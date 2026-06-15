@@ -97,6 +97,14 @@ from notebooklm.rpc.types import (
 
 FIXTURE_ROOT: Path = Path(__file__).parents[1] / "fixtures" / "rpc_golden"
 
+_ARTIFACT_CLIENT_OPTIONS: list[Any] = [
+    2,
+    None,
+    None,
+    [1, None, None, None, None, None, None, None, None, None, [1]],
+    [[1, 4, 8, 2, 3, 6]],
+]
+
 
 class _FixtureSchemaError(AssertionError):
     """Raised when a fixture is missing a required field or has the wrong type.
@@ -249,7 +257,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 audio_length=None,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -276,7 +284,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 audio_length=AudioLength.SHORT,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -312,7 +320,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 style_prompt=None,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -343,7 +351,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 style_prompt="blueprint line art",
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -379,7 +387,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 instructions=None,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -405,7 +413,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 extra_instructions=None,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -446,7 +454,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 extra_instructions="Ignored for custom reports.",
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -482,7 +490,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 difficulty=None,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -511,7 +519,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 difficulty=QuizDifficulty.HARD,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -540,7 +548,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 difficulty=QuizDifficulty.EASY,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -571,7 +579,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 style=None,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -604,7 +612,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 style=InfographicStyle.EDITORIAL,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -636,7 +644,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 slide_length=None,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -670,7 +678,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 slide_length=SlideDeckLength.SHORT,
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -702,7 +710,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                 instructions="Extract product comparisons",
             ),
             [
-                [2],
+                _ARTIFACT_CLIENT_OPTIONS,
                 "nb_payload",
                 [
                     None,
@@ -771,17 +779,9 @@ def test_revise_slide_payload_builder_matches_golden_envelope() -> None:
 def test_retry_artifact_payload_builder_matches_golden_envelope() -> None:
     params = build_retry_artifact_params("artifact_payload")
 
-    # The type-agnostic retry_options literal is sent verbatim (issue #1319).
-    assert params == [
-        [
-            2,
-            None,
-            None,
-            [1, None, None, None, None, None, None, None, None, None, [1]],
-            [[1, 4, 8, 2, 3, 6]],
-        ],
-        "artifact_payload",
-    ]
+    # The type-agnostic client-options literal is sent verbatim (issue #1319;
+    # also confirmed for CREATE_ARTIFACT on 2026-06-15).
+    assert params == [_ARTIFACT_CLIENT_OPTIONS, "artifact_payload"]
     encoded = encode_rpc_request(RPCMethod.RETRY_ARTIFACT, params)
     assert encoded == _expected_rpc_envelope(RPCMethod.RETRY_ARTIFACT, params)
     # The encoded envelope must carry the confirmed wire ID.

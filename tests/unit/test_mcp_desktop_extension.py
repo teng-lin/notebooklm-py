@@ -157,6 +157,7 @@ def test_find_uvx_returns_none_when_absent(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setenv("HOME", str(home))
 
     run_server = _load_run_server()
+    monkeypatch.setattr(run_server, "_candidate_uvx_paths", lambda: [])
     assert run_server.find_uvx() is None
 
 
@@ -198,6 +199,7 @@ def test_main_errors_to_stderr_when_uvx_absent(
     monkeypatch.setattr("sys.argv", ["run_server.py"])
 
     run_server = _load_run_server()
+    monkeypatch.setattr(run_server, "_candidate_uvx_paths", lambda: [])
     with pytest.raises(SystemExit) as excinfo:
         run_server.main()
     assert excinfo.value.code != 0

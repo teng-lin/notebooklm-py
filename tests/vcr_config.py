@@ -471,6 +471,63 @@ def _shape_only(node: Any) -> Any:
     return _LEAF
 
 
+_CREATE_ARTIFACT_RPC_ID = "R7cb6c"
+_CREATE_ARTIFACT_OPTIONS_SENTINEL = {"_CREATE_ARTIFACT_CLIENT_OPTIONS": True}
+_CREATE_ARTIFACT_OLD_CLIENT_OPTIONS = [2]
+_CREATE_ARTIFACT_LIVE_CLIENT_OPTIONS = [
+    2,
+    None,
+    None,
+    [1, None, None, None, None, None, None, None, None, None, [1]],
+    [[1, 4, 8, 2, 3, 6]],
+]
+
+
+def _is_create_artifact_client_options(node: Any) -> bool:
+    """Return whether ``node`` is a known CREATE_ARTIFACT options envelope.
+
+    Older cassettes recorded the compact ``[2]`` first param. Live UI captures
+    on 2026-06-15 send ``[2, None, None, ..., [[1, 4, 8, 2, 3, 6]]]`` instead.
+    Both identify the same client-options slot for matcher purposes; the actual
+    artifact spec remains matched structurally.
+    """
+    if not isinstance(node, list):
+        return False
+    return node in (
+        _CREATE_ARTIFACT_OLD_CLIENT_OPTIONS,
+        _CREATE_ARTIFACT_LIVE_CLIENT_OPTIONS,
+    )
+
+
+def _normalize_create_artifact_options(decoded_outer: Any) -> Any:
+    """Canonicalize old/new CREATE_ARTIFACT client-options shapes for VCR replay."""
+    if not isinstance(decoded_outer, list):
+        return decoded_outer
+
+    normalized_outer: list[Any] = []
+    for batch in decoded_outer:
+        if not isinstance(batch, list):
+            normalized_outer.append(batch)
+            continue
+        normalized_batch: list[Any] = []
+        for entry in batch:
+            if (
+                isinstance(entry, list)
+                and len(entry) >= 2
+                and entry[0] == _CREATE_ARTIFACT_RPC_ID
+                and isinstance(entry[1], list)
+                and entry[1]
+                and _is_create_artifact_client_options(entry[1][0])
+            ):
+                args = list(entry[1])
+                args[0] = _CREATE_ARTIFACT_OPTIONS_SENTINEL
+                normalized_batch.append([entry[0], args, *entry[2:]])
+            else:
+                normalized_batch.append(entry)
+        normalized_outer.append(normalized_batch)
+    return normalized_outer
+
+
 def _normalize_freq_string(body: str) -> str | None:
     """Extract and lightly-normalize the raw ``f.req`` value from a form body.
 
@@ -615,7 +672,7 @@ def _freq_body_matcher(r1: Any, r2: Any) -> bool:
                         else:
                             decoded_batch.append(entry)
                     decoded_outer.append(decoded_batch)
-                return f_req, ("batch", decoded_outer)
+                return f_req, ("batch", _normalize_create_artifact_options(decoded_outer))
             except (TypeError, IndexError):
                 return f_req, None
 

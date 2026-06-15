@@ -92,13 +92,13 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # Active classifications — artifact and generation create patterns
     # ---------------------------------------------------------------------------
     #
-    # CREATE_ARTIFACT — mutating create. Params are nested positional
-    # lists shaped like ``[[2], notebook_id, [None, None, type_code,
+    # CREATE_ARTIFACT — mutating create. Params are nested positional lists
+    # shaped like ``[client_options, notebook_id, [None, None, type_code,
     # source_ids_triple, ..., config]]`` for every artifact variant (audio,
     # video, report, quiz, etc.; see the ``generate_*`` methods and the
-    # ``_artifact.payloads.build_*`` helpers in ``_artifacts.py``). Every
-    # position is structural — there is no caller-supplied client-token slot.
-    # The server allocates the artifact_id in the response
+    # ``_artifact.payloads.build_*`` helpers). Every position is structural —
+    # there is no caller-supplied client-token slot. The server allocates the
+    # artifact_id in the response
     # (``ArtifactsAPI._parse_generation_result`` reads ``result[0][0]`` — see
     # ``_artifacts.py``), so a token-dedupe strategy is impossible.
     #

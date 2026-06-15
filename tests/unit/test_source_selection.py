@@ -444,7 +444,7 @@ class TestArtifactsSourceSelection:
 
         # Video params structure:
         # [
-        #   [2], notebook_id,
+        #   client_options, notebook_id,
         #   [None, None, 3, source_ids_triple, None, None, None, None,
         #    [None, None, [source_ids_double, language, instructions, None, format_code, style_code]]]
         # ]
@@ -632,7 +632,7 @@ class TestArtifactsSourceSelection:
 
         # Report params structure:
         # [
-        #   [2], notebook_id,
+        #   client_options, notebook_id,
         #   [None, None, 2, source_ids_triple, None, None, None,
         #    [None, [title, desc, None, source_ids_double, language, prompt, None, True]]]
         # ]
@@ -725,7 +725,7 @@ class TestArtifactsSourceSelection:
 
         # Quiz params structure:
         # [
-        #   [2], notebook_id,
+        #   client_options, notebook_id,
         #   [None, None, 4, source_ids_triple, ...]
         # ]
         inner_params = params[2]

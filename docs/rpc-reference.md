@@ -1,7 +1,7 @@
 # RPC & UI Reference
 
 **Status:** Active
-**Last Updated:** 2026-06-11
+**Last Updated:** 2026-06-15
 **Source of Truth:** `src/notebooklm/rpc/types.py` for method IDs; payload builders in `src/notebooklm/` and golden tests under `tests/unit/`
 **Purpose:** Complete reference for RPC methods, UI selectors, and payload structures
 
@@ -11,7 +11,10 @@
 > re-verified against the live builders in `_artifact/payloads.py` on
 > 2026-06-11 (AUDIO, VIDEO_EXPLAINER, VIDEO_BRIEF, VIDEO_CINEMATIC,
 > STUDY_GUIDE, BRIEFING_DOC, BLOG_POST, MIND_MAP, QUIZ, FLASHCARDS,
-> INFOGRAPHIC, SLIDE_DECK, DATA_TABLE).
+> INFOGRAPHIC, SLIDE_DECK, DATA_TABLE). Read-only notebook/source/artifact/chat/
+> sharing/settings RPCs were live-captured again on 2026-06-15. Home, Sources,
+> chat, and Studio selectors were rechecked the same day against a live Chrome
+> session on a probe notebook.
 
 ---
 
@@ -76,7 +79,7 @@
 | 2 | Report | Briefing Doc, Study Guide, Blog Post |
 | 3 | Video | Video Overview |
 | 4 | Quiz/Flashcards (QUIZ_FLASHCARD alias) | Quiz (variant=2), Flashcards (variant=1) |
-| 5 | Mind Map | Mind Map |
+| 5 | Mind Map | Library synthetic type for note-backed mind maps |
 | 7 | Infographic | Infographic |
 | 8 | Slide Deck | Slide Deck |
 | 9 | Data Table | Data Table |
@@ -102,6 +105,32 @@ Internal integer codes returned by `GET_NOTEBOOK` / `LIST_SOURCES` and consumed 
 | 17 | `EPUB` | EPUB upload (added in v0.4.0) |
 
 > Codes outside this map are surfaced as `SourceType.UNKNOWN` and emit `UnknownTypeWarning` on first occurrence so unmapped types don't crash callers.
+
+---
+
+## UI/Library Operation Parity
+
+Use this table as the coverage index before adding or changing selectors. "UI
+covered" means the selector or flow is documented below from the 2026-06-15 live
+Chrome probe. "Library-only" means the Python API deliberately exposes a backend
+or local convenience that has no stable web-control equivalent in the capture.
+
+| Library surface | UI parity status | Notes |
+|-----------------|------------------|-------|
+| `NotebooksAPI.list/create/get/rename/delete/remove_from_recent` | Partial UI coverage | Home create/card/action-menu selectors are covered. Rename/delete/remove-recent are represented by project action menus and RPC payloads; destructive menu items were not re-mutated in the live probe. |
+| `NotebooksAPI.get_summary/get_description/get_metadata/get_raw/get_share_url` | Library-only/read-derived | Summary content is visible in the chat panel, but these are read/format helpers rather than direct UI controls. |
+| `SourcesAPI.list/get/add_url/add_text/add_file/add_drive/delete/rename` | UI covered | Source cards, add-source modal tabs, upload/Drive entry points, source menus, and submit selectors are documented. |
+| `SourcesAPI.get_guide/get_fulltext` | UI covered/read-derived | Opening a source exposes the source viewer, source guide toggle, title input, and source content; `get_fulltext()` is the programmatic extraction path. |
+| `SourcesAPI.wait_*`, `refresh`, `check_freshness` | Library-only/partial UI | Wait methods are polling helpers. Refresh/freshness RPCs are documented, but no stable refresh selector was captured in the current source-list/label-list state. |
+| `LabelsAPI.list/sources/generate/create/update/rename/set_emoji/add_sources/remove_sources/delete` | UI covered | Auto-label, Reorganize all sources, manual label creation, inline rename, emoji picker, delete, label panels, and source Move to label checkboxes are documented. |
+| `ChatAPI.ask/get_history/delete_conversation/configure/save_answer_as_note` | UI covered | Chat input/send, options/delete history, configure dialog, and `Save message to a note` buttons are documented. `get_conversation_id`, cache methods, and history parsing are backend/local conveniences. |
+| `ArtifactsAPI.generate_*`, `suggest_reports`, `list/get/get_prompt/delete/rename/share/export` | UI covered/partial | All live Studio generation tiles and option sets are documented. Artifact list/open/menu/view-prompt/share/delete selectors are covered; export/download/retry availability depends on artifact type/status. |
+| `ArtifactsAPI.download_*`, `wait_for_completion`, `poll_status`, `revise_slide`, `retry_failed` | Library-only/conditional UI | Downloads, polling, and slide revision are programmatic conveniences. Retry requires a failed artifact row; the RPC is documented but no failed-row retry selector was present in the probe. |
+| `NotesAPI.list/get/create/update/delete` | UI covered/partial | Add note, note row, note view close/title input, and note menu delete are documented. Rich body editing uses NotebookLM's internal editor; keep selectors conservative. |
+| `MindMapsAPI.list/generate/rename/delete/get_tree` | UI covered/partial | Interactive mind map generation is the live Studio tile. Note-backed mind maps are a synthetic/library backing; tree extraction via `GET_INTERACTIVE_HTML` is programmatic. |
+| `ResearchAPI.start/poll/wait/import_sources` | UI covered for start only | Source discovery corpus/mode/submit selectors map to fast/deep web/Drive research. Polling and import verification are backend workflow helpers. |
+| `SettingsAPI.get/set_output_language`, `SharingAPI.get_status/set_public/set_view_level/add_user/update_user/remove_user` | UI covered/partial | Settings and Share dialogs are covered at entry/save/copy selectors. Programmatic user-permission mutations go beyond the captured UI selectors. |
+| UI-only note operations | UI-only | Note menus expose `Convert to source`, `Convert all notes to source`, `Export to Docs`, and `Export to Sheets`; keep them documented as selectors unless/until a public library method owns those flows. |
 
 ---
 
@@ -137,29 +166,68 @@ await try_selectors(page, HOME_SELECTORS["create_notebook"])
 ```python
 HOME_SELECTORS = {
     "create_notebook": [
+        "button[aria-label='Create new notebook']",
         "button:has-text('Create new')",
         "mat-card[role='button']:has-text('Create new notebook')",
     ],
     "notebook_card": [
+        "mat-card:has(button[aria-label='Project Actions Menu'])",
         "mat-card:has(button:has-text('more_vert'))",
         "mat-card[role='button']:has(h3)",
+        "a[href*='/notebook/']",
     ],
     "notebook_menu": [
+        "button[aria-label='Project Actions Menu']",
         "button[aria-label*='More options']",
+        "button:has-text('more_vert')",
     ],
 }
 ```
+
+### Live Home Components (2026-06-15)
+
+```python
+HOME_MENU_SELECTORS = {
+    "settings": "button[aria-label='Settings']",
+    "search": "button[aria-label='Open search']",
+    "filter_tabs": [
+        "button:has-text('All')",
+        "button:has-text('My notebooks')",
+        "button:has-text('Featured notebooks')",
+    ],
+    "view_toggle": [
+        "button[aria-label='Grid view']",
+        "button[aria-label='List view']",
+    ],
+    "sort_menu": ".project-filter-button",  # e.g. "Most recent"
+    "project_actions": "button[aria-label='Project Actions Menu']",
+}
+```
+
+The home project action menu is now labeled `Project Actions Menu`; older
+`More options` selectors did not match the live UI on 2026-06-15.
 
 ### RPC: LIST_NOTEBOOKS (wXbhsf)
 
 **Source:** `_notebooks.py::list()`
 
 ```python
+# Minimal client builder (`NotebooksAPI.list()`), accepted by the backend:
 params = [
     None,   # 0
     1,      # 1: Fixed value
     None,   # 2
     [2],    # 3: Fixed flag
+]
+
+# Live web UI/CDP capture on 2026-06-15:
+params = [
+    None,
+    1,
+    None,
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    None,
+    [[None, None, []], [[]], [None, []]],
 ]
 ```
 
@@ -190,17 +258,26 @@ params = [
 
 ### RPC: GET_NOTEBOOK (rLM1Ne)
 
-**Source:** `_notebooks.py::get()`
+**Source:** `_notebooks.py::get()`, `_source/listing.py::SourceLister.list()`
 
 ```python
 params = [
-    notebook_id,  # 0
-    None,         # 1
-    [2],          # 2: Fixed flag
-    None,         # 3
-    0,            # 4: Fixed value
+    notebook_id,                                           # 0
+    None,                                                  # 1
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+                                                           # 2: Shared request-options wrapper
+    None,                                                  # 3
+    0,                                                     # 4: Fixed value
 ]
 ```
+
+The slot `[2]` wrapper replaced the older bare `[2]` read-path tail. Live
+capture on 2026-06-15 confirmed the nested shape in `f.req`; keep
+`_notebooks.build_get_notebook_params()` and `_source/listing.py` in sync.
+The live web UI also sends a sixth filter/tail slot:
+`[[None, None, []]]`. Initial page load used slot `[4] == 0`; a follow-up
+refresh used slot `[4] == 1`. The client builder currently omits that sixth
+slot because the backend accepts the compact form.
 
 ### RPC: REMOVE_RECENTLY_VIEWED (fejl7e)
 
@@ -230,23 +307,87 @@ await rpc_call(
 ```python
 SOURCES_SELECTORS = {
     "add_sources": [
+        "button[aria-label='Add source']",
         "button:has-text('+ Add sources')",
         "button:has-text('Add sources')",
     ],
     "source_card": ".single-source-container",
-    "source_menu": "button[aria-label*='More options']",
+    "source_menu": [
+        "button.source-item-more-button[aria-label='More']",
+        "button[aria-label*='More options']",
+    ],
     "remove_source": "button:has-text('Remove source')",
     "rename_source": "button:has-text('Rename source')",
 }
 
 ADD_SOURCE_MODAL = {
-    "modal": "[role='dialog']",
-    "website_tab": "button:has-text('Website')",
-    "url_input": "textarea[placeholder*='links']",
+    "modal": "mat-dialog-container[role='dialog']",
+    "upload_files": "button:has-text('Upload files')",
+    "website_tab": [
+        "button:has-text('Websites')",
+        "button:has-text('Website')",
+    ],
+    "drive_tab": "button:has-text('Drive')",
+    "url_input": [
+        "textarea[aria-label='Enter URLs']",
+        "textarea[placeholder='Paste any links']",
+        "textarea[placeholder*='links']",
+    ],
     "copied_text_tab": "button:has-text('Copied text')",
+    "copied_text_input": [
+        "textarea[aria-label='Pasted text']",
+        "textarea[placeholder='Paste text here']",
+    ],
+    "back_button": "button[aria-label='Back']",
+    "close_button": "button[aria-label='Close']",
     "submit_button": "button:has-text('Insert')",
 }
+
+SOURCE_DISCOVERY_SELECTORS = {
+    "query": [
+        "textarea[placeholder='Search the web for new sources']",
+        "textarea[aria-label='Discover sources based on the inputted query']",
+    ],
+    "corpus_menu": ".corpus-menu-trigger",
+    "corpus_web": ".corpus-option-web",
+    "corpus_drive": ".corpus-option-drive",
+    "research_mode_menu": ".researcher-menu-trigger",
+    "fast_research": ".research-option-fast-research",
+    "deep_research": ".research-option-deep-research",
+    "submit": "button.actions-enter-button[aria-label='Submit']",
+    "auto_label": [
+        "button[aria-label='Auto-label your sources by topic']",
+        "button[aria-label='Undo or re-label sources']",
+    ],
+}
+
+DRIVE_PICKER_SELECTORS = {
+    "picker_iframe": "iframe[src*='picker'], iframe[src*='docs.google']",
+}
+
+SOURCE_VIEWER_SELECTORS = {
+    "open_source": "button.source-stretched-button",
+    "viewer": "source-viewer",
+    "title_input": "source-viewer input.title-input",
+    "close_view": [
+        "source-viewer button[mattooltip='Close source view']",
+        "button[mattooltip='Close source view']",
+    ],
+    "open_in_new": "source-viewer button[aria-label='Open in new tab']",
+    "source_guide_toggle": "source-viewer button[aria-label='Close source guide']",
+    "guide_keyword_chip": "source-viewer button[role='option']",
+}
 ```
+
+Live source-add submit check (2026-06-15): copied text, Website URL
+(`https://example.com`), and file upload all closed the modal and increased the
+source-card count. Drive opens a Google picker iframe; selecting a Drive file
+was not needed to verify the entry point.
+
+Live source-viewer check (2026-06-15): opening a source showed
+`source-viewer`, `input.title-input`, `Open in new tab`, a `Close source guide`
+toggle, source-guide keyword chips with `role='option'`, and a tooltiped close
+button (`mattooltip='Close source view'`).
 
 ### RPC: ADD_SOURCE (izAoDd) - URL
 
@@ -315,6 +456,71 @@ params = [
 CREATE_NOTEBOOK, and ADD_SOURCE_FILE use the shared nested wrapper from
 `_source/upload_payloads.py::build_template_block()`.
 
+### RPC: ADD_SOURCE_FILE (o4cbdc) - File Upload Registration
+
+**Source:** `_source/upload.py::SourceUploadPipeline.register_file_source()`,
+`_source/upload_payloads.py::build_register_file_source_params()`,
+`_source/upload_payloads.py::build_resumable_upload_start_request()`
+
+File uploads are a two-step flow. First, `ADD_SOURCE_FILE` registers the file
+source and returns a `SOURCE_ID`; then the client starts a Scotty resumable
+upload session and streams the bytes to the `x-goog-upload-url` returned by
+that start request.
+
+```python
+params = [
+    [[filename]],    # 0: Filename wrapped twice
+    notebook_id,     # 1: Notebook ID
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+                     # 2: Shared request-options wrapper
+]
+
+# Called with source_path:
+await rpc_call(
+    RPCMethod.ADD_SOURCE_FILE,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+    allow_null=False,
+    disable_internal_retries=True,
+)
+```
+
+Registration is mutating, so the upload pipeline uses the same
+probe-then-create idempotency pattern as URL and Drive sources. Because
+filenames are not unique, the probe records source IDs before the create and
+only trusts a same-title source if it is new since that baseline.
+
+```python
+# Start resumable upload after SOURCE_ID registration:
+start_headers = {
+    "Accept": "*/*",
+    "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+    "Origin": base_url,
+    "Referer": f"{base_url}/",
+    "x-goog-authuser": authuser,
+    "x-goog-upload-command": "start",
+    "x-goog-upload-header-content-length": str(file_size),
+    "x-goog-upload-header-content-type": content_type,
+    "x-goog-upload-protocol": "resumable",
+}
+start_body = {
+    "PROJECT_ID": notebook_id,
+    "SOURCE_NAME": filename,
+    "SOURCE_ID": source_id,
+}
+
+# Stream bytes to response.headers["x-goog-upload-url"]:
+upload_headers = {
+    "Accept": "*/*",
+    "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+    "x-goog-authuser": authuser,
+    "Origin": base_url,
+    "Referer": f"{base_url}/",
+    "x-goog-upload-command": "upload, finalize",
+    "x-goog-upload-offset": "0",
+}
+```
+
 ### RPC: DELETE_SOURCE (tGMBJ)
 
 **Source:** `_sources.py::delete()`
@@ -370,6 +576,13 @@ params = [
     [2],          # 1
     [2],          # 2
 ]
+
+# Markdown/HTML source rendering uses the same selector in both slots:
+params = [
+    [source_id],
+    [3],
+    [3],
+]
 ```
 
 **Request format:**
@@ -410,6 +623,52 @@ Each label is a 4-tuple `[name, sources, label_id, emoji]`:
 `[None, [label, ...]]` (label set at index `[1]`); `LIST_LABELS` returns
 `[[label, ...]]` (label set at index `[0]`); `UPDATE_LABEL` and `DELETE_LABEL`
 echo `[]` on success.
+
+### UI Selectors
+
+Live-checked on 2026-06-15 after NotebookLM generated source labels for the
+probe notebook.
+
+```python
+LABEL_UI_SELECTORS = {
+    # Before labels exist, the same button is labelled "Auto-label your sources
+    # by topic"; after labels exist, it becomes "Undo or re-label sources".
+    "auto_label_menu": [
+        "button[aria-label='Auto-label your sources by topic']",
+        "button[aria-label='Undo or re-label sources']",
+    ],
+    "add_new_label": "button[role='menuitem']:has-text('Add new label')",
+    "reorganize": "button[role='menuitem']:has-text('Reorganize')",
+    "reorganize_all_sources": "button[role='menuitem']:has-text('All sources')",
+    "return_to_list_view": "button[role='menuitem']:has-text('Return to list view')",
+    "label_panel": "source-picker mat-expansion-panel",
+    "label_header": "source-picker mat-expansion-panel-header",
+    "label_name": "source-picker .label-name",
+    "label_checkbox": "source-picker input[aria-label='<label name>']",
+    "label_more": "source-picker button.label-more-button",
+    "label_rename": "button[role='menuitem']:has-text('Rename')",
+    "label_remove": "button[role='menuitem']:has-text('Remove')",
+    "label_add_emoji": "button[role='menuitem']:has-text('Add emoji')",
+    "label_rename_input": "source-picker input.label-rename-input",
+    "emoji_search": "input[aria-label='Search for an emoji, press Escape to dismiss.']",
+    "source_move_to": "button.more-menu-move-to-labels-button",
+    "move_to_label_option": ".cdk-overlay-container [role='menuitem']:has-text('<label name>')",
+    "move_to_checkbox": ".cdk-overlay-container input.mdc-checkbox__native-control",
+}
+```
+
+Live label-flow notes:
+
+- `Add new label` immediately creates a manual label named `New Label`; there is
+  no pre-create dialog.
+- `Rename` switches that label row into an inline
+  `input.label-rename-input`; submitting with Enter commits the rename.
+- `Add emoji` opens the inline emoji picker and exposes the emoji search input.
+- `Remove` deleted the throwaway label immediately in the live UI probe.
+- Expanding a label panel reveals its member source rows; each source row keeps
+  the normal source menu plus a label-specific `Move to` submenu.
+- `Move to` shows every current label with checkboxes. The current label is
+  checked; unchecked labels can be selected to change/add membership.
 
 ### RPC: CREATE_LABEL (agX4Bc)
 
@@ -499,26 +758,65 @@ params = [OPTS, notebook_id, [label_id, ...]]
 ```python
 CHAT_SELECTORS = {
     "message_input": [
-        "textarea[placeholder='Start typing...']",
+        "textarea[placeholder='Ask a question or create something']",
         "textarea[aria-label='Query box']",
+        "textarea[placeholder='Start typing...']",
     ],
-    "send_button": "button[aria-label='Submit']",
+    "send_button": "button.submit-button[aria-label='Submit']",
     "configure_button": "button[aria-label='Configure notebook']",
-    "chat_history": "[role='log']",
+    "chat_history": [
+        "chat-panel .chat-panel-content",
+        "[role='log']",
+    ],
     "message_bubble": [
         ".to-user-container",      # AI messages
         ".from-user-container",    # User messages
     ],
+    "save_to_note": "button[aria-label='Save message to a note']",
+    "copy_response": "button[aria-label='Copy model response to clipboard']",
+    "rate_good": "button[aria-label='Rate response as good']",
+    "rate_bad": "button[aria-label='Rate response as bad']",
 }
 
 CHAT_CONFIG = {
     "modal": "configure-notebook-settings",
-    "goal_default": "button[aria-label='Default button']",
-    "goal_learning_guide": "button[aria-label*='Learning Guide']",
-    "goal_custom": "button[aria-label='Custom button']",
-    "length_shorter": "button[aria-label*='Shorter']",
-    "length_longer": "button[aria-label*='Longer']",
-    "save_button": "button:has-text('Save')",
+    "goal_default": (
+        "configure-notebook-settings .prompt-section-toggles "
+        "button[aria-label='Default button']"
+    ),
+    "goal_learning_guide": (
+        "configure-notebook-settings .prompt-section-toggles "
+        "button[aria-label='Learning Guide prompt button']"
+    ),
+    "goal_custom": (
+        "configure-notebook-settings .prompt-section-toggles "
+        "button[aria-label='Custom button']"
+    ),
+    "length_default": (
+        "configure-notebook-settings .style-section-toggles "
+        "button[aria-label='Default button']"
+    ),
+    "length_shorter": "configure-notebook-settings button[aria-label='Concise style guide button']",
+    "length_longer": "configure-notebook-settings button[aria-label='Verbose style guide button']",
+    "save_button": "configure-notebook-settings button[aria-label*='Save settings']",
+    "close_button": "button[aria-label='Close chat settings']",
+}
+
+CHAT_OPTIONS = {
+    "menu_button": "button[aria-label='Chat options']",
+    "customize_notebook": "button[role='menuitem']:has-text('Customize notebook')",
+    "delete_history": "button[role='menuitem']:has-text('Delete chat history')",
+}
+
+NOTEBOOK_SHELL_SELECTORS = {
+    "share_notebook": "button[aria-label='Share notebook']",
+    "share_dialog": "mat-dialog-container[role='dialog']:has-text('Share')",
+    "share_copy_link": "button:has-text('Copy link')",
+    "share_more_copy_options": "button[aria-label='More copy options']",
+    "share_save": "button:has-text('Save')",
+    "settings_menu": "button[aria-label='Settings']",
+    "settings_output_language": "button[role='menuitem']:has-text('Output Language')",
+    "settings_theme": "button[role='menuitem'][aria-label='Theme']",
 }
 ```
 
@@ -584,6 +882,14 @@ params = [
     notebook_id,  # 2
     1,            # 3: Limit (server ignores this; always returns one ID)
 ]
+
+# Live web UI/CDP capture on 2026-06-15:
+params = [
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    None,
+    notebook_id,
+    20,
+]
 ```
 
 **Response:** `[[[conv_id]]]` — single entry list containing the conversation ID.
@@ -603,6 +909,15 @@ params = [
     None,            # 2
     conversation_id, # 3
     limit,           # 4: Max turns to return (e.g., 2 for latest Q&A pair)
+]
+
+# Live web UI/CDP capture on 2026-06-15:
+params = [
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    None,
+    None,
+    conversation_id,
+    20,
 ]
 ```
 
@@ -642,7 +957,10 @@ is signaled by the absence of an error — there is no return payload.
 ```python
 STUDIO_SELECTORS = {
     "artifact_button": ".create-artifact-button-container",
-    "customize_icon": ".option-icon",  # Click THIS for customization!
+    "customize_icon": [
+        ".option-icon",
+        "button.edit-button[aria-label^='Customize']",
+    ],  # Click THIS for customization!
     "add_note": "button:has-text('Add note')",
     "artifact_list": ".artifact-library-container",
     "artifact_row": ".artifact-item-button",
@@ -651,19 +969,115 @@ STUDIO_SELECTORS = {
 
 ARTIFACT_MENU = {
     "rename": "button:has-text('Rename')",
-    "download": "button:has-text('Download')",
+    "share": "button:has-text('Share')",
+    "view_prompt_sources": "button:has-text('View prompt and sources')",
     "delete": "button:has-text('Delete')",
 }
+
+ARTIFACT_VIEWER_SELECTORS = {
+    "open_artifact": ".artifact-item-button",
+    "expand": "button[aria-label='Expand']",
+    "more_options": "button[aria-label='More options']",
+    "view_sources": "button:has-text('View'):has-text('sources')",
+    "good_content": "button[aria-label='Good content rating']",
+    "bad_content": "button[aria-label='Bad content rating']",
+}
+
+NOTE_SELECTORS = {
+    "add_note": "button.add-note-button, button:has-text('Add note')",
+    "note_row": ".artifact-item-button:has-text('sticky_note_2')",
+    "note_row_by_title": ".artifact-item-button:has-text('<note title>')",
+    "open_note": ".artifact-item-button:has-text('<note title>') .artifact-stretched-button",
+    "note_menu": ".artifact-item-button:has-text('<note title>') .artifact-more-button",
+    "note_view_title": "input.title-input",
+    "note_view_close": "button[aria-label='Close note view']",
+}
+
+NOTE_MENU = {
+    "convert_to_source": "button[role='menuitem']:has-text('Convert to source')",
+    "convert_all_notes_to_source": "button[role='menuitem']:has-text('Convert all notes to source')",
+    "export_to_docs": "button[role='menuitem']:has-text('Export to Docs')",
+    "export_to_sheets": "button[role='menuitem']:has-text('Export to Sheets')",
+    "delete": "button[role='menuitem']:has-text('Delete')",
+    "confirm_delete": "button[aria-label='Confirm deletion']",
+    "cancel_delete": "button[aria-label='Cancel']",
+}
+
+GENERATION_TILE_SELECTORS = {
+    "tile": ".create-artifact-button-container",
+    "tile_by_label": ".create-artifact-button-container[aria-label='<label>']",
+    "customize_icon": ".create-artifact-button-container[aria-label='<label>'] .option-icon",
+    # Present for every live tile except Video Overview and Reports:
+    "customize_button": "button.edit-button[aria-label^='Customize']",
+    "customizer_dialog": "mat-dialog-container[role='dialog']",
+    "dialog_close": [
+        "button[aria-label='Close dialog']",
+        "button[aria-label='Close']",
+    ],
+    "language_select": "mat-select[role='combobox']",
+    "language_option": "mat-option[role='option']",
+    "dialog_generate": "button:has-text('Generate')",
+}
 ```
+
+Live Studio tiles on 2026-06-15:
+
+| Tile label | Customize selector | Live options |
+|------------|--------------------|--------------|
+| Audio Overview | `.create-artifact-button-container[aria-label='Audio Overview'] .option-icon` | Format: Deep Dive, Brief, Critique, Debate; language; Length: Short, Default, Long; prompt textarea `aria-label='What should the AI hosts focus on in this episode?'` |
+| Slide Deck | `.create-artifact-button-container[aria-label='Slide Deck'] .option-icon` | Format: Detailed Deck, Presenter Slides; language; Length: Short, Default; prompt textarea `aria-label='Describe the slide deck you want to create'` |
+| Video Overview | `.create-artifact-button-container[aria-label='Video Overview'] .option-icon` | Format: Cinematic, Explainer, Brief; prompt textarea `aria-label='How would you like the video to be customized?'` |
+| Mind Map | `.create-artifact-button-container[aria-label='Mind Map'] .option-icon` | Prompt textarea `aria-label='Text area for custom topic'` |
+| Reports | `.create-artifact-button-container[aria-label='Reports'] .option-icon` | Root format picker: Create Your Own, Briefing Doc, Study Guide, Blog Post, plus dynamic suggested formats; each format can open a report prompt form |
+| Flashcards | `.create-artifact-button-container[aria-label='Flashcards'] .option-icon` | Number of Cards: Fewer, Standard (Default), More; Difficulty: Easy, Medium (Default), Hard; prompt textarea `aria-label='Text area for custom topic'` |
+| Quiz | `.create-artifact-button-container[aria-label='Quiz'] .option-icon` | Number of Questions: Fewer, Standard (Default), More; Difficulty: Easy, Medium (Default), Hard; prompt textarea `aria-label='Text area for custom topic'` |
+| Infographic | `.create-artifact-button-container[aria-label='Infographic'] .option-icon` | Orientation: Landscape, Portrait, Square; visual style: Auto-select, Kawaii, Clay, Sketch Note, Anime, Editorial, Instructional, Bento Grid, Bricks, Scientific, Professional; detail: Concise, Standard, Detailed BETA; prompt textarea `aria-label='Describe the infographic you want to create'` |
+| Data Table | `.create-artifact-button-container[aria-label='Data Table'] .option-icon` | Language; prompt textarea `aria-label='Describe the data table you want to create'` |
+
+Reports-specific live selectors:
+
+```python
+REPORT_DIALOG_SELECTORS = {
+    "create_your_own": "button[aria-label='Create Your Own']",
+    "briefing_doc": "button[aria-label='Briefing Doc']",
+    "study_guide": "button[aria-label='Study Guide']",
+    "blog_post": "button[aria-label='Blog Post']",
+    "suggested_format": "button.primary-action-button[aria-label]",  # Dynamic titles
+    "customize_report": "button[aria-label='Customize Report']",
+    "back": "button[aria-label='Back']",
+    "prompt": "textarea[aria-label='Input to describe the kind of report to create']",
+}
+```
+
+On 2026-06-15 the live suggested report titles for the probe notebook were
+`Product Evolution Report`, `Strategic Adoption Analysis`,
+`Technical Terminology Reference`, and `Capability Application Overview`.
+These are notebook-content-dependent, so treat them as examples, not constants.
+
+Notes live in the same Studio list as artifacts. Live note probe
+(2026-06-15): clicking `Add note` created a `New Note` row with
+`.artifact-item-button` and `.artifact-more-button`. Its menu exposed
+`Convert to source`, `Convert all notes to source`, `Export to Docs`,
+`Export to Sheets`, and `Delete`; delete opened a confirmation dialog with
+`button[aria-label='Confirm deletion']`. The throwaway `New Note` from the
+probe was deleted after collecting selectors.
 
 ### Critical: Edit Icon vs Full Button
 
 ```python
 # ✅ Click edit icon for customization dialog
-await page.locator(".create-artifact-button-container:has-text('Audio') .option-icon").click()
+await page.locator(
+    ".create-artifact-button-container[aria-label='Audio Overview'] .option-icon"
+).click()
+
+# Video Overview and Reports also use `.option-icon`, but do not expose it as
+# `button.edit-button[aria-label^='Customize']` in the live DOM.
+await page.locator(
+    ".create-artifact-button-container[aria-label='Video Overview'] .option-icon"
+).click()
 
 # ❌ Clicking full button starts generation with defaults (skips customization!)
-await page.locator(".create-artifact-button-container:has-text('Audio')").click()
+await page.locator(".create-artifact-button-container[aria-label='Audio Overview']").click()
 ```
 
 ### RPC: CREATE_ARTIFACT (R7cb6c)
@@ -671,6 +1085,40 @@ await page.locator(".create-artifact-button-container:has-text('Audio')").click(
 **All artifact types use `R7cb6c` with different content type codes and nested configs.**
 
 **Source:** `_artifacts.py` (param builders: `_artifact/payloads.py`)
+
+Live UI captures on 2026-06-15 for Data Table and interactive Mind Map showed
+the web client sending the full client-options block below as param `0` (not
+the older minimal `[2]` form). The Python payload builders now match this UI
+shape for every `CREATE_ARTIFACT` generator and for `RETRY_ARTIFACT`.
+
+```python
+create_artifact_options = [
+    2,
+    None,
+    None,
+    [1, None, None, None, None, None, None, None, None, None, [1]],
+    [[1, 4, 8, 2, 3, 6]],  # artifact-type capability list
+]
+```
+
+Kickoff response shape live-confirmed on 2026-06-15 for Data Table and
+interactive Mind Map:
+
+```python
+result = [
+    [
+        artifact_id,      # [0][0]: task/artifact id
+        title,            # [0][1]
+        artifact_type,    # [0][2]
+        None,             # [0][3]
+        status_code,      # [0][4]: 1=in_progress in both captures
+        # ... additional artifact metadata slots; first row len was 20
+    ]
+]
+```
+
+`ArtifactGenerationService._parse_generation_result()` reads `result[0][0]`
+and `result[0][4]`, which matches both live responses.
 
 #### Audio Overview (Type 1)
 
@@ -681,7 +1129,7 @@ source_ids_triple = [[[sid]] for sid in source_ids]  # [[[s1]], [[s2]], ...]
 source_ids_double = [[sid] for sid in source_ids]    # [[s1], [s2], ...]
 
 params = [
-    [2],                              # 0: Fixed
+    create_artifact_options,          # 0: Client options/capabilities
     notebook_id,                      # 1
     [
         None,                         # [0]
@@ -725,7 +1173,7 @@ if style_prompt:          # Optional 7th element; CUSTOM style only
     video_config.append(style_prompt)
 
 params = [
-    [2],
+    create_artifact_options,
     notebook_id,
     [
         None,                         # [0]
@@ -752,7 +1200,7 @@ subscription.
 
 ```python
 params = [
-    [2],
+    create_artifact_options,
     notebook_id,
     [
         None,                         # [0]
@@ -784,7 +1232,7 @@ params = [
 
 ```python
 params = [
-    [2],
+    create_artifact_options,
     notebook_id,
     [
         None,                         # [0]
@@ -817,7 +1265,7 @@ params = [
 
 ```python
 params = [
-    [2],
+    create_artifact_options,
     notebook_id,
     [
         None,                         # [0]
@@ -852,7 +1300,7 @@ params = [
 
 ```python
 params = [
-    [2],
+    create_artifact_options,
     notebook_id,
     [
         None,                         # [0]
@@ -892,7 +1340,7 @@ params = [
 #              See rpc/types.py::InfographicStyle for the full list.
 
 params = [
-    [2],
+    create_artifact_options,
     notebook_id,
     [
         None,                         # [0]
@@ -918,7 +1366,7 @@ infographic style preset feature; pass `None` to let the backend auto-select.
 # Length: 1=DEFAULT, 2=SHORT
 
 params = [
-    [2],
+    create_artifact_options,
     notebook_id,
     [
         None,                         # [0]
@@ -937,7 +1385,7 @@ params = [
 
 ```python
 params = [
-    [2],
+    create_artifact_options,
     notebook_id,
     [
         None,                         # [0]
@@ -990,7 +1438,7 @@ Unlike the synchronous note-backed kind, this is created asynchronously via
 ```python
 # RPC: CREATE_ARTIFACT (R7cb6c) — interactive mind map
 params = [
-    [2],
+    create_artifact_options,
     notebook_id,
     [
         None, None,
@@ -1027,10 +1475,25 @@ params = [
     'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"',  # Filter string
 ]
 
+# Live web UI/CDP capture on 2026-06-15 includes projection/type filters
+# inside the request-options wrapper:
+params = [
+    [
+        2,
+        None,
+        None,
+        [1, None, None, None, None, None, None, None, None, None, [1]],
+        [[1, 4, 8, 2, 3, 6]],
+    ],
+    notebook_id,
+    'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"',
+]
+
 # Response contains artifacts array with status:
 # status = 1 → Processing
 # status = 2 → Pending
 # status = 3 → Completed
+# status = 4 → Failed
 ```
 
 **Python API Note:** `artifacts.list()` also fetches mind maps from GET_NOTES_AND_MIND_MAPS and includes them as Artifact objects (type=5). This provides a unified list of all AI-generated content. Mind maps with status=2 (deleted) are filtered out.
@@ -1171,6 +1634,14 @@ params = [
 
 ```python
 params = [notebook_id]
+
+# Live web UI/CDP capture on 2026-06-15:
+params = [
+    notebook_id,
+    None,
+    None,  # Refresh calls may send a timestamp here, e.g. [seconds, nanos]
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+]
 ```
 
 ---
@@ -1278,6 +1749,12 @@ params = [
     [2],          # 1: Fixed flag
 ]
 
+# Live web UI/CDP capture on 2026-06-15:
+params = [
+    notebook_id,
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+]
+
 # Called with source_path:
 await rpc_call(
     RPCMethod.SUMMARIZE,
@@ -1309,6 +1786,12 @@ Get the current share settings for a notebook, including users with access and p
 params = [
     notebook_id,  # 0: Notebook ID
     [2],          # 1: Fixed flag
+]
+
+# Live web UI/CDP capture on 2026-06-15:
+params = [
+    notebook_id,
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
 ]
 
 # Called with source_path:
@@ -1762,6 +2245,11 @@ params = [
     [1, None, None, None, None, None, None, None, None, None, [1]],  # 1: Fixed config
 ]
 
+# Live web UI/CDP capture on 2026-06-15 from notebook context:
+params = [
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+]
+
 # Called with root source_path:
 await rpc_call(
     RPCMethod.GET_USER_SETTINGS,
@@ -1874,6 +2362,36 @@ await rpc_call(
 
 # Response: Export result with document URL
 ```
+
+### RPC: REVISE_SLIDE (KmcKPe)
+
+**Source:** `_artifacts.py::revise_slide()`,
+`_artifact/generation.py::ArtifactGenerationService.revise_slide()`,
+`_artifact/payloads.py::build_revise_slide_params()`
+
+Revise one slide in an existing completed slide deck. `slide_index` is
+zero-based and must be non-negative.
+
+```python
+params = [
+    [2],                        # 0: Fixed flag
+    artifact_id,                # 1: Slide deck artifact ID
+    [[[slide_index, prompt]]],  # 2: Revision request
+]
+
+# Called with source_path:
+await rpc_call(
+    RPCMethod.REVISE_SLIDE,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+    allow_null=True,
+)
+```
+
+Contract (ADR-0019 "async kickoff"): an accepted revision returns a standard
+`GenerationStatus` parsed from the RPC response; a synchronous server refusal
+propagates as `RateLimitError` / `RPCError`; a null result raises
+`ArtifactFeatureUnavailableError`.
 
 ### RPC: RETRY_ARTIFACT (Rytqqe)
 

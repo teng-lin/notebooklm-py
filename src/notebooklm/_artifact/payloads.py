@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Final
+from typing import Any
 
 from ..rpc import (
     INTERACTIVE_MIND_MAP_VARIANT,
@@ -54,6 +54,23 @@ _STATIC_REPORT_CONFIGS: dict[ReportFormat, dict[str, str]] = {
 }
 
 
+def _artifact_client_options() -> list[Any]:
+    """Return the client-options block used by Studio artifact RPCs.
+
+    Live UI captures on 2026-06-15 for Data Table and interactive Mind Map send
+    this full capability envelope as ``CREATE_ARTIFACT`` param 0. Older captures
+    used the shorter ``[2]`` form, but the fuller envelope now matches the web
+    client and the in-place retry RPC.
+    """
+    return [
+        2,
+        None,
+        None,
+        [1, None, None, None, None, None, None, None, None, None, [1]],
+        [[1, 4, 8, 2, 3, 6]],
+    ]
+
+
 def build_audio_artifact_params(
     notebook_id: str,
     source_ids: list[str],
@@ -71,7 +88,7 @@ def build_audio_artifact_params(
     length_code = audio_length.value if audio_length is not None else AudioLength.DEFAULT.value
 
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,
@@ -125,7 +142,7 @@ def build_video_artifact_params(
         video_config.append(style_prompt)
 
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,
@@ -157,7 +174,7 @@ def build_cinematic_video_artifact_params(
     source_ids_double = nest_source_ids(source_ids, 1)
 
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,
@@ -201,7 +218,7 @@ def build_report_artifact_params(
     source_ids_double = nest_source_ids(source_ids, 1)
 
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,
@@ -242,7 +259,7 @@ def build_quiz_artifact_params(
     difficulty_code = difficulty.value if difficulty is not None else QuizDifficulty.MEDIUM.value
 
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,
@@ -285,7 +302,7 @@ def build_flashcards_artifact_params(
     difficulty_code = difficulty.value if difficulty is not None else QuizDifficulty.MEDIUM.value
 
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,
@@ -344,7 +361,7 @@ def build_interactive_mind_map_artifact_params(
         # blank prompt is never sent to the server).
         options = [INTERACTIVE_MIND_MAP_VARIANT, None, instructions]
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,
@@ -382,7 +399,7 @@ def build_infographic_artifact_params(
     style_code = style.value if style is not None else InfographicStyle.AUTO_SELECT.value
 
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,
@@ -421,7 +438,7 @@ def build_slide_deck_artifact_params(
     length_code = slide_length.value if slide_length is not None else SlideDeckLength.DEFAULT.value
 
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,
@@ -454,24 +471,9 @@ def build_revise_slide_params(artifact_id: str, slide_index: int, prompt: str) -
     ]
 
 
-# Fixed client capability blob for ``RETRY_ARTIFACT``. Confirmed byte-identical
-# across video (UI DevTools capture), audio, and infographic retries
-# (issue #1319), so it is sent verbatim regardless of artifact type. The
-# trailing ``[[1, 4, 8, 2, 3, 6]]`` is a static artifact-type-code capability
-# list, not artifact-specific. If Google reshapes this, the RETRY_ARTIFACT call
-# fails loudly per the standard RPC policy rather than silently mis-retrying.
-_RETRY_OPTIONS: Final[list[Any]] = [
-    2,
-    None,
-    None,
-    [1, None, None, None, None, None, None, None, None, None, [1]],
-    [[1, 4, 8, 2, 3, 6]],
-]
-
-
 def build_retry_artifact_params(artifact_id: str) -> list[Any]:
     """Build ``RETRY_ARTIFACT`` params for an in-place failed-artifact retry."""
-    return [_RETRY_OPTIONS, artifact_id]
+    return [_artifact_client_options(), artifact_id]
 
 
 def build_data_table_artifact_params(
@@ -485,7 +487,7 @@ def build_data_table_artifact_params(
     source_ids_triple = nest_source_ids(source_ids, 2)
 
     return [
-        [2],
+        _artifact_client_options(),
         notebook_id,
         [
             None,

@@ -1,18 +1,26 @@
 """Snapshot test for the interactive-mind-map CREATE_ARTIFACT payload builder.
 
 The expected shape is verified live against the captured GUI request (#1256):
-``[[2], nb, [None,None,4,<triple src ids>,None,None,None,None,None,[None,[4]]]]``.
+``[client_options, nb, [None,None,4,<triple src ids>,None,None,None,None,None,[None,[4]]]]``.
 """
 
 from __future__ import annotations
 
 from notebooklm._artifact.payloads import build_interactive_mind_map_artifact_params
 
+_ARTIFACT_CLIENT_OPTIONS = [
+    2,
+    None,
+    None,
+    [1, None, None, None, None, None, None, None, None, None, [1]],
+    [[1, 4, 8, 2, 3, 6]],
+]
+
 
 def test_single_source_exact_shape():
     params = build_interactive_mind_map_artifact_params("nb1", ["s1"])
     assert params == [
-        [2],
+        _ARTIFACT_CLIENT_OPTIONS,
         "nb1",
         [None, None, 4, [[["s1"]]], None, None, None, None, None, [None, [4]]],
     ]
