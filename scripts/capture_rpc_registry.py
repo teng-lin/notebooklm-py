@@ -52,9 +52,10 @@ _BUNDLE_URL_RE = re.compile(rf'https://www\.gstatic\.com/_/mss/{_APP}/_/js/[^"\\
 # A registration's two stable, quoted anchors: the ``/Service.Method`` path and
 # the rpc id. We anchor on the path and scan *backward* for the nearest id, which
 # is robust to nested ``[...]`` in the options array (a single forward regex
-# spanning to the path breaks on the inner ``]``).
-_METHOD_PATH_RE = re.compile(r'"(/[A-Za-z][\w]*\.[A-Za-z][\w]*)"')
-_ID_TOKEN_RE = re.compile(r'"([A-Za-z0-9]{5,8})"')
+# spanning to the path breaks on the inner ``]``). Quote-agnostic (``"`` or
+# ``'``) so a change in the bundle minifier's quote style doesn't blank the diff.
+_METHOD_PATH_RE = re.compile(r"""["'](/[A-Za-z][\w]*\.[A-Za-z][\w]*)["']""")
+_ID_TOKEN_RE = re.compile(r"""["']([A-Za-z0-9]{5,8})["']""")
 # How far back from a path string to look for its registration id.
 _ID_LOOKBACK = 160
 
@@ -64,7 +65,9 @@ _RPC_ID_RE = re.compile(r"[A-Za-z0-9]{5,8}")
 
 _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138 Safari/537.36"
 
-_DEFAULT_TYPES = Path("src/notebooklm/rpc/types.py")
+# Resolved relative to this file (scripts/ -> repo root) so the script runs from
+# any working directory, not just the repo root.
+_DEFAULT_TYPES = Path(__file__).resolve().parent.parent / "src" / "notebooklm" / "rpc" / "types.py"
 
 
 def parse_ids_from_text(types_text: str) -> dict[str, str]:
@@ -72,7 +75,9 @@ def parse_ids_from_text(types_text: str) -> dict[str, str]:
     match = re.search(r"class RPCMethod\b.*?(?=\nclass |\Z)", types_text, re.DOTALL)
     body = match.group(0) if match else types_text
     out: dict[str, str] = {}
-    for name, value in re.findall(r'^\s+([A-Z][A-Z0-9_]*)\s*=\s*"([^"]+)"', body, re.MULTILINE):
+    for name, value in re.findall(
+        r"""^\s+([A-Z][A-Z0-9_]*)\s*=\s*["']([^"']+)["']""", body, re.MULTILINE
+    ):
         if _RPC_ID_RE.fullmatch(value):
             out[value] = name
     return out
@@ -97,9 +102,13 @@ def extract_registry(bundle: str) -> dict[str, str]:
 
 def diff(ours: dict[str, str], live: dict[str, str], bundle: str) -> dict[str, dict[str, str]]:
     """Classify our ids vs the live registry into the four reporting buckets."""
+
+    def _in_bundle(rpc_id: str) -> bool:
+        return f'"{rpc_id}"' in bundle or f"'{rpc_id}'" in bundle
+
     confirmed = {i: live[i] for i in ours if i in live}
-    present_unparsed = {i: ours[i] for i in ours if i not in live and f'"{i}"' in bundle}
-    absent = {i: ours[i] for i in ours if i not in live and f'"{i}"' not in bundle}
+    present_unparsed = {i: ours[i] for i in ours if i not in live and _in_bundle(i)}
+    absent = {i: ours[i] for i in ours if i not in live and not _in_bundle(i)}
     unmapped = {i: live[i] for i in live if i not in ours}
     return {
         "confirmed": confirmed,
@@ -110,32 +119,49 @@ def diff(ours: dict[str, str], live: dict[str, str], bundle: str) -> dict[str, d
 
 
 def fetch_bundle() -> str:
-    """Fetch the largest gstatic app-bundle chunk (the one carrying the registry).
+    """Fetch and concatenate the gstatic app-bundle chunks (which carry the registry).
 
-    One authenticated homepage read discovers the bundle URLs; the bundle itself
-    is then fetched unauthenticated from the public CDN.
+    One authenticated homepage read discovers the bundle URLs; the chunks are then
+    fetched unauthenticated from the public CDN, **sequentially** (to avoid rate
+    limiting) and **concatenated**, so the scan covers the whole frontend surface
+    regardless of how Google splits the registry across chunks.
     """
     import httpx
 
     from notebooklm._env import get_base_url
     from notebooklm.auth import authuser_query, load_auth_from_storage
 
+    def _get(
+        url: str,
+        *,
+        cookies: dict[str, str] | None = None,
+        follow_redirects: bool = False,
+        timeout: float = 60.0,
+    ) -> str:
+        response = httpx.get(
+            url,
+            headers={"User-Agent": _UA},
+            cookies=cookies,
+            follow_redirects=follow_redirects,
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return response.text
+
     cookies = load_auth_from_storage()
-    html = httpx.get(
+    html = _get(
         f"{get_base_url()}/?{authuser_query(0)}",
         cookies=cookies,
-        headers={"User-Agent": _UA},
         follow_redirects=True,
-        timeout=30,
-    ).text
+        timeout=30.0,
+    )
     urls = sorted(set(_BUNDLE_URL_RE.findall(html)))
     if not urls:
         raise SystemExit(
             f"No {_APP} bundle URL found in the homepage — not authenticated for "
             "NotebookLM? Run `notebooklm login` (or pass --bundle-file)."
         )
-    bodies = [httpx.get(u, headers={"User-Agent": _UA}, timeout=60).text for u in urls]
-    return max(bodies, key=len)
+    return "\n".join(_get(url) for url in urls)
 
 
 def _print_report(

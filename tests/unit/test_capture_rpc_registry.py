@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from scripts.capture_rpc_registry import diff, extract_registry, parse_ids_from_text
 
+# Mixed quote styles on purpose — exercises the quote-agnostic parsing of both
+# the enum (CREATE is single-quoted) and the bundle (the CCqFvf registration).
 _TYPES = """
 class RPCMethod(str, Enum):
     LIST = "wXbhsf"
-    CREATE = "CCqFvf"
+    CREATE = 'CCqFvf'
     GONE = "ZZxxYY"
     UNPARSED = "PuPpY1"
     NOT_AN_ID = "blog_post"
@@ -25,9 +27,9 @@ class SomethingElse(str, Enum):
 # present only as a bare string (not in registration form).
 _BUNDLE = (
     'x=new _.uD("wXbhsf",kF,csb,[_.Ue,!1,_.Se,"/Svc.List"]);'
-    'y=new _.uD("CCqFvf",a.b,c,[_.Ue,!0,_.Se,"/Svc.Create"]);'
+    "y=new _.uD('CCqFvf',a.b,c,[_.Ue,!0,_.Se,'/Svc.Create']);"
     'z=new _.uD("NewOne",p,q,[_.Ue,!1,_.Se,"/Svc.Brand"]);'
-    'log("PuPpY1");'
+    "log('PuPpY1');"
 )
 
 
