@@ -237,7 +237,12 @@ def _print_report(
     buckets: dict[str, dict[str, str]],
     current_services: set[str],
 ) -> None:
-    """Print the human-readable diff (counts + per-bucket id listings) to stdout."""
+    """Print the human-readable diff (counts + per-bucket id listings) to stdout.
+
+    ``current_services`` is the empirically-derived set of services our CONFIRMED
+    ids resolve to; it drives the UNMAPPED service-family grouping
+    (``current`` / ``enterprise`` / ``other``) via :func:`classify_service`.
+    """
     confirmed, present, absent, unmapped = (
         buckets["confirmed"],
         buckets["present_unparsed"],
