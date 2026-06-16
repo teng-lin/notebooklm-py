@@ -72,10 +72,10 @@ MIND_MAP_LEAF_ABSENT: Any = object()
 def unwrap_mind_map_generation_leaf(result: Any, *, method_id: str, source: str) -> Any:
     """Return the JSON leaf at ``result[0][0]`` of a ``GENERATE_MIND_MAP`` reply.
 
-    The ``GENERATE_MIND_MAP`` (``cu1Hbf``) reply nests the mind-map JSON payload
-    two levels deep (``[[mind_map_json]]``). This centralises the ``result[0]`` /
-    ``inner[0]`` descent ``ArtifactsAPI.generate_mind_map`` previously open-coded
-    (issue #1491).
+    The ``GENERATE_MIND_MAP`` (``yyryJe``, live method ``ActOnSources``) reply
+    nests the mind-map JSON payload two levels deep (``[[mind_map_json]]``). This
+    centralises the ``result[0]`` / ``inner[0]`` descent
+    ``ArtifactsAPI.generate_mind_map`` previously open-coded (issue #1491).
 
     The descent is **soft** (preserving the historical contract): a short /
     non-list payload, or a short / non-list inner list, returns the

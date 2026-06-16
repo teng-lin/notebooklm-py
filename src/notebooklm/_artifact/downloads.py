@@ -201,7 +201,11 @@ class ArtifactDownloadService:
         )
 
     async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None:
-        """Fetch interactive artifact HTML through the runtime RPC seam."""
+        """Fetch interactive artifact HTML through the runtime RPC seam.
+
+        ``GET_INTERACTIVE_HTML`` is the live generic ``GetArtifact`` getter; here
+        we read the HTML body at ``[0][9][0]`` (quiz / flashcard content).
+        """
         result = await self._rpc.rpc_call(
             RPCMethod.GET_INTERACTIVE_HTML,
             [artifact_id],

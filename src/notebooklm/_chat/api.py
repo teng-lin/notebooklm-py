@@ -671,6 +671,9 @@ class ChatAPI(LoopBoundPrimitive):
         # so a concurrent follow-up can't read pre-delete history then POST it
         # after the delete cleared both server-side state and the local cache.
         async with self._get_conversation_lock(conversation_id):
+            # DELETE_CONVERSATION is the live ``DeleteChatTurns``: it deletes the
+            # conversation's chat turns (the "Delete history" action), not a
+            # standalone conversation entity.
             # Param shape from web-UI traffic; trailing 1 is a fixed flag.
             params: list[Any] = [[], conversation_id, None, 1]
             await self._rpc.rpc_call(

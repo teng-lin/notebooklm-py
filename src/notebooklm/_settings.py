@@ -25,7 +25,13 @@ _TIER_PLAN_NAMES = {
 
 
 def build_get_user_settings_params() -> list[Any]:
-    """Build GET_USER_SETTINGS params without sharing a mutable list."""
+    """Build GET_USER_SETTINGS params without sharing a mutable list.
+
+    The live endpoint is ``GetOrCreateAccount``: it returns the account record
+    (output-language settings and account-level limits) and may create the
+    account server-side on the first call, so it is account-level rather than a
+    pure settings read.
+    """
     return [
         None,
         [1, None, None, None, None, None, None, None, None, None, [1]],
@@ -33,7 +39,14 @@ def build_get_user_settings_params() -> list[Any]:
 
 
 def build_get_user_tier_params() -> list[Any]:
-    """Build GET_USER_TIER params for the NotebookLM homepage context."""
+    """Build GET_USER_TIER params for the NotebookLM homepage context.
+
+    Despite the ``GET_USER_TIER`` enum name, the live endpoint is
+    ``FetchRecommendations`` on ``DasherGrowthPromotionService`` — a
+    promotions/growth recommendations fetch scoped to the homepage context,
+    not a subscription-tier lookup. We read the tier off the recommendations
+    payload as a best-effort signal (see :func:`extract_account_tier`).
+    """
     return [
         [
             [
@@ -144,7 +157,12 @@ def extract_account_limits(data: list | None) -> AccountLimits:
 
 
 def _find_tier_string(value: Any) -> str | None:
-    """Find the first NotebookLM tier string in a nested response."""
+    """Find the first ``NOTEBOOKLM_TIER_*`` string in a nested response.
+
+    The response is a promotions/recommendations payload (the live endpoint is
+    ``FetchRecommendations``), so the tier string is embedded at an unstable
+    depth — hence the stack-walk rather than a fixed index path.
+    """
     stack = [value]
     while stack:
         item = stack.pop()
@@ -156,7 +174,15 @@ def _find_tier_string(value: Any) -> str | None:
 
 
 def extract_account_tier(data: list | None) -> AccountTier:
-    """Extract the NotebookLM subscription tier from GET_USER_TIER response data."""
+    """Extract the NotebookLM tier signal from GET_USER_TIER response data.
+
+    GET_USER_TIER is the live ``FetchRecommendations`` promotions endpoint, so
+    ``data`` is a recommendations payload rather than an account record. The
+    returned ``AccountTier.tier`` is the ``NOTEBOOKLM_TIER_*`` string embedded
+    in that payload — a promotion-eligibility signal that tracks the plan, not
+    an authoritative subscription-tier field. Returns an empty ``AccountTier``
+    when no such string is present.
+    """
     tier = _find_tier_string(data)
     return AccountTier(tier=tier, plan_name=_TIER_PLAN_NAMES.get(tier) if tier else None)
 
@@ -285,7 +311,15 @@ class SettingsAPI:
         return limits
 
     async def get_account_tier(self) -> AccountTier:
-        """Get the NotebookLM subscription tier for the current account.
+        """Get the NotebookLM tier signal for the current account.
+
+        .. note::
+            This calls the homepage promotions endpoint (live method
+            ``FetchRecommendations`` on ``DasherGrowthPromotionService``), not a
+            dedicated tier API. The returned tier is a ``NOTEBOOKLM_TIER_*``
+            string scraped from the recommendations payload — a best-effort
+            signal that tracks the subscription plan rather than an
+            authoritative tier field. It may be absent even for a paid account.
 
         Returns:
             AccountTier with the raw tier string and a friendly plan name when known.

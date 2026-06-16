@@ -832,7 +832,7 @@ class ArtifactsAPI:
         title: str = "Export",
         export_type: ExportType = ExportType.DOCS,
     ) -> Any:
-        """Export any artifact to Google Docs/Sheets (generic; ``export_type`` selects)."""
+        """Export any artifact to Google Drive (live ``ExportToDrive``; ``export_type`` picks Docs/Sheets)."""
         params = [None, artifact_id, content, title, int(export_type)]
         return await self._rpc.rpc_call(
             RPCMethod.EXPORT_ARTIFACT,

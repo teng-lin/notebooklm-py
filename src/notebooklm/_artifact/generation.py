@@ -465,10 +465,11 @@ class ArtifactGenerationService:
             instructions=instructions,
         )
 
-        # GENERATE_MIND_MAP is classified PROBE_THEN_CREATE in
-        # ``_idempotency.py``. ``operation_variant=None`` is passed
-        # explicitly to document this call site as the no-variant default
-        # (the registry resolves the same entry either way; the explicit
+        # GENERATE_MIND_MAP is the live ``ActOnSources`` — a generic
+        # source-action op we drive with mind-map params; it is classified
+        # PROBE_THEN_CREATE in ``_idempotency.py``. ``operation_variant=None``
+        # is passed explicitly to document this call site as the no-variant
+        # default (the registry resolves the same entry either way; the explicit
         # kwarg is a future-proofing marker for a possible variant table).
         result = await self._rpc.rpc_call(
             RPCMethod.GENERATE_MIND_MAP,

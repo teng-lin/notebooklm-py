@@ -122,7 +122,9 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         ),
     )
 
-    # GENERATE_MIND_MAP — generation RPC with no client-token slot.
+    # GENERATE_MIND_MAP (live method ``ActOnSources``, a generic source-action
+    # op we drive to generate a mind map) — generation RPC with no client-token
+    # slot.
     # Params are ``[source_ids_nested, None, None, None, None,
     # ["interactive_mindmap", [["[CONTEXT]", instructions]], language], None,
     # [2, None, [1]]]`` (see ``ArtifactsAPI.generate_mind_map`` in
@@ -320,8 +322,11 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # default because transport retries remain enabled.
 
     _IDEMPOTENT_READ_OR_SET_OP_NOTES: dict[RPCMethod, str] = {
-        RPCMethod.LIST_NOTEBOOKS: "read-only list; replay does not mutate notebook state",
+        # Live method ListRecentlyViewedProjects: a read-only recents list.
+        RPCMethod.LIST_NOTEBOOKS: "read-only recents list; replay does not mutate notebook state",
         RPCMethod.GET_NOTEBOOK: "read-only notebook fetch; replay does not mutate notebook state",
+        # Live method MutateProject (generic notebook mutator; covers title plus
+        # chat-config and view-level via different params).
         RPCMethod.RENAME_NOTEBOOK: (
             "set notebook title/settings to caller-supplied values; replay leaves the same state"
         ),
@@ -332,8 +337,10 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         RPCMethod.UPDATE_SOURCE: (
             "set source metadata/title to caller-supplied values; replay leaves the same state"
         ),
+        # Live method GenerateNotebookGuide: generates the notebook guide
+        # (summary + suggested questions); response-only, persists nothing.
         RPCMethod.SUMMARIZE: (
-            "response-only notebook summary generation; no persisted resource is created by replay"
+            "response-only notebook guide generation; no persisted resource is created by replay"
         ),
         RPCMethod.GET_SOURCE_GUIDE: (
             "response-only source guide fetch/generation; no persisted resource is created by replay"
@@ -348,10 +355,16 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         RPCMethod.SHARE_ARTIFACT: (
             "legacy public share-link state update; replay leaves the same share state"
         ),
+        # Live method GetArtifact: a generic single-artifact getter (we use it
+        # to fetch interactive-artifact HTML / mind-map tree). Read-only.
         RPCMethod.GET_INTERACTIVE_HTML: (
-            "read-only artifact HTML fetch; replay does not mutate artifact state"
+            "read-only artifact fetch; replay does not mutate artifact state"
         ),
+        # Live method ListDiscoverSourcesJob (the research family is the
+        # DiscoverSources pipeline).
         RPCMethod.POLL_RESEARCH: "read-only research task poll; replay does not start a task",
+        # Live method GetNotes: mind maps come back as JSON-bodied notes, so a
+        # single GetNotes read returns both.
         RPCMethod.GET_NOTES_AND_MIND_MAPS: (
             "read-only notes/mind-maps list; replay does not mutate note state"
         ),
@@ -365,18 +378,32 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         RPCMethod.GET_CONVERSATION_TURNS: (
             "read-only conversation history fetch; replay does not mutate chat state"
         ),
+        # Live method DeleteChatTurns: deletes the conversation's chat turns
+        # (the web UI "Delete history" action), idempotent set-op.
         RPCMethod.DELETE_CONVERSATION: (
-            "server-side conversation delete is idempotent (set-op semantics)"
+            "server-side chat-turn delete is idempotent (set-op semantics)"
         ),
         RPCMethod.GET_SHARE_STATUS: "read-only share status fetch; replay does not mutate ACL state",
         RPCMethod.REMOVE_RECENTLY_VIEWED: (
             "remove notebook from recents is idempotent; replay leaves it absent"
         ),
-        RPCMethod.GET_USER_SETTINGS: "read-only settings fetch; replay does not mutate settings",
+        # Live method GetOrCreateAccount: the first call may create the account
+        # server-side, but every call (including replay) converges to the same
+        # account state, so replay creates no *additional* resource.
+        RPCMethod.GET_USER_SETTINGS: (
+            "GetOrCreateAccount settings fetch; replay converges to the same account state"
+        ),
+        # Live method MutateAccount (generic account mutator; we use it only for
+        # the output-language setting).
         RPCMethod.SET_USER_SETTINGS: (
             "set user settings to caller-supplied values; replay leaves the same state"
         ),
-        RPCMethod.GET_USER_TIER: "read-only account tier fetch; replay does not mutate account state",
+        # Live method FetchRecommendations on DasherGrowthPromotionService — a
+        # read-only promotions/recommendations fetch, not a tier lookup (the
+        # "tier" is scraped from the recommendations payload). Replay-safe.
+        RPCMethod.GET_USER_TIER: (
+            "read-only promotions/recommendations fetch; replay does not mutate account state"
+        ),
         RPCMethod.LIST_LABELS: "read-only label list; replay does not mutate label state",
         RPCMethod.UPDATE_LABEL: (
             "default (rename / set-emoji) sets label fields to caller-supplied values; "

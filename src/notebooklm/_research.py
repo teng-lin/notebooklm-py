@@ -341,6 +341,10 @@ class ResearchAPI:
         # 1 = Web, 2 = Drive
         source_type = 1 if source_lower == "web" else 2
 
+        # The whole research feature is Google's "DiscoverSources" pipeline:
+        # fast -> DiscoverSourcesManifold, deep -> DiscoverSourcesAsync,
+        # POLL_RESEARCH -> ListDiscoverSourcesJob, IMPORT_RESEARCH ->
+        # FinishDiscoverSourcesRun. "Research" is our label for that pipeline.
         if mode_lower == "fast":
             params = [[query, source_type], None, 1, notebook_id]
             rpc_id = RPCMethod.START_FAST_RESEARCH

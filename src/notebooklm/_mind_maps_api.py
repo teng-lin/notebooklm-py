@@ -37,9 +37,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# The interactive (studio-artifact) mind map exposes its ``{"name", "children"}``
-# node tree at ``[0][9][3]`` of the ``GET_INTERACTIVE_HTML`` response (vs the HTML
-# body at ``[0][9][0]``). The leaf at ``[3]`` is the only position that may be
+# ``GET_INTERACTIVE_HTML`` is the live ``GetArtifact`` — a generic
+# single-artifact getter, not an interactive-HTML-specific endpoint. For an
+# interactive (studio-artifact) mind map its response carries the
+# ``{"name", "children"}`` node tree at ``[0][9][3]`` (vs the HTML body at
+# ``[0][9][0]``). The leaf at ``[3]`` is the only position that may be
 # legitimately absent during the brief window after completion before the
 # options block is fully populated.
 _INTERACTIVE_TREE_LEAF_POS = 3

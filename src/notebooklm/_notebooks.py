@@ -351,7 +351,13 @@ class NotebooksAPI:
         return source_ids
 
     async def list(self) -> list[Notebook]:
-        """List all notebooks.
+        """List notebooks (most-recently-viewed first).
+
+        .. note::
+            The backing RPC is ``ListRecentlyViewedProjects``, so this returns
+            the account's *recently viewed* notebooks rather than a guaranteed
+            exhaustive inventory. In practice this is the same set the
+            NotebookLM home page shows.
 
         Returns:
             List of Notebook objects.
@@ -658,6 +664,8 @@ class NotebooksAPI:
             no longer enters its block.
         """
         logger.debug("Deleting notebook: %s", notebook_id)
+        # DELETE_NOTEBOOK is the live ``DeleteProjects`` (batch-capable: the
+        # leading slot is a list of ids); we delete a single notebook per call.
         params = [[notebook_id], [2]]
         await self._rpc.rpc_call(RPCMethod.DELETE_NOTEBOOK, params)
 
@@ -672,6 +680,10 @@ class NotebooksAPI:
             The renamed Notebook object (fetched after rename).
         """
         logger.debug("Renaming notebook %s to: %s", notebook_id, new_title)
+        # RENAME_NOTEBOOK is the live ``MutateProject``, a generic notebook
+        # mutator: the same RPC sets the title here, chat config in
+        # ``ChatAPI.configure``, and the share view-level in
+        # ``SharingAPI.set_view_level`` — each with a different params shape.
         # Payload format discovered via browser traffic capture:
         # [notebook_id, [[null, null, null, [null, new_title]]]]
         params = [notebook_id, [[None, None, None, [None, new_title]]]]
@@ -720,6 +732,12 @@ class NotebooksAPI:
 
         This provides a high-level overview of what the notebook contains,
         similar to what's shown in the Chat panel when opening a notebook.
+
+        .. note::
+            The backing RPC is ``GenerateNotebookGuide`` — it produces the
+            notebook *guide*: a short summary plus suggested starter questions
+            (each ``SuggestedTopic`` carries the question and its chat prompt),
+            rather than a freeform summary alone.
 
         Args:
             notebook_id: The notebook ID.
