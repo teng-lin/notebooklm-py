@@ -7,6 +7,7 @@ id that is present in the bundle but not parsed must NOT be reported as a rotati
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -126,3 +127,27 @@ def test_classify_service() -> None:
     assert classify_service("SourceService", current) == "enterprise"
     # Anything else is an unclassified drift signal -> other.
     assert classify_service("InteractionEventService", current) == "other"
+    # Empirical precedence: when a known DE service IS in the empirical current set,
+    # "current" wins over the DE-name rule — locks the documented empirical-first
+    # ordering (the ``in current_services`` check must precede the DE-set check).
+    assert classify_service("NotebookService", {"NotebookService"}) == "current"
+
+
+def test_main_json_includes_unmapped_family(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--json carries the per-id unmapped ``{method, family}`` schema (contract guard)."""
+    types = tmp_path / "types.py"
+    types.write_text(_TYPES, encoding="utf-8")
+    bundle = tmp_path / "bundle.js"
+    bundle.write_text(_BUNDLE, encoding="utf-8")
+
+    rc = main(["--bundle-file", str(bundle), "--types", str(types), "--json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    # NewOne (/Svc.Brand) is bundle-declared but absent from our enum -> unmapped.
+    # ``Svc`` is the service our CONFIRMED ids resolve to (wXbhsf/CCqFvf -> /Svc.List,
+    # /Svc.Create), so empirical-first classification tags this family "current" — this
+    # also exercises the empirical path through the --json output, not just the schema.
+    assert payload["unmapped"]["NewOne"] == {"method": "/Svc.Brand", "family": "current"}
