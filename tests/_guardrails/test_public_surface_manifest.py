@@ -218,6 +218,9 @@ def test_rpc_legacy_reexports_stay_importable_but_unblessed() -> None:
     import notebooklm.rpc as public_rpc
 
     assert len(_RPC_LEGACY_REEXPORTS) == 47
+    assert len(_RPC_LEGACY_REEXPORTS) == len(set(_RPC_LEGACY_REEXPORTS)), (
+        "_RPC_LEGACY_REEXPORTS must not contain duplicate names (a dup could mask a drop)"
+    )
     missing = [name for name in _RPC_LEGACY_REEXPORTS if not hasattr(public_rpc, name)]
     assert missing == [], f"de-blessed names must stay importable from notebooklm.rpc: {missing}"
     re_blessed = [name for name in _RPC_LEGACY_REEXPORTS if name in public_rpc.__all__]
