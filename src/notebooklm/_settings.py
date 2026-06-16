@@ -19,6 +19,9 @@ _TIER_PLAN_NAMES = {
     "NOTEBOOKLM_TIER_STANDARD": "Standard",
     "NOTEBOOKLM_TIER_PLUS": "Google AI Plus",
     "NOTEBOOKLM_TIER_PRO": "Google AI Pro",
+    # Consumer Google AI Pro reports this variant (live-observed on a real Pro
+    # account, 2026-06-16); without it get_account_tier() returns plan_name=None.
+    "NOTEBOOKLM_TIER_PRO_CONSUMER_USER": "Google AI Pro",
     "NOTEBOOKLM_TIER_PRO_DASHER_END_USER": "Google Workspace Pro",
     "NOTEBOOKLM_TIER_ULTRA": "Google AI Ultra",
 }

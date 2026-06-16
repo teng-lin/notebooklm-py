@@ -120,6 +120,7 @@ def test_extract_account_tier_preserves_unknown_tier_string():
         ("NOTEBOOKLM_TIER_STANDARD", "Standard"),
         ("NOTEBOOKLM_TIER_PLUS", "Google AI Plus"),
         ("NOTEBOOKLM_TIER_PRO", "Google AI Pro"),
+        ("NOTEBOOKLM_TIER_PRO_CONSUMER_USER", "Google AI Pro"),
         ("NOTEBOOKLM_TIER_PRO_DASHER_END_USER", "Google Workspace Pro"),
         ("NOTEBOOKLM_TIER_ULTRA", "Google AI Ultra"),
     ],
