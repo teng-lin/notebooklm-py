@@ -69,7 +69,10 @@ class RPCMethod(str, Enum):
     """
 
     # Notebook operations
-    LIST_NOTEBOOKS = "wXbhsf"  # -> ListRecentlyViewedProjects (recents, NOT all notebooks)
+    # -> ListRecentlyViewedProjects. Recency-ordered (most-recently-viewed first,
+    # live-observed); whether it can omit an owned notebook (full vs recents) is
+    # not independently confirmed.
+    LIST_NOTEBOOKS = "wXbhsf"
     CREATE_NOTEBOOK = "CCqFvf"  # -> CreateProject
     GET_NOTEBOOK = "rLM1Ne"  # -> GetProject
     RENAME_NOTEBOOK = "s0tc2d"  # -> MutateProject (generic notebook mutator; see note below)

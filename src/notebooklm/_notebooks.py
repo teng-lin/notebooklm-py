@@ -354,10 +354,11 @@ class NotebooksAPI:
         """List notebooks (most-recently-viewed first).
 
         .. note::
-            The backing RPC is ``ListRecentlyViewedProjects``, so this returns
-            the account's *recently viewed* notebooks rather than a guaranteed
-            exhaustive inventory. In practice this is the same set the
-            NotebookLM home page shows.
+            The backing RPC is ``ListRecentlyViewedProjects`` — results are
+            ordered most-recently-viewed first (live-observed). It is not
+            independently confirmed whether this can ever omit an *owned*
+            notebook; in practice it matches the set shown on the NotebookLM
+            home page.
 
         Returns:
             List of Notebook objects.
