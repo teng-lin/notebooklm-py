@@ -56,6 +56,25 @@ migration for each is in
 > `notebooklm source add --mime-type` are likewise **not** deprecated —
 > `mime_type` sets the resumable-upload content-type header.
 
+> **`notebooklm.rpc` public surface tightened — not a removal (v0.8.0,
+> [#1589](https://github.com/teng-lin/notebooklm-py/issues/1589)).**
+> `notebooklm.rpc.__all__` now advertises only the two documented power-user
+> imports, `RPCMethod` and `resolve_rpc_id`. The ~47 other names it used to list
+> — the batchexecute wire helpers (`encode_rpc_request`, `decode_response`,
+> `extract_rpc_result`, `safe_index`, …), the endpoint URL constants/helpers, and
+> the enum / exception **re-exports** — are **not removed**: they remain
+> importable as `notebooklm.rpc.<name>` for back-compat. They were never part of
+> the supported public API (`docs/stability.md` has always marked
+> `notebooklm.rpc.*` internal); this change only stops the compat gate from
+> advertising them. New code should import the canonical public name where one
+> exists: most enums as `notebooklm.<X>` / `notebooklm.types.<X>`, but
+> `ArtifactStatus` and `artifact_status_to_str` only as `notebooklm.types.<X>`;
+> the exceptions as `notebooklm.<X>` / `notebooklm.exceptions.<X>`. The wire
+> helpers, the endpoint URL constants/helpers, `safe_index`, `ArtifactTypeCode`,
+> and `RPCErrorCode` are internal with **no** blessed public alias and stay
+> importable only as `notebooklm.rpc.<name>`. For raw-RPC power use, import
+> `from notebooklm.rpc import RPCMethod, resolve_rpc_id`.
+
 
 ## Removed in v0.7.0
 

@@ -180,7 +180,7 @@ from notebooklm.rpc import RPCMethod, resolve_rpc_id
 
 ### Strict decoding (the only mode since v0.7.0)
 
-Schema-drift helpers (notably :func:`notebooklm.rpc.safe_index`) **raise**
+Schema-drift helpers (notably the internal ``safe_index`` decode helper) **raise**
 :class:`~notebooklm.exceptions.UnknownRPCMethodError` when Google's
 batchexecute response shape does not match what the decoder expects. This is
 now the only behavior: the legacy ``NOTEBOOKLM_STRICT_DECODE=0`` warn-and-
@@ -230,7 +230,7 @@ The following v0.3-era deprecations completed their removal cycle in v0.5.0:
 | `notebooklm.rpc.types.StudioContentType` | `ArtifactType` | Internal raw code alias removed |
 | `notebooklm.rpc.StudioContentType` | `ArtifactType` | Internal re-export removed |
 | `notebooklm.rpc.RPCMethod.DISCOVER_SOURCES` | none | Unused raw RPC enum member, not exercised by client APIs |
-| `notebooklm.rpc.RPCMethod.QUERY_ENDPOINT` | `notebooklm.rpc.get_query_url()` | Endpoint URL path moved out of the RPC method enum |
+| `notebooklm.rpc.RPCMethod.QUERY_ENDPOINT` | `notebooklm.rpc.get_query_url()` (internal) | Endpoint URL path moved out of the RPC method enum; `get_query_url()` is itself internal plumbing (`notebooklm.rpc.*` is internal — see above) with no blessed public replacement |
 | `notebooklm.cli.language_cmd.save_config` | `_save_config` | Private low-level write primitive only |
 
 ### Deprecated for a future major release

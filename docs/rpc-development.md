@@ -168,7 +168,9 @@ await client.refresh_auth()
 
 **Debug:**
 ```python
-from notebooklm.rpc import decode_response
+# decode_response is an internal RPC helper (notebooklm.rpc.* is internal per
+# docs/stability.md); import it from its defining module for contributor debugging.
+from notebooklm.rpc.decoder import decode_response
 
 raw_response = await http_client.post(...)
 print("Raw:", raw_response.text[:500])

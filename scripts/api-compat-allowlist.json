@@ -296,6 +296,241 @@
       "code": "changed-signature",
       "object": "notebooklm.client.NotebookLMClient.research.wait_for_completion",
       "reason": "Same break as above; covers the audit dotted-module-path view of the same callable."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.ArtifactStatus",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.types.ArtifactStatus. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.ArtifactTypeCode",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal artifact type-code enum (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.AudioFormat",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.AudioFormat / notebooklm.types.AudioFormat. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.AudioLength",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.AudioLength / notebooklm.types.AudioLength. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.AuthError",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Exception re-export; the canonical public import is notebooklm.AuthError / notebooklm.exceptions.AuthError. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.BATCHEXECUTE_URL",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute endpoint constant (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.ChatGoal",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.ChatGoal / notebooklm.types.ChatGoal. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.ChatResponseLength",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.ChatResponseLength / notebooklm.types.ChatResponseLength. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.ClientError",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Exception re-export; the canonical public import is notebooklm.ClientError / notebooklm.exceptions.ClientError. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.DriveMimeType",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.DriveMimeType / notebooklm.types.DriveMimeType. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.ExportType",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.ExportType / notebooklm.types.ExportType. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.FLASHCARDS_VARIANT",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal artifact-variant constant (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.INTERACTIVE_MIND_MAP_VARIANT",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal artifact-variant constant (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.InfographicDetail",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.InfographicDetail / notebooklm.types.InfographicDetail. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.InfographicOrientation",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.InfographicOrientation / notebooklm.types.InfographicOrientation. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.InfographicStyle",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.InfographicStyle / notebooklm.types.InfographicStyle. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.NetworkError",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Exception re-export; the canonical public import is notebooklm.NetworkError / notebooklm.exceptions.NetworkError. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.QUERY_URL",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute endpoint constant (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.QUIZ_VARIANT",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal artifact-variant constant (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.QuizDifficulty",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.QuizDifficulty / notebooklm.types.QuizDifficulty. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.QuizQuantity",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.QuizQuantity / notebooklm.types.QuizQuantity. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.RPCError",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Exception re-export; the canonical public import is notebooklm.RPCError / notebooklm.exceptions.RPCError. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.RPCErrorCode",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal RPC error-code helper (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.RPCTimeoutError",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Exception re-export; the canonical public import is notebooklm.RPCTimeoutError / notebooklm.exceptions.RPCTimeoutError. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.RateLimitError",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Exception re-export; the canonical public import is notebooklm.RateLimitError / notebooklm.exceptions.RateLimitError. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.ReportFormat",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.ReportFormat / notebooklm.types.ReportFormat. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.ServerError",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Exception re-export; the canonical public import is notebooklm.ServerError / notebooklm.exceptions.ServerError. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.SlideDeckFormat",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.SlideDeckFormat / notebooklm.types.SlideDeckFormat. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.SlideDeckLength",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.SlideDeckLength / notebooklm.types.SlideDeckLength. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.UPLOAD_URL",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute endpoint constant (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.UnknownRPCMethodError",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Exception re-export; the canonical public import is notebooklm.UnknownRPCMethodError / notebooklm.exceptions.UnknownRPCMethodError. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.VideoFormat",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.VideoFormat / notebooklm.types.VideoFormat. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.VideoStyle",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Enum re-export; the canonical public import is notebooklm.VideoStyle / notebooklm.types.VideoStyle. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.artifact_status_to_str",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Helper re-export; the canonical public import is notebooklm.types.artifact_status_to_str. Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.build_request_body",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute wire helper (defined in notebooklm.rpc.decoder / notebooklm.rpc.encoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.collect_rpc_ids",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute wire helper (defined in notebooklm.rpc.decoder / notebooklm.rpc.encoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.decode_response",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute wire helper (defined in notebooklm.rpc.decoder / notebooklm.rpc.encoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.encode_rpc_request",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute wire helper (defined in notebooklm.rpc.decoder / notebooklm.rpc.encoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.extract_rpc_result",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute wire helper (defined in notebooklm.rpc.decoder / notebooklm.rpc.encoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.get_batchexecute_url",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute endpoint helper (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.get_error_message_for_code",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal RPC error-code helper (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.get_query_url",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute endpoint helper (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.get_upload_url",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute endpoint helper (no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.nest_source_ids",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute wire helper (defined in notebooklm.rpc.decoder / notebooklm.rpc.encoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.parse_chunked_response",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute wire helper (defined in notebooklm.rpc.decoder / notebooklm.rpc.encoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.safe_index",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute decode helper (defined in notebooklm.rpc._safe_index, re-exported via notebooklm.rpc.decoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.strip_anti_xssi",
+      "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute wire helper (defined in notebooklm.rpc.decoder / notebooklm.rpc.encoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
     }
   ]
 }

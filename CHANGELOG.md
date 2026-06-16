@@ -124,6 +124,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the server and its dependencies (`fastmcp`) arrive only with the `mcp` extra.
   See [docs/mcp-guide.md](docs/mcp-guide.md).
 
+### Changed
+
+- **`notebooklm.rpc` public surface narrowed to the two documented power-user
+  imports** (#1589). `notebooklm.rpc.__all__` now lists only `RPCMethod` and
+  `resolve_rpc_id`; the ~47 other names it used to advertise (the batchexecute
+  wire helpers `encode_rpc_request` / `decode_response` / `extract_rpc_result` /
+  …, the endpoint URL constants and helpers, `safe_index`, and the enum /
+  exception **re-exports** that remain public under their canonical names —
+  most enums as `notebooklm.<X>` / `notebooklm.types.<X>`, the exceptions as
+  `notebooklm.<X>` / `notebooklm.exceptions.<X>`, with `ArtifactStatus` /
+  `artifact_status_to_str` `notebooklm.types`-only and `ArtifactTypeCode` having
+  no public alias) are no longer part of the
+  blessed, compat-gated public surface. This aligns the audited surface with
+  `docs/stability.md`, which has always marked `notebooklm.rpc.*` internal. **Not
+  a removal:** every name stays importable as `notebooklm.rpc.<name>` for
+  back-compat — only the public-API *advertisement* shrank. New code should
+  import the canonical public name (or `RPCMethod` / `resolve_rpc_id` for
+  raw-RPC power use). See [docs/deprecations.md](docs/deprecations.md).
+
 ### Fixed
 
 - **`notebooklm auth check` text mode now exits non-zero when an executed check

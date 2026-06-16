@@ -75,6 +75,7 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
         "select_cited_sources",
     ],
     "notebooklm.rpc": [
+        "resolve_rpc_id",
         "RPCMethod",
     ],
     "notebooklm.types": [
@@ -134,6 +135,93 @@ def test_public_facade_imports_are_identity_reexports() -> None:
     assert notebooklm.ConnectionLimits is public_types.ConnectionLimits
     assert public_rpc.RPCMethod is rpc_types.RPCMethod
     assert public_rpc.resolve_rpc_id is rpc_overrides.resolve_rpc_id
+
+
+# The names de-blessed from ``notebooklm.rpc.__all__`` in #1589. They were
+# removed from ``__all__`` (so the compat gate no longer advertises them) but
+# remain importable as module attributes for back-compat — see
+# ``scripts/api-compat-allowlist.json`` and ``docs/deprecations.md``.
+_RPC_LEGACY_REEXPORTS = [
+    # batchexecute endpoint URL constants + helpers
+    "BATCHEXECUTE_URL",
+    "QUERY_URL",
+    "UPLOAD_URL",
+    "get_batchexecute_url",
+    "get_query_url",
+    "get_upload_url",
+    # artifact-variant constants
+    "FLASHCARDS_VARIANT",
+    "QUIZ_VARIANT",
+    "INTERACTIVE_MIND_MAP_VARIANT",
+    # artifact type-code + status helpers
+    "ArtifactTypeCode",
+    "ArtifactStatus",
+    "artifact_status_to_str",
+    # enum re-exports (also public via notebooklm / notebooklm.types)
+    "AudioFormat",
+    "AudioLength",
+    "VideoFormat",
+    "VideoStyle",
+    "QuizQuantity",
+    "QuizDifficulty",
+    "InfographicOrientation",
+    "InfographicDetail",
+    "InfographicStyle",
+    "SlideDeckFormat",
+    "SlideDeckLength",
+    "ReportFormat",
+    "ChatGoal",
+    "ChatResponseLength",
+    "DriveMimeType",
+    "ExportType",
+    # batchexecute wire helpers
+    "encode_rpc_request",
+    "build_request_body",
+    "nest_source_ids",
+    "strip_anti_xssi",
+    "parse_chunked_response",
+    "extract_rpc_result",
+    "collect_rpc_ids",
+    "decode_response",
+    "safe_index",
+    # exception re-exports (also public via notebooklm / notebooklm.exceptions)
+    "RPCError",
+    "AuthError",
+    "NetworkError",
+    "RPCTimeoutError",
+    "RateLimitError",
+    "ServerError",
+    "ClientError",
+    "UnknownRPCMethodError",
+    # error-code utilities
+    "RPCErrorCode",
+    "get_error_message_for_code",
+]
+
+
+def test_rpc_all_is_minimized_to_documented_power_user_imports() -> None:
+    """``notebooklm.rpc.__all__`` stays frozen to the two blessed imports (#1589).
+
+    Catches a name being re-blessed into ``__all__`` directly (the compat audit
+    only catches this indirectly, via a now-stale allowlist entry).
+    """
+    import notebooklm.rpc as public_rpc
+
+    assert public_rpc.__all__ == ["RPCMethod", "resolve_rpc_id"]
+
+
+def test_rpc_legacy_reexports_stay_importable_but_unblessed() -> None:
+    """The de-blessed RPC names remain importable as attributes (back-compat),
+    while staying out of ``__all__``. Freezes the promise made in #1589 that this
+    is a de-advertisement, not a removal — no existing gate covers importability.
+    """
+    import notebooklm.rpc as public_rpc
+
+    assert len(_RPC_LEGACY_REEXPORTS) == 47
+    missing = [name for name in _RPC_LEGACY_REEXPORTS if not hasattr(public_rpc, name)]
+    assert missing == [], f"de-blessed names must stay importable from notebooklm.rpc: {missing}"
+    re_blessed = [name for name in _RPC_LEGACY_REEXPORTS if name in public_rpc.__all__]
+    assert re_blessed == [], f"de-blessed names must not return to __all__: {re_blessed}"
 
 
 # ---------------------------------------------------------------------------
