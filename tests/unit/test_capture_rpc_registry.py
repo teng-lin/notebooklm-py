@@ -10,7 +10,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from scripts.capture_rpc_registry import diff, extract_registry, main, parse_ids_from_text
+from scripts.capture_rpc_registry import (
+    _service_of,
+    classify_service,
+    diff,
+    extract_registry,
+    main,
+    parse_ids_from_text,
+)
 
 # Mixed quote styles on purpose — exercises the quote-agnostic parsing of both
 # the enum (CREATE is single-quoted) and the bundle (the CCqFvf registration).
@@ -92,3 +99,30 @@ def test_main_bundle_file_mode(tmp_path: Path, capsys: pytest.CaptureFixture[str
 
     # --check turns the ABSENT id (ZZxxYY/GONE) into a non-zero exit
     assert main(["--bundle-file", str(bundle), "--types", str(types), "--check"]) == 1
+
+
+def test_service_of() -> None:
+    assert _service_of("/LabsTailwindOrchestrationService.AddSources") == (
+        "LabsTailwindOrchestrationService"
+    )
+    # Leading slash optional; only the segment before the first dot is the service.
+    assert _service_of("NotebookService.CreateNotebook") == "NotebookService"
+
+
+def test_classify_service() -> None:
+    # `current_services` is what the run discovered empirically (services our
+    # CONFIRMED ids resolve to) — it always wins, even for a name we'd otherwise
+    # bucket elsewhere.
+    current = {"LabsTailwindOrchestrationService", "DasherGrowthPromotionService"}
+
+    # Empirical hit -> current.
+    assert classify_service("LabsTailwindOrchestrationService", current) == "current"
+    # A current-hit on a non-LabsTailwind name still wins via the empirical set.
+    assert classify_service("DasherGrowthPromotionService", current) == "current"
+    # Old family by prefix (not in the empirical set this run) -> current.
+    assert classify_service("LabsTailwindSharingService", current) == "current"
+    # Known Discovery-Engine domain services -> enterprise (Agentspace/Vertex surface).
+    assert classify_service("NotebookService", current) == "enterprise"
+    assert classify_service("SourceService", current) == "enterprise"
+    # Anything else is an unclassified drift signal -> other.
+    assert classify_service("InteractionEventService", current) == "other"

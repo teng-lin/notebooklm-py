@@ -16,17 +16,26 @@ ids we hardcode, surfacing four classes:
 * ABSENT          — our id no longer appears in the bundle at all (rotation/stale — the alarm)
 * PRESENT-UNPARSED— our id string is in the bundle but its registration form wasn't
                     parsed (not a rotation; a parser gap to widen, not an alert)
-* UNMAPPED        — a live RPC the bundle declares that we don't expose (new
-                    capability or migration target)
+* UNMAPPED        — a live RPC the bundle declares that we don't expose, grouped by
+                    service family: **current** (old `LabsTailwind*` consumer backend
+                    — callable on our cohort now, just unexposed), **enterprise** (the
+                    Discovery-Engine domain services — the NotebookLM Enterprise /
+                    Agentspace surface on `discoveryengine.googleapis.com`, behind a
+                    server-side VPC Service Controls perimeter; not consumer-callable,
+                    not a consumer migration target), or **other**
 
 Auth: discovering the bundle URL needs **one authenticated homepage read** (an
 unauthenticated request only returns the login app); fetching the bundle itself is
 unauthenticated (public CDN). Run ``notebooklm login`` first, or pass
 ``--bundle-file`` to analyse a pre-saved bundle offline (no auth/network).
 
-Cohort note: the bundle reflects *your account's* cohort. New-generation ids
-(e.g. ``AzXHBd``/``NotebookService.*``) may be registered but gated for
-un-migrated accounts; the active ids are whichever the cohort is served.
+Cohort note: the bundle is shared between the consumer NotebookLM app and the
+enterprise (Agentspace / Vertex AI Search) surface, so it registers BOTH RPC
+generations. The Discovery-Engine ids (e.g. ``AzXHBd``/``NotebookService.*``) are
+the *enterprise* surface — gated off for consumer accounts by a server-side VPC
+Service Controls perimeter (live-probed 2026-06-16: grpc 7 ``VPC_SERVICE_CONTROLS``
+/ ``CONSUMER_INVALID`` on ``discoveryengine.googleapis.com``), not a consumer
+cohort that is "about to migrate".
 
 Usage::
 
@@ -70,6 +79,51 @@ _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ch
 # Resolved relative to this file (scripts/ -> repo root) so the script runs from
 # any working directory, not just the repo root.
 _DEFAULT_TYPES = Path(__file__).resolve().parent.parent / "src" / "notebooklm" / "rpc" / "types.py"
+
+# --- Service-family classification: consumer backend vs enterprise (Discovery Engine) ---
+# "Current" (the consumer backend serving our cohort now) is detected *empirically*:
+# any service one of our CONFIRMED ids resolves to is, by definition, working for us.
+# Past that, the known Discovery-Engine domain services are tagged "enterprise" — they
+# are the NotebookLM Enterprise / Agentspace surface (discoveryengine.googleapis.com),
+# gated off for consumer accounts by a server-side VPC Service Controls perimeter, NOT a
+# pre-migration consumer cohort. The old NotebookLM family shares the ``LabsTailwind``
+# prefix (same consumer backend, callable on our cohort even where we don't expose it);
+# anything else is "other" — itself a useful drift signal (a new, unclassified service).
+_DISCOVERY_ENGINE_SERVICES = frozenset(
+    {
+        "NotebookService",
+        "SourceService",
+        "NoteService",
+        "ArtifactService",
+        "AudioOverviewService",
+        "AccountService",
+    }
+)
+
+
+def _service_of(method_path: str) -> str:
+    """``/LabsTailwindOrchestrationService.AddSources`` -> ``LabsTailwindOrchestrationService``."""
+    return method_path.lstrip("/").split(".", 1)[0]
+
+
+def classify_service(service: str, current_services: set[str]) -> str:
+    """Tag a service ``current`` / ``enterprise`` / ``other``.
+
+    ``current`` = the consumer backend, works on our cohort today; ``enterprise`` =
+    a Discovery-Engine domain service — the NotebookLM Enterprise / Agentspace
+    surface, gated off for consumer accounts by a VPC Service Controls perimeter
+    (NOT a consumer migration target); ``other`` = unclassified (investigate —
+    possibly a new service). Empirical first (a service our CONFIRMED ids use is
+    ``current``), then the known Discovery-Engine domain services, then the old
+    ``LabsTailwind*`` consumer family.
+    """
+    if service in current_services:
+        return "current"
+    if service in _DISCOVERY_ENGINE_SERVICES:
+        return "enterprise"
+    if service.startswith("LabsTailwind"):
+        return "current"
+    return "other"
 
 
 def parse_ids_from_text(types_text: str) -> dict[str, str]:
@@ -178,7 +232,10 @@ def fetch_bundle() -> str:
 
 
 def _print_report(
-    ours: dict[str, str], live: dict[str, str], buckets: dict[str, dict[str, str]]
+    ours: dict[str, str],
+    live: dict[str, str],
+    buckets: dict[str, dict[str, str]],
+    current_services: set[str],
 ) -> None:
     """Print the human-readable diff (counts + per-bucket id listings) to stdout."""
     confirmed, present, absent, unmapped = (
@@ -203,9 +260,31 @@ def _print_report(
         print("\nPRESENT-UNPARSED — id is in the bundle but registration not parsed (widen regex):")
         for rpc_id in sorted(present, key=lambda i: present[i]):
             print(f"  {rpc_id:<8} {present[rpc_id]}")
-    print(f"\nUNMAPPED — live RPCs we do not expose ({len(unmapped)}):")
-    for rpc_id in sorted(unmapped, key=lambda i: unmapped[i]):
-        print(f"  {rpc_id:<8} {unmapped[rpc_id]}")
+    # Group the unexposed RPCs by service family so "callable on our cohort now"
+    # (current) is visually separated from the gated Discovery-Engine surface.
+    fam_groups: dict[str, list[tuple[str, str]]] = {
+        "current": [],
+        "enterprise": [],
+        "other": [],
+    }
+    for rpc_id, method in unmapped.items():
+        fam_groups[classify_service(_service_of(method), current_services)].append((rpc_id, method))
+    fam_labels = {
+        "current": "UNMAPPED · consumer backend — callable on our cohort now, just not exposed",
+        "enterprise": (
+            "UNMAPPED · enterprise (Discovery Engine / Agentspace) — VPC-SC-gated, "
+            "not consumer-callable, not a migration target"
+        ),
+        "other": "UNMAPPED · other / unclassified services (investigate)",
+    }
+    print(f"\nUNMAPPED — live RPCs we do not expose ({len(unmapped)}), by service family:")
+    for fam in ("current", "enterprise", "other"):
+        items = fam_groups[fam]
+        if not items:
+            continue
+        print(f"\n  {fam_labels[fam]} ({len(items)}):")
+        for rpc_id, method in sorted(items, key=lambda x: x[1]):
+            print(f"    {rpc_id:<8} {method}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -229,6 +308,8 @@ def main(argv: list[str] | None = None) -> int:
     bundle = args.bundle_file.read_text(encoding="utf-8") if args.bundle_file else fetch_bundle()
     live = extract_registry(bundle)
     buckets = diff(ours, live, bundle)
+    # Services any CONFIRMED id resolves to are, empirically, serving our cohort.
+    current_services = {_service_of(m) for m in buckets["confirmed"].values()}
 
     if args.json:
         print(
@@ -239,7 +320,13 @@ def main(argv: list[str] | None = None) -> int:
                     },
                     "absent": buckets["absent"],
                     "present_unparsed": buckets["present_unparsed"],
-                    "unmapped": buckets["unmapped"],
+                    "unmapped": {
+                        i: {
+                            "method": m,
+                            "family": classify_service(_service_of(m), current_services),
+                        }
+                        for i, m in buckets["unmapped"].items()
+                    },
                     "counts": {k: len(v) for k, v in buckets.items()} | {"ours": len(ours)},
                 },
                 indent=2,
@@ -247,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
     else:
-        _print_report(ours, live, buckets)
+        _print_report(ours, live, buckets, current_services)
 
     if args.check and buckets["absent"]:
         print(
