@@ -660,7 +660,11 @@ class TestSettingsGoldenDecoded:
             "NOTEBOOKLM_TIER_PRO_CONSUMER_USER",
             field="settings_get_user_tier.tier",
         )
-        assert_decoded_equals(tier.plan_name, None, field="settings_get_user_tier.plan_name")
+        # The recorded token is a real consumer Pro account; it now maps to a plan
+        # name (previously decoded to None — the bug this change fixes).
+        assert_decoded_equals(
+            tier.plan_name, "Google AI Pro", field="settings_get_user_tier.plan_name"
+        )
 
 
 # =============================================================================
