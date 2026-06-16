@@ -56,7 +56,9 @@ _BUNDLE_URL_RE = re.compile(rf'https://www\.gstatic\.com/_/mss/{_APP}/_/js/[^"\\
 # ``'``) so a change in the bundle minifier's quote style doesn't blank the diff.
 _METHOD_PATH_RE = re.compile(r"""["'](/[A-Za-z][\w]*\.[A-Za-z][\w]*)["']""")
 _ID_TOKEN_RE = re.compile(r"""["']([A-Za-z0-9]{5,8})["']""")
-# How far back from a path string to look for its registration id.
+# How far back from a path string to scan for its registration id. The
+# ``_.uD(id, ReqCtor, RespCtor, [flags, path])`` form fits well within ~100 chars;
+# 160 leaves headroom for longer minified constructor names.
 _ID_LOOKBACK = 160
 
 # Real obfuscated rpc ids are short alphanumerics; this filter keeps non-id enum
@@ -131,13 +133,13 @@ def fetch_bundle() -> str:
     from notebooklm._env import get_base_url
     from notebooklm.auth import authuser_query, load_auth_from_storage
 
-    def _get(
+    def _fetch(
         url: str,
         *,
         cookies: dict[str, str] | None = None,
         follow_redirects: bool = False,
         timeout: float = 60.0,
-    ) -> str:
+    ) -> httpx.Response:
         response = httpx.get(
             url,
             headers={"User-Agent": _UA},
@@ -146,27 +148,39 @@ def fetch_bundle() -> str:
             timeout=timeout,
         )
         response.raise_for_status()
-        return response.text
+        return response
 
     cookies = load_auth_from_storage()
-    html = _get(
+    html = _fetch(
         f"{get_base_url()}/?{authuser_query(0)}",
         cookies=cookies,
         follow_redirects=True,
         timeout=30.0,
-    )
+    ).text
     urls = sorted(set(_BUNDLE_URL_RE.findall(html)))
     if not urls:
         raise SystemExit(
             f"No {_APP} bundle URL found in the homepage — not authenticated for "
             "NotebookLM? Run `notebooklm login` (or pass --bundle-file)."
         )
-    return "\n".join(_get(url) for url in urls)
+    # Keep only genuine JS responses: raise_for_status rejects non-200, and this
+    # rejects a 200 served with the wrong content-type (e.g. an HTML login/error
+    # page), which would otherwise be parsed as a bundle and make every id ABSENT.
+    bodies: list[str] = []
+    for url in urls:
+        response = _fetch(url)
+        content_type = response.headers.get("content-type", "")
+        if "javascript" in content_type or "text/plain" in content_type:
+            bodies.append(response.text)
+    if not bodies:
+        raise SystemExit(f"No readable JS bundle content fetched from the {_APP} URLs.")
+    return "\n".join(bodies)
 
 
 def _print_report(
     ours: dict[str, str], live: dict[str, str], buckets: dict[str, dict[str, str]]
 ) -> None:
+    """Print the human-readable diff (counts + per-bucket id listings) to stdout."""
     confirmed, present, absent, unmapped = (
         buckets["confirmed"],
         buckets["present_unparsed"],
@@ -195,6 +209,11 @@ def _print_report(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry point: load/fetch the bundle, diff vs rpc/types.py, report.
+
+    Returns the process exit code: ``1`` when ``--check`` is set and any of our
+    ids are ABSENT (a rotation/stale alarm), else ``0``.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument(
         "--json", action="store_true", help="emit a JSON snapshot instead of a report"
