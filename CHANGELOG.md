@@ -165,6 +165,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Video Overview visual-style values now match the live NotebookLM Web UI**
+  (#1594). `VideoStyle` previously used stale numeric values, so several named
+  styles could serialize as the wrong style on the wire. `CUSTOM` now reflects
+  the UI's `0` value and is encoded the same way the Web UI sends it: the style
+  enum slot is omitted/defaulted and the custom visual-style prompt is appended
+  to the video config. Preset styles such as Whiteboard, Anime, Kawaii,
+  Watercolor, Heritage, and Paper-craft now use the current Web UI values.
+
 - **`notebooklm auth check` text mode now exits non-zero when an executed check
   fails, matching `--json` mode** (#1569). Previously the Rich-table renderer
   printed the failed checks but always exited `0`, so an unattended health check

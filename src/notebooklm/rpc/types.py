@@ -267,15 +267,15 @@ class VideoStyle(int, Enum):
     """Video visual style options."""
 
     AUTO_SELECT = 1
-    CUSTOM = 2
-    CLASSIC = 3
-    WHITEBOARD = 4
-    KAWAII = 5
-    ANIME = 6
-    WATERCOLOR = 7
+    CUSTOM = 0
+    CLASSIC = 2
+    WHITEBOARD = 3
+    KAWAII = 9
+    ANIME = 7
+    WATERCOLOR = 6
     RETRO_PRINT = 8
-    HERITAGE = 9
-    PAPER_CRAFT = 10
+    HERITAGE = 4
+    PAPER_CRAFT = 5
 
 
 class QuizQuantity(int, Enum):

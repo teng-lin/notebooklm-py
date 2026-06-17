@@ -488,7 +488,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_prompt_encoding(
         self, mock_core, mock_mind_map_service
     ):
-        """Test custom video style prompt is encoded after the style code."""
+        """Test custom video style prompt is encoded like the live Web UI."""
         api = ArtifactsAPI(
             rpc=mock_core,
             drain=mock_core,
@@ -507,7 +507,7 @@ class TestArtifactsSourceSelection:
 
         params = mock_core.rpc_executor.rpc_call.call_args.args[1]
         video_config = params[2][8][2]
-        assert video_config[5] == VideoStyle.CUSTOM.value
+        assert video_config[5] is None
         assert video_config[6] == "Use hand-drawn diagrams"
 
     @pytest.mark.asyncio

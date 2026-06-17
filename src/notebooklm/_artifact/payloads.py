@@ -128,7 +128,12 @@ def build_video_artifact_params(
     source_ids_double = nest_source_ids(source_ids, 1)
 
     format_code = video_format.value if video_format is not None else VideoFormat.EXPLAINER.value
-    style_code = video_style.value if video_style is not None else VideoStyle.AUTO_SELECT.value
+    if video_style == VideoStyle.CUSTOM:
+        # Live Web UI serializes the CUSTOM enum's proto-default value (0) as
+        # an omitted/null field and carries the custom visual prompt in slot 6.
+        style_code = None
+    else:
+        style_code = video_style.value if video_style is not None else VideoStyle.AUTO_SELECT.value
 
     video_config = [
         source_ids_double,
