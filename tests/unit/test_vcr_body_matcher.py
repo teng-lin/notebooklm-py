@@ -62,6 +62,36 @@ _normalize_uuids: Callable[[str], str] = _vcr_config._normalize_uuids
 _FREQ_VOLATILE_KEYS: frozenset[str] = _vcr_config._FREQ_VOLATILE_KEYS
 _UUID_PLACEHOLDER: str = _vcr_config._UUID_PLACEHOLDER
 
+_OLD_CREATE_ARTIFACT_OPTIONS = [2]
+_LIVE_CREATE_ARTIFACT_OPTIONS = [
+    2,
+    None,
+    None,
+    [1, None, None, None, None, None, None, None, None, None, [1]],
+    [[1, 4, 8, 2, 3, 6]],
+]
+_DATA_TABLE_SPEC = [
+    None,
+    None,
+    9,
+    [[["source-id"]]],
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    [None, ["make a table", "en"]],
+]
+
 
 class _StubRequest:
     """Minimal stand-in for a ``vcr.request.Request`` carrying only ``body``."""
@@ -184,6 +214,62 @@ def test_batchexecute_null_vs_filled_slot_still_matches() -> None:
     body_a = _build_batchexecute_body("rpc", [None, None])
     body_b = _build_batchexecute_body("rpc", [2, 2])
     assert _freq_body_matcher(_StubRequest(body_a), _StubRequest(body_b)) is True
+
+
+def test_create_artifact_old_and_live_client_options_match() -> None:
+    """Old ``[2]`` and live client-options envelopes match for CREATE_ARTIFACT.
+
+    The production builder now follows the 2026-06-15 web UI shape at param 0,
+    while older generation cassettes recorded the compact ``[2]`` form. The VCR
+    matcher should treat only that client-options slot as equivalent and keep
+    the artifact spec itself structurally checked.
+    """
+    old_body = _build_batchexecute_body(
+        "R7cb6c",
+        [_OLD_CREATE_ARTIFACT_OPTIONS, "notebook-id", _DATA_TABLE_SPEC],
+    )
+    live_body = _build_batchexecute_body(
+        "R7cb6c",
+        [_LIVE_CREATE_ARTIFACT_OPTIONS, "notebook-id", _DATA_TABLE_SPEC],
+    )
+
+    assert _freq_body_matcher(_StubRequest(old_body), _StubRequest(live_body)) is True
+
+
+def test_create_artifact_spec_drift_still_fails_after_options_normalization() -> None:
+    """The R7cb6c compatibility rule does not hide real artifact-spec drift."""
+    truncated_spec = _DATA_TABLE_SPEC[:-1]
+    old_body = _build_batchexecute_body(
+        "R7cb6c",
+        [_OLD_CREATE_ARTIFACT_OPTIONS, "notebook-id", _DATA_TABLE_SPEC],
+    )
+    drift_body = _build_batchexecute_body(
+        "R7cb6c",
+        [_LIVE_CREATE_ARTIFACT_OPTIONS, "notebook-id", truncated_spec],
+    )
+
+    assert _freq_body_matcher(_StubRequest(old_body), _StubRequest(drift_body)) is False
+
+
+def test_create_artifact_unknown_client_options_shape_fails() -> None:
+    """Only the known old/live R7cb6c client-options envelopes are normalized."""
+    old_body = _build_batchexecute_body(
+        "R7cb6c",
+        [_OLD_CREATE_ARTIFACT_OPTIONS, "notebook-id", _DATA_TABLE_SPEC],
+    )
+
+    for unknown_options in (
+        [3],
+        [None],
+        ["unexpected"],
+        [2, None, None, [1], [[1, 4, 8, 2, 3, 6]]],
+    ):
+        unknown_body = _build_batchexecute_body(
+            "R7cb6c",
+            [unknown_options, "notebook-id", _DATA_TABLE_SPEC],
+        )
+
+        assert _freq_body_matcher(_StubRequest(old_body), _StubRequest(unknown_body)) is False
 
 
 def test_batchexecute_envelope_with_extra_top_level_slot_fails() -> None:

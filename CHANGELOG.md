@@ -7,12 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.2] - 2026-06-09
+## [0.7.2] - 2026-06-17
 
 Maintenance patch on the 0.7.x line. Backports fixes from `main`
 (cherry-picked ahead of the v0.8.0 breaking release).
 
 ### Fixed
+
+- **Video (and other artifact) generation no longer fails immediately on
+  cohorts that reject the legacy client-options shape** (#1594; backport of
+  #1583). `CREATE_ARTIFACT` sent a minimal param-0 of `[2]`; the live web
+  client sends the fuller capability envelope
+  (`[2, null, null, [1, …, [1]], [[1, 4, 8, 2, 3, 6]]]`). On some accounts the
+  backend began rejecting the short form for video generation specifically —
+  the artifact was created and then immediately marked failed, while audio and
+  infographic (which the backend still accepted) kept working. All artifact
+  builders (audio, video, cinematic video, report, quiz, flashcards) now send
+  the full envelope, matching the browser. The VCR body matcher normalizes the
+  old and new client-options shapes so existing generation cassettes still
+  replay.
 
 - **Empty notebook summary no longer raises `UnknownRPCMethodError`** (#1485).
   A brand-new, source-less notebook has no summary yet, so the `SUMMARIZE` RPC
