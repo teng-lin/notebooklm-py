@@ -8,6 +8,86 @@
   },
   "allowed_breaks": [
     {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.ANIME",
+      "reason": "v0.8.0 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures; see CHANGELOG.md and docs/rpc-reference.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.CLASSIC",
+      "reason": "v0.8.0 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures; see CHANGELOG.md and docs/rpc-reference.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.CUSTOM",
+      "reason": "v0.8.0 #1594: CUSTOM is the live Web UI's proto-default video style value (0) and is encoded by omitting/defaulting the style slot plus appending the custom style prompt. See CHANGELOG.md and docs/rpc-reference.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.HERITAGE",
+      "reason": "v0.8.0 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures; see CHANGELOG.md and docs/rpc-reference.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.KAWAII",
+      "reason": "v0.8.0 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures; see CHANGELOG.md and docs/rpc-reference.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.PAPER_CRAFT",
+      "reason": "v0.8.0 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures; see CHANGELOG.md and docs/rpc-reference.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.WATERCOLOR",
+      "reason": "v0.8.0 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures; see CHANGELOG.md and docs/rpc-reference.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.WHITEBOARD",
+      "reason": "v0.8.0 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures; see CHANGELOG.md and docs/rpc-reference.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.ANIME",
+      "reason": "Same break as notebooklm.VideoStyle.ANIME above; this entry covers the notebooklm.types re-export."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.CLASSIC",
+      "reason": "Same break as notebooklm.VideoStyle.CLASSIC above; this entry covers the notebooklm.types re-export."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.CUSTOM",
+      "reason": "Same break as notebooklm.VideoStyle.CUSTOM above; this entry covers the notebooklm.types re-export."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.HERITAGE",
+      "reason": "Same break as notebooklm.VideoStyle.HERITAGE above; this entry covers the notebooklm.types re-export."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.KAWAII",
+      "reason": "Same break as notebooklm.VideoStyle.KAWAII above; this entry covers the notebooklm.types re-export."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.PAPER_CRAFT",
+      "reason": "Same break as notebooklm.VideoStyle.PAPER_CRAFT above; this entry covers the notebooklm.types re-export."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.WATERCOLOR",
+      "reason": "Same break as notebooklm.VideoStyle.WATERCOLOR above; this entry covers the notebooklm.types re-export."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.WHITEBOARD",
+      "reason": "Same break as notebooklm.VideoStyle.WHITEBOARD above; this entry covers the notebooklm.types re-export."
+    },
+    {
       "code": "removed-member",
       "object": "notebooklm.NotebookLMClient.notebooks.share",
       "reason": "v0.8.0 #1363: removed the v0.5.0-deprecated NotebooksAPI.share() no-behavior-change wrapper over client.sharing.set_public. Use client.sharing.set_public(notebook_id, public) for the public-sharing toggle and client.notebooks.get_share_url(notebook_id, artifact_id) for the deep-link URL (get_share_url stays). See CHANGELOG.md and docs/deprecations.md."
