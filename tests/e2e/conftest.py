@@ -19,6 +19,10 @@ except ImportError:
     pass  # python-dotenv not installed, rely on shell environment
 
 from notebooklm import NotebookLMClient
+
+# ``load_auth_from_storage`` was de-blessed from ``notebooklm.auth.__all__`` in
+# #1592 (still importable there for back-compat); first-party code — including
+# these e2e fixtures — imports it from its canonical ``_auth.tokens`` home.
 from notebooklm._auth.tokens import load_auth_from_storage
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError, RateLimitError
