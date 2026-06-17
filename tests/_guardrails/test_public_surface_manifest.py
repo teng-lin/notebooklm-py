@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import enum
 import importlib
+import json
 import warnings
 from pathlib import Path
 from types import ModuleType
@@ -1199,6 +1200,329 @@ def test_public_top_level_module_declares_all(module_name: str) -> None:
     )
     for name in all_value:
         assert hasattr(module, name), f"{module_name}.__all__ references missing attribute {name!r}"
+
+
+# ---------------------------------------------------------------------------
+# Additions gate (#1592 follow-on): freeze the FULL collected surface of every
+# public module the audit discovers but that has no exact pin yet.
+#
+# The compat audit (scripts/audit_public_api_compat.py::compare_manifests) only
+# flags REMOVED/CHANGED exports vs the last release tag — it never walks
+# current-only names, so a name ADDED to a public ``__all__`` (or a brand-new
+# public module) is invisible and the surface can silently regrow. This snapshot
+# makes every such addition a deliberate, diff-visible, in-PR act.
+#
+# The four modules already exact-pinned elsewhere keep their own gates (NO dedup:
+# ``EXPECTED_AUTH_ALL`` is also load-bearing for the auth snapshot test, and the
+# no-cross-test-import guard forbids importing those lists into this module):
+#   notebooklm.auth   -> EXPECTED_AUTH_ALL                       (test_public_surface.py)
+#   notebooklm.client -> EXPECTED_CLIENT_ALL                     (test_public_surface.py)
+#   notebooklm.rpc    -> test_rpc_all_is_minimized_to_documented_power_user_imports
+#   notebooklm.types  -> _FROZEN_TYPES_ALL
+# ---------------------------------------------------------------------------
+
+_EXACT_PINNED_ELSEWHERE = {
+    "notebooklm.auth",
+    "notebooklm.client",
+    "notebooklm.rpc",
+    "notebooklm.types",
+}
+
+_ALLOWLIST_PATH = Path(__file__).resolve().parents[2] / "scripts" / "api-compat-allowlist.json"
+
+
+def _collected_public_surface(module_name: str) -> list[str]:
+    """The audit-collected export surface for ``module_name``: ``__all__`` plus
+    any *resolvable* ``extra_public_names`` (from the compat allowlist) not
+    already in ``__all__`` — mirroring
+    ``scripts/audit_public_api_compat.py::collect_module``. Extras are
+    case-insensitively de-duplicated/sorted exactly as ``load_policy`` normalizes
+    them (``audit:~720``) before ``collect_module`` consumes them, and a missing
+    extra is skipped (the audit drops it via ``AttributeError``). Order is
+    ``__all__`` (its own order) first, then the normalized extras.
+
+    A non-resolving name *in* ``__all__`` is kept here (unlike the audit, which
+    re-raises) — that bad state is caught independently by
+    ``test_public_top_level_module_declares_all`` (asserts ``hasattr`` per name).
+    """
+    module = importlib.import_module(module_name)
+    names = list(getattr(module, "__all__", []))
+    extras = json.loads(_ALLOWLIST_PATH.read_text(encoding="utf-8")).get("extra_public_names", {})
+    for name in sorted(set(extras.get(module_name, [])), key=str.lower):
+        if name not in names and hasattr(module, name):
+            names.append(name)
+    return names
+
+
+# Exact, ORDERED snapshot of each ungated public module's collected surface.
+# ``__all__`` order is meaningful (documented export order, like
+# ``_FROZEN_TYPES_ALL``), so it is compared exactly, not as a set. To grow a
+# public surface, add the name here in the SAME PR — that diff line is the
+# deliberate, reviewed acknowledgement.
+_UNGATED_PUBLIC_ALL_SNAPSHOT: dict[str, list[str]] = {
+    "notebooklm": [
+        "__version__",
+        "NotebookLMClient",
+        "AuthTokens",
+        "correlation_id",
+        "get_request_id",
+        "set_request_id",
+        "reset_request_id",
+        "AccountLimits",
+        "AccountTier",
+        "ConnectionLimits",
+        "ClientMetricsSnapshot",
+        "RpcTelemetryEvent",
+        "Notebook",
+        "NotebookDescription",
+        "NotebookMetadata",
+        "SuggestedTopic",
+        "Source",
+        "SourceFulltext",
+        "SourceGuide",
+        "SourceSummary",
+        "Artifact",
+        "GenerationState",
+        "GenerationStatus",
+        "ReportSuggestion",
+        "MindMap",
+        "MindMapKind",
+        "MindMapResult",
+        "Note",
+        "Label",
+        "ConversationTurn",
+        "ChatReference",
+        "AskResult",
+        "ChatMode",
+        "CitedSourceSelection",
+        "ResearchStatus",
+        "ResearchSource",
+        "ResearchTask",
+        "ResearchStart",
+        "SharedUser",
+        "ShareStatus",
+        "resolve_chat_reference_passage",
+        "NotebookLMError",
+        "ValidationError",
+        "ConfigurationError",
+        "NotFoundError",
+        "RPCError",
+        "DecodingError",
+        "UnknownRPCMethodError",
+        "AuthError",
+        "AuthExtractionError",
+        "NetworkError",
+        "RPCTimeoutError",
+        "RPCResponseTooLargeError",
+        "RateLimitError",
+        "ServerError",
+        "ClientError",
+        "NonIdempotentRetryError",
+        "NotebookError",
+        "NotebookNotFoundError",
+        "NotebookLimitError",
+        "ChatError",
+        "ChatResponseParseError",
+        "SourceError",
+        "SourceAddError",
+        "SourceProcessingError",
+        "SourceTimeoutError",
+        "SourceNotFoundError",
+        "ArtifactError",
+        "ArtifactFeatureUnavailableError",
+        "ArtifactNotFoundError",
+        "ArtifactNotReadyError",
+        "ArtifactParseError",
+        "ArtifactDownloadError",
+        "ArtifactTimeoutError",
+        "ArtifactPendingTimeoutError",
+        "ArtifactInProgressTimeoutError",
+        "AmbiguousResearchTaskError",
+        "ResearchError",
+        "ResearchTimeoutError",
+        "ResearchTaskMismatchError",
+        "NoteError",
+        "NoteNotFoundError",
+        "MindMapError",
+        "MindMapNotFoundError",
+        "LabelError",
+        "LabelNotFoundError",
+        "WaitTimeoutError",
+        "UnknownTypeWarning",
+        "SourceType",
+        "ArtifactType",
+        "AudioFormat",
+        "AudioLength",
+        "VideoFormat",
+        "VideoStyle",
+        "QuizQuantity",
+        "QuizDifficulty",
+        "InfographicOrientation",
+        "InfographicDetail",
+        "InfographicStyle",
+        "SlideDeckFormat",
+        "SlideDeckLength",
+        "ReportFormat",
+        "ChatGoal",
+        "ChatResponseLength",
+        "DriveMimeType",
+        "ExportType",
+        "SourceStatus",
+        "ShareAccess",
+        "ShareViewLevel",
+        "SharePermission",
+        "configure_logging",
+    ],
+    "notebooklm.artifacts": [
+        "RATE_LIMIT_RETRY_BACKOFF_MULTIPLIER",
+        "RATE_LIMIT_RETRY_INITIAL_DELAY",
+        "RATE_LIMIT_RETRY_MAX_DELAY",
+        "RateLimitRetryEvent",
+        "calculate_backoff_delay",
+        "with_rate_limit_retry",
+    ],
+    "notebooklm.config": [
+        "DEFAULT_BASE_URL",
+        "ENTERPRISE_BASE_HOST",
+        "get_base_host",
+        "get_base_url",
+        "get_default_language",
+        "PERSONAL_BASE_HOST",
+    ],
+    "notebooklm.exceptions": [
+        "NotebookLMError",
+        "NotFoundError",
+        "WaitTimeoutError",
+        "ValidationError",
+        "ConfigurationError",
+        "HeadlessReauthError",
+        "HeadlessLoginRequiredError",
+        "NetworkError",
+        "RPCError",
+        "DecodingError",
+        "UnknownRPCMethodError",
+        "AuthError",
+        "AuthExtractionError",
+        "RateLimitError",
+        "ServerError",
+        "ClientError",
+        "RPCTimeoutError",
+        "RPCResponseTooLargeError",
+        "NonIdempotentRetryError",
+        "IdempotencyVariantError",
+        "NotebookError",
+        "NotebookNotFoundError",
+        "NotebookLimitError",
+        "ChatError",
+        "ChatResponseParseError",
+        "SourceError",
+        "SourceAddError",
+        "SourceNotFoundError",
+        "SourceProcessingError",
+        "SourceTimeoutError",
+        "ArtifactError",
+        "ArtifactNotFoundError",
+        "ArtifactNotReadyError",
+        "ArtifactParseError",
+        "ArtifactDownloadError",
+        "ArtifactFeatureUnavailableError",
+        "ArtifactTimeoutError",
+        "ArtifactPendingTimeoutError",
+        "ArtifactInProgressTimeoutError",
+        "ResearchError",
+        "ResearchTimeoutError",
+        "ResearchTaskMismatchError",
+        "AmbiguousResearchTaskError",
+        "NoteError",
+        "NoteNotFoundError",
+        "MindMapError",
+        "MindMapNotFoundError",
+        "LabelError",
+        "LabelNotFoundError",
+    ],
+    "notebooklm.io": ["atomic_update_json", "atomic_write_json", "replace_file_atomically"],
+    "notebooklm.log": ["install_redaction"],
+    "notebooklm.migration": [
+        "MigrationLockTimeoutError",
+        "ensure_profiles_dir",
+        "migrate_to_profiles",
+    ],
+    "notebooklm.paths": [
+        "get_active_profile",
+        "get_browser_profile_dir",
+        "get_config_path",
+        "get_context_path",
+        "get_home_dir",
+        "get_path_info",
+        "get_profile_dir",
+        "get_storage_path",
+        "list_profiles",
+        "read_default_profile",
+        "resolve_profile",
+        "set_active_profile",
+    ],
+    "notebooklm.research": [
+        "extract_report_urls",
+        "normalize_citation_url",
+        "normalize_url",
+        "select_cited_sources",
+    ],
+    "notebooklm.urls": [
+        "contains_google_auth_redirect",
+        "is_google_auth_redirect",
+        "is_youtube_url",
+    ],
+    "notebooklm.utils": ["resolve_chat_reference_passage"],
+}
+
+
+def test_ungated_public_surface_covers_exactly_the_unpinned_modules() -> None:
+    """Completeness: every audit-discovered public module is addition-gated —
+    either exact-pinned elsewhere (auth/client/rpc/types) or frozen here. This
+    fails a BRAND-NEW public module that declares ``__all__`` (which the
+    ``declares_all`` test alone would let pass) until it is snapshotted.
+    """
+    assert (
+        set(_PUBLIC_TOP_LEVEL_MODULES)
+        == set(_UNGATED_PUBLIC_ALL_SNAPSHOT) | _EXACT_PINNED_ELSEWHERE
+    ), (
+        "A public top-level module is neither exact-pinned elsewhere nor frozen in "
+        "_UNGATED_PUBLIC_ALL_SNAPSHOT. Add a new public module to the snapshot (or to "
+        "an existing exact pin) so its additions are gated.\n"
+        f"  discovered-not-gated: {sorted(set(_PUBLIC_TOP_LEVEL_MODULES) - set(_UNGATED_PUBLIC_ALL_SNAPSHOT) - _EXACT_PINNED_ELSEWHERE)}\n"
+        f"  snapshotted-not-discovered: {sorted(set(_UNGATED_PUBLIC_ALL_SNAPSHOT) - set(_PUBLIC_TOP_LEVEL_MODULES))}"
+    )
+
+    # The 4 exact-pinned modules pin ``__all__`` ONLY; assert no allowlist extra
+    # targets them — an extra would be a *collected* export their ``__all__``-pin
+    # misses and this gate excludes (a latent bypass). If one ever does, give that
+    # module a collected-surface snapshot in ``_UNGATED_PUBLIC_ALL_SNAPSHOT`` too.
+    _extras = json.loads(_ALLOWLIST_PATH.read_text(encoding="utf-8")).get("extra_public_names", {})
+    _pinned_with_extras = _EXACT_PINNED_ELSEWHERE & set(_extras)
+    assert not _pinned_with_extras, (
+        f"allowlist extra_public_names target exact-__all__-pinned modules "
+        f"{sorted(_pinned_with_extras)} whose pins don't cover extras; add a "
+        "collected-surface snapshot for them in _UNGATED_PUBLIC_ALL_SNAPSHOT."
+    )
+
+
+@pytest.mark.parametrize("module_name", sorted(_UNGATED_PUBLIC_ALL_SNAPSHOT))
+def test_ungated_public_all_is_frozen(module_name: str) -> None:
+    """A name added to (or removed from) an ungated public module's surface fails
+    until the snapshot is updated in the same PR — closing the additions-blindness
+    of the compat audit for these modules. (Removals are also caught here, in
+    addition to the audit's ``removed-export`` break.)
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        actual = _collected_public_surface(module_name)
+    expected = _UNGATED_PUBLIC_ALL_SNAPSHOT[module_name]
+    assert actual == expected, (
+        f"{module_name} public surface changed. If intentional, update "
+        f"_UNGATED_PUBLIC_ALL_SNAPSHOT[{module_name!r}] in this PR (the deliberate ack).\n"
+        f"  added:   {sorted(set(actual) - set(expected))}\n"
+        f"  removed: {sorted(set(expected) - set(actual))}"
+    )
 
 
 # ---------------------------------------------------------------------------
