@@ -14,8 +14,8 @@ from __future__ import annotations
 import ast
 import enum
 import importlib
-import json
 import warnings
+from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 
@@ -1231,14 +1231,27 @@ _EXACT_PINNED_ELSEWHERE = {
 _ALLOWLIST_PATH = Path(__file__).resolve().parents[2] / "scripts" / "api-compat-allowlist.json"
 
 
+@lru_cache(maxsize=1)
+def _allowlist_extra_public_names() -> dict[str, list[str]]:
+    """Allowlist ``extra_public_names`` via the audit's OWN ``load_policy`` — the
+    same schema validation + case-insensitive sort/dedupe the audit applies, so
+    this gate can't drift from the audit's contract, and the file is parsed once
+    (not per parametrized case). Lazy import because the audit sets a module-level
+    ``ROOT`` from ``sys.argv`` at import time; this mirrors how
+    ``test_discovery_constants_match_the_audit_source`` reaches the audit module.
+    """
+    import scripts.audit_public_api_compat as audit
+
+    _allowances, extras = audit.load_policy(_ALLOWLIST_PATH)
+    return extras
+
+
 def _collected_public_surface(module_name: str) -> list[str]:
     """The audit-collected export surface for ``module_name``: ``__all__`` plus
-    any *resolvable* ``extra_public_names`` (from the compat allowlist) not
-    already in ``__all__`` — mirroring
-    ``scripts/audit_public_api_compat.py::collect_module``. Extras are
-    case-insensitively de-duplicated/sorted exactly as ``load_policy`` normalizes
-    them (``audit:~720``) before ``collect_module`` consumes them, and a missing
-    extra is skipped (the audit drops it via ``AttributeError``). Order is
+    any *resolvable* ``extra_public_names`` not already in ``__all__`` — mirroring
+    ``scripts/audit_public_api_compat.py::collect_module``. The extras come from
+    the audit's ``load_policy`` (already case-insensitively sorted/de-duped), and a
+    missing extra is skipped (the audit drops it via ``AttributeError``). Order is
     ``__all__`` (its own order) first, then the normalized extras.
 
     A non-resolving name *in* ``__all__`` is kept here (unlike the audit, which
@@ -1247,8 +1260,7 @@ def _collected_public_surface(module_name: str) -> list[str]:
     """
     module = importlib.import_module(module_name)
     names = list(getattr(module, "__all__", []))
-    extras = json.loads(_ALLOWLIST_PATH.read_text(encoding="utf-8")).get("extra_public_names", {})
-    for name in sorted(set(extras.get(module_name, [])), key=str.lower):
+    for name in _allowlist_extra_public_names().get(module_name, []):
         if name not in names and hasattr(module, name):
             names.append(name)
     return names
@@ -1497,11 +1509,10 @@ def test_ungated_public_surface_covers_exactly_the_unpinned_modules() -> None:
     # targets them — an extra would be a *collected* export their ``__all__``-pin
     # misses and this gate excludes (a latent bypass). If one ever does, give that
     # module a collected-surface snapshot in ``_UNGATED_PUBLIC_ALL_SNAPSHOT`` too.
-    _extras = json.loads(_ALLOWLIST_PATH.read_text(encoding="utf-8")).get("extra_public_names", {})
-    _pinned_with_extras = _EXACT_PINNED_ELSEWHERE & set(_extras)
-    assert not _pinned_with_extras, (
+    pinned_with_extras = _EXACT_PINNED_ELSEWHERE & set(_allowlist_extra_public_names())
+    assert not pinned_with_extras, (
         f"allowlist extra_public_names target exact-__all__-pinned modules "
-        f"{sorted(_pinned_with_extras)} whose pins don't cover extras; add a "
+        f"{sorted(pinned_with_extras)} whose pins don't cover extras; add a "
         "collected-surface snapshot for them in _UNGATED_PUBLIC_ALL_SNAPSHOT."
     )
 
