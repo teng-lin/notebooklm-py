@@ -65,7 +65,7 @@
     {
       "code": "removed-member",
       "object": "notebooklm.Note.from_api_response",
-      "reason": "Dead positional parser removed (#1389). Note rows are decoded through notebooklm._row_adapters.notes.NoteRow; the classmethod had no production callers (only test_types.py exercised it). Construct Note(...) directly from NoteRow's named properties — see NotesAPI._parse_note."
+      "reason": "Dead positional parser removed (#1389). Note rows are decoded through notebooklm._row_adapters.notes.NoteRow; the classmethod had no production callers (only test_types.py exercised it). Construct Note(...) directly from NoteRow's named properties \u2014 see NotesAPI._parse_note."
     },
     {
       "code": "removed-member",
@@ -316,6 +316,126 @@
       "code": "changed-return",
       "object": "notebooklm.client.NotebookLMClient.sources.rename",
       "reason": "Same break as notebooklm.NotebookLMClient.sources.rename above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.CUSTOM",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.CLASSIC",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.WHITEBOARD",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.KAWAII",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.ANIME",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.WATERCOLOR",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.HERITAGE",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.VideoStyle.PAPER_CRAFT",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.rpc.VideoStyle.CUSTOM",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.rpc.VideoStyle.CLASSIC",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.rpc.VideoStyle.WHITEBOARD",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.rpc.VideoStyle.KAWAII",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.rpc.VideoStyle.ANIME",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.rpc.VideoStyle.WATERCOLOR",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.rpc.VideoStyle.HERITAGE",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.rpc.VideoStyle.PAPER_CRAFT",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.CUSTOM",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.CLASSIC",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.WHITEBOARD",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.KAWAII",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.ANIME",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.WATERCOLOR",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.HERITAGE",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
+    },
+    {
+      "code": "changed-enum-value",
+      "object": "notebooklm.types.VideoStyle.PAPER_CRAFT",
+      "reason": "v0.7.2 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures (backport of #1597); see CHANGELOG.md."
     }
   ]
 }

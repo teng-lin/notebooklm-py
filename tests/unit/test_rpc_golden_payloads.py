@@ -357,7 +357,7 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                             "Summarize visually",
                             None,
                             1,
-                            2,
+                            None,
                             "blueprint line art",
                         ],
                     ],
@@ -385,6 +385,37 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
                     None,
                     None,
                     [None, None, [[["src_alpha"]], "de", None, None, 3]],
+                ],
+            ],
+        ),
+        (
+            "video_non_contiguous_preset_style",
+            build_video_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="en",
+                instructions="Make it playful",
+                video_format=VideoFormat.BRIEF,
+                video_style=VideoStyle.KAWAII,
+                style_prompt=None,
+            ),
+            [
+                _ARTIFACT_CLIENT_OPTIONS,
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    3,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        None,
+                        [[["src_alpha"]], "en", "Make it playful", None, 2, 9],
+                    ],
                 ],
             ],
         ),
@@ -750,6 +781,22 @@ def test_artifact_payload_builders_match_golden_rpc_envelopes(
 
     assert params == expected
     assert encode_rpc_request(method, params) == _expected_rpc_envelope(method, expected)
+
+
+def test_video_style_values_match_live_web_ui() -> None:
+    """Guard against drift in the Web UI's Video Overview style radio values."""
+    assert {style: style.value for style in VideoStyle} == {
+        VideoStyle.AUTO_SELECT: 1,
+        VideoStyle.CUSTOM: 0,
+        VideoStyle.CLASSIC: 2,
+        VideoStyle.WHITEBOARD: 3,
+        VideoStyle.KAWAII: 9,
+        VideoStyle.ANIME: 7,
+        VideoStyle.WATERCOLOR: 6,
+        VideoStyle.RETRO_PRINT: 8,
+        VideoStyle.HERITAGE: 4,
+        VideoStyle.PAPER_CRAFT: 5,
+    }
 
 
 def test_revise_slide_payload_builder_matches_golden_envelope() -> None:

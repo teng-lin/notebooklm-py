@@ -14,6 +14,16 @@ Maintenance patch on the 0.7.x line. Backports fixes from `main`
 
 ### Fixed
 
+- **Video Overview visual-style values corrected to match the live Web UI**
+  (#1594; backport of #1597). `VideoStyle` used stale numeric wire values, so
+  several named styles (Whiteboard, Kawaii, Anime, Watercolor, Heritage,
+  Paper-craft, Classic, Custom) serialized as the *wrong* style on the wire.
+  Values now match live Web UI captures, and `CUSTOM` is encoded the Web-UI way
+  (the style enum slot is omitted/defaulted and the custom visual-style prompt
+  is appended). **Note:** this changes the integer values of `VideoStyle`
+  members — code that passed the raw ints must update; passing the enum members
+  (`VideoStyle.WHITEBOARD`, …) is unaffected.
+
 - **Video (and other artifact) generation no longer fails immediately on
   cohorts that reject the legacy client-options shape** (#1594; backport of
   #1583). `CREATE_ARTIFACT` sent a minimal param-0 of `[2]`; the live web

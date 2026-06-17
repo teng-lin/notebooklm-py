@@ -596,15 +596,15 @@ params = [
 **Source:** `_artifacts.py::generate_video()`
 
 ```python
-# Build the inner video config; style_prompt is appended ONLY when set
-# (which the builder allows only for video_style=VideoStyle.CUSTOM).
+# Build the inner video config. Explainer and Brief expose visual styles;
+# Cinematic hides the visual-style selector.
 video_config = [
     source_ids_double,
     language,             # "en"
-    instructions,
+    instructions,          # Focus/customization prompt
     None,
     format_code,          # 1=EXPLAINER, 2=BRIEF, 3=CINEMATIC
-    style_code,           # 1=AUTO_SELECT, 2=CUSTOM, 3=CLASSIC, 4=WHITEBOARD, ...
+    style_code,           # None=CUSTOM, 1=AUTO_SELECT, 2=CLASSIC, 3=WHITEBOARD, ...
 ]
 if style_prompt:          # Optional 7th element; CUSTOM style only
     video_config.append(style_prompt)
@@ -623,6 +623,25 @@ params = [
         None,                         # [7]
         [None, None, video_config],   # [8]
     ],
+]
+```
+
+Live Web UI capture on 2026-06-17 showed these visual-style radio values:
+`AUTO_SELECT=1`, `CUSTOM=0`, `CLASSIC=2`, `WHITEBOARD=3`,
+`KAWAII=9`, `ANIME=7`, `WATERCOLOR=6`, `RETRO_PRINT=8`,
+`HERITAGE=4`, and `PAPER_CRAFT=5`. Because `CUSTOM=0` is the protobuf
+default, the Web UI's JSON array omits that field as `null` and appends the
+custom visual-style prompt in the 7th slot:
+
+```python
+[
+    source_ids_double,
+    "en",
+    "Focus prompt",
+    None,
+    2,                    # VideoFormat.BRIEF
+    None,                 # VideoStyle.CUSTOM omitted/defaulted
+    "Custom visual style",
 ]
 ```
 
