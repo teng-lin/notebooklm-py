@@ -11,10 +11,10 @@ import json
 import pytest
 from pytest_httpx import HTTPXMock
 
+from notebooklm._auth.cookies import load_httpx_cookies
+from notebooklm._auth.tokens import load_auth_from_storage
 from notebooklm.auth import (
     AuthTokens,
-    load_auth_from_storage,
-    load_httpx_cookies,
 )
 
 

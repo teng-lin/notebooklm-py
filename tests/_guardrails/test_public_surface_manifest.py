@@ -836,6 +836,13 @@ def test_auth_cookie_domain_constants_are_facade_exports() -> None:
 # ---------------------------------------------------------------------------
 
 
+# NOTE: 22 of the 23 names de-blessed from ``auth.__all__`` in PR-1 (#1592) were
+# removed from this manifest as a deliberate change (the docstring above sanctions
+# removal via a dedicated plan); the 23rd, ``recover_psidts_in_memory``, was never
+# in this list. First-party code now imports the de-blessed names from
+# ``notebooklm._auth.<sub>``; they stay importable from ``notebooklm.auth`` for
+# back-compat, guarded by ``test_auth_deblessed_names_stay_importable_but_unblessed``
+# in ``tests/_guardrails/test_public_surface.py``.
 _AUTH_FIRST_PARTY_COMPATIBILITY_NAMES = [
     "_auth_domain_priority",
     "_EXTRACTION_HINT",
@@ -851,45 +858,23 @@ _AUTH_FIRST_PARTY_COMPATIBILITY_NAMES = [
     "_update_cookie_input",
     "_validate_required_cookies",
     "Account",
-    "advance_cookie_snapshot_after_save",
-    "ALLOWED_COOKIE_DOMAINS",
-    "authuser_query",
     "AuthTokens",
     "build_cookie_jar",
     "build_httpx_cookies_from_storage",
     "clear_account_metadata",
     "convert_rookiepy_cookies_to_storage_state",
-    "CookieSaveResult",
-    "CookieSnapshot",
-    "CookieSnapshotKey",
-    "CookieSnapshotValue",
     "enumerate_accounts",
     "extract_cookies_from_storage",
     "extract_cookies_with_domains",
-    "extract_csrf_from_html",
     "extract_email_from_html",
-    "extract_session_id_from_html",
-    "extract_wiz_field",
-    "fetch_tokens",
     "fetch_tokens_with_domains",
-    "format_authuser_value",
     "get_account_email_for_storage",
     "get_authuser_for_storage",
     "GOOGLE_REGIONAL_CCTLDS",
-    "KEEPALIVE_ROTATE_URL",
-    "load_auth_from_storage",
-    "load_httpx_cookies",
-    "MINIMUM_REQUIRED_COOKIES",
-    "normalize_cookie_map",
-    "NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV",
-    "NOTEBOOKLM_REFRESH_CMD_ENV",
-    "NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV",
     "OPTIONAL_COOKIE_DOMAINS",
     "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
     "read_account_metadata",
     "REQUIRED_COOKIE_DOMAINS",
-    "save_cookies_to_storage",
-    "snapshot_cookie_jar",
     "write_account_metadata",
 ]
 
@@ -957,7 +942,8 @@ def test_auth_paths_facade_delegates_to_private_module() -> None:
     import notebooklm.auth as auth
     from notebooklm._auth import paths
 
-    # Public-surface env-var names (listed in notebooklm.auth.__all__).
+    # Env-var names de-blessed from notebooklm.auth.__all__ in #1592; kept
+    # importable via the facade.
     assert auth.NOTEBOOKLM_REFRESH_CMD_ENV == paths.NOTEBOOKLM_REFRESH_CMD_ENV
     assert auth.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV == paths.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV
     assert auth.NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV == paths.NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV
@@ -972,7 +958,8 @@ def test_auth_extraction_facade_delegates_to_private_module() -> None:
     import notebooklm.auth as auth
     from notebooklm._auth import extraction
 
-    # Public-surface (listed in notebooklm.auth.__all__).
+    # WIZ extractors de-blessed from notebooklm.auth.__all__ in #1592; kept
+    # importable via the facade.
     assert auth.extract_csrf_from_html is extraction.extract_csrf_from_html
     assert auth.extract_session_id_from_html is extraction.extract_session_id_from_html
     assert auth.extract_wiz_field is extraction.extract_wiz_field

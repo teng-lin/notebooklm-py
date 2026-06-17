@@ -10,16 +10,17 @@ import json
 
 import pytest
 
-from notebooklm._auth.extraction import _safe_url
+from notebooklm._auth.cookies import load_httpx_cookies
+from notebooklm._auth.extraction import (
+    _safe_url,
+    extract_csrf_from_html,
+    extract_session_id_from_html,
+)
+from notebooklm._auth.storage import save_cookies_to_storage, snapshot_cookie_jar
 from notebooklm.auth import (
     AuthTokens,
     build_httpx_cookies_from_storage,
     extract_cookies_from_storage,
-    extract_csrf_from_html,
-    extract_session_id_from_html,
-    load_httpx_cookies,
-    save_cookies_to_storage,
-    snapshot_cookie_jar,
 )
 
 

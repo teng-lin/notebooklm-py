@@ -18,14 +18,13 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm._auth import refresh as _auth_refresh
+from notebooklm._auth.refresh import fetch_tokens
+from notebooklm._auth.storage import save_cookies_to_storage, snapshot_cookie_jar
 from notebooklm.auth import (
     AuthTokens,
     extract_cookies_with_domains,
-    fetch_tokens,
     fetch_tokens_passive,
     fetch_tokens_with_domains,
-    save_cookies_to_storage,
-    snapshot_cookie_jar,
 )
 
 

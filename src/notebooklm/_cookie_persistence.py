@@ -11,13 +11,13 @@ from typing import Protocol
 
 import httpx
 
-from .auth import (
-    AuthTokens,
+from ._auth.storage import (
     CookieSaveResult,
     CookieSnapshot,
     advance_cookie_snapshot_after_save,
     snapshot_cookie_jar,
 )
+from .auth import AuthTokens
 
 
 class SaveCookiesToStorage(Protocol):

@@ -19,7 +19,8 @@ except ImportError:
     pass  # python-dotenv not installed, rely on shell environment
 
 from notebooklm import NotebookLMClient
-from notebooklm.auth import AuthTokens, load_auth_from_storage
+from notebooklm._auth.tokens import load_auth_from_storage
+from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError, RateLimitError
 from notebooklm.paths import get_profile_dir
 

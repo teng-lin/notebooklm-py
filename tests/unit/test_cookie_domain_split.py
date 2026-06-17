@@ -27,6 +27,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from notebooklm._auth.cookie_policy import ALLOWED_COOKIE_DOMAINS
 from notebooklm._auth.cookie_policy import (
     build_cookie_domain_allowlist as _neutral_build_cookie_domain_allowlist,
 )
@@ -34,7 +35,6 @@ from notebooklm._auth.cookie_policy import (
     resolve_optional_cookie_domains as _neutral_resolve_optional_cookie_domains,
 )
 from notebooklm.auth import (
-    ALLOWED_COOKIE_DOMAINS,
     OPTIONAL_COOKIE_DOMAINS,
     OPTIONAL_COOKIE_DOMAINS_BY_LABEL,
     REQUIRED_COOKIE_DOMAINS,
@@ -467,7 +467,7 @@ class TestTokenVerificationStillWorksAfterMinimumSet:
 
     def test_minimum_required_set_round_trips_through_load_httpx_cookies(self, tmp_path: Path):
         """The httpx jar (used by downloads + refresh) is non-empty for REQUIRED-only state."""
-        from notebooklm.auth import load_httpx_cookies
+        from notebooklm._auth.cookies import load_httpx_cookies
 
         storage_state = {
             "cookies": [

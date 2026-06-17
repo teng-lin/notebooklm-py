@@ -531,6 +531,121 @@
       "code": "removed-export",
       "object": "notebooklm.rpc.strip_anti_xssi",
       "reason": "v0.8.0 #1589: de-bless internal RPC export from notebooklm.rpc.__all__ (notebooklm.rpc.* is internal per docs/stability.md, except RPCMethod/resolve_rpc_id). Internal batchexecute wire helper (defined in notebooklm.rpc.decoder / notebooklm.rpc.encoder; no blessed public alias). Still importable explicitly for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.ALLOWED_COOKIE_DOMAINS",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.cookie_policy.ALLOWED_COOKIE_DOMAINS; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.CookieSaveResult",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.storage.CookieSaveResult; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.CookieSnapshot",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.storage.CookieSnapshot; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.CookieSnapshotKey",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.storage.CookieSnapshotKey; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.CookieSnapshotValue",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.storage.CookieSnapshotValue; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.KEEPALIVE_ROTATE_URL",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.keepalive.KEEPALIVE_ROTATE_URL; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.MINIMUM_REQUIRED_COOKIES",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.cookie_policy.MINIMUM_REQUIRED_COOKIES; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.paths.NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.NOTEBOOKLM_REFRESH_CMD_ENV",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.paths.NOTEBOOKLM_REFRESH_CMD_ENV; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.paths.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.advance_cookie_snapshot_after_save",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.storage.advance_cookie_snapshot_after_save; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.authuser_query",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.account.authuser_query; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.extract_csrf_from_html",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.extraction.extract_csrf_from_html; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.extract_session_id_from_html",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.extraction.extract_session_id_from_html; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.extract_wiz_field",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.extraction.extract_wiz_field; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.fetch_tokens",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.refresh.fetch_tokens; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.format_authuser_value",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.account.format_authuser_value; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.load_auth_from_storage",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.tokens.load_auth_from_storage; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.load_httpx_cookies",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.cookies.load_httpx_cookies; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.normalize_cookie_map",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.cookies.normalize_cookie_map; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.recover_psidts_in_memory",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.psidts_recovery.recover_psidts_in_memory; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.save_cookies_to_storage",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.storage.save_cookies_to_storage; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.auth.snapshot_cookie_jar",
+      "reason": "v0.8.0 #1592: de-bless internal auth re-export from notebooklm.auth.__all__ (notebooklm.auth.* is internal per docs/stability.md). Canonical home notebooklm._auth.storage.snapshot_cookie_jar; no blessed public alias. Still importable from notebooklm.auth for back-compat. See CHANGELOG.md and docs/deprecations.md."
     }
   ]
 }

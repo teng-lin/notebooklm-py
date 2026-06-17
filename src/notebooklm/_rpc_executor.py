@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 
 import httpx
 
+from ._auth.account import format_authuser_value
 from ._auth_refresh_retry import RefreshBudget, refresh_and_count
 from ._deadline import RuntimeDeadline
 from ._env import get_default_language
@@ -29,7 +30,6 @@ from ._transport_errors import (
     TransportServerError,
     parse_retry_after,
 )
-from .auth import format_authuser_value
 from .exceptions import DecodingError
 from .rpc import (
     ClientError,

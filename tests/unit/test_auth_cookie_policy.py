@@ -12,14 +12,13 @@ from typing import Any
 import httpx
 import pytest
 
+from notebooklm._auth.cookies import load_httpx_cookies
+from notebooklm._auth.storage import save_cookies_to_storage, snapshot_cookie_jar
 from notebooklm.auth import (
     build_httpx_cookies_from_storage,
     convert_rookiepy_cookies_to_storage_state,
     extract_cookies_from_storage,
     extract_cookies_with_domains,
-    load_httpx_cookies,
-    save_cookies_to_storage,
-    snapshot_cookie_jar,
 )
 
 
@@ -990,7 +989,7 @@ class TestPathAwareCookieIdentity:
         """Pre-#369 callers built ``{(name, domain): value}`` dicts by hand;
         those keep working — :func:`normalize_cookie_map` widens the missing
         path to ``/`` so the rest of the pipeline sees the canonical shape."""
-        from notebooklm.auth import normalize_cookie_map
+        from notebooklm._auth.cookies import normalize_cookie_map
 
         result = normalize_cookie_map(
             {
@@ -1008,7 +1007,7 @@ class TestPathAwareCookieIdentity:
         'missing required cookies' error. Surface it via ``logger.warning``."""
         import logging
 
-        from notebooklm.auth import normalize_cookie_map
+        from notebooklm._auth.cookies import normalize_cookie_map
 
         with caplog.at_level(logging.WARNING, logger="notebooklm.auth"):
             result = normalize_cookie_map(
@@ -1087,7 +1086,7 @@ class TestRookiepyDomainsCoverage:
         validation purposes (e.g. ``cli.session`` historically) keep
         seeing the same domains. Only the runtime gate has tightened.
         """
-        from notebooklm.auth import ALLOWED_COOKIE_DOMAINS
+        from notebooklm._auth.cookie_policy import ALLOWED_COOKIE_DOMAINS
 
         for domain in (
             ".youtube.com",
@@ -1298,7 +1297,7 @@ class TestMinimumRequiredCookies:
 
     def test_minimum_required_cookies_contains_sid(self):
         """Test MINIMUM_REQUIRED_COOKIES contains SID."""
-        from notebooklm.auth import MINIMUM_REQUIRED_COOKIES
+        from notebooklm._auth.cookie_policy import MINIMUM_REQUIRED_COOKIES
 
         assert "SID" in MINIMUM_REQUIRED_COOKIES
 
@@ -1314,8 +1313,8 @@ class TestAllowedCookieDomains:
         REQUIRED/OPTIONAL constants — see the cookie-domain split
         migration note in ``src/notebooklm/auth.py``.
         """
+        from notebooklm._auth.cookie_policy import ALLOWED_COOKIE_DOMAINS
         from notebooklm.auth import (
-            ALLOWED_COOKIE_DOMAINS,
             OPTIONAL_COOKIE_DOMAINS,
             REQUIRED_COOKIE_DOMAINS,
         )
@@ -1351,8 +1350,8 @@ class TestAllowedCookieDomains:
 
     def test_required_is_frozenset(self):
         """REQUIRED must be a frozenset so it cannot be mutated at runtime."""
+        from notebooklm._auth.cookie_policy import ALLOWED_COOKIE_DOMAINS
         from notebooklm.auth import (
-            ALLOWED_COOKIE_DOMAINS,
             OPTIONAL_COOKIE_DOMAINS,
             REQUIRED_COOKIE_DOMAINS,
         )

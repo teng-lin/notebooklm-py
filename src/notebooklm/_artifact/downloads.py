@@ -18,9 +18,9 @@ from urllib.parse import ParseResult, urlparse
 
 import httpx
 
+from .._auth.cookies import load_httpx_cookies
 from .._mind_maps_api import extract_interactive_tree_leaf
 from .._row_adapters.notes import NoteRow
-from ..auth import load_httpx_cookies
 from ..exceptions import UnknownRPCMethodError, ValidationError
 from ..rpc import ArtifactTypeCode, RPCMethod, safe_index
 from ..types import (

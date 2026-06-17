@@ -78,13 +78,13 @@ from ..auth import AuthTokens
 from .config import CORE_LOGGER_NAME
 
 if TYPE_CHECKING:
+    from .._auth.storage import CookieSaveResult
     from .._chat import ChatAPI
     from .._client_composed import ClientComposed
     from .._cookie_persistence import CookiePersistence
     from .._reqid_counter import ReqidCounter
     from .._source.upload import SourceUploadPipeline
     from .._transport_drain import TransportDrainTracker
-    from ..auth import CookieSaveResult
     from ..types import ConnectionLimits
     from .auth import AuthRefreshCoordinator
 

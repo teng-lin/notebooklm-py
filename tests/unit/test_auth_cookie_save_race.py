@@ -31,15 +31,17 @@ import notebooklm._atomic_io as _atomic_io
 import notebooklm._auth.refresh as _auth_refresh
 import notebooklm._auth.storage as _auth_storage
 import notebooklm._runtime.lifecycle as _lifecycle
-from notebooklm.auth import (
-    AuthTokens,
+from notebooklm._auth.storage import (
     CookieSaveResult,
     CookieSnapshotKey,
     CookieSnapshotValue,
     advance_cookie_snapshot_after_save,
-    build_httpx_cookies_from_storage,
     save_cookies_to_storage,
     snapshot_cookie_jar,
+)
+from notebooklm.auth import (
+    AuthTokens,
+    build_httpx_cookies_from_storage,
 )
 from tests._helpers.client_factory import build_client_shell_for_tests
 

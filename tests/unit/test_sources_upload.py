@@ -46,8 +46,8 @@ def mock_core():
     # ``core.auth.authuser`` / ``core.auth.account_email`` at call time so
     # tests that mutate ``mock_core.auth.authuser`` mid-test still observe
     # the updated routing.
-    from notebooklm.auth import authuser_query as _authuser_query
-    from notebooklm.auth import format_authuser_value as _authuser_header
+    from notebooklm._auth.account import authuser_query as _authuser_query
+    from notebooklm._auth.account import format_authuser_value as _authuser_header
 
     core.authuser_query = MagicMock(
         side_effect=lambda: _authuser_query(core.auth.authuser, core.auth.account_email)

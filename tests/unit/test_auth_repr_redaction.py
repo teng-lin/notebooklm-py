@@ -124,7 +124,7 @@ def test_repr_handles_empty_cookies_and_no_jar() -> None:
 
 def test_repr_does_not_leak_cookie_snapshot_values() -> None:
     """``cookie_snapshot`` mirrors the live jar and must also be redacted."""
-    from notebooklm.auth import snapshot_cookie_jar
+    from notebooklm._auth.storage import snapshot_cookie_jar
 
     auth = _build_auth_with_secrets()
     snapshot = snapshot_cookie_jar(auth.cookie_jar)  # type: ignore[arg-type]

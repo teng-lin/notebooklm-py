@@ -18,9 +18,11 @@ import pytest
 
 import notebooklm._auth.refresh as refresh_mod
 from notebooklm import auth as auth_mod
-from notebooklm.auth import (
+from notebooklm._auth.paths import (
     NOTEBOOKLM_REFRESH_CMD_ENV,
     NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV,
+)
+from notebooklm.auth import (
     _run_refresh_cmd,
     _split_refresh_cmd,
 )

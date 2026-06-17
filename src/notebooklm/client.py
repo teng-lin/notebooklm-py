@@ -48,6 +48,8 @@ if TYPE_CHECKING:
 #   names are exactly the previously-importable names the annotations no
 #   longer reference.
 from ._artifacts import ArtifactsAPI
+from ._auth.account import authuser_query as authuser_query
+from ._auth.extraction import extract_wiz_field as extract_wiz_field
 from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
 from ._client_assembly import _assemble_client
@@ -80,8 +82,6 @@ from ._source.upload import SourceUploadPipeline
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
 from .auth import AuthTokens
-from .auth import authuser_query as authuser_query
-from .auth import extract_wiz_field as extract_wiz_field
 from .exceptions import AuthExtractionError as AuthExtractionError
 
 __all__ = ["NotebookLMClient"]

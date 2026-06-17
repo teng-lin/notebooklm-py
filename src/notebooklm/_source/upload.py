@@ -13,6 +13,7 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 
+from .._auth.account import authuser_query, format_authuser_value
 from .._callbacks import maybe_await_callback
 from .._env import get_base_url
 from .._idempotency import idempotent_create
@@ -25,7 +26,6 @@ from .._runtime.contracts import (
     Kernel,
     RpcCaller,
 )
-from ..auth import authuser_query, format_authuser_value
 from ..exceptions import (
     AuthError,
     NetworkError,

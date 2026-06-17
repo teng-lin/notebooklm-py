@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from typing import Any, NoReturn, Protocol
 from urllib.parse import quote, urlencode
 
+from .._auth.account import format_authuser_value
 from .._env import get_default_bl, get_default_language
 from .._row_adapters.chat import (
     AnswerRow,
@@ -26,7 +27,6 @@ from .._row_adapters.chat import (
     StreamFrameRow,
     TextLeafRow,
 )
-from ..auth import format_authuser_value
 from ..exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
 from ..rpc._safe_index import safe_index
 from ..rpc.decoder import strip_anti_xssi

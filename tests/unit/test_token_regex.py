@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm.auth import extract_wiz_field
+from notebooklm._auth.extraction import extract_wiz_field
 from notebooklm.exceptions import AuthExtractionError, RPCError
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "notebooklm_html.html"

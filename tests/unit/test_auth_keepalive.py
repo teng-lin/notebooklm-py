@@ -18,10 +18,10 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import auth as auth_module
+from notebooklm._auth.keepalive import KEEPALIVE_ROTATE_URL
+from notebooklm._auth.paths import NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV
+from notebooklm._auth.refresh import fetch_tokens
 from notebooklm.auth import (
-    KEEPALIVE_ROTATE_URL,
-    NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV,
-    fetch_tokens,
     fetch_tokens_with_domains,
 )
 

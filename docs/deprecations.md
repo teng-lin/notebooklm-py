@@ -75,6 +75,23 @@ migration for each is in
 > importable only as `notebooklm.rpc.<name>`. For raw-RPC power use, import
 > `from notebooklm.rpc import RPCMethod, resolve_rpc_id`.
 
+> **`notebooklm.auth` public surface tightened — not a removal (v0.8.0,
+> [#1592](https://github.com/teng-lin/notebooklm-py/issues/1592)).**
+> `auth.__all__` no longer advertises 23 internal re-exports that only first-party
+> `src`/tests imported (cookie-snapshot/storage helpers, the WIZ-extraction helpers,
+> `authuser_query`/`format_authuser_value`, `load_httpx_cookies`/`normalize_cookie_map`,
+> `ALLOWED_COOKIE_DOMAINS`/`MINIMUM_REQUIRED_COOKIES`, the keepalive/refresh env +
+> URL constants, `load_auth_from_storage`, `fetch_tokens`, `recover_psidts_in_memory`).
+> These were migration leftovers from the `_auth/*` extraction (ADR-0003 → ADR-0014).
+> They are **not removed**: each remains importable as `notebooklm.auth.<name>` for
+> back-compat — first-party code now imports them from their `notebooklm._auth.<sub>`
+> home. `notebooklm.auth.*` has always been internal (`docs/stability.md`) except the
+> documented imports (`AuthTokens`, `convert_rookiepy_cookies_to_storage_state`, the
+> cookie-domain constants) and the cohesive operations (`enumerate_accounts`,
+> `fetch_tokens_with_domains`, `fetch_tokens_passive`, …), which are unchanged. A
+> deeper service-interface refactor of the remaining cli/_app-forced names was
+> evaluated and deferred (limited encapsulation payoff while names stay importable).
+
 
 ## Removed in v0.7.0
 

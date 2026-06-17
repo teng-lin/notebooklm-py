@@ -51,51 +51,59 @@ EXPECTED_CLIENT_ALL: list[str] = ["NotebookLMClient"]
 
 EXPECTED_AUTH_ALL: list[str] = [
     "Account",
-    "advance_cookie_snapshot_after_save",
-    "ALLOWED_COOKIE_DOMAINS",
     "AuthTokens",
-    "authuser_query",
     "build_cookie_jar",
     "build_httpx_cookies_from_storage",
     "clear_account_metadata",
     "convert_rookiepy_cookies_to_storage_state",
     "cookie_names_from_storage",
+    "enumerate_accounts",
+    "extract_cookies_from_storage",
+    "extract_cookies_with_domains",
+    "extract_email_from_html",
+    "fetch_tokens_passive",
+    "fetch_tokens_with_domains",
+    "get_account_email_for_storage",
+    "get_authuser_for_storage",
+    "GOOGLE_REGIONAL_CCTLDS",
+    "missing_cookies_hint",
+    "OPTIONAL_COOKIE_DOMAINS",
+    "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
+    "read_account_metadata",
+    "REQUIRED_COOKIE_DOMAINS",
+    "validate_with_recovery",
+    "write_account_metadata",
+]
+
+# Names de-blessed from ``auth.__all__`` in PR-1 (#1592): removed from the
+# advertised surface but kept importable as module attributes for back-compat
+# (the rpc-tranche mechanism — see scripts/api-compat-allowlist.json). The freeze
+# test below locks that promise so a future change can't silently drop importability
+# or re-bless a name.
+_AUTH_DEBLESSED_KEEP_IMPORTABLE: list[str] = [
+    "advance_cookie_snapshot_after_save",
+    "ALLOWED_COOKIE_DOMAINS",
+    "authuser_query",
     "CookieSaveResult",
     "CookieSnapshot",
     "CookieSnapshotKey",
     "CookieSnapshotValue",
-    "enumerate_accounts",
-    "extract_cookies_from_storage",
-    "extract_cookies_with_domains",
     "extract_csrf_from_html",
-    "extract_email_from_html",
     "extract_session_id_from_html",
     "extract_wiz_field",
     "fetch_tokens",
-    "fetch_tokens_passive",
-    "fetch_tokens_with_domains",
     "format_authuser_value",
-    "get_account_email_for_storage",
-    "get_authuser_for_storage",
-    "GOOGLE_REGIONAL_CCTLDS",
     "KEEPALIVE_ROTATE_URL",
     "load_auth_from_storage",
     "load_httpx_cookies",
     "MINIMUM_REQUIRED_COOKIES",
-    "missing_cookies_hint",
     "normalize_cookie_map",
     "NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV",
     "NOTEBOOKLM_REFRESH_CMD_ENV",
     "NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV",
-    "OPTIONAL_COOKIE_DOMAINS",
-    "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
-    "read_account_metadata",
     "recover_psidts_in_memory",
-    "REQUIRED_COOKIE_DOMAINS",
     "save_cookies_to_storage",
     "snapshot_cookie_jar",
-    "validate_with_recovery",
-    "write_account_metadata",
 ]
 
 
@@ -266,6 +274,22 @@ def test_auth_all_matches_external_imports_audit() -> None:
         "Add them to __all__ (and to EXPECTED_AUTH_ALL above) so the public "
         "surface stays explicit."
     )
+
+
+def test_auth_deblessed_names_stay_importable_but_unblessed() -> None:
+    """PR-1 (#1592): de-blessed auth names stay importable for back-compat but are
+    absent from ``__all__`` — the rpc-tranche freeze guard, applied to auth."""
+    assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == 23
+    assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == len(set(_AUTH_DEBLESSED_KEEP_IMPORTABLE)), (
+        "_AUTH_DEBLESSED_KEEP_IMPORTABLE must not contain duplicates"
+    )
+    declared = set(auth_module.__all__)
+    sentinel = object()
+    for name in _AUTH_DEBLESSED_KEEP_IMPORTABLE:
+        assert getattr(auth_module, name, sentinel) is not sentinel, (
+            f"de-blessed {name!r} must stay importable from notebooklm.auth"
+        )
+        assert name not in declared, f"de-blessed {name!r} must not be back in auth.__all__"
 
 
 def test_client_all_matches_external_imports_audit() -> None:
