@@ -1,7 +1,7 @@
 # RPC & UI Reference
 
 **Status:** Active
-**Last Updated:** 2026-06-15
+**Last Updated:** 2026-06-17
 **Source of Truth:** `src/notebooklm/rpc/types.py` for method IDs; payload builders in `src/notebooklm/` and golden tests under `tests/unit/`
 **Purpose:** Complete reference for RPC methods, UI selectors, and payload structures
 
@@ -1169,7 +1169,7 @@ video_config = [
     format_code,          # 1=EXPLAINER, 2=BRIEF, 3=CINEMATIC
     style_code,           # None=CUSTOM, 1=AUTO_SELECT, 2=CLASSIC, 3=WHITEBOARD, ...
 ]
-if style_prompt:          # Optional 7th element; CUSTOM style only
+if video_style == VideoStyle.CUSTOM and style_prompt:
     video_config.append(style_prompt)
 
 params = [

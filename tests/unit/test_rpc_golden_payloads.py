@@ -813,6 +813,22 @@ def test_video_style_values_match_live_web_ui() -> None:
     }
 
 
+def test_video_style_prompt_slot_is_custom_only() -> None:
+    """Preset styles must not emit the Web UI's custom visual-style prompt slot."""
+    params = build_video_artifact_params(
+        "nb_payload",
+        ["src_alpha"],
+        language="en",
+        instructions="Make it playful",
+        video_format=VideoFormat.EXPLAINER,
+        video_style=VideoStyle.WHITEBOARD,
+        style_prompt="ignored outside custom style",
+    )
+
+    video_config = params[2][8][2]
+    assert video_config == [[["src_alpha"]], "en", "Make it playful", None, 1, 3]
+
+
 def test_revise_slide_payload_builder_matches_golden_envelope() -> None:
     params = build_revise_slide_params("artifact_payload", 2, "Tighten the summary")
 

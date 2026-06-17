@@ -143,7 +143,7 @@ def build_video_artifact_params(
         format_code,
         style_code,
     ]
-    if style_prompt:
+    if video_style == VideoStyle.CUSTOM and style_prompt:
         video_config.append(style_prompt)
 
     return [
