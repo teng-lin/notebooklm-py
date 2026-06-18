@@ -768,7 +768,8 @@ class SourcesAPI:
 
         Example:
             candidates = await client.sources.discover(nb_id, "quantum computing")
-            await client.sources.add_url(nb_id, candidates[0].url)  # add one
+            if candidates:
+                await client.sources.add_url(nb_id, candidates[0].url)  # add one
         """
         return await self._discoverer.discover(notebook_id, query, source=source)
 

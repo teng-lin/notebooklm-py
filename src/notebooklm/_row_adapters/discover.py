@@ -20,7 +20,7 @@ is a one-place fix and so genuine drift on the *guaranteed* descents RAISES via
   short-circuits to a default, so an over-trimmed row degrades gracefully
   rather than raising.
 
-Position contracts are pinned by ``tests/unit/test_discover_row_adapter.py``.
+Position contracts are pinned by ``tests/unit/test_discover_sources.py``.
 """
 
 from __future__ import annotations
