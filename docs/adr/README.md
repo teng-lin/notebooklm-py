@@ -56,6 +56,7 @@ The ADR Index table utilizes five eras of Status notation to reflect the lifecyc
 | [0019](0019-error-and-return-contract.md) | Error-and-return contract for the public API | Accepted; v0.8.0 implementation landed |
 | [0020](0020-sealed-async-result-types.md) | Sealed async result types for artifact generation | Proposed — design of record; recommends continued deferral (ADR-0019 Tier 3 / #1345) |
 | [0021](0021-transport-neutral-app-layer.md) | Transport-neutral application layer (`_app/`) | Accepted |
+| [0022](0022-regenerable-baselines.md) | Regenerable test baselines (derive / store / compare / regen) | Accepted |
 
 ADR-0007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_guardrails/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
 

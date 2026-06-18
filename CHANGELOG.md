@@ -126,6 +126,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Regenerable test baselines (Phase 1; contributor-facing, no public API
+  change).** Frozen public-surface snapshots that were hand-typed copies of
+  values the code already derives — `_FROZEN_TYPES_ALL` and
+  `_UNGATED_PUBLIC_ALL_SNAPSHOT` in
+  `tests/_guardrails/test_public_surface_manifest.py` — are now *derived*
+  baselines committed under `tests/fixtures/baselines/` (`types_all.json`,
+  `ungated_surface.json`) and registered in `tests/_baselines/registry.py`
+  alongside the existing CLI contract. A single freeze test diffs each committed
+  file against `derive()`; a dev-only `--update-baselines` pytest flag (wrapped by
+  `python scripts/regen_baselines.py`) regenerates them. Adding a public symbol is
+  now one regen command plus a reviewed diff instead of hand-editing several
+  literals. CI never regenerates — it only diffs (the regen flag is refused under
+  `CI`). The authored `_DOCUMENTED_PUBLIC_IMPORTS` (promised-import *intent*) and
+  `_TOP_LEVEL_TYPE_EXPORTS` (fuzzy derivation) stay hand-curated. See
+  [ADR-0022](docs/adr/0022-regenerable-baselines.md).
 - **`notebooklm.rpc` public surface narrowed to the two documented power-user
   imports** (#1589). `notebooklm.rpc.__all__` now lists only `RPCMethod` and
   `resolve_rpc_id`; the ~47 other names it used to advertise (the batchexecute

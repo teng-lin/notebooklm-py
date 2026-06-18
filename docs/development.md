@@ -377,6 +377,9 @@ NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
 tests/
 ├── unit/                            # No network, fast, mock everything
 ├── _guardrails/                     # Architecture/invariant gates (custom AST + filesystem lint)
+├── _baselines/                      # Regenerable-baseline registry (ADR-0022): derive/store/compare
+├── fixtures/
+│   └── baselines/                   # Committed derived baselines (types_all.json, ungated_surface.json)
 ├── integration/                     # Mocked HTTP responses + VCR cassettes
 │   ├── test_artifacts_integration.py # ArtifactsAPI integration
 │   ├── test_artifacts_drift.py      # CREATE_ARTIFACT payload drift guard
@@ -484,6 +487,36 @@ Most gates are fast and run in the normal loop; the slow repo-wide cassette scan
 couple more tightly to implementation than a static linter — a
 behavior-preserving refactor can still trip one. That coupling is deliberate: it
 catches architecture drift that ruff and mypy structurally cannot see.
+
+### Updating baselines
+
+Some gates freeze a *snapshot* of a value the code already derives, so a public
+surface change is a deliberate, diff-visible act. These **regenerable baselines**
+(ADR-0022) are registered in `tests/_baselines/registry.py` and committed under
+`tests/fixtures/baselines/` (plus the CLI contract at
+`tests/fixtures/cli_contract_baseline.json`):
+
+| Baseline | Derives from | Committed file |
+|---|---|---|
+| `types_all` | `notebooklm.types.__all__` | `tests/fixtures/baselines/types_all.json` |
+| `ungated_surface` | collected `__all__` of each ungated public module | `tests/fixtures/baselines/ungated_surface.json` |
+| `cli_contract` | `build_cli_contract()` | `tests/fixtures/cli_contract_baseline.json` |
+
+The freeze test `test_baseline_matches_committed_file` (in
+`tests/_guardrails/test_public_surface_manifest.py`) asserts each committed file
+equals `derive()`. When you intentionally change a public surface — e.g. add an
+export to `notebooklm.types.__all__` or a CLI option — that test fails. Regenerate
+the committed files in the **same PR**:
+
+```bash
+python scripts/regen_baselines.py
+git diff tests/fixtures/baselines tests/fixtures/cli_contract_baseline.json
+```
+
+Review the diff — each changed line is the deliberate acknowledgement of the
+surface change. Regen is **dev-only**: it shells `pytest … --update-baselines`,
+which both the wrapper and the `update_baselines` fixture refuse to run when a
+`CI` environment is detected. **CI never regenerates — it only diffs.**
 
 ### VCR Testing (Recorded HTTP)
 

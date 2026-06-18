@@ -204,6 +204,49 @@ def _mock_keepalive_poke(request):
     )
 
 
+def pytest_addoption(parser):
+    """Register the dev-only ``--update-baselines`` regen flag (ADR-0022).
+
+    When set, the regenerable-baseline freeze test
+    (``test_baseline_matches_committed_file``) REWRITES each committed baseline
+    file from ``derive()`` instead of asserting. ``scripts/regen_baselines.py``
+    is the discoverable wrapper that shells ``pytest ... --update-baselines``.
+
+    **Dev-only-regen invariant (ADR-0022):** CI must NEVER pass this flag — it
+    only ever diffs. The ``update_baselines`` fixture additionally refuses to
+    regenerate when a CI environment is detected, so wiring the flag into a CI
+    command can't silently rewrite baselines; it fails loudly instead.
+    """
+    parser.addoption(
+        "--update-baselines",
+        action="store_true",
+        default=False,
+        help=(
+            "DEV ONLY: rewrite committed baseline fixtures from live code instead "
+            "of asserting against them. CI must never pass this (it only diffs). "
+            "Prefer `python scripts/regen_baselines.py`."
+        ),
+    )
+
+
+@pytest.fixture
+def update_baselines(request) -> bool:
+    """Whether the dev-only baseline regen was requested (``--update-baselines``).
+
+    Enforces the dev-only-regen invariant: if the flag is set while a CI
+    environment is detected (``CI`` env var truthy, as GitHub Actions and most
+    CI providers set), this fails the test rather than silently rewriting the
+    committed baselines. Locally (no ``CI``), the flag enables regen.
+    """
+    requested = bool(request.config.getoption("--update-baselines"))
+    if requested and os.environ.get("CI", "").strip():
+        raise pytest.UsageError(
+            "--update-baselines must not be used in CI: baselines are dev-only "
+            "regenerated and CI only diffs (ADR-0022). Unset CI or drop the flag."
+        )
+    return requested
+
+
 def pytest_configure(config):
     """Register custom markers and configure test environment."""
     config.addinivalue_line(

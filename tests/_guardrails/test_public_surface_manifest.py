@@ -15,11 +15,18 @@ import ast
 import enum
 import importlib
 import warnings
-from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+from tests._baselines.registry import (
+    BASELINES,
+    UNGATED_PUBLIC_MODULES,
+    Baseline,
+    allowlist_extra_public_names,
+    baseline_by_name,
+)
 
 pytestmark = pytest.mark.repo_lint
 
@@ -296,82 +303,12 @@ _REEXPORTED_RPC_ENUMS = [
     "VideoStyle",
 ]
 
-_FROZEN_TYPES_ALL = [
-    "CitedSourceSelection",
-    "ConnectionLimits",
-    "ClientMetricsSnapshot",
-    "RpcTelemetryEvent",
-    "Notebook",
-    "NotebookDescription",
-    "NotebookMetadata",
-    "SuggestedTopic",
-    "Source",
-    "SourceFulltext",
-    "SourceSummary",
-    "Artifact",
-    "GenerationState",
-    "GenerationStatus",
-    "ReportSuggestion",
-    "Note",
-    "Label",
-    "ConversationTurn",
-    "ChatReference",
-    "AskResult",
-    "ChatMode",
-    "SharedUser",
-    "ShareStatus",
-    # Research / mind-map / source-guide typed returns (issue #1209).
-    "ResearchStatus",
-    "ResearchSource",
-    "ResearchTask",
-    "ResearchStart",
-    "MindMap",
-    "MindMapKind",
-    "MindMapResult",
-    "SourceGuide",
-    "SourceError",
-    "SourceAddError",
-    "SourceProcessingError",
-    "SourceTimeoutError",
-    "SourceNotFoundError",
-    "ArtifactError",
-    "ArtifactFeatureUnavailableError",
-    "ArtifactNotFoundError",
-    "ArtifactNotReadyError",
-    "ArtifactParseError",
-    "ArtifactDownloadError",
-    "ArtifactTimeoutError",
-    "ArtifactPendingTimeoutError",
-    "ArtifactInProgressTimeoutError",
-    "LabelError",
-    "LabelNotFoundError",
-    "UnknownTypeWarning",
-    "SourceType",
-    "ArtifactType",
-    "ArtifactStatus",
-    "AudioFormat",
-    "AudioLength",
-    "VideoFormat",
-    "VideoStyle",
-    "QuizQuantity",
-    "QuizDifficulty",
-    "InfographicOrientation",
-    "InfographicDetail",
-    "InfographicStyle",
-    "SlideDeckFormat",
-    "SlideDeckLength",
-    "ReportFormat",
-    "ChatGoal",
-    "ChatResponseLength",
-    "DriveMimeType",
-    "ExportType",
-    "SourceStatus",
-    "ShareAccess",
-    "ShareViewLevel",
-    "SharePermission",
-    "artifact_status_to_str",
-    "source_status_to_str",
-]
+# NOTE: the former hand-typed ``_FROZEN_TYPES_ALL`` snapshot of
+# ``notebooklm.types.__all__`` is gone — it is now the regenerable ``types_all``
+# baseline (``tests/fixtures/baselines/types_all.json``, derived by the
+# ``types_all`` :class:`~tests._baselines.registry.Baseline`). The freeze test is
+# ``test_baseline_matches_committed_file[types_all]`` plus the per-name
+# ``hasattr`` check in ``test_types_all_contract_is_frozen_in_order`` below.
 
 _TOP_LEVEL_TYPE_EXPORTS = [
     "AccountLimits",
@@ -558,11 +495,18 @@ def test_rpc_enum_reexports_are_identical(enum_name: str) -> None:
 
 
 def test_types_all_contract_is_frozen_in_order() -> None:
-    """T13 type moves must preserve the exact public types.__all__ ordering."""
+    """T13 type moves must preserve the exact public ``types.__all__`` ordering.
+
+    The frozen ordering itself is the regenerable ``types_all`` baseline
+    (asserted by ``test_baseline_matches_committed_file[types_all]``). This test
+    keeps the per-name ``hasattr`` intent: every name in the committed order must
+    resolve on ``notebooklm.types``.
+    """
     import notebooklm.types as public_types
 
-    assert list(public_types.__all__) == _FROZEN_TYPES_ALL
-    for name in _FROZEN_TYPES_ALL:
+    committed = baseline_by_name("types_all").load()
+    assert list(public_types.__all__) == committed
+    for name in committed:
         assert hasattr(public_types, name), f"notebooklm.types.__all__ misses {name!r}"
 
 
@@ -1218,7 +1162,14 @@ def test_public_top_level_module_declares_all(module_name: str) -> None:
 #   notebooklm.auth   -> EXPECTED_AUTH_ALL                       (test_public_surface.py)
 #   notebooklm.client -> EXPECTED_CLIENT_ALL                     (test_public_surface.py)
 #   notebooklm.rpc    -> test_rpc_all_is_minimized_to_documented_power_user_imports
-#   notebooklm.types  -> _FROZEN_TYPES_ALL
+#   notebooklm.types  -> ``types_all`` regenerable baseline (tests/_baselines)
+#
+# The ordered collected surface of each ungated module is now the regenerable
+# ``ungated_surface`` baseline (``tests/fixtures/baselines/ungated_surface.json``).
+# ``collect_public_surface`` (the derive helper) and the module set
+# (``UNGATED_PUBLIC_MODULES``) both live in ``tests._baselines.registry`` so the
+# gate and the regen path derive identically. The freeze test is
+# ``test_baseline_matches_committed_file[ungated_surface]``.
 # ---------------------------------------------------------------------------
 
 _EXACT_PINNED_ELSEWHERE = {
@@ -1228,311 +1179,105 @@ _EXACT_PINNED_ELSEWHERE = {
     "notebooklm.types",
 }
 
-_ALLOWLIST_PATH = Path(__file__).resolve().parents[2] / "scripts" / "api-compat-allowlist.json"
-
-
-@lru_cache(maxsize=1)
-def _allowlist_extra_public_names() -> dict[str, list[str]]:
-    """Allowlist ``extra_public_names`` via the audit's OWN ``load_policy`` — the
-    same schema validation + case-insensitive sort/dedupe the audit applies, so
-    this gate can't drift from the audit's contract, and the file is parsed once
-    (not per parametrized case). Lazy import because the audit sets a module-level
-    ``ROOT`` from ``sys.argv`` at import time; this mirrors how
-    ``test_discovery_constants_match_the_audit_source`` reaches the audit module.
-    """
-    import scripts.audit_public_api_compat as audit
-
-    _allowances, extras = audit.load_policy(_ALLOWLIST_PATH)
-    return extras
-
-
-def _collected_public_surface(module_name: str) -> list[str]:
-    """The audit-collected export surface for ``module_name``: ``__all__`` plus
-    any *resolvable* ``extra_public_names`` not already in ``__all__`` — mirroring
-    ``scripts/audit_public_api_compat.py::collect_module``. The extras come from
-    the audit's ``load_policy`` (already case-insensitively sorted/de-duped), and a
-    missing extra is skipped (the audit drops it via ``AttributeError``). Order is
-    ``__all__`` (its own order) first, then the normalized extras.
-
-    A non-resolving name *in* ``__all__`` is kept here (unlike the audit, which
-    re-raises) — that bad state is caught independently by
-    ``test_public_top_level_module_declares_all`` (asserts ``hasattr`` per name).
-    """
-    module = importlib.import_module(module_name)
-    names = list(getattr(module, "__all__", []))
-    for name in _allowlist_extra_public_names().get(module_name, []):
-        if name not in names and hasattr(module, name):
-            names.append(name)
-    return names
-
-
-# Exact, ORDERED snapshot of each ungated public module's collected surface.
-# ``__all__`` order is meaningful (documented export order, like
-# ``_FROZEN_TYPES_ALL``), so it is compared exactly, not as a set. To grow a
-# public surface, add the name here in the SAME PR — that diff line is the
-# deliberate, reviewed acknowledgement.
-_UNGATED_PUBLIC_ALL_SNAPSHOT: dict[str, list[str]] = {
-    "notebooklm": [
-        "__version__",
-        "NotebookLMClient",
-        "AuthTokens",
-        "correlation_id",
-        "get_request_id",
-        "set_request_id",
-        "reset_request_id",
-        "AccountLimits",
-        "AccountTier",
-        "ConnectionLimits",
-        "ClientMetricsSnapshot",
-        "RpcTelemetryEvent",
-        "Notebook",
-        "NotebookDescription",
-        "NotebookMetadata",
-        "SuggestedTopic",
-        "Source",
-        "SourceFulltext",
-        "SourceGuide",
-        "SourceSummary",
-        "Artifact",
-        "GenerationState",
-        "GenerationStatus",
-        "ReportSuggestion",
-        "MindMap",
-        "MindMapKind",
-        "MindMapResult",
-        "Note",
-        "Label",
-        "ConversationTurn",
-        "ChatReference",
-        "AskResult",
-        "ChatMode",
-        "CitedSourceSelection",
-        "ResearchStatus",
-        "ResearchSource",
-        "ResearchTask",
-        "ResearchStart",
-        "SharedUser",
-        "ShareStatus",
-        "resolve_chat_reference_passage",
-        "NotebookLMError",
-        "ValidationError",
-        "ConfigurationError",
-        "NotFoundError",
-        "RPCError",
-        "DecodingError",
-        "UnknownRPCMethodError",
-        "AuthError",
-        "AuthExtractionError",
-        "NetworkError",
-        "RPCTimeoutError",
-        "RPCResponseTooLargeError",
-        "RateLimitError",
-        "ServerError",
-        "ClientError",
-        "NonIdempotentRetryError",
-        "NotebookError",
-        "NotebookNotFoundError",
-        "NotebookLimitError",
-        "ChatError",
-        "ChatResponseParseError",
-        "SourceError",
-        "SourceAddError",
-        "SourceProcessingError",
-        "SourceTimeoutError",
-        "SourceNotFoundError",
-        "ArtifactError",
-        "ArtifactFeatureUnavailableError",
-        "ArtifactNotFoundError",
-        "ArtifactNotReadyError",
-        "ArtifactParseError",
-        "ArtifactDownloadError",
-        "ArtifactTimeoutError",
-        "ArtifactPendingTimeoutError",
-        "ArtifactInProgressTimeoutError",
-        "AmbiguousResearchTaskError",
-        "ResearchError",
-        "ResearchTimeoutError",
-        "ResearchTaskMismatchError",
-        "NoteError",
-        "NoteNotFoundError",
-        "MindMapError",
-        "MindMapNotFoundError",
-        "LabelError",
-        "LabelNotFoundError",
-        "WaitTimeoutError",
-        "UnknownTypeWarning",
-        "SourceType",
-        "ArtifactType",
-        "AudioFormat",
-        "AudioLength",
-        "VideoFormat",
-        "VideoStyle",
-        "QuizQuantity",
-        "QuizDifficulty",
-        "InfographicOrientation",
-        "InfographicDetail",
-        "InfographicStyle",
-        "SlideDeckFormat",
-        "SlideDeckLength",
-        "ReportFormat",
-        "ChatGoal",
-        "ChatResponseLength",
-        "DriveMimeType",
-        "ExportType",
-        "SourceStatus",
-        "ShareAccess",
-        "ShareViewLevel",
-        "SharePermission",
-        "configure_logging",
-    ],
-    "notebooklm.artifacts": [
-        "RATE_LIMIT_RETRY_BACKOFF_MULTIPLIER",
-        "RATE_LIMIT_RETRY_INITIAL_DELAY",
-        "RATE_LIMIT_RETRY_MAX_DELAY",
-        "RateLimitRetryEvent",
-        "calculate_backoff_delay",
-        "with_rate_limit_retry",
-    ],
-    "notebooklm.config": [
-        "DEFAULT_BASE_URL",
-        "ENTERPRISE_BASE_HOST",
-        "get_base_host",
-        "get_base_url",
-        "get_default_language",
-        "PERSONAL_BASE_HOST",
-    ],
-    "notebooklm.exceptions": [
-        "NotebookLMError",
-        "NotFoundError",
-        "WaitTimeoutError",
-        "ValidationError",
-        "ConfigurationError",
-        "HeadlessReauthError",
-        "HeadlessLoginRequiredError",
-        "NetworkError",
-        "RPCError",
-        "DecodingError",
-        "UnknownRPCMethodError",
-        "AuthError",
-        "AuthExtractionError",
-        "RateLimitError",
-        "ServerError",
-        "ClientError",
-        "RPCTimeoutError",
-        "RPCResponseTooLargeError",
-        "NonIdempotentRetryError",
-        "IdempotencyVariantError",
-        "NotebookError",
-        "NotebookNotFoundError",
-        "NotebookLimitError",
-        "ChatError",
-        "ChatResponseParseError",
-        "SourceError",
-        "SourceAddError",
-        "SourceNotFoundError",
-        "SourceProcessingError",
-        "SourceTimeoutError",
-        "ArtifactError",
-        "ArtifactNotFoundError",
-        "ArtifactNotReadyError",
-        "ArtifactParseError",
-        "ArtifactDownloadError",
-        "ArtifactFeatureUnavailableError",
-        "ArtifactTimeoutError",
-        "ArtifactPendingTimeoutError",
-        "ArtifactInProgressTimeoutError",
-        "ResearchError",
-        "ResearchTimeoutError",
-        "ResearchTaskMismatchError",
-        "AmbiguousResearchTaskError",
-        "NoteError",
-        "NoteNotFoundError",
-        "MindMapError",
-        "MindMapNotFoundError",
-        "LabelError",
-        "LabelNotFoundError",
-    ],
-    "notebooklm.io": ["atomic_update_json", "atomic_write_json", "replace_file_atomically"],
-    "notebooklm.log": ["install_redaction"],
-    "notebooklm.migration": [
-        "MigrationLockTimeoutError",
-        "ensure_profiles_dir",
-        "migrate_to_profiles",
-    ],
-    "notebooklm.paths": [
-        "get_active_profile",
-        "get_browser_profile_dir",
-        "get_config_path",
-        "get_context_path",
-        "get_home_dir",
-        "get_path_info",
-        "get_profile_dir",
-        "get_storage_path",
-        "list_profiles",
-        "read_default_profile",
-        "resolve_profile",
-        "set_active_profile",
-    ],
-    "notebooklm.research": [
-        "extract_report_urls",
-        "normalize_citation_url",
-        "normalize_url",
-        "select_cited_sources",
-    ],
-    "notebooklm.urls": [
-        "contains_google_auth_redirect",
-        "is_google_auth_redirect",
-        "is_youtube_url",
-    ],
-    "notebooklm.utils": ["resolve_chat_reference_passage"],
-}
-
 
 def test_ungated_public_surface_covers_exactly_the_unpinned_modules() -> None:
     """Completeness: every audit-discovered public module is addition-gated —
-    either exact-pinned elsewhere (auth/client/rpc/types) or frozen here. This
-    fails a BRAND-NEW public module that declares ``__all__`` (which the
-    ``declares_all`` test alone would let pass) until it is snapshotted.
+    either exact-pinned elsewhere (auth/client/rpc/types) or frozen in the
+    ``ungated_surface`` baseline. This fails a BRAND-NEW public module that
+    declares ``__all__`` (which the ``declares_all`` test alone would let pass)
+    until it is added to ``UNGATED_PUBLIC_MODULES`` and the baseline regenerated.
     """
-    assert (
-        set(_PUBLIC_TOP_LEVEL_MODULES)
-        == set(_UNGATED_PUBLIC_ALL_SNAPSHOT) | _EXACT_PINNED_ELSEWHERE
-    ), (
+    committed_modules = set(baseline_by_name("ungated_surface").load())
+    assert set(_PUBLIC_TOP_LEVEL_MODULES) == committed_modules | _EXACT_PINNED_ELSEWHERE, (
         "A public top-level module is neither exact-pinned elsewhere nor frozen in "
-        "_UNGATED_PUBLIC_ALL_SNAPSHOT. Add a new public module to the snapshot (or to "
-        "an existing exact pin) so its additions are gated.\n"
-        f"  discovered-not-gated: {sorted(set(_PUBLIC_TOP_LEVEL_MODULES) - set(_UNGATED_PUBLIC_ALL_SNAPSHOT) - _EXACT_PINNED_ELSEWHERE)}\n"
-        f"  snapshotted-not-discovered: {sorted(set(_UNGATED_PUBLIC_ALL_SNAPSHOT) - set(_PUBLIC_TOP_LEVEL_MODULES))}"
+        "the ungated_surface baseline. Add a new public module to "
+        "tests._baselines.registry.UNGATED_PUBLIC_MODULES (or to an existing exact "
+        "pin) and regenerate (`python scripts/regen_baselines.py`) so its additions "
+        "are gated.\n"
+        f"  discovered-not-gated: {sorted(set(_PUBLIC_TOP_LEVEL_MODULES) - committed_modules - _EXACT_PINNED_ELSEWHERE)}\n"
+        f"  baselined-not-discovered: {sorted(committed_modules - set(_PUBLIC_TOP_LEVEL_MODULES))}"
+    )
+
+    # The registry's regen seed and the committed baseline keys must agree, so the
+    # parametrized freeze (keyed off the committed file) can't silently skip a
+    # module that ``UNGATED_PUBLIC_MODULES`` intends to gate.
+    assert committed_modules == set(UNGATED_PUBLIC_MODULES), (
+        "ungated_surface baseline keys drifted from UNGATED_PUBLIC_MODULES; "
+        "regenerate the baseline (`python scripts/regen_baselines.py`)."
     )
 
     # The 4 exact-pinned modules pin ``__all__`` ONLY; assert no allowlist extra
     # targets them — an extra would be a *collected* export their ``__all__``-pin
-    # misses and this gate excludes (a latent bypass). If one ever does, give that
-    # module a collected-surface snapshot in ``_UNGATED_PUBLIC_ALL_SNAPSHOT`` too.
-    pinned_with_extras = _EXACT_PINNED_ELSEWHERE & set(_allowlist_extra_public_names())
+    # misses and this gate excludes (a latent bypass). If one ever does, add it to
+    # ``UNGATED_PUBLIC_MODULES`` so its collected surface is baselined too.
+    pinned_with_extras = _EXACT_PINNED_ELSEWHERE & set(allowlist_extra_public_names())
     assert not pinned_with_extras, (
         f"allowlist extra_public_names target exact-__all__-pinned modules "
-        f"{sorted(pinned_with_extras)} whose pins don't cover extras; add a "
-        "collected-surface snapshot for them in _UNGATED_PUBLIC_ALL_SNAPSHOT."
+        f"{sorted(pinned_with_extras)} whose pins don't cover extras; add them to "
+        "UNGATED_PUBLIC_MODULES so their collected surface is baselined."
     )
 
 
-@pytest.mark.parametrize("module_name", sorted(_UNGATED_PUBLIC_ALL_SNAPSHOT))
-def test_ungated_public_all_is_frozen(module_name: str) -> None:
-    """A name added to (or removed from) an ungated public module's surface fails
-    until the snapshot is updated in the same PR — closing the additions-blindness
-    of the compat audit for these modules. (Removals are also caught here, in
-    addition to the audit's ``removed-export`` break.)
+# ---------------------------------------------------------------------------
+# Regenerable-baseline freeze (ADR-0022).
+#
+# Every registered :class:`~tests._baselines.registry.Baseline` (``types_all``,
+# ``ungated_surface``, ``cli_contract``) is frozen here: the committed JSON file
+# must equal ``derive()``. A name added to (or removed from) a public surface
+# fails until the committed file is regenerated in the SAME PR — that diff line
+# is the deliberate, reviewed acknowledgement. Regenerate after an intended
+# change with::
+#
+#     python scripts/regen_baselines.py
+#
+# CI never passes ``--update-baselines``; it only ever diffs (the dev-only-regen
+# invariant). See ADR-0022.
+# ---------------------------------------------------------------------------
+
+
+def test_baseline_registry_is_non_trivial() -> None:
+    """Guard the registry itself: the known baselines must be registered.
+
+    A regression that emptied ``BASELINES`` would make the parametrized freeze
+    below vacuously pass. Pin the stable names so that is caught loudly.
     """
+    names = {baseline.name for baseline in BASELINES}
+    assert {"types_all", "ungated_surface", "cli_contract"} <= names, names
+    # Names are unique (parametrize ids + lookup rely on it).
+    assert len(names) == len(BASELINES)
+
+
+@pytest.mark.parametrize("baseline", BASELINES, ids=lambda b: b.name)
+def test_baseline_matches_committed_file(baseline: Baseline, update_baselines: bool) -> None:
+    """The committed baseline JSON must equal ``derive()`` (CI-mode assertion).
+
+    With ``--update-baselines`` (dev only — see ``tests/conftest.py``), the
+    ``update_baselines`` fixture is ``True`` and the test instead REWRITES the
+    committed file from ``derive()`` and passes. CI must never set the flag.
+    """
+    if update_baselines:
+        baseline.write()
+        return
+
+    assert baseline.path.is_file(), (
+        f"committed baseline {baseline.path} is missing — regenerate with "
+        "`python scripts/regen_baselines.py`"
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        actual = _collected_public_surface(module_name)
-    expected = _UNGATED_PUBLIC_ALL_SNAPSHOT[module_name]
-    assert actual == expected, (
-        f"{module_name} public surface changed. If intentional, update "
-        f"_UNGATED_PUBLIC_ALL_SNAPSHOT[{module_name!r}] in this PR (the deliberate ack).\n"
-        f"  added:   {sorted(set(actual) - set(expected))}\n"
-        f"  removed: {sorted(set(expected) - set(actual))}"
+        derived = baseline.derive()
+    committed = baseline.load()
+    assert derived == committed, (
+        f"{baseline.name} baseline ({baseline.path.name}) is stale. If the change "
+        "is intentional, regenerate it in this PR (`python scripts/regen_baselines.py`) "
+        "— that diff is the deliberate acknowledgement."
+    )
+    # The committed bytes must be exactly what ``write()`` would emit, so a
+    # regen is a no-op on a fresh checkout (idempotency) and hand-edits that
+    # happen to parse-equal but differ in formatting are caught.
+    assert baseline.dump(committed) == baseline.path.read_text(encoding="utf-8"), (
+        f"{baseline.name} baseline is not in canonical serialized form; "
+        "regenerate it (`python scripts/regen_baselines.py`)."
     )
 
 
