@@ -723,3 +723,143 @@ def test_main_exits_two_when_auth_missing(monkeypatch: pytest.MonkeyPatch) -> No
     with pytest.raises(SystemExit) as excinfo:
         check_rpc_health.main()
     assert excinfo.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# sqTeoe studio-customization cohort tripwire
+# ---------------------------------------------------------------------------
+
+CohortStatus = check_rpc_health.CohortStatus
+build_customization_choices_params = check_rpc_health.build_customization_choices_params
+check_customization_cohort = check_rpc_health.check_customization_cohort
+make_raw_rpc_request = check_rpc_health.make_raw_rpc_request
+
+
+def _cohort_auth() -> check_rpc_health.AuthTokens:
+    return check_rpc_health.AuthTokens(
+        cookies={"SID": "sid"},
+        csrf_token="csrf",
+        session_id="session",
+    )
+
+
+def test_build_customization_choices_params_shape() -> None:
+    """The reverse-engineered ``[nbctx, None, artifact_type]`` shape is verified."""
+    params = build_customization_choices_params("nb_42")
+    assert params == [
+        [
+            2,
+            None,
+            None,
+            [1, None, None, None, None, None, None, None, None, None, [1]],
+            ["nb_42"],
+        ],
+        None,
+        3,  # artifact_type = video
+    ]
+
+
+@pytest.mark.asyncio
+async def test_make_raw_rpc_request_threads_id_into_query_and_body() -> None:
+    """The raw id lands in BOTH the ``rpcids=`` query param and the ``f.req`` body."""
+    captured: dict[str, Any] = {}
+
+    class FakeClient:
+        async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+            captured["url"] = url
+            captured["content"] = content
+            return httpx.Response(200, text=")]}'\n\n[]", request=httpx.Request("POST", url))
+
+    text, error = await make_raw_rpc_request(
+        FakeClient(),
+        _cohort_auth(),
+        "sqTeoe",
+        [["x"]],
+        source_path="/notebook/nb_1",
+    )
+    assert error is None
+    assert text == ")]}'\n\n[]"
+    query = parse_qs(urlparse(captured["url"]).query)
+    assert query["rpcids"] == ["sqTeoe"]
+    assert query["source-path"] == ["/notebook/nb_1"]
+    # The body's f.req carries the override id, kept in sync with the query param.
+    assert "sqTeoe" in captured["content"]
+    # The fallback RPCMethod (LIST_NOTEBOOKS) must NOT leak into the wire.
+    assert check_rpc_health.RPCMethod.LIST_NOTEBOOKS.value not in captured["content"]
+
+
+@pytest.mark.asyncio
+async def test_check_customization_cohort_gated_on_null() -> None:
+    """A genuine null payload is GATED (the expected steady state, NOT a failure)."""
+
+    class NullClient:
+        async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+            # wrb.fr frame whose payload is JSON null -> decode_response(..., allow_null) == None
+            body = ')]}\'\n\n[["wrb.fr","sqTeoe","null",null,null,null,"generic"]]'
+            return httpx.Response(200, text=body, request=httpx.Request("POST", url))
+
+    status, detail = await check_customization_cohort(NullClient(), _cohort_auth(), "nb_1")
+    assert status is CohortStatus.GATED
+    assert "gated" in detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_check_customization_cohort_migrated_on_non_null() -> None:
+    """A non-null payload is the loud MIGRATED signal (cohort flipped)."""
+
+    class MigratedClient:
+        async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+            body = ')]}\'\n\n[["wrb.fr","sqTeoe","[[1,2,3]]",null,null,null,"generic"]]'
+            return httpx.Response(200, text=body, request=httpx.Request("POST", url))
+
+    status, _ = await check_customization_cohort(MigratedClient(), _cohort_auth(), "nb_1")
+    assert status is CohortStatus.MIGRATED
+
+
+@pytest.mark.asyncio
+async def test_check_customization_cohort_unknown_on_transport_error() -> None:
+    """A transport failure never alarms; it draws UNKNOWN (no cohort conclusion)."""
+
+    class FailingClient:
+        async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+            raise httpx.ReadTimeout("")
+
+    status, detail = await check_customization_cohort(FailingClient(), _cohort_auth(), "nb_1")
+    assert status is CohortStatus.UNKNOWN
+    assert detail == "ReadTimeout"
+
+
+@pytest.mark.asyncio
+async def test_check_customization_cohort_unknown_without_notebook() -> None:
+    status, _ = await check_customization_cohort(object(), _cohort_auth(), None)
+    assert status is CohortStatus.UNKNOWN
+
+
+def test_compute_exit_code_cohort_migrated_is_four() -> None:
+    """MIGRATED draws exit 4 when no higher-priority drift fired."""
+    clean = Counter({CheckStatus.OK: 3})
+    assert check_rpc_health.compute_exit_code(clean, [], CohortStatus.MIGRATED) == 4
+    assert check_rpc_health.compute_exit_code(clean, [], CohortStatus.GATED) == 0
+    # RPC drift outranks the cohort flip.
+    mismatch = Counter({CheckStatus.MISMATCH: 1})
+    assert check_rpc_health.compute_exit_code(mismatch, [], CohortStatus.MIGRATED) == 1
+    real_error = [_result("e", CheckStatus.ERROR, error="Parse error: boom")]
+    assert check_rpc_health.compute_exit_code(Counter(), real_error, CohortStatus.MIGRATED) == 3
+
+
+def test_print_summary_reports_cohort_flip(capsys: pytest.CaptureFixture[str]) -> None:
+    results = [_result("ok", CheckStatus.OK)]
+    rc = print_summary(results, CohortStatus.MIGRATED)
+    out = capsys.readouterr().out
+    assert rc == 4
+    assert "COHORT FLIP" in out
+    assert "sqTeoe customization choices = MIGRATED" in out
+
+
+def test_print_summary_gated_is_pass(capsys: pytest.CaptureFixture[str]) -> None:
+    results = [_result("ok", CheckStatus.OK)]
+    rc = print_summary(results, CohortStatus.GATED)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "sqTeoe customization choices = GATED" in out
+    assert "RESULT: PASS" in out

@@ -10,9 +10,14 @@ Exit codes:
     2 - Authentication or infrastructure failure (not an RPC problem)
     3 - One or more RPC methods returned a non-transient ERROR
         (timeouts, parse failures, unexpected HTTP errors)
+    4 - Studio-customization cohort flip: the ``sqTeoe`` tripwire
+        (GetArtifactCustomizationChoices) returned non-null, meaning our
+        account migrated to the new customization surface and the VideoStyle /
+        format codes must be re-captured. GATED-null is the expected steady
+        state and is NOT a failure.
 
 Priority order when multiple statuses are present:
-    MISMATCH (1) > AUTH (2) > non-transient ERROR (3) > OK (0)
+    MISMATCH (1) > AUTH (2) > non-transient ERROR (3) > cohort MIGRATED (4) > OK (0)
 
 Transient errors that still exit 0 are limited to rate-limit signals
 (HTTP 429, gRPC ``RESOURCE_EXHAUSTED``, and the decoder's user-displayable
@@ -91,6 +96,28 @@ class CheckStatus(str, Enum):
     MISMATCH = "MISMATCH"
     ERROR = "ERROR"
     SKIPPED = "SKIPPED"
+
+
+class CohortStatus(str, Enum):
+    """Result of the ``sqTeoe`` studio-customization cohort tripwire.
+
+    ``GetArtifactCustomizationChoices`` (rpc id ``sqTeoe``) is gated off for our
+    consumer cohort and returns ``null`` unconditionally today (``GATED`` — the
+    expected steady state, NOT a failure). The day it starts returning a
+    non-null payload our account has been migrated to the new studio-customization
+    surface (``MIGRATED`` — a loud signal: the VideoStyle/format codes must be
+    re-captured). ``UNKNOWN`` covers a transient/transport failure on the probe
+    itself (no cohort conclusion drawn — never an alarm).
+    """
+
+    GATED = "GATED"
+    MIGRATED = "MIGRATED"
+    UNKNOWN = "UNKNOWN"
+
+
+# Studio-customization cohort tripwire RPC. NOT in ``RPCMethod`` (it is gated off
+# for our consumer cohort, so there is no typed/public path), called by raw id.
+_CUSTOMIZATION_CHOICES_RPC_ID = "sqTeoe"
 
 
 @dataclass
@@ -822,6 +849,114 @@ async def check_chat_query(
     )
 
 
+def build_customization_choices_params(notebook_id: str) -> list[Any]:
+    """Build ``sqTeoe`` (GetArtifactCustomizationChoices) params for ``notebook_id``.
+
+    Reverse-engineered (live-verified) request shape: ``[nbctx, None, artifact_type]``
+    where ``nbctx`` is the standard notebook-context options wrapper and
+    ``artifact_type`` is ``3`` (video) — the surface whose VideoStyle/format codes
+    we most want an early migration signal for. Extracted as a helper so the wire
+    shape is testable without a live call.
+    """
+    nbctx = [
+        2,
+        None,
+        None,
+        [1, None, None, None, None, None, None, None, None, None, [1]],
+        [notebook_id],
+    ]
+    artifact_type = 3  # video
+    return [nbctx, None, artifact_type]
+
+
+async def make_raw_rpc_request(
+    client: httpx.AsyncClient,
+    auth: AuthTokens,
+    rpc_id: str,
+    params: list[Any],
+    source_path: str = "/",
+) -> tuple[str | None, str | None]:
+    """Issue a batchexecute call by *raw* rpc id (for methods not in ``RPCMethod``).
+
+    The cohort tripwire probes ``sqTeoe``, which has no ``RPCMethod`` member (it
+    is gated for our cohort), so it cannot go through ``make_rpc_request``. This
+    mirrors that function's wire assembly but threads the id straight into both
+    the ``rpcids=`` query param and ``encode_rpc_request``'s ``rpc_id_override``
+    (the two MUST stay in sync). It calls the executor directly — there is no
+    idempotency registry in this script, so no retries to disable.
+    """
+    query_params = {
+        "rpcids": rpc_id,
+        "source-path": source_path,
+        "f.sid": auth.session_id,
+        "hl": get_default_language(),
+        "rt": "c",
+    }
+    if auth.account_email or auth.authuser:
+        query_params["authuser"] = auth.account_route
+    url = f"{get_batchexecute_url()}?{urlencode(query_params)}"
+    # Any RPCMethod member works as the first arg — ``rpc_id_override`` is what
+    # actually lands in the body, kept identical to the ``rpcids=`` query param.
+    rpc_request = encode_rpc_request(RPCMethod.LIST_NOTEBOOKS, params, rpc_id_override=rpc_id)
+    body = build_request_body(rpc_request, auth.csrf_token)
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": auth.cookie_header,
+    }
+    try:
+        response = await client.post(url, content=body, headers=headers)
+        response.raise_for_status()
+        return response.text, None
+    except httpx.HTTPStatusError as e:
+        return None, f"HTTP {e.response.status_code}"
+    except httpx.RequestError as e:
+        return None, str(e) or type(e).__name__
+
+
+async def check_customization_cohort(
+    client: httpx.AsyncClient,
+    auth: AuthTokens,
+    notebook_id: str | None,
+) -> tuple[CohortStatus, str]:
+    """Probe ``sqTeoe`` to detect a studio-customization cohort flip.
+
+    ``GetArtifactCustomizationChoices`` returns ``null`` for our gated consumer
+    cohort. We decode with ``allow_null=True`` so a genuine null payload is
+    ``GATED`` (the steady state, not a failure) — but the *absent-id* drift guard
+    inside ``decode_response`` still fires if the id stopped being echoed (that
+    surfaces as a parse error here and is reported as ``UNKNOWN``, not silently
+    swallowed). A non-null payload means our account was migrated to the new
+    customization surface (``MIGRATED`` — re-capture VideoStyle codes).
+
+    Returns ``(status, detail)``. ``UNKNOWN`` is drawn for any transport/parse
+    failure so the tripwire never alarms on a transient flake; only a clean,
+    decoded non-null result is ``MIGRATED``.
+    """
+    if not notebook_id:
+        return CohortStatus.UNKNOWN, "No notebook ID provided (cohort tripwire needs one)"
+
+    response_text, error = await make_raw_rpc_request(
+        client,
+        auth,
+        _CUSTOMIZATION_CHOICES_RPC_ID,
+        build_customization_choices_params(notebook_id),
+        source_path=f"/notebook/{notebook_id}",
+    )
+    if error is not None:
+        return CohortStatus.UNKNOWN, error
+    if response_text is None:
+        return CohortStatus.UNKNOWN, "Empty response from server"
+
+    try:
+        data = decode_response(response_text, _CUSTOMIZATION_CHOICES_RPC_ID, allow_null=True)
+    except (json.JSONDecodeError, ValueError, IndexError, TypeError, RPCError) as e:
+        return CohortStatus.UNKNOWN, f"Parse error: {scrub_secrets(e)}"
+
+    if data is None:
+        return CohortStatus.GATED, "null (gated — expected steady state)"
+    return CohortStatus.MIGRATED, "non-null payload (cohort migrated)"
+
+
 async def setup_temp_resources(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -1116,8 +1251,13 @@ async def cleanup_temp_resources(
         print(f"WARNING: Notebook {temp.notebook_id} may need manual cleanup", file=sys.stderr)
 
 
-async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
-    """Run health check on all RPC methods."""
+async def run_health_check(full_mode: bool = False) -> tuple[list[CheckResult], CohortStatus]:
+    """Run health check on all RPC methods.
+
+    Returns ``(results, cohort_status)``: the per-method ``CheckResult`` list plus
+    the ``sqTeoe`` studio-customization cohort tripwire verdict (reported and
+    exit-coded separately from RPC drift; see :class:`CohortStatus`).
+    """
     storage_path = resolve_storage_path()
     cookies = load_auth()
 
@@ -1130,6 +1270,7 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
 
     results: list[CheckResult] = []
     temp_resources = TempResources()
+    cohort_status = CohortStatus.UNKNOWN
 
     print("Fetching auth tokens...")
     try:
@@ -1202,13 +1343,22 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
                 chat_line += f" - {scrub_secrets(chat_result.error)}"
             print(chat_line)
 
+            # Studio-customization cohort tripwire. Distinct from the RPC-drift
+            # probes: GATED-null is the expected steady state (NOT a failure),
+            # MIGRATED is a loud signal that the customization surface flipped and
+            # the VideoStyle/format codes must be re-captured.
+            cohort_status, cohort_detail = await check_customization_cohort(
+                client, auth, notebook_id
+            )
+            print(f"COHORT   sqTeoe customization choices: {cohort_status.value} - {cohort_detail}")
+
         finally:
             if full_mode and temp_resources.notebook_id:
                 print()
                 print("Testing DELETE operations during cleanup...")
                 await cleanup_temp_resources(client, auth, temp_resources, results)
 
-    return results
+    return results, cohort_status
 
 
 # Substrings that mark an ERROR as a transient signal. Keep this list
@@ -1278,6 +1428,7 @@ def partition_errors(
 def compute_exit_code(
     counts: Counter[CheckStatus],
     non_transient_errors: list[CheckResult],
+    cohort_status: CohortStatus = CohortStatus.UNKNOWN,
 ) -> int:
     """Compute the script exit code from result counts.
 
@@ -1285,16 +1436,26 @@ def compute_exit_code(
         1. MISMATCH  -> 1
         2. AUTH      -> 2 (signaled by the caller via sys.exit, never reached here)
         3. non-transient ERROR -> 3
-        4. OK        -> 0
+        4. cohort MIGRATED -> 4 (sqTeoe tripwire flipped; loud but not RPC drift)
+        5. OK        -> 0
+
+    The cohort flip sits *below* the RPC-drift codes so a run that has both real
+    drift AND a cohort flip still surfaces the higher-severity drift exit; the
+    flip is reported in the summary either way.
     """
     if counts[CheckStatus.MISMATCH] > 0:
         return 1
     if non_transient_errors:
         return 3
+    if cohort_status == CohortStatus.MIGRATED:
+        return 4
     return 0
 
 
-def print_summary(results: list[CheckResult]) -> int:
+def print_summary(
+    results: list[CheckResult],
+    cohort_status: CohortStatus = CohortStatus.UNKNOWN,
+) -> int:
     """Print summary and return exit code."""
     print()
     print("=" * 60)
@@ -1347,10 +1508,14 @@ def print_summary(results: list[CheckResult]) -> int:
             print(f"  [transient]     {r.method.name} ({r.expected_id}): {scrub_secrets(r.error)}")
         print()
 
+    # Cohort tripwire line. GATED-null is the expected steady state (a PASS, not
+    # a failure); MIGRATED is the loud flip the canary exists to surface.
+    print(f"COHORT:   sqTeoe customization choices = {cohort_status.value}")
+
     # Return exit code.
-    # Priority: MISMATCH (1) > non-transient ERROR (3) > OK (0).
+    # Priority: MISMATCH (1) > non-transient ERROR (3) > cohort MIGRATED (4) > OK (0).
     # AUTH (2) is signaled earlier via sys.exit(2) and never reaches here.
-    exit_code = compute_exit_code(counts, non_transient_errors)
+    exit_code = compute_exit_code(counts, non_transient_errors, cohort_status)
 
     if exit_code == 1:
         print("RESULT: FAIL - RPC ID mismatches detected")
@@ -1360,6 +1525,10 @@ def print_summary(results: list[CheckResult]) -> int:
         print(f"RESULT: FAIL - non-transient ERROR detected in methods: {affected}")
         print("       These are real failures (not rate-limit transients).")
         return 3
+    if exit_code == 4:
+        print("RESULT: COHORT FLIP - sqTeoe returned non-null (studio customization migrated)")
+        print("       Re-capture VideoStyle / format codes in src/notebooklm/rpc/types.py.")
+        return 4
     if transient_errors:
         print("RESULT: PASS - Only transient errors observed (rate-limits / ReadTimeouts)")
         print("       Review ERROR DETAILS above for affected methods.")
@@ -1385,8 +1554,8 @@ def main() -> int:
     print("=" * 60)
     print()
 
-    results = asyncio.run(run_health_check(full_mode=args.full))
-    return print_summary(results)
+    results, cohort_status = asyncio.run(run_health_check(full_mode=args.full))
+    return print_summary(results, cohort_status)
 
 
 if __name__ == "__main__":

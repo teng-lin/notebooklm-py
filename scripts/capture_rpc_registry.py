@@ -5,7 +5,12 @@ against ``src/notebooklm/rpc/types.py``.
 NotebookLM declares every ``batchexecute`` RPC in its (public, gstatic-served) JS
 bundle as::
 
-    _.uD("<rpc_id>", <ReqCtor>, <RespCtor>, [<flags>, "/<Service>.<Method>"])
+    _.fD("<rpc_id>", <ReqCtor>, <RespCtor>, [<flags>, "/<Service>.<Method>"])
+
+(The registration helper is currently minified to ``_.fD``; it was ``_.uD`` in an
+earlier bundle. The scraper does **not** depend on the helper name — it anchors on
+the quoted ``"/<Service>.<Method>"`` path — so a future rename of this helper does
+not blank the diff.)
 
 The obfuscated ``<rpc_id>`` values are this project's #1 breakage class — they
 rotate without notice and a stale id silently breaks the affected operation. This
@@ -23,6 +28,14 @@ ids we hardcode, surfacing four classes:
                     Agentspace surface on `discoveryengine.googleapis.com`, behind a
                     server-side VPC Service Controls perimeter; not consumer-callable,
                     not a consumer migration target), or **other**
+
+Beyond the rpc-id registry, the same bundle carries the studio-feature **enum
+maps** (``switch(code){case N:return "Label"}`` blocks for VideoFormat /
+AudioFormat / app-variants), the ``Yp`` **quota-code** map (a feature-rollout
+early-warning surface), and proto **required-field assertions** (schema-shape
+drift). ``--check-enums`` extracts and diffs the switch enums against the int
+enums in ``rpc/types.py`` with the same four-class spirit as the id diff, but a
+distinct taxonomy — see :func:`diff_enums` for why ``NEW`` is report-only.
 
 Auth: discovering the bundle URL needs **one authenticated homepage read** (an
 unauthenticated request only returns the login app); fetching the bundle itself is
@@ -42,6 +55,8 @@ Usage::
     python scripts/capture_rpc_registry.py                 # human-readable diff
     python scripts/capture_rpc_registry.py --json          # machine-readable snapshot
     python scripts/capture_rpc_registry.py --check         # exit 1 if any of our ids are ABSENT
+    python scripts/capture_rpc_registry.py --check-enums    # exit 1 on CHANGED/STALE studio enums
+    python scripts/capture_rpc_registry.py --check --check-enums  # both gates (combine freely)
     python scripts/capture_rpc_registry.py --bundle-file bundle.js   # offline, no auth
 """
 
@@ -174,6 +189,205 @@ def diff(ours: dict[str, str], live: dict[str, str], bundle: str) -> dict[str, d
     }
 
 
+# ---------------------------------------------------------------------------
+# Studio enum drift (switch(code){case N:return "Label"} maps)
+# ---------------------------------------------------------------------------
+#
+# Beyond the rpc-id registry the bundle inlines the studio-feature enums as
+# minified ``switch`` statements mapping an integer code to a display label,
+# e.g. ``switch(a){case 1:return"Explainer";case 3:return"Cinematic";...}``.
+# These are the human-facing labels for VideoFormat / AudioFormat / the
+# app-variant picker — the same integers we hardcode in ``rpc/types.py`` and
+# send on the wire. If Google ever renumbers a *selectable* format (the #1597
+# alarm: the VideoStyle/format code an existing label maps to changes) every
+# generate-* call silently produces the wrong artifact, so we diff them.
+
+# A switch block: ``switch(<scrutinee>){ <case 1:return"X";case 2:return"Y";> }``.
+# ``<scrutinee>`` is a short minified expr (kept <=30 chars so we don't span a
+# huge unrelated ``switch``); the body is one-or-more ``case N:return"Label"``.
+_SWITCH_BLOCK_RE = re.compile(r'switch\([^)]{1,30}\)\{((?:case \d+:return"[^"]*";?\s*)+)')
+# A single ``case N:return"Label"`` arm inside a matched block.
+_SWITCH_CASE_RE = re.compile(r'case (\d+):return"([^"]*)"')
+
+# Label-anchoring registry: a recognizable *subset* of labels identifies which
+# of our enums a switch block is. A block whose label set is a SUPERSET of an
+# anchor set is attributed to that enum (so a block that gained an unreleased
+# label still matches). Anchors are deliberately a handful of stable,
+# distinctive labels — not the full set — so a NEW label never breaks
+# attribution. The keys are our ``rpc/types.py`` enum class names.
+_ENUM_LABEL_ANCHORS: dict[str, frozenset[str]] = {
+    "VideoFormat": frozenset({"Explainer", "Cinematic"}),
+    "AudioFormat": frozenset({"Deep Dive", "Critique", "Debate"}),
+}
+
+
+def _normalize_label(label: str) -> str:
+    """``"Deep Dive"`` -> ``"DEEP_DIVE"`` so a bundle label can be matched to an
+    enum *member* name (our members are ``UPPER_SNAKE``, the bundle labels are
+    ``Title Case`` with spaces). Used to pair a live ``code -> label`` with our
+    ``MEMBER_NAME -> value`` mapping when diffing.
+    """
+    return re.sub(r"[^A-Z0-9]+", "_", label.upper()).strip("_")
+
+
+def extract_switch_enums(bundle: str) -> dict[str, dict[int, str]]:
+    """Return ``{our_enum_name: {code: label}}`` for every switch block that a
+    label anchor attributes to one of our enums.
+
+    Each ``switch(code){case N:return "Label"}`` block is parsed into a
+    ``{code -> label}`` map, then attributed to one of our enums by
+    *label-anchoring*: if the block's label set is a superset of an anchor set
+    in :data:`_ENUM_LABEL_ANCHORS`, it is that enum. Unattributed blocks (the
+    bundle has many switches we don't care about) are dropped. If two blocks
+    attribute to the same enum their maps are merged (later wins), which is
+    harmless because the anchor guarantees they are the same logical enum.
+    """
+    out: dict[str, dict[int, str]] = {}
+    for block_match in _SWITCH_BLOCK_RE.finditer(bundle):
+        cases = {int(code): label for code, label in _SWITCH_CASE_RE.findall(block_match.group(1))}
+        if not cases:
+            continue
+        labels = set(cases.values())
+        for enum_name, anchor in _ENUM_LABEL_ANCHORS.items():
+            if anchor <= labels:
+                out.setdefault(enum_name, {}).update(cases)
+    return out
+
+
+def parse_enum_members_from_text(types_text: str, enum_name: str) -> dict[str, int]:
+    """Return ``{MEMBER_NAME: int_value}`` for an ``(int, Enum)`` class in types.py.
+
+    Mirrors :func:`parse_ids_from_text` but for the integer studio enums. Scoped
+    to the named class body so members of other enums don't bleed in. Aliases
+    (two names, same value — e.g. ``QUIZ_FLASHCARD = 4``) are all retained.
+    """
+    match = re.search(rf"class {re.escape(enum_name)}\b.*?(?=\nclass |\Z)", types_text, re.DOTALL)
+    if not match:
+        return {}
+    out: dict[str, int] = {}
+    for name, value in re.findall(
+        r"""^\s+([A-Z][A-Z0-9_]*)\s*=\s*(\d+)""", match.group(0), re.MULTILINE
+    ):
+        out[name] = int(value)
+    return out
+
+
+def diff_enums(
+    types_text: str, live_switch: dict[str, dict[int, str]]
+) -> dict[str, list[dict[str, object]]]:
+    """Diff our int enums against the bundle's switch maps into a FOUR-class taxonomy.
+
+    Mirroring the id ``diff`` but for the studio enums. For each enum the bundle
+    attributed (via label-anchoring), each of our members is paired to a live
+    ``code -> label`` by normalizing the label to ``UPPER_SNAKE`` and matching it
+    to a member name. The four buckets:
+
+    * ``CHANGED`` — a label present in BOTH our enum and the bundle but mapped to
+      a DIFFERENT integer (our ``EXPLAINER = 1`` but the bundle now returns
+      "Explainer" for ``case 2``). **This is the #1597 alarm**: an existing,
+      selectable format silently renumbered. Fails ``--check-enums``.
+    * ``STALE`` — our member's integer is not present in the bundle's code set
+      for that enum at all (the format we still send was retired). Also fails
+      ``--check-enums``.
+    * ``NEW`` — the bundle declares a code our enum lacks (a new display label).
+      **REPORT-ONLY, never an alarm**: a switch arm is only a *display label*; a
+      label can ship in the bundle long before the format is selectable on any
+      cohort (proven live — the bundle listed Short / Whiteboard Animation /
+      Lecture while they were not yet selectable). Adding the member eagerly off
+      a bundle label would encode an unreleased/non-functional code.
+    * ``UNPARSED`` — an enum we have a label anchor for but found no switch block
+      to attribute (a recognizable region didn't parse). "Widen the regex", NOT
+      an alarm — same posture as PRESENT-UNPARSED in the id diff.
+
+    Returns ``{class -> [records]}`` where each record carries the enum name and
+    the specifics needed to report and to drive the ``--check-enums`` exit code.
+    """
+    buckets: dict[str, list[dict[str, object]]] = {
+        "changed": [],
+        "stale": [],
+        "new": [],
+        "unparsed": [],
+    }
+    for enum_name in _ENUM_LABEL_ANCHORS:
+        live_map = live_switch.get(enum_name)
+        if not live_map:
+            # We know this enum (we hold an anchor) but no block parsed for it.
+            buckets["unparsed"].append({"enum": enum_name})
+            continue
+
+        ours = parse_enum_members_from_text(types_text, enum_name)
+        # live label (normalized) -> code, for matching our members by name.
+        live_by_norm_label = {_normalize_label(label): code for code, label in live_map.items()}
+        our_codes = set(ours.values())
+
+        for member, value in ours.items():
+            live_code = live_by_norm_label.get(member)
+            if live_code is None:
+                # The label our member name corresponds to is not in the bundle.
+                if value not in live_map:
+                    buckets["stale"].append(
+                        {"enum": enum_name, "member": member, "our_value": value}
+                    )
+                # else: our value is still a live code under a label that didn't
+                # normalize back to our member name — neither CHANGED nor STALE.
+            elif live_code != value:
+                buckets["changed"].append(
+                    {
+                        "enum": enum_name,
+                        "member": member,
+                        "label": live_map[live_code],
+                        "our_value": value,
+                        "live_value": live_code,
+                    }
+                )
+
+        for code, label in sorted(live_map.items()):
+            if code not in our_codes:
+                buckets["new"].append({"enum": enum_name, "code": code, "label": label})
+
+    return buckets
+
+
+# ---------------------------------------------------------------------------
+# Quota codes (Yp map) and proto required-field assertions
+# ---------------------------------------------------------------------------
+#
+# Two more drift surfaces the same bundle carries — extracted for *visibility*
+# (a report line + JSON), not gated. They are leading indicators, not contract
+# breaks: a new quota code means a feature is rolling out server-side (an
+# early-warning for "build support soon"), and a changed proto assertion means a
+# request shape we encode may have grown a newly-required field.
+
+# The ``Yp`` quota map: ``[<code>,{status:"...",result:{message:"...limits..."}}]``.
+# The ``...limits...`` anchor in the message keeps this off unrelated result
+# objects. Codes map to features (1 chat, 3 audio, 6 video, 7 reports, ...).
+_QUOTA_CODE_RE = re.compile(r'\[(\d+),\{status:"[^"]*",result:\{message:"([^"]*limits[^"]*)"')
+
+# Proto required-field assertions: ``"<Message> is missing field '<field>'"``.
+# A drift in this set means a request message grew/lost a required field.
+_PROTO_ASSERTION_RE = re.compile(r"\"(\w+) is missing field '(\w+)'\"")
+
+
+def extract_quota_codes(bundle: str) -> dict[int, str]:
+    """Return ``{quota_code: message}`` from the bundle's ``Yp`` quota map.
+
+    A feature-rollout early-warning surface: a code we have not seen before means
+    Google is provisioning quota for a feature that is rolling out. Report-only.
+    """
+    return {int(code): message for code, message in _QUOTA_CODE_RE.findall(bundle)}
+
+
+def extract_proto_assertions(bundle: str) -> set[tuple[str, str]]:
+    """Return ``{(message, field)}`` proto required-field assertions from the bundle.
+
+    A schema-shape drift surface: ``"ExplainerVideoArtifact is missing field
+    'generation_options'"`` means that proto requires ``generation_options``. A
+    new assertion can mean a request we build needs a field we don't send.
+    Report-only.
+    """
+    return set(_PROTO_ASSERTION_RE.findall(bundle))
+
+
 def fetch_bundle() -> str:
     """Fetch and concatenate the gstatic app-bundle chunks (which carry the registry).
 
@@ -292,11 +506,72 @@ def _print_report(
             print(f"    {rpc_id:<8} {method}")
 
 
+def _print_enum_report(
+    enum_buckets: dict[str, list[dict[str, object]]],
+    quota: dict[int, str],
+    proto: set[tuple[str, str]],
+) -> None:
+    """Print the studio-enum / quota / proto drift report (same style as the id diff).
+
+    ``CHANGED``/``STALE`` are the alarms (a selectable format renumbered or
+    retired); ``NEW`` and ``UNPARSED`` print but never alarm. Quota codes and
+    proto assertions are report-only visibility surfaces.
+    """
+    changed, stale, new, unparsed = (
+        enum_buckets["changed"],
+        enum_buckets["stale"],
+        enum_buckets["new"],
+        enum_buckets["unparsed"],
+    )
+    print("\n" + "=" * 60)
+    print("STUDIO ENUM DRIFT (switch code->label maps)")
+    print(
+        f"CHANGED: {len(changed)}  STALE: {len(stale)}  NEW: {len(new)}  UNPARSED: {len(unparsed)}"
+    )
+    if changed:
+        print("\nCHANGED — a label's integer differs from ours (the #1597 alarm):")
+        for r in changed:
+            print(
+                f"  {r['enum']}.{r['member']} ({r['label']!r}): "
+                f"ours={r['our_value']} live={r['live_value']}"
+            )
+    if stale:
+        print("\nSTALE — our member's value is no longer a live code (format retired):")
+        for r in stale:
+            print(f"  {r['enum']}.{r['member']} = {r['our_value']}")
+    if new:
+        print("\nNEW — bundle code we lack (REPORT-ONLY; a display label may be unreleased):")
+        for r in new:
+            print(f"  {r['enum']} case {r['code']} -> {r['label']!r}")
+    if unparsed:
+        print("\nUNPARSED — known enum with no switch block parsed (widen regex; not an alarm):")
+        for r in unparsed:
+            print(f"  {r['enum']}")
+
+    print("\nQUOTA CODES (Yp map — feature-rollout early-warning; report-only):")
+    if quota:
+        for code, message in sorted(quota.items()):
+            print(f"  {code:<3} {message}")
+    else:
+        print("  (none parsed)")
+
+    print("\nPROTO REQUIRED-FIELD ASSERTIONS (schema-shape; report-only):")
+    if proto:
+        for message, field in sorted(proto):
+            print(f"  {message} -> {field}")
+    else:
+        print("  (none parsed)")
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: load/fetch the bundle, diff vs rpc/types.py, report.
 
-    Returns the process exit code: ``1`` when ``--check`` is set and any of our
-    ids are ABSENT (a rotation/stale alarm), else ``0``.
+    Returns the process exit code: ``1`` when a gate fires —  ``--check`` with any
+    ABSENT id (id rotation), and/or ``--check-enums`` with any CHANGED/STALE
+    studio enum (a selectable format renumbered or retired). The two gates
+    combine (either firing exits ``1``); ``NEW``/``UNPARSED`` enum classes,
+    quota codes and proto assertions are report-only and never affect the exit
+    code. Without a gate flag the exit is always ``0`` (report mode).
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument(
@@ -304,17 +579,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--check", action="store_true", help="exit 1 if any of our ids are ABSENT")
     parser.add_argument(
+        "--check-enums",
+        action="store_true",
+        help="exit 1 if any studio enum is CHANGED or STALE (NEW/UNPARSED never fail)",
+    )
+    parser.add_argument(
         "--bundle-file", type=Path, help="analyse a saved bundle file (no auth/network)"
     )
     parser.add_argument("--types", type=Path, default=_DEFAULT_TYPES, help="path to rpc/types.py")
     args = parser.parse_args(argv)
 
-    ours = parse_ids_from_text(args.types.read_text(encoding="utf-8"))
+    types_text = args.types.read_text(encoding="utf-8")
+    ours = parse_ids_from_text(types_text)
     bundle = args.bundle_file.read_text(encoding="utf-8") if args.bundle_file else fetch_bundle()
     live = extract_registry(bundle)
     buckets = diff(ours, live, bundle)
     # Services any CONFIRMED id resolves to are, empirically, serving our cohort.
     current_services = {_service_of(m) for m in buckets["confirmed"].values()}
+
+    live_switch = extract_switch_enums(bundle)
+    enum_buckets = diff_enums(types_text, live_switch)
+    quota = extract_quota_codes(bundle)
+    proto = extract_proto_assertions(bundle)
 
     if args.json:
         print(
@@ -332,7 +618,12 @@ def main(argv: list[str] | None = None) -> int:
                         }
                         for i, m in buckets["unmapped"].items()
                     },
-                    "counts": {k: len(v) for k, v in buckets.items()} | {"ours": len(ours)},
+                    "enums": enum_buckets,
+                    "quota_codes": {str(code): message for code, message in quota.items()},
+                    "proto_assertions": sorted(f"{m}.{f}" for m, f in proto),
+                    "counts": {k: len(v) for k, v in buckets.items()}
+                    | {"ours": len(ours)}
+                    | {f"enum_{k}": len(v) for k, v in enum_buckets.items()},
                 },
                 indent=2,
                 sort_keys=True,
@@ -340,14 +631,24 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         _print_report(ours, live, buckets, current_services)
+        _print_enum_report(enum_buckets, quota, proto)
 
+    exit_code = 0
     if args.check and buckets["absent"]:
         print(
             f"\nFAIL: {len(buckets['absent'])} of our RPC ids are no longer registered.",
             file=sys.stderr,
         )
-        return 1
-    return 0
+        exit_code = 1
+    if args.check_enums and (enum_buckets["changed"] or enum_buckets["stale"]):
+        print(
+            f"\nFAIL: {len(enum_buckets['changed'])} CHANGED and "
+            f"{len(enum_buckets['stale'])} STALE studio enum value(s) — a selectable "
+            "format was renumbered or retired; re-capture rpc/types.py enums.",
+            file=sys.stderr,
+        )
+        exit_code = 1
+    return exit_code
 
 
 if __name__ == "__main__":

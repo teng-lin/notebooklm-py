@@ -190,6 +190,86 @@ jobs:
         echo "## RPC Health Check Results" >> "$GITHUB_STEP_SUMMARY"
         grep -A 10 "^SUMMARY$" health-report.txt >> "$GITHUB_STEP_SUMMARY" || echo "No summary found" >> "$GITHUB_STEP_SUMMARY"
 
+    # Bundle-drift monitor (capture_rpc_registry.py). NOT a PR gate — it depends
+    # on Google's live external JS bundle, which can rotate at any time — so it
+    # rides the nightly/issue-filing track here. ``--check`` gates id rotation
+    # (ABSENT), ``--check-enums`` gates studio enum CHANGED/STALE (a selectable
+    # format renumbered/retired — the #1597 class). NEW/UNPARSED, quota codes and
+    # proto assertions print for visibility but never fail. ``continue-on-error``
+    # so a drift hit files an issue rather than red-failing the canary outright.
+    - name: Run bundle drift monitor
+      id: bundle
+      continue-on-error: true
+      shell: bash
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+      run: |
+        set +e
+        uv run python scripts/capture_rpc_registry.py --check --check-enums 2>&1 \
+          | tee bundle-drift-report.txt
+        exit_code=${PIPESTATUS[0]}
+        echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+        exit "$exit_code"
+
+    - name: Scrub secrets from bundle-drift-report.txt
+      # The bundle is public CDN content, but the discovery homepage read is
+      # authenticated and a transport error could echo a request URL; scrub
+      # before any downstream consumer reads the file (same posture as the
+      # health-report scrub above). Idempotent.
+      if: always()
+      shell: bash
+      run: |
+        if [ ! -f bundle-drift-report.txt ]; then
+          echo "::warning::bundle-drift-report.txt not produced; skipping scrub."
+          exit 0
+        fi
+        uv run python - <<'PY'
+        from pathlib import Path
+        from notebooklm._logging import scrub_secrets
+
+        report = Path("bundle-drift-report.txt")
+        original = report.read_text(encoding="utf-8", errors="replace")
+        scrubbed = scrub_secrets(original)
+        if scrubbed != original:
+            report.write_text(scrubbed, encoding="utf-8")
+            print(f"Scrubbed bundle-drift-report.txt (delta {abs(len(original) - len(scrubbed))} chars).")
+        else:
+            print("No secret-shaped substrings detected in bundle-drift-report.txt.")
+        PY
+
+    - name: Check for existing bundle drift issue
+      if: steps.bundle.outputs.exit_code != '0'
+      id: dup_bundle
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if ! count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+          --state open --label automated --label rpc-breakage \
+          --search 'in:title "Studio enum / RPC drift detected"' \
+          --json number --jq 'length'); then
+          echo "::warning::Bundle drift dedup probe failed; allowing issue creation"
+          count=0
+        fi
+        echo "open=${count}" >> "$GITHUB_OUTPUT"
+
+    - name: Create Issue on bundle drift
+      if: |
+        steps.bundle.outputs.exit_code != '0'
+        && steps.dup_bundle.outputs.open == '0'
+      uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710  # @ v6.0.0
+      with:
+        title: "Studio enum / RPC drift detected"
+        content-filepath: bundle-drift-report.txt
+        labels: rpc-breakage, automated
+
+    - name: Upload bundle drift report
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: rpc-bundle-drift-report
+        path: bundle-drift-report.txt
+        retention-days: 30
+
     # Each issue-creating step is paired with a dedup probe that counts
     # open issues sharing the same title + automated label. Without this,
     # back-to-back failing runs (manual reruns, cron + workflow_dispatch)
@@ -298,6 +378,35 @@ jobs:
         title: "RPC Health Check: Non-transient ERROR detected"
         content-filepath: error-issue-body.md
         labels: rpc-error, bug, automated
+
+    # Exit code 4 = the ``sqTeoe`` cohort tripwire flipped (GetArtifactCustomization
+    # Choices returned non-null). Our account migrated to the new studio-customization
+    # surface; the VideoStyle / format codes in rpc/types.py must be re-captured.
+    # GATED-null is the expected steady state and never reaches this branch.
+    - name: Check for existing cohort-flip issue
+      if: steps.health.outputs.exit_code == '4'
+      id: dup_cohort
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if ! count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+          --state open --label automated --label rpc-breakage \
+          --search 'in:title "Studio customization cohort flipped"' \
+          --json number --jq 'length'); then
+          echo "::warning::Cohort-flip dedup probe failed; allowing issue creation"
+          count=0
+        fi
+        echo "open=${count}" >> "$GITHUB_OUTPUT"
+
+    - name: Create Issue on cohort flip
+      if: |
+        steps.health.outputs.exit_code == '4'
+        && steps.dup_cohort.outputs.open == '0'
+      uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710  # @ v6.0.0
+      with:
+        title: "Studio customization cohort flipped — re-capture VideoStyle codes"
+        content-filepath: health-report.txt
+        labels: rpc-breakage, automated
 
     - name: Upload Report
       if: always()
