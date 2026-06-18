@@ -157,11 +157,19 @@ class TestParseDiscoveredSources:
         assert first.why_relevant.startswith("Details the 2026")
         assert first.source_type == 1
 
-    def test_empty_result_returns_empty_list(self) -> None:
+    def test_null_result_returns_empty_list(self) -> None:
+        # A null (``allow_null``) envelope short-circuits to [].
         assert parse_discovered_sources(None) == []
-        assert parse_discovered_sources([]) == []
+
+    def test_malformed_empty_envelope_raises_drift(self) -> None:
+        # A bare ``[]`` is not a well-shaped envelope: it has no candidate slot,
+        # so it must reach safe_index and RAISE (genuine drift) rather than be
+        # silently swallowed as "no candidates".
+        with pytest.raises(UnknownRPCMethodError):
+            parse_discovered_sources([])
 
     def test_empty_candidate_list_returns_empty(self) -> None:
+        # A well-shaped envelope with an empty candidate list is "no results".
         assert parse_discovered_sources([[], "summary", ["id"]]) == []
 
     def test_skips_rows_without_url(self) -> None:

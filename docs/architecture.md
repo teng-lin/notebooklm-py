@@ -1226,7 +1226,7 @@ src/notebooklm/
     ├── session_cmd.py           # login, use, status, clear
     ├── share_cmd.py             # Sharing management CLI commands
     ├── skill_cmd.py             # Skill management commands
-    ├── source_cmd.py            # source add, list, delete
+    ├── source_cmd.py            # source add, list, delete, discover (`source discover` entrypoint; delegates presentation to cli/services/source_discover.py)
     └── services/                # CLI-specific service layer (ADR-0008 Click-to-service extraction)
         ├── __init__.py
         ├── auth_diagnostics.py  # `auth check` CLI adapter over `_app/auth_check.py` — re-exports AuthCheckPlan/Result; builds the plan from the AuthSource Click-context precedence (plan_from_click_context + the auth_source display label) and injects read_env_auth_json into the neutral run_auth_check

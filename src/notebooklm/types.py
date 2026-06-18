@@ -243,6 +243,7 @@ for _public_moved_type in (
     ChatMode,
     ChatReference,
     ConversationTurn,
+    DiscoveredSource,
     GenerationState,
     GenerationStatus,
     Label,

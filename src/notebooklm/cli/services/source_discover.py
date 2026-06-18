@@ -36,12 +36,15 @@ def _truncate(value: str, width: int = 60) -> str:
     return value if len(value) <= width else value[: width - 1] + "…"
 
 
-def _build_spec(query: str, search_source: str) -> ListSpec[DiscoveredSource]:
+def _build_spec(query: str, search_source: str, *, no_truncate: bool) -> ListSpec[DiscoveredSource]:
     async def envelope_extras(client: NotebookLMClient, notebook_id: str) -> dict[str, str | None]:
         return {"notebook_id": notebook_id, "query": query}
 
     async def fetch(client: NotebookLMClient, notebook_id: str) -> list[DiscoveredSource]:
         return await client.sources.discover(notebook_id, query, source=search_source)
+
+    def _cell(value: str) -> str:
+        return value if no_truncate else _truncate(value)
 
     return ListSpec(
         title="Discovered sources for {notebook_id}",
@@ -50,9 +53,9 @@ def _build_spec(query: str, search_source: str) -> ListSpec[DiscoveredSource]:
         serialize=lambda src: src.to_public_dict(),
         columns=["Title", "URL", "Why relevant"],
         row=lambda src: [
-            _truncate(src.title or "-"),
+            _cell(src.title or "-"),
             src.url,
-            _truncate(src.why_relevant or "-"),
+            _cell(src.why_relevant or "-"),
         ],
         envelope_extras=envelope_extras,
     )
@@ -62,7 +65,7 @@ async def execute_source_discover(
     client: NotebookLMClient, plan: SourceDiscoverPlan
 ) -> ListRender[DiscoveredSource]:
     """Fetch and prepare the discovered-sources render payload."""
-    spec = _build_spec(plan.query, plan.search_source)
+    spec = _build_spec(plan.query, plan.search_source, no_truncate=plan.no_truncate)
     return await prepare_list(
         spec,
         client,

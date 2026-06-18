@@ -1066,7 +1066,8 @@ candidates = await client.sources.discover(nb_id, "quantum computing")
 for c in candidates:
     print(f"{c.title} — {c.url}\n  {c.why_relevant}")
 # Add the ones you want:
-await client.sources.add_url(nb_id, candidates[0].url)
+if candidates:
+    await client.sources.add_url(nb_id, candidates[0].url)
 ```
 
 ---

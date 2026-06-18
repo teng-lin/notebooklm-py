@@ -34,8 +34,8 @@ def resolve_discover_mode(source: str) -> int:
     fails loudly instead of silently discovering web sources.
     """
     try:
-        return _SOURCE_MODES[source.lower()]
-    except KeyError:
+        return _SOURCE_MODES[source.strip().lower()]
+    except (KeyError, AttributeError):
         supported = ", ".join(sorted(_SOURCE_MODES))
         raise ValueError(f"Invalid source {source!r}. Supported: {supported}.") from None
 
@@ -63,8 +63,13 @@ def parse_discovered_sources(result: Any) -> list[DiscoveredSource]:
     Rows without a usable URL are skipped (a thin/over-trimmed row degrades
     gracefully). A structurally missing candidate slot RAISES via the row
     adapter's ``safe_index`` descent (genuine drift, not an empty result).
+
+    Only a ``None`` envelope (``allow_null`` null result) short-circuits to
+    ``[]``; an empty-but-shaped ``[]`` still descends through the row adapter so
+    schema drift is detected instead of being silently swallowed as "no
+    candidates".
     """
-    if not result:
+    if result is None:
         return []
     discovered: list[DiscoveredSource] = []
     for raw_row in DiscoverResultRow(result).candidate_rows:
