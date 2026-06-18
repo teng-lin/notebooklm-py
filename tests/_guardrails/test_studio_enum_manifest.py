@@ -33,9 +33,10 @@ pytestmark = pytest.mark.repo_lint
 # Frozen wire-value snapshot.
 #
 # Every ``int``-valued ``Enum`` defined in ``notebooklm.rpc.types`` is pinned to
-# its exact ``{member_name: value}`` map (canonical members only — value-aliases
-# like ``QuizQuantity.MORE`` and ``ArtifactTypeCode.QUIZ_FLASHCARD`` collapse onto
-# their canonical member when iterating the enum, which is the wire contract).
+# its exact ``{member_name: value}`` map, INCLUDING value-aliases like
+# ``QuizQuantity.MORE`` and ``ArtifactTypeCode.QUIZ_FLASHCARD`` (the map is built
+# from ``__members__``, so aliases are frozen too — an alias whose wire value
+# drifted independently would otherwise slip past the gate).
 #
 # To change a value here you MUST edit this snapshot in the SAME PR — that diff
 # line is the deliberate, reviewed acknowledgement that a wire contract moved.
@@ -48,6 +49,7 @@ _RPC_ENUM_SNAPSHOT: dict[str, dict[str, int]] = {
         "REPORT": 2,
         "VIDEO": 3,
         "QUIZ": 4,
+        "QUIZ_FLASHCARD": 4,  # value-alias of QUIZ
         "MIND_MAP": 5,
         "INFOGRAPHIC": 7,
         "SLIDE_DECK": 8,
@@ -74,7 +76,7 @@ _RPC_ENUM_SNAPSHOT: dict[str, dict[str, int]] = {
         "SCIENTIFIC": 11,
     },
     "QuizDifficulty": {"EASY": 1, "MEDIUM": 2, "HARD": 3},
-    "QuizQuantity": {"FEWER": 1, "STANDARD": 2},
+    "QuizQuantity": {"FEWER": 1, "STANDARD": 2, "MORE": 2},  # MORE = value-alias of STANDARD
     "ShareAccess": {"RESTRICTED": 0, "ANYONE_WITH_LINK": 1},
     "SharePermission": {"OWNER": 1, "EDITOR": 2, "VIEWER": 3, "_REMOVE": 4},
     "ShareViewLevel": {"FULL_NOTEBOOK": 0, "CHAT_ONLY": 1},
@@ -116,8 +118,14 @@ def _discover_int_enums() -> dict[str, type[enum.Enum]]:
 
 
 def _live_value_map(enum_cls: type[enum.Enum]) -> dict[str, int]:
-    """Canonical ``{member_name: value}`` map for an int enum (aliases collapse)."""
-    return {member.name: int(member.value) for member in enum_cls}
+    """Full ``{member_name: value}`` map for an int enum, INCLUDING value-aliases.
+
+    Iterating the enum directly (``for m in enum_cls``) silently drops aliases
+    (members sharing a value with a canonical member), so an alias whose wire
+    value drifted independently would never be caught. ``__members__`` exposes
+    every defined name — canonical and alias — so each is frozen.
+    """
+    return {name: int(member.value) for name, member in enum_cls.__members__.items()}
 
 
 @pytest.mark.parametrize("enum_name", sorted(_RPC_ENUM_SNAPSHOT))
