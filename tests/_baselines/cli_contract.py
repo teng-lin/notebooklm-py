@@ -78,9 +78,7 @@ def _command_for(path: str) -> click.Command:
 def _json_default(value):
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    if isinstance(value, tuple):
-        return [_json_default(v) for v in value]
-    if isinstance(value, list):
+    if isinstance(value, (tuple, list)):
         return [_json_default(v) for v in value]
     return str(value)
 

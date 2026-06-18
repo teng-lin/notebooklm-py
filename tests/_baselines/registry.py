@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -53,8 +54,8 @@ _ALLOWLIST_PATH = _PROJECT_ROOT / "scripts" / "api-compat-allowlist.json"
 def allowlist_extra_public_names() -> dict[str, list[str]]:
     """Allowlist ``extra_public_names`` via the audit's OWN ``load_policy`` — the
     same schema validation + case-insensitive sort/dedupe the audit applies, so
-    this can't drift from the audit's contract, parsed once. Lazy import because
-    the audit sets a module-level ``ROOT`` from ``sys.argv`` at import time.
+    this can't drift from the audit's contract, parsed once. Lazy import to keep
+    the audit module (and its collector machinery) off the registry-import path.
     """
     import scripts.audit_public_api_compat as audit
 
@@ -156,7 +157,17 @@ class Baseline:
         return json.loads(self.path.read_text(encoding="utf-8"))
 
     def write(self) -> None:
-        """Rewrite the committed file from ``derive()``. Dev-only (regen seam)."""
+        """Rewrite the committed file from ``derive()``. Dev-only (regen seam).
+
+        Enforces the dev-only-regen invariant at the seam itself (not only at the
+        ``--update-baselines`` call site): a CI environment must never rewrite a
+        baseline. CI only ever diffs (ADR-0022).
+        """
+        if os.environ.get("CI", "").strip():
+            raise RuntimeError(
+                "refusing to regenerate baselines in CI: baselines are dev-only "
+                "regenerated and CI only diffs (ADR-0022)."
+            )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(self.dump(self.derive()), encoding="utf-8")
 
