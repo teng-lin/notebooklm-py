@@ -135,7 +135,12 @@ def test_rpc_enum_values_frozen(enum_name: str) -> None:
     These integers are an undocumented contract with Google's backend; a silent
     change produces wrong-output-without-error (see #1597, VideoStyle).
     """
-    enum_cls = getattr(rpc_types, enum_name)
+    enum_cls = getattr(rpc_types, enum_name, None)
+    assert enum_cls is not None, (
+        f"_RPC_ENUM_SNAPSHOT pins {enum_name}, but it no longer exists in "
+        "rpc/types.py. Remove it from _RPC_ENUM_SNAPSHOT in this PR (a removed "
+        "wire enum is a deliberate, reviewed change)."
+    )
     live = _live_value_map(enum_cls)
     assert live == _RPC_ENUM_SNAPSHOT[enum_name], (
         f"Wire values for {enum_name} changed.\n"
