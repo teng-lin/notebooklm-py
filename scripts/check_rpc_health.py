@@ -535,6 +535,11 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if method in (RPCMethod.REFRESH_SOURCE, RPCMethod.CHECK_SOURCE_FRESHNESS):
         return [[notebook_id], [["placeholder"]]]
 
+    # DISCOVER_SOURCES: synchronous topic discovery (read-only; returns
+    # candidate sources and adds nothing). Live shape [[query], None, mode, nb].
+    if method == RPCMethod.DISCOVER_SOURCES:
+        return [["RPC health check test"], None, 1, notebook_id]
+
     if method == RPCMethod.UPDATE_SOURCE:
         return [[notebook_id], "placeholder", "New Title"]
 

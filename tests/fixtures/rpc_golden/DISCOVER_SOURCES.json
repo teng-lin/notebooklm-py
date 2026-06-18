@@ -1,0 +1,76 @@
+{
+  "method_name": "DISCOVER_SOURCES",
+  "method_id": "Es3dTe",
+  "description": "Synchronously discover ~10 candidate web sources for a topic without adding them (production shape [[query], None, mode, notebook_id]).",
+  "request": {
+    "params": [
+      [
+        "quantum computing"
+      ],
+      null,
+      1,
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "Es3dTe",
+          "[[\"quantum computing\"],null,1,\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "Es3dTe",
+          "[[[\"https://example.com/a\",\"Title A\",\"Why A is relevant\",1],[\"https://example.com/b\",\"Title B\",\"Why B is relevant\",1]],\"Summary of the selection.\",[\"SCRUBBED-RUN-0001\"]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": true,
+    "expected_decoded": [
+      [
+        [
+          "https://example.com/a",
+          "Title A",
+          "Why A is relevant",
+          1
+        ],
+        [
+          "https://example.com/b",
+          "Title B",
+          "Why B is relevant",
+          1
+        ]
+      ],
+      "Summary of the selection.",
+      [
+        "SCRUBBED-RUN-0001"
+      ]
+    ]
+  },
+  "mapper": "notebooklm._source.discover:parse_discovered_sources",
+  "mapper_expected": [
+    {
+      "url": "https://example.com/a",
+      "title": "Title A",
+      "why_relevant": "Why A is relevant",
+      "source_type": 1
+    },
+    {
+      "url": "https://example.com/b",
+      "title": "Title B",
+      "why_relevant": "Why B is relevant",
+      "source_type": 1
+    }
+  ]
+}

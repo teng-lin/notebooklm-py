@@ -55,6 +55,7 @@
 | `VfAZjd` | SUMMARIZE | Get notebook summary | `_notebooks.py` |
 | `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_sources.py` |
 | `yR9Yof` | CHECK_SOURCE_FRESHNESS | Check if source needs refresh | `_sources.py` |
+| `Es3dTe` | DISCOVER_SOURCES | Discover candidate sources by topic (sync) | `_source/discover.py` |
 | `Ljjv0c` | START_FAST_RESEARCH | Start fast research | `_research.py` |
 | `QA9ei` | START_DEEP_RESEARCH | Start deep research | `_research.py` |
 | `e3bVqc` | POLL_RESEARCH | Poll research status | `_research.py` |
@@ -2022,6 +2023,45 @@ await rpc_call(
 ```
 
 ---
+
+## Source Discovery
+
+### RPC: DISCOVER_SOURCES (Es3dTe)
+
+**Source:** `_source/discover.py::SourceDiscoverer.discover()` (exposed as `client.sources.discover()`)
+
+Synchronous "discover sources by topic": one call returns ~10 candidate web
+sources for a query **without adding them** to the notebook. This is distinct
+from the asynchronous research pipeline (`START_FAST_RESEARCH` /
+`START_DEEP_RESEARCH` → `POLL_RESEARCH` → `IMPORT_RESEARCH`), which Google's
+backend implements via the same `DiscoverSources*` service family but exposes as
+a start/poll/import "research run".
+
+```python
+# mode: 1 = web (the only live-verified corpus today)
+params = [
+    [query],      # 0: Query, wrapped in a single-element list
+    None,         # 1
+    mode,         # 2: Corpus-type int (1 = web)
+    notebook_id,  # 3: Notebook ID (raw UUID)
+]
+
+await rpc_call(
+    RPCMethod.DISCOVER_SOURCES,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+    allow_null=True,
+)
+
+# Response envelope (live-verified):
+#   [
+#     [ [url, title, why_relevant, source_type], ... ],  # [0] ~10 candidates
+#     "<one-line summary of the selection>",              # [1] summary
+#     ["<run-id-uuid>"],                                  # [2] run id
+#   ]
+# Each candidate row is [url, title, why_relevant, source_type]; web rows
+# carry source_type == 1.
+```
 
 ## Research Operations
 

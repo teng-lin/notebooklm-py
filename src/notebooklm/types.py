@@ -45,6 +45,7 @@ from ._types.notebooks import (
 )
 from ._types.notes import Note
 from ._types.research import (
+    DiscoveredSource,
     MindMapResult,
     ResearchSource,
     ResearchSourceInput,
@@ -170,6 +171,7 @@ __all__ = [
     "MindMapKind",
     "MindMapResult",
     "SourceGuide",
+    "DiscoveredSource",
     # Exceptions
     "SourceError",
     "SourceAddError",

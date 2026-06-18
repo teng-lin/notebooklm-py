@@ -272,3 +272,36 @@ class SourceGuide:
         the JSON shape stays a ``list``.
         """
         return {"summary": self.summary, "keywords": list(self.keywords)}
+
+
+# Default ``source_type`` tag on a discovered-source row. The live ``Es3dTe``
+# response tags every web candidate ``1``; the field is preserved verbatim so a
+# future corpus-typed result (Drive, etc.) round-trips unchanged.
+DISCOVERED_SOURCE_TYPE_WEB = 1
+
+
+@dataclass(frozen=True)
+class DiscoveredSource:
+    """One candidate source returned by :meth:`SourcesAPI.discover`.
+
+    The synchronous ``DiscoverSources`` (``Es3dTe``) RPC returns ~10 candidate
+    web sources for a topic *without adding them* to the notebook — the caller
+    decides which to add via :meth:`SourcesAPI.add_url`. Each row is
+    ``[url, title, why_relevant, source_type]`` on the wire.
+
+    Use attribute access (``source.url``, ``source.title``).
+    """
+
+    url: str
+    title: str
+    why_relevant: str = ""
+    source_type: int = DISCOVERED_SOURCE_TYPE_WEB
+
+    def to_public_dict(self) -> dict[str, Any]:
+        """Return a plain-dict shape for JSON/CLI output."""
+        return {
+            "url": self.url,
+            "title": self.title,
+            "why_relevant": self.why_relevant,
+            "source_type": self.source_type,
+        }

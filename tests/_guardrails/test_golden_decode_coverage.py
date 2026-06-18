@@ -114,6 +114,9 @@ GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
     RPCMethod.GET_SOURCE: (
         (_GOLDEN_VCR, "TestSourcesGoldenDecoded::test_get_fulltext_decoded_golden"),
     ),
+    RPCMethod.DISCOVER_SOURCES: (
+        (_GOLDEN_VCR, "TestDiscoverSourcesGoldenDecoded::test_discover_decoded_golden"),
+    ),
     # --- notebooks ---
     RPCMethod.LIST_NOTEBOOKS: (
         (_GOLDEN_EXPANSION, "TestNotebooksGoldenDecoded::test_list_decoded_golden"),

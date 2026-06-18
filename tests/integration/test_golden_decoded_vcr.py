@@ -50,7 +50,13 @@ import reprlib
 
 import pytest
 
-from notebooklm.types import Artifact, ArtifactType, Source, SourceType
+from notebooklm.types import (
+    Artifact,
+    ArtifactType,
+    DiscoveredSource,
+    Source,
+    SourceType,
+)
 from tests.integration._golden_assert import assert_decoded_equals
 from tests.integration._vcr_helpers import vcr_client
 from tests.integration.conftest import skip_no_cassettes
@@ -402,4 +408,41 @@ class TestSourcesGoldenDecoded:
             fulltext.char_count,
             len(fulltext.content),
             field="sources_get_fulltext.char_count == len(content)",
+        )
+
+
+class TestDiscoverSourcesGoldenDecoded:
+    """Pin the decoded ``DiscoveredSource`` rows for the discover cassette."""
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("discover_sources.yaml")
+    async def test_discover_decoded_golden(self):
+        """``sources.discover`` decodes each candidate's url/title/why/type."""
+        async with vcr_client() as client:
+            candidates = await client.sources.discover(
+                MUTABLE_NOTEBOOK_ID, "quantum computing advances"
+            )
+
+        # The recorded ``Es3dTe`` response carries 10 web candidates.
+        assert_decoded_equals(len(candidates), 10, field="discover.count")
+        first = candidates[0]
+        assert isinstance(first, DiscoveredSource)
+        assert_decoded_equals(
+            first.url,
+            "https://www.forbes.com/sites/chuckbrooks/2026/06/13/"
+            "the-quantum-frontier-how-quantum-computing-is-reshaping-our-future/",
+            field="discover[0].url",
+        )
+        assert first.title.startswith("The Quantum Frontier"), (
+            f"Unexpected discover[0] title head: {reprlib.repr(first.title)}"
+        )
+        # ``why_relevant`` lives at a different slot than ``title`` — pin a
+        # non-empty decode so a slot slip is visible.
+        assert first.why_relevant, "discover[0].why_relevant should be non-empty"
+        # Every recorded candidate is a web source (type tag 1).
+        assert_decoded_equals(
+            sorted({c.source_type for c in candidates}),
+            [1],
+            field="discover.source_type set",
         )

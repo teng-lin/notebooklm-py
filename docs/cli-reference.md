@@ -150,6 +150,7 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--allow-internal` (URL sources only), `--json` (file-source `--mime-type` overrides extension inference — see [detailed section](#source-add-mime-type-file-sources)) | `source add "https://..." --timeout 90` |
 | `add-drive <id> <title>` | Drive file ID, title | `--mime-type [google-doc\|google-slides\|google-sheets\|pdf]`, `--json` | `source add-drive abc123 "Doc" --mime-type google-slides` |
 | `add-research [query]` | Search query (or `--prompt-file -` for stdin) | `--mode [fast\|deep]`, `--from [web\|drive]`, `--import-all`, `--cited-only`, `--no-wait`, `--timeout`, `--prompt-file PATH` | `source add-research "AI" --mode deep --no-wait` |
+| `discover [query]` | Topic query (or `--prompt-file -` for stdin) | `--json`, `--limit N`, `--no-truncate`, `--prompt-file PATH` | `source discover "quantum computing"` |
 | `get <id>` | Source ID | `--json` | `source get src123` |
 | `fulltext <id>` | Source ID | `--json`, `-o FILE`, `--force`, `--no-clobber`, `-f [text\|markdown]` | `source fulltext src123 -f markdown -o out.md` (`-f markdown` requires the `markdown` extra: `pip install "notebooklm-py[markdown]"` — full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)) |
 | `guide <id>` | Source ID | `--json` | `source guide src123` |
@@ -895,6 +896,39 @@ notebooklm source add-research "AI papers" --mode deep --import-all --timeout 36
 # Read long query from file (or stdin via '-')
 notebooklm source add-research --prompt-file research_query.txt --mode deep
 echo "very long query..." | notebooklm source add-research --prompt-file -
+```
+
+### Source: `discover`
+
+Discover ~10 candidate web sources for a topic **without adding them** to the
+notebook. This is the synchronous, one-shot lookup — copy a URL from the
+results and run `source add <url>` to add it. It is distinct from
+`source add-research`, which runs the asynchronous web/deep research pipeline
+and can import results.
+
+> **Python equivalent:** [`client.sources.discover(nb_id, query)`](python-api.md#sourcesapi-clientsources).
+
+```bash
+notebooklm source discover [query] [OPTIONS]
+```
+
+**Options:**
+- `-n, --notebook ID` - Notebook ID (uses current if not set)
+- `--json` - Output as JSON (a `{"sources": [...], "count": N}` envelope)
+- `--limit N` - Show at most N candidates
+- `--no-truncate` - Do not truncate the rendered table columns
+- `--prompt-file PATH` - Read the query from a file (or `-` for stdin)
+
+**Examples:**
+```bash
+# Discover candidate web sources for a topic
+notebooklm source discover "quantum computing advances"
+
+# JSON output (each entry has url / title / why_relevant / source_type)
+notebooklm source discover "AI safety" --json
+
+# Then add a chosen candidate
+notebooklm source add "https://example.com/the-best-result"
 ```
 
 ### Research: `status`

@@ -108,6 +108,7 @@
       "clean",
       "delete",
       "delete-by-title",
+      "discover",
       "fulltext",
       "get",
       "guide",
@@ -8995,6 +8996,7 @@
         "clean",
         "delete",
         "delete-by-title",
+        "discover",
         "fulltext",
         "get",
         "guide",
@@ -9670,6 +9672,115 @@
         }
       ],
       "short_help": "Delete a source by exact title."
+    },
+    "source discover": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "query",
+          "nargs": 1,
+          "required": false,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Read prompt/query text from a file (or '-' for stdin) instead of the positional argument",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "prompt_file",
+          "opts": [
+            "--prompt-file"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "prompt_file"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Show at most N rows. 0 = show no rows. Omit for unlimited. Applies to both text and --json output.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "limit",
+          "opts": [
+            "--limit"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Disable column truncation in the rendered table (default: truncate).",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "no_truncate",
+          "opts": [
+            "--no-truncate"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Discover candidate web sources for a topic..."
     },
     "source fulltext": {
       "class": "Command",

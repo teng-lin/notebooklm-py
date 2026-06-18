@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Discover sources by topic.** New `client.sources.discover(notebook_id,
+  query, *, source="web")` returns ~10 candidate web sources for a topic
+  **without adding them** to the notebook (each a typed `DiscoveredSource` with
+  `url` / `title` / `why_relevant` / `source_type`); pass a candidate's `url` to
+  `sources.add_url` to add it. Backed by the synchronous `DiscoverSources`
+  (`Es3dTe`) RPC and exposed on the CLI as `notebooklm source discover
+  "<query>"` (with `--json`). This is distinct from `client.research`, which
+  wraps the asynchronous DiscoverSourcesManifold/Async start→poll→import
+  pipeline. `DiscoveredSource` is exported from `notebooklm` and
+  `notebooklm.types`. The live-verified request shape is `[[query], None, mode,
+  notebook_id]` (mode `1` = web) and the response envelope is `[[[url, title,
+  why_relevant, type], ...], "<summary>", ["<run-id>"]]`.
 - **Retrieve the generation prompt behind an artifact** (#1571). New
   `client.artifacts.get_prompt(notebook_id, artifact_id)` returns the free-text
   prompt an artifact was generated from, and a matching `artifact get-prompt`

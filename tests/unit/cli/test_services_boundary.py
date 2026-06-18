@@ -133,6 +133,7 @@ GUARDED_PATHS = {
     "cli/services/polling.py": SERVICES_ROOT / "polling.py",
     "cli/services/research.py": SERVICES_ROOT / "research.py",
     "cli/services/session_context.py": SERVICES_ROOT / "session_context.py",
+    "cli/services/source_discover.py": SERVICES_ROOT / "source_discover.py",
     "cli/services/source_listing.py": SERVICES_ROOT / "source_listing.py",
     "cli/services/source_mutations.py": SERVICES_ROOT / "source_mutations.py",
     "cli/services/source_research.py": SERVICES_ROOT / "source_research.py",

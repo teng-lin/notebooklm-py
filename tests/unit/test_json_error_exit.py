@@ -225,6 +225,10 @@ def _fail_source_list(client: MagicMock) -> None:
     client.sources.list = AsyncMock(side_effect=RuntimeError("net down"))
 
 
+def _fail_source_discover(client: MagicMock) -> None:
+    client.sources.discover = AsyncMock(side_effect=RuntimeError("net down"))
+
+
 def _fail_note_list(client: MagicMock) -> None:
     client.notes.list = AsyncMock(side_effect=RuntimeError("net down"))
 
@@ -343,6 +347,11 @@ def _fail_notebook_create(client: MagicMock) -> None:
 JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
     # source group: client raises -> @with_client routes to json_error_response.
     ("source_list_unauthorized", ["source", "list", "-n", "abc", "--json"], _fail_source_list),
+    (
+        "source_discover_unauthorized",
+        ["source", "discover", "quantum", "-n", "abc", "--json"],
+        _fail_source_discover,
+    ),
     # artifact group
     (
         "artifact_list_unauthorized",

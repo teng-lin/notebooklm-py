@@ -925,6 +925,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_row_adapters/labels.py` | `LabelRow` strict typed view over the raw positional label tuple `[name, sources, id, emoji]` (fails loud on schema drift) |
 | `_row_adapters/notes.py` | `NoteRow` typed view over raw positional note and mind-map RPC rows |
 | `_row_adapters/research.py` | `ResearchTaskRow` / `ResearchTaskInfoRow` / `ResearchResultRow` typed views over raw positional `POLL_RESEARCH` rows that centralise the single-level positions `_research_task_parser.py` used to open-code (#1501) |
+| `_row_adapters/discover.py` | `DiscoverResultRow` / `DiscoveredSourceRow` typed views over the raw positional `DISCOVER_SOURCES` envelope (`[[url, title, why_relevant, type], ...]`) |
 | `_row_adapters/sources.py` | `SourceRow` / `SourceRowShape` typed views over raw positional source RPC rows |
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
 | `_research_task_parser.py` | Internal parser for research task result-type selection |
@@ -949,6 +950,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_artifact/polling.py` | Poll coordination service for artifact generation tasks |
 | `_source/add.py` | Core service layer for adding text, URL, or Google Drive sources |
 | `_source/content.py` | Core service layer for fetching source HTML/markdown content |
+| `_source/discover.py` | Core service layer for synchronous topic-based source discovery (`DISCOVER_SOURCES`); builds params, parses candidates into `DiscoveredSource` |
 | `_source/listing.py` | Core service layer for listing notebook sources |
 | `_source/polling.py` | Poll coordination service for active source conversions |
 | `_source/upload.py` | Concurrency-gated upload pipeline for source files |
@@ -1090,6 +1092,7 @@ src/notebooklm/
 │   ├── _upload_decode.py        # Pure URL/source-id/content-type decode + validation helpers (extracted from upload.py)
 │   ├── add.py                   # Source addition coordinator
 │   ├── content.py               # Source content fetcher
+│   ├── discover.py              # Synchronous topic-based source discovery (DISCOVER_SOURCES); params builder + DiscoveredSource parser + SourceDiscoverer
 │   ├── listing.py               # Source listing helper
 │   ├── polling.py               # Source polling coordinator
 │   ├── upload.py                # Gated source upload service
@@ -1110,6 +1113,7 @@ src/notebooklm/
 │   ├── __init__.py              # Re-exports the typed row views
 │   ├── artifacts.py             # Artifact + GET_SUGGESTED_REPORTS row adapters (ArtifactRow / ReportSuggestionRow)
 │   ├── chat.py                  # Streamed-chat row adapters (AnswerRow / CitationRow / CitationDetail / PassageRow / StreamFrameRow / ErrorPayloadRow / TextLeafRow) — closes the chat positional-decode perimeter (#1491)
+│   ├── discover.py              # DISCOVER_SOURCES row adapters (DiscoverResultRow / DiscoveredSourceRow) over the candidate envelope
 │   ├── labels.py                # Source-label row adapter
 │   ├── notes.py                 # Note and mind-map row adapter
 │   ├── research.py              # POLL_RESEARCH row adapters (ResearchTaskRow / ResearchTaskInfoRow / ResearchResultRow) — drains the research parser's single-level positional reads (#1501)
@@ -1145,7 +1149,7 @@ src/notebooklm/
 │   ├── mind_maps.py             # MindMap + MindMapKind pure-value types (#1256)
 │   ├── notebooks.py
 │   ├── notes.py
-│   ├── research.py              # ResearchStatus enum + ResearchTask/ResearchSource/ResearchStart/MindMapResult/SourceGuide typed returns (#1209)
+│   ├── research.py              # ResearchStatus enum + ResearchTask/ResearchSource/ResearchStart/MindMapResult/SourceGuide/DiscoveredSource typed returns (#1209)
 │   ├── sharing.py
 │   └── sources.py
 ├── _notebooks.py                # NotebooksAPI
@@ -1251,6 +1255,7 @@ src/notebooklm/
         ├── polling.py           # Shared polling helpers for CLI wait commands
         ├── research.py          # `research wait` CLI adapter over `_app/research.py` — re-exports plan/result/outcome; injects cli.resolve.resolve_notebook_id + cli.research_import.import_research_sources defaults (preserves their patch seams)
         ├── session_context.py   # Notebook-context CLI adapter over `_app/session.py` for `use`/`status`/`auth logout` — re-exports the typed result classes; builds the injected StatusInputs/LogoutInputs bundles from its own session_context-namespace path helpers (read at call time, preserving the get_context_path/get_storage_path/clear_context patch seams)
+        ├── source_discover.py   # `source discover` CLI adapter — owns the ListSpec/prepare_list presentation half over client.sources.discover() candidates (DiscoveredSource)
         ├── source_listing.py    # `source list` CLI adapter over `_app/source_listing.py` — owns the ListSpec/prepare_list presentation half; injects resolve_label_id into the neutral fetch_sources
         ├── source_mutations.py  # Source-mutation CLI adapter over `_app/source_mutations.py` — re-exports plan/result/error/helpers; injects cli.resolve validate_id + resolve_source_id (preserves the resolve_source_id monkeypatch seam) and the click.confirm confirmer
         ├── source_research.py   # `source add-research` CLI adapter — thin wrapper over `_app/source_research.py` (injects the rich-coupled importer; re-exports plan/result + validate_add_research_flags; preserves the import_research_sources monkeypatch seam)

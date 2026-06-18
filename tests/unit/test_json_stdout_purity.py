@@ -328,6 +328,21 @@ def _customize_source_guide(client: MagicMock) -> None:
     )
 
 
+def _customize_source_discover(client: MagicMock) -> None:
+    from notebooklm.types import DiscoveredSource
+
+    client.sources.discover = AsyncMock(
+        return_value=[
+            DiscoveredSource(
+                url="https://example.com/a",
+                title="Title A",
+                why_relevant="Why A",
+                source_type=1,
+            )
+        ]
+    )
+
+
 def _customize_source_add_research(client: MagicMock) -> None:
     client.research.start = AsyncMock(
         return_value=ResearchStart(
@@ -470,6 +485,11 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
             "--json",
         ],
         _customize_source_add_research,
+    ),
+    (
+        "source_discover",
+        ["source", "discover", "quantum", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_source_discover,
     ),
     # artifact group
     ("artifact_list", ["artifact", "list", "-n", "abc123def456ghi789jkl", "--json"], None),

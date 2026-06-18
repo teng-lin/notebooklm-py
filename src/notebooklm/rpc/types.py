@@ -128,6 +128,11 @@ class RPCMethod(str, Enum):
     START_DEEP_RESEARCH = "QA9ei"  # -> DiscoverSourcesAsync
     POLL_RESEARCH = "e3bVqc"  # -> ListDiscoverSourcesJob
     IMPORT_RESEARCH = "LBwxtb"  # -> FinishDiscoverSourcesRun
+    # -> DiscoverSources. Synchronous "discover sources by topic": one call
+    # returns ~10 candidate web sources for a query, without adding them. This
+    # is distinct from the async DiscoverSourcesManifold/Async pipeline that the
+    # research family (START_FAST_RESEARCH/START_DEEP_RESEARCH) wraps.
+    DISCOVER_SOURCES = "Es3dTe"
 
     # Note and mind map operations
     # -> ActOnSources (generic source-action op; we use it to generate a mind map)

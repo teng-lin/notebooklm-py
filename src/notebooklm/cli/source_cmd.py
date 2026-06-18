@@ -10,9 +10,9 @@ where they provide presentation-pipeline glue or compatibility imports:
 * ``_app/source_clean.py``         — clean (pure orchestration: classify +
   batched delete; rendering + exit codes live here in the command layer)
 * ``_app/source_listing.py`` via ``services/source_listing.py`` — list
-* ``_app/source_mutations.py`` via ``services/source_mutations.py`` — delete, delete-by-title, rename,
-  refresh, add-drive
+* ``_app/source_mutations.py`` via ``services/source_mutations.py`` — delete, delete-by-title, rename, refresh, add-drive
 * ``_app/source_research.py`` via ``services/source_research.py`` — add-research
+* ``services/source_discover.py`` (no ``_app`` core; client method is read-only) — discover
 
 The full per-command listing lives in the ``source`` click group docstring
 below (it is what ``notebooklm source --help`` shows).
@@ -97,6 +97,10 @@ from .rendering import (
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_id
 from .runtime import is_quiet
 from .services.label_listing import LabelResolutionError
+from .services.source_discover import (
+    SourceDiscoverPlan,
+    execute_source_discover,
+)
 from .services.source_listing import SourceListPlan, execute_source_list
 from .services.source_mutations import (
     SourceAddDrivePlan,
@@ -129,6 +133,7 @@ def source():
       add              Add a source (url, text, file, youtube)
       add-drive        Add a Google Drive document
       add-research     Search web/drive and add sources from results
+      discover         Discover candidate sources by topic (does not add them)
       get              Get source details
       fulltext         Get full indexed text content
       guide            Get AI-generated source summary and keywords
@@ -593,6 +598,44 @@ def source_add_research(
                 ),
             )
             _render_add_research_result(result, json_output=json_output)
+
+    return _run()
+
+
+@source.command("discover")
+@click.argument("query", default="", required=False)
+@prompt_file_option
+@notebook_option
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@list_options
+@with_client
+def source_discover(
+    ctx, query, prompt_file, notebook_id, json_output, limit, no_truncate, client_auth
+):
+    """Discover candidate web sources for a topic (does NOT add them).
+
+    Synchronously returns ~10 candidate sources for QUERY. Nothing is added to
+    the notebook — copy a URL and run ``source add <url>`` to add it. Distinct
+    from ``source add-research`` (the async pipeline that can import results).
+    """
+    query = resolve_prompt(query, prompt_file, "query", required=True)
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            render = await execute_source_discover(
+                client,
+                SourceDiscoverPlan(
+                    notebook_id=nb_id_resolved,
+                    query=query,
+                    search_source="web",
+                    json_output=json_output,
+                    limit=limit,
+                    no_truncate=no_truncate,
+                ),
+            )
+            render_list(render)
 
     return _run()
 

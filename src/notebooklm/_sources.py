@@ -19,11 +19,12 @@ from ._settings import build_get_user_settings_params, extract_account_limits
 from ._source import upload as _source_upload
 from ._source.add import SourceAddService
 from ._source.content import SourceContentRenderer
+from ._source.discover import SourceDiscoverer
 from ._source.listing import SourceLister
 from ._source.polling import SourcePoller
 from ._source.upload import SourceUploadPipeline
 from ._source.upload_payloads import build_rename_source_params
-from ._types.research import SourceGuide
+from ._types.research import DiscoveredSource, SourceGuide
 from ._url_utils import is_youtube_url
 from .exceptions import SourceNotFoundError
 from .rpc import RPCMethod
@@ -98,6 +99,7 @@ class SourcesAPI:
         self._content = SourceContentRenderer(self._rpc, logger=logger)
         self._lister = SourceLister(self._rpc)
         self._poller = SourcePoller()
+        self._discoverer = SourceDiscoverer(self._rpc)
         self._upload_timeout = upload_timeout
         self._max_concurrent_uploads = max_concurrent_uploads
         self._uploader = uploader
@@ -729,6 +731,46 @@ class SourcesAPI:
             source_id,
             output_format=output_format,
         )
+
+    async def discover(
+        self,
+        notebook_id: str,
+        query: str,
+        *,
+        source: str = "web",
+    ) -> builtins.list[DiscoveredSource]:
+        """Discover candidate sources for a topic, without adding them.
+
+        Synchronously calls Google's ``DiscoverSources`` (``Es3dTe``) RPC,
+        which returns ~10 candidate web sources for ``query``. This is a
+        read-only suggestion call: it does **not** add anything to the
+        notebook — pass a candidate's ``url`` to :meth:`add_url` to add it.
+
+        This is distinct from :class:`~notebooklm.research.ResearchAPI`
+        (``client.research``), which wraps the *asynchronous*
+        DiscoverSourcesManifold/Async "research run" pipeline (start → poll →
+        import). Use ``discover`` for a one-shot topic lookup; use
+        ``client.research`` for a full web/deep research run.
+
+        Args:
+            notebook_id: The notebook ID.
+            query: The discovery topic / query string.
+            source: Corpus type to search. Only ``"web"`` is supported in v1;
+                an unknown value raises ``ValueError``.
+
+        Returns:
+            A list of :class:`~notebooklm.types.DiscoveredSource` candidates,
+            each exposing ``url``, ``title``, ``why_relevant``, and
+            ``source_type``. Empty when nothing is found.
+
+        Raises:
+            ValueError: If ``query`` is empty or ``source`` is unsupported.
+
+        Example:
+            candidates = await client.sources.discover(nb_id, "quantum computing")
+            await client.sources.add_url(nb_id, candidates[0].url)  # add one
+        """
+        return await self._discoverer.discover(notebook_id, query, source=source)
 
     # --- Private helper methods ---
 

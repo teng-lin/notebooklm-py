@@ -988,7 +988,7 @@ print(url)
 
 ### SourcesAPI (`client.sources`)
 
-**CLI equivalent:** [Source Commands](cli-reference.md#source-commands-notebooklm-source-cmd) — `notebooklm source add`, `list`, `get`, `fulltext`, `guide`, `rename`, `refresh`, `delete`, `wait`.
+**CLI equivalent:** [Source Commands](cli-reference.md#source-commands-notebooklm-source-cmd) — `notebooklm source add`, `list`, `get`, `fulltext`, `guide`, `discover`, `rename`, `refresh`, `delete`, `wait`.
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
@@ -997,6 +997,7 @@ print(url)
 | `get_or_none(notebook_id, source_id)` | `str, str` | `Source \| None` | Optional lookup; returns `None` when absent |
 | `get_fulltext(notebook_id, source_id, *, output_format="text")` | `str, str, *, output_format: Literal["text", "markdown"]` | `SourceFulltext` | Get full content; `"markdown"` requires the optional `markdownify` extra |
 | `get_guide(notebook_id, source_id)` | `str, str` | `SourceGuide` | Get AI-generated `summary` + `keywords`; use attribute access (`guide.summary`) |
+| `discover(notebook_id, query, *, source="web")` | `str, str, *, str` | `list[DiscoveredSource]` | **Discover** ~10 candidate web sources for a topic **without adding them** (synchronous `DiscoverSources` RPC). Each `DiscoveredSource` exposes `url` / `title` / `why_relevant` / `source_type`; pass a `url` to `add_url` to add it. Distinct from `client.research` (the async start/poll/import pipeline). Only `source="web"` is supported; raises `ValueError` on an empty query or unsupported `source`. |
 | `add_url(notebook_id, url, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
@@ -1058,6 +1059,14 @@ guide = await client.sources.get_guide(nb_id, src.id)
 print(f"Summary: {guide.summary}")
 print(f"Keywords: {guide.keywords}")
 # SourceGuide is a typed value; prefer attribute access.
+
+# Discover candidate web sources for a topic (does NOT add them). This is the
+# synchronous one-shot lookup — for a full async research run use client.research.
+candidates = await client.sources.discover(nb_id, "quantum computing")
+for c in candidates:
+    print(f"{c.title} — {c.url}\n  {c.why_relevant}")
+# Add the ones you want:
+await client.sources.add_url(nb_id, candidates[0].url)
 ```
 
 ---

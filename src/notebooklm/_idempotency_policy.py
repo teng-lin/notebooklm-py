@@ -345,6 +345,10 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         RPCMethod.GET_SOURCE_GUIDE: (
             "response-only source guide fetch/generation; no persisted resource is created by replay"
         ),
+        RPCMethod.DISCOVER_SOURCES: (
+            "response-only source discovery; returns candidate sources and adds nothing, "
+            "so replay creates no resource"
+        ),
         RPCMethod.GET_SUGGESTED_REPORTS: (
             "response-only report suggestion generation; no persisted resource is created by replay"
         ),
