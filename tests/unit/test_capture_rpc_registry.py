@@ -308,6 +308,33 @@ class VideoFormat(int, Enum):
     assert buckets["changed"] == []
 
 
+def test_diff_enums_stale_when_value_repurposed_to_another_member() -> None:
+    """Our member's value is still a live code but now labels a DIFFERENT member -> STALE.
+
+    The integer code wasn't retired — it was *repurposed*. Our ``BRIEF = 2`` still
+    sees code 2 in the bundle, but code 2 now returns "Cinematic", which normalizes
+    to ``CINEMATIC`` (a different member already in our enum). Leaving BRIEF
+    unflagged would silently keep our ``BRIEF`` name pointing at a code that now
+    means Cinematic, so it must be STALE.
+    """
+    # Anchors (Explainer, Cinematic) present so the block attributes to VideoFormat.
+    # No "Brief" label in the bundle; code 2 has been reused for "Cinematic".
+    bundle = 'switch(a){case 1:return"Explainer";case 2:return"Cinematic"}'
+    types = """
+class VideoFormat(int, Enum):
+    EXPLAINER = 1
+    BRIEF = 2
+    CINEMATIC = 2
+"""
+    live = extract_switch_enums(bundle)
+    buckets = diff_enums(types, live)
+
+    stale = {(r["enum"], r["member"], r["our_value"]) for r in buckets["stale"]}
+    assert ("VideoFormat", "BRIEF", 2) in stale
+    # CINEMATIC's name still matches the live label for code 2 -> not CHANGED.
+    assert buckets["changed"] == []
+
+
 def test_diff_enums_unparsed_when_no_block() -> None:
     """A known enum (we hold an anchor) with no switch block parsed -> UNPARSED."""
     # Only VideoFormat is present; AudioFormat has no block to attribute.

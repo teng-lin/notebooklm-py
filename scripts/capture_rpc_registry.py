@@ -205,9 +205,13 @@ def diff(ours: dict[str, str], live: dict[str, str], bundle: str) -> dict[str, d
 # A switch block: ``switch(<scrutinee>){ <case 1:return"X";case 2:return"Y";> }``.
 # ``<scrutinee>`` is a short minified expr (kept <=30 chars so we don't span a
 # huge unrelated ``switch``); the body is one-or-more ``case N:return"Label"``.
-_SWITCH_BLOCK_RE = re.compile(r'switch\([^)]{1,30}\)\{((?:case \d+:return"[^"]*";?\s*)+)')
-# A single ``case N:return"Label"`` arm inside a matched block.
-_SWITCH_CASE_RE = re.compile(r'case (\d+):return"([^"]*)"')
+# Whitespace-tolerant so a minor minifier/pretty-printer change (spaces after
+# ``return``, around ``:``, between arms) doesn't yield a false UNPARSED.
+_SWITCH_BLOCK_RE = re.compile(
+    r'switch\([^)]{1,30}\)\{\s*((?:case\s+\d+\s*:\s*return\s*"[^"]*"\s*;?\s*)+)'
+)
+# A single ``case N:return "Label"`` arm inside a matched block.
+_SWITCH_CASE_RE = re.compile(r'case\s+(\d+)\s*:\s*return\s*"([^"]*)"')
 
 # Label-anchoring registry: a recognizable *subset* of labels identifies which
 # of our enums a switch block is. A block whose label set is a SUPERSET of an
@@ -324,12 +328,19 @@ def diff_enums(
             live_code = live_by_norm_label.get(member)
             if live_code is None:
                 # The label our member name corresponds to is not in the bundle.
-                if value not in live_map:
+                live_label = live_map.get(value)
+                norm_live_label = _normalize_label(live_label) if live_label else None
+                if value not in live_map or (norm_live_label in ours and norm_live_label != member):
+                    # STALE either because our integer code vanished from the
+                    # bundle entirely, OR it was repurposed: the code now maps to
+                    # a label that normalizes to a DIFFERENT member already in our
+                    # enum, so our member name still pointing at it is wrong.
                     buckets["stale"].append(
                         {"enum": enum_name, "member": member, "our_value": value}
                     )
                 # else: our value is still a live code under a label that didn't
-                # normalize back to our member name — neither CHANGED nor STALE.
+                # normalize back to any of our member names — neither CHANGED nor
+                # STALE (likely a renamed/aliased label we don't track yet).
             elif live_code != value:
                 buckets["changed"].append(
                     {

@@ -910,7 +910,9 @@ async def make_raw_rpc_request(
     except httpx.HTTPStatusError as e:
         return None, f"HTTP {e.response.status_code}"
     except httpx.RequestError as e:
-        return None, str(e) or type(e).__name__
+        # httpx.RequestError subclasses can stringify the failed request URL,
+        # which carries f.sid; scrub before it reaches a live print site.
+        return None, scrub_secrets(str(e) or type(e).__name__)
 
 
 async def check_customization_cohort(
@@ -947,9 +949,15 @@ async def check_customization_cohort(
     if response_text is None:
         return CohortStatus.UNKNOWN, "Empty response from server"
 
+    # RPCError (incl. UnknownRPCMethodError from the absent-id drift guard) must
+    # propagate so the tripwire LOUDLY surfaces an id rotation / protocol break
+    # rather than degrading it to a quiet UNKNOWN. Bare ValueError likewise
+    # propagates — it signals a code bug (e.g. an invalid int() conversion), not
+    # API shape drift. Only a genuinely unreadable/malformed JSON root is caught
+    # and reported as UNKNOWN here.
     try:
         data = decode_response(response_text, _CUSTOMIZATION_CHOICES_RPC_ID, allow_null=True)
-    except (json.JSONDecodeError, ValueError, IndexError, TypeError, RPCError) as e:
+    except (json.JSONDecodeError, TypeError) as e:
         return CohortStatus.UNKNOWN, f"Parse error: {scrub_secrets(e)}"
 
     if data is None:
@@ -1350,7 +1358,10 @@ async def run_health_check(full_mode: bool = False) -> tuple[list[CheckResult], 
             cohort_status, cohort_detail = await check_customization_cohort(
                 client, auth, notebook_id
             )
-            print(f"COHORT   sqTeoe customization choices: {cohort_status.value} - {cohort_detail}")
+            print(
+                "COHORT   sqTeoe customization choices: "
+                f"{cohort_status.value} - {scrub_secrets(cohort_detail)}"
+            )
 
         finally:
             if full_mode and temp_resources.notebook_id:
