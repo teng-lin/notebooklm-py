@@ -1188,14 +1188,15 @@ def test_ungated_public_surface_covers_exactly_the_unpinned_modules() -> None:
     until it is added to ``UNGATED_PUBLIC_MODULES`` and the baseline regenerated.
     """
     committed_modules = set(baseline_by_name("ungated_surface").load())
-    assert set(_PUBLIC_TOP_LEVEL_MODULES) == committed_modules | _EXACT_PINNED_ELSEWHERE, (
+    discovered = set(_PUBLIC_TOP_LEVEL_MODULES)
+    assert discovered == committed_modules | _EXACT_PINNED_ELSEWHERE, (
         "A public top-level module is neither exact-pinned elsewhere nor frozen in "
         "the ungated_surface baseline. Add a new public module to "
         "tests._baselines.registry.UNGATED_PUBLIC_MODULES (or to an existing exact "
         "pin) and regenerate (`python scripts/regen_baselines.py`) so its additions "
         "are gated.\n"
-        f"  discovered-not-gated: {sorted(set(_PUBLIC_TOP_LEVEL_MODULES) - committed_modules - _EXACT_PINNED_ELSEWHERE)}\n"
-        f"  baselined-not-discovered: {sorted(committed_modules - set(_PUBLIC_TOP_LEVEL_MODULES))}"
+        f"  discovered-not-gated: {sorted(discovered - committed_modules - _EXACT_PINNED_ELSEWHERE)}\n"
+        f"  baselined-not-discovered: {sorted(committed_modules - discovered)}"
     )
 
     # The registry's regen seed and the committed baseline keys must agree, so the
