@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.2] - 2026-06-17
+## [0.7.2] - 2026-06-18
 
 Maintenance patch on the 0.7.x line. Backports fixes from `main`
 (cherry-picked ahead of the v0.8.0 breaking release).
@@ -36,6 +36,19 @@ Maintenance patch on the 0.7.x line. Backports fixes from `main`
   the full envelope, matching the browser. The VCR body matcher normalizes the
   old and new client-options shapes so existing generation cassettes still
   replay.
+
+- **`notebooks.create()` and `sources.add_url()` no longer fail on
+  already-migrated cohorts** (#1548; backport of #1546). Google migrated the
+  `CREATE_NOTEBOOK` (CCqFvf) and URL `ADD_SOURCE` (izAoDd) payloads to a nested
+  wire shape during the gradual rollout: the flat trailing template block
+  (`[2],[1]` for create; `[2],None,None` for url-add) collapsed into a nested
+  `[2, None, None, [1, …, [1]]]` block, and the URL source spec gained a
+  trailing `1`. Backends on already-migrated accounts began rejecting the old
+  flat shape (`status=3` for create, `5`/`9` for add-source), while read paths
+  were unaffected. Both payload builders now emit the nested shape, which is
+  forward-compatible across migrated and un-migrated cohorts (verified live).
+  Scope is limited to the create + add-url RPCs with exact Web-UI captures; the
+  youtube/text/drive/file `ADD_SOURCE` variants are unchanged.
 
 - **Empty notebook summary no longer raises `UnknownRPCMethodError`** (#1485).
   A brand-new, source-less notebook has no summary yet, so the `SUMMARIZE` RPC
@@ -1181,7 +1194,9 @@ This is the initial public release of `notebooklm-py`. While core functionality 
 - **Authentication expiry**: CSRF tokens expire after some time. Re-run `notebooklm login` if you encounter auth errors.
 - **Large file uploads**: Files over 50MB may fail or timeout. Split large documents if needed.
 
-[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/teng-lin/notebooklm-py/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/teng-lin/notebooklm-py/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.4.1...v0.5.0
