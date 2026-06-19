@@ -35,6 +35,25 @@
 
 📥 **Downloads & Export** - Download all generated artifacts locally (MP3, MP4, PDF, PNG, CSV, JSON, Markdown). Export to Google Docs/Sheets. **Features the web UI doesn't offer**: batch downloads, quiz/flashcard export in multiple formats, mind map JSON extraction.
 
+## Use Cases & Recipes
+
+NotebookLM is a **grounded** engine: Gemini does the heavy reading and answers from *your* sources with citations. The winning pattern is to let it do the expensive analysis while your agent (Claude Code, Codex, …) orchestrates and handles the final mile. Recipes people build on top of this library:
+
+- **🪙 Zero-token research offload** — Throw 30 documents into a notebook, let Gemini do the heavy analysis, and have your agent spend tokens only on the final polish. The agent just orchestrates (`create` → `source add` → `ask`); the reasoning happens server-side.
+- **🧠 Web research → expert agent** — Run [Deep Research](docs/cli-reference.md#source-add-research) (`source add-research`) to scan the web into a sourced report, then distill that report into a reusable Claude skill — a packaged domain expert without hand-curating sources.
+- **💾 Persistent cross-session memory** — Keep a "Master Brain" notebook; a wrap-up step appends each session's decisions and fixes as notes (`note create` / save chat), and a line in your `CLAUDE.md` queries it (`ask`) at the start of the next session. Storage and recall live on Google's infrastructure.
+- **🕸️ Obsidian / knowledge-graph sync** — Run the CLI from your vault root so downloaded artifacts (reports, mind-map JSON, transcripts) land as files in your knowledge graph; community skills built on this library even resolve NotebookLM's citation markers into Obsidian `[[wikilinks]]`. Pair with a podcast overview for an audio digest of your notes.
+- **🔁 Multi-format content repurposing** — One source set, every format: `generate audio` (podcast), `generate video`, `generate slide-deck`, plus a `report` blog draft and quiz/flashcards — fan a single notebook out across channels.
+- **📞 Grounded knowledge base (RAG)** — Load product docs, FAQs, RFCs, and past tickets, then `ask --json` for **source-grounded, cited** answers for support, on-call, or internal Q&A.
+- **🧩 Grounded memory for coding agents** — Expose a notebook of your internal docs/RFCs/architecture over the [MCP server](docs/mcp-guide.md) (or plain `ask`) so an agent answers from *your* code with citations rather than plausible-sounding guesses — a zero-infra alternative to standing up your own vector DB and embedding pipeline.
+- **🚨 Incident runbook generator** — On an alert, spin up a notebook of the relevant docs, ask targeted diagnostic questions, and emit a briefing-doc `report` as an automated runbook.
+- **📚 Curriculum / study-set builder** — Scrape a syllabus or developer roadmap, create one notebook per topic (with deliberate pacing to dodge rate limits), and bulk-generate podcasts, quizzes, and flashcards for each.
+- **📰 Scheduled audio briefings** — Pair `auth refresh --quiet` (cron/launchd/systemd) with `generate audio` to publish a fresh personalized briefing to a podcast feed on a schedule.
+
+These combine ordinary library primitives — see the [CLI Reference](docs/cli-reference.md) and [Python API](docs/python-api.md). The agent-side glue (skills, scheduling, vault layout) lives in your own setup, not this package.
+
+**Seen in the wild:** ["Claude Code + NotebookLM = CHEAT CODE"](https://www.youtube.com/watch?v=usTeU4Uh0iM) · ["…+ Obsidian = GOD MODE"](https://www.youtube.com/watch?v=kU3qYQ7ACMA) · [giving Claude Code "a brain that doesn't hallucinate"](https://dev.to/stevengonsalvez/notebooklm-skills-give-claude-code-a-brain-that-doesnt-hallucinate-2anj) · [auto-building study notebooks from roadmap.sh](https://dev.to/waseemaldmeiri/automating-roadmapsh-into-notebooklm-132i) · [a browser-free YouTube→notebook→cited-answers pipeline driven entirely from the terminal](https://artemxtech.substack.com/p/notebooklm-has-a-knowledge-graph).
+
 ## Ways to Use
 
 | Method | Best For |
