@@ -168,6 +168,24 @@ class SuggestedTopic:
     prompt: str
 
 
+@dataclass(frozen=True)
+class PromptSuggestion:
+    """An AI-suggested question/prompt to ask a notebook.
+
+    Returned by :meth:`NotebooksAPI.suggest_prompts` (the ``otmP3b`` /
+    ``GeneratePromptSuggestions`` RPC). Each suggestion pairs a short,
+    human-readable ``title`` with a ready-to-send multi-line ``prompt`` that can
+    be passed straight to :meth:`ChatAPI.ask`.
+
+    Attributes:
+        title: Short label for the suggestion (e.g. ``"Professional Briefing"``).
+        prompt: The full multi-line instruction string to ask the notebook.
+    """
+
+    title: str
+    prompt: str
+
+
 @dataclass
 class NotebookDescription:
     """AI-generated description and suggested topics for a notebook."""

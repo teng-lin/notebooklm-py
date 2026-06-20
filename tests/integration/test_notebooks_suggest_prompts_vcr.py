@@ -1,6 +1,6 @@
 """Suggest-prompts (``otmP3b`` / ``GeneratePromptSuggestions``) VCR cassette.
 
-Locks the on-wire shape of ``ChatAPI.suggest_prompts`` and exercises the
+Locks the on-wire shape of ``NotebooksAPI.suggest_prompts`` and exercises the
 decode->``PromptSuggestion`` path end-to-end through the real RPC decoder
 (golden decoded-row coverage for ``otmP3b``).
 
@@ -33,7 +33,7 @@ from tests.vcr_config import notebooklm_vcr
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
-CASSETTE_NAME = "chat_suggest_prompts.yaml"
+CASSETTE_NAME = "notebooks_suggest_prompts.yaml"
 CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / CASSETTE_NAME
 
 # Scrubbed, non-real ids baked into the cassette's recorded ``otmP3b`` request.
@@ -74,11 +74,11 @@ def _decode_freq_params(body: str | bytes) -> list[Any]:
 
 
 class TestSuggestPromptsVCR:
-    """``client.chat.suggest_prompts`` replay against the recorded ``otmP3b`` POST."""
+    """``client.notebooks.suggest_prompts`` replay against the recorded ``otmP3b`` POST."""
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("chat_suggest_prompts.yaml")
+    @notebooklm_vcr.use_cassette("notebooks_suggest_prompts.yaml")
     async def test_suggest_prompts_decoded_golden(self) -> None:
         """Replay decodes the wrapped envelope into typed ``PromptSuggestion`` rows.
 
@@ -87,7 +87,7 @@ class TestSuggestPromptsVCR:
         """
         auth = await get_vcr_auth()
         async with NotebookLMClient(auth) as client:
-            suggestions = await client.chat.suggest_prompts(
+            suggestions = await client.notebooks.suggest_prompts(
                 NOTEBOOK_ID, source_ids=SOURCE_IDS, mode=4
             )
 

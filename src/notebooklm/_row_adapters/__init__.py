@@ -5,7 +5,7 @@ Re-exports the typed row views; importers may also reach submodules directly
 (``from .._row_adapters.sources import SourceRow``).
 """
 
-from . import artifacts, chat, labels, notes, research, sources
+from . import artifacts, chat, labels, notebooks, notes, research, sources
 from .artifacts import ArtifactRow, ReportSuggestionRow
 from .chat import (
     AnswerRow,
@@ -35,6 +35,7 @@ __all__ = [
     "artifacts",
     "chat",
     "labels",
+    "notebooks",
     "notes",
     "research",
     "sources",

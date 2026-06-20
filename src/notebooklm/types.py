@@ -24,7 +24,6 @@ from ._types.chat import (
     ChatMode,
     ChatReference,
     ConversationTurn,
-    PromptSuggestion,
 )
 from ._types.common import (
     AccountLimits,
@@ -41,6 +40,7 @@ from ._types.notebooks import (
     Notebook,
     NotebookDescription,
     NotebookMetadata,
+    PromptSuggestion,
     SourceSummary,
     SuggestedTopic,
 )

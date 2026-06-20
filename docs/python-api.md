@@ -943,6 +943,7 @@ async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
 | `delete(notebook_id)` | `notebook_id: str` | `None` | Delete a notebook (idempotent; returns `None` whether or not it existed) |
 | `rename(notebook_id, new_title)` | `notebook_id: str, new_title: str` | `Notebook` | Rename a notebook (re-fetched; raises `NotebookNotFoundError` if missing) |
 | `get_description(notebook_id)` | `notebook_id: str` | `NotebookDescription` | Get AI summary and topics |
+| `suggest_prompts(notebook_id, *, source_ids=None, mode=4, query=None)` | `str, list[str] \| None, int, str \| None` | `list[PromptSuggestion]` | Get AI-suggested prompts for the notebook. `source_ids=None` uses all sources; `mode` is the required `1..9` "mode/surface" int (default `4` suggests chat questions; other modes target other surfaces); `query` optionally steers the suggestions. Each `PromptSuggestion.prompt` is a ready-to-send instruction for `ask()`. |
 | `get_metadata(notebook_id)` | `notebook_id: str` | `NotebookMetadata` | Get notebook metadata and sources |
 | `get_summary(notebook_id)` | `notebook_id: str` | `str` | Get raw summary text |
 | `get_share_url(notebook_id, artifact_id=None)` | `notebook_id: str, str \| None` | `str` | Get a share URL |
@@ -1383,7 +1384,6 @@ else:
 | `configure(notebook_id, ...)` | `str, ...` | `None` | Set chat persona |
 | `get_history(notebook_id, limit=100, conversation_id=None)` | `str, int, str` | `list[tuple[str, str]]` | Get Q&A pairs from most recent conversation |
 | `get_conversation_id(notebook_id)` | `str` | `str \| None` | Get most recent conversation ID from server |
-| `suggest_prompts(notebook_id, *, source_ids=None, mode=4, query=None)` | `str, list[str] \| None, int, str \| None` | `list[PromptSuggestion]` | Get AI-suggested questions/prompts to ask the notebook. `source_ids=None` uses all sources; `mode` is the required `1..9` "mode/surface" int (default `4`); `query` optionally steers the suggestions. Each `PromptSuggestion.prompt` is a ready-to-send instruction for `ask()`. |
 | `delete_conversation(notebook_id, conversation_id)` | `str, str` | `None` | **DESTRUCTIVE.** Permanently delete a server-side conversation (web UI's "Delete history" action). The next `ask()` with no `conversation_id` then starts a brand-new conversation. |
 | `save_answer_as_note(notebook_id, ask_result, *, title=None)` | `str, AskResult, str \| None` | `Note` | Save a chat answer as a citation-rich note ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)) — the resulting note's `[N]` markers remain interactive hover-anchored citations in the NotebookLM web UI. Owns the saved-from-chat workflow on `ChatAPI` (the data owner). Raises `ValueError` if `ask_result.references` is empty. When `title is None`, derives `f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"`. |
 

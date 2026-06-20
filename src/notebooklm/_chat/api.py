@@ -19,10 +19,8 @@ from .._notebook_metadata import NotebookSourceIdProvider
 from .._request_types import AuthSnapshot
 from .._row_adapters.chat import (
     ConversationTurnRow,
-    PromptSuggestionRow,
     unwrap_conversation_turns,
     unwrap_last_conversation_id,
-    unwrap_prompt_suggestions,
 )
 from .._runtime.config import DEFAULT_CHAT_TIMEOUT
 from .._runtime.contracts import LoopGuard, RpcCaller
@@ -56,9 +54,7 @@ from ..types import (
     ChatReference,
     ConversationTurn,
     Note,
-    PromptSuggestion,
 )
-from .payloads import _PROMPT_SUGGESTIONS_DEFAULT_MODE, build_prompt_suggestions_params
 
 logger = logging.getLogger(__name__)
 
@@ -475,85 +471,6 @@ class ChatAPI(LoopBoundPrimitive):
             references=references,
             raw_response=raw_response[:1000],
         )
-
-    async def suggest_prompts(
-        self,
-        notebook_id: str,
-        *,
-        source_ids: list[str] | None = None,
-        mode: int = _PROMPT_SUGGESTIONS_DEFAULT_MODE,
-        query: str | None = None,
-    ) -> list[PromptSuggestion]:
-        """Get AI-suggested questions/prompts to ask a notebook.
-
-        Backed by ``GeneratePromptSuggestions`` (``otmP3b``): the server returns
-        a short list of ``{title, prompt}`` suggestions, each ``prompt`` a
-        ready-to-send multi-line instruction you can pass straight to
-        :meth:`ask`.
-
-        Args:
-            notebook_id: The notebook to suggest prompts for.
-            source_ids: Source ids to scope the suggestions to. ``None``
-                (default) uses **all** of the notebook's sources.
-            mode: The required ``C0`` int "mode/surface" enum, inclusive range
-                ``1..9`` (``0`` / omitted makes the server return ``INTERNAL``).
-                Every value in range returns a populated, LLM-generated (hence
-                non-deterministic) suggestion list, and the server does not
-                validate the code's *meaning*, so the values behave
-                interchangeably from the client's view. The label↔int mapping is
-                not recoverable from any capture we hold, so this stays a plain
-                int rather than a named enum. The default ``4`` is the single
-                value exercised in the issue's live-verified capture (#1612), not
-                a recovered "default" semantic; see
-                ``_chat/payloads._PROMPT_SUGGESTIONS_DEFAULT_MODE`` for the full
-                known/unknown notes and how to resume the exploration.
-            query: Optional free-text steer for the kind of prompts to suggest.
-                An empty / whitespace-only string is treated as no steer.
-
-        Returns:
-            A list of :class:`~notebooklm.types.PromptSuggestion`. An empty /
-            degenerate server response yields ``[]`` (suggestions are
-            best-effort UI sugar — an absent payload does not raise).
-
-        Raises:
-            ValidationError: if ``mode`` is outside the inclusive ``1..9`` range
-                (caught before any network call, so a bad mode never costs an
-                RPC).
-
-        .. versionadded:: 0.8.0
-        """
-        logger.debug("Suggesting prompts for notebook %s (mode=%d)", notebook_id, mode)
-        # Validate the mode up front (before the source-id fetch) so a bad value
-        # fails fast without a wasted round-trip; the builder's ValueError is
-        # re-raised as the public ValidationError for a uniform error contract.
-        try:
-            build_prompt_suggestions_params(notebook_id, [], mode=mode)
-        except ValueError as exc:
-            raise ValidationError(str(exc)) from exc
-        if source_ids is None:
-            source_ids = await self._notebooks.get_source_ids(notebook_id)
-
-        params = build_prompt_suggestions_params(notebook_id, source_ids, mode=mode, query=query)
-        result = await self._rpc.rpc_call(
-            RPCMethod.SUGGEST_PROMPTS,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
-
-        rows = unwrap_prompt_suggestions(result, source="suggest_prompts")
-        # ``is_well_formed`` only gates on row LENGTH (>= 2 slots), not on the
-        # field values, mirroring ``ReportSuggestionRow``: a length-ok row whose
-        # title/prompt degrade to "" (a non-string leaf) still maps to a
-        # ``PromptSuggestion("", "")``. Real traffic always carries string
-        # leaves, so this is a best-effort tolerance for a degenerate server
-        # payload, not an expected output — callers should not treat an empty
-        # title/prompt as meaningful.
-        return [
-            PromptSuggestion(title=row.title, prompt=row.prompt)
-            for row in map(PromptSuggestionRow, rows)
-            if row.is_well_formed
-        ]
 
     async def get_conversation_turns(
         self, notebook_id: str, conversation_id: str, limit: int = 2

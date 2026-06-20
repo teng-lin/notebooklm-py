@@ -38,11 +38,10 @@ from __future__ import annotations
 from typing import Any
 
 from notebooklm._row_adapters.artifacts import ReportSuggestionRow, unwrap_artifact_rows
-from notebooklm._row_adapters.chat import PromptSuggestionRow, unwrap_prompt_suggestions
+from notebooklm._row_adapters.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
 from notebooklm._types.artifacts import Artifact, ReportSuggestion
-from notebooklm._types.chat import PromptSuggestion
 from notebooklm._types.labels import Label
-from notebooklm._types.notebooks import Notebook
+from notebooklm._types.notebooks import Notebook, PromptSuggestion
 from notebooklm._types.sharing import ShareStatus
 from notebooklm._types.sources import Source
 from notebooklm.rpc.types import RPCMethod
@@ -160,7 +159,7 @@ def get_suggested_reports(decoded: Any) -> list[ReportSuggestion]:
 def suggest_prompts(decoded: Any) -> list[PromptSuggestion]:
     """``SUGGEST_PROMPTS`` -> one :class:`PromptSuggestion` per row.
 
-    Mirrors ``ChatAPI.suggest_prompts`` (``_chat/api.py``): the decoded payload
+    Mirrors ``NotebooksAPI.suggest_prompts`` (``_notebooks.py``): the decoded payload
     is the single-element ``[[ [title, prompt], ... ]]`` envelope routed through
     the production ``unwrap_prompt_suggestions`` (``result[0]``), then each
     well-formed row is wrapped in a :class:`PromptSuggestionRow` (the position
