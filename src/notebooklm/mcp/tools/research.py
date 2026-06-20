@@ -104,10 +104,11 @@ def register(mcp: Any) -> None:
     async def research_cancel(ctx: Context, notebook: str, run_id: str) -> dict[str, Any]:
         """Cancel an in-flight research run in a notebook.
 
-        Accepts a notebook name or ID and the ``run_id`` to cancel — the
-        ``task_id`` reported by ``research_status`` (== the ``task_id`` from
-        ``research_start``; for a **deep** run that is the ``report_id`` returned
-        by ``research_start``, NOT its ``task_id``).
+        Accepts a notebook name or ID and the ``run_id`` to cancel: pass the
+        ``task_id`` reported by ``research_status``. (For a **deep** run that is
+        the ``report_id`` returned by ``research_start``, NOT its ``task_id``,
+        which is a sessionId — so prefer the ``research_status`` value to avoid
+        the trap.)
 
         Fire-and-forget: the server returns nothing to confirm the cancel and
         does not validate ``run_id``, so this always reports
