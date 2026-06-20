@@ -600,8 +600,10 @@ class ResearchAPI:
         """
         logger.debug("Cancelling research run %s in notebook %s", run_id, notebook_id)
         # Field 3 carries the run id; the optional field-1 client context is
-        # omitted to match ``_poll_task_models`` (``[None, None, <id>]``).
-        await self._rpc.rpc_call(
+        # omitted to match ``_poll_task_models`` (``[None, None, <id>]``). Routed
+        # through ``self._rpc_call`` so a post-construction override of the RPC
+        # caller (advanced tests / instrumentation) is honoured.
+        await self._rpc_call(
             RPCMethod.CANCEL_RESEARCH,
             [None, None, run_id],
             source_path=f"/notebook/{notebook_id}",
