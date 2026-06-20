@@ -1,9 +1,10 @@
 """Chat and conversation CLI commands.
 
 Commands:
-    ask        Ask a notebook a question
-    configure  Configure chat persona and response settings
-    history    Get conversation history or clear local cache
+    ask             Ask a notebook a question
+    suggest-prompts Get AI-suggested prompts for a notebook
+    configure       Configure chat persona and response settings
+    history         Get conversation history or clear local cache
 """
 
 import logging
@@ -41,6 +42,14 @@ from .rendering import (
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_ids
 
 logger = logging.getLogger(__name__)
+
+# Inclusive ``--mode`` range for ``suggest-prompts``. Mirrors the canonical 1..9
+# bound that ``NotebooksAPI.suggest_prompts`` enforces (the CLI boundary forbids
+# importing the runtime layer's private constant, so this is a deliberate copy);
+# the method re-validates server-side-bound, so a drift here only changes which
+# layer reports the same out-of-range error, never correctness.
+_SUGGEST_PROMPTS_MODE_MIN = 1
+_SUGGEST_PROMPTS_MODE_MAX = 9
 
 
 def _configure_json_payload(config: ConfigureResult) -> dict[str, Any]:
@@ -424,6 +433,108 @@ def register_chat_commands(cli):
                         if note_save_error is not None:
                             data["note_save_error"] = note_save_error
                     json_output_response(data)
+
+        return _run()
+
+    @cli.command("suggest-prompts")
+    @notebook_option
+    @click.option(
+        "--mode",
+        default=4,
+        type=int,
+        help=(
+            "Suggestion surface to target (1-9, default 4). 4=default chat "
+            "questions, 5=critique, 6=audio/debate, 8=quiz, 9=flashcards. "
+            "Out-of-range values exit 1 with a validation error."
+        ),
+    )
+    @click.option(
+        "--query",
+        default=None,
+        help="Free-text steer for the kind of prompts to suggest.",
+    )
+    @click.option(
+        "--source",
+        "-s",
+        "source_ids",
+        multiple=True,
+        help="Limit to specific source IDs (can be repeated). Defaults to all sources.",
+        shell_complete=_complete_sources,
+    )
+    @json_option
+    @with_client
+    def suggest_prompts_cmd(
+        ctx,
+        notebook_id,
+        mode,
+        query,
+        source_ids,
+        json_output,
+        client_auth,
+    ):
+        """Get AI-suggested prompts for a notebook.
+
+        Returns a short list of suggested prompts (each a title plus a
+        ready-to-send instruction) that you can pass to ``notebooklm ask``.
+        ``--mode`` selects the product surface the prompts are written for:
+        4 (default) = chat questions, 5 = critique, 6 = audio/debate,
+        8 = quiz, 9 = flashcards. A mode outside 1-9 exits 1.
+
+        \b
+        Example:
+          notebooklm suggest-prompts
+          notebooklm suggest-prompts --mode 8           # quiz prompts
+          notebooklm suggest-prompts --query "key risks"
+          notebooklm suggest-prompts -s src_001 -s src_002
+          notebooklm suggest-prompts --json
+        """
+        nb_id = require_notebook(notebook_id)
+        # Validate ``mode`` up front -- BEFORE any notebook/source resolution --
+        # so an out-of-range value always surfaces the mode error (exit 1) and
+        # never pays for a ``sources.list`` resolution RPC. ``suggest_prompts``
+        # re-validates the same 1..9 range before its own RPC; this mirror keeps
+        # the bad-mode failure deterministic regardless of how ``-s`` resolves.
+        # Raises the public ``ValidationError`` so the shared error envelope
+        # (``@with_client``) maps it to a VALIDATION_ERROR exit-1 / JSON envelope.
+        if not _SUGGEST_PROMPTS_MODE_MIN <= mode <= _SUGGEST_PROMPTS_MODE_MAX:
+            raise ValidationError(
+                f"mode must be in the inclusive range "
+                f"{_SUGGEST_PROMPTS_MODE_MIN}..{_SUGGEST_PROMPTS_MODE_MAX}, got {mode!r}"
+            )
+
+        async def _run():
+            async with resolve_client_factory(ctx)(client_auth) as client:
+                nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+                sources = await resolve_source_ids(
+                    client, nb_id_resolved, source_ids, json_output=json_output
+                )
+                suggestions = await client.notebooks.suggest_prompts(
+                    nb_id_resolved,
+                    source_ids=sources,
+                    mode=mode,
+                    query=query,
+                )
+
+                if json_output:
+                    json_output_response(
+                        {
+                            "notebook_id": nb_id_resolved,
+                            "suggestions": [
+                                {"title": s.title, "prompt": s.prompt} for s in suggestions
+                            ],
+                            "count": len(suggestions),
+                        }
+                    )
+                    return
+
+                if not suggestions:
+                    console.print("[yellow]No prompt suggestions returned[/yellow]")
+                    return
+
+                console.print("[bold cyan]Suggested prompts:[/bold cyan]")
+                for i, suggestion in enumerate(suggestions, 1):
+                    console.print(f"\n[bold]{i}. {suggestion.title}[/bold]")
+                    console.print(suggestion.prompt)
 
         return _run()
 
