@@ -244,6 +244,9 @@ GOLDEN_EXEMPT: dict[RPCMethod, str] = {
     RPCMethod.DELETE_LABEL: _REASON_NONE_CONTRACT,
     RPCMethod.DELETE_CONVERSATION: _REASON_NONE_CONTRACT,
     RPCMethod.REMOVE_RECENTLY_VIEWED: _REASON_NONE_CONTRACT,
+    # ``research.cancel`` is fire-and-forget: the server returns [] (decodes to
+    # None-equivalent) and is not branched on — there is no decoded field to pin.
+    RPCMethod.CANCEL_RESEARCH: _REASON_NONE_CONTRACT,
     # ``sources.refresh`` returns None on success (v0.8.0, #1290).
     RPCMethod.REFRESH_SOURCE: _REASON_NONE_CONTRACT,
     # ``notes.update`` returns None (the UPDATE_NOTE echo is not decoded).
