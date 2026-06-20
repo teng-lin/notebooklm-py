@@ -243,21 +243,36 @@ def _has_active_vcr_cassette() -> bool:
     on ``notebooklm_vcr`` is the primary protection — this guard is a
     secondary belt-and-braces check for unbound requests.
     """
+    # vcrpy installs ``functools.wraps``-style stubs (``__wrapped__`` points
+    # back to the original) on its HTTP interception points. The exact point
+    # moved across versions: vcrpy <=8.1 patched
+    # ``httpcore.AsyncConnectionPool.handle_async_request``; vcrpy >=8.2 patches
+    # ``httpx.AsyncHTTPTransport.handle_async_request`` (the transport layer)
+    # instead. Probe both so the guard survives either vcrpy generation.
+    candidates = []
+    try:
+        import httpx  # type: ignore[import-not-found]
+
+        candidates.append((httpx.AsyncHTTPTransport, "handle_async_request"))
+    except ImportError:
+        pass
     try:
         import httpcore  # type: ignore[import-not-found]
 
-        # When a vcrpy cassette is active, httpcore's AsyncConnectionPool gets
-        # its ``handle_async_request`` patched with a vcr-aware wrapper. The
-        # wrapper has a ``__wrapped__`` reference back to the original. If we
-        # see a wrapper, a cassette context is active somewhere.
-        handle = getattr(httpcore.AsyncConnectionPool, "handle_async_request", None)
-        if handle is None:
-            return True
-        # vcrpy uses ``functools.wraps`` or sets ``__wrapped__`` on its stubs.
-        return getattr(handle, "__wrapped__", None) is not None
-    except (ImportError, AttributeError):
-        # If httpcore is missing or vcr stubs aren't introspectable, fall
-        # open — we shouldn't break tests on environmental quirks.
+        candidates.append((httpcore.AsyncConnectionPool, "handle_async_request"))
+    except ImportError:
+        pass
+
+    if not candidates:
+        # Neither library importable — fall open rather than break tests on
+        # environmental quirks.
+        return True
+    try:
+        return any(
+            getattr(getattr(cls, attr, None), "__wrapped__", None) is not None
+            for cls, attr in candidates
+        )
+    except AttributeError:
         return True
 
 
