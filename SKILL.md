@@ -154,6 +154,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 - `notebooklm artifact wait` - long-running (when in main conversation)
 - `notebooklm source wait` - long-running (when in main conversation)
 - `notebooklm research wait` - long-running (when in main conversation)
+- `notebooklm research cancel <run_id>` - state-changing; cancels a running research job (an in-progress job transitions to FAILED). Fire-and-forget: it does not confirm success — re-check with `notebooklm research status`.
 - `notebooklm ask "..." --save-as-note` - writes a note
 - `notebooklm history --save` - writes a note
 
@@ -198,6 +199,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 | Web research (query from file) | `notebooklm source add-research --prompt-file research_query.txt --mode deep` |
 | Check research status | `notebooklm research status` |
 | Wait for research | `notebooklm research wait --import-all` |
+| Cancel research | `notebooklm research cancel <run_id>` (run_id = the `task_id` from `research status`) |
 | Chat | `notebooklm ask "question"` |
 | Chat (long prompt from file) | `notebooklm ask --prompt-file question.txt` |
 | Chat (specific sources) | `notebooklm ask "question" -s src_id1 -s src_id2` |
@@ -665,7 +667,7 @@ notebooklm --help              # Main commands
 notebooklm auth check          # Diagnose auth issues
 notebooklm auth check --test   # Full auth validation with network test
 notebooklm source --help       # Source management
-notebooklm research --help     # Research status/wait
+notebooklm research --help     # Research status/wait/cancel
 notebooklm generate --help     # Content generation
 notebooklm artifact --help     # Artifact management
 notebooklm download --help     # Download content
