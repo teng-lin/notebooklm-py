@@ -2233,14 +2233,20 @@ await rpc_call(
 
 # Response: [] unconditionally.
 #
-# Notes:
+# Notes (all LIVE-VERIFIED end-to-end against a scratch notebook):
 # - Fire-and-forget. The server returns an empty payload and does NOT validate
 #   the run id (a garbage all-zeros id also returns []), so the response carries
 #   no success signal. ``cancel()`` returns None and never raises on an unknown
-#   id. Confirm by polling afterward — a cancelled IN_PROGRESS run reads FAILED.
+#   id. Confirm by polling afterward — a cancelled IN_PROGRESS run reads FAILED
+#   within a few seconds; re-cancelling an already-terminal run is a silent no-op.
 # - run_id is the poll-level id. For DEEP research that is the report_id from
-#   START_DEEP_RESEARCH (deep's task_id is a sessionId; cancelling with it is a
-#   silent no-op). For FAST research it is the task_id (fast returns no report_id).
+#   START_DEEP_RESEARCH: deep's task_id is a sessionId that POLL_RESEARCH reports
+#   as NOT_FOUND, and cancelling with it is a SILENT NO-OP (run keeps running) —
+#   only the report_id stops a deep run. For FAST research it is the task_id
+#   (fast returns no report_id). poll().task_id is the safe value for both modes.
+# - notebook_id (source-path) is ROUTING ONLY, not a scoping/authorization
+#   boundary: a valid run_id is cancelled even when source-path names a different
+#   / non-existent / empty notebook. The run id alone identifies the run server-side.
 ```
 
 ---

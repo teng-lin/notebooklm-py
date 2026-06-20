@@ -115,6 +115,10 @@ def register(mcp: Any) -> None:
         ``{"cancelled": true}`` without asserting the run existed. Poll
         ``research_status`` afterward to confirm — a cancelled in-progress run
         surfaces as ``failed``.
+
+        The ``notebook`` is routing context only, not a scoping boundary: the
+        server keys the cancel on ``run_id`` alone, so a valid ``run_id`` is
+        cancelled regardless of which notebook is named.
         """
         client = get_client(ctx)
         with mcp_errors():
