@@ -1536,3 +1536,45 @@ class TestResearch:
             result = await client.research.poll("nb_123")
 
         assert result.sources == ()
+
+
+class TestResearchCancel:
+    """Tests for ``ResearchAPI.cancel`` (CancelDiscoverSourcesJob / Zbrupe)."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_sends_run_id_in_field_three(
+        self, auth_tokens, httpx_mock, build_rpc_response
+    ):
+        """cancel() targets Zbrupe with ``[None, None, run_id]`` and notebook source-path."""
+        # Live-verified: the server returns ``[]`` unconditionally.
+        response_body = build_rpc_response(RPCMethod.CANCEL_RESEARCH, [])
+        httpx_mock.add_response(content=response_body.encode(), method="POST")
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.cancel("nb_123", "run_456")
+
+        # Fire-and-forget: no value to surface.
+        assert result is None
+
+        request = httpx_mock.get_request()
+        # RPC id + routing source-path ride the URL query.
+        assert RPCMethod.CANCEL_RESEARCH.value in str(request.url)
+        assert "source-path=%2Fnotebook%2Fnb_123" in str(request.url)
+        # Field 3 carries the run id; the optional field-1 client context is omitted.
+        params = _extract_request_params(request)
+        assert params == [None, None, "run_456"]
+
+    @pytest.mark.asyncio
+    async def test_cancel_unknown_id_does_not_raise(
+        self, auth_tokens, httpx_mock, build_rpc_response
+    ):
+        """An unknown / garbage run id still returns ``[]`` — cancel must not raise."""
+        # The server does NOT validate the id (a garbage all-zeros id also
+        # returns ``[]``), so there is no success signal to branch on.
+        response_body = build_rpc_response(RPCMethod.CANCEL_RESEARCH, [])
+        httpx_mock.add_response(content=response_body.encode(), method="POST")
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.research.cancel("nb_123", "00000000-0000-0000-0000-000000000000")
+
+        assert result is None

@@ -561,6 +561,41 @@ class ResearchAPI:
             if sleep_for > 0:
                 await asyncio.sleep(sleep_for)
 
+    async def cancel(self, notebook_id: str, run_id: str) -> None:
+        """Cancel an in-flight research (DiscoverSources) run.
+
+        Fire-and-forget. An IN_PROGRESS run transitions to a terminal
+        ``FAILED`` state shortly after this call; cancelling an
+        already-terminal run is a silent no-op.
+
+        Args:
+            notebook_id: The notebook the run belongs to.
+            run_id: The **poll-level** run id — i.e. ``task.task_id`` from
+                :meth:`poll` (equivalently ``ResearchTask.task_id``). For a
+                **deep** research run started via :meth:`start`, this is the
+                ``report_id`` returned by ``start`` (deep's ``start().task_id``
+                is a *sessionId*, and cancelling with it is a silent no-op). For
+                a **fast** run it is ``start().task_id`` (fast returns no
+                ``report_id``). When in doubt, pass the ``task_id`` surfaced by
+                :meth:`poll`.
+
+        Returns:
+            ``None``. This is **fire-and-forget**: the server returns an empty
+            payload unconditionally and does **not** validate ``run_id`` (an
+            unknown / garbage id also yields an empty response), so the response
+            carries no success signal and this method never raises on an unknown
+            id. The only way to confirm a cancel took effect is to :meth:`poll`
+            afterward — a cancelled IN_PROGRESS run surfaces as ``FAILED``.
+        """
+        logger.debug("Cancelling research run %s in notebook %s", run_id, notebook_id)
+        # Field 3 carries the run id; the optional field-1 client context is
+        # omitted to match ``_poll_task_models`` (``[None, None, <id>]``).
+        await self._rpc.rpc_call(
+            RPCMethod.CANCEL_RESEARCH,
+            [None, None, run_id],
+            source_path=f"/notebook/{notebook_id}",
+        )
+
     async def import_sources(
         self,
         notebook_id: str,

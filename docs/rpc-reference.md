@@ -59,6 +59,7 @@
 | `QA9ei` | START_DEEP_RESEARCH | Start deep research | `_research.py` |
 | `e3bVqc` | POLL_RESEARCH | Poll research status | `_research.py` |
 | `LBwxtb` | IMPORT_RESEARCH | Import research results | `_research.py` |
+| `Zbrupe` | CANCEL_RESEARCH | Cancel in-flight research run | `_research.py` |
 | `rc3d8d` | RENAME_ARTIFACT | Rename artifact | `_artifacts.py` |
 | `Krh3pd` | EXPORT_ARTIFACT | Export to Docs/Sheets | `_artifacts.py` |
 | `RGP97b` | SHARE_ARTIFACT | Legacy notebook/artifact share-link toggle | `_sharing_manager.py` |
@@ -2207,6 +2208,39 @@ await rpc_call(
 #   not just the URL sources.
 # - The browser/client flow uses the later polled deep-research task ID here rather
 #   than blindly reusing the original task ID returned by START_DEEP_RESEARCH.
+```
+
+### RPC: CANCEL_RESEARCH (Zbrupe)
+
+**Source:** `_research.py::ResearchAPI.cancel()`
+
+Cancel an in-flight research (DiscoverSources) run. An IN_PROGRESS run
+transitions to a terminal `FAILED` state shortly after this call; cancelling an
+already-terminal run is a silent no-op.
+
+```python
+params = [
+    None,    # 0: optional client context — omitted (matches start/poll)
+    None,    # 1
+    run_id,  # 2: the poll-level run id (== ResearchTask.task_id from poll())
+]
+
+await rpc_call(
+    RPCMethod.CANCEL_RESEARCH,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+)
+
+# Response: [] unconditionally.
+#
+# Notes:
+# - Fire-and-forget. The server returns an empty payload and does NOT validate
+#   the run id (a garbage all-zeros id also returns []), so the response carries
+#   no success signal. ``cancel()`` returns None and never raises on an unknown
+#   id. Confirm by polling afterward — a cancelled IN_PROGRESS run reads FAILED.
+# - run_id is the poll-level id. For DEEP research that is the report_id from
+#   START_DEEP_RESEARCH (deep's task_id is a sessionId; cancelling with it is a
+#   silent no-op). For FAST research it is the task_id (fast returns no report_id).
 ```
 
 ---

@@ -1,0 +1,39 @@
+{
+  "method_name": "CANCEL_RESEARCH",
+  "method_id": "Zbrupe",
+  "description": "Cancel an in-flight research run (request shape [None, None, run_id]; server returns [] unconditionally).",
+  "request": {
+    "params": [
+      null,
+      null,
+      "SCRUBBED_RESEARCH_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "Zbrupe",
+          "[null,null,\"SCRUBBED_RESEARCH_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "Zbrupe",
+          "[]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": []
+  }
+}

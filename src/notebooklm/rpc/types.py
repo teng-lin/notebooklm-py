@@ -128,6 +128,7 @@ class RPCMethod(str, Enum):
     START_DEEP_RESEARCH = "QA9ei"  # -> DiscoverSourcesAsync
     POLL_RESEARCH = "e3bVqc"  # -> ListDiscoverSourcesJob
     IMPORT_RESEARCH = "LBwxtb"  # -> FinishDiscoverSourcesRun
+    CANCEL_RESEARCH = "Zbrupe"  # -> CancelDiscoverSourcesJob
 
     # Note and mind map operations
     # -> ActOnSources (generic source-action op; we use it to generate a mind map)

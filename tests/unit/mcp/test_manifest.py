@@ -3,8 +3,9 @@
 Builds the server (bound to a mock client) and lists its tools through the
 in-memory FastMCP ``Client``, then pins:
 
-* the EXACT set of tool names (the 25 of Phase 2a + 2b) — so a tool can't be
-  silently added, removed, or renamed without updating this gate;
+* the EXACT set of tool names (the 25 of Phase 2a + 2b plus ``research_cancel``)
+  — so a tool can't be silently added, removed, or renamed without updating this
+  gate;
 * a tool-count ceiling (28) leaving a little headroom over the ~25 design target;
 * the ``destructiveHint`` annotation + a ``confirm`` parameter on every
   destructive (delete) tool; and
@@ -22,7 +23,7 @@ import pytest
 pytest.importorskip("fastmcp")
 
 
-#: The complete, pinned tool surface. 25 tools across 7 domains. Adding or
+#: The complete, pinned tool surface. 26 tools across 7 domains. Adding or
 #: removing a tool MUST update this set (and the ceiling below if it grows).
 EXPECTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -52,10 +53,11 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "artifact_generate",
         "artifact_status",
         "artifact_download",
-        # Research (3)
+        # Research (4)
         "research_start",
         "research_status",
         "research_import",
+        "research_cancel",
         # Meta (1)
         "server_info",
     }

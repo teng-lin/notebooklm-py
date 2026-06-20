@@ -202,6 +202,32 @@ async def test_research_import_non_current_task_fails_cleanly(mcp_call, mock_cli
     mock_client.research.import_sources.assert_not_called()
 
 
+# ---------------------------------------------------------------------------
+# research_cancel
+# ---------------------------------------------------------------------------
+
+
+async def test_research_cancel(mcp_call, mock_client) -> None:
+    mock_client.research.cancel = AsyncMock(return_value=None)
+    result = await mcp_call("research_cancel", {"notebook": NB_ID, "run_id": TASK_ID})
+    assert result.structured_content == {
+        "notebook_id": NB_ID,
+        "run_id": TASK_ID,
+        "cancelled": True,
+    }
+    mock_client.research.cancel.assert_awaited_once_with(NB_ID, TASK_ID)
+
+
+async def test_research_cancel_resolves_notebook_by_name(mcp_call, mock_client) -> None:
+    mock_client.notebooks.list = AsyncMock(
+        return_value=[FakeNotebook(id=NB_ID, title="My Notebook")]
+    )
+    mock_client.research.cancel = AsyncMock(return_value=None)
+    result = await mcp_call("research_cancel", {"notebook": "My Notebook", "run_id": TASK_ID})
+    assert result.structured_content["cancelled"] is True
+    mock_client.research.cancel.assert_awaited_once_with(NB_ID, TASK_ID)
+
+
 async def test_research_start_then_status_poll_shape(mcp_call, mock_client) -> None:
     """start→status: start returns a task_id, status polls the notebook."""
     mock_client.research.start = AsyncMock(return_value=FakeResearchStart(task_id=TASK_ID))

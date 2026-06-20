@@ -96,6 +96,10 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
         # probed in either quick or full mode (see ALWAYS_SKIP_METHODS in
         # scripts/check_rpc_health.py).
         "START_DEEP_RESEARCH",
+        # Cancels an in-flight research run — write op needing a real run id;
+        # the server returns [] unconditionally (no echo to confirm), so it is
+        # not probed by the canary.
+        "CANCEL_RESEARCH",
         # AI auto-groups / creates source labels (multi-mode write) — write op,
         # --full only. LIST_LABELS (read) is probed via get_test_params.
         "CREATE_LABEL",
