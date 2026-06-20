@@ -23,6 +23,7 @@ from notebooklm._app.research import (
     ResearchStatusResult,
     ResearchWaitPlan,
     ResearchWaitResult,
+    cancel_research,
     execute_research_wait,
     poll_and_classify,
     validate_research_wait_flags,
@@ -87,6 +88,21 @@ def test_validate_flags_import_all_alone_ok() -> None:
 
 def test_validate_flags_neither_flag_ok() -> None:
     validate_research_wait_flags(import_all=False, cited_only=False)
+
+
+# ===========================================================================
+# cancel_research
+# ===========================================================================
+
+
+async def test_cancel_research_forwards_run_id_and_returns_none() -> None:
+    client = _client()
+    client.research.cancel = AsyncMock(return_value=None)
+
+    result = await cancel_research(client, "nb_1", "run_9")
+
+    assert result is None
+    client.research.cancel.assert_awaited_once_with("nb_1", "run_9")
 
 
 # ===========================================================================

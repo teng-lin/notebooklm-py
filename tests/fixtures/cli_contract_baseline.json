@@ -84,6 +84,7 @@
       "switch"
     ],
     "research": [
+      "cancel",
       "status",
       "wait"
     ],
@@ -8106,11 +8107,64 @@
     "research": {
       "class": "Group",
       "commands": [
+        "cancel",
         "status",
         "wait"
       ],
       "params": [],
       "short_help": "Research management commands."
+    },
+    "research cancel": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "run_id",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Cancel an in-flight research run."
     },
     "research status": {
       "class": "Command",

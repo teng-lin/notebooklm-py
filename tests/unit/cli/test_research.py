@@ -445,6 +445,68 @@ class TestResearchWait:
 
 
 # =============================================================================
+# RESEARCH CANCEL TESTS
+# =============================================================================
+
+
+class TestResearchCancel:
+    def test_cancel_requests_and_confirms(self, runner, mock_auth, mock_fetch_tokens):
+        mock_client = create_mock_client()
+        mock_client.research.cancel = AsyncMock(return_value=None)
+
+        result = runner.invoke(
+            cli,
+            ["research", "cancel", "run_456", "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
+
+        assert result.exit_code == 0
+        assert "Cancel requested for run:" in result.output
+        assert "run_456" in result.output
+        # The notebook is resolved and passed through with the run id; fire-and-
+        # forget so the command never asserts success from the (empty) response.
+        mock_client.research.cancel.assert_awaited_once()
+        args = mock_client.research.cancel.await_args.args
+        assert args[0] == "nb_123"
+        assert args[1] == "run_456"
+
+    def test_cancel_json_output(self, runner, mock_auth, mock_fetch_tokens):
+        mock_client = create_mock_client()
+        mock_client.research.cancel = AsyncMock(return_value=None)
+
+        result = runner.invoke(
+            cli,
+            ["research", "cancel", "run_456", "-n", "nb_123", "--json"],
+            obj=inject_client(mock_client),
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data == {"run_id": "run_456", "cancel_requested": True}
+
+    def test_cancel_does_not_raise_on_unknown_id(self, runner, mock_auth, mock_fetch_tokens):
+        # The server returns [] for an unknown id; ``cancel`` returns None and
+        # the command still reports success (fire-and-forget — confirm by poll).
+        mock_client = create_mock_client()
+        mock_client.research.cancel = AsyncMock(return_value=None)
+
+        result = runner.invoke(
+            cli,
+            ["research", "cancel", "00000000-0000-0000-0000-000000000000", "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
+
+        assert result.exit_code == 0
+        assert "Cancel requested for run:" in result.output
+
+    def test_cancel_requires_run_id(self, runner):
+        # RUN_ID is a required positional; omitting it is a Click usage error.
+        result = runner.invoke(cli, ["research", "cancel", "-n", "nb_123"])
+        assert result.exit_code == 2
+        assert "Missing argument" in result.output or "Usage:" in result.output
+
+
+# =============================================================================
 # COMMAND EXISTENCE TESTS
 # =============================================================================
 
@@ -464,3 +526,8 @@ class TestResearchCommandsExist:
         result = runner.invoke(cli, ["research", "wait", "--help"])
         assert result.exit_code == 0
         assert "Wait for research to complete" in result.output
+
+    def test_research_cancel_command_exists(self, runner):
+        result = runner.invoke(cli, ["research", "cancel", "--help"])
+        assert result.exit_code == 0
+        assert "Cancel an in-flight research run" in result.output

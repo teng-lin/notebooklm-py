@@ -242,6 +242,13 @@ def _research_no_research(client: MagicMock) -> None:
     client.research.poll = AsyncMock(return_value={"status": "no_research"})
 
 
+def _fail_research_cancel(client: MagicMock) -> None:
+    # `research cancel` is fire-and-forget and never raises on an unknown id,
+    # but a genuine transport failure from the cancel RPC must still surface as
+    # the typed JSON error envelope (not a bare traceback).
+    client.research.cancel = AsyncMock(side_effect=RuntimeError("net down"))
+
+
 def _source_add_research_start_failed(client: MagicMock) -> None:
     """``source add-research --json`` failure: ``client.research.start`` returns falsy.
 
@@ -466,6 +473,12 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
         "research_wait_no_research",
         ["research", "wait", "-n", "abc123def456ghi789jkl", "--json"],
         _research_no_research,
+    ),
+    # research cancel: a transport failure surfaces as the typed JSON envelope.
+    (
+        "research_cancel_rpc_failure_json",
+        ["research", "cancel", "run_456", "-n", "abc123def456ghi789jkl", "--json"],
+        _fail_research_cancel,
     ),
     # source add-research failure-to-start: ADR-0015 typed envelope on the
     # `start_failed` outcome from services/source_research.py.

@@ -112,6 +112,29 @@ async def poll_and_classify(
 
 
 # ===========================================================================
+# research cancel
+# ===========================================================================
+
+
+async def cancel_research(client: Any, notebook_id: str, run_id: str) -> None:
+    """Cancel an in-flight research run via ``client.research.cancel``.
+
+    Transport-neutral thin wrapper mirroring :func:`poll_and_classify`: the CLI
+    / MCP / HTTP adapters drive this and render their own confirmation. The
+    underlying RPC is **fire-and-forget** — the server returns nothing to
+    confirm the cancel and does not validate ``run_id`` — so this returns
+    ``None`` and never raises on an unknown id; callers confirm by polling
+    afterward (a cancelled IN_PROGRESS run surfaces as ``FAILED``).
+
+    ``run_id`` is the poll-level run id (``ResearchTask.task_id`` from
+    :func:`poll_and_classify`). For DEEP research that is the ``report_id``
+    returned by ``start`` (deep's ``start().task_id`` is a sessionId and does
+    not cancel); for FAST research it is ``start().task_id``.
+    """
+    await client.research.cancel(notebook_id, run_id)
+
+
+# ===========================================================================
 # research wait
 # ===========================================================================
 
@@ -329,6 +352,7 @@ __all__ = [
     "ResearchWaitOutcome",
     "ResearchWaitPlan",
     "ResearchWaitResult",
+    "cancel_research",
     "execute_research_wait",
     "poll_and_classify",
     "validate_research_wait_flags",

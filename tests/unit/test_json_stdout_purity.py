@@ -355,6 +355,12 @@ def _customize_research_wait(client: MagicMock) -> None:
     )
 
 
+def _customize_research_cancel(client: MagicMock) -> None:
+    # `research cancel <run_id> --json` is fire-and-forget: ``cancel`` returns
+    # None and the command emits a fixed JSON acknowledgement.
+    client.research.cancel = AsyncMock(return_value=None)
+
+
 def _customize_notebook_create(client: MagicMock) -> None:
     # `notebook create --json` calls `client.notebooks.create(title)`
     # and emits a JSON payload with the new notebook's id/title/created_at.
@@ -484,6 +490,11 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
         "research_wait",
         ["research", "wait", "-n", "abc123def456ghi789jkl", "--json"],
         _customize_research_wait,
+    ),
+    (
+        "research_cancel",
+        ["research", "cancel", "run_456", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_research_cancel,
     ),
     # share group
     ("share_status", ["share", "status", "-n", "abc123def456ghi789jkl", "--json"], None),

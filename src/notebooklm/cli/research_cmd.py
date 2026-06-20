@@ -3,12 +3,16 @@
 Commands:
     status      Check research status (single check)
     wait        Wait for research to complete (blocking)
+    cancel      Cancel an in-flight research run (fire-and-forget)
 
 The ``wait`` command is a thin Click handler over
 :func:`notebooklm.cli.services.research.execute_research_wait`, which
 injects the CLI notebook resolver, source importer, and wait context into
 the transport-neutral :mod:`notebooklm._app.research` core. Task-id
-pinning is handled by ``ResearchAPI.wait_for_completion``. This module owns
+pinning is handled by ``ResearchAPI.wait_for_completion``. ``status`` and
+``cancel`` are thin handlers over the same neutral core
+(:func:`notebooklm._app.research.poll_and_classify` /
+:func:`~notebooklm._app.research.cancel_research`). This module owns
 input validation, spinner I/O, rendering, and exit codes.
 """
 
@@ -18,6 +22,7 @@ import click
 
 from .._app.research import (
     ResearchStatusResult,
+    cancel_research,
     poll_and_classify,
     validate_research_wait_flags,
 )
@@ -59,6 +64,7 @@ def research():
     Commands:
       status    Check research status (non-blocking)
       wait      Wait for research to complete (blocking)
+      cancel    Cancel an in-flight research run (fire-and-forget)
 
     \b
     Use 'source add-research' to start a research session.
@@ -124,6 +130,49 @@ def _render_status_result(result: ResearchStatusResult) -> None:
         console.print("\n[dim]Use 'research wait --import-all' to import sources[/dim]")
     else:
         console.print(f"[yellow]Status: {result.status}[/yellow]")
+
+
+@research.command("cancel")
+@click.argument("run_id")
+@notebook_option
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@with_client
+def research_cancel(ctx, run_id, notebook_id, json_output, client_auth):
+    """Cancel an in-flight research run.
+
+    RUN_ID is the run's poll-level id — the ``task_id`` shown by
+    'research status'. For DEEP research that is the report_id from start, NOT
+    the deep start task_id (which is a sessionId and will not cancel anything).
+
+    \b
+    Fire-and-forget: the server reports neither success nor failure, so a
+    cancel cannot be confirmed from this command — run 'research status'
+    afterward (a cancelled in-progress run shows as failed).
+
+    \b
+    Examples:
+      notebooklm research cancel <run_id>
+      notebooklm research cancel <run_id> --json
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            # Fire-and-forget: ``cancel`` returns None and does not raise on an
+            # unknown id (the server returns nothing to branch on). If no
+            # exception was raised, the request was accepted — confirm by polling.
+            await cancel_research(client, nb_id_resolved, run_id)
+            if json_output:
+                json_output_response({"run_id": run_id, "cancel_requested": True})
+            else:
+                console.print(f"[green]Cancel requested for run:[/green] {run_id}")
+                console.print(
+                    "[dim]Fire-and-forget — run 'research status' to confirm "
+                    "(a cancelled run shows as failed)[/dim]"
+                )
+
+    return _run()
 
 
 @research.command("wait")

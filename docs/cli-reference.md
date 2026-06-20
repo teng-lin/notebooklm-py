@@ -199,6 +199,7 @@ All `label` subcommands accept `-n/--notebook ID` (resolves via flag > `NOTEBOOK
 |---------|-----------|---------|---------|
 | `status` | - | `-n/--notebook`, `--json` | `research status` |
 | `wait` | - | `-n/--notebook`, `--timeout`, `--interval`, `--import-all`, `--cited-only`, `--json` | `research wait --import-all --cited-only` |
+| `cancel` | `RUN_ID` | `-n/--notebook`, `--json` | `research cancel <run_id>` |
 
 ### Generate Commands (`notebooklm generate <type>`)
 
@@ -962,6 +963,34 @@ notebooklm research wait --json --import-all
 ```
 
 **Use case:** Primarily for LLM agents that need to wait for non-blocking deep research started with `source add-research --no-wait`.
+
+### Research: `cancel`
+
+Cancel an in-flight research run.
+
+> **Python equivalent:** [`client.research.cancel(nb_id, run_id)`](python-api.md#researchapi-clientresearch).
+
+```bash
+notebooklm research cancel RUN_ID [OPTIONS]
+```
+
+**Arguments:**
+- `RUN_ID` - The run's poll-level id — the `task_id` shown by `research status`. For **deep** research this is the `report_id` returned by `source add-research`, **not** the deep start `task_id` (which is a sessionId and will not cancel anything).
+
+**Options:**
+- `-n, --notebook ID` - Notebook ID (uses current if not set)
+- `--json` - Output as JSON
+
+**Examples:**
+```bash
+# Cancel a run (find the run id with `research status`)
+notebooklm research cancel <run_id>
+
+# JSON output for agent workflows
+notebooklm research cancel <run_id> --json
+```
+
+> **Fire-and-forget:** the server reports neither success nor failure for a cancel and does not validate the run id, so this command cannot confirm the cancel took effect. Run `research status` afterward — a cancelled in-progress run shows as `failed`.
 
 ### Generate: `audio`
 

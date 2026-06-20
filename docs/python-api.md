@@ -1476,7 +1476,7 @@ if result.references:
 
 ### ResearchAPI (`client.research`)
 
-**CLI equivalent:** [Research Commands](cli-reference.md#research-commands-notebooklm-research-cmd) (`notebooklm research status`, `wait`) plus `notebooklm source add-research` ([Source: `add-research`](cli-reference.md#source-add-research)) for the combined start-and-import workflow.
+**CLI equivalent:** [Research Commands](cli-reference.md#research-commands-notebooklm-research-cmd) (`notebooklm research status`, `wait`, `cancel`) plus `notebooklm source add-research` ([Source: `add-research`](cli-reference.md#source-add-research)) for the combined start-and-import workflow.
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
@@ -1484,6 +1484,7 @@ if result.references:
 | `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `ResearchTask` | Check research status. If multiple tasks are in flight and `task_id` is omitted, raises `AmbiguousResearchTaskError` |
 | `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, initial_interval=5)` | `str, str \| None, float, float` | `ResearchTask` | Wait for research to complete, pinning the discovered task ID between polls. Raises `ResearchTimeoutError` (a `WaitTimeoutError`/`TimeoutError`) and `AmbiguousResearchTaskError` when unpinned polling is ambiguous. |
 | `import_sources(notebook_id, task_id, sources)` | `str, str, Sequence[dict[str, Any] \| ResearchSource]` | `list[dict]` | Import findings. Accepts plain dicts **or** the typed `ResearchSource` objects from `poll().sources`. |
+| `cancel(notebook_id, run_id)` | `str, str` | `None` | Cancel an in-flight run. **Fire-and-forget** — returns `None`, never raises on an unknown id; confirm by polling. `run_id` is `poll().task_id` (for deep research the `report_id` from `start`, **not** the deep `start().task_id` sessionId). |
 
 > **Typed returns.** `start` / `poll` / `wait_for_completion` return the typed
 > dataclasses `ResearchStart` / `ResearchTask` (whose `.sources` are
@@ -1581,6 +1582,23 @@ async def import_sources(
         `client.sources.list(notebook_id)` to verify the final source set.
       - Entries without a `url` and without a complete report (`title` +
         `report_markdown` + `result_type == 5`) are skipped with a warning.
+    """
+
+async def cancel(notebook_id: str, run_id: str) -> None:
+    """
+    Cancel an in-flight research (DiscoverSources) run. Fire-and-forget: the
+    server returns nothing to confirm the cancel and does not validate run_id,
+    so this returns None and never raises on an unknown id. Confirm by polling
+    afterward — a cancelled IN_PROGRESS run surfaces as FAILED.
+
+    run_id: the poll-level run id == poll().task_id. For DEEP research that is
+        the report_id returned by start() (deep's start().task_id is a sessionId
+        and cancelling with it is a silent no-op); for FAST research it is
+        start().task_id. When in doubt, pass poll().task_id.
+
+    Note: notebook_id is routing context only, not a scoping boundary — the
+    server keys the cancel on run_id alone (a valid run_id is cancelled even
+    when notebook_id names a different/non-existent notebook).
     """
 ```
 
