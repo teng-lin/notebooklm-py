@@ -140,6 +140,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 - `notebooklm use <id>` - set context (⚠️ SINGLE-AGENT ONLY - use `-n` flag in parallel workflows)
 - `notebooklm create` - create notebook
 - `notebooklm ask "..."` - chat queries (without `--save-as-note`)
+- `notebooklm suggest-prompts` - AI-suggested prompts for a notebook (read-only, no state change)
 - `notebooklm history` - display conversation history (read-only)
 - `notebooklm source add` - add sources
 - `notebooklm profile list` - list profiles
@@ -200,6 +201,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 | Check research status | `notebooklm research status` |
 | Wait for research | `notebooklm research wait --import-all` |
 | Cancel research | `notebooklm research cancel <run_id>` (run_id = the `task_id` from `research status`) |
+| Suggest questions to ask | `notebooklm suggest-prompts` |
 | Chat | `notebooklm ask "question"` |
 | Chat (long prompt from file) | `notebooklm ask --prompt-file question.txt` |
 | Chat (specific sources) | `notebooklm ask "question" -s src_id1 -s src_id2` |

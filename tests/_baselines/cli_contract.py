@@ -55,7 +55,7 @@ CLICK_GROUPS = (
 TOP_LEVEL_SURFACES = {
     "session": ("login", "auth", "use", "status", "clear"),
     "notebook": ("list", "create", "delete", "rename", "metadata", "summary"),
-    "chat": ("ask", "configure", "history"),
+    "chat": ("ask", "suggest-prompts", "configure", "history"),
 }
 
 EXTRA_TOP_LEVEL_COMMANDS = ("completion", "doctor")

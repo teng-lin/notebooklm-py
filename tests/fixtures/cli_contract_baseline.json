@@ -7800,6 +7800,7 @@
         "skill",
         "source",
         "status",
+        "suggest-prompts",
         "summary",
         "use"
       ],
@@ -10384,6 +10385,104 @@
       ],
       "short_help": "Show current context (active notebook and..."
     },
+    "suggest-prompts": {
+      "class": "Command",
+      "params": [
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": 4,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Suggestion surface to target (1-9, default 4). 4=default chat questions, 5=critique, 6=audio/debate, 8=quiz, 9=flashcards. Out-of-range values exit 1 with a validation error.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "mode",
+          "opts": [
+            "--mode"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "integer"
+          }
+        },
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Free-text steer for the kind of prompts to suggest.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "query",
+          "opts": [
+            "--query"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": "Sentinel.UNSET",
+          "envvar": null,
+          "has_custom_shell_complete": true,
+          "help": "Limit to specific source IDs (can be repeated). Defaults to all sources.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "source_ids",
+          "opts": [
+            "--source",
+            "-s"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Get AI-suggested prompts for a notebook."
+    },
     "summary": {
       "class": "Command",
       "params": [
@@ -10529,6 +10628,7 @@
     "skill",
     "source",
     "status",
+    "suggest-prompts",
     "summary",
     "use"
   ],
@@ -10536,6 +10636,7 @@
   "top_level_surfaces": {
     "chat": [
       "ask",
+      "suggest-prompts",
       "configure",
       "history"
     ],

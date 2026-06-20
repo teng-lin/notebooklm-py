@@ -41,6 +41,7 @@ from notebooklm.types import (
     Label,
     Note,
     Notebook,
+    PromptSuggestion,
     ResearchSource,
     ResearchStart,
     ResearchStatus,
@@ -295,6 +296,15 @@ def _customize_chat_ask(client: MagicMock) -> None:
             references=[],
             raw_response="",
         )
+    )
+
+
+def _customize_suggest_prompts(client: MagicMock) -> None:
+    client.notebooks.suggest_prompts = AsyncMock(
+        return_value=[
+            PromptSuggestion(title="Briefing", prompt="Give me a briefing."),
+            PromptSuggestion(title="Risks", prompt="What are the key risks?"),
+        ]
     )
 
 
@@ -609,6 +619,11 @@ JSON_COMMANDS: list[tuple[str, list[str], object]] = [
         "history_cmd",
         ["history", "-n", "abc123def456ghi789jkl", "--json"],
         None,
+    ),
+    (
+        "suggest_prompts_cmd",
+        ["suggest-prompts", "-n", "abc123def456ghi789jkl", "--json"],
+        _customize_suggest_prompts,
     ),
     # doctor / profile / notebook-create coverage (meta-audit G9 + I7 + I9):
     # `doctor` and `profile list` read NOTEBOOKLM_HOME directly and don't

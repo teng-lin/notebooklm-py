@@ -217,6 +217,10 @@ def _fail_chat_ask(client: MagicMock) -> None:
     client.chat.ask = AsyncMock(side_effect=RuntimeError("network unreachable"))
 
 
+def _fail_suggest_prompts(client: MagicMock) -> None:
+    client.notebooks.suggest_prompts = AsyncMock(side_effect=RuntimeError("network unreachable"))
+
+
 def _fail_artifact_list(client: MagicMock) -> None:
     client.artifacts.list = AsyncMock(side_effect=RuntimeError("auth: 401 Unauthorized"))
 
@@ -589,6 +593,11 @@ JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
     ("share_status_failure", ["share", "status", "-n", "abc", "--json"], _fail_share_status),
     ("notebook_list_failure", ["list", "--json"], _fail_notebook_list),
     ("chat_ask_failure", ["ask", "hi", "-n", "abc", "--json"], _fail_chat_ask),
+    (
+        "suggest_prompts_failure",
+        ["suggest-prompts", "-n", "abc", "--json"],
+        _fail_suggest_prompts,
+    ),
     # notebook create: with_client + RuntimeError -> UNEXPECTED_ERROR envelope.
     (
         "notebook_create_failure",
