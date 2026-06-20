@@ -47,6 +47,7 @@
 | `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_chat/api.py` |
 | `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_chat/api.py` |
 | `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_chat/api.py` |
+| `otmP3b` | SUGGEST_PROMPTS | Get AI-suggested questions/prompts to ask a notebook | `_chat/api.py` |
 | `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_notes.py` |
 | `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
 | `AH0mwd` | DELETE_NOTE | Delete a note | `_notes.py` |
@@ -947,6 +948,37 @@ params = [
 
 **Response:** empty `[]` body inside the standard `wrb.fr` envelope. Success
 is signaled by the absence of an error — there is no return payload.
+
+---
+
+### RPC: SUGGEST_PROMPTS (otmP3b)
+
+**Source:** `_chat/api.py::suggest_prompts()`
+
+Returns AI-suggested questions/prompts to ask a notebook (the live
+`GeneratePromptSuggestions` method). Each suggestion pairs a short title with a
+ready-to-send multi-line instruction string. Shape live-verified on the
+consumer/labs cohort (issue #1612) — the backend serves it regardless of the
+web UI's experiment flag.
+
+```python
+params = [
+    # 0: client context (capability envelope; same family as artifact RPCs)
+    [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+    notebook_id,                  # 1: Notebook to suggest prompts for
+    [[source_id], ...],           # 2: Source-id wrappers (one [id] per source)
+    mode,                         # 3: REQUIRED int "mode/surface" enum (1..9;
+                                  #    0/omitted -> server INTERNAL). Default 4.
+    None,                         # 4: Reserved (always null)
+    query,                        # 5: Optional free-text steer (or null)
+]
+# source_path = f"/notebook/{notebook_id}"
+```
+
+**Response:** a single-element envelope wrapping the suggestion rows —
+`[[ [title, prompt], [title, prompt], ... ]]`. Each row is decoded to a
+`PromptSuggestion(title, prompt)`. An empty / degenerate payload yields `[]`
+(suggestions are best-effort, so an absent payload does not raise).
 
 ---
 

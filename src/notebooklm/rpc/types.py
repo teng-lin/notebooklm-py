@@ -144,6 +144,8 @@ class RPCMethod(str, Enum):
     GET_CONVERSATION_TURNS = "khqZz"  # -> ListChatTurns. Returns full Q&A turns for a conversation
     # -> DeleteChatTurns (deletes the chat turns; web UI's "Delete history")
     DELETE_CONVERSATION = "J7Gthc"
+    # -> GeneratePromptSuggestions. AI-suggested questions/prompts to ask a notebook
+    SUGGEST_PROMPTS = "otmP3b"
 
     # Sharing operations (notebook-level)
     SHARE_NOTEBOOK = "QDyure"  # -> LabsTailwindSharingService.ShareProject. Set notebook visibility

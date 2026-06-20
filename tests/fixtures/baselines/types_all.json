@@ -20,6 +20,7 @@
   "ChatReference",
   "AskResult",
   "ChatMode",
+  "PromptSuggestion",
   "SharedUser",
   "ShareStatus",
   "ResearchStatus",

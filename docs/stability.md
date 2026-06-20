@@ -77,7 +77,7 @@ NotebookDescription, ConversationTurn
 ShareStatus, SharedUser, SourceFulltext
 NotebookMetadata, SourceSummary
 AccountLimits, AccountTier
-ChatReference, ReportSuggestion, SuggestedTopic
+ChatReference, ReportSuggestion, PromptSuggestion, SuggestedTopic
 MindMapKind, MindMapResult
 ResearchStart, ResearchStatus, ResearchTask, ResearchSource
 ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent

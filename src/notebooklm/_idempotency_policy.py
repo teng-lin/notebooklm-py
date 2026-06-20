@@ -383,6 +383,11 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         RPCMethod.DELETE_CONVERSATION: (
             "server-side chat-turn delete is idempotent (set-op semantics)"
         ),
+        # Live method GeneratePromptSuggestions: response-only prompt-suggestion
+        # generation (same family as GET_SUGGESTED_REPORTS); persists nothing.
+        RPCMethod.SUGGEST_PROMPTS: (
+            "response-only prompt suggestion generation; no persisted resource is created by replay"
+        ),
         RPCMethod.GET_SHARE_STATUS: "read-only share status fetch; replay does not mutate ACL state",
         RPCMethod.REMOVE_RECENTLY_VIEWED: (
             "remove notebook from recents is idempotent; replay leaves it absent"

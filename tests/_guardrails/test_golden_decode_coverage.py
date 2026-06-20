@@ -89,6 +89,7 @@ _GOLDEN_VCR = "tests/integration/test_golden_decoded_vcr.py"
 _GOLDEN_EXPANSION = "tests/integration/test_golden_decoded_vcr_expansion.py"
 _COMPREHENSIVE = "tests/integration/test_vcr_comprehensive.py"
 _GAP_BACKFILL = "tests/integration/test_rpc_gap_backfill_vcr.py"
+_SUGGEST_PROMPTS_VCR = "tests/integration/test_chat_suggest_prompts_vcr.py"
 
 GoldenPointer = tuple[str, str]
 
@@ -205,6 +206,9 @@ GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
     ),
     RPCMethod.GET_SUGGESTED_REPORTS: (
         (_GOLDEN_EXPANSION, "TestArtifactsWriteGoldenDecoded::test_suggest_reports_decoded_golden"),
+    ),
+    RPCMethod.SUGGEST_PROMPTS: (
+        (_SUGGEST_PROMPTS_VCR, "TestSuggestPromptsVCR::test_suggest_prompts_decoded_golden"),
     ),
     RPCMethod.EXPORT_ARTIFACT: (
         (_GOLDEN_EXPANSION, "TestArtifactsWriteGoldenDecoded::test_export_report_decoded_golden"),

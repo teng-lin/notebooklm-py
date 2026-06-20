@@ -921,7 +921,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_types/`, `types.py` | Dataclass implementation package and public type/re-export facade |
 | `_types/labels.py` | `Label` pure-value type (source-label topic grouping; `source_ids` only, no artifact members) re-exported by `types.py` |
 | `_row_adapters/artifacts.py` | `ArtifactRow` typed view over raw positional artifact RPC rows, plus `ReportSuggestionRow` over `GET_SUGGESTED_REPORTS` rows |
-| `_row_adapters/chat.py` | Streamed-chat row adapters (`AnswerRow` / `CitationRow` / `CitationDetail` / `PassageRow` / `StreamFrameRow` / `ErrorPayloadRow` / `TextLeafRow`) that centralise the chat wire positions `_chat/wire.py` used to open-code (#1491) |
+| `_row_adapters/chat.py` | Streamed-chat row adapters (`AnswerRow` / `CitationRow` / `CitationDetail` / `PassageRow` / `StreamFrameRow` / `ErrorPayloadRow` / `TextLeafRow`) that centralise the chat wire positions `_chat/wire.py` used to open-code (#1491), plus the `SUGGEST_PROMPTS` (`otmP3b`) suggestion-row view (`PromptSuggestionRow` / `unwrap_prompt_suggestions`) |
 | `_row_adapters/labels.py` | `LabelRow` strict typed view over the raw positional label tuple `[name, sources, id, emoji]` (fails loud on schema drift) |
 | `_row_adapters/notes.py` | `NoteRow` typed view over raw positional note and mind-map RPC rows |
 | `_row_adapters/research.py` | `ResearchTaskRow` / `ResearchTaskInfoRow` / `ResearchResultRow` typed views over raw positional `POLL_RESEARCH` rows that centralise the single-level positions `_research_task_parser.py` used to open-code (#1501) |
@@ -960,6 +960,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_sharing_manager.py` | Direct sharing management logic |
 | `_version_check.py` | Dynamic client-side version deprecation guard |
 | `_chat/notes.py` | Chat-adjacent note saving workflow adapter |
+| `_chat/payloads.py` | Stable `batchexecute` chat RPC request payload builders (currently `SUGGEST_PROMPTS`) |
 | `_chat/wire.py` | Streamed-chat wire request construction + response parsing for the chat client |
 | `_chat/transport.py` | Chat-specific error mapping over the shared transport pipeline |
 | `_middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
@@ -1118,6 +1119,7 @@ src/notebooklm/
 │   ├── __init__.py              # Re-exports ChatAPI so `from ._chat import ChatAPI` keeps resolving
 │   ├── api.py                   # ChatAPI facade (was _chat.py)
 │   ├── notes.py                 # Note saving workflow adapter
+│   ├── payloads.py              # batchexecute chat RPC payload builders (SUGGEST_PROMPTS)
 │   ├── wire.py                  # Streamed-chat wire request/response parser
 │   └── transport.py             # Chat error mapping
 ├── _auth/                       # Auth subpackage (forwarded through auth.py facade)

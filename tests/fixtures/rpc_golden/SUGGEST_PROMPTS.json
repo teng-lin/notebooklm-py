@@ -1,0 +1,64 @@
+{
+  "method_name": "SUGGEST_PROMPTS",
+  "method_id": "otmP3b",
+  "description": "Fetch AI-suggested questions/prompts to ask a notebook (wrapped [[ [title, prompt], ... ]] envelope). NOTE: response.allow_null is false here (the fixture pins a live, non-null decode); production rpc_call uses allow_null=True to tolerate a null payload. This fixture-vs-production split mirrors GET_SUGGESTED_REPORTS — see test_rpc_golden_payloads.py (the allow_null cross-check comment).",
+  "request": {
+    "params": [
+      [2, null, null, [1, null, null, null, null, null, null, null, null, null, [1]]],
+      "SCRUBBED_NB_001",
+      [["SCRUBBED_SRC_001"]],
+      4,
+      null,
+      null
+    ],
+    "expected_f_req": [
+      [
+        [
+          "otmP3b",
+          "[[2,null,null,[1,null,null,null,null,null,null,null,null,null,[1]]],\"SCRUBBED_NB_001\",[[\"SCRUBBED_SRC_001\"]],4,null,null]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "otmP3b",
+          "[[[\"Professional Briefing\",\"\\n- Summarize the material for business professionals.\\n- Focus on enterprise use cases.\"],[\"Process Timeline\",\"\\n- Present the history of the product as a timeline.\\n- Highlight major milestones.\"]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        [
+          "Professional Briefing",
+          "\n- Summarize the material for business professionals.\n- Focus on enterprise use cases."
+        ],
+        [
+          "Process Timeline",
+          "\n- Present the history of the product as a timeline.\n- Highlight major milestones."
+        ]
+      ]
+    ]
+  },
+  "mapper": "tests.unit._golden_mappers:suggest_prompts",
+  "mapper_expected": [
+    {
+      "title": "Professional Briefing",
+      "prompt": "\n- Summarize the material for business professionals.\n- Focus on enterprise use cases."
+    },
+    {
+      "title": "Process Timeline",
+      "prompt": "\n- Present the history of the product as a timeline.\n- Highlight major milestones."
+    }
+  ]
+}

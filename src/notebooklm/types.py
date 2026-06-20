@@ -24,6 +24,7 @@ from ._types.chat import (
     ChatMode,
     ChatReference,
     ConversationTurn,
+    PromptSuggestion,
 )
 from ._types.common import (
     AccountLimits,
@@ -159,6 +160,7 @@ __all__ = [
     "ChatReference",
     "AskResult",
     "ChatMode",
+    "PromptSuggestion",
     "SharedUser",
     "ShareStatus",
     # Research / mind-map / source-guide typed returns
@@ -251,6 +253,7 @@ for _public_moved_type in (
     Notebook,
     NotebookDescription,
     NotebookMetadata,
+    PromptSuggestion,
     ReportSuggestion,
     ResearchSource,
     ResearchStart,

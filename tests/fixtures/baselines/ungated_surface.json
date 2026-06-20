@@ -33,6 +33,7 @@
     "ChatReference",
     "AskResult",
     "ChatMode",
+    "PromptSuggestion",
     "CitedSourceSelection",
     "ResearchStatus",
     "ResearchSource",

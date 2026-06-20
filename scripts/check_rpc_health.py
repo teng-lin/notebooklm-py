@@ -540,6 +540,27 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if method == RPCMethod.GET_CONVERSATION_TURNS:
         return [[], None, None, "placeholder_conv_id", 2]
 
+    # SUGGEST_PROMPTS (GeneratePromptSuggestions): like GET_SUGGESTED_REPORTS,
+    # suggestions only exist once a notebook has indexed sources, so route to a
+    # stable read-only notebook when one is configured. The required mode enum
+    # (1..9) is set to the default 4; an empty source-id list scopes to all of
+    # the notebook's sources server-side. The canary only verifies the RPC ID
+    # echoes back, so empty source ids are sufficient.
+    if method == RPCMethod.SUGGEST_PROMPTS:
+        stable_id = (
+            os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
+            or os.environ.get("NOTEBOOKLM_GENERATION_NOTEBOOK_ID")
+            or notebook_id
+        )
+        return [
+            [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]],
+            stable_id,
+            [],
+            4,
+            None,
+            None,
+        ]
+
     # LIST_ARTIFACTS has special params
     if method == RPCMethod.LIST_ARTIFACTS:
         return [[2], notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"']
