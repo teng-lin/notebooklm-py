@@ -213,11 +213,13 @@ class FakeSharing:
     async def update_user(
         self, notebook_id: str, email: str, permission: SharePermission
     ) -> ShareStatus:
-        self._s.shared_users.setdefault(notebook_id, {})[email] = SharedUser(
-            email=email,
+        return await self.add_user(
+            notebook_id,
+            email,
             permission=permission,
+            notify=False,
+            welcome_message="",
         )
-        return self._s.share_status(notebook_id)
 
     async def remove_user(self, notebook_id: str, email: str) -> ShareStatus:
         self._s.shared_users.get(notebook_id, {}).pop(email, None)

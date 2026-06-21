@@ -62,6 +62,7 @@ def test_add_update_and_remove_user(authed_client: TestClient, fake_client: Fake
     )
     assert fake_client.last_share_notify is False
 
+    fake_client.last_share_notify = True
     update = authed_client.patch(
         "/v1/notebooks/nb-1/share/users/reader@example.com",
         json={"permission": "editor"},
@@ -71,6 +72,7 @@ def test_add_update_and_remove_user(authed_client: TestClient, fake_client: Fake
     assert fake_client.shared_users["nb-1"]["reader@example.com"].permission == (
         SharePermission.EDITOR
     )
+    assert fake_client.last_share_notify is False
 
     remove = authed_client.delete("/v1/notebooks/nb-1/share/users/reader@example.com")
     assert remove.status_code == 204
