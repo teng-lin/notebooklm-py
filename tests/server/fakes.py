@@ -1,9 +1,10 @@
 """In-memory fake :class:`NotebookLMClient` for the REST server tests.
 
 Mirrors the public client namespaces the REST routes touch
-(``notebooks`` / ``sources`` / ``chat`` / ``artifacts``) with simple in-memory
-state — no auth, no network. Tests inject it via ``create_app(client_factory=…)``
-and drive the app through a FastAPI ``TestClient``.
+(``notebooks`` / ``sources`` / ``chat`` / ``artifacts`` / ``sharing``) with
+simple in-memory state — no auth, no network. Tests inject it via
+``create_app(client_factory=…)`` and drive the app through a FastAPI
+``TestClient``.
 
 State is scriptable per test: pre-seed notebooks/sources/artifacts, override the
 poll/get behavior (e.g. return ``None`` for the not-yet-listable window), and
@@ -18,9 +19,10 @@ from typing import Any
 from notebooklm._types.artifacts import Artifact, GenerationState, GenerationStatus
 from notebooklm._types.chat import AskResult
 from notebooklm._types.notebooks import Notebook
+from notebooklm._types.sharing import SharedUser, ShareStatus
 from notebooklm._types.sources import Source
 from notebooklm.exceptions import NotebookNotFoundError
-from notebooklm.rpc.types import SourceStatus
+from notebooklm.rpc.types import ShareAccess, SharePermission, ShareViewLevel, SourceStatus
 
 #: download-spec kind -> internal artifact type-code.
 _KIND_CODE = {
@@ -177,6 +179,51 @@ class FakeArtifacts:
         return self._s.download_return_path or output_path
 
 
+class FakeSharing:
+    def __init__(self, state: FakeClient) -> None:
+        self._s = state
+
+    async def get_status(self, notebook_id: str) -> ShareStatus:
+        return self._s.share_status(notebook_id)
+
+    async def set_public(self, notebook_id: str, enable: bool) -> ShareStatus:
+        self._s.public_shares[notebook_id] = enable
+        return self._s.share_status(notebook_id)
+
+    async def set_view_level(self, notebook_id: str, level: ShareViewLevel) -> ShareStatus:
+        self._s.share_view_levels[notebook_id] = level
+        return self._s.share_status(notebook_id)
+
+    async def add_user(
+        self,
+        notebook_id: str,
+        email: str,
+        *,
+        permission: SharePermission,
+        notify: bool,
+        welcome_message: str,
+    ) -> ShareStatus:
+        self._s.shared_users.setdefault(notebook_id, {})[email] = SharedUser(
+            email=email,
+            permission=permission,
+        )
+        self._s.last_share_notify = notify
+        return self._s.share_status(notebook_id)
+
+    async def update_user(
+        self, notebook_id: str, email: str, permission: SharePermission
+    ) -> ShareStatus:
+        self._s.shared_users.setdefault(notebook_id, {})[email] = SharedUser(
+            email=email,
+            permission=permission,
+        )
+        return self._s.share_status(notebook_id)
+
+    async def remove_user(self, notebook_id: str, email: str) -> ShareStatus:
+        self._s.shared_users.get(notebook_id, {}).pop(email, None)
+        return self._s.share_status(notebook_id)
+
+
 class FakeClient:
     """Scriptable in-memory client mirroring the namespaces the routes use."""
 
@@ -185,12 +232,16 @@ class FakeClient:
         self.sources_store: dict[str, dict[str, Source]] = {}
         self.artifacts_store: dict[str, dict[str, Artifact]] = {}
         self.poll_states: dict[tuple[str, str], GenerationState] = {}
+        self.public_shares: dict[str, bool] = {}
+        self.share_view_levels: dict[str, ShareViewLevel] = {}
+        self.shared_users: dict[str, dict[str, SharedUser]] = {}
 
         self.new_source_status: SourceStatus = SourceStatus.PROCESSING
         self.hide_new_sources: bool = False
         self.download_bytes: bytes = b"FAKE-ARTIFACT-BYTES"
         self.download_return_path: str | None = None
         self.chat_error: Exception | None = None
+        self.last_share_notify: bool | None = None
 
         self.next_task = 1
         self.next_source = 1
@@ -201,3 +252,17 @@ class FakeClient:
         self.sources = FakeSources(self)
         self.chat = FakeChat(self)
         self.artifacts = FakeArtifacts(self)
+        self.sharing = FakeSharing(self)
+
+    def share_status(self, notebook_id: str) -> ShareStatus:
+        is_public = self.public_shares.get(notebook_id, False)
+        return ShareStatus(
+            notebook_id=notebook_id,
+            is_public=is_public,
+            access=ShareAccess.ANYONE_WITH_LINK if is_public else ShareAccess.RESTRICTED,
+            view_level=self.share_view_levels.get(notebook_id, ShareViewLevel.FULL_NOTEBOOK),
+            shared_users=list(self.shared_users.get(notebook_id, {}).values()),
+            share_url=f"https://notebooklm.google.com/notebook/{notebook_id}"
+            if is_public
+            else None,
+        )

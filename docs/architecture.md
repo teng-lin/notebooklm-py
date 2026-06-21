@@ -1273,7 +1273,8 @@ src/notebooklm/
         ├── notebooks.py         # /v1/notebooks list/get/create/delete
         ├── sources.py           # /v1/notebooks/{id}/sources list/get/add(url·text·file)/delete + poll-the-resource status
         ├── chat.py              # POST /v1/notebooks/{id}/chat — blocking ask (no SSE)
-        └── artifacts.py         # /v1/notebooks/{id}/artifacts list/generate/poll/download (registry-projected poll; server-generated temp download path)
+        ├── artifacts.py         # /v1/notebooks/{id}/artifacts list/generate/poll/download (registry-projected poll; server-generated temp download path)
+        └── share.py             # /v1/notebooks/{id}/share status/public/users/view-level over _app.sharing
 ```
 
 ## ADR cross-references

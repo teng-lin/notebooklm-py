@@ -352,9 +352,10 @@ curl -H "Authorization: Bearer $TOKEN" -d '{"url":"https://example.com"}' \
      -H 'Content-Type: application/json' $BASE/v1/notebooks/<id>/sources/url
 curl -H "Authorization: Bearer $TOKEN" -d '{"question":"Summarize"}' \
      -H 'Content-Type: application/json' $BASE/v1/notebooks/<id>/chat # blocking answer
+curl -H "Authorization: Bearer $TOKEN" $BASE/v1/notebooks/<id>/share # sharing status
 ```
 
-Endpoints: `/v1/notebooks` (list/get/create/delete); `/v1/notebooks/{id}/sources` (list/get/add via `url`·`text`·`file`/delete); `/v1/notebooks/{id}/chat` (blocking ask, no streaming); `/v1/notebooks/{id}/artifacts` (list / generate / poll / download). Long-running work (source ingest, artifact generation) is **poll-the-resource**: the create call returns immediately and the matching `GET` reports `pending` until the resource is ready (`200`), `404` for an id the server never created, `409`/`410` for a failed/removed artifact.
+Endpoints: `/v1/notebooks` (list/get/create/delete); `/v1/notebooks/{id}/sources` (list/get/add via `url`·`text`·`file`/delete); `/v1/notebooks/{id}/chat` (blocking ask, no streaming); `/v1/notebooks/{id}/artifacts` (list / generate / poll / download); `/v1/notebooks/{id}/share` (status / public link / users / view level). Long-running work (source ingest, artifact generation) is **poll-the-resource**: the create call returns immediately and the matching `GET` reports `pending` until the resource is ready (`200`), `404` for an id the server never created, `409`/`410` for a failed/removed artifact.
 
 **Artifacts & uploads:**
 
