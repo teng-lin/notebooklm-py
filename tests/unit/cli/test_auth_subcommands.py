@@ -25,6 +25,102 @@ from ._session_helpers import (
 )
 
 
+def _valid_cookie_export(extra_cookies=None):
+    cookies = [
+        {"name": "SID", "value": "fixture-sid", "domain": ".google.com", "path": "/"},
+        {
+            "name": "__Secure-1PSIDTS",
+            "value": "fixture-psidts",
+            "domain": ".google.com",
+            "path": "/",
+        },
+        {"name": "APISID", "value": "fixture-apisid", "domain": ".google.com", "path": "/"},
+        {"name": "SAPISID", "value": "fixture-sapisid", "domain": ".google.com", "path": "/"},
+    ]
+    if extra_cookies:
+        cookies.extend(extra_cookies)
+    return cookies
+
+
+class TestAuthImportCookiesCommand:
+    """Tests for the 'auth import-cookies' command."""
+
+    def test_import_cookies_accepts_bare_cookie_list_and_storage_override(self, runner, tmp_path):
+        input_path = tmp_path / "cookies.json"
+        storage_path = tmp_path / "storage_state.json"
+        input_path.write_text(
+            json.dumps(
+                _valid_cookie_export(
+                    [
+                        {
+                            "name": "UNRELATED",
+                            "value": "should-not-persist",
+                            "domain": ".example.com",
+                            "path": "/",
+                        }
+                    ]
+                )
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            cli, ["--storage", str(storage_path), "auth", "import-cookies", str(input_path)]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "imported" in result.output
+        stored = json.loads(storage_path.read_text(encoding="utf-8"))
+        stored_names = {cookie["name"] for cookie in stored["cookies"]}
+        assert {"SID", "__Secure-1PSIDTS", "APISID", "SAPISID"} <= stored_names
+        assert "UNRELATED" not in stored_names
+
+    def test_import_cookies_accepts_playwright_storage_state_from_stdin(self, runner, tmp_path):
+        storage_path = tmp_path / "storage_state.json"
+        payload = {"cookies": _valid_cookie_export(), "origins": []}
+
+        result = runner.invoke(
+            cli,
+            ["--storage", str(storage_path), "auth", "import-cookies", "-", "--json"],
+            input=json.dumps(payload),
+        )
+
+        assert result.exit_code == 0, result.output
+        output = json.loads(result.output)
+        assert output["success"] is True
+        assert output["cookie_count"] == 4
+        assert json.loads(storage_path.read_text(encoding="utf-8"))["cookies"]
+
+    def test_import_cookies_rejects_missing_required_cookies_without_leaking_values(
+        self, runner, tmp_path
+    ):
+        input_path = tmp_path / "cookies.json"
+        storage_path = tmp_path / "storage_state.json"
+        secret_value = "super-secret-cookie-value"
+        input_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "name": "APISID",
+                        "value": secret_value,
+                        "domain": ".google.com",
+                        "path": "/",
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            cli, ["--storage", str(storage_path), "auth", "import-cookies", str(input_path)]
+        )
+
+        assert result.exit_code != 0
+        assert "Missing required cookies" in result.output
+        assert secret_value not in result.output
+        assert not storage_path.exists()
+
+
 class TestAuthCheckCommand:
     """Tests for the 'auth check' command."""
 
