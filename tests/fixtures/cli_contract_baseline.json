@@ -1110,6 +1110,7 @@
       "class": "Group",
       "commands": [
         "check",
+        "import-cookies",
         "inspect",
         "logout",
         "refresh"
@@ -1176,6 +1177,101 @@
         }
       ],
       "short_help": "Check authentication status and diagnose..."
+    },
+    "auth import-cookies": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "json_path",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "allow_dash": false,
+            "dir_okay": true,
+            "executable": false,
+            "exists": false,
+            "file_okay": true,
+            "name": "path",
+            "readable": true,
+            "resolve_path": false,
+            "writable": false
+          }
+        },
+        {
+          "default": [],
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Opt in to persisting sibling-product cookies. Same syntax as 'notebooklm login --include-domains': youtube, docs, myaccount, mail, all. By default, only required Google auth/Drive/NotebookLM cookie domains are kept.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": true,
+          "name": "include_domains_raw",
+          "opts": [
+            "--include-domains"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Persist all optional sibling-product cookie domains.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_optional",
+          "opts": [
+            "--include-optional"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Suppress success output",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "quiet",
+          "opts": [
+            "--quiet"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Import authentication cookies from JSON..."
     },
     "auth inspect": {
       "class": "Command",

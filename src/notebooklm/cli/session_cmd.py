@@ -28,17 +28,16 @@ import functools
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import click
 import httpx
 
-from .._atomic_io import atomic_write_json
 from .._auth.browser_capture import filter_storage_state_cookies_by_domain_policy
 from ..auth import cookie_names_from_storage, extract_cookies_from_storage, missing_cookies_hint
 from ..exceptions import AuthError, NotebookNotFoundError
+from ..io import atomic_write_json
 from ..paths import get_storage_path
 
 # Render helpers live in a sibling module to keep this file small; they are
@@ -176,12 +175,18 @@ def _read_auth_json_input(path: str) -> Any:
     """Read a cookie JSON payload from a file path or stdin (``-``)."""
     try:
         if path == "-":
+            import sys
+
             return json.loads(sys.stdin.read())
         return json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise click.ClickException(f"Invalid JSON: {exc}") from None
+        raise click.ClickException(  # cli-input-validation: import-cookies JSON parse failure
+            f"Invalid JSON: {exc}"
+        ) from None
     except OSError as exc:
-        raise click.ClickException(f"Could not read {path!r}: {exc}") from None
+        raise click.ClickException(  # cli-input-validation: import-cookies JSON read failure
+            f"Could not read {path!r}: {exc}"
+        ) from None
 
 
 def _coerce_cookie_json_to_storage_state(payload: Any) -> dict[str, Any]:
@@ -196,7 +201,7 @@ def _coerce_cookie_json_to_storage_state(payload: Any) -> dict[str, Any]:
             "cookies": [_normalize_imported_cookie(cookie) for cookie in payload],
             "origins": [],
         }
-    raise click.ClickException(
+    raise click.ClickException(  # cli-input-validation: import-cookies JSON shape validation
         "Cookie JSON must be either a Playwright storage_state object "
         "with a 'cookies' list or a bare list of cookie objects."
     )
@@ -240,7 +245,9 @@ def _import_cookie_json(
         extract_cookies_from_storage(filtered_state)
     except ValueError as exc:
         hint = missing_cookies_hint(cookie_names)
-        raise click.ClickException(f"{exc}\n\n{hint}") from None
+        raise click.ClickException(  # cli-input-validation: import-cookies required-cookie validation
+            f"{exc}\n\n{hint}"
+        ) from None
 
     storage_path.parent.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":

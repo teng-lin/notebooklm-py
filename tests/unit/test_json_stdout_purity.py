@@ -793,6 +793,7 @@ JSON_SUCCESS_WAIVED: dict[tuple[str, ...], str] = {
     ("artifact", "wait"): _MUTATION_RATIONALE_SUCCESS,
     # auth-flow commands (covered by dedicated test files).
     ("auth", "check"): _AUTH_RATIONALE,
+    ("auth", "import-cookies"): _AUTH_RATIONALE,
     ("auth", "inspect"): _AUTH_RATIONALE,
     ("configure",): _AUTH_RATIONALE,
     # top-level notebook `delete` mutation — success path is covered by
@@ -871,6 +872,7 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     ("artifact", "suggestions"): _MUTATION_RATIONALE_ERROR,
     # auth-flow error paths (covered by dedicated test files).
     ("auth", "check"): _AUTH_RATIONALE,
+    ("auth", "import-cookies"): _AUTH_RATIONALE,
     ("auth", "inspect"): _AUTH_RATIONALE,
     ("configure",): _AUTH_RATIONALE,
     # top-level notebook `delete` mutation — error path is covered by
