@@ -27,6 +27,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -67,7 +68,7 @@ from .services.auth_diagnostics import (
     plan_from_click_context,
     run_auth_check,
 )
-from .services.auth_source import AUTH_JSON_ENV_NAME, has_env_auth_json
+from .services.auth_source import AUTH_JSON_ENV_NAME, auth_source_from_ctx, has_env_auth_json
 
 # Direct imports replace the D1-PR-3-retired forwarding wrappers; see ADR-0008.
 # These names are all called from this module's body. Several also serve as
@@ -191,7 +192,10 @@ def _coerce_cookie_json_to_storage_state(payload: Any) -> dict[str, Any]:
             "cookies": [_normalize_imported_cookie(cookie) for cookie in payload["cookies"]],
         }
     if isinstance(payload, list):
-        return {"cookies": [_normalize_imported_cookie(cookie) for cookie in payload], "origins": []}
+        return {
+            "cookies": [_normalize_imported_cookie(cookie) for cookie in payload],
+            "origins": [],
+        }
     raise click.ClickException(
         "Cookie JSON must be either a Playwright storage_state object "
         "with a 'cookies' list or a bare list of cookie objects."
@@ -239,9 +243,9 @@ def _import_cookie_json(
         raise click.ClickException(f"{exc}\n\n{hint}") from None
 
     storage_path.parent.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        os.chmod(storage_path.parent, 0o700)
     atomic_write_json(storage_path, filtered_state)
-    if sys.platform != "win32":
-        storage_path.parent.chmod(0o700)
     return filtered_state
 
 
@@ -746,7 +750,9 @@ def register_session_commands(cli):
     @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
     @click.option("--quiet", "quiet", is_flag=True, help="Suppress success output")
     @click.pass_context
-    def auth_import_cookies(ctx, json_path, include_domains_raw, include_optional, json_output, quiet):
+    def auth_import_cookies(
+        ctx, json_path, include_domains_raw, include_optional, json_output, quiet
+    ):
         """Import authentication cookies from JSON and save them persistently.
 
         Accepts either a Playwright ``storage_state`` object (``{"cookies": [...]}``)
@@ -764,7 +770,8 @@ def register_session_commands(cli):
           cat cookies.json | notebooklm auth import-cookies -
         """
         with handle_errors():
-            if has_env_auth_json():
+            auth_source = auth_source_from_ctx(ctx)
+            if auth_source.has_env_auth:
                 click.echo(
                     f"Error: 'auth import-cookies' is incompatible with {AUTH_JSON_ENV_NAME}. "
                     "Unset the env var first so the imported cookies can be used "
@@ -774,12 +781,7 @@ def register_session_commands(cli):
                 exit_with_code(1)
 
             include_domains = _parse_include_domains(include_domains_raw)
-            profile = ctx.obj.get("profile") if ctx.obj else None
-            storage_path = (
-                ctx.obj.get("storage_path")
-                if ctx.obj and ctx.obj.get("storage_path") is not None
-                else get_storage_path(profile=profile)
-            )
+            storage_path = auth_source.storage_path_for_diagnostics()
 
             imported = _import_cookie_json(
                 payload=_read_auth_json_input(json_path),
