@@ -27,7 +27,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
-import os
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -175,10 +175,12 @@ def _read_auth_json_input(path: str) -> Any:
     """Read a cookie JSON payload from a file path or stdin (``-``)."""
     try:
         if path == "-":
-            import sys
-
             return json.loads(sys.stdin.read())
         return json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    except UnicodeDecodeError as exc:
+        raise click.ClickException(  # cli-input-validation: import-cookies text decode failure
+            f"Could not decode {path!r} as UTF-8: {exc}"
+        ) from None
     except json.JSONDecodeError as exc:
         raise click.ClickException(  # cli-input-validation: import-cookies JSON parse failure
             f"Invalid JSON: {exc}"
@@ -192,9 +194,12 @@ def _read_auth_json_input(path: str) -> Any:
 def _coerce_cookie_json_to_storage_state(payload: Any) -> dict[str, Any]:
     """Normalize supported cookie JSON shapes to Playwright storage_state."""
     if isinstance(payload, dict) and isinstance(payload.get("cookies"), list):
+        # Import only cookies: a storage_state's ``origins`` (localStorage /
+        # sessionStorage) bypass the cookie-domain allowlist, so drop them rather
+        # than persist unrelated site data. Matches the bare-list branch below.
         return {
-            **payload,
             "cookies": [_normalize_imported_cookie(cookie) for cookie in payload["cookies"]],
+            "origins": [],
         }
     if isinstance(payload, list):
         return {
@@ -216,7 +221,7 @@ def _normalize_imported_cookie(cookie: Any) -> Any:
     if "expires" not in normalized:
         # EditThisCookie / Cookie-Editor style exports usually call this field
         # ``expirationDate``. Playwright storage_state uses ``expires``.
-        normalized["expires"] = normalized.get("expirationDate", -1)
+        normalized["expires"] = normalized.pop("expirationDate", -1)
     normalized.setdefault("path", "/")
     normalized.setdefault("httpOnly", False)
     normalized.setdefault("secure", False)
@@ -249,9 +254,7 @@ def _import_cookie_json(
             f"{exc}\n\n{hint}"
         ) from None
 
-    storage_path.parent.mkdir(parents=True, exist_ok=True)
-    if os.name != "nt":
-        os.chmod(storage_path.parent, 0o700)
+    storage_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     atomic_write_json(storage_path, filtered_state)
     return filtered_state
 
@@ -779,13 +782,11 @@ def register_session_commands(cli):
         with handle_errors():
             auth_source = auth_source_from_ctx(ctx)
             if auth_source.has_env_auth:
-                click.echo(
-                    f"Error: 'auth import-cookies' is incompatible with {AUTH_JSON_ENV_NAME}. "
+                raise click.ClickException(
+                    f"'auth import-cookies' is incompatible with {AUTH_JSON_ENV_NAME}. "
                     "Unset the env var first so the imported cookies can be used "
-                    "from storage_state.json.",
-                    err=True,
+                    "from storage_state.json."
                 )
-                exit_with_code(1)
 
             include_domains = _parse_include_domains(include_domains_raw)
             storage_path = auth_source.storage_path_for_diagnostics()
