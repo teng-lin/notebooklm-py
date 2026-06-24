@@ -40,6 +40,16 @@ _MEDIA_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = (10, 0, None)
 _STRICT_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = ()
 _HTML_UPLOAD_SUFFIXES = frozenset({".html", ".htm", ".xhtml", ".xht"})
 _HTML_UPLOAD_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
+# ``mimetypes.guess_type`` returns ``None`` for some text suffixes on Python 3.10
+# and on hosts without a populated ``/etc/mime.types`` (notably ``.md``). Without
+# an override the upload falls back to ``application/octet-stream`` (see
+# ``_resolve_upload_content_type``), NotebookLM cannot infer how to parse the
+# file, and processing fails with status=ERROR. Pin the types we know NotebookLM
+# accepts so upload works regardless of the host's MIME table.
+_EXTENSION_CONTENT_TYPES: dict[str, str] = {
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+}
 
 
 def _normalize_upload_path(path: str) -> str:
@@ -295,7 +305,13 @@ def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
         return content_type
 
     guessed, _encoding = mimetypes.guess_type(file_path.name)
-    return guessed or "application/octet-stream"
+    if guessed:
+        return guessed
+    # ``mimetypes`` has no entry for some text suffixes (e.g. ``.md``) on
+    # Python 3.10 / hosts without a system MIME table — fall back to the
+    # pinned mapping before the opaque ``application/octet-stream`` default,
+    # which NotebookLM cannot infer a parser for (processing fails, #1627).
+    return _EXTENSION_CONTENT_TYPES.get(file_path.suffix.lower(), "application/octet-stream")
 
 
 def _normalize_content_type(content_type: str) -> str:
