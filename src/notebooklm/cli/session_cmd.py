@@ -35,6 +35,7 @@ import click
 import httpx
 
 from .._auth.browser_capture import filter_storage_state_cookies_by_domain_policy
+from .._auth.cookie_policy import MINIMUM_REQUIRED_COOKIES
 from ..auth import cookie_names_from_storage, extract_cookies_from_storage, missing_cookies_hint
 from ..exceptions import AuthError, NotebookNotFoundError
 from ..io import atomic_write_json
@@ -247,12 +248,22 @@ def _import_cookie_json(
     try:
         # This validates required cookies and catches malformed cookie shapes
         # using the same loader later runtime calls use.
-        extract_cookies_from_storage(filtered_state)
+        extracted_cookies = extract_cookies_from_storage(filtered_state)
     except ValueError as exc:
         hint = missing_cookies_hint(cookie_names)
         raise click.ClickException(  # cli-input-validation: import-cookies required-cookie validation
             f"{exc}\n\n{hint}"
         ) from None
+
+    empty_required = sorted(
+        name
+        for name in MINIMUM_REQUIRED_COOKIES
+        if not isinstance(extracted_cookies.get(name), str) or not extracted_cookies[name]
+    )
+    if empty_required:
+        raise click.ClickException(  # cli-input-validation: import-cookies required-cookie value validation
+            "Required cookies must have non-empty string values: " + ", ".join(empty_required)
+        )
 
     storage_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     atomic_write_json(storage_path, filtered_state)

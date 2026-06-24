@@ -224,6 +224,24 @@ class TestAuthImportCookiesCommand:
         assert stat.S_IMODE(auth_dir.stat().st_mode) == 0o700
         assert stat.S_IMODE(storage_path.stat().st_mode) == 0o600
 
+    def test_import_cookies_rejects_empty_required_cookie_values(self, runner, tmp_path):
+        input_path = tmp_path / "cookies.json"
+        storage_path = tmp_path / "storage_state.json"
+        cookies = _valid_cookie_export()
+        for cookie in cookies:
+            if cookie["name"] == "SID":
+                cookie["value"] = ""
+        input_path.write_text(json.dumps(cookies), encoding="utf-8")
+
+        result = runner.invoke(
+            cli, ["--storage", str(storage_path), "auth", "import-cookies", str(input_path)]
+        )
+
+        assert result.exit_code != 0
+        assert "Required cookies must have non-empty string values" in result.output
+        assert "SID" in result.output
+        assert not storage_path.exists()
+
     def test_import_cookies_rejects_missing_required_cookies_without_leaking_values(
         self, runner, tmp_path
     ):
