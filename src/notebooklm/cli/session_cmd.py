@@ -14,12 +14,8 @@ auth diagnostics, and auth-source precedence. Command-side wrappers in
 exit, and async-runner seams for the Playwright and browser-cookie login
 services.
 
-Body-used names that *moved* into those services are re-imported here as
-the command layer's own bindings. A handful are also bound on the
-``notebooklm.cli.session_cmd`` namespace by tests that pre-date ADR-0008's
-services-side patching convention (e.g. ``_sync_server_language_to_config``,
-``_login_browser_cookies_single``); those names stay because they are
-referenced from this module's body.
+Body-used names that moved into services are re-imported here as command-layer
+bindings and legacy patch seams.
 """
 
 from __future__ import annotations
@@ -27,23 +23,19 @@ from __future__ import annotations
 import functools
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import click
 import httpx
 
-from .._auth.browser_capture import filter_storage_state_cookies_by_domain_policy
-from .._auth.cookie_policy import MINIMUM_REQUIRED_COOKIES
+from .. import auth
 from ..auth import cookie_names_from_storage, extract_cookies_from_storage, missing_cookies_hint
 from ..exceptions import AuthError, NotebookNotFoundError
 from ..io import atomic_write_json
 from ..paths import get_storage_path
 
-# Render helpers live in a sibling module to keep this file small; they are
-# imported back so ``register_session_commands`` calls them through this
-# module's own namespace (see ADR-0008).
+# Render helpers stay in a sibling module; command registration calls them here.
 from ._session_render import (
     _render_auth_check_result,
     _render_auth_inspect,
@@ -71,12 +63,6 @@ from .services.auth_diagnostics import (
 from .services.auth_source import AUTH_JSON_ENV_NAME, auth_source_from_ctx, has_env_auth_json
 
 # Direct imports replace the D1-PR-3-retired forwarding wrappers; see ADR-0008.
-# These names are all called from this module's body. Several also serve as
-# ``notebooklm.cli.session_cmd.*`` monkeypatch surfaces for tests that pre-date
-# ADR-0008's services-side patching convention (e.g.
-# ``_sync_server_language_to_config``, ``_login_browser_cookies_single``,
-# ``_refresh_from_browser_cookies``, ``_enumerate_browser_accounts``); those
-# patches keep working because the body-used name stays bound here.
 from .services.login import (
     _enumerate_browser_accounts,
     _login_all_accounts_from_browser,
@@ -84,9 +70,7 @@ from .services.login import (
     _refresh_from_browser_cookies,
     _sync_server_language_to_config,
 )
-from .services.login import (
-    cookie_domains as _cookie_domains,
-)
+from .services.login import cookie_domains as _cookie_domains
 from .services.login.exceptions import LoginConfigurationError
 from .services.login.outcomes import BrowserCookieOutcome, NetworkFailure
 from .services.playwright_login import (
@@ -94,6 +78,7 @@ from .services.playwright_login import (
 )
 from .services.playwright_login import (
     PlaywrightLoginPlan,
+    filter_storage_state_cookies_by_domain_policy,
 )
 from .services.session_context import (
     UseNotebookResult,
@@ -176,7 +161,7 @@ def _read_auth_json_input(path: str) -> Any:
     """Read a cookie JSON payload from a file path or stdin (``-``)."""
     try:
         if path == "-":
-            return json.loads(sys.stdin.read())
+            return json.loads(click.get_text_stream("stdin").read())
         return json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
     except UnicodeDecodeError as exc:
         raise click.ClickException(  # cli-input-validation: import-cookies text decode failure
@@ -257,7 +242,7 @@ def _import_cookie_json(
 
     empty_required = sorted(
         name
-        for name in MINIMUM_REQUIRED_COOKIES
+        for name in auth.MINIMUM_REQUIRED_COOKIES
         if not isinstance(extracted_cookies.get(name), str) or not extracted_cookies[name]
     )
     if empty_required:
@@ -793,7 +778,7 @@ def register_session_commands(cli):
         with handle_errors():
             auth_source = auth_source_from_ctx(ctx)
             if auth_source.has_env_auth:
-                raise click.ClickException(
+                raise click.ClickException(  # cli-input-validation: import-cookies env-auth conflict
                     f"'auth import-cookies' is incompatible with {AUTH_JSON_ENV_NAME}. "
                     "Unset the env var first so the imported cookies can be used "
                     "from storage_state.json."
