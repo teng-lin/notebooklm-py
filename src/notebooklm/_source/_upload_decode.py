@@ -307,10 +307,8 @@ def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
     guessed, _encoding = mimetypes.guess_type(file_path.name)
     if guessed:
         return guessed
-    # ``mimetypes`` has no entry for some text suffixes (e.g. ``.md``) on
-    # Python 3.10 / hosts without a system MIME table — fall back to the
-    # pinned mapping before the opaque ``application/octet-stream`` default,
-    # which NotebookLM cannot infer a parser for (processing fails, #1627).
+    # Fall back to the pinned overrides before the opaque octet-stream default
+    # (see ``_EXTENSION_CONTENT_TYPES`` for why; #1627).
     return _EXTENSION_CONTENT_TYPES.get(file_path.suffix.lower(), "application/octet-stream")
 
 
