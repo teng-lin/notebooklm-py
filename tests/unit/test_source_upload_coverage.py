@@ -177,6 +177,28 @@ def test_resolve_upload_content_type_unknown_suffix_falls_back_to_octet_stream(
     assert _resolve_upload_content_type(Path("blob.unknownext"), None) == "application/octet-stream"
 
 
+def test_resolve_upload_content_type_override_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pinned override sits last in precedence: explicit mime > guess > override.
+
+    The override only fills the gap when ``mimetypes`` misses (#1627); it must not
+    shadow an explicit mime_type or a successful guess, and it keys on the final
+    suffix only (so ``notes.md.txt`` is not mistaken for markdown).
+    """
+    import mimetypes
+    from pathlib import Path
+
+    # Explicit mime_type wins over the pinned ``.md`` override.
+    assert _resolve_upload_content_type(Path("notes.md"), "text/plain") == "text/plain"
+    # A successful guess wins over the override (sentinel proves the guess path ran).
+    monkeypatch.setattr(mimetypes, "guess_type", lambda _name: ("application/x-sentinel", None))
+    assert _resolve_upload_content_type(Path("notes.md"), None) == "application/x-sentinel"
+    # On a miss, the override keys on the actual suffix: ``.md.txt`` -> ``.txt`` -> octet-stream.
+    monkeypatch.setattr(mimetypes, "guess_type", lambda _name: (None, None))
+    assert _resolve_upload_content_type(Path("notes.md.txt"), None) == "application/octet-stream"
+
+
 def test_extract_register_file_source_id_ambiguous_field_candidates() -> None:
     """Two distinct context-matched SOURCE_IDs are ambiguous -> None .
     Each inner dict carries a matching ``SOURCE_NAME`` so both SOURCE_IDs are
