@@ -338,10 +338,12 @@ def _extract_chunk_with_parseable(
             #
             # Don't flip ``parseable`` here: a null inner_json is not a
             # successfully decoded envelope. Both raise paths below are
-            # ``NoReturn`` for a recognized rejection, so flow only reaches the
-            # next iteration when item[5] was absent/empty.
+            # ``NoReturn``, and any present payload (``is not None`` — even an
+            # empty ``[]``, which ``_raise_chat_rejection`` reports without a
+            # status) is treated as a rejection, so flow only reaches the next
+            # iteration when item[5] was absent or a non-list.
             error_payload = frame.error_payload
-            if error_payload:
+            if error_payload is not None:
                 raise_if_rate_limited(error_payload)
                 _raise_chat_rejection(error_payload)
             continue
@@ -430,8 +432,9 @@ def _raise_chat_rejection(error_payload: list) -> NoReturn:
     centralises the ``error_payload[0]`` position (issue #1491).
     """
     status = ErrorPayloadRow(error_payload).status_code
+    detail = f" (status {status!r})" if status is not None else ""
     raise ChatError(
-        f"Chat request was rejected by the server (status {status!r}). "
+        f"Chat request was rejected by the server{detail}. "
         "This usually means the request was malformed or too large — e.g. an "
         "over-long question (there is a ~5.5k-character ceiling); shorten it "
         "and try again."

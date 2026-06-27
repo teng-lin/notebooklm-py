@@ -217,22 +217,20 @@ def _substitute_synthetic_error(response: dict[str, Any]) -> dict[str, Any]:
     return response
 
 
-def _ci_header_key(headers: dict[str, Any], name: str) -> str | None:
-    """Return the actual key in ``headers`` matching ``name`` case-insensitively.
+def _ci_header_keys(headers: dict[str, Any], name: str) -> list[str]:
+    """Return ALL keys in ``headers`` matching ``name`` case-insensitively.
 
     Google serves HTTP/2, whose header names are lowercase (``set-cookie``),
     while older cassettes were recorded with title-case (``Set-Cookie``). A
     case-sensitive ``name in headers`` check misses the lowercase form and
     silently leaves live ``Set-Cookie`` session tokens unscrubbed — the
     ``test_cassette_shapes`` guard would catch the leak, but the scrubber must
-    prevent it, not merely rely on detection. Returns the first matching key or
-    ``None``.
+    prevent it, not merely rely on detection. Returns *every* matching key (not
+    just the first) so a dict carrying both ``Set-Cookie`` and ``set-cookie``
+    gets every token-bearing entry scrubbed, not one.
     """
     lowered = name.lower()
-    for key in headers:
-        if key.lower() == lowered:
-            return key
-    return None
+    return [key for key in headers if key.lower() == lowered]
 
 
 def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
@@ -288,8 +286,7 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
     # cookie pair's value while preserving the cookie attributes (Path / Domain
     # / Expires / Secure / HttpOnly / ...). Both passes are idempotent.
     headers = response.get("headers", {})
-    cookie_key = _ci_header_key(headers, "Set-Cookie")
-    if cookie_key is not None:
+    for cookie_key in _ci_header_keys(headers, "Set-Cookie"):
         cookies = headers[cookie_key]
         if isinstance(cookies, list):
             headers[cookie_key] = [scrub_set_cookie(scrub_string(c)) for c in cookies]
@@ -303,14 +300,12 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
     # a fresh recording leaks per-upload tokens past ``scrub_response`` (the guard
     # catches them, but the scrubber should prevent them — not just detect).
     for _name in ("X-Goog-Upload-URL", "X-Goog-Upload-Control-URL"):
-        _key = _ci_header_key(headers, _name)
-        if _key is not None:
+        for _key in _ci_header_keys(headers, _name):
             _vals = headers[_key]
             headers[_key] = (
                 [scrub_string(v) for v in _vals] if isinstance(_vals, list) else scrub_string(_vals)
             )
-    _uploader_key = _ci_header_key(headers, "X-GUploader-UploadID")
-    if _uploader_key is not None:
+    for _uploader_key in _ci_header_keys(headers, "X-GUploader-UploadID"):
         _vals = headers[_uploader_key]
         headers[_uploader_key] = (
             ["SCRUBBED_UPLOAD_ID" for _ in _vals]

@@ -739,6 +739,19 @@ def test_oversized_request_rejection_surfaces_status_not_parse_error() -> None:
         parse_streaming_chat_response(wire)
 
 
+def test_null_inner_frame_with_empty_payload_still_raises_without_status() -> None:
+    """A null-inner ``wrb.fr`` with an empty ``[]`` payload is not swallowed.
+
+    Guards the ``is not None`` (not truthy) check: a present-but-empty item[5]
+    has no status to report, but the frame still carries no answer, so it must
+    raise a rejection rather than collapse into "No parseable chunks".
+    """
+    wire = _length_prefixed(json.dumps([["wrb.fr", None, None, None, None, []]]))
+
+    with pytest.raises(ChatError, match=r"rejected by the server\."):
+        parse_streaming_chat_response(wire)
+
+
 def test_e_terminator_frame_does_not_break_successful_answer() -> None:
     """A trailing ``"e"`` stream terminator must not turn a good answer into an error.
 
