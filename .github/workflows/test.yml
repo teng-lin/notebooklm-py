@@ -78,6 +78,13 @@ jobs:
       # `cli.add_command(...)`, including `cli/mcp_cmd.py` — the most likely
       # place a stray `import fastmcp` would land. `cli.grouped` only defines
       # the Click Group subclass and traverses none of the command modules.
+      # `client` + `artifacts` cover the primary public Python-API surface
+      # (`from notebooklm import NotebookLMClient`). Since the lean install has
+      # neither fastmcp nor fastapi, a stray top-level import of either from any
+      # core/`_app` module reachable here fails the step. The `notebooklm-server`
+      # adapter is intentionally NOT imported: it legitimately requires fastapi
+      # (so it can't load on the lean install) and is exercised by the `test`
+      # matrix instead — `server` is not wired into the CLI command tree.
       run: uv run python -c "import notebooklm, notebooklm.notebooklm_cli, notebooklm.client, notebooklm.artifacts"
 
     - name: Run pre-commit checks
