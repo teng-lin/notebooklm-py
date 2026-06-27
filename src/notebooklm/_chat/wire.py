@@ -435,9 +435,9 @@ def _raise_chat_rejection(error_payload: list) -> NoReturn:
     detail = f" (status {status!r})" if status is not None else ""
     raise ChatError(
         f"Chat request was rejected by the server{detail}. "
-        "This usually means the request was malformed or too large — e.g. an "
-        "over-long question (there is a ~5.5k-character ceiling); shorten it "
-        "and try again."
+        "This usually means the request was malformed or too large — most often "
+        "an over-long question past the server-side size limit; shorten it and "
+        "try again."
     )
 
 

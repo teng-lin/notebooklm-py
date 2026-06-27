@@ -324,9 +324,12 @@ class TestErrorPayloadRow:
 
     @pytest.mark.parametrize(
         ("payload", "expected"),
-        [([3], 3), ([8, None, []], 8), ([], None)],
+        [([3], 3), ([8, None, []], 8), ([], None), ([None], None)],
     )
     def test_status_code_reads_leading_slot(self, payload: list, expected: object) -> None:
+        # ``[None]`` (leading slot present but null) yields ``None`` — the
+        # rejection message then omits the status detail rather than printing
+        # ``(status None)``.
         assert ErrorPayloadRow(payload).status_code == expected
 
     @pytest.mark.parametrize("entry", [[], [123], "x", None])
