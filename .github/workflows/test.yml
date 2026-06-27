@@ -65,6 +65,21 @@ jobs:
           attempt=$((attempt + 1))
         done
 
+    - name: Assert core imports without optional adapter extras
+      # This job uses the canonical lean install (browser+dev+markdown, no
+      # `mcp`/`server`). Since the test matrix now installs those extras, this
+      # is the remaining per-PR guard that the core package still imports
+      # without fastmcp/fastapi present — a stray top-level `import fastmcp` in
+      # non-adapter code would ImportError here, catching the regression before
+      # it reaches the release-time smoke test in publish.yml.
+      #
+      # `notebooklm_cli` (not `cli.grouped`) is imported because it is the
+      # console-script entrypoint that builds the full command tree via
+      # `cli.add_command(...)`, including `cli/mcp_cmd.py` — the most likely
+      # place a stray `import fastmcp` would land. `cli.grouped` only defines
+      # the Click Group subclass and traverses none of the command modules.
+      run: uv run python -c "import notebooklm, notebooklm.notebooklm_cli, notebooklm.client, notebooklm.artifacts"
+
     - name: Run pre-commit checks
       run: uv run pre-commit run --all-files
 
@@ -130,129 +145,6 @@ jobs:
     - name: Verify e2e test fixtures
       run: uv run pytest tests/e2e --collect-only -q
 
-  mcp:
-    # The MCP server ships behind the optional `mcp` extra, so the canonical
-    # install (browser+dev+markdown) used by the main matrix omits fastmcp and the
-    # MCP suites (tests/unit/mcp, tests/integration/mcp_vcr) are skipped there via
-    # importorskip. This dedicated job installs the `mcp` extra and runs them, so
-    # the MCP adapter — including the research_import LBwxtb leg (#1541) — has real
-    # CI coverage across all three OSes.
-    name: MCP suite (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: quality
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        ref: ${{ inputs.custom_branch || github.ref }}
-        persist-credentials: false
-
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
-        cache: 'pip'
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        enable-cache: true
-
-    - name: Install dependencies (mcp extra)
-      # Retried to ride out transient registry/network blips: a real lockfile
-      # problem fails all 3 attempts identically, so this only absorbs flakes
-      # — it never masks a genuine resolution error. (The windows leg of this
-      # job has flaked on the `Install uv` / dep-resolution network hop.)
-      shell: bash
-      run: |
-        attempt=1; max=3
-        until uv sync --frozen --extra dev --extra mcp; do
-          if [ "$attempt" -ge "$max" ]; then
-            echo "::error::uv sync failed after $max attempts" >&2
-            exit 1
-          fi
-          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
-          sleep $((attempt * 15))
-          attempt=$((attempt + 1))
-        done
-
-    - name: Run MCP suite
-      # The MCP package is invisible to the main coverage job: that job installs
-      # only browser+dev+markdown (no `mcp` extra), so every `tests/unit/mcp`
-      # test is skipped there and `src/notebooklm/mcp/**` lands in coverage.json
-      # at 0%. This job is the only one that exercises the adapter, so it owns
-      # the coverage gate too. The threshold is the project-wide 90% floor (the
-      # same value `scripts/check_coverage_thresholds.py` pins everywhere — keep
-      # it identical or that drift guard fails); the adapter currently sits at
-      # ~96%, so this gate catches a regression back toward the old 0% blind spot.
-      run: >-
-        uv run pytest tests/unit/mcp tests/integration/mcp_vcr -q
-        --cov=src/notebooklm/mcp --cov-report=term-missing --cov-fail-under=90
-
-  server:
-    # The REST server ships behind the optional ``server`` extra, so the
-    # canonical install (browser+dev+markdown) used by the main matrix omits
-    # fastapi and ``tests/server`` is skipped there via ``importorskip``. This
-    # dedicated job installs the ``server`` extra and runs the suite across all
-    # three OSes — without it the adapter (incl. Unix-vs-Windows file handling)
-    # would have zero CI coverage.
-    name: REST server (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: quality
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-    - uses: actions/checkout@v7
-      with:
-        ref: ${{ inputs.custom_branch || github.ref }}
-        persist-credentials: false
-
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
-        cache: 'pip'
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        enable-cache: true
-
-    - name: Install dependencies (server extra)
-      # Retried to ride out transient registry/network blips: a real lockfile
-      # problem fails all 3 attempts identically, so this only absorbs flakes
-      # — it never masks a genuine resolution error.
-      shell: bash
-      run: |
-        attempt=1; max=3
-        until uv sync --frozen --extra dev --extra server; do
-          if [ "$attempt" -ge "$max" ]; then
-            echo "::error::uv sync failed after $max attempts" >&2
-            exit 1
-          fi
-          echo "::warning::uv sync attempt $attempt failed; retrying in $((attempt * 15))s" >&2
-          sleep $((attempt * 15))
-          attempt=$((attempt + 1))
-        done
-
-    - name: Run REST server suite
-      # Same blind spot as the MCP job: the main coverage job omits the `server`
-      # extra, so `tests/server` is skipped there and `src/notebooklm/server/**`
-      # registers 0% in coverage.json. This dedicated job owns the server
-      # coverage gate. The threshold is the project-wide 90% floor (kept
-      # identical everywhere so `check_coverage_thresholds.py` stays green); the
-      # adapter currently sits at ~92%, so this catches a slide back toward 0%.
-      run: >-
-        uv run pytest tests/server -q
-        --cov=src/notebooklm/server --cov-report=term-missing --cov-fail-under=90
-
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
@@ -299,8 +191,25 @@ jobs:
         # has no internal retry across the full resolve+download. A real
         # lockfile problem fails all 3 attempts identically, so this only
         # absorbs flakes — it never masks a genuine resolution error.
+        #
+        # `mcp` + `server` are installed here (on top of the canonical
+        # browser+dev+markdown set) so the MCP and server suites
+        # (`tests/unit/mcp`, `tests/integration/mcp_vcr`, `tests/server`) run
+        # in the main matrix instead of being importorskip'd — that gives
+        # `src/notebooklm/{mcp,server}/**` real coverage in coverage.json (no
+        # more 0% blind spot) across the full 3.10–3.14 × 3-OS matrix.
+        # `cookies` is deliberately excluded: rookiepy fails on Python
+        # 3.13/3.14 (see check_ci_install_parity.py).
+        #
+        # Tradeoff: the deleted MCP/server jobs each enforced a *scoped*
+        # `--cov=src/notebooklm/{mcp,server} --cov-fail-under=90`. mcp/server
+        # are now covered only by the global aggregate gate below — no
+        # per-subpackage floor backfills it, so a subpackage could regress
+        # within the aggregate's headroom. Add entries to
+        # `[tool.notebooklm.per_file_coverage_floors]` if that backstop is
+        # wanted back.
         attempt=1; max=3
-        until uv sync --frozen --extra browser --extra dev --extra markdown; do
+        until uv sync --frozen --extra browser --extra dev --extra markdown --extra mcp --extra server; do
           if [ "$attempt" -ge "$max" ]; then
             echo "::error::uv sync failed after $max attempts" >&2
             exit 1
