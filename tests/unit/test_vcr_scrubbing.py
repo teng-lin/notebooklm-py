@@ -230,3 +230,32 @@ def test_scrub_response_helper_scrubs_set_cookie_token(
     joined = "".join(set_cookie) if isinstance(set_cookie, list) else set_cookie
     assert "g.a000" not in joined, f"Set-Cookie token leaked:\n{joined}"
     assert "LSID=SCRUBBED" in joined
+
+
+def test_scrub_response_scrubs_lowercase_set_cookie_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``scrub_response`` scrubs a lowercase ``set-cookie`` header (HTTP/2).
+
+    Google serves HTTP/2, whose header names are lowercase, so a fresh recording
+    carries ``set-cookie`` (not the title-case ``Set-Cookie`` older cassettes
+    have). A case-sensitive lookup would leave the live session token unscrubbed
+    — this pins the case-insensitive match.
+    """
+    monkeypatch.delenv("NOTEBOOKLM_VCR_RECORD_ERRORS", raising=False)
+    vcr_config_path = Path(__file__).resolve().parent.parent / "vcr_config.py"
+    spec = importlib.util.spec_from_file_location("tests_vcr_config_scrub_ci", vcr_config_path)
+    assert spec is not None and spec.loader is not None
+    vcr_config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vcr_config)
+
+    response: dict[str, Any] = {
+        "status": {"code": 200, "message": "OK"},
+        "headers": {"set-cookie": [f"SIDCC={_G_A000}; expires=Sun, 27-Jun-2027; path=/; Secure"]},
+        "body": {"string": b"[]"},
+    }
+    out = vcr_config.scrub_response(response)
+    set_cookie = out["headers"]["set-cookie"]
+    joined = "".join(set_cookie) if isinstance(set_cookie, list) else set_cookie
+    assert "g.a000" not in joined, f"lowercase set-cookie token leaked:\n{joined}"
+    assert "SIDCC=SCRUBBED" in joined

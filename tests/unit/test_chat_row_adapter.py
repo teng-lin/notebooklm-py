@@ -84,7 +84,7 @@ class TestFramePositionContract:
         ) == (0, 2, 2, 5)
 
     def test_error_payload_positions_pinned(self) -> None:
-        assert ErrorPayloadRow._ENTRIES_POS == 2
+        assert (ErrorPayloadRow._STATUS_POS, ErrorPayloadRow._ENTRIES_POS) == (0, 2)
 
     def test_text_leaf_positions_pinned(self) -> None:
         assert TextLeafRow._TEXT_POS == 2
@@ -321,6 +321,13 @@ class TestErrorPayloadRow:
     @pytest.mark.parametrize("payload", [[8, None], [8, None, "x"], []])
     def test_absent_or_non_list_entries_degrade(self, payload: list) -> None:
         assert ErrorPayloadRow(payload).entries == []
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [([3], 3), ([8, None, []], 8), ([], None)],
+    )
+    def test_status_code_reads_leading_slot(self, payload: list, expected: object) -> None:
+        assert ErrorPayloadRow(payload).status_code == expected
 
     @pytest.mark.parametrize("entry", [[], [123], "x", None])
     def test_non_string_entry_type_is_none(self, entry: object) -> None:

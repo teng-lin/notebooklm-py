@@ -449,14 +449,26 @@ class StreamFrameRow:
 class ErrorPayloadRow:
     """Typed view of a streamed-chat error payload (``item[5]``).
 
-    Structure: ``[8, None, [["type.googleapis.com/.../UserDisplayableError", …]]]``.
-    Centralises the ``error_payload[2]`` and inner ``entry[0]`` reads so
-    ``raise_if_rate_limited`` stops open-coding them (issue #1491).
+    Structure: ``[8, None, [["type.googleapis.com/.../UserDisplayableError", …]]]``
+    for the rich rate-limit shape, or a bare ``[3]`` status for a request-level
+    rejection (issue #1472). Centralises the ``error_payload[0]`` status, the
+    ``error_payload[2]`` entries, and the inner ``entry[0]`` reads so
+    ``raise_if_rate_limited`` / ``_raise_chat_rejection`` stop open-coding them
+    (issue #1491).
     """
 
     _raw: list[Any] = field(repr=False)
 
+    _STATUS_POS: ClassVar[int] = 0
     _ENTRIES_POS: ClassVar[int] = 2
+
+    @property
+    def status_code(self) -> Any:
+        """Leading status/code at ``error_payload[0]`` (e.g. ``3`` for a bare
+        ``[3]`` rejection, ``8`` for the rate-limit shape) — ``None`` if absent."""
+        if not self._raw:
+            return None
+        return self._raw[self._STATUS_POS]
 
     @property
     def entries(self) -> list[Any]:

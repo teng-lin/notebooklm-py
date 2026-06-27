@@ -1,0 +1,200 @@
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22rLM1Ne%22%2C%22%5B%5C%2264832f19-cce2-4d59-a69e-4763c5ca57ea%5C%22%2Cnull%2C%5B2%2Cnull%2Cnull%2C%5B1%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B1%5D%5D%5D%2Cnull%2C0%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1782537130637&
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '296'
+      content-type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      cookie:
+      - NID=SCRUBBED; SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED;
+        HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
+        __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
+      host:
+      - notebooklm.google.com
+      user-agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=rLM1Ne&source-path=%2Fnotebook%2F64832f19-cce2-4d59-a69e-4763c5ca57ea&f.sid=SCRUBBED&hl=en&rt=c
+  response:
+    body:
+      string: ')]}''
+
+
+        400
+
+        [["wrb.fr","rLM1Ne","[[\"T#1472 scratch oversized rejection\",null,\"64832f19-cce2-4d59-a69e-4763c5ca57ea\",\"\",null,[1,false,true,null,null,[1782537131,665112000],1,false,[1782537131,443988000],null,null,null,false,true,1,false,null,true,1,null,null,null,false],null,null,null,[true,true,true],[6,500,300,500000,2]]]",null,null,null,"generic"],["di",169],["af.httprm",169,"-8485418463010796162",8]]
+
+        23
+
+        [["e",4,null,null,438]]
+
+        '
+    headers:
+      accept-ch:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
+        Sec-CH-UA-Model, Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+        Sec-CH-UA-Platform-Version
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      cache-control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      content-disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      content-length:
+      - '438'
+      content-security-policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      content-type:
+      - application/json; charset=utf-8
+      cross-origin-opener-policy:
+      - same-origin-allow-popups
+      cross-origin-resource-policy:
+      - same-site
+      date:
+      - Sat, 27 Jun 2026 05:12:11 GMT
+      expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      permissions-policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*,
+        ch-ua-model=*, ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      pragma:
+      - no-cache
+      server:
+      - ESF
+      set-cookie:
+      - SIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:11 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:11 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:11 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:11 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:11 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:11 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      transfer-encoding:
+      - chunked
+      vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: f.req=%5Bnull%2C%22%5B%5B%5D%2C%5C%22Summarize%20the%20following%20requirement%20in%20detail%3A%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%20encoder%20envelope%20batchexecute%20rpc%20agent%20loop%20context%20window%20subagent%20skill%20orchestration%20retrieval%20citation%20notebook%20source%20artifact%20podcast%20transcript%20embedding%20token%20prompt%20latency%20concurrency%20idempotency%20schema%20decoder%5C%22%2Cnull%2C%5B2%2Cnull%2C%5B1%5D%2C%5B1%5D%5D%2Cnull%2Cnull%2Cnull%2C%5C%2264832f19-cce2-4d59-a69e-4763c5ca57ea%5C%22%2C1%5D%22%5D&at=SCRUBBED_CSRF%3A1782537130637&
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '12567'
+      content-type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      cookie:
+      - NID=SCRUBBED; SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED;
+        HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
+        __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
+      host:
+      - notebooklm.google.com
+      user-agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed?bl=boq_labs-tailwind-frontend_20260301.03_p0&hl=en&_reqid=200000&rt=c&f.sid=SCRUBBED
+  response:
+    body:
+      string: ')]}''
+
+
+        36
+
+        [["wrb.fr",null,null,null,null,[3]]]
+
+        55
+
+        [["di",156],["af.httprm",156,"-8343793854737661657",8]]
+
+        23
+
+        [["e",4,null,null,132]]
+
+        '
+    headers:
+      accept-ch:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
+        Sec-CH-UA-Model, Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+        Sec-CH-UA-Platform-Version
+      alt-svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      cache-control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      content-disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      content-length:
+      - '132'
+      content-security-policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      content-type:
+      - application/json; charset=utf-8
+      cross-origin-opener-policy:
+      - same-origin-allow-popups
+      cross-origin-resource-policy:
+      - same-site
+      date:
+      - Sat, 27 Jun 2026 05:12:12 GMT
+      expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      permissions-policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*,
+        ch-ua-model=*, ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      pragma:
+      - no-cache
+      server:
+      - ESF
+      set-cookie:
+      - SIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:12 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:12 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:12 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:12 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:12 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Sun, 27-Jun-2027 05:12:12 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      transfer-encoding:
+      - chunked
+      vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      x-content-type-options:
+      - nosniff
+      x-frame-options:
+      - SAMEORIGIN
+      x-xss-protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+version: 1

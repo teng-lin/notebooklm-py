@@ -714,6 +714,46 @@ def test_error_frame_without_code_still_surfaces_chat_error() -> None:
         parse_streaming_chat_response(_length_prefixed(error_frame))
 
 
+def test_oversized_request_rejection_surfaces_status_not_parse_error() -> None:
+    """A null-inner ``wrb.fr`` with an item[5] status payload is a rejection.
+
+    The server rejects an over-long question with a ``wrb.fr`` frame carrying no
+    answer JSON (null item[2]) and a bare grpc-style status at item[5]
+    (``[3]`` == ``INVALID_ARGUMENT``), followed by ``di`` / ``af.httprm`` / ``e``
+    stream-bookkeeping frames. The parser used to skip the status frame and
+    raise the generic "No parseable chunks" error, masking the real cause
+    (discussion #1472). It now raises a :class:`ChatError` echoing the status.
+
+    The body below is byte-for-byte the real captured rejection from #1472 — the
+    ``["e", 4, None, None, 132]`` trailer is deliberately included to pin that it
+    is NOT treated as the error (its trailing ``132`` is a response byte count,
+    not an error code).
+    """
+    wire = _length_prefixed(
+        json.dumps([["wrb.fr", None, None, None, None, [3]]]),
+        json.dumps([["di", 198], ["af.httprm", 197, "-1460015816955467607", 6]]),
+        json.dumps([["e", 4, None, None, 132]]),
+    )
+
+    with pytest.raises(ChatError, match=r"rejected by the server \(status 3\)"):
+        parse_streaming_chat_response(wire)
+
+
+def test_e_terminator_frame_does_not_break_successful_answer() -> None:
+    """A trailing ``"e"`` stream terminator must not turn a good answer into an error.
+
+    Successful streamed responses end with an ``["e", n, None, None, bytes]``
+    bookkeeping frame (the trailing number is a running byte count). Regression
+    guard for discussion #1472: the ``"e"`` tag must stay inert so a valid
+    answer parses normally instead of raising.
+    """
+    body = _length_prefixed(_chunk("Real answer."), json.dumps([["e", 15, None, None, 41687]]))
+
+    result = parse_streaming_chat_response(body)
+
+    assert result.answer == "Real answer."
+
+
 def test_chat_wire_static_import_guard() -> None:
     forbidden = {
         "notebooklm",
