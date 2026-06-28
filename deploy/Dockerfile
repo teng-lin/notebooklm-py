@@ -23,12 +23,14 @@ ENV NOTEBOOKLM_MCP_HOST=0.0.0.0 \
 
 EXPOSE 9420
 
-# Liveness: stdlib-only TCP connect to the bound port. No curl/wget/nc needed,
-# and it never touches the auth-gated /mcp route. The port is hardcoded to 9420
-# (the image default above) — exec-form HEALTHCHECK can't read env vars, so if
-# you override NOTEBOOKLM_MCP_PORT, update this port to match.
+# Liveness: stdlib-only TCP connect to the listener over loopback. No curl/wget/nc
+# needed, and it never touches the auth-gated /mcp route. The python process reads
+# NOTEBOOKLM_MCP_PORT from its own env at runtime (a program sees its environment
+# even in exec-form — only shell `$VAR` substitution doesn't), so overriding the
+# port keeps the healthcheck in sync. Host is always loopback: the server binds
+# 0.0.0.0, which you connect to via 127.0.0.1 from inside the container.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["python", "-c", "import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(0 if s.connect_ex(('127.0.0.1',9420))==0 else 1)"]
+    CMD ["python", "-c", "import os,socket,sys; p=int(os.environ.get('NOTEBOOKLM_MCP_PORT','9420')); s=socket.socket(); s.settimeout(2); sys.exit(0 if s.connect_ex(('127.0.0.1',p))==0 else 1)"]
 
 # --host 0.0.0.0 is non-loopback, so NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1 AND a
 # NOTEBOOKLM_MCP_TOKEN are MANDATORY (the entrypoint refuses to start otherwise).
