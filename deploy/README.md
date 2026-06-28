@@ -47,20 +47,26 @@ In the Cloudflare **Zero Trust** dashboard → **Networks → Tunnels**:
    record and serves TLS with its own cert.
 
 ## 4. Run
+
+The `Makefile` wraps the two build modes — one command each:
+
 ```bash
-cd deploy && docker compose up -d
-docker compose logs -f notebooklm-mcp   # should report it bound 0.0.0.0:9420
+cd deploy
+make dev                    # build + install THIS checkout (source) and start
+make prod VERSION=0.8.0     # build + install a published PyPI release and start
+make logs                   # tail the server log (expect: bound 0.0.0.0:9420)
+make restart                # rebuild + recreate after a source/config change
+make down                   # stop and remove
 ```
 
-**Build modes** — the image installs `notebooklm-py` two ways (the build context
-is the repo root):
-- **From source (default):** `docker compose up` builds and installs *this
-  checkout*, so you deploy the exact code in the repo (right for dev / an
-  unreleased branch). After changing source, rebuild with `docker compose up -d
-  --build`.
-- **From a published release:** uncomment `build.args.NOTEBOOKLM_SPEC` in
-  `docker-compose.yml` (e.g. `notebooklm-py[mcp,headless]==0.8.0`) or build with
-  `docker compose build --build-arg NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]==0.8.0"`.
+Equivalent raw compose (the image installs `notebooklm-py` two ways; build
+context is the repo root):
+- **From source (default):** `docker compose up -d --build` installs *this
+  checkout* — you deploy the exact code in the repo (right for dev / an
+  unreleased branch).
+- **From a published release:** `docker compose build --build-arg
+  NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]==0.8.0"` then `docker compose up -d`
+  (or uncomment `build.args.NOTEBOOKLM_SPEC` in `docker-compose.yml`).
 
 ## 5. Connect from Claude Code
 ```bash
