@@ -87,6 +87,18 @@ def test_explicit_http_transport_binds_loopback(monkeypatch: pytest.MonkeyPatch)
     assert captured["auth"] is None
 
 
+def test_bogus_transport_env_default_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An invalid env-derived transport default must SystemExit, not silently run
+    stdio (argparse ``choices`` validates an explicit flag but not the env default)."""
+    monkeypatch.setenv("NOTEBOOKLM_MCP_TRANSPORT", "websocket")
+    monkeypatch.setattr(entry, "create_server", MagicMock())
+
+    with pytest.raises(SystemExit) as excinfo:
+        entry.main([])
+
+    assert "Invalid transport" in str(excinfo.value)
+
+
 @pytest.mark.parametrize(
     ("host", "expected"),
     [
