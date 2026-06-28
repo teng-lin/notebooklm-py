@@ -4,9 +4,13 @@ Two transports are supported:
 
 * **stdio** (default): the client speaks JSON-RPC over stdin/stdout. stdout must
   carry *pristine* JSON-RPC, so all logging is pinned to **stderr**.
-* **http** (loopback): a local streamable-HTTP server. A bind guard refuses any
-  non-loopback ``--host`` unless ``NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1`` is set,
-  so an MCP server is never accidentally exposed to the network.
+* **http**: a streamable-HTTP server. A bind guard refuses any non-loopback
+  ``--host`` unless ``NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1`` is set, so an MCP
+  server is never accidentally exposed to the network. A second, fail-closed
+  guard refuses to start on a non-loopback bind unless ``NOTEBOOKLM_MCP_TOKEN``
+  is set — a network-reachable server fronting a full Google account must require
+  a bearer token. The token is **env-only** (never a CLI flag, so it cannot leak
+  via ``ps aux``) and is verified by :mod:`._auth`.
 
 The auth profile is bound once at startup via ``--profile`` /
 ``NOTEBOOKLM_PROFILE``. This module imports NO ``click`` / ``rich`` / ``cli``.
@@ -20,6 +24,7 @@ import logging
 import os
 import sys
 
+from ._auth import MCP_TOKEN_ENV, build_auth_provider, get_configured_token
 from .server import create_server
 
 __all__ = ["main"]
@@ -49,14 +54,18 @@ def _configure_logging(level: str) -> None:
 
 
 def _is_loopback(host: str) -> bool:
-    """Return whether ``host`` resolves to a loopback interface."""
-    if host in _LOOPBACK_HOSTNAMES:
+    """Return whether ``host`` resolves to a loopback interface.
+
+    Hostnames are case-insensitive, so ``LOCALHOST`` is normalized before the
+    check; an IP literal (``127.0.0.1`` / ``::1``) is parsed. Anything else
+    (a public DNS name, ``0.0.0.0``, ``::``) is NOT loopback — fail closed.
+    """
+    normalized = host.strip().lower()
+    if normalized in _LOOPBACK_HOSTNAMES:
         return True
     try:
-        return ipaddress.ip_address(host).is_loopback
+        return ipaddress.ip_address(normalized).is_loopback
     except ValueError:
-        # A non-numeric, non-"localhost" hostname (e.g. a public DNS name) is NOT
-        # treated as loopback — fail closed.
         return False
 
 
@@ -85,6 +94,26 @@ def _check_http_bind_allowed(host: str, *, allow_external: bool) -> None:
         f"This would expose the server to the network. Set "
         f"{ALLOW_EXTERNAL_BIND_ENV}=1 to override (only behind a trusted proxy)."
     )
+
+
+def _check_http_token_required(host: str, token: str | None) -> None:
+    """Refuse a non-loopback HTTP bind without a bearer token (fail closed).
+
+    Keyed off the effective non-loopback bind — NOT the ``ALLOW_EXTERNAL_BIND``
+    flag — so a loopback dev run never needs a token, while any network-reachable
+    bind (which fronts a full Google account) must carry one. Mirrors the REST
+    server's ``_check_token_configured`` startup guard.
+
+    Raises:
+        SystemExit: ``host`` is non-loopback and ``token`` is ``None``.
+    """
+    if not _is_loopback(host) and token is None:
+        raise SystemExit(
+            f"Refusing to bind the MCP HTTP transport to non-loopback host "
+            f"'{host}' without {MCP_TOKEN_ENV} set. A network-reachable "
+            f"MCP server fronts a full Google account and must require a "
+            f"bearer token. Set {MCP_TOKEN_ENV} to a strong random value."
+        )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -132,12 +161,15 @@ def _resolve_port(raw: str) -> int:
     parser build before ``--port`` can override it.
     """
     try:
-        return int(raw)
+        port = int(raw)
     except (TypeError, ValueError):
         raise SystemExit(
             f"Invalid port {raw!r}: must be an integer "
             f"(check the --port argument and NOTEBOOKLM_MCP_PORT)."
         ) from None
+    if not 1 <= port <= 65535:
+        raise SystemExit(f"Invalid port {port}: must be in 1..65535.")
+    return port
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -155,15 +187,20 @@ def main(argv: list[str] | None = None) -> None:
             f"NOTEBOOKLM_MCP_TRANSPORT)."
         )
 
-    server = create_server(profile=args.profile)
-
     if args.transport == "http":
         allow_external = os.environ.get(ALLOW_EXTERNAL_BIND_ENV) == "1"
         _check_http_bind_allowed(args.host, allow_external=allow_external)
+        # Resolve the token once, BEFORE building the server: the same value
+        # gates startup (fail closed on a network bind) and, when present,
+        # becomes the per-request bearer verifier.
+        token = get_configured_token()
+        _check_http_token_required(args.host, token)
+        server = create_server(profile=args.profile, auth=build_auth_provider(token))
         server.run(transport="http", host=args.host, port=_resolve_port(args.port))
     else:
         # show_banner=False keeps FastMCP's startup banner out of the host's logs
         # (and off stdout — stdio requires uncontaminated JSON-RPC).
+        server = create_server(profile=args.profile)
         server.run(transport="stdio", show_banner=False)
 
 

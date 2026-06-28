@@ -52,7 +52,9 @@ impersonate = ["curl_cffi>=0.11,<1"]
 # pure-Python (no native wheels), so it is safe in `all`. >=1.1.0 for
 # exchange_token; no <2 cap so the 2.0.0 ServiceDisabled fix installs.
 headless = ["gpsoauth>=1.1.0"]
-mcp = ["fastmcp>=2.14,<4"]
+# >=3.0: the remote-transport bearer auth (FastMCP(auth=...) + TokenVerifier)
+# landed in fastmcp 3.0; 2.x lacks it and would ImportError in mcp/_auth.py.
+mcp = ["fastmcp>=3.0,<4"]
 # Optional single-tenant REST server (the third _app adapter, after cli/ and
 # mcp/). EXPERIMENTAL: the /v1 surface may change in a minor release; it is
 # excluded from the public-API compatibility gate. python-multipart is REQUIRED

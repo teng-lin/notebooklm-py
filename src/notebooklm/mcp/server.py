@@ -22,6 +22,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import cast
 
 from fastmcp import FastMCP
+from fastmcp.server.auth import AuthProvider
 
 from ..client import NotebookLMClient
 from ._context import AppState
@@ -65,6 +66,7 @@ def create_server(
     *,
     profile: str | None = None,
     client_factory: ClientFactory | None = None,
+    auth: AuthProvider | None = None,
 ) -> FastMCP:
     """Build the FastMCP server.
 
@@ -74,6 +76,11 @@ def create_server(
         client_factory: Test seam — a zero-arg callable returning an async context
             manager that yields a client. Defaults to
             ``NotebookLMClient.from_storage(profile=...)``.
+        auth: Optional FastMCP auth provider gating the HTTP transport. Passed
+            **explicitly** by the caller — this function never reads
+            ``NOTEBOOKLM_MCP_TOKEN`` itself, so stdio runs and the unit suite
+            never silently attach auth (the token check + provider build live in
+            :mod:`.__main__`, only on the network-bound http path).
 
     Returns:
         A configured :class:`~fastmcp.FastMCP` server whose lifespan binds one
@@ -95,6 +102,6 @@ def create_server(
         async with factory() as client:
             yield AppState(client=client)
 
-    mcp = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS, lifespan=lifespan)
+    mcp = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS, lifespan=lifespan, auth=auth)
     register_all(mcp)
     return mcp

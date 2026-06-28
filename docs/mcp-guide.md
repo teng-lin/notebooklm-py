@@ -87,10 +87,44 @@ notebooklm-mcp --transport http --port 9000
 | `--port` | `8000` | http only |
 | `--log-level` | `INFO` | logs go to **stderr**; stdout stays pure JSON-RPC |
 
+There is no `--token` flag — the HTTP bearer token is **env-only**
+(`NOTEBOOKLM_MCP_TOKEN`) so it cannot leak via `ps aux`.
+
 `stdio` is right for Claude Desktop/Code, Cursor, and Windsurf (they launch the server as a
 subprocess). Use `http` for a local web client or to share one running server across clients on
-the same machine. The HTTP transport is single-user and loopback-only by design; binding to a
-non-loopback address requires the explicit `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1` override.
+the same machine. The HTTP transport is loopback-only by default; binding to a non-loopback
+address requires **both** the explicit `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1` override **and** a
+`NOTEBOOKLM_MCP_TOKEN` — the server fails closed (refuses to start) on a network bind without a
+token, since it fronts a full Google account.
+
+## Remote deployment (Docker + Cloudflare Tunnel)
+
+Because master-token auth keeps the session alive unattended (no browser), the HTTP transport can
+run as a **remote connector** reachable from Claude Code, Claude.ai, and mobile. The
+[`deploy/`](../deploy/) directory ships a turn-key setup — a Dockerfile + Compose stack with a
+`cloudflared` sidecar — so you get HTTPS with **no public IP, no open ports, and no TLS
+certificate to manage** (Cloudflare terminates TLS at its edge).
+
+```bash
+# 1. bootstrap once (machine with a browser):
+notebooklm login --master-token --account you@example.com
+cp -r ~/.notebooklm/profiles/<profile>/. deploy/profile/   # mounted read-write
+# 2. secrets:
+cp deploy/.env.example deploy/.env                          # set MCP token + tunnel token
+# 3. create a Cloudflare Tunnel → public hostname → http://notebooklm-mcp:8000
+# 4. run:
+cd deploy && docker compose up -d
+# 5. connect:
+claude mcp add --transport http notebooklm https://<host>/mcp \
+  --header "Authorization: Bearer $NOTEBOOKLM_MCP_TOKEN"
+```
+
+Full step-by-step (incl. the security model and the read-write profile requirement) is in
+[`deploy/README.md`](../deploy/README.md). Use a **dedicated/throwaway Google account** — the
+mounted `master_token.json` is a durable full-account credential. The connector moves
+text/references only; add device files via Google Drive (`source_add` with a Drive id) or the
+NotebookLM app, and consume generated podcasts/videos in the NotebookLM app (same account).
+`OAuth` connectors and multi-tenant hosting are out of scope for this single-tenant setup.
 
 ## Core concepts
 

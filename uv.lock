@@ -1342,7 +1342,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.0.0,<9" },
     { name = "curl-cffi", marker = "extra == 'impersonate'", specifier = ">=0.11,<1" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.115,<1" },
-    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=2.14,<4" },
+    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.0,<4" },
     { name = "filelock", specifier = ">=3.13,<4" },
     { name = "gpsoauth", marker = "extra == 'headless'", specifier = ">=1.1.0" },
     { name = "httpx", specifier = ">=0.27.0,<0.29" },

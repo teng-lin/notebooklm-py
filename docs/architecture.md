@@ -1169,8 +1169,9 @@ src/notebooklm/
 ├── notebooklm_cli.py            # Entry-point assembler — imports + registers cli/ groups
 ├── mcp/                         # MCP server (opt-in `mcp` extra) — transport-neutral adapter over _app/, sibling to cli/
 │   ├── __init__.py              # Re-exports create_server / SERVER_NAME / SERVER_INSTRUCTIONS
-│   ├── __main__.py              # `notebooklm-mcp` entrypoint: argparse (--profile/--transport/--host/--port/--log-level), stderr logging, loopback HTTP bind guard
-│   ├── server.py                # create_server(profile, client_factory): FastMCP server; lifespan binds one NotebookLMClient; register_all tool-registration seam
+│   ├── __main__.py              # `notebooklm-mcp` entrypoint: argparse (--profile/--transport/--host/--port/--log-level), stderr logging, loopback HTTP bind guard + fail-closed token guard (non-loopback bind requires NOTEBOOKLM_MCP_TOKEN); builds the auth provider and passes it to create_server on the http path
+│   ├── server.py                # create_server(profile, client_factory, auth): FastMCP server; lifespan binds one NotebookLMClient; register_all tool-registration seam; auth passed explicitly (never reads the token env)
+│   ├── _auth.py                 # Remote-transport bearer auth: McpBearerAuthProvider(TokenVerifier) with constant-time hmac.compare_digest over NOTEBOOKLM_MCP_TOKEN (env-only, never logged/repr'd); build_auth_provider/get_configured_token — mirrors server/_auth.py, NOT fastmcp StaticTokenVerifier
 │   ├── _context.py              # AppState dataclass + get_client(ctx) — the lifespan-bound client
 │   ├── _errors.py               # Structured tool-error projection (CATEGORY_TABLE/ERROR_CODES/mcp_errors/to_tool_error/tool_error_payload) over _app.errors.classify
 │   ├── _resolve.py              # resolve_notebook/resolve_source/resolve_note — name + partial-id resolution over _app.resolve plus exact-title matching
