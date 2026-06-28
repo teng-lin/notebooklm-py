@@ -218,7 +218,8 @@ async def test_authenticated_tool_call_over_http_transport() -> None:
             assert result.structured_content == {"notebooks": []}
             stub.notebooks.list.assert_awaited()  # dispatch really reached the client
 
-        # Wrong bearer → rejected by the auth middleware (never reaches a tool).
-        with pytest.raises(httpx.HTTPStatusError):
+        # Wrong bearer → rejected by the auth middleware with 401 (never a tool).
+        with pytest.raises(httpx.HTTPStatusError) as excinfo:
             async with Client(make_transport("wrong-token")) as mcp:
                 await mcp.list_tools()
+        assert excinfo.value.response.status_code == 401
