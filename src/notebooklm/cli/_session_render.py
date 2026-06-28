@@ -155,19 +155,23 @@ def _render_logout_outcome(outcome: LogoutOutcome, *, json_output: bool = False)
     """
     if json_output:
         failure = outcome.failure
+        # ``json_error_response`` is NoReturn (exits 1); the explicit ``else``
+        # makes it structurally impossible to emit both the error envelope and
+        # the success payload — one JSON document per invocation, always.
         if failure is not None:
             json_error_response(
                 f"logout_{failure.kind}_failed",
                 failure.error_message,
                 {"path": str(failure.path), "env_auth_remains": outcome.env_auth_remains},
             )
-        json_output_response(
-            {
-                "status": "logged_out" if outcome.removed_any else "already_logged_out",
-                "removed": outcome.removed_any,
-                "env_auth_remains": outcome.env_auth_remains,
-            }
-        )
+        else:
+            json_output_response(
+                {
+                    "status": "logged_out" if outcome.removed_any else "already_logged_out",
+                    "removed": outcome.removed_any,
+                    "env_auth_remains": outcome.env_auth_remains,
+                }
+            )
         return
 
     if outcome.env_auth_remains:

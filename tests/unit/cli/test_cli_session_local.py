@@ -199,6 +199,30 @@ class TestAuthLogoutCommand:
         assert payload["status"] == "already_logged_out"
         assert payload["removed"] is False
 
+    def test_auth_logout_json_failure_is_single_error_document(
+        self, runner: CliRunner, isolated_home: Path, monkeypatch
+    ) -> None:
+        """A per-step failure under ``--json`` emits exactly ONE error envelope
+        (exit 1) — never both the error and the success payload."""
+        from notebooklm.cli.services.session_context import LogoutFailure, LogoutOutcome
+
+        failure = LogoutOutcome(
+            removed_any=False,
+            env_auth_remains=False,
+            failure=LogoutFailure(
+                kind="storage",
+                path=isolated_home / "x" / "storage_state.json",
+                error_message="permission denied",
+                partial_storage_removed=False,
+            ),
+        )
+        monkeypatch.setattr("notebooklm.cli.session_cmd.execute_logout", lambda ctx: failure)
+        result = runner.invoke(cli, ["auth", "logout", "--json"])
+        assert result.exit_code == 1, result.output
+        payload = json.loads(result.stdout)  # raises if stdout isn't a single document
+        assert payload["error"] is True
+        assert payload["code"] == "logout_storage_failed"
+
     def test_auth_logout_also_clears_context(self, runner: CliRunner, isolated_home: Path) -> None:
         """``auth logout`` removes context.json so post-logout commands start fresh.
 
