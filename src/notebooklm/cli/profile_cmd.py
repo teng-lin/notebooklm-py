@@ -243,8 +243,9 @@ def switch_cmd(name, json_output):
         )
 
     config_path = get_config_path()
-    # Capture the previous value for the status message before mutating.
-    # The lock-protected mutator below is the source of truth for the write.
+    # Best-effort prior value for the human status line only. It is read outside
+    # the lock, so a concurrent ``profile switch`` could make it stale — which is
+    # why it is NOT exposed in the machine-readable ``--json`` contract.
     old_profile = _read_config(config_path).get("default_profile", "default")
 
     try:
@@ -255,7 +256,7 @@ def switch_cmd(name, json_output):
         ) from None
 
     if json_output:
-        json_output_response({"profile": name, "previous": old_profile, "status": "switched"})
+        json_output_response({"profile": name, "status": "switched"})
         return
     console.print(f"[green]Switched default profile: {old_profile} → {name}[/green]")
 
@@ -409,15 +410,21 @@ def rename_cmd(old_name, new_name, json_output):
         default_updated = was_updated()
 
     if json_output:
-        payload: dict[str, object] = {
-            "old_name": old_name,
-            "new_name": new_name,
-            "default_updated": default_updated,
-            "status": "renamed",
-        }
-        if config_error is not None:
-            payload["config_warning"] = config_error
-        json_output_response(payload)
+        # The directory move (the rename itself) has already succeeded; exit 0 +
+        # ``status: renamed`` reflects that, matching the text-mode contract. A
+        # failed default-pointer retarget is a recoverable secondary failure
+        # surfaced via ``config_warning`` (always present — null when clean — so
+        # automation can detect it with ``payload["config_warning"]`` without a
+        # KeyError).
+        json_output_response(
+            {
+                "old_name": old_name,
+                "new_name": new_name,
+                "default_updated": default_updated,
+                "status": "renamed",
+                "config_warning": config_error,
+            }
+        )
         return
 
     if config_error is not None:

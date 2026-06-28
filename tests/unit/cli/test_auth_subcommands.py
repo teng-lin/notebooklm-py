@@ -1865,6 +1865,26 @@ class TestAuthRefreshCommand:
         assert payload["status"] == "ok"
         assert payload["verified"] is False
 
+    def test_auth_refresh_json_verify_success(self, runner, mock_storage_path):
+        """``--json --verify`` success emits a single document with verified=True —
+        the human '[green]ok[/green] verified' line must NOT leak onto stdout."""
+        with (
+            patch.object(
+                auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+            patch.object(
+                auth_module, "fetch_tokens_passive", new_callable=AsyncMock
+            ) as mock_passive,
+        ):
+            mock_fetch.return_value = ("csrf_ok", "session_ok")
+            mock_passive.return_value = ("csrf_ok", "session_ok")
+            result = runner.invoke(cli, ["auth", "refresh", "--verify", "--json"])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)  # raises if a stray line preceded the JSON
+        assert payload["status"] == "ok"
+        assert payload["verified"] is True
+        assert "verified:" not in result.stdout  # no human line leaked
+
     def test_auth_refresh_json_with_browser_cookies_is_refused(self, runner, mock_storage_path):
         """``--json`` + ``--browser-cookies`` returns the error envelope, never the
         interactive login-IO output (which writes Rich text to stdout and would

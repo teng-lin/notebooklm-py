@@ -942,8 +942,8 @@ def register_session_commands(cli):
                     "default keepalive refresh with --json instead.",
                 )
 
-            # --json suppresses human status lines (like --quiet); verify failures
-            # exit 1 via stderr only.
+            # --json suppresses human status lines (like --quiet); a verify failure
+            # emits the error envelope on stdout in --json mode, else on stderr.
             quiet = quiet or json_output
 
             profile = ctx.obj.get("profile") if ctx.obj else None

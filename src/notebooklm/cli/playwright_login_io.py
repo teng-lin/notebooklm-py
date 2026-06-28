@@ -189,10 +189,13 @@ def _verify_token_fetch_after_refresh(
     except Exception as exc:  # noqa: BLE001 — surface any failure as a clean exit 1
         message = f"refresh completed but the post-refresh token fetch failed: {exc}"
         if json_output:
-            json_error_response("post_refresh_token_fetch_failed", message)
+            json_error_response("post_refresh_token_fetch_failed", message)  # NoReturn
+        # Non-json path only (the json branch above exits): human error on stderr.
         click.echo(f"Error: {message}", err=True)
         exit_with_code(1)
-    if not quiet:
+    # Suppress the human success line in --json mode too (not just --quiet), so the
+    # caller's single JSON document is the only thing on stdout.
+    if not quiet and not json_output:
         console.print("[green]ok[/green] verified: token fetch succeeds after refresh")
 
 

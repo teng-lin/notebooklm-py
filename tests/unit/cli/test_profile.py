@@ -493,7 +493,7 @@ class TestProfileJsonOutput:
         )
         assert result.exit_code == 0, result.output
         payload = json.loads(result.output)
-        assert payload == {"profile": "work", "previous": "default", "status": "switched"}
+        assert payload == {"profile": "work", "status": "switched"}
         assert read_config(tmp_path)["default_profile"] == "work"
 
     def test_delete_json_skips_confirm(self, runner, tmp_path):
@@ -518,6 +518,7 @@ class TestProfileJsonOutput:
             "new_name": "client",
             "default_updated": False,
             "status": "renamed",
+            "config_warning": None,
         }
         assert (tmp_path / "profiles" / "client").exists()
 
