@@ -515,6 +515,47 @@ class TestAuthCheckCommand:
         output = json.loads(result.output)
         assert output["notebook_count"] == 3
 
+    def test_auth_check_never_leaks_secret_values(self, runner, tmp_path):
+        """auth check must surface identity (names, domains, paths, email) but
+        NEVER a secret value — no cookie values, no master_token value — in either
+        the Rich table or --json. Security invariant for issue #1640."""
+        storage = tmp_path / "storage_state.json"
+        secrets = {
+            "SID": "SID_SECRET_VALUE_abc123",
+            "__Secure-1PSIDTS": "PSIDTS_SECRET_VALUE_xyz789",
+            "APISID": "APISID_SECRET_VALUE",
+            "SAPISID": "SAPISID_SECRET_VALUE",
+        }
+        storage.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": n, "value": v, "domain": ".google.com", "path": "/"}
+                        for n, v in secrets.items()
+                    ],
+                    "notebooklm": {"account": {"email": "you@gmail.com", "authuser": 0}},
+                }
+            ),
+            encoding="utf-8",
+        )
+        master_secret = "aas_et/MASTER_TOKEN_SECRET_DO_NOT_LEAK"
+        auth_module.write_master_token(
+            storage.with_name("master_token.json"),
+            email="you@gmail.com",
+            master_token=master_secret,
+            android_id="0123456789abcdef",
+        )
+        forbidden = [master_secret, *secrets.values()]
+
+        for args in (
+            ["--storage", str(storage), "auth", "check"],
+            ["--storage", str(storage), "auth", "check", "--json"],
+        ):
+            result = runner.invoke(cli, args)
+            assert result.exit_code == 0, result.output
+            leaked = [s for s in forbidden if s in result.output]
+            assert not leaked, f"auth check leaked secret value(s) {leaked} via {args}"
+
     def test_auth_check_master_token_psidts_hint(self, runner, mock_storage_path):
         """Missing PSIDTS on a master-token profile shows the corrected guidance,
         not the browser-extraction / App-Bound Encryption hint."""
