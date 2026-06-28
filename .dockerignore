@@ -1,0 +1,21 @@
+# Build-context excludes for deploy/Dockerfile (context = repo root).
+# Keeps the context small and never bakes secrets/venvs/caches into the image.
+.git
+.venv
+.venv*/
+.worktrees/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.sisyphus/
+node_modules/
+# never copy deploy secrets into the build
+deploy/profile/
+deploy/.env

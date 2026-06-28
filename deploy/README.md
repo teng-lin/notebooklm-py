@@ -52,6 +52,16 @@ cd deploy && docker compose up -d
 docker compose logs -f notebooklm-mcp   # should report it bound 0.0.0.0:9420
 ```
 
+**Build modes** — the image installs `notebooklm-py` two ways (the build context
+is the repo root):
+- **From source (default):** `docker compose up` builds and installs *this
+  checkout*, so you deploy the exact code in the repo (right for dev / an
+  unreleased branch). After changing source, rebuild with `docker compose up -d
+  --build`.
+- **From a published release:** uncomment `build.args.NOTEBOOKLM_SPEC` in
+  `docker-compose.yml` (e.g. `notebooklm-py[mcp,headless]==0.8.0`) or build with
+  `docker compose build --build-arg NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]==0.8.0"`.
+
 ## 5. Connect from Claude Code
 ```bash
 claude mcp add --transport http notebooklm \

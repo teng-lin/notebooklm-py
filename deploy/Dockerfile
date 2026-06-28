@@ -3,14 +3,27 @@
 # The image is stateless: the profile (incl. master_token.json) is mounted at
 # runtime, never baked in. Run behind a Cloudflare Tunnel (or any TLS reverse
 # proxy) — see deploy/README.md.
+#
+# Two install modes (the compose build context is the repo root):
+#   * DEV / from-source (DEFAULT): installs THIS checkout, so `docker compose up`
+#     deploys exactly the code in this repo. Leave NOTEBOOKLM_SPEC empty.
+#   * PRODUCTION / from PyPI: build with a release spec, e.g.
+#       docker compose build --build-arg NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]==0.8.0"
+#     (or set it under build.args in docker-compose.yml).
 FROM python:3.12-slim
 
-# Default to the published package. Override at build time to pin a version or
-# install from a local wheel:
-#   docker build --build-arg NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]==X.Y.Z" .
-ARG NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]"
+ARG NOTEBOOKLM_SPEC=""
 
-RUN pip install --no-cache-dir "${NOTEBOOKLM_SPEC}"
+# Copy the repo source (build context = repo root; see .dockerignore for excludes).
+COPY . /src
+
+# Empty NOTEBOOKLM_SPEC → install the copied source (dev). Non-empty → install
+# that spec from PyPI (production) and ignore the copied source.
+RUN if [ -n "$NOTEBOOKLM_SPEC" ]; then \
+        pip install --no-cache-dir "$NOTEBOOKLM_SPEC"; \
+    else \
+        pip install --no-cache-dir "/src[mcp,headless]"; \
+    fi
 
 # Run as a non-root user; the mounted profile dir must be writable by this uid
 # (keepalive/recovery rotates cookies into storage_state.json).
