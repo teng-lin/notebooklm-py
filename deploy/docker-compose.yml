@@ -1,7 +1,8 @@
 # Remote notebooklm-mcp behind a Cloudflare Tunnel.
 #
 #   cp .env.example .env   # then set NOTEBOOKLM_MCP_TOKEN + CF_TUNNEL_TOKEN
-#   # put your bootstrapped profile (incl. master_token.json) in ./profile/
+#   # by default it mounts ~/.notebooklm/profiles/default (override via
+#   # NOTEBOOKLM_PROFILE_DIR); runs as your uid so no chown is needed
 #   docker compose up -d
 #
 # No host ports are published — the ONLY way in is through Cloudflare, which
@@ -17,17 +18,31 @@ services:
       #   NOTEBOOKLM_SPEC: "notebooklm-py[mcp,headless]==0.8.0"
     # image: ghcr.io/...   # or pull a prebuilt image instead of building
     restart: unless-stopped
+    # Run as YOUR uid:gid so the mounted profile's files (owned by you on the
+    # host) are readable AND writable with NO chown — and your own `notebooklm`
+    # CLI keeps owning them. Defaults to 1000:1000; `make` fills these from
+    # `id -u`/`id -g` automatically, or set them in .env.
+    user: "${NOTEBOOKLM_UID:-1000}:${NOTEBOOKLM_GID:-1000}"
     environment:
       # Bearer token clients must present (Authorization: Bearer ...). Env-only.
       NOTEBOOKLM_MCP_TOKEN: ${NOTEBOOKLM_MCP_TOKEN:?set NOTEBOOKLM_MCP_TOKEN in .env}
       # Binds 0.0.0.0 (for the cloudflared sidecar) → makes the token MANDATORY.
       NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND: "1"
+      # Point the app at the mounted profile, independent of the (arbitrary) uid's
+      # home. The host dir is always mounted as the profile literally named
+      # "server"; NOTEBOOKLM_HOME/profiles/server is where the app reads+writes.
+      NOTEBOOKLM_HOME: /data
+      NOTEBOOKLM_PROFILE: server
+      # HOME points at the writable mount too, so an arbitrary uid with no
+      # /etc/passwd entry never trips a `~` / getpwuid lookup.
+      HOME: /data/profiles/server
     volumes:
       # READ-WRITE: keepalive/recovery rotates cookies into storage_state.json
-      # (+ its .lock) here. A read-only mount kills the session ~1h in.
-      # Treat ./profile as a secret — master_token.json is a full-account
-      # credential (keep it mode 0600 inside).
-      - ./profile:/home/app/.notebooklm/profiles/server:rw
+      # (+ its .lock). A read-only mount kills the session ~1h in.
+      # Defaults to your local "default" profile; override with NOTEBOOKLM_PROFILE_DIR
+      # in .env to point at a different profile dir (e.g. a dedicated/throwaway one).
+      # Treat the dir as a secret — master_token.json is a full-account credential.
+      - "${NOTEBOOKLM_PROFILE_DIR:-${HOME}/.notebooklm/profiles/default}:/data/profiles/server:rw"
     # No `ports:` — not reachable except via the tunnel.
 
   cloudflared:

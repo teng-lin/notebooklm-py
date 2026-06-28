@@ -5,7 +5,7 @@ behind a Cloudflare Tunnel: no public IP, no open ports, no TLS certificate to
 manage. Single-tenant, self-hosted.
 
 > ⚠️ **Use a dedicated / throwaway Google account.** The mounted
-> `master_token.json` is a durable, full-account credential. Treat `./profile`
+> `master_token.json` is a durable, full-account credential. Treat the mounted profile dir
 > and `.env` as secrets (both are gitignored).
 
 ## Prerequisites
@@ -17,20 +17,22 @@ manage. Single-tenant, self-hosted.
 pip install "notebooklm-py[browser,headless]"
 notebooklm login --master-token --account you@example.com
 ```
-This writes `master_token.json` (+ a minted `storage_state.json`) into the
-profile dir. Copy that profile dir here:
-```bash
-mkdir -p deploy/profile
-cp -r ~/.notebooklm/profiles/<profile>/. deploy/profile/
-chmod 600 deploy/profile/master_token.json
-# The container runs as uid 10001 (non-root). It must be able to READ
-# master_token.json AND WRITE storage_state.json (+ its .lock) for cookie
-# rotation, so give that uid ownership of the bind-mounted dir:
-sudo chown -R 10001:10001 deploy/profile
-```
-The profile dir is mounted **read-write** — the server re-mints/rotates cookies
-into `storage_state.json` here, so it must be writable by uid 10001 (a read-only
-mount, or a dir the container uid can't write, makes the session die ~1 h in).
+This writes `master_token.json` (+ a minted `storage_state.json`) into
+`~/.notebooklm/profiles/<profile>/`. **You don't copy or chown anything** — the
+container mounts that dir directly and runs as *your* uid:gid, so the files stay
+owned by you (your `notebooklm` CLI keeps working) and are readable/writable with
+no permission dance.
+
+- **Default:** mounts `~/.notebooklm/profiles/default`.
+- **Other profile:** set `NOTEBOOKLM_PROFILE_DIR` in `.env` (e.g. a
+  dedicated/throwaway profile — recommended, since `master_token.json` is a
+  full-account credential).
+
+The dir is mounted **read-write** because the server re-mints/rotates cookies into
+`storage_state.json` (+ its `.lock`) — a read-only mount makes the session die
+~1 h in. Running as your uid is what makes that write work without a chown.
+(`make` fills your uid/gid from `id` automatically; for raw `docker compose`, set
+`NOTEBOOKLM_UID`/`NOTEBOOKLM_GID` in `.env`.)
 
 ## 2. Configure secrets
 ```bash

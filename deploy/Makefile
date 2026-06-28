@@ -7,6 +7,13 @@
 COMPOSE ?= docker compose
 VERSION ?= 0.8.0
 
+# Run the container as YOUR uid/gid so the mounted profile needs no chown, and
+# default the mounted profile to your local "default" profile. All overridable
+# (env or `make dev NOTEBOOKLM_PROFILE_DIR=...`); exported so compose sees them.
+export NOTEBOOKLM_UID ?= $(shell id -u)
+export NOTEBOOKLM_GID ?= $(shell id -g)
+export NOTEBOOKLM_PROFILE_DIR ?= $(HOME)/.notebooklm/profiles/default
+
 .PHONY: help dev prod up restart logs down config
 
 help: ## Show this help
