@@ -149,11 +149,17 @@ class TestClearCommand:
         assert "Context cleared" in result.output
 
     def test_clear_json(self, runner: CliRunner, isolated_home: Path) -> None:
-        """``clear --json`` emits a single structured document on stdout."""
+        """``clear --json`` reports an actual clear (cleared=True)."""
         _seed_context(isolated_home, notebook_id="abc123", title="Demo", is_owner=True)
         result = runner.invoke(cli, ["clear", "--json"])
         assert result.exit_code == 0, result.output
-        assert json.loads(result.output) == {"status": "cleared"}
+        assert json.loads(result.output) == {"status": "cleared", "cleared": True}
+
+    def test_clear_json_noop(self, runner: CliRunner, isolated_home: Path) -> None:
+        """``clear --json`` with nothing to clear reports cleared=False (no-op)."""
+        result = runner.invoke(cli, ["clear", "--json"])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == {"status": "already_clear", "cleared": False}
 
 
 # ---------------------------------------------------------------------------

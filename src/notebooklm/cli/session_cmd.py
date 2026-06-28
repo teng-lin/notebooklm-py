@@ -574,9 +574,13 @@ def register_session_commands(cli):
     @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
     def clear_cmd(json_output):
         """Clear current notebook context."""
-        clear_context()
+        cleared = clear_context()
         if json_output:
-            json_output_response({"status": "cleared"})
+            # Preserve the actual outcome so automation can tell a real clear
+            # from a no-op (the text path stays idempotent for humans).
+            json_output_response(
+                {"status": "cleared" if cleared else "already_clear", "cleared": cleared}
+            )
             return
         console.print("[green]Context cleared[/green]")
 
