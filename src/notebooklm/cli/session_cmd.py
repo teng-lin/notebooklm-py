@@ -43,7 +43,12 @@ from ._session_render import (
     _render_status,
     _use_notebook_table,
 )
-from .auth_runtime import handle_auth_error, resolve_client_factory, run_client_workflow
+from .auth_runtime import (
+    auth_check_notebook_count,
+    handle_auth_error,
+    resolve_client_factory,
+    run_client_workflow,
+)
 from .context import clear_context, set_current_notebook
 from .error_handler import _output_error, exit_with_code, handle_errors
 from .playwright_login_io import (
@@ -830,6 +835,19 @@ def register_session_commands(cli):
             ctx, test_fetch=test_fetch, json_output=json_output, passive=passive
         )
         result = run_async(run_auth_check(plan))
+
+        # Live notebook count: a "the API really accepts this session" signal
+        # beyond the homepage token round-trip. Computed here (not in the neutral
+        # core, which never opens a client) and only when the token fetch already
+        # passed. Skipped for --passive: opening a client may rotate/persist
+        # cookies, which the read-only contract (issue #1569) forbids.
+        if test_fetch and not passive and result.checks["token_fetch"] is True:
+            # cli-rpc-unenveloped: the notebook count is a best-effort liveness
+            # probe whose failures degrade to null, so this RPC must NOT route
+            # through the error envelope (a failed count must not fail the auth
+            # check or hijack its exit code).
+            result.details["notebook_count"] = auth_check_notebook_count(ctx)
+
         _render_auth_check_result(result)
 
     @auth_group.command("refresh")

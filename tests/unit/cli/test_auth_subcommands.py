@@ -423,6 +423,126 @@ class TestAuthCheckCommand:
         with patch_session_login_dual("get_storage_path", return_value=storage_file):
             yield storage_file
 
+    def _write_valid_storage(self, path):
+        """A storage_state that passes every local check, with in-band account."""
+        path.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": n, "value": f"{n}-v", "domain": ".google.com", "path": "/"}
+                        for n in ("SID", "__Secure-1PSIDTS", "APISID", "SAPISID")
+                    ],
+                    "notebooklm": {"account": {"email": "you@gmail.com", "authuser": 0}},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_auth_check_identity_fields_parity_rich_vs_json(self, runner, mock_storage_path):
+        """Every identity/location fact is shown in BOTH the table and --json,
+        sourced from one result so the two surfaces never disagree (issue #1640)."""
+        self._write_valid_storage(mock_storage_path)
+        auth_module.write_master_token(
+            mock_storage_path.with_name("master_token.json"),
+            email="you@gmail.com",
+            master_token="aas_et/secret",
+            android_id="0123456789abcdef",
+        )
+        master_path = str(mock_storage_path.with_name("master_token.json"))
+
+        json_result = runner.invoke(cli, ["auth", "check", "--json"])
+        assert json_result.exit_code == 0, json_result.output
+        payload = json.loads(json_result.output)
+
+        # JSON exposes the identity facts at top level.
+        assert payload["account"]["email"] == "you@gmail.com"
+        assert payload["storage_path"] == str(mock_storage_path)
+        assert payload["master_token"]["path"] == master_path
+        assert payload["master_token"]["present"] is True
+        assert payload["psidts"]["present"] is True
+
+        rich_result = runner.invoke(cli, ["auth", "check"])
+        assert rich_result.exit_code == 0, rich_result.output
+        text = rich_result.output
+
+        # Parity: each identity fact in the JSON also appears in the table. Paths
+        # can wrap in the Rich table, so compare on the filename, not the full
+        # path string.
+        assert payload["account"]["email"] in text
+        assert "master_token.json" in text
+        assert "__Secure-1PSIDTS" in text
+        assert "Account" in text and "Master token" in text
+
+    def test_auth_check_test_json_includes_live_notebook_count(self, runner, tmp_path):
+        """notebook_count flows through the REAL command wiring on --test --json.
+
+        Regression for the nested-event-loop bug: the count probe must run from
+        sync context (after run_auth_check's loop closes), not inside it, or
+        run_async would raise and the count would silently be null. Uses an
+        explicit --storage path so both the core check and the probe's auth
+        loader resolve the same file.
+        """
+        storage = tmp_path / "storage_state.json"
+        self._write_valid_storage(storage)
+
+        class _FakeNotebooks:
+            async def list(self):
+                return [object(), object(), object()]  # 3 notebooks
+
+        class _FakeClient:
+            notebooks = _FakeNotebooks()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+        def factory(auth=None, **kwargs):
+            return _FakeClient()
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf_token", "session_id")
+            result = runner.invoke(
+                cli,
+                ["--storage", str(storage), "auth", "check", "--test", "--json"],
+                obj={"client_factory": factory},
+            )
+
+        assert result.exit_code == 0, result.output
+        output = json.loads(result.output)
+        assert output["notebook_count"] == 3
+
+    def test_auth_check_master_token_psidts_hint(self, runner, mock_storage_path):
+        """Missing PSIDTS on a master-token profile shows the corrected guidance,
+        not the browser-extraction / App-Bound Encryption hint."""
+        # SID + secondary binding but no __Secure-1PSIDTS.
+        mock_storage_path.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": n, "value": f"{n}-v", "domain": ".google.com", "path": "/"}
+                        for n in ("SID", "APISID", "SAPISID")
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        auth_module.write_master_token(
+            mock_storage_path.with_name("master_token.json"),
+            email="you@gmail.com",
+            master_token="aas_et/secret",
+            android_id="0123456789abcdef",
+        )
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+        assert result.exit_code != 0
+        payload = json.loads(result.output)
+        assert "master_token.json is present" in payload["details"]["error"]
+        assert "App-Bound Encryption" not in payload["details"]["error"]
+
     def test_auth_check_storage_not_found(self, runner, mock_storage_path):
         """Test auth check when storage file doesn't exist."""
         # Ensure file doesn't exist

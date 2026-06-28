@@ -273,6 +273,170 @@ async def test_token_fetch_not_run_when_test_fetch_false(tmp_path: Path) -> None
 
 
 # ---------------------------------------------------------------------------
+# Identity + location facts (issue #1640)
+# ---------------------------------------------------------------------------
+
+
+def _storage_with_account(
+    *cookie_names: str, email: str | None = None, authuser: int = 0
+) -> dict[str, Any]:
+    """A valid storage_state carrying the in-band account namespace."""
+    state = _valid_storage_state(*cookie_names)
+    if email is not None:
+        state["notebooklm"] = {"account": {"email": email, "authuser": authuser}}
+    return state
+
+
+@pytest.mark.asyncio
+async def test_identity_fields_populated_from_storage(tmp_path: Path) -> None:
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(_storage_with_account("APISID", "SAPISID", email="you@gmail.com", authuser=2)),
+        encoding="utf-8",
+    )
+    plan = _plan(storage_path=storage, profile="github")
+
+    result = await run_auth_check(plan, read_env_auth_json=_never_read_env)
+
+    assert result.details["account"] == {"email": "you@gmail.com", "authuser": 2}
+    assert result.details["profile"] == "github"
+    assert result.details["storage_path"] == str(storage)
+    assert result.details["psidts"]["present"] is True
+    # No sibling master_token.json → reported absent with the path it looked for.
+    assert result.details["master_token"]["present"] is False
+    assert result.details["master_token"]["path"] == str(storage.with_name("master_token.json"))
+
+
+@pytest.mark.asyncio
+async def test_psidts_expiry_surfaced(tmp_path: Path) -> None:
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "v", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "v",
+                        "domain": ".google.com",
+                        "path": "/",
+                        "expires": 1_800_000_000,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = await run_auth_check(_plan(storage_path=storage), read_env_auth_json=_never_read_env)
+
+    psidts = result.details["psidts"]
+    assert psidts["present"] is True
+    # Epoch 1_800_000_000 → 2027-01-15T08:00:00+00:00 (UTC ISO).
+    assert psidts["expires_at"].startswith("2027-01-15T08:00:00")
+
+
+@pytest.mark.asyncio
+async def test_psidts_out_of_range_expiry_degrades_to_none(tmp_path: Path) -> None:
+    """A corrupt/out-of-range ``expires`` must not abort the check (auth check
+    has no error envelope); the field degrades to present + expires_at=None."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "v", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "v",
+                        "domain": ".google.com",
+                        "path": "/",
+                        "expires": 1e20,  # OverflowError from datetime.fromtimestamp
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = await run_auth_check(_plan(storage_path=storage), read_env_auth_json=_never_read_env)
+
+    assert result.details["psidts"] == {"present": True, "expires_at": None}
+
+
+@pytest.mark.asyncio
+async def test_master_token_present_and_account_read(tmp_path: Path) -> None:
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(json.dumps(_valid_storage_state("APISID", "SAPISID")), encoding="utf-8")
+    auth_module.write_master_token(
+        storage.with_name("master_token.json"),
+        email="owner@gmail.com",
+        master_token="aas_et/secret",
+        android_id="0123456789abcdef",
+    )
+    result = await run_auth_check(_plan(storage_path=storage), read_env_auth_json=_never_read_env)
+
+    mt = result.details["master_token"]
+    assert mt["present"] is True
+    assert mt["account"] == "owner@gmail.com"
+    assert mt["path"] == str(storage.with_name("master_token.json"))
+
+
+@pytest.mark.asyncio
+async def test_missing_psidts_with_master_token_uses_corrected_hint(tmp_path: Path) -> None:
+    """A master-token profile missing PSIDTS at rest gets master-token guidance,
+    not the (wrong) browser-extraction / App-Bound Encryption hint."""
+    storage = tmp_path / "storage_state.json"
+    # SID + secondary binding present, but no __Secure-1PSIDTS (the recoverable,
+    # self-healing case for a master-token profile).
+    storage.write_text(json.dumps(_storage_state("SID", "APISID", "SAPISID")), encoding="utf-8")
+    auth_module.write_master_token(
+        storage.with_name("master_token.json"),
+        email="owner@gmail.com",
+        master_token="aas_et/secret",
+        android_id="0123456789abcdef",
+    )
+    result = await run_auth_check(_plan(storage_path=storage), read_env_auth_json=_never_read_env)
+
+    assert result.checks["cookies_present"] is False
+    assert "master_token.json is present" in result.details["error"]
+    assert "App-Bound Encryption" not in result.details["error"]
+    assert result.details["master_token"]["present"] is True
+
+
+@pytest.mark.asyncio
+async def test_env_auth_reads_account_from_inline_json(tmp_path: Path) -> None:
+    plan = _plan(
+        storage_path=tmp_path / "ignored.json",
+        has_env_auth=True,
+        profile="work",
+    )
+    inline = json.dumps(_storage_with_account(email="ci@gmail.com", authuser=1))
+    result = await run_auth_check(plan, read_env_auth_json=lambda: inline)
+
+    assert result.details["account"] == {"email": "ci@gmail.com", "authuser": 1}
+    # Env-auth has no profile directory → master-token is N/A.
+    assert result.details["master_token"] == {"present": False, "path": None, "account": None}
+
+
+@pytest.mark.asyncio
+async def test_missing_sid_and_psidts_keeps_generic_hint(tmp_path: Path) -> None:
+    """When BOTH SID and PSIDTS are missing the session is unrecoverable, so the
+    master-token hint must NOT fire even with a sibling master_token.json."""
+    storage = tmp_path / "storage_state.json"
+    # Neither SID nor __Secure-1PSIDTS — only the secondary binding pair.
+    storage.write_text(json.dumps(_storage_state("APISID", "SAPISID")), encoding="utf-8")
+    auth_module.write_master_token(
+        storage.with_name("master_token.json"),
+        email="owner@gmail.com",
+        master_token="aas_et/secret",
+        android_id="0123456789abcdef",
+    )
+    result = await run_auth_check(_plan(storage_path=storage), read_env_auth_json=_never_read_env)
+
+    assert result.checks["cookies_present"] is False
+    assert "master_token.json is present" not in result.details["error"]
+
+
+# ---------------------------------------------------------------------------
 # all_passed rollup
 # ---------------------------------------------------------------------------
 

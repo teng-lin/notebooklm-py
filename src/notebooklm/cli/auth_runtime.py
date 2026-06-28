@@ -291,6 +291,34 @@ def resolve_client_factory(
     return NotebookLMClient
 
 
+def auth_check_notebook_count(ctx) -> int | None:
+    """Best-effort live notebook count for ``auth check --test``; ``None`` on any
+    failure.
+
+    Both :func:`get_auth_tokens` and the client open run their own ``run_async``
+    (the CLI's single-top-level-loop invariant), so this MUST be called from sync
+    code -- never from inside ``run_async(run_auth_check(...))``, which would nest
+    event loops. The count never affects the exit code: ``token_fetch`` is the
+    authoritative validity check, so any failure here just leaves ``None``.
+    """
+    helpers = _helpers_facade()
+    try:
+        auth = get_auth_tokens(ctx)
+    except Exception as exc:  # auth resolution failed -- skip the optional count
+        logger.debug("auth check notebook-count: auth resolution failed: %s", exc)
+        return None
+
+    async def _count() -> int:
+        async with resolve_client_factory(ctx)(auth) as client:
+            return len(await client.notebooks.list())
+
+    try:
+        return helpers.run_async(_count())
+    except Exception as exc:
+        logger.debug("auth check notebook-count probe failed: %s", exc)
+        return None
+
+
 def run_client_workflow(
     ctx: click.Context,
     *,

@@ -159,6 +159,7 @@ __all__ = [
     "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
     "persist_minted_jar",
     "read_account_metadata",
+    "read_account_metadata_from_storage_state",
     "read_master_token",
     "REQUIRED_COOKIE_DOMAINS",
     "validate_with_recovery",
@@ -210,6 +211,7 @@ _account_context_path = _auth_account._account_context_path
 extract_email_from_html = _auth_account.extract_email_from_html
 _probe_authuser = _auth_account._probe_authuser
 read_account_metadata = _auth_account.read_account_metadata
+read_account_metadata_from_storage_state = _auth_account.read_account_metadata_from_storage_state
 get_authuser_for_storage = _auth_account.get_authuser_for_storage
 get_account_email_for_storage = _auth_account.get_account_email_for_storage
 format_authuser_value = _auth_account.format_authuser_value

@@ -32,10 +32,26 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+#: Cookie that carries the rotating session-freshness binding. Most likely to be
+#: missing/stale, so ``auth check`` surfaces it as a first-class field.
+_PSIDTS_COOKIE = "__Secure-1PSIDTS"
+
+#: Missing-PSIDTS guidance for a master-token profile, where a missing
+#: ``__Secure-1PSIDTS`` at rest is normal (it is minted on the first
+#: authenticated call, and at bootstrap since #1638) — the browser-extraction /
+#: App-Bound Encryption hint is wrong here.
+_MASTER_TOKEN_PSIDTS_HINT = (
+    f"A master_token.json is present, so a missing {_PSIDTS_COOKIE} at rest is "
+    "normal for this profile — it is minted on the first authenticated call (and "
+    "at bootstrap since #1638). Run 'notebooklm auth check --test' to mint and "
+    "verify, or re-run 'notebooklm login --master-token'."
+)
 
 
 @dataclass(frozen=True)
@@ -137,6 +153,83 @@ def _read_storage_state(
         return None, f"Storage unreadable: {exc}"
 
 
+def _psidts_status(storage_state: dict[str, Any]) -> dict[str, Any]:
+    """First-class ``__Secure-1PSIDTS`` presence + expiry, read from raw cookies.
+
+    Read straight off ``storage_state`` (not the domain-filtered extracted set)
+    so the field is available even when ``extract_cookies_from_storage`` raises
+    on a missing-PSIDTS profile. ``expires`` is the Playwright epoch-seconds
+    field; ``-1`` (session cookie) / missing maps to ``None``.
+    """
+    for cookie in storage_state.get("cookies", []):
+        if cookie.get("name") != _PSIDTS_COOKIE:
+            continue
+        expires_at: str | None = None
+        expires = cookie.get("expires")
+        if isinstance(expires, (int, float)) and expires > 0:
+            try:
+                expires_at = datetime.fromtimestamp(expires, tz=timezone.utc).isoformat()
+            except (OverflowError, ValueError, OSError):
+                # A corrupt/out-of-range epoch must not abort the whole check
+                # (auth check has no error envelope, and a broken session — the
+                # case it diagnoses — is the most likely to carry garbage here).
+                expires_at = None
+        return {"present": True, "expires_at": expires_at}
+    return {"present": False, "expires_at": None}
+
+
+def _account_info(plan: AuthCheckPlan, storage_state: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the persisted account ``{email, authuser}`` for this profile.
+
+    For env-var auth the in-band record lives in the parsed inline JSON; for a
+    file profile, the on-disk reader also consults the legacy sibling record.
+    """
+    from ..auth import (
+        get_account_email_for_storage,
+        get_authuser_for_storage,
+        read_account_metadata_from_storage_state,
+    )
+
+    if plan.has_env_auth:
+        meta = read_account_metadata_from_storage_state(storage_state)
+        email = meta.get("email") if isinstance(meta.get("email"), str) else None
+        raw_authuser = meta.get("authuser")
+        # Clamp to match the file path's get_authuser_for_storage (negatives → 0).
+        authuser = raw_authuser if isinstance(raw_authuser, int) and raw_authuser >= 0 else 0
+        return {"email": email or None, "authuser": authuser}
+    return {
+        "email": get_account_email_for_storage(plan.storage_path),
+        "authuser": get_authuser_for_storage(plan.storage_path),
+    }
+
+
+def _master_token_status(plan: AuthCheckPlan) -> dict[str, Any]:
+    """Note a sibling ``master_token.json`` (headless master-token profile).
+
+    The record lives beside ``storage_state.json`` (login --master-token writes
+    both into the profile dir), so resolve it relative to the actual storage path
+    — this also honors a ``--storage`` override. Env-var auth carries no profile
+    directory, so master-token is N/A there.
+    """
+    if plan.has_env_auth:
+        return {"present": False, "path": None, "account": None}
+
+    from ..auth import read_master_token
+
+    path = plan.storage_path.with_name("master_token.json")
+    if not path.exists():
+        return {"present": False, "path": str(path), "account": None}
+    account: str | None = None
+    try:
+        record = read_master_token(path)
+    except Exception as exc:  # malformed/unreadable — still report presence
+        logger.debug("master_token.json present but unreadable: %s", exc)
+        record = None
+    if record:
+        account = record.get("email")
+    return {"present": True, "path": str(path), "account": account}
+
+
 async def run_auth_check(
     plan: AuthCheckPlan,
     *,
@@ -151,6 +244,11 @@ async def run_auth_check(
 
     ``read_env_auth_json`` is injected (the CLI's consolidated accessor) so the
     neutral core reads the inline-auth payload without touching ``os.environ``.
+
+    The live ``--test`` ``notebook_count`` signal is *not* computed here: it needs
+    an opened ``NotebookLMClient``, which the transport-neutral core intentionally
+    does not construct. The CLI command layer adds it into ``details`` after this
+    returns (only when ``token_fetch`` passed and the probe is non-passive).
     """
     from ..auth import extract_cookies_from_storage
 
@@ -180,6 +278,15 @@ async def run_auth_check(
         return AuthCheckResult(plan=plan, checks=checks, details=details)
     checks["json_valid"] = True
 
+    # Identity + location facts (the same source of truth both renderers read,
+    # so the Rich table and --json envelope can never disagree — issue #1640).
+    details["account"] = _account_info(plan, storage_state)
+    details["profile"] = plan.profile
+    master_token = _master_token_status(plan)
+    psidts = _psidts_status(storage_state)
+    details["master_token"] = master_token
+    details["psidts"] = psidts
+
     # Check 3: cookies present + SID lookup.
     try:
         cookies = extract_cookies_from_storage(storage_state)
@@ -196,7 +303,16 @@ async def run_auth_check(
         details["cookies_by_domain"] = cookies_by_domain
         details["cookie_domains"] = sorted(cookies_by_domain.keys())
     except ValueError as exc:
-        details["error"] = str(exc)
+        # The default missing-cookie hint blames browser-cookie extraction
+        # (App-Bound Encryption). For a master-token profile a missing PSIDTS is
+        # normal and self-heals — but only when PSIDTS is the *sole* missing
+        # required cookie (SID present). If SID is also missing the session is
+        # not recoverable, so keep the generic hint.
+        sid_present = any(c.get("name") == "SID" for c in storage_state.get("cookies", []))
+        if sid_present and not psidts["present"] and master_token["present"]:
+            details["error"] = _MASTER_TOKEN_PSIDTS_HINT
+        else:
+            details["error"] = str(exc)
         return AuthCheckResult(plan=plan, checks=checks, details=details)
 
     # Check 4: optional token-fetch round-trip. ``passive`` selects the

@@ -203,13 +203,24 @@ def _render_auth_check_result(result: AuthCheckResult) -> None:
     details = result.details
 
     if plan.json_output:
-        json_output_response(
-            {
-                "status": "ok" if all_passed else "error",
-                "checks": checks,
-                "details": details,
-            }
-        )
+        # Promote the identity/location facts to top-level keys for CI gates
+        # (the same values the Rich table shows — sourced from one ``details``
+        # so the two surfaces can't disagree, issue #1640). ``notebook_count`` is
+        # only meaningful with --test, so it is emitted only then (null if the
+        # probe could not run).
+        payload = {
+            "status": "ok" if all_passed else "error",
+            "account": details.get("account"),
+            "profile": details.get("profile"),
+            "storage_path": details.get("storage_path"),
+            "master_token": details.get("master_token"),
+            "psidts": details.get("psidts"),
+            "checks": checks,
+            "details": details,
+        }
+        if plan.test_fetch:
+            payload["notebook_count"] = details.get("notebook_count")
+        json_output_response(payload)
         if not all_passed:
             exit_with_code(1)
         return
@@ -224,6 +235,39 @@ def _render_auth_check_result(result: AuthCheckResult) -> None:
         if val is None:
             return "[dim]⊘ skipped[/dim]"
         return "[green]✓ pass[/green]" if val else "[red]✗ fail[/red]"
+
+    # Identity + location rows (mirror the --json top-level fields). Present only
+    # once the storage JSON parsed; ``account`` is the sentinel for that.
+    if "account" in details:
+        account = details["account"] or {}
+        email = account.get("email")
+        account_text = (
+            f"{email} (authuser {account.get('authuser', 0)})" if email else "[dim]unknown[/dim]"
+        )
+        table.add_row("Account", "", account_text)
+        table.add_row("Profile", "", details.get("profile") or "[dim]default[/dim]")
+        table.add_row("Storage", "", details.get("storage_path", ""))
+
+        master = details.get("master_token") or {}
+        if master.get("present"):
+            mt_account = master.get("account")
+            mt_text = master.get("path", "")
+            if mt_account:
+                mt_text = f"{mt_text} (account: {mt_account})"
+            table.add_row("Master token", "[green]✓ present[/green]", mt_text)
+        else:
+            table.add_row("Master token", "", "[dim]not present[/dim]")
+
+        psidts = details.get("psidts") or {}
+        expires_at = psidts.get("expires_at")
+        psidts_detail = f"expires {expires_at}" if expires_at else "session cookie (no expiry)"
+        table.add_row(
+            # Literal duplicated rather than imported — cli/ must not import
+            # notebooklm._* privates (CLI-boundary gate).
+            "__Secure-1PSIDTS",
+            status_icon(bool(psidts.get("present"))),
+            psidts_detail if psidts.get("present") else "",
+        )
 
     table.add_row(
         "Storage exists",
@@ -246,6 +290,13 @@ def _render_auth_check_result(result: AuthCheckResult) -> None:
         status_icon(checks["token_fetch"]),
         "use --test to check" if checks["token_fetch"] is None else "",
     )
+    if plan.test_fetch:
+        count = details.get("notebook_count")
+        table.add_row(
+            "Notebooks",
+            "",
+            str(count) if count is not None else "[dim]n/a[/dim]",
+        )
 
     console.print(table)
 

@@ -75,6 +75,7 @@ EXPECTED_AUTH_ALL: list[str] = [
     "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
     "persist_minted_jar",
     "read_account_metadata",
+    "read_account_metadata_from_storage_state",
     "read_master_token",
     "REQUIRED_COOKIE_DOMAINS",
     "validate_with_recovery",
