@@ -243,7 +243,7 @@ jobs:
         echo "version=$(uv pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> $GITHUB_OUTPUT
 
     - name: Cache Playwright browsers
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       # Tolerate transient cache-backend failures: a miss already falls
       # through to the install step below, and a backend hiccup should be
       # treated the same. Without this, a 29s backend flake on a single

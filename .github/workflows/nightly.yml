@@ -96,7 +96,7 @@ jobs:
     env:
       # Pin Playwright's browser install dir to a single workspace-relative
       # path on every OS — see test.yml for the rationale (sidesteps the
-      # actions/cache@v5 Windows dual-path restore flake).
+      # actions/cache@v6 Windows dual-path restore flake).
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
 
     concurrency:
@@ -154,7 +154,7 @@ jobs:
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Cache Playwright browsers
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ${{ github.workspace }}/.playwright-browsers
         # ``-ws`` suffix invalidates archives keyed to the prior dual-path
