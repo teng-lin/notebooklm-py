@@ -9,7 +9,7 @@ without an explicit ``auth=``).
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -162,3 +162,63 @@ def test_http_app_accepts_correct_bearer() -> None:
         r = client.post("/mcp", json=init, headers=headers)
     assert r.status_code != 401  # passed the bearer gate
     assert r.status_code == 200  # initialize handshake handled
+
+
+@pytest.mark.asyncio
+async def test_authenticated_tool_call_over_http_transport() -> None:
+    """Full integration: a real MCP ``Client`` drives the real FastMCP HTTP
+    transport + auth middleware + protocol handshake + tool dispatch, end to end.
+
+    With the correct bearer the client completes the handshake and a
+    ``notebook_list`` tool call (dispatched through ``_app`` to a stubbed
+    NotebookLMClient) returns its structured result; a wrong bearer is rejected
+    with 401. Runs entirely in-process over an httpx ASGI transport — no port, no
+    network, no extra deps (the existing ``mcp_vcr`` suite covers the in-memory
+    transport; this is the one path that also exercises HTTP + the bearer gate).
+    """
+    pytest.importorskip("starlette")
+    import httpx
+    from fastmcp import Client
+    from fastmcp.client.transports import StreamableHttpTransport
+
+    from notebooklm.mcp.server import create_server
+
+    stub = MagicMock()
+    stub.notebooks.list = AsyncMock(return_value=[])  # canned: empty list serializes cleanly
+
+    @asynccontextmanager
+    async def factory():
+        yield stub
+
+    server = create_server(
+        client_factory=lambda: factory(), auth=build_auth_provider("right-token")
+    )
+    app = server.http_app()
+
+    def httpx_factory(**kwargs):
+        # fastmcp passes its own transport/headers; drive the app in-process via ASGI.
+        kwargs.pop("transport", None)
+        return httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://mcp.test", **kwargs
+        )
+
+    def make_transport(token: str) -> StreamableHttpTransport:
+        return StreamableHttpTransport(
+            "http://mcp.test/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            httpx_client_factory=httpx_factory,
+        )
+
+    # Running the app lifespan binds the (stubbed) client for the request lifetime.
+    async with app.router.lifespan_context(app):
+        async with Client(make_transport("right-token")) as mcp:
+            tools = await mcp.list_tools()
+            assert any(t.name == "notebook_list" for t in tools)
+            result = await mcp.call_tool("notebook_list", {})
+            assert result.structured_content == {"notebooks": []}
+            stub.notebooks.list.assert_awaited()  # dispatch really reached the client
+
+        # Wrong bearer → rejected by the auth middleware (never reaches a tool).
+        with pytest.raises(httpx.HTTPStatusError):
+            async with Client(make_transport("wrong-token")) as mcp:
+                await mcp.list_tools()
