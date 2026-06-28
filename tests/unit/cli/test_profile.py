@@ -473,3 +473,71 @@ class TestProfileRenameCommand:
         assert result.exit_code == 0, result.output
         assert (tmp_path / "profiles" / "client").exists()
         assert read_config(tmp_path) == {}
+
+
+class TestProfileJsonOutput:
+    """``--json`` emits a single parseable document for every profile mutation."""
+
+    def test_create_json(self, runner, tmp_path):
+        result = runner.invoke(
+            cli, ["profile", "create", "work", "--json"], env=notebooklm_env(tmp_path)
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == {"profile": "work", "status": "created"}
+        assert (tmp_path / "profiles" / "work").exists()
+
+    def test_switch_json(self, runner, tmp_path):
+        make_profile(tmp_path, "work")
+        result = runner.invoke(
+            cli, ["profile", "switch", "work", "--json"], env=notebooklm_env(tmp_path)
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload == {"profile": "work", "previous": "default", "status": "switched"}
+        assert read_config(tmp_path)["default_profile"] == "work"
+
+    def test_delete_json_skips_confirm(self, runner, tmp_path):
+        make_profile(tmp_path, "default")
+        make_profile(tmp_path, "work")
+        # No --yes: --json must imply non-interactive and delete without prompting.
+        result = runner.invoke(
+            cli, ["profile", "delete", "work", "--json"], env=notebooklm_env(tmp_path)
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == {"profile": "work", "status": "deleted"}
+        assert not (tmp_path / "profiles" / "work").exists()
+
+    def test_rename_json(self, runner, tmp_path):
+        make_profile(tmp_path, "work")
+        result = runner.invoke(
+            cli, ["profile", "rename", "work", "client", "--json"], env=notebooklm_env(tmp_path)
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == {
+            "old_name": "work",
+            "new_name": "client",
+            "default_updated": False,
+            "status": "renamed",
+        }
+        assert (tmp_path / "profiles" / "client").exists()
+
+    def test_create_duplicate_json_error_envelope(self, runner, tmp_path):
+        """A validation failure under ``--json`` still emits one JSON document on
+        stdout (the grouped-CLI ClickException -> envelope path), not human text."""
+        make_profile(tmp_path, "work")
+        result = runner.invoke(
+            cli, ["profile", "create", "work", "--json"], env=notebooklm_env(tmp_path)
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["error"] is True
+        assert payload["code"] == "VALIDATION_ERROR"
+
+    def test_switch_missing_json_error_envelope(self, runner, tmp_path):
+        result = runner.invoke(
+            cli, ["profile", "switch", "missing", "--json"], env=notebooklm_env(tmp_path)
+        )
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["error"] is True
+        assert payload["code"] == "VALIDATION_ERROR"

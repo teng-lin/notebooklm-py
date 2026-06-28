@@ -23,7 +23,7 @@ from __future__ import annotations
 import functools
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import click
 import httpx
@@ -52,12 +52,13 @@ from .auth_runtime import (
 from .context import clear_context, set_current_notebook
 from .error_handler import _output_error, exit_with_code, handle_errors
 from .playwright_login_io import (
+    _verify_token_fetch_after_refresh,
     prepare_paths_or_exit,
     repair_after_refresh,
     run_login,
     validate_flags_or_exit,
 )
-from .rendering import console, json_output_response
+from .rendering import console, json_error_response, json_output_response
 from .resolve import resolve_notebook_id
 from .runtime import run_async
 from .services.auth_diagnostics import (
@@ -101,36 +102,6 @@ async def fetch_tokens_with_domains(*args: Any, **kwargs: Any) -> Any:
     from ..auth import fetch_tokens_with_domains as auth_fetch_tokens_with_domains
 
     return await auth_fetch_tokens_with_domains(*args, **kwargs)
-
-
-async def fetch_tokens_passive(*args: Any, **kwargs: Any) -> Any:
-    """Patch-compatible forwarding wrapper for the read-only passive token fetch."""
-    from ..auth import fetch_tokens_passive as auth_fetch_tokens_passive
-
-    return await auth_fetch_tokens_passive(*args, **kwargs)
-
-
-def _verify_token_fetch_after_refresh(
-    storage_path: Path, profile: str | None, *, quiet: bool
-) -> None:
-    """Confirm a token fetch actually succeeds after ``auth refresh``.
-
-    Runs the strictly read-only passive probe (no NOTEBOOKLM_REFRESH_CMD, no
-    cookie rotation, no write). A successful ``auth refresh`` — especially the
-    ``--browser-cookies`` rewrite — does not by itself prove the resulting
-    cookies authenticate; ``--verify`` makes that an explicit, fail-loud gate
-    so unattended schedulers can rely on the exit code (issue #1569).
-    """
-    try:
-        run_async(fetch_tokens_passive(storage_path, profile))
-    except Exception as exc:  # noqa: BLE001 — surface any failure as a clean exit 1
-        click.echo(
-            f"Error: refresh completed but the post-refresh token fetch failed: {exc}",
-            err=True,
-        )
-        exit_with_code(1)
-    if not quiet:
-        console.print("[green]ok[/green] verified: token fetch succeeds after refresh")
 
 
 def _click_exception_from(exc: LoginConfigurationError) -> click.ClickException:
@@ -600,9 +571,13 @@ def register_session_commands(cli):
         _render_status(report, json_output=json_output)
 
     @cli.command("clear")
-    def clear_cmd():
+    @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+    def clear_cmd(json_output):
         """Clear current notebook context."""
         clear_context()
+        if json_output:
+            json_output_response({"status": "cleared"})
+            return
         console.print("[green]Context cleared[/green]")
 
     @cli.group("auth")
@@ -611,8 +586,9 @@ def register_session_commands(cli):
         pass
 
     @auth_group.command("logout")
+    @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
     @click.pass_context
-    def auth_logout(ctx):
+    def auth_logout(ctx, json_output):
         """Log out by clearing saved authentication.
 
         Removes both the saved cookie file (storage_state.json) and the
@@ -626,7 +602,7 @@ def register_session_commands(cli):
           notebooklm --storage A.json auth logout      # Clear the override auth file
         """
         outcome = execute_logout(ctx)
-        _render_logout_outcome(outcome)
+        _render_logout_outcome(outcome, json_output=json_output)
 
     @auth_group.command("inspect")
     @click.option(
@@ -888,8 +864,9 @@ def register_session_commands(cli):
             "passive probe). Exit non-zero if the post-refresh cookies still fail."
         ),
     )
+    @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
     @click.pass_context
-    def auth_refresh(ctx, browser_cookies, include_domains_raw, quiet, verify):
+    def auth_refresh(ctx, browser_cookies, include_domains_raw, quiet, verify, json_output):
         """Refresh stored cookies by exercising the auth path once or reading browser cookies.
 
         Default mode is a one-shot keepalive: opens a session, runs the
@@ -930,26 +907,44 @@ def register_session_commands(cli):
         See docs/troubleshooting.md ("Cookie freshness for long-running /
         unattended use") for launchd / systemd / cron recipes.
         """
-        with handle_errors():
+
+        def _fail(code: str, message: str) -> NoReturn:
+            # --json -> envelope on stdout (NoReturn); else human stderr. Both exit 1.
+            if json_output:
+                json_error_response(code, message)
+            click.echo(f"Error: {message}", err=True)
+            exit_with_code(1)
+
+        with handle_errors(json_output=json_output):
             if has_env_auth_json():
-                click.echo(
-                    f"Error: 'auth refresh' is incompatible with {AUTH_JSON_ENV_NAME}. "
+                _fail(
+                    "auth_json_env_conflict",
+                    f"'auth refresh' is incompatible with {AUTH_JSON_ENV_NAME}. "
                     "The keepalive needs a writable storage_state.json to persist "
                     "rotated cookies. Either unset the env var for this "
                     "process and use a profile-backed storage file, or arrange for "
                     "the env var to be refreshed externally.",
-                    err=True,
                 )
-                exit_with_code(1)
 
             include_domains = _parse_include_domains(include_domains_raw)
             if include_domains and browser_cookies is None:
-                click.echo(
-                    "Error: --include-domains only applies when --browser-cookies "
+                _fail(
+                    "include_domains_without_browser_cookies",
+                    "--include-domains only applies when --browser-cookies "
                     "is also set (the keepalive-only path does not re-extract cookies).",
-                    err=True,
                 )
-                exit_with_code(1)
+
+            # --json is keepalive-only (--browser-cookies prints to stdout) — refuse.
+            if json_output and browser_cookies is not None:
+                _fail(
+                    "json_unsupported_with_browser_cookies",
+                    "--json is not supported with --browser-cookies; use the "
+                    "default keepalive refresh with --json instead.",
+                )
+
+            # --json suppresses human status lines (like --quiet); verify failures
+            # exit 1 via stderr only.
+            quiet = quiet or json_output
 
             profile = ctx.obj.get("profile") if ctx.obj else None
             storage_path = get_storage_path(profile=profile)
@@ -976,7 +971,14 @@ def register_session_commands(cli):
                     console.print(f"[green]ok[/green] refreshed: {storage_path}")
 
             if verify:
-                _verify_token_fetch_after_refresh(storage_path, profile, quiet=quiet)
+                _verify_token_fetch_after_refresh(
+                    storage_path, profile, quiet=quiet, json_output=json_output
+                )
+
+            if json_output:
+                json_output_response(
+                    {"status": "ok", "storage_path": str(storage_path), "verified": verify}
+                )
 
 
 # Backward-compat constant kept at module scope for tests that import it

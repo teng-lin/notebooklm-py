@@ -1,6 +1,7 @@
 """Tests for skill CLI commands."""
 
 import importlib
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -519,6 +520,28 @@ class TestSkillStatus:
         assert result.exit_code == 0
         assert "version mismatch" not in result.output.lower()
         assert result.output.count("Installed") >= 2
+
+    def test_skill_status_json(self, runner, tmp_path):
+        """``skill status --json`` emits a single structured document."""
+        home = tmp_path / "home"
+        version = "1.2.3"
+        dest = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
+        dest.parent.mkdir(parents=True)
+        dest.write_text(f"<!-- notebooklm-py v{version} -->\n# Test")
+
+        with (
+            patch.object(skill_module.Path, "home", return_value=home),
+            patch.object(skill_module, "get_package_version", return_value=version),
+        ):
+            result = runner.invoke(cli, ["skill", "status", "--target", "agents", "--json"])
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["cli_version"] == version
+        agents = next(t for t in payload["targets"] if t["target"] == "agents")
+        assert agents["installed"] is True
+        assert agents["skill_version"] == version
+        assert agents["version_mismatch"] is False
 
 
 class TestSkillUninstall:

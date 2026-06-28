@@ -35,7 +35,7 @@ from .._app.skill import (
 from ..io import replace_file_atomically
 from .agent_templates import get_agent_source_content
 from .error_handler import exit_with_code
-from .rendering import console
+from .rendering import console, json_output_response
 
 __all__ = [
     "SCOPES",
@@ -284,27 +284,46 @@ def install(scope: str, target_name: str, dry_run: bool, no_clobber: bool, force
     show_default=True,
     help="Inspect Claude Code, universal agent skill directories, or both.",
 )
-def status(scope: str, target_name: str):
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+def status(scope: str, target_name: str, json_output: bool):
     """Check installed skill targets and version info."""
     cli_version = get_package_version()
     selected_targets = iter_targets(target_name)
-    any_installed = False
+    target_rows = []
+    for target in selected_targets:
+        skill_path = get_skill_path(target, scope)
+        skill_version = get_skill_version(skill_path)
+        installed = skill_path.exists()
+        target_rows.append(
+            {
+                "target": target,
+                "label": TARGETS[target].label,
+                "installed": installed,
+                "path": str(skill_path),
+                "skill_version": skill_version if installed else None,
+                "version_mismatch": bool(
+                    installed and skill_version and skill_version != cli_version
+                ),
+            }
+        )
+    any_installed = any(row["installed"] for row in target_rows)
+
+    if json_output:
+        json_output_response({"scope": scope, "cli_version": cli_version, "targets": target_rows})
+        return
 
     console.print(f"NotebookLM skill status ({scope} scope)")
     console.print(f"  CLI version: {cli_version}")
 
-    for target in selected_targets:
-        skill_path = get_skill_path(target, scope)
-        skill_version = get_skill_version(skill_path)
+    for row in target_rows:
         status_label = (
-            "[green]Installed[/green]" if skill_path.exists() else "[yellow]Not installed[/yellow]"
+            "[green]Installed[/green]" if row["installed"] else "[yellow]Not installed[/yellow]"
         )
-        console.print(f"  {TARGETS[target].label}: {status_label}")
-        console.print(f"    Path: {skill_path}")
-        if skill_path.exists():
-            any_installed = True
-            console.print(f"    Skill version: {skill_version or 'unknown'}")
-            if skill_version and skill_version != cli_version:
+        console.print(f"  {row['label']}: {status_label}")
+        console.print(f"    Path: {row['path']}")
+        if row["installed"]:
+            console.print(f"    Skill version: {row['skill_version'] or 'unknown'}")
+            if row["version_mismatch"]:
                 console.print(
                     "    [yellow]Version mismatch[/yellow] - run [cyan]notebooklm skill install[/cyan]"
                 )

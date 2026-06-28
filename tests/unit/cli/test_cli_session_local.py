@@ -148,6 +148,13 @@ class TestClearCommand:
         assert result.exit_code == 0, result.output
         assert "Context cleared" in result.output
 
+    def test_clear_json(self, runner: CliRunner, isolated_home: Path) -> None:
+        """``clear --json`` emits a single structured document on stdout."""
+        _seed_context(isolated_home, notebook_id="abc123", title="Demo", is_owner=True)
+        result = runner.invoke(cli, ["clear", "--json"])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == {"status": "cleared"}
+
 
 # ---------------------------------------------------------------------------
 # auth logout
@@ -174,6 +181,23 @@ class TestAuthLogoutCommand:
 
         assert result.exit_code == 0, result.output
         assert "Already logged out" in result.output
+
+    def test_auth_logout_json(self, runner: CliRunner, isolated_home: Path) -> None:
+        """``auth logout --json`` emits a structured logged-out document."""
+        _seed_storage_state(isolated_home)
+        result = runner.invoke(cli, ["auth", "logout", "--json"])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["status"] == "logged_out"
+        assert payload["removed"] is True
+
+    def test_auth_logout_json_no_session(self, runner: CliRunner, isolated_home: Path) -> None:
+        """``auth logout --json`` with nothing to remove reports already-logged-out."""
+        result = runner.invoke(cli, ["auth", "logout", "--json"])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["status"] == "already_logged_out"
+        assert payload["removed"] is False
 
     def test_auth_logout_also_clears_context(self, runner: CliRunner, isolated_home: Path) -> None:
         """``auth logout`` removes context.json so post-logout commands start fresh.

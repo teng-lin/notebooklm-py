@@ -1853,6 +1853,28 @@ class TestAuthRefreshCommand:
         assert "ok" in result.output.lower()
         mock_fetch.assert_awaited_once()
 
+    def test_auth_refresh_json_success(self, runner, mock_storage_path):
+        """--json emits a single structured keepalive result on stdout."""
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf_ok", "session_ok")
+            result = runner.invoke(cli, ["auth", "refresh", "--json"])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["status"] == "ok"
+        assert payload["verified"] is False
+
+    def test_auth_refresh_json_with_browser_cookies_is_refused(self, runner, mock_storage_path):
+        """``--json`` + ``--browser-cookies`` returns the error envelope, never the
+        interactive login-IO output (which writes Rich text to stdout and would
+        corrupt the single-JSON-document contract)."""
+        result = runner.invoke(cli, ["auth", "refresh", "--browser-cookies", "chrome", "--json"])
+        assert result.exit_code == 1, result.output
+        payload = json.loads(result.output)
+        assert payload["error"] is True
+        assert payload["code"] == "json_unsupported_with_browser_cookies"
+
     def test_auth_refresh_quiet_suppresses_success_output(self, runner, mock_storage_path):
         """--quiet keeps stdout clean when refresh succeeds (cron-friendly)."""
         with patch.object(
@@ -1970,6 +1992,25 @@ class TestAuthRefreshCommand:
         assert result.exit_code == 1
         assert "post-refresh token fetch failed" in result.output.lower()
         assert "Traceback (most recent call last)" not in result.output
+
+    def test_auth_refresh_verify_failure_json_envelope(self, runner, mock_storage_path):
+        """``--verify`` failure under ``--json`` emits the error envelope on stdout
+        (exit 1), not a human stderr line — the json contract holds on this path."""
+        with (
+            patch.object(
+                auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+            patch.object(
+                auth_module, "fetch_tokens_passive", new_callable=AsyncMock
+            ) as mock_passive,
+        ):
+            mock_fetch.return_value = ("csrf_ok", "session_ok")
+            mock_passive.side_effect = ValueError("Authentication expired or invalid.")
+            result = runner.invoke(cli, ["auth", "refresh", "--verify", "--json"])
+        assert result.exit_code == 1, result.output
+        payload = json.loads(result.output)
+        assert payload["error"] is True
+        assert payload["code"] == "post_refresh_token_fetch_failed"
 
     def test_auth_refresh_verify_after_browser_cookies(self, runner, mock_storage_path):
         """``--verify`` also gates the ``--browser-cookies`` rewrite path."""

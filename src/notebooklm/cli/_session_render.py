@@ -15,7 +15,7 @@ from rich.markup import render as render_markup
 from rich.table import Table
 
 from .error_handler import _output_error, exit_with_code
-from .rendering import console, json_output_response
+from .rendering import console, json_error_response, json_output_response
 from .services.auth_diagnostics import AuthCheckResult
 from .services.auth_source import AUTH_JSON_ENV_NAME
 from .services.login.outcomes import BrowserCookieOutcome
@@ -140,7 +140,7 @@ def _render_status(report: StatusReport, *, json_output: bool) -> None:
     console.print(table)
 
 
-def _render_logout_outcome(outcome: LogoutOutcome) -> None:
+def _render_logout_outcome(outcome: LogoutOutcome, *, json_output: bool = False) -> None:
     """Render a :class:`LogoutOutcome` and apply its exit policy.
 
     Owns the presentation + exit policy for the ``run_logout`` flow,
@@ -148,7 +148,28 @@ def _render_logout_outcome(outcome: LogoutOutcome) -> None:
     :class:`OSError` failures, prints the diagnostic and then exits 1; on
     success prints either the green "Logged out." line or the yellow
     "No active session found." no-op line and returns normally.
+
+    With ``json_output`` the same outcomes are emitted as a single JSON
+    document (success) or the ``{"error": true, ...}`` envelope (failure,
+    exit 1) so automation can consume the result.
     """
+    if json_output:
+        failure = outcome.failure
+        if failure is not None:
+            json_error_response(
+                f"logout_{failure.kind}_failed",
+                failure.error_message,
+                {"path": str(failure.path), "env_auth_remains": outcome.env_auth_remains},
+            )
+        json_output_response(
+            {
+                "status": "logged_out" if outcome.removed_any else "already_logged_out",
+                "removed": outcome.removed_any,
+                "env_auth_remains": outcome.env_auth_remains,
+            }
+        )
+        return
+
     if outcome.env_auth_remains:
         console.print(
             f"[yellow]Note: {AUTH_JSON_ENV_NAME} is set — env-based auth will "

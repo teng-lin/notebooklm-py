@@ -31,8 +31,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
+import click
+
 from .error_handler import exit_with_code
-from .rendering import console
+from .rendering import console, json_error_response
 from .runtime import run_async
 from .services.login.io_seam import set_default_login_io_factory
 from .services.playwright_login import (
@@ -164,8 +166,39 @@ def repair_after_refresh(
     )
 
 
+def _verify_token_fetch_after_refresh(
+    storage_path: Path, profile: str | None, *, quiet: bool, json_output: bool = False
+) -> None:
+    """Confirm a token fetch actually succeeds after ``auth refresh``.
+
+    Runs the strictly read-only passive probe (no NOTEBOOKLM_REFRESH_CMD, no
+    cookie rotation, no write). A successful ``auth refresh`` — especially the
+    ``--browser-cookies`` rewrite — does not by itself prove the resulting
+    cookies authenticate; ``--verify`` makes that an explicit, fail-loud gate
+    so unattended schedulers can rely on the exit code (issue #1569).
+
+    With ``json_output`` a verify failure is emitted as the error envelope on
+    stdout (exit 1); otherwise the human ``Error: …`` line goes to stderr. The
+    ``fetch_tokens_passive`` import is deferred so the ``notebooklm.auth`` patch
+    seam used by the auth-subcommand tests stays effective.
+    """
+    from ..auth import fetch_tokens_passive
+
+    try:
+        run_async(fetch_tokens_passive(storage_path, profile))
+    except Exception as exc:  # noqa: BLE001 — surface any failure as a clean exit 1
+        message = f"refresh completed but the post-refresh token fetch failed: {exc}"
+        if json_output:
+            json_error_response("post_refresh_token_fetch_failed", message)
+        click.echo(f"Error: {message}", err=True)
+        exit_with_code(1)
+    if not quiet:
+        console.print("[green]ok[/green] verified: token fetch succeeds after refresh")
+
+
 __all__ = [
     "PlaywrightLoginIO",
+    "_verify_token_fetch_after_refresh",
     "make_login_io",
     "prepare_paths_or_exit",
     "repair_after_refresh",

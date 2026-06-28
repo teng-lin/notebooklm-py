@@ -778,9 +778,31 @@ _INTROSPECTION_RATIONALE = (
     "success path; ``--json`` purity is checked indirectly by the format unit "
     "tests in tests/unit/cli/."
 )
+_PROFILE_RATIONALE = (
+    "Local filesystem profile mutation (no NotebookLMClient); the ``--json`` "
+    "success payloads AND the validation-error envelope (VALIDATION_ERROR, via "
+    "the grouped-CLI ClickException handler) are asserted directly in "
+    "tests/unit/cli/test_profile.py::TestProfileJsonOutput."
+)
+_SESSION_LOCAL_RATIONALE = (
+    "Local session-context / auth-state command (no NotebookLMClient); the "
+    "``--json`` success and error envelopes are asserted in "
+    "tests/unit/cli/test_cli_session_local.py + test_auth_subcommands.py "
+    "(incl. auth refresh --verify failure and the --browser-cookies refusal)."
+)
 
 
 JSON_SUCCESS_WAIVED: dict[tuple[str, ...], str] = {
+    # session/profile/skill local commands — no NotebookLMClient; --json output
+    # is asserted in the dedicated cli unit tests named in each rationale.
+    ("clear",): _SESSION_LOCAL_RATIONALE,
+    ("auth", "logout"): _SESSION_LOCAL_RATIONALE,
+    ("auth", "refresh"): _SESSION_LOCAL_RATIONALE,
+    ("profile", "create"): _PROFILE_RATIONALE,
+    ("profile", "delete"): _PROFILE_RATIONALE,
+    ("profile", "rename"): _PROFILE_RATIONALE,
+    ("profile", "switch"): _PROFILE_RATIONALE,
+    ("skill", "status"): _INTROSPECTION_RATIONALE,
     # artifact group — get/poll/wait need a real or fully-stubbed generation
     # status payload that round-trips through the artifact formatter chain.
     ("artifact", "delete"): _MUTATION_RATIONALE_SUCCESS,
@@ -859,6 +881,16 @@ JSON_SUCCESS_WAIVED: dict[tuple[str, ...], str] = {
 
 
 JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
+    # session/profile/skill local commands — error envelope asserted in the
+    # dedicated cli unit tests named in each rationale.
+    ("clear",): _SESSION_LOCAL_RATIONALE,
+    ("auth", "logout"): _SESSION_LOCAL_RATIONALE,
+    ("auth", "refresh"): _SESSION_LOCAL_RATIONALE,
+    ("profile", "create"): _PROFILE_RATIONALE,
+    ("profile", "delete"): _PROFILE_RATIONALE,
+    ("profile", "rename"): _PROFILE_RATIONALE,
+    ("profile", "switch"): _PROFILE_RATIONALE,
+    ("skill", "status"): _INTROSPECTION_RATIONALE,
     # artifact group — error envelope is covered for list + wait. Remaining
     # entries are mutations that surface @with_client's UNEXPECTED_ERROR
     # envelope on RPC failure; coverage can grow with the suite.
