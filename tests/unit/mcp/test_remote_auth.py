@@ -35,8 +35,20 @@ async def test_verify_token_accepts_exact_match_only() -> None:
     assert ok.token != "correct-horse"
     assert await provider.verify_token("wrong") is None
     assert await provider.verify_token("") is None
-    # Non-ASCII bearer → clean reject (no TypeError → no 500).
-    assert await provider.verify_token("nøt-ascii-Ω") is None
+
+
+@pytest.mark.asyncio
+async def test_verify_token_matches_utf8_token_through_latin1_header() -> None:
+    """A non-ASCII token sent UTF-8-encoded verifies correctly: Starlette latin-1-
+    decodes the header, and verify_token round-trips it back to the request bytes.
+    (Guards the encoding-mismatch bug gemini-code-assist flagged.)"""
+    provider = McpBearerAuthProvider("café-Ω-token")  # configured (clean str)
+    # What Starlette hands verify_token: the latin-1 view of the UTF-8 header bytes.
+    as_received = "café-Ω-token".encode().decode("latin-1")
+    assert await provider.verify_token(as_received) is not None
+    # The raw (non-round-tripped) string must NOT match — and must not raise even
+    # though it contains a non-latin-1 char.
+    assert await provider.verify_token("café-Ω-token") is None
 
 
 def test_repr_never_leaks_the_token() -> None:

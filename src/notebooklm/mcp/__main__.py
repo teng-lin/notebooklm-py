@@ -143,8 +143,8 @@ def _build_parser() -> argparse.ArgumentParser:
         # NOTEBOOKLM_MCP_PORT must not crash the parser before CLI args are read
         # (which would make --port unable to override it). Kept as a string and
         # converted after parse with a clear error (see ``_resolve_port``).
-        default=os.environ.get("NOTEBOOKLM_MCP_PORT", "8000"),
-        help="HTTP bind port (http transport only; default: 8000).",
+        default=os.environ.get("NOTEBOOKLM_MCP_PORT", "9420"),
+        help="HTTP bind port (http transport only; default: 9420).",
     )
     parser.add_argument(
         "--log-level",
@@ -188,15 +188,19 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     if args.transport == "http":
+        # Normalize the host once and use it for the guards AND the bind — the
+        # loopback check tolerates surrounding whitespace, so an env value like
+        # " 127.0.0.1 " must not pass the guards and then fail at bind time.
+        host = args.host.strip()
         allow_external = os.environ.get(ALLOW_EXTERNAL_BIND_ENV) == "1"
-        _check_http_bind_allowed(args.host, allow_external=allow_external)
+        _check_http_bind_allowed(host, allow_external=allow_external)
         # Resolve the token once, BEFORE building the server: the same value
         # gates startup (fail closed on a network bind) and, when present,
         # becomes the per-request bearer verifier.
         token = get_configured_token()
-        _check_http_token_required(args.host, token)
+        _check_http_token_required(host, token)
         server = create_server(profile=args.profile, auth=build_auth_provider(token))
-        server.run(transport="http", host=args.host, port=_resolve_port(args.port))
+        server.run(transport="http", host=host, port=_resolve_port(args.port))
     else:
         # show_banner=False keeps FastMCP's startup banner out of the host's logs
         # (and off stdout — stdio requires uncontaminated JSON-RPC).

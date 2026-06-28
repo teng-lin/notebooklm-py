@@ -87,6 +87,21 @@ def test_explicit_http_transport_binds_loopback(monkeypatch: pytest.MonkeyPatch)
     assert captured["auth"] is None
 
 
+def test_http_default_port_is_9420(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The default HTTP port is 9420 (no --port / NOTEBOOKLM_MCP_PORT)."""
+    fake_server = MagicMock()
+    monkeypatch.setattr(
+        entry, "create_server", lambda *, profile=None, client_factory=None, auth=None: fake_server
+    )
+    monkeypatch.delenv("NOTEBOOKLM_MCP_PORT", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_MCP_TOKEN", raising=False)
+
+    entry.main(["--transport", "http"])
+
+    fake_server.run.assert_called_once_with(transport="http", host="127.0.0.1", port=9420)
+
+
 def test_bogus_transport_env_default_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:
     """An invalid env-derived transport default must SystemExit, not silently run
     stdio (argparse ``choices`` validates an explicit flag but not the env default)."""

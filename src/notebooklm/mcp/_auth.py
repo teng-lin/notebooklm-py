@@ -13,17 +13,19 @@ Design — mirror the REST server's `server/_auth.py` posture, NOT
   tokens are stored in plain text"; it pulls in ``authlib``/JOSE for what is a
   single string comparison; and its token dict requires a ``client_id`` key with
   no default (``{token: {}}`` raises ``KeyError`` on the first request).
-* A ~20-line :class:`~fastmcp.server.auth.auth.TokenVerifier` subclass doing a
-  constant-time :func:`hmac.compare_digest` is the right tool: no extra
-  dependency, a clean 401, and the token held in a private attribute that never
-  reaches a log or ``repr`` (honoring the #1517/#1518 redaction discipline — the
-  REST server protects ``NOTEBOOKLM_SERVER_TOKEN`` the same way).
+* A ~25-line :class:`~fastmcp.server.auth.auth.TokenVerifier` subclass doing a
+  constant-time :func:`hmac.compare_digest` on **SHA-256 digests** is the right
+  tool: no extra dependency, a clean 401, and only a non-reversible digest of the
+  token is retained (never the cleartext, so a ``vars()``/scope dump can't leak
+  it) — honoring the #1517/#1518 redaction discipline, the way the REST server
+  protects ``NOTEBOOKLM_SERVER_TOKEN``.
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
 
@@ -62,35 +64,39 @@ class McpBearerAuthProvider(TokenVerifier):
     """Gate the HTTP transport on a single bearer token (constant-time compare).
 
     FastMCP runs :meth:`verify_token` for every request via its
-    ``RequireAuthMiddleware``; a ``None`` return is a 401. The token lives in a
-    name-mangled private attribute and is deliberately kept out of ``repr`` so it
-    cannot leak into a log line or an exception render.
+    ``RequireAuthMiddleware``; a ``None`` return is a 401. The instance holds only
+    the **SHA-256 digest** of the configured token, never the cleartext — so
+    ``vars(provider)`` / a scope dump cannot surface it — and verification hashes
+    the presented token and compares digests in constant time.
     """
 
     def __init__(self, token: str) -> None:
         super().__init__()
-        # Name-mangled (``_McpBearerAuthProvider__token``) so a default repr /
-        # vars() dump does not surface it; __repr__ is overridden too.
-        self.__token = token
+        # Store only a digest of the configured token (its raw UTF-8 bytes hashed).
+        # The digest is non-reversible and cannot be replayed as a token (verify
+        # hashes the *presented* value), so no cleartext copy is retained anywhere.
+        self.__digest = hashlib.sha256(token.encode("utf-8")).digest()
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        # Compare BYTES, not str: Starlette latin-1-decodes the Authorization
-        # header, so a non-ASCII bearer reaches here as a str that
-        # hmac.compare_digest(str, str) would reject with TypeError (→ an
-        # unhandled 500 + traceback instead of a clean 401). Encoding both sides
-        # keeps the constant-time compare and returns None (401) for any
-        # non-matching/malformed token.
-        if hmac.compare_digest(
-            token.encode("utf-8", "surrogatepass"), self.__token.encode("utf-8")
-        ):
-            # Do NOT echo the live token back into the AccessToken: FastMCP stores
-            # it on the request scope (scope["user"]) and AccessToken's pydantic
-            # repr would expose it in any scope/log dump. We never read the field,
-            # so stamp an opaque constant instead (the last cleartext copy gone).
+        # Starlette latin-1-decodes the Authorization header, so ``token`` here is
+        # the latin-1 view of the raw request bytes. ``.encode("latin-1")`` round-
+        # trips that back to the EXACT bytes the client sent, which we hash and
+        # compare against the configured token's UTF-8-byte digest — so an ASCII
+        # token and a UTF-8-encoded non-ASCII token both verify correctly. A header
+        # string outside latin-1 (cannot come from Starlette) simply fails to match.
+        try:
+            presented = token.encode("latin-1")
+        except UnicodeEncodeError:
+            return None
+        if hmac.compare_digest(hashlib.sha256(presented).digest(), self.__digest):
+            # Do NOT echo the live token into the AccessToken: FastMCP stores it on
+            # the request scope (scope["user"]) and AccessToken's pydantic repr
+            # would expose it in any scope/log dump. We never read the field, so
+            # stamp an opaque constant instead.
             return AccessToken(token=_CLIENT_ID, client_id=_CLIENT_ID, scopes=[])
         return None
 
-    def __repr__(self) -> str:  # never leak the token
+    def __repr__(self) -> str:  # never surface auth material
         return f"{type(self).__name__}(token=<redacted>)"
 
 

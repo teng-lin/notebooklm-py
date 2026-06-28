@@ -43,13 +43,13 @@ cp deploy/.env.example deploy/.env
 In the Cloudflare **Zero Trust** dashboard → **Networks → Tunnels**:
 1. Create a tunnel; copy its **token** into `CF_TUNNEL_TOKEN` in `.env`.
 2. Add a **Public Hostname** (e.g. `notebooklm-mcp.yourdomain.com`) →
-   **Service** `http://notebooklm-mcp:8000`. Cloudflare auto-creates the DNS
+   **Service** `http://notebooklm-mcp:9420`. Cloudflare auto-creates the DNS
    record and serves TLS with its own cert.
 
 ## 4. Run
 ```bash
 cd deploy && docker compose up -d
-docker compose logs -f notebooklm-mcp   # should report it bound 0.0.0.0:8000
+docker compose logs -f notebooklm-mcp   # should report it bound 0.0.0.0:9420
 ```
 
 ## 5. Connect from Claude Code

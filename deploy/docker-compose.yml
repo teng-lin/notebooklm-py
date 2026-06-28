@@ -25,12 +25,19 @@ services:
     # No `ports:` — not reachable except via the tunnel.
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    # Pinnable for reproducibility: set CLOUDFLARED_VERSION in .env to a release
+    # from github.com/cloudflare/cloudflared/releases. Defaults to `latest` (the
+    # tunnel connector is backward-compatible and is what Cloudflare recommends
+    # running), so the template works without choosing a tag.
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-latest}
     restart: unless-stopped
     command: tunnel run
     environment:
       # From the Cloudflare Zero Trust dashboard (Networks → Tunnels). Configure
-      # the tunnel's Public Hostname to point at http://notebooklm-mcp:8000.
+      # the tunnel's Public Hostname to point at http://notebooklm-mcp:9420.
       TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:?set CF_TUNNEL_TOKEN in .env}
     depends_on:
-      - notebooklm-mcp
+      # Wait until the MCP server passes its HEALTHCHECK (port listening), not
+      # merely until its container starts, before bringing the tunnel up.
+      notebooklm-mcp:
+        condition: service_healthy

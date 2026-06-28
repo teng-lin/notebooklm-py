@@ -75,7 +75,7 @@ The console script is `notebooklm-mcp`:
 ```bash
 notebooklm-mcp                         # stdio transport (default — for desktop hosts)
 notebooklm-mcp --profile work          # bind a specific auth profile
-notebooklm-mcp --transport http        # loopback streamable-HTTP on 127.0.0.1:8000
+notebooklm-mcp --transport http        # loopback streamable-HTTP on 127.0.0.1:9420
 notebooklm-mcp --transport http --port 9000
 ```
 
@@ -84,7 +84,7 @@ notebooklm-mcp --transport http --port 9000
 | `--profile` | active profile | which stored auth profile the process binds |
 | `--transport` | `stdio` | `stdio` (subprocess hosts) or `http` (loopback) |
 | `--host` | `127.0.0.1` | http only; non-loopback is **refused** unless `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1` |
-| `--port` | `8000` | http only |
+| `--port` | `9420` | http only |
 | `--log-level` | `INFO` | logs go to **stderr**; stdout stays pure JSON-RPC |
 
 There is no `--token` flag — the HTTP bearer token is **env-only**
@@ -111,7 +111,7 @@ notebooklm login --master-token --account you@example.com
 cp -r ~/.notebooklm/profiles/<profile>/. deploy/profile/   # mounted read-write
 # 2. secrets:
 cp deploy/.env.example deploy/.env                          # set MCP token + tunnel token
-# 3. create a Cloudflare Tunnel → public hostname → http://notebooklm-mcp:8000
+# 3. create a Cloudflare Tunnel → public hostname → http://notebooklm-mcp:9420
 # 4. run:
 cd deploy && docker compose up -d
 # 5. connect:
