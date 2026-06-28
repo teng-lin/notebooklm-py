@@ -291,7 +291,7 @@ def resolve_client_factory(
     return NotebookLMClient
 
 
-def auth_check_notebook_count(ctx) -> int | None:
+def auth_check_notebook_count(ctx: click.Context) -> int | None:
     """Best-effort live notebook count for ``auth check --test``; ``None`` on any
     failure.
 

@@ -249,18 +249,25 @@ def _render_auth_check_result(result: AuthCheckResult) -> None:
         table.add_row("Storage", "", details.get("storage_path", ""))
 
         master = details.get("master_token") or {}
+        mt_path = master.get("path")
         if master.get("present"):
             mt_account = master.get("account")
-            mt_text = master.get("path", "")
+            mt_text = mt_path or ""
             if mt_account:
                 mt_text = f"{mt_text} (account: {mt_account})"
             table.add_row("Master token", "[green]✓ present[/green]", mt_text)
         else:
-            table.add_row("Master token", "", "[dim]not present[/dim]")
+            # Name where we looked (matches the --json master_token.path), so the
+            # diagnostic is actionable even when the file is absent.
+            absent = f"[dim]not present ({mt_path})[/dim]" if mt_path else "[dim]not present[/dim]"
+            table.add_row("Master token", "", absent)
 
         psidts = details.get("psidts") or {}
         expires_at = psidts.get("expires_at")
-        psidts_detail = f"expires {expires_at}" if expires_at else "session cookie (no expiry)"
+        # ``expires_at`` is None for a genuine session cookie AND for a corrupt /
+        # unreadable epoch — "no expiry recorded" is accurate for both and avoids
+        # mislabeling an unparseable cookie as session-scoped.
+        psidts_detail = f"expires {expires_at}" if expires_at else "no expiry recorded"
         table.add_row(
             # Literal duplicated rather than imported — cli/ must not import
             # notebooklm._* privates (CLI-boundary gate).

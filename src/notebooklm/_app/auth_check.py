@@ -49,8 +49,8 @@ _PSIDTS_COOKIE = "__Secure-1PSIDTS"
 _MASTER_TOKEN_PSIDTS_HINT = (
     f"A master_token.json is present, so a missing {_PSIDTS_COOKIE} at rest is "
     "normal for this profile — it is minted on the first authenticated call (and "
-    "at bootstrap since #1638). Run 'notebooklm auth check --test' to mint and "
-    "verify, or re-run 'notebooklm login --master-token'."
+    "at bootstrap). Run 'notebooklm auth check --test' to mint and verify, or "
+    "re-run 'notebooklm login --master-token'."
 )
 
 
@@ -166,7 +166,9 @@ def _psidts_status(storage_state: dict[str, Any]) -> dict[str, Any]:
             continue
         expires_at: str | None = None
         expires = cookie.get("expires")
-        if isinstance(expires, (int, float)) and expires > 0:
+        # ``bool`` is an ``int`` subclass — a stray ``expires: true`` must not be
+        # read as epoch 1.
+        if isinstance(expires, (int, float)) and not isinstance(expires, bool) and expires > 0:
             try:
                 expires_at = datetime.fromtimestamp(expires, tz=timezone.utc).isoformat()
             except (OverflowError, ValueError, OSError):
@@ -192,10 +194,12 @@ def _account_info(plan: AuthCheckPlan, storage_state: dict[str, Any]) -> dict[st
 
     if plan.has_env_auth:
         meta = read_account_metadata_from_storage_state(storage_state)
-        email = meta.get("email") if isinstance(meta.get("email"), str) else None
+        raw_email = meta.get("email")
+        email = raw_email.strip() if isinstance(raw_email, str) else ""
         raw_authuser = meta.get("authuser")
-        # Clamp to match the file path's get_authuser_for_storage (negatives → 0).
-        authuser = raw_authuser if isinstance(raw_authuser, int) and raw_authuser >= 0 else 0
+        # Match the file path's get_authuser_for_storage: a real int only (``bool``
+        # is an ``int`` subclass, so exclude it), negatives clamped to 0.
+        authuser = raw_authuser if type(raw_authuser) is int and raw_authuser >= 0 else 0
         return {"email": email or None, "authuser": authuser}
     return {
         "email": get_account_email_for_storage(plan.storage_path),

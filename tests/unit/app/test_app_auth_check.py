@@ -418,6 +418,18 @@ async def test_env_auth_reads_account_from_inline_json(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_env_auth_account_normalizes_whitespace_and_rejects_bool(tmp_path: Path) -> None:
+    """Env-auth account mirrors the file path: whitespace-only email → None, and a
+    bool authuser (``bool`` is an ``int`` subclass) falls back to 0."""
+    plan = _plan(storage_path=tmp_path / "ignored.json", has_env_auth=True)
+    state = _valid_storage_state()
+    state["notebooklm"] = {"account": {"email": "   ", "authuser": True}}
+    result = await run_auth_check(plan, read_env_auth_json=lambda: json.dumps(state))
+
+    assert result.details["account"] == {"email": None, "authuser": 0}
+
+
+@pytest.mark.asyncio
 async def test_missing_sid_and_psidts_keeps_generic_hint(tmp_path: Path) -> None:
     """When BOTH SID and PSIDTS are missing the session is unrecoverable, so the
     master-token hint must NOT fire even with a sibling master_token.json."""
