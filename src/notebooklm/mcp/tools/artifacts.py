@@ -423,12 +423,20 @@ def register(mcp: Any) -> None:
                     f"Unknown download type {artifact_type!r}; "
                     f"expected one of {sorted(_DOWNLOAD_SPECS)}"
                 )
-            # Validate output_format against the spec up front (shared by both the
-            # local-download and signed-URL paths).
-            if output_format is not None and not spec.format_choices:
-                raise ValidationError(
-                    f"artifact_type {artifact_type!r} does not support an output_format option"
-                )
+            # Validate output_format against the spec up front (shared by BOTH the
+            # local-download and signed-URL paths) so stdio and the remote connector
+            # fail identically — a bad value must not mint a token whose link 500s
+            # only when the browser opens it.
+            if output_format is not None:
+                if not spec.format_choices:
+                    raise ValidationError(
+                        f"artifact_type {artifact_type!r} does not support an output_format option"
+                    )
+                if output_format not in spec.format_choices:
+                    raise ValidationError(
+                        f"output_format {output_format!r} is not valid for artifact_type "
+                        f"{artifact_type!r}; expected one of {sorted(spec.format_choices)}"
+                    )
             nb_id = await resolve_notebook(client, notebook)
 
             cfg = get_file_transfer(ctx)
@@ -436,14 +444,16 @@ def register(mcp: Any) -> None:
                 # Remote connector: broker a signed download URL (the server path is
                 # unreachable). `path` is accepted but ignored.
                 return _broker_download(cfg, nb_id, artifact_type, output_format)
+            # No file-transfer config. On the remote (http) connector the server
+            # filesystem is unreachable REGARDLESS of `path`, so fail clearly here —
+            # mirroring source_add type=file — BEFORE any server-side download (else a
+            # supplied `path` would silently write the artifact onto the server).
+            if _is_http_transport():
+                raise ValidationError(
+                    "remote file transfer is not configured; set "
+                    "NOTEBOOKLM_MCP_PUBLIC_URL on the server to enable it"
+                )
             if path is None:
-                # No file transfer: this is stdio (http-without-cfg is reported
-                # below), where `path` is the required local output file.
-                if _is_http_transport():
-                    raise ValidationError(
-                        "remote file transfer is not configured; set "
-                        "NOTEBOOKLM_MCP_PUBLIC_URL on the server to enable it"
-                    )
                 raise ValidationError("artifact_download requires 'path' on the stdio transport")
 
             args: dict[str, Any] = {

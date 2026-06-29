@@ -98,7 +98,13 @@ def _safe_upload_name(filename: str | None) -> str:
     base = os.path.basename((filename or "").replace("\x00", ""))
     if not base or base in (".", ".."):
         return "upload.bin"
-    return base[:255]
+    if len(base) > 255:
+        # Truncate the STEM, not the whole name — lopping a pathological 300-char
+        # name to 255 could drop the extension, and NotebookLM 400s on an
+        # extensionless upload. Keep the suffix.
+        suffix = Path(base).suffix[:255]
+        base = Path(base).stem[: 255 - len(suffix)] + suffix
+    return base
 
 
 def _cleanup(path: str) -> None:
@@ -276,8 +282,7 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
             filename = _safe_upload_name(request.query_params.get("filename"))
             mime = payload.get("mime") or request.headers.get("content-type") or None
 
-            temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-ul-")
-            os.chmod(temp_dir, 0o700)
+            temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-ul-")  # mkdtemp is 0o700
             temp_path = os.path.join(temp_dir, filename)
             try:
                 fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

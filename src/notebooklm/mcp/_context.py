@@ -38,8 +38,8 @@ class AppState:
     file_transfer: FileTransferConfig | None = None
 
 
-def get_client(ctx: Context) -> NotebookLMClient:
-    """Return the lifespan-bound client for the current tool call.
+def _app_state(ctx: Context) -> AppState:
+    """Return the lifespan-bound :class:`AppState` for the current tool call.
 
     Raises:
         RuntimeError: If called outside an active MCP request context (the
@@ -48,8 +48,17 @@ def get_client(ctx: Context) -> NotebookLMClient:
     request_context = ctx.request_context
     if request_context is None:  # pragma: no cover - always set during a tool call
         raise RuntimeError("no active MCP request context")
-    state: AppState = request_context.lifespan_context
-    return state.client
+    return cast("AppState", request_context.lifespan_context)
+
+
+def get_client(ctx: Context) -> NotebookLMClient:
+    """Return the lifespan-bound client for the current tool call.
+
+    Raises:
+        RuntimeError: If called outside an active MCP request context (the
+            lifespan binding is always present during a real tool invocation).
+    """
+    return _app_state(ctx).client
 
 
 def get_file_transfer(ctx: Context) -> FileTransferConfig | None:
@@ -59,11 +68,7 @@ def get_file_transfer(ctx: Context) -> FileTransferConfig | None:
     without a public URL), so the file tools fall back to / reject the path-based
     behavior. Mirrors :func:`get_client`.
     """
-    request_context = ctx.request_context
-    if request_context is None:  # pragma: no cover - always set during a tool call
-        raise RuntimeError("no active MCP request context")
-    state: AppState = request_context.lifespan_context
-    return state.file_transfer
+    return _app_state(ctx).file_transfer
 
 
 def get_client_from_app(request: Request) -> NotebookLMClient:

@@ -172,6 +172,19 @@ async def test_artifact_download_config_rejects_bad_format(mock_client, config) 
     assert "VALIDATION" in str(excinfo.value)
 
 
+async def test_artifact_download_config_rejects_invalid_format_value(mock_client, config) -> None:
+    # A bad VALUE for a type that DOES have a format axis must fail at mint time
+    # (both transports), not mint a token whose link only 500s when opened.
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            config,
+            "artifact_download",
+            {"notebook": NB_ID, "artifact_type": "slide-deck", "output_format": "docx"},
+        )
+    assert "VALIDATION" in str(excinfo.value)
+
+
 async def test_artifact_download_http_without_config_is_not_configured_error(
     monkeypatch, mock_client
 ) -> None:
@@ -182,6 +195,23 @@ async def test_artifact_download_http_without_config_is_not_configured_error(
             None,
             "artifact_download",
             {"notebook": NB_ID, "artifact_type": "audio"},
+        )
+    assert "not configured" in str(excinfo.value)
+
+
+async def test_artifact_download_http_without_config_with_path_still_not_configured(
+    monkeypatch, mock_client
+) -> None:
+    # Regression: a supplied `path` on remote-without-config must NOT fall through
+    # to a server-side download (writing to an unreachable server path) — it must
+    # report "not configured", mirroring source_add type=file.
+    monkeypatch.setattr(art_mod, "get_http_request", lambda: MagicMock())
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            None,
+            "artifact_download",
+            {"notebook": NB_ID, "artifact_type": "audio", "path": "/tmp/out.mp3"},
         )
     assert "not configured" in str(excinfo.value)
 

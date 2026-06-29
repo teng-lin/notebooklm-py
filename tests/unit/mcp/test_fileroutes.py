@@ -94,14 +94,15 @@ def test_download_good_token_streams_bytes_no_bearer(monkeypatch, mock_client, c
 @pytest.mark.parametrize(
     "token",
     [
-        "bogus.token",  # malformed
-        "",  # empty path param won't match; use a clearly-bad one below
+        "bogus.token",  # malformed (two segments, bad MAC)
+        "x",  # single segment, no '.'
+        "é.bm9wZQ",  # non-ASCII body → FileLinkError, not a 500
     ],
 )
 def test_download_bad_token_403(monkeypatch, mock_client, config, token) -> None:
     app = _build(mock_client, config)
     with starlette_testclient.TestClient(app) as client:
-        resp = client.get(f"/files/dl/{token or 'x'}")
+        resp = client.get(f"/files/dl/{token}")
     assert resp.status_code == 403
 
 

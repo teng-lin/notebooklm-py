@@ -281,7 +281,10 @@ def _broker_upload(
     """
     default_title = title
     if not default_title and path:
-        default_title = os.path.basename(path) or None
+        # The agent's path may be Windows-style (``C:\\Users\\me\\report.pdf``) even
+        # though this server runs on Linux, where ``os.path.basename`` won't split on
+        # ``\\`` — normalize first so the default title is the real leaf.
+        default_title = os.path.basename(path.replace("\\", "/")) or None
     payload: dict[str, Any] = {"op": "ul", "nb": notebook_id}
     if default_title:
         payload["title"] = default_title

@@ -28,6 +28,10 @@ _BANNED_PREFIXES = (
     "rich",
     "notebooklm.cli",
     "cli",
+    # The MCP layer must not import the REST `server` extra (it pulls `fastapi`,
+    # absent on an `mcp`-only install). Share logic via the neutral `_app/` cores
+    # instead. (Catches absolute imports; e.g. `from notebooklm.server.routes...`.)
+    "notebooklm.server",
 )
 
 
@@ -60,6 +64,6 @@ def test_no_click_rich_or_cli_coupling_in_mcp(path: Path) -> None:
     bad = _violations(path)
     assert not bad, (
         f"{path.relative_to(REPO_ROOT)} imports a forbidden module {bad}. "
-        "The MCP layer must stay click/rich/cli-free; build on the _app/ cores "
-        "and the public namespaced client APIs instead."
+        "The MCP layer must stay free of click/rich/cli and the REST `server` extra; "
+        "build on the _app/ cores and the public namespaced client APIs instead."
     )
