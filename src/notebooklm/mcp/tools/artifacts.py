@@ -41,6 +41,7 @@ from ..._app.language import is_supported_language
 from ..._app.serialize import to_jsonable
 from ...exceptions import ValidationError
 from ...types import ArtifactType
+from .._coerce import coerce_list
 from .._confirm import READ_ONLY
 from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors
@@ -360,7 +361,7 @@ def register(mcp: Any) -> None:
             "mind-map",
             "report",
         ],
-        source_ids: list[str] | None = None,
+        source_ids: list[str] | str | None = None,
         instructions: str = "",
         language: str | None = None,
         report_format: str | None = None,
@@ -412,11 +413,19 @@ def register(mcp: Any) -> None:
         but accepts each kind's own set of values.
 
         ``source_ids`` (optional) scopes generation to specific sources; omit it
-        to use every source. ``instructions`` is free-text guidance for kinds
-        that accept it (including ``mind-map``).
+        to use every source. It accepts a real list, a JSON-array string, or a
+        comma-separated string (the comma form cannot carry a source title that
+        itself contains a comma — use a JSON array or a real list for those).
+        ``instructions`` is free-text guidance for kinds that accept it
+        (including ``mind-map``).
         """
         client = get_client(ctx)
         with mcp_errors():
+            # Tolerate ``source_ids`` sent as a JSON-array string / comma string /
+            # scalar (some MCP clients + LLM tool-callers do); normalize to a
+            # ``list[str]`` up front. ``None`` stays ``None`` (=> all sources, the
+            # #1652 contract); ``""``/``[]`` collapse to all sources downstream.
+            source_ids = coerce_list(source_ids)
             # ``artifact_type`` is a Literal — FastMCP/Pydantic rejects an unknown
             # kind at the schema boundary, so no runtime membership check is needed.
             # Validate ``language`` up front: the neutral generate core's default

@@ -22,15 +22,17 @@ Both bodies wrap in :func:`mcp_errors`. This module imports NO ``click`` /
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Literal
 
 from fastmcp import Context
 
 from ..._app import chat as core
 from ..._app.serialize import to_jsonable
+from .._coerce import coerce_list
 from .._context import get_client
 from .._errors import mcp_errors
-from .._resolve import resolve_notebook
+from .._resolve import resolve_notebook, resolve_source
 
 #: Reference fields kept in the default ("lite") ``chat_ask`` projection. The full
 #: ``ChatReference`` also carries chunk-level char offsets / ``chunk_id`` /
@@ -49,11 +51,18 @@ def register(mcp: Any) -> None:
         question: str,
         conversation_id: str | None = None,
         references: Literal["lite", "full"] = "lite",
+        source_ids: list[str] | str | None = None,
     ) -> dict[str, Any]:
         """Ask a notebook's sources a question. Accepts a notebook name or ID.
 
         Pass ``conversation_id`` to continue a specific conversation; omit it to
         continue the notebook's most-recent conversation (or start a new one).
+
+        ``source_ids`` (optional) scopes the question to specific sources by
+        id/prefix/title; omit it to query every source. It accepts a real list, a
+        JSON-array string, or a comma-separated string (the comma form cannot
+        carry a source title that itself contains a comma — use a JSON array or a
+        real list for those).
 
         Returns the ``answer`` plus citation ``references``. The internal
         ``raw_response`` debugging blob is never included. ``references`` controls
@@ -63,7 +72,22 @@ def register(mcp: Any) -> None:
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
-            result = await client.chat.ask(nb_id, question, conversation_id=conversation_id)
+            # Tolerate ``source_ids`` sent as a JSON-array string / comma string /
+            # scalar, then resolve each ref (id/prefix/title) the same way every
+            # other source-accepting tool does. Omitted/empty stays None (=> all
+            # sources, mirroring ``client.chat.ask``'s None contract).
+            refs = coerce_list(source_ids)
+            resolved_source_ids = (
+                list(await asyncio.gather(*(resolve_source(client, nb_id, ref) for ref in refs)))
+                if refs
+                else None
+            )
+            result = await client.chat.ask(
+                nb_id,
+                question,
+                source_ids=resolved_source_ids,
+                conversation_id=conversation_id,
+            )
             payload = to_jsonable(result)
             # Drop the debug-only raw wire-protocol blob (it just burns agent context).
             payload.pop("raw_response", None)

@@ -201,6 +201,67 @@ async def test_artifact_generate_empty_source_ids_uses_all(mcp_call, mock_client
     assert kwargs["source_ids"] is None
 
 
+# Full-UUID source ids take resolve_source's fast path (no listing needed), so the
+# string-shape coercion tests below need no ``sources.list`` mock.
+_SRC_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+_SRC_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+
+async def test_artifact_generate_source_ids_json_string(mcp_call, mock_client) -> None:
+    """``source_ids`` sent as a JSON-array string is tolerated (coerce_list)."""
+    mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
+    await mcp_call(
+        "artifact_generate",
+        {"notebook": NB_ID, "artifact_type": "audio", "source_ids": f'["{_SRC_A}","{_SRC_B}"]'},
+    )
+    kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
+    assert kwargs["source_ids"] == (_SRC_A, _SRC_B)
+
+
+async def test_artifact_generate_source_ids_comma_string(mcp_call, mock_client) -> None:
+    """``source_ids`` sent as a comma-separated string is tolerated (coerce_list)."""
+    mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
+    await mcp_call(
+        "artifact_generate",
+        {"notebook": NB_ID, "artifact_type": "audio", "source_ids": f"{_SRC_A},{_SRC_B}"},
+    )
+    kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
+    assert kwargs["source_ids"] == (_SRC_A, _SRC_B)
+
+
+async def test_artifact_generate_source_ids_scalar_string(mcp_call, mock_client) -> None:
+    """``source_ids`` sent as a bare scalar string is tolerated (coerce_list)."""
+    mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
+    await mcp_call(
+        "artifact_generate",
+        {"notebook": NB_ID, "artifact_type": "audio", "source_ids": _SRC_A},
+    )
+    kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
+    assert kwargs["source_ids"] == (_SRC_A,)
+
+
+async def test_artifact_generate_source_ids_empty_string_uses_all(mcp_call, mock_client) -> None:
+    """An empty string coerces to [] => collapses to None (all sources)."""
+    mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
+    await mcp_call(
+        "artifact_generate",
+        {"notebook": NB_ID, "artifact_type": "audio", "source_ids": ""},
+    )
+    kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
+    assert kwargs["source_ids"] is None
+
+
+async def test_artifact_generate_source_ids_whitespace_uses_all(mcp_call, mock_client) -> None:
+    """A whitespace-only string coerces to [] => collapses to None (all sources)."""
+    mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
+    await mcp_call(
+        "artifact_generate",
+        {"notebook": NB_ID, "artifact_type": "audio", "source_ids": "   "},
+    )
+    kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
+    assert kwargs["source_ids"] is None
+
+
 async def test_artifact_generate_unknown_type_is_validation_error(mcp_call, mock_client) -> None:
     """An unknown artifact_type is rejected at the Literal schema boundary."""
     with pytest.raises(ToolError) as excinfo:

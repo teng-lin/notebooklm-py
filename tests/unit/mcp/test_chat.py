@@ -60,7 +60,9 @@ async def test_chat_ask(mcp_call, mock_client) -> None:
     result = await mcp_call("chat_ask", {"notebook": NB_ID, "question": "what?"})
     assert result.structured_content["answer"] == "42"
     assert result.structured_content["conversation_id"] == CONV_ID
-    mock_client.chat.ask.assert_awaited_once_with(NB_ID, "what?", conversation_id=None)
+    mock_client.chat.ask.assert_awaited_once_with(
+        NB_ID, "what?", source_ids=None, conversation_id=None
+    )
 
 
 async def test_chat_ask_passes_conversation_id(mcp_call, mock_client) -> None:
@@ -71,7 +73,9 @@ async def test_chat_ask_passes_conversation_id(mcp_call, mock_client) -> None:
         "chat_ask",
         {"notebook": NB_ID, "question": "follow up", "conversation_id": CONV_ID},
     )
-    mock_client.chat.ask.assert_awaited_once_with(NB_ID, "follow up", conversation_id=CONV_ID)
+    mock_client.chat.ask.assert_awaited_once_with(
+        NB_ID, "follow up", source_ids=None, conversation_id=CONV_ID
+    )
 
 
 async def test_chat_ask_resolves_notebook_by_name(mcp_call, mock_client) -> None:
@@ -82,7 +86,81 @@ async def test_chat_ask_resolves_notebook_by_name(mcp_call, mock_client) -> None
         return_value=FakeAskResult(answer="hi", conversation_id=CONV_ID)
     )
     await mcp_call("chat_ask", {"notebook": "My Notebook", "question": "q"})
-    mock_client.chat.ask.assert_awaited_once_with(NB_ID, "q", conversation_id=None)
+    mock_client.chat.ask.assert_awaited_once_with(NB_ID, "q", source_ids=None, conversation_id=None)
+
+
+# Full-UUID source ids take resolve_source's fast path (no listing needed).
+_SRC_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+_SRC_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+
+async def test_chat_ask_omitting_source_ids_uses_all(mcp_call, mock_client) -> None:
+    """Omitting ``source_ids`` => None (=> all sources, client.chat.ask's contract)."""
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="42", conversation_id=CONV_ID)
+    )
+    await mcp_call("chat_ask", {"notebook": NB_ID, "question": "what?"})
+    assert mock_client.chat.ask.await_args.kwargs["source_ids"] is None
+
+
+async def test_chat_ask_source_ids_list(mcp_call, mock_client) -> None:
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="42", conversation_id=CONV_ID)
+    )
+    await mcp_call(
+        "chat_ask",
+        {"notebook": NB_ID, "question": "what?", "source_ids": [_SRC_A, _SRC_B]},
+    )
+    assert mock_client.chat.ask.await_args.kwargs["source_ids"] == [_SRC_A, _SRC_B]
+
+
+async def test_chat_ask_source_ids_json_string(mcp_call, mock_client) -> None:
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="42", conversation_id=CONV_ID)
+    )
+    await mcp_call(
+        "chat_ask",
+        {"notebook": NB_ID, "question": "what?", "source_ids": f'["{_SRC_A}"]'},
+    )
+    assert mock_client.chat.ask.await_args.kwargs["source_ids"] == [_SRC_A]
+
+
+async def test_chat_ask_source_ids_comma_string(mcp_call, mock_client) -> None:
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="42", conversation_id=CONV_ID)
+    )
+    await mcp_call(
+        "chat_ask",
+        {"notebook": NB_ID, "question": "what?", "source_ids": f"{_SRC_A},{_SRC_B}"},
+    )
+    assert mock_client.chat.ask.await_args.kwargs["source_ids"] == [_SRC_A, _SRC_B]
+
+
+async def test_chat_ask_source_ids_scalar_string(mcp_call, mock_client) -> None:
+    """A bare scalar-string source_ids resolves/passes a single id (coerce_list)."""
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="42", conversation_id=CONV_ID)
+    )
+    await mcp_call("chat_ask", {"notebook": NB_ID, "question": "what?", "source_ids": _SRC_A})
+    assert mock_client.chat.ask.await_args.kwargs["source_ids"] == [_SRC_A]
+
+
+async def test_chat_ask_empty_source_ids_uses_all(mcp_call, mock_client) -> None:
+    """An explicit empty list => None (all sources), never [] (zero sources)."""
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="42", conversation_id=CONV_ID)
+    )
+    await mcp_call("chat_ask", {"notebook": NB_ID, "question": "what?", "source_ids": []})
+    assert mock_client.chat.ask.await_args.kwargs["source_ids"] is None
+
+
+async def test_chat_ask_whitespace_source_ids_uses_all(mcp_call, mock_client) -> None:
+    """A whitespace-only string coerces to [] => collapses to None (all sources)."""
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="42", conversation_id=CONV_ID)
+    )
+    await mcp_call("chat_ask", {"notebook": NB_ID, "question": "what?", "source_ids": "   "})
+    assert mock_client.chat.ask.await_args.kwargs["source_ids"] is None
 
 
 async def test_chat_configure_goal_and_length(mcp_call, mock_client) -> None:
