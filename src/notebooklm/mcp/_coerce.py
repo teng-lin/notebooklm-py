@@ -32,9 +32,10 @@ def coerce_list(value: Any) -> list[str] | None:
     * ``None`` -> ``None`` (preserves the "unset"/"all" contract — NOT ``[]``).
     * ``list`` / ``tuple`` -> each element stringified.
     * a JSON-array string (``'["a","b"]'``) -> the parsed list, stringified. If
-      the string starts with ``[`` but is not valid JSON or not a JSON list,
-      matched outer brackets are stripped (handling the bracketed-but-unquoted
-      ``"[a, b]"`` some clients emit) and it falls back to comma-splitting.
+      the string starts with ``[`` but is not valid JSON or not a JSON list, the
+      leading ``[`` (and a trailing ``]`` if present) is stripped — handling the
+      bracketed-but-unquoted ``"[a, b]"`` / unbalanced ``"[a,b"`` some clients
+      emit — and it falls back to comma-splitting.
     * any other string -> split on commas, stripping whitespace and dropping
       empty segments (so ``""`` / ``"   "`` -> ``[]``, ``"a"`` -> ``["a"]``).
     * a bare non-string scalar (e.g. ``5``) -> ``["5"]`` (defensive: a non-string
@@ -57,11 +58,12 @@ def coerce_list(value: Any) -> list[str] | None:
             if isinstance(parsed, list):
                 return [str(item) for item in parsed]
             # Not valid JSON (or not a JSON list) — e.g. the bracketed-but-unquoted
-            # "[a, b]" some clients/LLMs emit. Strip matched outer brackets so the
-            # comma-split below yields clean items ("a"/"b"), not "[a"/"b]". An
-            # unbalanced "[a,b" (no closing bracket) is left as-is.
-            if text.endswith("]"):
-                text = text.removeprefix("[").removesuffix("]")
+            # "[a, b]" some clients/LLMs emit. A leading "[" is never a valid source
+            # ref, so strip it (and a matching trailing "]") before the comma-split
+            # below — yielding clean items ("a"/"b") instead of "[a"/"b]". This also
+            # covers the unbalanced "[a,b" case so a stray "[" can't leak into a
+            # resolved id and surface as a confusing "not found".
+            text = text.removeprefix("[").removesuffix("]")
         return [part.strip() for part in text.split(",") if part.strip()]
     # bare non-string scalar (int, etc.)
     return [str(value)]

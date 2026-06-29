@@ -85,6 +85,7 @@ def test_bracketed_unquoted_single() -> None:
     assert coerce_list("[a]") == ["a"]
 
 
-def test_unbalanced_open_bracket_falls_back_to_comma_split() -> None:
-    """An unbalanced "[a,b" (no closing bracket) is NOT stripped — comma-split as-is."""
-    assert coerce_list("[a,b") == ["[a", "b"]
+def test_unbalanced_open_bracket_strips_leading_bracket() -> None:
+    """An unbalanced "[a,b" (no closing bracket) still has its stray leading "["
+    stripped so it can't leak into a resolved id."""
+    assert coerce_list("[a,b") == ["a", "b"]
