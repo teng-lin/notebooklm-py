@@ -24,9 +24,7 @@ These require auth (``requires_auth``) and the ``mcp`` extra
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import AsyncIterator
-from typing import Any
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -34,41 +32,25 @@ import pytest
 # Require the `mcp` extra; skip the whole module cleanly when fastmcp is absent.
 pytest.importorskip("fastmcp")
 
-from fastmcp import Client  # noqa: E402 - after importorskip guard
-
-from notebooklm import NotebookLMClient  # noqa: E402 - after importorskip guard
-from notebooklm.mcp.server import create_server  # noqa: E402 - after importorskip guard
-
+# Shared in-memory MCP driver lives in a ``_``-prefixed helper module so the
+# sibling live-MCP test modules can reuse it without importing one ``test_*``
+# module from another (forbidden by test_no_cross_test_imports). Re-exported
+# under the historical ``_call`` / ``_mcp_client`` names this module already used.
+from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
+    call_tool as _call,
+)
+from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
+    download_type as _download_type,
+)
+from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
+    mcp_client as _mcp_client,
+)
+from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
+    pick_downloadable_artifact as _pick_downloadable_artifact,
+)
 from .conftest import requires_auth  # noqa: E402 - after importorskip guard
 
 pytestmark = pytest.mark.e2e
-
-
-@contextlib.asynccontextmanager
-async def _mcp_client(real_client: NotebookLMClient) -> AsyncIterator[Client]:
-    """Yield an in-memory FastMCP ``Client`` bound to ``real_client``.
-
-    Wraps the already-open E2E ``client`` fixture in a no-op async-context-manager
-    factory so the server lifespan re-yields the same client (the fixture owns the
-    open/close lifecycle; the factory must NOT close it).
-    """
-
-    @contextlib.asynccontextmanager
-    async def factory() -> AsyncIterator[NotebookLMClient]:
-        yield real_client
-
-    server = create_server(client_factory=factory)
-    async with Client(server) as mcp_client:
-        yield mcp_client
-
-
-async def _call(
-    real_client: NotebookLMClient, name: str, args: dict[str, Any] | None = None
-) -> Any:
-    """Call one MCP tool and return its structured content."""
-    async with _mcp_client(real_client) as mcp_client:
-        result = await mcp_client.call_tool(name, args or {})
-    return result.structured_content
 
 
 @requires_auth
@@ -204,3 +186,328 @@ class TestMcpNameResolution:
         # Case-insensitive match also resolves to the same id.
         described_upper = await _call(client, "notebook_describe", {"notebook": title.upper()})
         assert described_upper["notebook_id"] == nb_id
+
+
+# Tool → owning-test matrix. Every one of the 26 registered tools must map to a
+# test (or a documented owner) so a newly-added tool fails ``test_tool_matrix``
+# until it gains live coverage. ``test_tool_matrix`` asserts this set equals the
+# live manifest.
+TOOL_COVERAGE: dict[str, str] = {
+    # notebooks / meta
+    "notebook_list": "TestMcpReadOnly.test_notebook_list",
+    "notebook_create": "TestMcpLifecycle.test_create_describe_rename_delete",
+    "notebook_describe": "TestMcpLifecycle / TestMcpNameResolution",
+    "notebook_rename": "TestMcpLifecycle.test_create_describe_rename_delete",
+    "notebook_delete": "TestMcpLifecycle.test_create_describe_rename_delete",
+    "server_info": "TestMcpReadOnly.test_server_info",
+    # sources
+    "source_add": "TestMcpSources.test_source_roundtrip / test_source_add_text",
+    "source_list": "TestMcpSources.test_source_roundtrip",
+    "source_get_content": "TestMcpSources.test_source_roundtrip",
+    "source_rename": "TestMcpSources.test_source_roundtrip",
+    "source_delete": "TestMcpSources.test_source_roundtrip",
+    "source_wait": "TestMcpSources.test_source_roundtrip",
+    # chat
+    "chat_ask": "TestMcpChat.test_configure_then_ask",
+    "chat_configure": "TestMcpChat.test_configure_then_ask",
+    # notes
+    "note_create": "TestMcpNotes.test_note_crud",
+    "note_list": "TestMcpNotes.test_note_crud",
+    "note_update": "TestMcpNotes.test_note_crud",
+    "note_delete": "TestMcpNotes.test_note_crud",
+    # artifacts
+    "artifact_list": "TestMcpArtifacts.test_artifact_list",
+    "artifact_generate": "TestMcpArtifacts.test_generate_report_wiring (variants)",
+    "artifact_status": "TestMcpArtifacts.test_generate_report_wiring (variants)",
+    "artifact_download": "TestMcpArtifacts.test_download_existing_artifact",
+    # research
+    "research_start": "TestMcpResearch.test_start_status_cancel (variants)",
+    "research_status": "TestMcpResearch.test_status_readonly",
+    "research_cancel": "TestMcpResearch.test_start_status_cancel (variants)",
+    "research_import": "tests/e2e research suite (CLI import roundtrip)",
+}
+
+
+@requires_auth
+class TestMcpToolMatrix:
+    """Every registered tool is accounted for by a live test (the 26-tool matrix)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.readonly
+    async def test_tool_matrix(self, client):
+        """The owning-test matrix must cover EXACTLY the live tool manifest.
+
+        Guards against a new tool shipping without live MCP coverage: a tool
+        added to the server but missing from ``TOOL_COVERAGE`` fails here.
+        """
+        async with _mcp_client(client) as mcp_client:
+            tools = await mcp_client.list_tools()
+        live = {tool.name for tool in tools}
+        documented = set(TOOL_COVERAGE)
+        assert documented == live, (
+            f"tool/test matrix drift — only in manifest: {sorted(live - documented)}; "
+            f"only in matrix: {sorted(documented - live)}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.readonly
+    async def test_every_readonly_tool_is_callable(self, client, read_only_notebook_id):
+        """Each read-only tool dispatches live and returns a structured dict.
+
+        Covers the read-only surface that is callable with only a notebook (or
+        nothing) plus ``source_get_content`` (a real source id is resolved from
+        ``source_list``). ``artifact_status`` needs a live ``task_id`` and is
+        instead covered by ``TestMcpArtifacts`` (the generation wiring smoke).
+        """
+        nb = read_only_notebook_id
+
+        # No-arg reads.
+        assert isinstance(await _call(client, "notebook_list"), dict)
+        assert isinstance(await _call(client, "server_info"), dict)
+
+        # Notebook-scoped reads.
+        for name in ("notebook_describe", "source_list", "artifact_list", "note_list"):
+            structured = await _call(client, name, {"notebook": nb})
+            assert isinstance(structured, dict), f"{name} returned {type(structured)}"
+
+        # research_status with no in-flight task classifies cleanly (no_research / etc.).
+        research = await _call(client, "research_status", {"notebook": nb})
+        assert "status" in research
+
+        # source_get_content needs a real source id — resolve one from the listing.
+        listing = await _call(client, "source_list", {"notebook": nb})
+        sources = listing.get("sources") or []
+        if sources:
+            src_id = sources[0]["id"]
+            content = await _call(client, "source_get_content", {"notebook": nb, "source": src_id})
+            assert content["source"]["id"] == src_id
+
+
+@requires_auth
+class TestMcpSources:
+    """Source domain: add / wait / list / get / rename / delete through MCP tools."""
+
+    @pytest.mark.asyncio
+    async def test_source_roundtrip(self, client, temp_notebook):
+        """A URL source round-trips: add → (wait) → list → get → rename → delete."""
+        nb = temp_notebook.id
+
+        added = await _call(
+            client,
+            "source_add",
+            {"notebook": nb, "source_type": "url", "url": "https://example.com"},
+        )
+        assert isinstance(added, dict)
+        src_id = (added.get("source") or {}).get("id")
+        assert src_id, f"source_add did not return a source id: {added}"
+
+        # Wait for processing (best-effort: the roundtrip's value is the wiring,
+        # not example.com's fetch outcome — just assert it dispatched cleanly).
+        waited = await _call(
+            client, "source_wait", {"notebook": nb, "source": src_id, "timeout": 120.0}
+        )
+        assert waited.get("notebook_id") == nb
+        assert "status" in waited
+
+        listing = await _call(client, "source_list", {"notebook": nb})
+        ids = [s["id"] for s in listing["sources"]]
+        assert src_id in ids
+
+        content = await _call(client, "source_get_content", {"notebook": nb, "source": src_id})
+        assert content["source"]["id"] == src_id
+
+        renamed = await _call(
+            client,
+            "source_rename",
+            {"notebook": nb, "source": src_id, "new_title": "Renamed Source"},
+        )
+        assert isinstance(renamed, dict)
+
+        # Confirm-gating: preview without confirm, then confirm=True deletes.
+        preview = await _call(client, "source_delete", {"notebook": nb, "source": src_id})
+        assert preview["status"] == "needs_confirmation"
+        deleted = await _call(
+            client, "source_delete", {"notebook": nb, "source": src_id, "confirm": True}
+        )
+        assert deleted["status"] == "deleted"
+        assert deleted["source_id"] == src_id
+
+    @pytest.mark.asyncio
+    async def test_source_add_text(self, client, temp_notebook):
+        """A text source adds through MCP and appears in the listing."""
+        nb = temp_notebook.id
+        added = await _call(
+            client,
+            "source_add",
+            {
+                "notebook": nb,
+                "source_type": "text",
+                "text": "Live MCP text source body for the e2e suite.",
+                "title": "MCP Text Source",
+            },
+        )
+        src_id = (added.get("source") or {}).get("id")
+        assert src_id, f"text source_add did not return an id: {added}"
+        listing = await _call(client, "source_list", {"notebook": nb})
+        assert src_id in [s["id"] for s in listing["sources"]]
+
+
+@requires_auth
+class TestMcpChat:
+    """Chat domain: configure then ask against the read-only notebook."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.readonly
+    async def test_configure_then_ask(self, client, read_only_notebook_id):
+        """``chat_configure`` then ``chat_ask`` returns a non-empty answer."""
+        nb = read_only_notebook_id
+
+        configured = await _call(
+            client, "chat_configure", {"notebook": nb, "response_length": "shorter"}
+        )
+        assert isinstance(configured, dict)
+
+        answer = await _call(
+            client, "chat_ask", {"notebook": nb, "question": "What is this notebook about?"}
+        )
+        assert answer.get("answer"), f"chat_ask returned no answer: {answer}"
+        # citations land under ``references`` (the ChatAnswer wire field).
+        assert isinstance(answer.get("references", []), list)
+
+
+@requires_auth
+class TestMcpNotes:
+    """Note domain: create / list / update / delete through MCP tools."""
+
+    @pytest.mark.asyncio
+    async def test_note_crud(self, client, temp_notebook):
+        nb = temp_notebook.id
+
+        created = await _call(
+            client,
+            "note_create",
+            {"notebook": nb, "title": "E2E MCP Note", "content": "Initial body."},
+        )
+        note_id = created["note_id"]
+        assert note_id
+        # note_create returns a `created: True` bool (NOT a `status` key like
+        # note_update/note_delete — the tool return shapes are asymmetric).
+        assert created["created"] is True
+
+        listing = await _call(client, "note_list", {"notebook": nb})
+        assert note_id in [n["id"] for n in listing["notes"]]
+
+        updated = await _call(
+            client, "note_update", {"notebook": nb, "note": note_id, "content": "Updated body."}
+        )
+        assert updated["status"] == "updated"
+        assert updated["note_id"] == note_id
+
+        preview = await _call(client, "note_delete", {"notebook": nb, "note": note_id})
+        assert preview["status"] == "needs_confirmation"
+        deleted = await _call(
+            client, "note_delete", {"notebook": nb, "note": note_id, "confirm": True}
+        )
+        assert deleted["status"] == "deleted"
+        assert deleted["note_id"] == note_id
+
+
+@requires_auth
+class TestMcpArtifacts:
+    """Artifact domain: list (read) + a download of an existing artifact, plus a
+    generation **wiring smoke** (marked ``variants`` — heavy, no poll-to-done)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.readonly
+    async def test_artifact_list(self, client, generation_notebook_id):
+        """``artifact_list`` returns the notebook's artifacts as a list."""
+        structured = await _call(client, "artifact_list", {"notebook": generation_notebook_id})
+        assert isinstance(structured["artifacts"], list)
+
+    @pytest.mark.asyncio
+    @pytest.mark.readonly
+    async def test_download_existing_artifact(self, client, generation_notebook_id, tmp_path):
+        """Download an EXISTING artifact (no fresh generation) to a local path.
+
+        Reuses whatever downloadable artifact the notebook already has (generation
+        e2e populates them nightly). Skips cleanly when none is present so this
+        never depends on cross-file test ordering.
+        """
+        listing = await _call(client, "artifact_list", {"notebook": generation_notebook_id})
+        candidate = _pick_downloadable_artifact(listing["artifacts"])
+        if candidate is None:
+            pytest.skip("no existing downloadable artifact on the generation notebook")
+
+        dl_type = _download_type(candidate["_artifact_type"])
+        out_path = tmp_path / f"artifact-{dl_type}"
+        result = await _call(
+            client,
+            "artifact_download",
+            {
+                "notebook": generation_notebook_id,
+                "artifact_type": dl_type,
+                "path": str(out_path),
+            },
+        )
+        assert isinstance(result, dict)
+        # The stdio download core writes the file and reports its path; assert
+        # bytes landed on disk.
+        written = Path(result.get("output_path") or out_path)
+        assert written.exists(), f"download produced no file: {result}"
+        assert written.stat().st_size > 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.variants
+    async def test_generate_report_wiring(self, client, generation_notebook_id):
+        """Wiring smoke: ``artifact_generate`` threads through and returns a
+        ``task_id``; one ``artifact_status`` poll dispatches. Does NOT poll to
+        completion (the RPC health of generation is proven by ``test_generation``)."""
+        generated = await _call(
+            client,
+            "artifact_generate",
+            {"notebook": generation_notebook_id, "artifact_type": "report"},
+        )
+        task_id = generated.get("task_id")
+        assert task_id, f"artifact_generate returned no task_id: {generated}"
+
+        status = await _call(
+            client,
+            "artifact_status",
+            {"notebook": generation_notebook_id, "task_id": task_id},
+        )
+        assert status["notebook_id"] == generation_notebook_id
+        assert "status" in status
+
+
+@requires_auth
+class TestMcpResearch:
+    """Research domain: a read-only status smoke (nightly) + a start/cancel wiring
+    smoke (``variants`` — spawns a backend job)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.readonly
+    async def test_status_readonly(self, client, read_only_notebook_id):
+        """``research_status`` classifies a notebook with no in-flight research."""
+        structured = await _call(client, "research_status", {"notebook": read_only_notebook_id})
+        assert "status" in structured
+        assert structured["notebook_id"] == read_only_notebook_id
+
+    @pytest.mark.asyncio
+    @pytest.mark.variants
+    async def test_start_status_cancel(self, client, temp_notebook):
+        """Wiring smoke: start a fast web research run, poll status once, cancel."""
+        nb = temp_notebook.id
+        started = await _call(
+            client,
+            "research_start",
+            {"notebook": nb, "query": "history of machine learning", "mode": "fast"},
+        )
+        assert started["notebook_id"] == nb
+
+        status = await _call(client, "research_status", {"notebook": nb})
+        assert "status" in status
+
+        run_id = status.get("task_id") or started.get("task_id")
+        if run_id:
+            cancelled = await _call(client, "research_cancel", {"notebook": nb, "run_id": run_id})
+            assert cancelled["cancelled"] is True

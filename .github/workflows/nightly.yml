@@ -129,8 +129,10 @@ jobs:
       shell: bash
       run: |
         # --extra impersonate so the ubuntu curl_cffi smoke step below can run.
+        # --extra mcp so the MCP/CLI live e2e suite (tests/e2e/test_mcp*.py,
+        # test_cli_live.py) actually RUNS instead of importorskip-ping fastmcp.
         attempt=1; max=3
-        until uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate; do
+        until uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra mcp; do
           if [ "$attempt" -ge "$max" ]; then
             echo "::error::uv sync failed after $max attempts" >&2
             exit 1

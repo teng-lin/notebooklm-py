@@ -1,14 +1,21 @@
 """E2E test fixtures and configuration."""
 
+import contextlib
 import hashlib
 import logging
 import os
+import subprocess
 import sys
 import warnings
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 import pytest
+
+if TYPE_CHECKING:
+    from notebooklm.client import NotebookLMClient
 
 # Load .env file if python-dotenv is available
 try:
@@ -899,3 +906,150 @@ async def multi_source_notebook_id(client):
             warnings.warn(
                 f"Failed to delete multi-source notebook {notebook_id}: {e}", stacklevel=2
             )
+
+
+# =============================================================================
+# Layer B — in-process MCP HTTP transport (ASGI, no socket)
+# =============================================================================
+# These helpers build the FastMCP http app bound to the LIVE e2e client (via the
+# ``client_factory`` seam) and drive it entirely in-process over
+# ``httpx.ASGITransport`` — the proven pattern from
+# ``tests/unit/mcp/test_remote_auth.py``. No port, no subprocess. fastmcp is
+# imported LAZILY inside these helpers so the shared e2e conftest still loads
+# cleanly when the ``mcp`` extra is absent (non-MCP e2e suites must not break).
+
+#: Bearer token the Layer-B tests authenticate the in-process http transport
+#: with. Arbitrary (the server compares against whatever ``build_auth`` was given).
+MCP_TEST_BEARER = "e2e-test-bearer-token"
+
+#: Base URL the in-process ASGI app answers on. Requests are routed by
+#: ``httpx.ASGITransport`` straight to the app object, so the host is cosmetic.
+_ASGI_BASE_URL = "http://app"
+
+
+class InProcessMcp:
+    """Handle to an in-process MCP http app for the Layer-B e2e tests.
+
+    Exposes both transports the tests need within one app lifespan:
+
+    * :meth:`mcp_client` — a ``fastmcp.Client`` over ``StreamableHttpTransport``
+      that drives MCP tool calls through the bearer-gated ``/mcp`` route.
+    * :meth:`raw_client` — a plain ``httpx.AsyncClient`` for the raw custom
+      routes (``/files/*``, ``/.well-known/*``, and the unauth ``/mcp`` probe).
+    """
+
+    def __init__(self, app: Any, token: str) -> None:
+        self.app = app
+        self.token = token
+
+    def mcp_client(self, token: str | None = None) -> Any:
+        """Return a (not-yet-entered) ``fastmcp.Client`` bearer-authed to the app."""
+        import httpx
+        from fastmcp import Client
+        from fastmcp.client.transports import StreamableHttpTransport
+
+        bearer = self.token if token is None else token
+
+        def httpx_factory(**kwargs: Any) -> httpx.AsyncClient:
+            # fastmcp passes its own transport; drive the app in-process via ASGI.
+            kwargs.pop("transport", None)
+            return httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=self.app), base_url=_ASGI_BASE_URL, **kwargs
+            )
+
+        return Client(
+            StreamableHttpTransport(
+                f"{_ASGI_BASE_URL}/mcp",
+                headers={"Authorization": f"Bearer {bearer}"},
+                httpx_client_factory=httpx_factory,
+            )
+        )
+
+    def raw_client(self) -> Any:
+        """Return a (not-yet-entered) plain ``httpx.AsyncClient`` over the ASGI app."""
+        import httpx
+
+        return httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=self.app), base_url=_ASGI_BASE_URL
+        )
+
+
+def asgi_path(url: str) -> str:
+    """Strip a minted signed URL down to the path the in-process ASGI client hits.
+
+    Minted ``/files/*`` URLs carry the configured public origin
+    (``https://127.0.0.1``); the in-process httpx client routes by path, so only
+    the path segment matters. Preserves any query string (none today, but cheap).
+    """
+    parts = urlsplit(url)
+    return parts.path + (f"?{parts.query}" if parts.query else "")
+
+
+@contextlib.asynccontextmanager
+async def inprocess_mcp_server(
+    real_client: "NotebookLMClient",
+    *,
+    token: str | None = MCP_TEST_BEARER,
+    oauth: Any = None,
+    file_transfer: Any = None,
+) -> AsyncIterator[InProcessMcp]:
+    """Build the MCP http app bound to ``real_client`` and enter its lifespan.
+
+    Mirrors ``tests/unit/mcp/test_remote_auth.py`` exactly, but the
+    ``client_factory`` yields the already-open LIVE e2e client (the fixture owns
+    its lifecycle, so the factory must NOT close it). Entering
+    ``app.router.lifespan_context`` is REQUIRED — the ``/files/*`` handlers read
+    the lifespan-bound client off ``app.state`` and 500 without it.
+    """
+    from notebooklm.mcp._auth import build_auth
+    from notebooklm.mcp.server import create_server
+
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator["NotebookLMClient"]:
+        yield real_client
+
+    server = create_server(
+        client_factory=factory,
+        auth=build_auth(token, oauth),
+        file_transfer=file_transfer,
+    )
+    app = server.http_app()
+    async with app.router.lifespan_context(app):
+        yield InProcessMcp(app, token or MCP_TEST_BEARER)
+
+
+# =============================================================================
+# CLI subprocess helper (deliverable 4)
+# =============================================================================
+
+
+def run_cli(
+    *args: str,
+    notebook: str | None = None,
+    extra_env: dict[str, str] | None = None,
+    timeout: float = 180.0,
+) -> subprocess.CompletedProcess[str]:
+    """Invoke the CLI as ``sys.executable -m notebooklm.notebooklm_cli``.
+
+    Runs the real installed CLI in a child process so the binary entry point,
+    argument parsing, and ``--json`` stdout/stderr split are exercised end to
+    end. The child inherits the parent environment (so ``NOTEBOOKLM_AUTH_JSON`` /
+    storage materialized for the e2e client carries over) — never ``--profile``,
+    which would make the CLI ignore an inline ``NOTEBOOKLM_AUTH_JSON`` secret.
+
+    Pass the target notebook via ``notebook=`` (exported as
+    ``NOTEBOOKLM_NOTEBOOK``) or an explicit ``-n <id>`` in ``args`` — NEVER
+    ``notebooklm use`` (that mutates shared profile state).
+    """
+    env = os.environ.copy()
+    if notebook is not None:
+        env["NOTEBOOKLM_NOTEBOOK"] = notebook
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        [sys.executable, "-m", "notebooklm.notebooklm_cli", *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
+    )

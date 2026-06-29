@@ -252,6 +252,36 @@ no break against the baseline) is a CI failure, not silent cruft.
   2. Commit and push
   3. Re-run RPC health check
 
+### MCP connector smoke (manual, per release)
+
+The nightly E2E run now installs `--extra mcp` and exercises the MCP/CLI layers
+against the live API (`tests/e2e/test_mcp*.py`, `test_cli_live.py`) — so the
+on-demand Nightly run above already covers Layer A (tools ⇄ live API) and Layer B
+(HTTP transport + signed-URL routes, in-process). What it **cannot** cover is
+claude.ai actually driving the remote connector (OAuth login + the browser
+upload/download pages). Verify that by hand, once per release (~10 min):
+
+- [ ] `cd deploy && make dev` (or point at your deployed tunnel) and connect the
+      connector in claude.ai.
+- [ ] **OAuth login page** renders and the password gate accepts your password.
+- [ ] List notebooks through the connector.
+- [ ] Add a URL source.
+- [ ] Ask a question and get a grounded answer.
+- [ ] Generate **one** artifact (e.g. a report).
+- [ ] **Upload** a local file via the signed link (open it in a browser, pick a
+      file, confirm the source lands).
+- [ ] **Download** the generated artifact via the signed link.
+
+Bootstrap / sanity helper for the upload+download halves (drives a RUNNING
+server's file routes, prints PASS/FAIL):
+
+```bash
+python scripts/mcp_live_smoke.py \
+    --base-url https://your-tunnel.example.com \
+    --bearer "$NOTEBOOKLM_MCP_TOKEN" \
+    --notebook <notebook-id>
+```
+
 ---
 
 ## Package Verification
