@@ -29,12 +29,33 @@ from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     ArtifactNotFoundError,
     NotebookNotFoundError,
 )
+from notebooklm.mcp.tools.artifacts import _KIND_OPTIONS  # noqa: E402
 from notebooklm.types import Artifact, ArtifactType, GenerationState  # noqa: E402
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
 NB_ID = "11111111-1111-1111-1111-111111111111"
 TASK_ID = "task-abc-123"
+
+
+def _schema_enum(prop: dict[str, Any]) -> set[str] | None:
+    """The JSON-schema ``enum`` for a tool param, or ``None`` if it has none.
+
+    Handles BOTH shapes FastMCP/Pydantic emits: a required ``Literal`` renders a
+    flat ``{"enum": [...]}``; an optional ``Literal[...] | None`` renders
+    ``{"anyOf": [{"enum": [...], "type": "string"}, {"type": "null"}]}``. A
+    free-text ``str``/``str | None`` param has no ``enum`` branch → ``None``.
+    """
+    if "enum" in prop:
+        return set(prop["enum"])
+    # ``anyOf`` is Pydantic v2's shape for ``T | None`` today; also scan ``oneOf``
+    # so the helper survives a future schema-generation switch to the JSON-Schema
+    # mutually-exclusive form rather than silently returning ``None``.
+    for branch in prop.get("anyOf", []) + prop.get("oneOf", []):
+        if "enum" in branch:
+            return set(branch["enum"])
+    return None
+
 
 #: Real-``Artifact`` builders for the download core (it filters on
 #: ``isinstance(a, Artifact)`` + the int type code + ``is_completed``).
@@ -269,16 +290,6 @@ async def test_artifact_generate_unknown_type_is_validation_error(mcp_call, mock
     assert "audio" in str(excinfo.value) and "report" in str(excinfo.value)
 
 
-async def test_artifact_generate_bad_enum_is_validation_error(mcp_call, mock_client) -> None:
-    """A bad per-kind option (e.g. report_format) projects as VALIDATION."""
-    with pytest.raises(ToolError) as excinfo:
-        await mcp_call(
-            "artifact_generate",
-            {"notebook": NB_ID, "artifact_type": "report", "report_format": "nonsense"},
-        )
-    assert "VALIDATION" in str(excinfo.value)
-
-
 async def test_artifact_generate_bad_language_is_validation_error(mcp_call, mock_client) -> None:
     """An unsupported ``language`` projects as VALIDATION up front (not forwarded raw)."""
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
@@ -404,25 +415,76 @@ async def test_artifact_generate_mind_map_forwards_instructions(mcp_call, mock_c
     [
         ("video", {"style": "professional"}),  # infographic-only value, invalid for video
         ("infographic", {"style": "classic"}),  # video-only value, invalid for infographic
-        ("mind-map", {"map_kind": "bogus"}),  # core wouldn't catch — MCP must
-        ("slide-deck", {"deck_format": "nonsense"}),
     ],
-    ids=["video-bad-style", "infographic-bad-style", "bad-map-kind", "bad-deck-format"],
+    ids=["video-bad-style", "infographic-bad-style"],
 )
-async def test_artifact_generate_bad_option_value_is_validation_error(
+async def test_artifact_generate_cross_kind_style_is_validation_error(
     mcp_call, mock_client, artifact_type: str, opts: dict
 ) -> None:
-    """A value outside the kind's choice set projects as VALIDATION.
+    """A ``style`` value that IS in the global union Literal but invalid for THIS kind
+    projects as VALIDATION via the runtime ``_KIND_OPTIONS`` loop.
 
-    The per-type ``style`` cases prove the video/infographic style sets are enforced
-    separately (the two overlap only on auto/anime/kawaii).
+    ``style`` is a single union Literal (video ∪ infographic), so these values pass
+    the schema boundary and must be narrowed per-kind at runtime — proving the
+    video/infographic style sets stay enforced separately (they overlap only on
+    auto/anime/kawaii).
     """
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
             "artifact_generate",
             {"notebook": NB_ID, "artifact_type": artifact_type, **opts},
         )
-    assert "VALIDATION" in str(excinfo.value)
+    msg = str(excinfo.value)
+    assert "VALIDATION" in msg
+    # ...and NOT a boundary rejection: these values are in the global union Literal,
+    # so they pass Pydantic and are caught by the runtime per-kind narrowing.
+    assert "literal_error" not in msg
+
+
+@pytest.mark.parametrize(
+    "artifact_type,opts,accepted",
+    [
+        (
+            "report",
+            {"report_format": "nonsense"},
+            ("briefing-doc", "study-guide", "blog-post", "custom"),
+        ),
+        ("mind-map", {"map_kind": "bogus"}, ("interactive", "note-backed")),
+        ("slide-deck", {"deck_format": "nonsense"}, ("detailed", "presenter")),
+        # A value outside the GLOBAL union ``style`` Literal rejects at the boundary
+        # too (distinct from the cross-kind cases above, which ARE in the union).
+        (
+            "video",
+            {"style": "nonsense"},
+            tuple(
+                set(_KIND_OPTIONS["video"]["style"]) | set(_KIND_OPTIONS["infographic"]["style"])
+            ),
+        ),
+    ],
+    ids=["bad-report-format", "bad-map-kind", "bad-deck-format", "out-of-union-style"],
+)
+async def test_artifact_generate_bad_option_value_is_schema_boundary_error(
+    mcp_call, mock_client, artifact_type: str, opts: dict, accepted: tuple[str, ...]
+) -> None:
+    """An out-of-enum value for a ``Literal`` option rejects at the schema boundary
+    (pydantic ``literal_error``), surfacing the accepted members — NOT the runtime
+    ``"VALIDATION"`` projection (which only fires for values that pass the boundary,
+    i.e. the cross-kind ``style`` cases above).
+
+    This is the point of the Literal typing: bad values reject earlier (no
+    ``"VALIDATION"`` substring — same as the unknown-``artifact_type`` case), with
+    the schema enum surfaced to the agent. The ``"VALIDATION" not in`` +
+    ``literal_error in`` assertions are what actually distinguish a boundary
+    rejection from the runtime path (both list the accepted members)."""
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call(
+            "artifact_generate",
+            {"notebook": NB_ID, "artifact_type": artifact_type, **opts},
+        )
+    msg = str(excinfo.value)
+    assert all(member in msg for member in accepted)
+    assert "VALIDATION" not in msg
+    assert "literal_error" in msg
 
 
 @pytest.mark.parametrize(
@@ -523,6 +585,59 @@ async def test_artifact_generate_exposes_new_option_params(mcp_list_tools) -> No
         "map_kind",
     ):
         assert param in properties, f"artifact_generate must expose {param!r}"
+
+
+async def test_artifact_generate_option_params_expose_enums(mcp_list_tools) -> None:
+    """Each finite-choice option param is typed ``Literal`` → the tool schema exposes a
+    JSON-schema ``enum`` matching ``_KIND_OPTIONS`` (acceptance criterion for #1666).
+
+    The expected enum is read from ``_KIND_OPTIONS`` (pinned equal to the neutral core
+    maps by ``test_kind_options_match_core_maps``), so a core-map change not mirrored
+    into BOTH ``_KIND_OPTIONS`` and the signature ``Literal`` fails here. ``style`` is a
+    single union Literal, so its enum is the union across video+infographic; ``quantity``
+    /``difficulty`` are shared by quiz+flashcards (identical today — assert the union so
+    a future flashcards-specific set is still covered)."""
+    tools = await mcp_list_tools()
+    schema = next(t for t in tools if t.name == "artifact_generate").inputSchema
+    props = schema.get("properties", {})
+
+    # Single-kind option params: enum == that kind's choice set.
+    single_kind = {
+        "report_format": "report",
+        "audio_format": "audio",
+        "audio_length": "audio",
+        "video_format": "video",
+        "deck_format": "slide-deck",
+        "deck_length": "slide-deck",
+        "orientation": "infographic",
+        "detail": "infographic",
+        "map_kind": "mind-map",
+    }
+    for param, kind in single_kind.items():
+        assert _schema_enum(props[param]) == set(_KIND_OPTIONS[kind][param]), param
+
+    # quantity/difficulty: shared by quiz+flashcards (union).
+    for param in ("quantity", "difficulty"):
+        expected = set(_KIND_OPTIONS["quiz"][param]) | set(_KIND_OPTIONS["flashcards"][param])
+        assert _schema_enum(props[param]) == expected, param
+
+    # style: single union Literal across video + infographic.
+    expected_style = set(_KIND_OPTIONS["video"]["style"]) | set(
+        _KIND_OPTIONS["infographic"]["style"]
+    )
+    assert _schema_enum(props["style"]) == expected_style
+
+
+async def test_artifact_generate_free_text_params_have_no_enum(mcp_list_tools) -> None:
+    """``style_prompt`` and ``language`` stay free text — NOT converted to ``Literal``.
+
+    Uses the same nested-aware ``_schema_enum`` helper so an accidental conversion that
+    hid an ``enum`` inside an ``anyOf`` branch would still be caught."""
+    tools = await mcp_list_tools()
+    schema = next(t for t in tools if t.name == "artifact_generate").inputSchema
+    props = schema.get("properties", {})
+    assert _schema_enum(props["style_prompt"]) is None
+    assert _schema_enum(props["language"]) is None
 
 
 # ---------------------------------------------------------------------------

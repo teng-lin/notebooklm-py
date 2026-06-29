@@ -364,19 +364,53 @@ def register(mcp: Any) -> None:
         source_ids: list[str] | str | None = None,
         instructions: str = "",
         language: str | None = None,
-        report_format: str | None = None,
-        audio_format: str | None = None,
-        audio_length: str | None = None,
-        quantity: str | None = None,
-        difficulty: str | None = None,
-        video_format: str | None = None,
-        style: str | None = None,
+        # Finite-choice per-kind options are typed as ``Literal`` so FastMCP/Pydantic
+        # emits a JSON-schema ``enum`` (agents discover valid values from the schema,
+        # not by trial-and-error) and rejects out-of-enum values at the boundary. The
+        # members are DUPLICATED from the neutral core's private ``_*_MAP`` maps via
+        # ``_KIND_OPTIONS`` (the CLI/MCP boundary forbids importing them); a guardrail
+        # test pins each ``enum`` equal to ``_KIND_OPTIONS`` (itself pinned to the core
+        # maps) so they can't drift. ``style_prompt``/``language`` stay free text.
+        report_format: Literal["briefing-doc", "study-guide", "blog-post", "custom"] | None = None,
+        audio_format: Literal["deep-dive", "brief", "critique", "debate"] | None = None,
+        audio_length: Literal["short", "default", "long"] | None = None,
+        quantity: Literal["fewer", "standard", "more"] | None = None,
+        difficulty: Literal["easy", "medium", "hard"] | None = None,
+        video_format: Literal["explainer", "brief", "cinematic"] | None = None,
+        # ``style`` is shared by ``video`` and ``infographic`` with DIFFERENT value
+        # sets (overlap only auto/anime/kawaii). One param carries one Literal, so this
+        # is the UNION of both kinds' values; the runtime ``_KIND_OPTIONS`` loop narrows
+        # it per-kind (a video-only value on infographic, or vice versa, is rejected
+        # there with a clean VALIDATION error).
+        style: Literal[
+            # full video set (auto/kawaii/anime also valid for infographic)
+            "auto",
+            "custom",
+            "classic",
+            "whiteboard",
+            "kawaii",
+            "anime",
+            "watercolor",
+            "retro-print",
+            "heritage",
+            "paper-craft",
+            # infographic styles not already listed above
+            "sketch-note",
+            "professional",
+            "bento-grid",
+            "editorial",
+            "instructional",
+            "bricks",
+            "clay",
+            "scientific",
+        ]
+        | None = None,
         style_prompt: str | None = None,
-        deck_format: str | None = None,
-        deck_length: str | None = None,
-        orientation: str | None = None,
-        detail: str | None = None,
-        map_kind: str | None = None,
+        deck_format: Literal["detailed", "presenter"] | None = None,
+        deck_length: Literal["default", "short"] | None = None,
+        orientation: Literal["landscape", "portrait", "square"] | None = None,
+        detail: Literal["concise", "standard", "detailed"] | None = None,
+        map_kind: Literal["interactive", "note-backed"] | None = None,
     ) -> dict[str, Any]:
         """Start generating a studio artifact. Accepts a notebook name or ID.
 
