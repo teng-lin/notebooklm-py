@@ -93,6 +93,7 @@ async def test_source_add_file_with_config_returns_upload_url(mock_client, confi
     agent = sc["agent_upload"]
     assert agent["method"] == "POST"
     assert agent["headers"]["Accept"] == "application/json"
+    assert agent["url"].startswith(sc["url"])
     assert sc["url"] in agent["example"]
 
 

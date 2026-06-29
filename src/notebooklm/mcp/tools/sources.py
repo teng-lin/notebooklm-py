@@ -300,18 +300,16 @@ def _broker_upload(
         "notebook_id": notebook_id,
         "url": url,
         "expires_at": int(time.time()) + UPLOAD_TTL,
-        # A human opens ``url`` in a browser and picks a file. An AGENT that already
-        # holds the bytes does NOT need the browser: stream the file as the raw body
-        # of a POST to the same URL and it adds the source directly (the server never
-        # reads the agent's filesystem — the bytes flow to it). With
-        # ``Accept: application/json`` the route returns ``{"status":"added",
-        # "source_id":…}`` instead of an HTML page.
+        # An agent holding the bytes skips the browser: POST them as the raw body here.
         "agent_upload": {
             "method": "POST",
             "url": f"{url}?filename=<basename>",
-            "headers": {"Accept": "application/json", "Content-Type": "<mime-type>"},
+            "headers": {
+                "Accept": "application/json",
+                "Content-Type": "<mime-type> (fallback only; ignored when mime_type was passed)",
+            },
             "body": "the raw file bytes (not multipart/form-data)",
-            "returns": '{"status": "added", "source_id": …}',
+            "returns": '{"status": "added", "source_id": ...}',
             "example": (
                 'curl -X POST -H "Accept: application/json" --data-binary @report.pdf '
                 f'"{url}?filename=report.pdf"'
