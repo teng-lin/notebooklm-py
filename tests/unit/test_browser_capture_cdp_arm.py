@@ -130,8 +130,11 @@ def test_cdp_authenticated_landing_persists_and_filters(tmp_path: Path) -> None:
 
     # Attached to the operator-pointed endpoint.
     playwright.chromium.connect_over_cdp.assert_called_once_with("http://127.0.0.1:9222")
-    # We navigated our temporary page to the NotebookLM base URL.
+    # We navigated our temporary page to the NotebookLM base URL, using an early
+    # lifecycle state -- the streaming SPA never fires "load", so the default
+    # wait_until would waste 30s then TimeoutError before classification (#1697).
     page.goto.assert_called_once()
+    assert page.goto.call_args.kwargs.get("wait_until") in {"commit", "domcontentloaded"}
     # Persisted, with the same domain allowlist (mail.google.com dropped).
     storage = tmp_path / "storage_state.json"
     assert storage.exists()

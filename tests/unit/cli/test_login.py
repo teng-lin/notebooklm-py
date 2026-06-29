@@ -386,8 +386,12 @@ class TestLoginCommand:
         goto_calls = mock_page.goto.call_args_list
         # 3 calls: initial NOTEBOOKLM_URL, then accounts.google.com, then NOTEBOOKLM_URL
         assert len(goto_calls) == 3
-        assert goto_calls[1].kwargs.get("wait_until") == "commit"
-        assert goto_calls[2].kwargs.get("wait_until") == "commit"
+        # Every goto in the login flow must use an early lifecycle state, NOT the
+        # Playwright default "load" -- the NotebookLM SPA never fires "load", so a
+        # load-gated goto hangs (#1697). Assert the invariant (not the literal
+        # "commit") so a future switch to "domcontentloaded" doesn't spuriously fail.
+        for call in goto_calls:
+            assert call.kwargs.get("wait_until") in {"commit", "domcontentloaded"}
 
     def test_login_auto_detect_skipped_when_already_logged_in(
         self, runner, mock_login_browser_with_storage
@@ -422,6 +426,14 @@ class TestLoginCommand:
         mock_page.wait_for_url.assert_called_once()
         # Verify timeout=300_000 (5 minutes) is passed
         assert mock_page.wait_for_url.call_args.kwargs.get("timeout") == 300_000
+        # The detector must NOT inherit Playwright's default wait_until="load":
+        # notebooklm.google.com is a streaming SPA that never fires "load", so a
+        # load-gated wait hangs the full 5 min even though login already succeeded
+        # (#1697). Assert the invariant rather than the literal "commit".
+        assert mock_page.wait_for_url.call_args.kwargs.get("wait_until") in {
+            "commit",
+            "domcontentloaded",
+        }
         assert "Login detected" in result.output
 
     @pytest.mark.requires_playwright

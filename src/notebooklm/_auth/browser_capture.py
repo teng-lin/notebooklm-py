@@ -529,7 +529,13 @@ def run_browser_capture(
             # Retry navigation on transient connection errors with backoff
             for attempt in range(1, LOGIN_MAX_RETRIES + 1):
                 try:
-                    page.goto(f"{get_base_url()}/", timeout=30000)
+                    # wait_until="commit": notebooklm.google.com is a streaming
+                    # SPA that never fires the "load" event (readyState stays
+                    # "interactive"), so Playwright's default wait_until="load"
+                    # would block until timeout. "commit" resolves once response
+                    # headers are processed -- enough to land on the host and
+                    # classify page.url. See #1697 (and the #214 precedent below).
+                    page.goto(f"{get_base_url()}/", wait_until="commit", timeout=30000)
                     break
                 except PlaywrightError as exc:
                     error_str = str(exc)
@@ -608,7 +614,14 @@ def run_browser_capture(
                 io.emit("2. Authentication will be saved automatically once login is detected\n")
                 io.emit("[dim]Waiting for login (up to 5 minutes)...[/dim]")
                 try:
-                    page.wait_for_url(f"{get_base_url()}/**", timeout=300_000)
+                    # wait_until="commit", not the default "load": the SPA never
+                    # fires "load", so a load-gated wait hangs the full 5 min even
+                    # though sign-in already succeeded and the URL already matches
+                    # (the #1697 symptom). "commit" returns as soon as we reach the
+                    # host. Cookies are read later at storage_state() (after the
+                    # cookie-forcing round-trips), so resolving early is safe;
+                    # page.content() at capture time is best-effort/None-tolerant.
+                    page.wait_for_url(f"{get_base_url()}/**", wait_until="commit", timeout=300_000)
                 except PlaywrightTimeout:
                     io.emit(
                         "[red]Login not detected within 5 minutes.[/red]\n"
@@ -828,7 +841,11 @@ def run_cdp_capture(
             # This avoids navigating (and thereby disrupting) a tab the operator
             # is actively using.
             page = context.new_page()
-            page.goto(f"{get_base_url()}/", timeout=30000)
+            # wait_until="commit": same streaming-SPA reason as the headed login
+            # arm -- the default "load" never fires on notebooklm.google.com, so
+            # this CDP re-auth goto would otherwise waste 30s then TimeoutError
+            # before landing classification. See #1697.
+            page.goto(f"{get_base_url()}/", wait_until="commit", timeout=30000)
 
             # SAME landing classification as the headless launch arm: if we did
             # not land on the NotebookLM host, the attached browser's Google
