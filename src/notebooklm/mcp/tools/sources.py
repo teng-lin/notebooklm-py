@@ -422,6 +422,7 @@ def register(mcp: Any) -> None:
             if urls is None and source_type is None:
                 raise ValidationError("provide 'source_type' (single add) or 'urls' (batch)")
             if urls is not None:
+                # Batch mode: reject single-mode scalars, then resolve + dispatch.
                 _reject_batch_scalars(
                     url=url,
                     text=text,
@@ -432,28 +433,41 @@ def register(mcp: Any) -> None:
                 )
                 if not urls:
                     raise ValidationError("urls must contain at least one URL")
-            elif (
+                nb_id = await resolve_notebook(client, notebook)
+                return await _add_url_batch(client, nb_id, urls, allow_internal=allow_internal)
+
+            # Single-add mode. The mode checks above guarantee source_type is set; a
+            # hard raise (not assert — stripped under ``python -O``) both narrows the
+            # type for the validators + dispatch below and fails loudly if the
+            # invariant is ever broken by a future edit.
+            if source_type is None:  # pragma: no cover - unreachable given the mode guards
+                raise ValidationError("internal error: source_type unexpectedly None")
+
+            # The drive-mime and content-scalar-exclusivity checks below run BEFORE
+            # resolve_notebook, so these malformed calls never pay a notebook
+            # round-trip. (Content *presence* + the YouTube-host guard still run
+            # later, during dispatch — that ordering is unchanged by #1696.)
+            if (
                 mime_type is not None
                 and source_type == "drive"
                 and mime_type not in _DRIVE_MIME_CHOICES
             ):
-                # Single-mode drive mime validation (kept pre-resolve, as before).
                 raise ValidationError(
                     f"Invalid mime_type {mime_type!r} for drive; "
                     f"expected one of {list(_DRIVE_MIME_CHOICES)}"
                 )
+            # Content-scalar exclusivity (fail-closed): reject any content scalar
+            # this source_type does not consume. title/mime_type are untouched —
+            # they are optional metadata, not content.
+            _reject_single_content_scalars(
+                source_type,
+                url=url,
+                text=text,
+                path=path,
+                document_id=document_id,
+            )
 
             nb_id = await resolve_notebook(client, notebook)
-
-            if urls is not None:
-                return await _add_url_batch(client, nb_id, urls, allow_internal=allow_internal)
-
-            # Single-add mode: the mode checks above guarantee source_type is set.
-            # A hard raise (not assert — stripped under ``python -O``) both narrows
-            # the type for the single-mode dispatch and fails loudly if the
-            # invariant is ever broken by a future edit.
-            if source_type is None:  # pragma: no cover - unreachable given the mode guards
-                raise ValidationError("internal error: source_type unexpectedly None")
 
             if source_type == "file":
                 cfg = get_file_transfer(ctx)
@@ -626,6 +640,52 @@ def _reject_batch_scalars(
     if offenders:
         raise ValidationError(
             "these arguments are not valid with 'urls' (batch mode): " + ", ".join(offenders)
+        )
+
+
+#: Maps each single-add *content* scalar to the ``source_type`` values that
+#: legitimately consume it. A content scalar supplied for any other source_type
+#: is silently ignored today; :func:`_reject_single_content_scalars` rejects it.
+#: ``title`` / ``mime_type`` are intentionally absent — they are optional metadata
+#: valid alongside several types, not content.
+_CONTENT_SCALAR_OWNERS: dict[str, frozenset[str]] = {
+    "url": frozenset({"url", "youtube"}),
+    "text": frozenset({"text"}),
+    "path": frozenset({"file"}),
+    "document_id": frozenset({"drive"}),
+}
+
+
+def _reject_single_content_scalars(
+    source_type: str,
+    *,
+    url: str | None,
+    text: str | None,
+    path: str | None,
+    document_id: str | None,
+) -> None:
+    """Reject content scalars that don't belong to this single-add ``source_type``.
+
+    Single mode consumes exactly one content scalar (the one its ``source_type``
+    needs) and historically ignored the rest, contradicting the docstring's
+    mutual-exclusivity claim. Fail closed instead — matching batch mode's posture
+    (:func:`_reject_batch_scalars`). Only *content* scalars are checked; ``title`` /
+    ``mime_type`` are legitimate optional metadata and are left alone.
+    """
+    offenders = [
+        name
+        for name, value in (
+            ("url", url),
+            ("text", text),
+            ("path", path),
+            ("document_id", document_id),
+        )
+        if value is not None and source_type not in _CONTENT_SCALAR_OWNERS[name]
+    ]
+    if offenders:
+        raise ValidationError(
+            f"these arguments are not valid with source_type {source_type!r}: "
+            + ", ".join(offenders)
         )
 
 

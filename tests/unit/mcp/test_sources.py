@@ -763,6 +763,90 @@ async def test_source_add_drive_bad_mime_is_validation_error(mcp_call, mock_clie
     mock_client.sources.add_drive.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("source_type", "good", "foreign"),
+    [
+        # url consumes `url`; text/path/document_id are foreign.
+        ("url", {"url": "https://example.com/a"}, {"text": "hi"}),
+        ("url", {"url": "https://example.com/a"}, {"path": "/tmp/x"}),
+        ("url", {"url": "https://example.com/a"}, {"document_id": "drivefile123"}),
+        # text consumes `text`; url/path/document_id are foreign.
+        ("text", {"text": "hello"}, {"url": "https://example.com/a"}),
+        ("text", {"text": "hello"}, {"path": "/tmp/x"}),
+        ("text", {"text": "hello"}, {"document_id": "drivefile123"}),
+        # file consumes `path`; url/text/document_id are foreign.
+        ("file", {"path": "/tmp/doc.pdf"}, {"url": "https://example.com/a"}),
+        ("file", {"path": "/tmp/doc.pdf"}, {"text": "hi"}),
+        ("file", {"path": "/tmp/doc.pdf"}, {"document_id": "drivefile123"}),
+        # drive consumes `document_id`; url/text/path are foreign.
+        ("drive", {"document_id": "drivefile123"}, {"url": "https://example.com/a"}),
+        ("drive", {"document_id": "drivefile123"}, {"text": "hi"}),
+        ("drive", {"document_id": "drivefile123"}, {"path": "/tmp/x"}),
+        # youtube consumes `url`; text/path/document_id are foreign.
+        ("youtube", {"url": "https://www.youtube.com/watch?v=abc"}, {"text": "hi"}),
+        ("youtube", {"url": "https://www.youtube.com/watch?v=abc"}, {"path": "/tmp/x"}),
+        ("youtube", {"url": "https://www.youtube.com/watch?v=abc"}, {"document_id": "d"}),
+    ],
+)
+async def test_source_add_single_rejects_foreign_content_scalar(
+    mcp_call, mock_client, source_type, good, foreign
+) -> None:
+    """A content scalar that this source_type does not consume fails closed —
+    BEFORE any notebook I/O (mirrors batch mode). A notebook *title* is used so
+    a single ``notebooks.list`` lookup would be observable were rejection late."""
+    mock_client.notebooks.list = AsyncMock(return_value=[])
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call(
+            "source_add",
+            {"notebook": "Some Notebook", "source_type": source_type, **good, **foreign},
+        )
+    msg = str(excinfo.value)
+    assert "VALIDATION" in msg
+    # The message names the offending scalar (part of the rejection contract).
+    assert next(iter(foreign)) in msg
+    # Rejection is pre-resolve, so a name is never looked up.
+    mock_client.notebooks.list.assert_not_called()
+
+
+async def test_source_add_single_lists_all_foreign_scalars(mcp_call, mock_client) -> None:
+    """Multiple foreign content scalars are all named in one rejection."""
+    mock_client.notebooks.list = AsyncMock(return_value=[])
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call(
+            "source_add",
+            {
+                "notebook": "Some Notebook",
+                "source_type": "text",
+                "text": "hello",
+                "url": "https://example.com/a",
+                "path": "/tmp/x",
+            },
+        )
+    msg = str(excinfo.value)
+    assert "VALIDATION" in msg
+    assert "url" in msg and "path" in msg
+    mock_client.notebooks.list.assert_not_called()
+
+
+async def test_source_add_single_metadata_not_rejected(mcp_call, mock_client) -> None:
+    """``title`` / ``mime_type`` are optional metadata, NOT content scalars — a
+    valid single add carrying them alongside its one content scalar still works."""
+    mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Page"))
+    result = await mcp_call(
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "source_type": "url",
+            "url": "https://example.com/a",
+            "title": "My Page",
+            "mime_type": "text/html",
+        },
+    )
+    assert result.structured_content == {
+        "source": {"id": SRC_ID, "title": "Page", "kind": "web_page", "status_label": "ready"}
+    }
+
+
 async def test_source_get_content_not_found_projects_tool_error(mcp_call, mock_client) -> None:
     def _raise(*_a: Any, **_k: Any) -> Any:
         raise SourceNotFoundError(SRC_ID)
