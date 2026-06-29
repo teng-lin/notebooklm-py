@@ -80,7 +80,12 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     "_source/upload.py": 1250,
     "cli/session_cmd.py": 1080,
     "_sources.py": 1023,
-    "cli/services/playwright_login.py": 988,
+    # +7 LOC backporting the login-hang fix (#1700; fixes #1697): two concise
+    # comments explaining the non-obvious wait_until="commit" rationale at the
+    # goto / wait_for_url sites (the kwarg itself is in-place). The module was
+    # already at its ceiling, so any explanation grows it; splitting is out of
+    # scope for a maintenance backport.
+    "cli/services/playwright_login.py": 995,
     "_artifact/downloads.py": 1033,
     "client.py": 986,
     "_research.py": 969,

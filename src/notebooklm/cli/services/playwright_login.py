@@ -795,12 +795,8 @@ def run_playwright_login(plan: PlaywrightLoginPlan, io: LoginIO) -> None:
             # Retry navigation on transient connection errors with backoff
             for attempt in range(1, LOGIN_MAX_RETRIES + 1):
                 try:
-                    # wait_until="commit": notebooklm.google.com is a streaming
-                    # SPA that never fires the "load" event (readyState stays
-                    # "interactive"), so Playwright's default wait_until="load"
-                    # would block until timeout. "commit" resolves once response
-                    # headers are processed -- enough to land on the host and
-                    # classify page.url. See #1697 (and the #214 precedent below).
+                    # wait_until="commit": the SPA never fires "load", so the
+                    # default would hang. See #1697 (and the #214 gotos below).
                     page.goto(f"{get_base_url()}/", wait_until="commit", timeout=30000)
                     break
                 except PlaywrightError as exc:
@@ -862,11 +858,9 @@ def run_playwright_login(plan: PlaywrightLoginPlan, io: LoginIO) -> None:
                 try:
                     # wait_until="commit", not the default "load": the SPA never
                     # fires "load", so a load-gated wait hangs the full 5 min even
-                    # though sign-in already succeeded and the URL already matches
-                    # (the #1697 symptom). "commit" returns as soon as we reach the
-                    # host. Cookies are read later at storage_state() (after the
-                    # cookie-forcing round-trips), so resolving early is safe;
-                    # page.content() at capture time is best-effort/None-tolerant.
+                    # though sign-in succeeded and the URL already matches (#1697).
+                    # Cookies are read later at storage_state(), so resolving early
+                    # is safe.
                     page.wait_for_url(f"{get_base_url()}/**", wait_until="commit", timeout=300_000)
                 except PlaywrightTimeout:
                     io.emit(
