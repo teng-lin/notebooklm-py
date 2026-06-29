@@ -23,6 +23,16 @@ the v0.8.0 breaking release).
   gate** (backport of #1630). A redirect to `notebooklm.google` is now
   classified and surfaced with an actionable message instead of an opaque
   failure.
+- **Interactive `notebooklm login` no longer hangs 5 minutes and silently
+  fails to save auth** (backport of #1700; fixes #1697). The login-success
+  detector used Playwright's default `wait_until="load"`, but
+  `notebooklm.google.com` is a streaming SPA that never fires the `load` event
+  (`readyState` stays `interactive`), so the wait blocked until timeout even
+  though sign-in had succeeded — printing "Login not detected within 5 minutes"
+  and never writing `storage_state.json`. The initial navigation and the
+  success detector now pass `wait_until="commit"` (the same level the existing
+  cookie-forcing navigations already use), so login is detected as soon as the
+  authenticated host is reached.
 
 ## [0.7.2] - 2026-06-18
 
