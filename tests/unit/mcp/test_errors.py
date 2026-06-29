@@ -32,6 +32,7 @@ from notebooklm.mcp._errors import (  # noqa: E402 - after importorskip guard
     CATEGORY_TABLE,
     ERROR_CODES,
     mcp_errors,
+    redact,
     to_tool_error,
     tool_error_payload,
 )
@@ -173,3 +174,120 @@ def test_mcp_errors_propagates_base_exceptions() -> None:
 
     with pytest.raises(asyncio.CancelledError), mcp_errors():
         raise asyncio.CancelledError
+
+
+# --------------------------------------------------------------------------- #
+# redact() — secret / path pattern redaction (#1682)
+# --------------------------------------------------------------------------- #
+def test_redact_strips_bearer_token() -> None:
+    """An ``Authorization: Bearer`` header value is masked (via scrub_secrets).
+
+    Uses the header form (which redacts ANY value) rather than a bare token, whose
+    shape regex intentionally ignores short non-realistic tokens.
+    """
+    out = redact("RPC failed: Authorization: Bearer ya29.s3cr3t-Token_VALUE-abc123")
+    assert "ya29.s3cr3t-Token_VALUE-abc123" not in out
+    assert "Bearer" in out  # the header name survives as a shape hint
+
+
+def test_redact_strips_session_cookie_values() -> None:
+    """A ``Cookie:`` header and a ``__Secure-*`` cookie value are masked."""
+    out = redact("boom Cookie: SID=AAAA1111secret; HSID=BBBB2222secret")
+    assert "AAAA1111secret" not in out
+    assert "BBBB2222secret" not in out
+    out2 = redact("__Secure-1PSIDTS=zzzzSECRETvalue")
+    assert "zzzzSECRETvalue" not in out2
+
+
+def test_redact_strips_signed_files_url_token_bare_and_in_url() -> None:
+    """The ``/files/(dl|ul)/<token>`` side-channel token is redacted."""
+    bare = redact("link is /files/dl/eyJvcCI6ImRsIn0.ZmFrZW1hYw and expired")
+    assert "/files/dl/***" in bare
+    assert "eyJvcCI6ImRsIn0" not in bare
+    in_url = redact("open https://files.test/files/ul/eyJvcCI6InVsIn0.bWFjbWFj?x=1 now")
+    assert "/files/ul/***" in in_url
+    assert "eyJvcCI6InVsIn0" not in in_url
+    # A malformed multi-dot token leaves no tail.
+    multidot = redact("/files/dl/a.b.c")
+    assert multidot == "/files/dl/***"
+
+
+@pytest.mark.parametrize(
+    ("message", "leaked", "expected_fragment"),
+    [
+        (
+            "open /home/alice/.notebooklm/default/storage_state.json failed",
+            "alice",
+            "/home/***/.notebooklm/default/storage_state.json",
+        ),
+        # macOS account name with a space (the round-1 codex concern).
+        (
+            "read /Users/Alice Smith/Library/data.json",
+            "Smith",
+            "/Users/***/Library/data.json",
+        ),
+        # Windows account name with a space.
+        (r"open C:\Users\Bob Smith\app\state failed", "Bob", r"C:\Users\***\app\state"),
+    ],
+)
+def test_redact_masks_home_directory_usernames(message, leaked, expected_fragment) -> None:
+    out = redact(message)
+    assert leaked not in out
+    assert expected_fragment in out
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Bare terminal home dir (no following path component) is left alone so we
+        # never eat trailing prose.
+        "/home/alice: permission denied",
+        # Multi-path prose must NOT be eaten reaching for a later separator.
+        "Could not find /home/alice or /home/bob/config",
+        "/Users/Alice Smith: permission denied for /Users/Bob/x",
+    ],
+)
+def test_redact_never_eats_prose_between_paths(message) -> None:
+    out = redact(message)
+    # The prose words between path-ish fragments survive verbatim.
+    for word in ("permission", "denied", "Could", "find", "or", "for"):
+        if word in message:
+            assert word in out
+
+
+def test_redact_does_not_eat_prose_first_segment_examples() -> None:
+    """Exact-output guards for the two multi-path prose cases."""
+    assert (
+        redact("Could not find /home/alice or /home/bob/config")
+        == "Could not find /home/alice or /home/***/config"
+    )
+    assert (
+        redact("/Users/Alice Smith: permission denied for /Users/Bob/x")
+        == "/Users/Alice Smith: permission denied for /Users/***/x"
+    )
+
+
+def test_unexpected_exception_message_is_generic_not_raw_text() -> None:
+    """A non-library bug's raw ``str(exc)`` is never echoed (redact is a denylist).
+
+    ``redact`` only masks KNOWN credential/path shapes, so an unexpected exception
+    could otherwise leak arbitrary text (env detail, non-home paths). The UNEXPECTED
+    category therefore returns a fixed generic message while preserving code +
+    retriable (mirrors the REST server policy).
+    """
+    leaky = RuntimeError("kaboom: opened /var/lib/notebooklm/secret.cfg key=hunter2")
+    payload = tool_error_payload(leaky)
+    assert payload["code"] == "UNEXPECTED"
+    assert payload["retriable"] is False
+    assert "secret.cfg" not in payload["message"]
+    assert "hunter2" not in payload["message"]
+    assert "/var/lib/notebooklm" not in payload["message"]
+
+
+def test_redact_runs_before_truncation_so_secret_not_half_cut() -> None:
+    """A secret sitting near the length cap must be fully redacted, never half-shown."""
+    filler = "x" * 290
+    secret = "AAAA1111-this-is-a-secret-cookie-value"
+    out = redact(f"{filler} Cookie: SID={secret}")
+    assert secret not in out
+    assert "1111-this-is-a-secret" not in out  # no partial tail survived the cap

@@ -392,3 +392,107 @@ def test_lifespan_not_set_returns_500(mock_client, config) -> None:
     client = starlette_testclient.TestClient(app)
     resp = client.get(_path(url))
     assert resp.status_code == 500
+
+
+# --------------------------------------------------------------------------- #
+# Upstream-error classification + redaction (#1682)
+# --------------------------------------------------------------------------- #
+def _raising_download(exc: BaseException):
+    async def fake(plan, client, *, notebook_resolver, artifact_resolver, progress=None):
+        raise exc
+
+    return fake
+
+
+def test_download_raised_auth_error_is_502_not_raw_500(monkeypatch, mock_client, config) -> None:
+    # A NotebookLMError raised out of execute_download (e.g. the unwrapped artifact
+    # list RPC) must classify to a clean status, not bubble up as a raw Starlette 500.
+    from notebooklm.exceptions import AuthError
+
+    monkeypatch.setattr(
+        _fileroutes.download_core,
+        "execute_download",
+        _raising_download(AuthError("session expired: cookie SID=AAAA1111secret")),
+    )
+    app = _build(mock_client, config)
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 502  # AUTH → 502 (token-authed route; upstream failure)
+    assert "AAAA1111secret" not in resp.text  # the cookie value is redacted
+
+
+def test_download_raised_not_found_is_404(monkeypatch, mock_client, config) -> None:
+    from notebooklm.exceptions import NotFoundError
+
+    monkeypatch.setattr(
+        _fileroutes.download_core,
+        "execute_download",
+        _raising_download(NotFoundError("notebook gone")),
+    )
+    app = _build(mock_client, config)
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 404
+
+
+def test_download_returned_error_outcome_stays_409_and_hides_detail(
+    monkeypatch, mock_client, config
+) -> None:
+    # A FAILURE the core *returns* (DownloadOutcome.ERROR, e.g. a full-id not-found)
+    # stays a generic 409 with the error detail discarded — deliberately NOT
+    # re-statused to 502 (that would regress not-found) and never leaks result.error.
+    async def fake(plan, client, *, notebook_resolver, artifact_resolver, progress=None):
+        return _fileroutes.download_core.DownloadResult(
+            outcome=_fileroutes.download_core.DownloadOutcome.ERROR,
+            error="boom /home/secretuser/leak.json",
+        )
+
+    monkeypatch.setattr(_fileroutes.download_core, "execute_download", fake)
+    app = _build(mock_client, config)
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 409
+    assert "secretuser" not in resp.text
+    assert "leak.json" not in resp.text
+
+
+def test_upload_raised_server_error_is_502(monkeypatch, mock_client, config) -> None:
+    from notebooklm.exceptions import ServerError
+
+    async def fake(client, exec_plan):
+        raise ServerError("upstream 503")
+
+    monkeypatch.setattr(_fileroutes.add_core, "execute_source_add", fake)
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+    assert resp.status_code == 502
+
+
+def test_upload_validation_error_redacts_local_path(monkeypatch, mock_client, config) -> None:
+    # A validate-path rejection can embed the local file path; the 400 body must be
+    # redacted (the home-dir username masked) while keeping the friendly prefix.
+    from notebooklm.exceptions import ValidationError
+
+    async def fake(client, exec_plan):
+        raise ValidationError("path /home/secretuser/private/x.pdf is not allowed")
+
+    monkeypatch.setattr(_fileroutes.add_core, "execute_source_add", fake)
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+    assert resp.status_code == 400
+    assert "Upload rejected:" in resp.text
+    assert "secretuser" not in resp.text  # home-dir username redacted
+
+
+def test_file_route_status_table_covers_every_error_category() -> None:
+    """Every ``ErrorCategory`` has a file-route status (no silent fallback)."""
+    from notebooklm._app.errors import ErrorCategory
+
+    assert set(_fileroutes._FILE_ROUTE_STATUS) == set(ErrorCategory)

@@ -60,3 +60,25 @@ async def test_server_info_auth_present(mcp_call, mock_client, tmp_path, monkeyp
     assert auth["storage_exists"] is True
     assert auth["sid_cookie"] is True
     assert auth["authenticated"] is True
+
+
+async def test_server_info_does_not_leak_absolute_storage_path(
+    mcp_call, mock_client, tmp_path, monkeypatch
+) -> None:
+    """Security (#1682): the absolute auth storage path must never reach a caller.
+
+    ``server_info`` is readable by any authenticated (possibly remote) client, so
+    it must not disclose the server-host OS username / filesystem layout. It returns
+    only the ``profile`` name + auth booleans.
+    """
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    result = await mcp_call("server_info")
+    auth = result.structured_content["auth"]
+    # No path-shaped field is exposed...
+    assert "storage_path" not in auth
+    # ...and the resolved storage directory does not appear anywhere in the payload
+    # (guards against a path leaking via any other key, present or future).
+    assert str(tmp_path) not in json.dumps(result.structured_content)
+    # The non-sensitive identity fields are still present.
+    assert "profile" in auth
+    assert "authenticated" in auth

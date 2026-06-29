@@ -45,10 +45,15 @@ def register(mcp: Any) -> None:
         """Report the server version and local authentication health.
 
         Takes no arguments. Returns the package ``version`` and an ``auth`` block
-        (``authenticated`` / ``storage_exists`` / ``sid_cookie`` / ``profile`` /
-        ``storage_path``). Use it to confirm the server is logged in before
-        driving notebook tools; if ``authenticated`` is false, run
+        (``authenticated`` / ``storage_exists`` / ``json_valid`` / ``cookies_present``
+        / ``sid_cookie`` / ``profile``). Use it to confirm the server is logged in
+        before driving notebook tools; if ``authenticated`` is false, run
         ``notebooklm login`` on the server host.
+
+        The absolute on-disk storage path is deliberately **not** returned: it
+        leaks the server-host OS username / filesystem layout to any (possibly
+        remote) caller, while telling the agent nothing it can act on. The
+        ``profile`` name + booleans are sufficient to diagnose auth health.
         """
         with mcp_errors():
             profile = get_active_profile()
@@ -73,6 +78,5 @@ def register(mcp: Any) -> None:
                     "cookies_present": bool(result.checks.get("cookies_present")),
                     "sid_cookie": bool(result.checks.get("sid_cookie")),
                     "profile": profile,
-                    "storage_path": str(storage_path),
                 },
             }

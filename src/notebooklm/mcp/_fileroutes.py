@@ -45,8 +45,10 @@ from starlette.responses import (
 
 from .._app import download as download_core
 from .._app import source_add as add_core
-from ..exceptions import ValidationError
+from .._app.errors import ErrorCategory, classify
+from ..exceptions import NotebookLMError, ValidationError
 from ._context import get_client_from_app
+from ._errors import redact
 from ._filelink import FileLinkError, FileTransferConfig
 from .tools.artifacts import _DOWNLOAD_SPECS
 
@@ -81,6 +83,52 @@ _HTML_SECURITY_HEADERS = {
         "connect-src 'self'; form-action 'none'; base-uri 'none'"
     ),
 }
+
+
+#: HTTP status each neutral :class:`ErrorCategory` projects onto for the
+#: ``/files/*`` routes. Covers EVERY category (pinned by ``test_fileroutes.py``).
+#: This mirrors the REST server's ``CATEGORY_STATUS`` but is defined locally — the
+#: MCP layer must NOT import ``notebooklm.server`` (it pulls ``fastapi``; the
+#: boundary is enforced by ``tests/_guardrails/test_mcp_boundary.py``). Deliberate
+#: deviation: ``AUTH`` / ``CONFIG`` → **502**, not 401/500. These routes are
+#: authenticated by the signed token, so a *server-side* broken Google session is
+#: an upstream-dependency failure (Bad Gateway) the token-bearing caller cannot fix
+#: by re-authenticating — 401 would be misleading.
+_FILE_ROUTE_STATUS: dict[ErrorCategory, int] = {
+    ErrorCategory.NOT_FOUND: 404,
+    ErrorCategory.AUTH: 502,
+    ErrorCategory.RATE_LIMITED: 429,
+    ErrorCategory.VALIDATION: 400,
+    ErrorCategory.CONFIG: 502,
+    ErrorCategory.NETWORK: 502,
+    ErrorCategory.NOTEBOOK_LIMIT: 409,
+    ErrorCategory.ARTIFACT_TIMEOUT: 504,
+    ErrorCategory.TIMEOUT: 504,
+    ErrorCategory.SERVER: 502,
+    ErrorCategory.RPC: 502,
+    ErrorCategory.SOURCE_MUTATION: 422,
+    ErrorCategory.LIBRARY: 502,
+    ErrorCategory.UNEXPECTED: 500,
+}
+
+
+def _upstream_error_response(exc: NotebookLMError) -> PlainTextResponse:
+    """Project an upstream ``NotebookLMError`` onto a classified, redacted response.
+
+    A ``NotebookLMError`` raised inside a ``/files/*`` handler (e.g. the artifact
+    ``list`` RPC inside ``execute_download``, which is not wrapped by the core, or
+    ``execute_source_add``) would otherwise escape to a raw Starlette 500. Classify
+    it via the shared :func:`_app.errors.classify`, map the category to an HTTP
+    status, and return the secret-scrubbed message (the same :func:`redact`
+    chokepoint the MCP tool errors use). ``.get(..., 502)`` is defense-in-depth —
+    every category is in the table (pinned by a coverage test).
+    """
+    status = _FILE_ROUTE_STATUS.get(classify(exc).category, 502)
+    return PlainTextResponse(
+        f"Upstream NotebookLM error: {redact(str(exc))}",
+        status_code=status,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
 
 
 def _safe_upload_name(filename: str | None) -> str:
@@ -202,6 +250,14 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 # invoked — supply the required identity stub inline.
                 artifact_resolver=lambda _artifacts, artifact_id: artifact_id,
             )
+        except NotebookLMError as exc:
+            # An upstream error raised out of the core (e.g. the artifact ``list``
+            # RPC inside ``execute_download`` is not wrapped) would otherwise become
+            # a raw 500. Classify + redact it instead. (Failures that the core
+            # *returns* as a non-success ``DownloadResult`` fall through to the
+            # generic 409 below — that path already leaks nothing.)
+            _cleanup(temp_dir)
+            return _upstream_error_response(exc)
         except BaseException:
             _cleanup(temp_dir)
             raise
@@ -334,7 +390,18 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     headers=_HTML_SECURITY_HEADERS,
                 )
             except ValidationError as exc:
-                return PlainTextResponse(f"Upload rejected: {exc}", status_code=400)
+                # ValidationError ⊂ NotebookLMError, so this MUST precede the
+                # NotebookLMError handler. ``validate_upload_path`` rejections can
+                # embed the local file path, so the detail is redacted.
+                return PlainTextResponse(
+                    f"Upload rejected: {redact(str(exc))}",
+                    status_code=400,
+                    headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                )
+            except NotebookLMError as exc:
+                # An upstream auth/server/rate-limit error from execute_source_add
+                # (add_file → RPC) would otherwise escape as a raw 500.
+                return _upstream_error_response(exc)
             except OSError:
                 # A bad filename / fs error (e.g. a name that survives sanitization
                 # but the fs rejects) is a clean 400, not a bare 500.
