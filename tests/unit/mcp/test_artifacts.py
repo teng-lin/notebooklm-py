@@ -51,7 +51,7 @@ def _schema_enum(prop: dict[str, Any]) -> set[str] | None:
     # ``anyOf`` is Pydantic v2's shape for ``T | None`` today; also scan ``oneOf``
     # so the helper survives a future schema-generation switch to the JSON-Schema
     # mutually-exclusive form rather than silently returning ``None``.
-    for branch in prop.get("anyOf", []) + prop.get("oneOf", []):
+    for branch in (prop.get("anyOf") or []) + (prop.get("oneOf") or []):
         if "enum" in branch:
             return set(branch["enum"])
     return None
@@ -457,7 +457,12 @@ async def test_artifact_generate_cross_kind_style_is_validation_error(
             "video",
             {"style": "nonsense"},
             tuple(
-                set(_KIND_OPTIONS["video"]["style"]) | set(_KIND_OPTIONS["infographic"]["style"])
+                # sorted() so the parametrize id / member order is deterministic
+                # across runs (set iteration order varies with hash randomization).
+                sorted(
+                    set(_KIND_OPTIONS["video"]["style"])
+                    | set(_KIND_OPTIONS["infographic"]["style"])
+                )
             ),
         ),
     ],
