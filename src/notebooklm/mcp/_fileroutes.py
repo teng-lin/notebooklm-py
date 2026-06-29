@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import html
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -34,7 +35,13 @@ from typing import TYPE_CHECKING
 
 from starlette.background import BackgroundTask
 from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+)
 
 from .._app import download as download_core
 from .._app import source_add as add_core
@@ -50,9 +57,6 @@ if TYPE_CHECKING:
 #: temp-file disk pressure; an upload exceeding it is rejected with 413 — early via
 #: ``Content-Length``, and authoritatively via the running byte cap below.
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
-
-#: Chunk size when streaming the raw upload body to the temp file.
-_UPLOAD_CHUNK = 1024 * 1024
 
 #: Cap concurrent in-flight uploads. The per-request byte cap bounds ONE upload to
 #: 200 MiB, but a leaked/replayable ``ul`` token (valid for its full TTL) could
@@ -92,10 +96,14 @@ def _safe_upload_name(filename: str | None) -> str:
     REST route's twin lives behind the ``server`` extra (``fastapi``), which this
     ``mcp``-only module must not import.
     """
-    # Strip NUL (would make ``os.open`` raise ``ValueError``) and reject the
-    # directory-cursor names ``.``/``..`` (which would target an existing dir and
-    # fail ``O_EXCL`` → 500) — fall back to a safe extensioned default.
-    base = os.path.basename((filename or "").replace("\x00", ""))
+    # Strip control chars (NUL would make ``os.open`` raise ``ValueError``; the rest
+    # are never legitimate in a filename), normalize ``\`` so a Windows-style
+    # ``C:\dir\x.pdf`` from a sandbox PUT yields its real leaf, then take the
+    # basename (the path-traversal guard). Reject the directory-cursor names
+    # ``.``/``..`` (which would target an existing dir and fail ``O_EXCL`` → 500) —
+    # fall back to a safe extensioned default.
+    cleaned = re.sub(r"[\x00-\x1f]", "", filename or "").replace("\\", "/")
+    base = os.path.basename(cleaned)
     if not base or base in (".", ".."):
         return "upload.bin"
     if len(base) > 255:
@@ -115,11 +123,6 @@ def _cleanup(path: str) -> None:
 async def _passthrough_notebook(notebook_id: str) -> str:
     """Async pass-through notebook resolver (the token carries the full id)."""
     return notebook_id
-
-
-def _passthrough_artifact(_artifacts: list[download_core.ArtifactDict], artifact_id: str) -> str:
-    """Sync pass-through artifact-id resolver (unused — selection is by ``latest``)."""
-    return artifact_id  # pragma: no cover - download tokens never carry an artifact id
 
 
 _UPLOAD_PAGE = """<!doctype html>
@@ -195,7 +198,9 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 plan,
                 client,
                 notebook_resolver=_passthrough_notebook,
-                artifact_resolver=_passthrough_artifact,
+                # download selects by ``latest``, so the artifact resolver is never
+                # invoked — supply the required identity stub inline.
+                artifact_resolver=lambda _artifacts, artifact_id: artifact_id,
             )
         except BaseException:
             _cleanup(temp_dir)
@@ -278,9 +283,11 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         try:
             # Filename: the raw fetch body omits it, so it arrives sanitized via
             # ?filename=. Content-type: the signed token's mime WINS; the request
-            # Content-Type header is the fallback.
+            # Content-Type header is the fallback. Strip any ``; charset=…`` params
+            # off the header so only the bare MIME type reaches the backend.
             filename = _safe_upload_name(request.query_params.get("filename"))
-            mime = payload.get("mime") or request.headers.get("content-type") or None
+            raw_mime = payload.get("mime") or request.headers.get("content-type")
+            mime = raw_mime.split(";")[0].strip() if raw_mime else None
 
             temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-ul-")  # mkdtemp is 0o700
             temp_path = os.path.join(temp_dir, filename)
@@ -310,10 +317,18 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     client,
                     add_core.SourceAddExecutionPlan(notebook_id=str(payload.get("nb")), plan=plan),
                 )
-                source_id = html.escape(str(result.source.id))
+                source_id = str(result.source.id)
+                # The documented sandbox-`curl`/PUT path (an agent uploading a file
+                # it holds) gets clean JSON when it asks for it; a human browser gets
+                # the HTML page.
+                if "application/json" in request.headers.get("accept", ""):
+                    return JSONResponse(
+                        {"status": "added", "source_id": source_id},
+                        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                    )
                 return HTMLResponse(
                     "<!doctype html><html><body style='font-family:system-ui'>"
-                    f"<h2>Source added</h2><p>id = <code>{source_id}</code></p>"
+                    f"<h2>Source added</h2><p>id = <code>{html.escape(source_id)}</code></p>"
                     "<p>You can close this tab and return to your assistant.</p>"
                     "</body></html>",
                     headers=_HTML_SECURITY_HEADERS,

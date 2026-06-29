@@ -249,7 +249,10 @@ def _broker_download(
     (claude.ai renders it clickable) and the structured ``download_ready`` payload.
     The signer injects expiry; ``expires_at`` mirrors the download TTL.
     """
-    payload: dict[str, Any] = {"op": "dl", "nb": notebook_id, "atype": artifact_type}
+    payload: dict[str, Any] = {
+        "nb": notebook_id,
+        "atype": artifact_type,
+    }  # op stamped by download_url
     if output_format is not None:
         payload["fmt"] = output_format
     url = cfg.download_url(payload)

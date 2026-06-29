@@ -91,6 +91,30 @@ def test_download_good_token_streams_bytes_no_bearer(monkeypatch, mock_client, c
     assert resp.headers["cache-control"] == "no-store"
 
 
+def test_download_route_forwards_fmt_from_token(monkeypatch, mock_client, config) -> None:
+    # The `fmt` carried in a dl token must reach build_download_plan (route-level
+    # round trip; the tool-level test only checks the token encodes it).
+    captured: dict[str, object] = {}
+
+    async def fake(plan, client, *, notebook_resolver, artifact_resolver, progress=None):
+        captured["format_choice"] = plan.format_choice
+        await notebook_resolver(plan.notebook_id)
+        Path(plan.output_path).write_bytes(b"QUIZ")
+        return _fileroutes.download_core.DownloadResult(
+            outcome=_fileroutes.download_core.DownloadOutcome.SINGLE_DOWNLOADED,
+            artifact={"id": "a1", "title": "Quiz", "selection_reason": "latest"},
+            output_path=plan.output_path,
+        )
+
+    monkeypatch.setattr(_fileroutes.download_core, "execute_download", fake)
+    app = _build(mock_client, config)
+    url = config.download_url({"nb": NB, "atype": "quiz", "fmt": "markdown"})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 200
+    assert captured["format_choice"] == "markdown"
+
+
 @pytest.mark.parametrize(
     "token",
     [
@@ -236,11 +260,13 @@ def test_upload_post_missing_filename_defaults_to_extensioned_name(mock_client, 
     ("raw", "expected"),
     [
         ("a\x00b.pdf", "ab.pdf"),  # NUL stripped (would make os.open raise)
+        ("a\x01\x1fb.pdf", "ab.pdf"),  # other control chars stripped too
         ("..", "upload.bin"),  # directory cursor → safe default
         (".", "upload.bin"),
         ("", "upload.bin"),
         (None, "upload.bin"),
         ("../../etc/passwd", "passwd"),  # traversal → basename
+        (r"C:\Users\me\report.pdf", "report.pdf"),  # Windows path → leaf
     ],
 )
 def test_safe_upload_name_hardening(raw, expected) -> None:

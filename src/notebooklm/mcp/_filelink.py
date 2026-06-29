@@ -163,12 +163,20 @@ class FileTransferConfig:
     base_url: str
 
     def upload_url(self, payload: dict[str, Any]) -> str:
-        """Sign ``payload`` with the upload TTL and build the ``/files/ul`` URL."""
-        return self._build("ul", self.signer.sign(payload, UPLOAD_TTL))
+        """Sign ``payload`` with the upload TTL and build the ``/files/ul`` URL.
+
+        The builder OWNS the ``op`` claim (stamps ``"ul"``) so the token always
+        matches the route it is minted for — a caller cannot accidentally produce
+        a token the route would 403.
+        """
+        return self._build("ul", self.signer.sign({**payload, "op": "ul"}, UPLOAD_TTL))
 
     def download_url(self, payload: dict[str, Any]) -> str:
-        """Sign ``payload`` with the download TTL and build the ``/files/dl`` URL."""
-        return self._build("dl", self.signer.sign(payload, DOWNLOAD_TTL))
+        """Sign ``payload`` with the download TTL and build the ``/files/dl`` URL.
+
+        The builder OWNS the ``op`` claim (stamps ``"dl"``) — see :meth:`upload_url`.
+        """
+        return self._build("dl", self.signer.sign({**payload, "op": "dl"}, DOWNLOAD_TTL))
 
     def _build(self, kind: str, token: str) -> str:
         return f"{self.base_url.rstrip('/')}/files/{kind}/{token}"

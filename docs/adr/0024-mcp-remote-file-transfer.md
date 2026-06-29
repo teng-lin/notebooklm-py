@@ -186,7 +186,8 @@ FastMCP behavior so an upgrade that starts gating custom routes fails loudly.
   token rides in the URL **path**, so it is captured by tunnel access logs
   (Cloudflare/Tailscale), browser history, and any `Referer` — the short TTL +
   `no-referrer` bound the window, and the blast radius is the single tenant's own
-  account (`ponytail:` one-shot dl token if multi-tenant; stateless wins here).
+  account (a one-shot download token would be needed for multi-tenant; the
+  stateless design wins here).
   The payload is **signed, not encrypted**: a leaked URL exposes the base64-decoded
   notebook id / artifact type / title to whoever reads the log. Accepted — these are
   the single tenant's own low-sensitivity metadata, and the HMAC's job is to prevent
@@ -245,7 +246,7 @@ upgrade that changes either fails loudly. Handlers take `(request)` only and rea
 - A leaked upload URL within its 15-min TTL lets someone add a source **to the
   single tenant's own notebook**; a leaked download URL within 30 min streams one
   artifact. Single-tenant blast radius, short TTL — accepted; replay-burn is
-  deliberately skipped (`ponytail:` — add a one-shot nonce store if multi-tenant).
+  deliberately skipped (add a one-shot nonce store if this ever goes multi-tenant).
   A leaked upload token is also replayable *concurrently* (N parallel POSTs each
   spool up to 200 MiB before the running cap / source-add), so transient `/tmp`
   pressure is N×200 MiB — still token-gated, single-tenant, behind the tunnel, and

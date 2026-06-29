@@ -285,7 +285,7 @@ def _broker_upload(
         # though this server runs on Linux, where ``os.path.basename`` won't split on
         # ``\\`` — normalize first so the default title is the real leaf.
         default_title = os.path.basename(path.replace("\\", "/")) or None
-    payload: dict[str, Any] = {"op": "ul", "nb": notebook_id}
+    payload: dict[str, Any] = {"nb": notebook_id}  # op stamped by upload_url
     if default_title:
         payload["title"] = default_title
     if mime_type:
