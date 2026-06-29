@@ -23,10 +23,14 @@ than imported from ``cli/_download_specs.py``.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import Context
+from fastmcp.server.dependencies import get_http_request
+from fastmcp.tools.tool import ToolResult
+from mcp.types import ResourceLink
 
 from ..._app import artifacts as artifact_core
 from ..._app import download as download_core
@@ -36,8 +40,9 @@ from ..._app.serialize import to_jsonable
 from ...exceptions import ValidationError
 from ...types import ArtifactType
 from .._confirm import READ_ONLY
-from .._context import get_client
+from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors
+from .._filelink import DOWNLOAD_TTL, FileTransferConfig
 from .._resolve import resolve_notebook
 from ._passthrough import passthrough_notebook_id
 
@@ -215,6 +220,54 @@ def _no_partial_artifact(_artifacts: list[Any], artifact_id: str) -> str:
     return artifact_id
 
 
+def _is_http_transport() -> bool:
+    """Whether the current tool call arrived over the http transport.
+
+    A remote (http) call has an active Starlette request; stdio does not
+    (:func:`get_http_request` raises ``RuntimeError``). Lets a remote download
+    *without* file transfer configured report a clean "not configured" error
+    instead of the stdio "requires path" error.
+    """
+    try:
+        get_http_request()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _broker_download(
+    cfg: FileTransferConfig,
+    notebook_id: str,
+    artifact_type: str,
+    output_format: str | None,
+) -> ToolResult:
+    """Mint a signed download URL + a clickable ``resource_link`` for a remote
+    ``artifact_download``.
+
+    Returns a :class:`ToolResult` carrying BOTH a ``resource_link`` content item
+    (claude.ai renders it clickable) and the structured ``download_ready`` payload.
+    The signer injects expiry; ``expires_at`` mirrors the download TTL.
+    """
+    payload: dict[str, Any] = {"op": "dl", "nb": notebook_id, "atype": artifact_type}
+    if output_format is not None:
+        payload["fmt"] = output_format
+    url = cfg.download_url(payload)
+    structured = {
+        "status": "download_ready",
+        "notebook_id": notebook_id,
+        "artifact_type": artifact_type,
+        "url": url,
+        "expires_at": int(time.time()) + DOWNLOAD_TTL,
+    }
+    link = ResourceLink(
+        type="resource_link",
+        name=f"{artifact_type} download",
+        uri=url,  # type: ignore[arg-type]  # pydantic coerces the str to AnyUrl
+        description=f"Download the latest {artifact_type} artifact (link expires).",
+    )
+    return ToolResult(content=[link], structured_content=structured)
+
+
 def register(mcp: Any) -> None:
     """Register the artifact tools on ``mcp``."""
 
@@ -346,16 +399,21 @@ def register(mcp: Any) -> None:
         ctx: Context,
         notebook: str,
         artifact_type: str,
-        path: str,
+        path: str | None = None,
         output_format: str | None = None,
-    ) -> dict[str, Any]:
-        """Download a generated artifact to a local path. Accepts a notebook name or ID.
+    ) -> Any:
+        """Download a generated artifact. Accepts a notebook name or ID.
 
         ``artifact_type`` is one of audio|video|slide-deck|infographic|report|
-        mind-map|data-table|quiz|flashcards. ``path`` is the output file on the
-        server host (the latest artifact of that type is selected).
-        ``output_format`` overrides the default file format where supported:
-        slide-deck → pdf|pptx; quiz/flashcards → json|markdown|html.
+        mind-map|data-table|quiz|flashcards (the latest artifact of that type is
+        selected). ``output_format`` overrides the default file format where
+        supported: slide-deck → pdf|pptx; quiz/flashcards → json|markdown|html.
+
+        Over **stdio** the artifact is written to ``path`` (the output file on the
+        server host; required). Over the **remote (http) connector** the server's
+        filesystem is unreachable, so the tool instead returns a clickable
+        ``resource_link`` plus ``{"status": "download_ready", "url": …}`` — a
+        short-lived signed URL; ``path`` is ignored.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -365,21 +423,35 @@ def register(mcp: Any) -> None:
                     f"Unknown download type {artifact_type!r}; "
                     f"expected one of {sorted(_DOWNLOAD_SPECS)}"
                 )
+            # Validate output_format against the spec up front (shared by both the
+            # local-download and signed-URL paths).
+            if output_format is not None and not spec.format_choices:
+                raise ValidationError(
+                    f"artifact_type {artifact_type!r} does not support an output_format option"
+                )
             nb_id = await resolve_notebook(client, notebook)
+
+            cfg = get_file_transfer(ctx)
+            if cfg is not None:
+                # Remote connector: broker a signed download URL (the server path is
+                # unreachable). `path` is accepted but ignored.
+                return _broker_download(cfg, nb_id, artifact_type, output_format)
+            if path is None:
+                # No file transfer: this is stdio (http-without-cfg is reported
+                # below), where `path` is the required local output file.
+                if _is_http_transport():
+                    raise ValidationError(
+                        "remote file transfer is not configured; set "
+                        "NOTEBOOKLM_MCP_PUBLIC_URL on the server to enable it"
+                    )
+                raise ValidationError("artifact_download requires 'path' on the stdio transport")
+
             args: dict[str, Any] = {
                 "notebook_id": nb_id,
                 "output_path": path,
                 "latest": True,
             }
             if output_format is not None:
-                if not spec.format_choices:
-                    # The type has no format axis (audio/video/report/etc.); a
-                    # supplied ``output_format`` was previously dropped silently.
-                    # Fail with a clean VALIDATION so the caller learns it is
-                    # unsupported.
-                    raise ValidationError(
-                        f"artifact_type {artifact_type!r} does not support an output_format option"
-                    )
                 args[spec.format_param_name] = output_format
             plan = download_core.build_download_plan(spec, args, cwd=Path.cwd())
             result = await download_core.execute_download(

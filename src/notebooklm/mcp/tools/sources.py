@@ -16,9 +16,12 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 
 from __future__ import annotations
 
+import os
+import time
 from typing import Any
 
 from fastmcp import Context
+from fastmcp.server.dependencies import get_http_request
 
 from ..._app import source_add as add_core
 from ..._app import source_content as content_core
@@ -28,8 +31,9 @@ from ..._app.serialize import to_jsonable
 from ...exceptions import SourceNotFoundError, ValidationError
 from ...urls import is_youtube_url
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
-from .._context import get_client
+from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors
+from .._filelink import UPLOAD_TTL, FileTransferConfig
 from .._resolve import resolve_notebook, resolve_source
 from ._passthrough import passthrough_child_id
 from ._preview import title_for_id
@@ -177,7 +181,13 @@ def register(mcp: Any) -> None:
         * ``url``     — requires ``url``.
         * ``youtube`` — requires ``url`` (a YouTube link).
         * ``text``    — requires ``text``; ``title`` optional.
-        * ``file``    — requires ``path`` (a local file path on the server host).
+        * ``file``    — over **stdio**, requires ``path`` (a local file path on the
+          server host). Over the **remote (http) connector** the server's
+          filesystem is unreachable, so instead the tool returns
+          ``{"status": "upload_required", "url": …}``: open the short-lived signed
+          URL in a browser and upload the file, then confirm with ``source_wait`` /
+          ``source_list``. ``title`` / ``mime_type`` (carried in the signed URL) and
+          the supplied ``path`` (its basename seeds the default title) are honored.
         * ``drive``   — requires ``document_id`` (Google Drive file id); ``title``
           and ``mime_type`` (one of google-doc|google-slides|google-sheets|pdf,
           default google-doc) optional.
@@ -192,6 +202,20 @@ def register(mcp: Any) -> None:
                     f"Unknown source type {source_type!r}; expected one of {list(_SOURCE_TYPES)}"
                 )
             nb_id = await resolve_notebook(client, notebook)
+
+            if source_type == "file":
+                cfg = get_file_transfer(ctx)
+                if cfg is not None:
+                    # Remote connector: broker a signed upload URL (the server path
+                    # is unreachable). A supplied `path` is accepted, not opened —
+                    # its basename seeds the default title.
+                    return _broker_upload(cfg, nb_id, title=title, mime_type=mime_type, path=path)
+                if _is_http_transport():
+                    raise ValidationError(
+                        "remote file transfer is not configured; set "
+                        "NOTEBOOKLM_MCP_PUBLIC_URL on the server to enable it"
+                    )
+                # stdio: fall through to the existing local-path behavior below.
 
             if source_type == "drive":
                 if not document_id:
@@ -223,6 +247,52 @@ def register(mcp: Any) -> None:
                 add_core.SourceAddExecutionPlan(notebook_id=nb_id, plan=plan),
             )
             return to_jsonable(add_result)
+
+
+def _is_http_transport() -> bool:
+    """Whether the current tool call arrived over the http transport.
+
+    A remote (http) call has an active Starlette request; stdio does not
+    (:func:`get_http_request` raises ``RuntimeError``). Used to tell a remote
+    ``file`` add *without* file transfer configured (→ clean "not configured"
+    error) apart from a stdio add (→ existing local-path behavior).
+    """
+    try:
+        get_http_request()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _broker_upload(
+    cfg: FileTransferConfig,
+    notebook_id: str,
+    *,
+    title: str | None,
+    mime_type: str | None,
+    path: str | None,
+) -> dict[str, Any]:
+    """Mint a signed upload URL for a remote ``source_add type=file``.
+
+    The agent-supplied ``title`` / ``mime_type`` ride in the signed token (so they
+    survive the browser round-trip and cannot be tampered with). When ``title`` is
+    unset, the supplied ``path``'s basename seeds the default. The signer injects
+    expiry; ``expires_at`` mirrors the upload TTL for the caller.
+    """
+    default_title = title
+    if not default_title and path:
+        default_title = os.path.basename(path) or None
+    payload: dict[str, Any] = {"op": "ul", "nb": notebook_id}
+    if default_title:
+        payload["title"] = default_title
+    if mime_type:
+        payload["mime"] = mime_type
+    return {
+        "status": "upload_required",
+        "notebook_id": notebook_id,
+        "url": cfg.upload_url(payload),
+        "expires_at": int(time.time()) + UPLOAD_TTL,
+    }
 
 
 def _select_content(

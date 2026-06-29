@@ -26,6 +26,7 @@ from fastmcp.server.auth import AuthProvider
 
 from ..client import NotebookLMClient
 from ._context import AppState
+from ._filelink import FileTransferConfig
 
 __all__ = ["SERVER_INSTRUCTIONS", "SERVER_NAME", "create_server", "register_all"]
 
@@ -67,6 +68,7 @@ def create_server(
     profile: str | None = None,
     client_factory: ClientFactory | None = None,
     auth: AuthProvider | None = None,
+    file_transfer: FileTransferConfig | None = None,
 ) -> FastMCP:
     """Build the FastMCP server.
 
@@ -81,6 +83,12 @@ def create_server(
             ``NOTEBOOKLM_MCP_TOKEN`` itself, so stdio runs and the unit suite
             never silently attach auth (the token check + provider build live in
             :mod:`.__main__`, only on the network-bound http path).
+        file_transfer: Optional remote file-transfer config (signer + validated
+            public base URL). When set, the two file tools emit signed URLs and the
+            ``/files/*`` routes are mounted on the http app; when ``None`` (stdio,
+            or http without a public URL) the tools keep / reject the path-based
+            behavior and no routes are mounted (ADR-0024). Built only on the
+            network-bound http path in :mod:`.__main__`.
 
     Returns:
         A configured :class:`~fastmcp.FastMCP` server whose lifespan binds one
@@ -100,8 +108,14 @@ def create_server(
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[AppState]:
         async with factory() as client:
-            yield AppState(client=client)
+            yield AppState(client=client, file_transfer=file_transfer)
 
     mcp = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS, lifespan=lifespan, auth=auth)
     register_all(mcp)
+    if file_transfer is not None:
+        # Import lazily so a build without file transfer never imports the route
+        # module (and stdio stays untouched).
+        from ._fileroutes import register_file_routes
+
+        register_file_routes(mcp, file_transfer)
     return mcp

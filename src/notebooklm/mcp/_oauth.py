@@ -58,7 +58,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import urlsplit
 
 import anyio
 from fastmcp.server.auth import AuthProvider
@@ -78,6 +77,8 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from notebooklm._atomic_io import atomic_write_json
+
+from ._urlcheck import _validate_bare_https_origin
 
 logger = logging.getLogger(__name__)
 
@@ -158,22 +159,11 @@ def get_oauth_config() -> OAuthConfig | None:
             f"the primary brute-force defense, so it must be at least {MIN_PASSWORD_LEN} "
             "characters (use a long random value)."
         )
-    parsed = urlsplit(base_url)
     # Must be a BARE https origin: the OAuth routes (/authorize, /token, /register,
     # /login, /.well-known/*) mount at the ROOT, so a path like /mcp would make the
-    # discovery metadata advertise endpoints that don't exist. (A trailing "/" is fine.)
-    if (
-        parsed.scheme.lower() != "https"
-        or not parsed.netloc
-        or parsed.path not in ("", "/")
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise SystemExit(
-            f"{OAUTH_BASE_URL_ENV} must be a bare public https origin claude.ai reaches "
-            f"(e.g. https://your-host) — NOT the /mcp connector URL, and no path/query/"
-            f"fragment; got {base_url!r}."
-        )
+    # discovery metadata advertise endpoints that don't exist. (A trailing "/" is
+    # fine.) The same check guards the file-transfer base URL — shared helper.
+    _validate_bare_https_origin(base_url, OAUTH_BASE_URL_ENV)
 
     state_path: Path | None = None
     home = os.environ.get("NOTEBOOKLM_HOME")

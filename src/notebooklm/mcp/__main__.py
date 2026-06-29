@@ -24,15 +24,19 @@ import argparse
 import ipaddress
 import logging
 import os
+import secrets
 import sys
 
 from ._auth import MCP_TOKEN_ENV, build_auth, get_configured_token
+from ._filelink import FileLinkSigner, FileTransferConfig
 from ._oauth import (
+    OAUTH_BASE_URL_ENV,
     OAUTH_PASSWORD_ENV,
     OAuthConfig,
     build_oauth_provider,
     get_oauth_config,
 )
+from ._urlcheck import _validate_bare_https_origin
 from .server import create_server
 
 __all__ = ["main"]
@@ -40,6 +44,11 @@ __all__ = ["main"]
 #: Env var that opts a deployment into binding the HTTP transport to a
 #: non-loopback interface. Off by default — the server is local-first.
 ALLOW_EXTERNAL_BIND_ENV = "NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND"
+
+#: Public https origin claude.ai reaches the tunnel at, used to build the signed
+#: file-transfer URLs. Optional — falls back to the OAuth base URL. When neither is
+#: set, remote file transfer is simply unavailable (no startup crash).
+PUBLIC_URL_ENV = "NOTEBOOKLM_MCP_PUBLIC_URL"
 
 #: Hostnames that are always treated as loopback even though they are not numeric
 #: IP literals. An empty / whitespace host is intentionally NOT here — it must be
@@ -163,6 +172,32 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_file_transfer() -> FileTransferConfig | None:
+    """Build the remote file-transfer config from env, or ``None`` when unavailable.
+
+    The public base URL is ``NOTEBOOKLM_MCP_PUBLIC_URL`` falling back to
+    ``NOTEBOOKLM_MCP_OAUTH_BASE_URL`` (the tunnel URL the OAuth flow already
+    requires). When neither is set the capability is simply absent — **no
+    SystemExit** (a bearer-only remote deployment that never uses file transfer
+    must keep starting). When set, the value is validated as a bare https origin
+    (a ``/mcp``-suffixed or non-https URL would mint broken/unsafe links) and the
+    signer gets an ephemeral key minted at startup.
+
+    Raises:
+        SystemExit: a public URL is set but is not a bare https origin.
+    """
+    public_url = os.environ.get(PUBLIC_URL_ENV)
+    env_name = PUBLIC_URL_ENV
+    if not (public_url or "").strip():
+        public_url = os.environ.get(OAUTH_BASE_URL_ENV)
+        env_name = OAUTH_BASE_URL_ENV
+    public_url = (public_url or "").strip()
+    if not public_url:
+        return None
+    _validate_bare_https_origin(public_url, env_name)
+    return FileTransferConfig(signer=FileLinkSigner(secrets.token_bytes(32)), base_url=public_url)
+
+
 def _resolve_port(raw: str) -> int:
     """Convert the (possibly env-derived) ``--port`` string to an int, or fail clean.
 
@@ -211,7 +246,14 @@ def main(argv: list[str] | None = None) -> None:
         oauth_config = get_oauth_config()
         _check_http_auth_required(host, token, oauth_config)
         oauth = build_oauth_provider(oauth_config) if oauth_config else None
-        server = create_server(profile=args.profile, auth=build_auth(token, oauth))
+        # Optional remote file transfer: built only here (http path), validated, and
+        # absent (None) when no public URL is set — never a startup crash.
+        file_transfer = _build_file_transfer()
+        server = create_server(
+            profile=args.profile,
+            auth=build_auth(token, oauth),
+            file_transfer=file_transfer,
+        )
         server.run(transport="http", host=host, port=_resolve_port(args.port))
     else:
         # show_banner=False keeps FastMCP's startup banner out of the host's logs

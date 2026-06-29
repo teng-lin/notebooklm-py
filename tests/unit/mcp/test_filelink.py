@@ -1,0 +1,160 @@
+"""Unit tests for the HMAC file-transfer token signer (``mcp/_filelink.py``).
+
+The money path: a token must round-trip its payload, reject any tampering / wrong
+operation / expiry, cap its length before decoding, and tolerate base64url with or
+without padding. No fastmcp needed — stdlib only — but kept under ``tests/unit/mcp``
+beside the other MCP tests.
+"""
+
+from __future__ import annotations
+
+import base64
+import hmac
+import json
+import time
+from unittest import mock
+
+import pytest
+
+import notebooklm.mcp._filelink as filelink
+from notebooklm.mcp._filelink import (
+    DOWNLOAD_TTL,
+    UPLOAD_TTL,
+    FileLinkError,
+    FileLinkSigner,
+    FileTransferConfig,
+    _b64url_decode,
+)
+
+KEY = b"k" * 32
+
+
+def _signer() -> FileLinkSigner:
+    return FileLinkSigner(KEY)
+
+
+def test_round_trip_returns_payload_with_injected_exp() -> None:
+    signer = _signer()
+    before = int(time.time())
+    token = signer.sign({"op": "ul", "nb": "n1", "title": "Doc"}, ttl=60)
+    payload = signer.verify(token, op="ul")
+    assert payload["op"] == "ul"
+    assert payload["nb"] == "n1"
+    assert payload["title"] == "Doc"
+    # The signer OWNS expiry: callers never pass exp; it is injected as now+ttl.
+    assert before + 60 <= payload["exp"] <= int(time.time()) + 61
+
+
+def test_tampered_body_is_rejected() -> None:
+    signer = _signer()
+    token = signer.sign({"op": "ul", "nb": "n1"}, ttl=60)
+    body_b64, mac_b64 = token.split(".")
+    # Flip the notebook id in the (decoded) body, re-encode, keep the old MAC.
+    payload = json.loads(_b64url_decode(body_b64))
+    payload["nb"] = "attacker"
+    forged_body = (
+        base64.urlsafe_b64encode(
+            json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+        )
+        .rstrip(b"=")
+        .decode()
+    )
+    with pytest.raises(FileLinkError):
+        signer.verify(f"{forged_body}.{mac_b64}", op="ul")
+
+
+def test_tampered_mac_is_rejected() -> None:
+    signer = _signer()
+    token = signer.sign({"op": "ul", "nb": "n1"}, ttl=60)
+    body_b64, _mac = token.split(".")
+    bad_mac = base64.urlsafe_b64encode(b"x" * 32).rstrip(b"=").decode()
+    with pytest.raises(FileLinkError):
+        signer.verify(f"{body_b64}.{bad_mac}", op="ul")
+
+
+def test_wrong_key_is_rejected() -> None:
+    token = _signer().sign({"op": "dl", "nb": "n1", "atype": "audio"}, ttl=60)
+    with pytest.raises(FileLinkError):
+        FileLinkSigner(b"z" * 32).verify(token, op="dl")
+
+
+def test_expired_token_is_rejected() -> None:
+    signer = _signer()
+    # A negative TTL injects an exp already in the past — no clock patching needed.
+    token = signer.sign({"op": "ul", "nb": "n1"}, ttl=-10)
+    with pytest.raises(FileLinkError):
+        signer.verify(token, op="ul")
+
+
+def test_operation_mismatch_is_rejected() -> None:
+    signer = _signer()
+    upload_token = signer.sign({"op": "ul", "nb": "n1"}, ttl=60)
+    # A valid upload token must NOT verify against the download route's op.
+    with pytest.raises(FileLinkError):
+        signer.verify(upload_token, op="dl")
+
+
+def test_over_length_token_rejected() -> None:
+    signer = _signer()
+    # An over-length token (> the 4 KiB cap) is rejected by the pre-decode length
+    # guard. Crucially it carries a single "." and valid base64url so the ONLY thing
+    # that can reject it is the length cap — if the cap didn't fire first, decode +
+    # MAC work would run; the rejection proves the cap short-circuits.
+    body = "A" * 5000
+    mac = base64.urlsafe_b64encode(b"x" * 32).rstrip(b"=").decode()
+    with pytest.raises(FileLinkError):
+        signer.verify(f"{body}.{mac}", op="ul")
+    # Sanity: the cap is what trips — a same-shaped but short token gets past length
+    # and fails later (still a FileLinkError, but for a different reason).
+    assert len(body) + len(mac) + 1 > filelink._MAX_TOKEN_LEN
+
+
+def test_malformed_token_shapes_rejected() -> None:
+    signer = _signer()
+    for bad in ("", "no-dot", "a.b.c", ".", "a.", ".b"):
+        with pytest.raises(FileLinkError):
+            signer.verify(bad, op="ul")
+
+
+def test_non_ascii_token_body_raises_filelinkerror_not_unicodeerror() -> None:
+    # A non-ASCII char in the body segment must surface as a FileLinkError (→ flat
+    # 403 at the route), NOT an uncaught UnicodeEncodeError (a bare 500). Security
+    # finding: malformed public input should reject cleanly.
+    signer = _signer()
+    with pytest.raises(FileLinkError):
+        signer.verify("é.bm9wZQ", op="ul")
+
+
+def test_base64url_padding_tolerant() -> None:
+    # The encoder strips '=' padding; the decoder must accept inputs needing 0..3
+    # pad bytes back. Cover lengths that re-pad to each residue.
+    for raw in (b"a", b"ab", b"abc", b"abcd"):
+        encoded = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+        assert _b64url_decode(encoded) == raw
+        # And the fully-padded form decodes identically.
+        assert _b64url_decode(base64.urlsafe_b64encode(raw).decode()) == raw
+
+
+def test_verify_uses_constant_time_compare() -> None:
+    signer = _signer()
+    token = signer.sign({"op": "ul", "nb": "n1"}, ttl=60)
+    # Object patch on the stdlib ``hmac`` (a public attr), not a string target.
+    with mock.patch.object(hmac, "compare_digest", wraps=hmac.compare_digest) as cmp:
+        signer.verify(token, op="ul")
+        cmp.assert_called_once()
+
+
+def test_config_builds_ttl_scoped_urls() -> None:
+    signer = _signer()
+    config = FileTransferConfig(signer=signer, base_url="https://host.example/")
+    up = config.upload_url({"op": "ul", "nb": "n1"})
+    down = config.download_url({"op": "dl", "nb": "n1", "atype": "audio"})
+    assert up.startswith("https://host.example/files/ul/")
+    assert down.startswith("https://host.example/files/dl/")
+    # The trailing slash on base_url is not doubled.
+    assert "//files" not in up.replace("https://", "")
+    # Upload token carries the 15-min TTL, download the 30-min TTL.
+    up_exp = signer.verify(up.rsplit("/", 1)[1], op="ul")["exp"]
+    down_exp = signer.verify(down.rsplit("/", 1)[1], op="dl")["exp"]
+    assert UPLOAD_TTL == 15 * 60 and DOWNLOAD_TTL == 30 * 60
+    assert down_exp - up_exp >= DOWNLOAD_TTL - UPLOAD_TTL - 2

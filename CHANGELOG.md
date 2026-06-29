@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Remote MCP file upload & download** (ADR-0024). Over the remote (HTTP)
+  connector — where the claude.ai browser can't carry the MCP credential and the
+  JSON-RPC channel can't carry bytes — `source_add type=file` and
+  `artifact_download` now broker a **short-lived HMAC-signed URL** served by the
+  same container, and the browser does the byte transfer out-of-band (the
+  established remote-MCP pattern; MCP has no native upload primitive and its
+  native binary-Resource download is capped far below a podcast/video). Upload
+  accepts a raw body over `POST`/`PUT` (a browser file-picker page **or** a
+  code-execution-sandbox `curl`), bounded by a 200 MiB per-request cap and an
+  in-flight-upload limit; download returns a clickable `resource_link`. Enabled
+  by `NOTEBOOKLM_MCP_PUBLIC_URL` (falls back to `NOTEBOOKLM_MCP_OAUTH_BASE_URL`);
+  unset → the two tools return a clear "not configured" error and the server
+  still starts. **stdio (local) installs are unchanged** — they keep reading and
+  writing real local paths. The REST `server` extra already supports native
+  multipart upload + `FileResponse` download and is unaffected. See
+  [docs/mcp-guide.md](docs/mcp-guide.md#file-upload--download-remote).
 - **Retrieve the generation prompt behind an artifact** (#1571). New
   `client.artifacts.get_prompt(notebook_id, artifact_id)` returns the free-text
   prompt an artifact was generated from, and a matching `artifact get-prompt`

@@ -60,7 +60,7 @@ def test_defaults_wire_stdio_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_server = MagicMock()
     created: dict[str, object] = {}
 
-    def fake_create_server(*, profile: str | None = None, client_factory=None):
+    def fake_create_server(*, profile: str | None = None, client_factory=None, file_transfer=None):
         created["profile"] = profile
         return fake_server
 
@@ -88,7 +88,7 @@ def test_explicit_http_transport_binds_loopback(monkeypatch: pytest.MonkeyPatch)
     fake_server = MagicMock()
     captured: dict[str, object] = {}
 
-    def fake_create_server(*, profile=None, client_factory=None, auth=None):
+    def fake_create_server(*, profile=None, client_factory=None, auth=None, file_transfer=None):
         captured["auth"] = auth
         return fake_server
 
@@ -107,7 +107,9 @@ def test_http_default_port_is_9420(monkeypatch: pytest.MonkeyPatch) -> None:
     """The default HTTP port is 9420 (no --port / NOTEBOOKLM_MCP_PORT)."""
     fake_server = MagicMock()
     monkeypatch.setattr(
-        entry, "create_server", lambda *, profile=None, client_factory=None, auth=None: fake_server
+        entry,
+        "create_server",
+        lambda *, profile=None, client_factory=None, auth=None, file_transfer=None: fake_server,
     )
     monkeypatch.delenv("NOTEBOOKLM_MCP_PORT", raising=False)
     monkeypatch.delenv("NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND", raising=False)
@@ -154,7 +156,7 @@ def test_http_loopback_with_token_attaches_auth(monkeypatch: pytest.MonkeyPatch)
     fake_server = MagicMock()
     captured: dict[str, object] = {}
 
-    def fake_create_server(*, profile=None, client_factory=None, auth=None):
+    def fake_create_server(*, profile=None, client_factory=None, auth=None, file_transfer=None):
         captured["auth"] = auth
         return fake_server
 
@@ -191,7 +193,7 @@ def test_http_non_loopback_with_token_attaches_auth(monkeypatch: pytest.MonkeyPa
     fake_server = MagicMock()
     captured: dict[str, object] = {}
 
-    def fake_create_server(*, profile=None, client_factory=None, auth=None):
+    def fake_create_server(*, profile=None, client_factory=None, auth=None, file_transfer=None):
         captured["auth"] = auth
         return fake_server
 
@@ -213,7 +215,7 @@ def test_http_non_loopback_with_oauth_only_satisfies_gate(monkeypatch: pytest.Mo
     fake_server = MagicMock()
     captured: dict[str, object] = {}
 
-    def fake_create_server(*, profile=None, client_factory=None, auth=None):
+    def fake_create_server(*, profile=None, client_factory=None, auth=None, file_transfer=None):
         captured["auth"] = auth
         return fake_server
 
@@ -238,7 +240,7 @@ def test_http_non_loopback_with_oauth_and_bearer_composes_multiauth(
     fake_server = MagicMock()
     captured: dict[str, object] = {}
 
-    def fake_create_server(*, profile=None, client_factory=None, auth=None):
+    def fake_create_server(*, profile=None, client_factory=None, auth=None, file_transfer=None):
         captured["auth"] = auth
         return fake_server
 

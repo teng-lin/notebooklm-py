@@ -162,9 +162,34 @@ curl https://<host>/.well-known/oauth-authorization-server     # 200 JSON; issue
 
 Full step-by-step + security model: [`deploy/README.md`](../deploy/README.md). Use a
 **dedicated/throwaway Google account** — the mounted `master_token.json` is a durable full-account
-credential. The connector moves text/references only; add device files via Google Drive
-(`source_add` with a Drive id) and consume generated podcasts/videos in the NotebookLM app.
-Multi-tenant hosting is out of scope for this single-tenant setup.
+credential. Multi-tenant hosting is out of scope for this single-tenant setup.
+
+### File upload & download (remote)
+
+The MCP/JSON-RPC channel can't carry binaries, so over a remote connector
+`source_add type=file` and `artifact_download` broker a **short-lived signed URL**
+served by the same container; your browser does the byte transfer (see
+[ADR-0024](adr/0024-mcp-remote-file-transfer.md)). This is the standard pattern for
+remote MCP file transfer — MCP has no native file-upload primitive, and its native
+download (binary Resources) is capped far below a podcast/video.
+
+**Enable it:** set `NOTEBOOKLM_MCP_PUBLIC_URL` to your bare public origin (the same
+host as the tunnel, no `/mcp`). It falls back to `NOTEBOOKLM_MCP_OAUTH_BASE_URL`, so
+if you configured claude.ai OAuth above, **file transfer is already on**. Unset on a
+bearer-only deploy → the two file tools return a clear "not configured" error
+(everything else still works; the server does not refuse to start).
+
+- **Upload a local file:** `source_add type=file` returns an `upload_required` link.
+  Open it in your browser, pick the file, and it's added to the notebook. (Claude can
+  also `PUT` a file it already holds to that link from its **code-execution sandbox** —
+  but that requires Code Execution enabled **and your server domain whitelisted** in
+  claude.ai Settings → Capabilities → additional allowed domains, or the `PUT` fails.)
+- **Download an artifact:** `artifact_download` returns a `download_ready` link (a
+  clickable `resource_link`); open it to stream the podcast/video/PDF to your device.
+- Links are HMAC-signed and short-lived (upload 15 min, download 30 min) and expire on
+  a server restart. Google Drive (`source_add` with a Drive id) remains a no-browser
+  alternative for adding files. stdio (local) installs are unchanged — they still read
+  and write real local paths directly.
 
 ## Core concepts
 
