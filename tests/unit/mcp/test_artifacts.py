@@ -35,6 +35,8 @@ from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
 NB_ID = "11111111-1111-1111-1111-111111111111"
 TASK_ID = "task-abc-123"
+SRC_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+SRC_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 
 #: Real-``Artifact`` builders for the download core (it filters on
 #: ``isinstance(a, Artifact)`` + the int type code + ``is_completed``).
@@ -62,6 +64,12 @@ class FakeArtifact:
     kind: ArtifactType = ArtifactType.AUDIO
     is_completed: bool = True
     created_at: datetime = field(default_factory=lambda: datetime(2024, 1, 1, tzinfo=timezone.utc))
+
+
+@dataclass
+class FakeSource:
+    id: str
+    title: str | None
 
 
 @dataclass
@@ -145,14 +153,51 @@ async def test_artifact_generate_report_routes_to_report(mcp_call, mock_client) 
     mock_client.artifacts.generate_report.assert_awaited_once()
 
 
-async def test_artifact_generate_passes_source_ids(mcp_call, mock_client) -> None:
+async def test_artifact_generate_resolves_source_id_prefix(mcp_call, mock_client) -> None:
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
+    mock_client.sources.list = AsyncMock(
+        return_value=[
+            FakeSource(id=SRC_A, title="Methods.pdf"),
+            FakeSource(id=SRC_B, title="Appendix.pdf"),
+        ]
+    )
     await mcp_call(
         "artifact_generate",
-        {"notebook": NB_ID, "artifact_type": "audio", "source_ids": ["src-1", "src-2"]},
+        {"notebook": NB_ID, "artifact_type": "audio", "source_ids": [SRC_A[:12]]},
     )
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
-    assert kwargs["source_ids"] == ("src-1", "src-2")
+    assert kwargs["source_ids"] == [SRC_A]
+    mock_client.sources.list.assert_awaited_once_with(NB_ID)
+
+
+async def test_artifact_generate_resolves_source_title(mcp_call, mock_client) -> None:
+    mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
+    mock_client.sources.list = AsyncMock(
+        return_value=[
+            FakeSource(id=SRC_A, title="Methods.pdf"),
+            FakeSource(id=SRC_B, title="Appendix.pdf"),
+        ]
+    )
+    await mcp_call(
+        "artifact_generate",
+        {"notebook": NB_ID, "artifact_type": "audio", "source_ids": ["appendix.pdf"]},
+    )
+    kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
+    assert kwargs["source_ids"] == [SRC_B]
+    mock_client.sources.list.assert_awaited_once_with(NB_ID)
+
+
+async def test_artifact_generate_empty_string_source_id_is_validation_error(
+    mcp_call, mock_client
+) -> None:
+    mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call(
+            "artifact_generate",
+            {"notebook": NB_ID, "artifact_type": "audio", "source_ids": [""]},
+        )
+    assert "VALIDATION" in str(excinfo.value)
+    mock_client.artifacts.generate_audio.assert_not_called()
 
 
 async def test_artifact_generate_omitting_source_ids_uses_all(mcp_call, mock_client) -> None:

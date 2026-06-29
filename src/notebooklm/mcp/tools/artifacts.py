@@ -6,9 +6,10 @@ Thin adapters over the transport-neutral artifact cores:
 * ``artifact_generate`` is a hybrid over the neutral ``generate`` core: it builds a
   :class:`~notebooklm._app.generate.GenerationPlan` via ``build_generation_plan``
   (which enum-maps + validates the per-kind options) and drives
-  ``execute_generation`` with **pass-through** notebook/source resolvers (MCP has
-  already resolved the notebook id and supplies full source ids). Each ``type``
-  routes to the matching ``client.artifacts.generate_*`` method.
+  ``execute_generation`` with a pass-through notebook resolver (MCP has already
+  resolved the notebook id) and an MCP source resolver that accepts full ids,
+  prefixes, and exact titles. Each ``type`` routes to the matching
+  ``client.artifacts.generate_*`` method.
 * ``artifact_status`` is the **stateless** poll path (``_app.artifacts.poll_artifact``
   → ``client.artifacts.poll_status``) so an agent can poll a ``task_id`` across
   separate tool calls without holding server state.
@@ -44,7 +45,7 @@ from .._confirm import READ_ONLY
 from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors
 from .._filelink import DOWNLOAD_TTL, FileTransferConfig
-from .._resolve import resolve_notebook
+from .._resolve import resolve_notebook, resolve_source
 from ._passthrough import passthrough_notebook_id
 
 if TYPE_CHECKING:
@@ -264,24 +265,28 @@ _DOWNLOAD_SPECS: dict[str, download_core.DownloadTypeSpec] = {
 
 
 async def _passthrough_sources(
-    _client: NotebookLMClient,
-    _notebook_id: str,
+    client: NotebookLMClient,
+    notebook_id: str,
     source_ids: Any,
     *,
     json_output: bool = False,
 ) -> Any:
-    """Return the supplied (already-full) source ids, or ``None`` when none were
-    given so the backend uses *every* source.
+    """Resolve source refs to full ids, or ``None`` when none were given.
 
-    MCP supplies full source ids, so no partial-id resolution is needed. But an
-    EMPTY collection must map to ``None`` (not ``[]``): the generate core treats
-    ``None`` as "all sources" (mirroring the CLI's ``resolve_source_ids``, which
-    returns ``None`` for no input), whereas an empty list means "zero sources" —
-    which the backend refuses for source-needing kinds (quiz/audio/flashcards),
-    returning a null id surfaced as ``… generation is unavailable``. The tool
-    passes ``tuple(source_ids or ())``, so omitting ``source_ids`` arrives here
-    as ``()`` and must become ``None``."""
-    return source_ids or None
+    The generate core treats ``None`` as "all sources" (mirroring the CLI's
+    ``resolve_source_ids``), whereas an empty list means "zero sources" and is
+    rejected by the backend for source-needing kinds. The tool passes
+    ``tuple(source_ids or ())``, so omitted ``source_ids`` and an explicit empty
+    list arrive here as ``()`` and must become ``None``.
+
+    Non-empty collections resolve each element through MCP's source resolver so
+    full UUIDs fast-path, unique prefixes expand, exact titles match, and empty
+    strings fail validation just like sibling source-accepting tools.
+    """
+    del json_output  # MCP source resolution is silent; keep the core callback signature.
+    if not source_ids:
+        return None
+    return [await resolve_source(client, notebook_id, source_id) for source_id in source_ids]
 
 
 async def _passthrough_download_notebook(notebook_id: str) -> str:
