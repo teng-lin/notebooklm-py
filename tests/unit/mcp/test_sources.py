@@ -803,7 +803,8 @@ async def test_source_add_single_rejects_foreign_content_scalar(
     msg = str(excinfo.value)
     assert "VALIDATION" in msg
     # The message names the offending scalar (part of the rejection contract).
-    assert next(iter(foreign)) in msg
+    (foreign_key,) = foreign
+    assert foreign_key in msg
     # Rejection is pre-resolve, so a name is never looked up.
     mock_client.notebooks.list.assert_not_called()
 
