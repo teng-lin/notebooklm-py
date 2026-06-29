@@ -845,6 +845,10 @@ async def test_source_add_single_metadata_not_rejected(mcp_call, mock_client) ->
     assert result.structured_content == {
         "source": {"id": SRC_ID, "title": "Page", "kind": "web_page", "status_label": "ready"}
     }
+    # The add actually proceeded (not silently rejected). A url source ignores
+    # title/mime_type downstream — add_url takes only (notebook_id, url) — so the
+    # point here is that supplying them does not trip the content-scalar gate.
+    mock_client.sources.add_url.assert_awaited_once_with(NB_ID, "https://example.com/a")
 
 
 async def test_source_get_content_not_found_projects_tool_error(mcp_call, mock_client) -> None:
