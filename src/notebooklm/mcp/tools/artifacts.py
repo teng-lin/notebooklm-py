@@ -31,6 +31,7 @@ from fastmcp import Context
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.tools.tool import ToolResult
 from mcp.types import ResourceLink
+from pydantic import AnyUrl
 
 from ..._app import artifacts as artifact_core
 from ..._app import download as download_core
@@ -262,7 +263,10 @@ def _broker_download(
     link = ResourceLink(
         type="resource_link",
         name=f"{artifact_type} download",
-        uri=url,  # type: ignore[arg-type]  # pydantic coerces the str to AnyUrl
+        # ResourceLink.uri is an AnyUrl — construct it explicitly rather than
+        # passing the raw str (keeps mypy happy across pydantic-stub versions:
+        # a bare str needed a [arg-type] ignore that CI's stubs flagged unused).
+        uri=AnyUrl(url),
         description=f"Download the latest {artifact_type} artifact (link expires).",
     )
     return ToolResult(content=[link], structured_content=structured)
