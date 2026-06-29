@@ -17,9 +17,11 @@ Tools covered and the cassette each replays:
 * ``source_get_content`` over ``sources_get_fulltext.yaml`` — consumes BOTH the
   leading ``GET_NOTEBOOK`` (``rLM1Ne``, metadata via ``execute_source_get``) and
   the trailing ``hizoJc`` (``GET_SOURCE``, full text via ``execute_source_fulltext``).
-* ``source_wait`` (single + all) over ``sources_list.yaml`` — the poller probes
-  source status via the same ``GET_NOTEBOOK`` list, and every recorded source is
-  already ``READY`` so it resolves on the first poll.
+* ``source_wait`` (single + all) over ``sources_wait.yaml`` (= ``sources_list.yaml``
+  plus one real ``hizoJc`` ``GET_SOURCE`` interaction) — the poller probes source
+  status via the same ``GET_NOTEBOOK`` list, and every recorded source is already
+  ``READY`` so it resolves on the first poll; the lone web-page source's body is
+  fetched for the #1698 content-sanity check.
 
 Every tool is invoked with a FULL canonical UUID (the cassette's recorded
 notebook/source id) so the resolver takes its full-UUID fast path and never adds
@@ -414,7 +416,7 @@ async def test_mcp_source_get_content_over_vcr() -> None:
 
 
 @pytest.mark.asyncio
-@notebooklm_vcr.use_cassette("sources_list.yaml")
+@notebooklm_vcr.use_cassette("sources_wait.yaml")
 async def test_mcp_source_wait_single_over_vcr() -> None:
     """``source_wait`` (single source) resolves immediately for a READY source.
 
@@ -423,6 +425,14 @@ async def test_mcp_source_wait_single_over_vcr() -> None:
     The recorded source is already ``READY``, so it resolves on the first poll
     and the tool returns the unified aggregate (``ok`` True, the source in
     ``ready``, all error buckets empty).
+
+    The recorded source is a ``web_page``, so the #1698 content-sanity check
+    issues a ``GET_SOURCE`` (``hizoJc``) fetch for it — replayed from
+    ``sources_wait.yaml`` (= ``sources_list.yaml`` plus that one real interaction).
+    Its body is ample (11,819 chars ≫ the thin threshold), so NO ``warning`` is
+    attached: this end-to-end replay confirms a healthy ready page is not flagged.
+    (The per-kind fetch logic — web-page-only, thin → warning — is pinned by the
+    unit tests in ``tests/unit/mcp/test_sources.py``.)
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
@@ -448,10 +458,12 @@ async def test_mcp_source_wait_single_over_vcr() -> None:
     assert source["id"] == SOURCES_LIST_SOURCE_ID
     assert source["status"] == 2  # SourceStatus.READY
     assert source["status_label"] == "ready"
+    # The web-page body fetched ample text → no thin-content warning.
+    assert "warning" not in source
 
 
 @pytest.mark.asyncio
-@notebooklm_vcr.use_cassette("sources_list.yaml", allow_playback_repeats=True)
+@notebooklm_vcr.use_cassette("sources_wait.yaml", allow_playback_repeats=True)
 async def test_mcp_source_wait_all_over_vcr() -> None:
     """``source_wait`` (no ``source``) waits for every source in the notebook.
 
@@ -461,6 +473,11 @@ async def test_mcp_source_wait_all_over_vcr() -> None:
     unified aggregate (``ok`` True, the sources in ``ready``, error buckets
     empty). ``allow_playback_repeats`` lets the per-source polls re-match the
     single recorded ``rLM1Ne`` interaction.
+
+    The lone ``web_page`` source triggers the #1698 content-sanity ``GET_SOURCE``
+    (``hizoJc``) fetch (the 7 ``pasted_text`` sources are skipped by the kind gate);
+    its ample body yields no ``warning``. ``sources_wait.yaml`` carries that one
+    extra interaction. (Web-page-only fetching is pinned by the unit tests.)
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
@@ -485,3 +502,5 @@ async def test_mcp_source_wait_all_over_vcr() -> None:
     assert SOURCES_LIST_SOURCE_ID in ids
     # Every returned source is READY (the wait only yields ready sources).
     assert all(row["status"] == 2 for row in ready)
+    # The one web_page has ample text → no thin-content warning anywhere.
+    assert all("warning" not in row for row in ready)

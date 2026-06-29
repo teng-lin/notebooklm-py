@@ -108,6 +108,33 @@ class FakeFailedSource:
 
 
 @dataclass
+class FakeReadyTextSource:
+    """A READY non-web-page source (pasted text). ``FakeSource`` hardcodes
+    ``kind=WEB_PAGE``; this fake exists so the source_wait thin-content sanity
+    check can prove it NEVER flags (or even fetches) a non-web-page source —
+    legitimately short pasted text / transcripts must not be warned about."""
+
+    id: str
+    title: str | None = None
+
+    @property
+    def is_ready(self) -> bool:
+        return True
+
+    @property
+    def is_error(self) -> bool:
+        return False
+
+    @property
+    def kind(self) -> SourceType:
+        return SourceType.PASTED_TEXT
+
+    @property
+    def status(self) -> SourceStatus:
+        return SourceStatus.READY
+
+
+@dataclass
 class FakeFulltext:
     """Stand-in for ``SourceFulltext`` (what ``client.sources.get_fulltext`` returns)."""
 
@@ -510,6 +537,13 @@ async def test_source_wait_single_source_ready(mcp_call, mock_client) -> None:
     mock_client.sources.wait_until_ready = AsyncMock(
         return_value=FakeSource(id=SRC_ID, title="Ready")
     )
+    # FakeSource is a READY web_page, so the thin-content sanity check fetches its
+    # body; return ample content so NO warning is added (assert below pins the exact
+    # ready row). Without this the fetch would await a bare MagicMock and the
+    # swallowed TypeError would mask the assertion — green for the wrong reason.
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
     result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
     sc = result.structured_content
     _assert_aggregate_shape(sc)
@@ -574,6 +608,11 @@ async def test_source_wait_all_sources_all_ready(mcp_call, mock_client) -> None:
     mock_client.sources.wait_until_ready = _dispatch_wait_until_ready(
         {SRC_ID: FakeSource(id=SRC_ID, title="A"), SRC2_ID: FakeSource(id=SRC2_ID, title="B")}
     )
+    # Both fakes are READY web_pages → the thin-content check fetches each body;
+    # ample content ⇒ no warning (keeps the ready-id set assertion exact).
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
     result = await mcp_call("source_wait", {"notebook": NB_ID})
     sc = result.structured_content
     _assert_aggregate_shape(sc)
@@ -605,6 +644,11 @@ async def test_source_wait_all_sources_partial_progress(mcp_call, mock_client) -
             missing_id: SourceNotFoundError(missing_id),
         }
     )
+    # The lone ready source is a READY web_page → thin-content check fetches it;
+    # ample content ⇒ no warning, so the ready bucket stays exactly [ready_id].
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
     result = await mcp_call("source_wait", {"notebook": NB_ID})
     sc = result.structured_content
     _assert_aggregate_shape(sc)
@@ -635,6 +679,9 @@ async def test_source_wait_all_sources_forwards_interval(mcp_call, mock_client) 
     """The all-sources branch honors the advertised ``timeout``/``interval`` per source."""
     mock_client.sources.list = AsyncMock(return_value=[FakeSource(id=SRC_ID)])
     mock_client.sources.wait_until_ready = AsyncMock(return_value=FakeSource(id=SRC_ID, title="A"))
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
     await mcp_call("source_wait", {"notebook": NB_ID, "timeout": 30.0, "interval": 3.0})
     mock_client.sources.wait_until_ready.assert_awaited_once_with(
         NB_ID, SRC_ID, timeout=30.0, initial_interval=3.0
@@ -674,6 +721,129 @@ async def test_source_wait_all_sources_cancels_siblings_on_unexpected_error(
         await mcp_call("source_wait", {"notebook": NB_ID})
     assert sibling_cancelled.is_set(), "slow sibling poller was not cancelled/drained"
     mock_client.sources.wait_for_sources.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# source_wait — thin-content sanity warning (#1698): a READY web_page whose
+# fetched text is suspiciously thin is flagged (likely dead link / soft-404 /
+# paywall ghost source). web-page only; never rejects; best-effort.
+# ---------------------------------------------------------------------------
+
+
+async def test_source_wait_thin_web_page_warns(mcp_call, mock_client) -> None:
+    """A READY web_page with < the thin threshold (100) chars gets a warning,
+    yet stays READY/ok (advisory only)."""
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="Ghost")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="tiny", char_count=4)
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    sc = result.structured_content
+    _assert_aggregate_shape(sc)
+    assert sc["ok"] is True
+    assert len(sc["ready"]) == 1
+    row = sc["ready"][0]
+    assert row["id"] == SRC_ID
+    assert "warning" in row
+    assert "4 chars" in row["warning"]
+    assert "source_get_content" in row["warning"]
+    mock_client.sources.get_fulltext.assert_awaited_once_with(NB_ID, SRC_ID, output_format="text")
+
+
+async def test_source_wait_ample_web_page_no_warning(mcp_call, mock_client) -> None:
+    """A READY web_page at/above the threshold is not flagged."""
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="Real")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 100, char_count=100)
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    sc = result.structured_content
+    assert sc["ready"][0].get("warning") is None
+
+
+async def test_source_wait_zero_char_web_page_warns(mcp_call, mock_client) -> None:
+    """A READY web_page with 0 extracted chars warns too — the wording covers the
+    not-yet-indexed / empty case rather than asserting a false 'dead link'."""
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="Empty")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="", char_count=0)
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    sc = result.structured_content
+    row = sc["ready"][0]
+    assert "warning" in row
+    assert "0 chars" in row["warning"]
+    assert "not-yet-indexed" in row["warning"]
+
+
+async def test_source_wait_non_web_page_not_flagged_or_fetched(mcp_call, mock_client) -> None:
+    """A READY non-web-page source (short pasted text) is NEVER flagged, and its
+    body is NEVER fetched — the kind gate protects legitimately short content."""
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeReadyTextSource(id=SRC_ID, title="Short note")
+    )
+    mock_client.sources.get_fulltext = AsyncMock()
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    sc = result.structured_content
+    assert sc["ready"][0].get("warning") is None
+    mock_client.sources.get_fulltext.assert_not_called()
+
+
+async def test_source_wait_thin_check_fetch_failure_degrades(mcp_call, mock_client) -> None:
+    """A body-fetch failure must NEVER break the wait — it degrades to no warning."""
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="Flaky")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(side_effect=RuntimeError("transport boom"))
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    sc = result.structured_content
+    _assert_aggregate_shape(sc)
+    assert sc["ok"] is True
+    assert sc["ready"][0].get("warning") is None
+
+
+async def test_source_wait_all_sources_thin_warning_per_item(mcp_call, mock_client) -> None:
+    """Across the all-sources fan-out: only the thin web_page is flagged; the ample
+    web_page and the non-web-page are not. ``get_fulltext`` is called for the two
+    web_pages only (the pasted-text source is skipped by the kind gate)."""
+    thin_id, ample_id, text_id = SRC_ID, SRC2_ID, "55555555-5555-5555-5555-555555555555"
+    mock_client.sources.list = AsyncMock(
+        return_value=[
+            FakeSource(id=thin_id),
+            FakeSource(id=ample_id),
+            FakeReadyTextSource(id=text_id),
+        ]
+    )
+    mock_client.sources.wait_until_ready = _dispatch_wait_until_ready(
+        {
+            thin_id: FakeSource(id=thin_id, title="Ghost"),
+            ample_id: FakeSource(id=ample_id, title="Real"),
+            text_id: FakeReadyTextSource(id=text_id, title="Note"),
+        }
+    )
+
+    def _fulltext(_nb: str, source_id: str, **_kwargs: Any) -> Any:
+        char_count = 5 if source_id == thin_id else 300
+        return FakeFulltext(content="y" * char_count, char_count=char_count)
+
+    mock_client.sources.get_fulltext = AsyncMock(side_effect=_fulltext)
+    result = await mcp_call("source_wait", {"notebook": NB_ID})
+    sc = result.structured_content
+    _assert_aggregate_shape(sc)
+    assert sc["ok"] is True
+    warned = {row["id"]: row.get("warning") for row in sc["ready"]}
+    assert warned[thin_id] is not None and "5 chars" in warned[thin_id]
+    assert warned[ample_id] is None
+    assert warned[text_id] is None
+    # Only the two web_page sources are fetched; the pasted-text source is skipped.
+    fetched_ids = {call.args[1] for call in mock_client.sources.get_fulltext.await_args_list}
+    assert fetched_ids == {thin_id, ample_id}
 
 
 async def test_source_add_text(mcp_call, mock_client) -> None:

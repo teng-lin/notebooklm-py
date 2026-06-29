@@ -38,7 +38,7 @@ from ...exceptions import (
     SourceTimeoutError,
     ValidationError,
 )
-from ...types import source_status_to_str
+from ...types import SourceType, source_status_to_str
 from ...urls import is_youtube_url
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client, get_file_transfer
@@ -61,6 +61,12 @@ _DRIVE_MIME_CHOICES = ("google-doc", "google-slides", "google-sheets", "pdf")
 
 #: The default Drive MIME choice when the caller does not specify one.
 _DEFAULT_DRIVE_MIME = "google-doc"
+
+#: A READY ``web_page`` source whose indexed text is shorter than this many
+#: characters gets a non-blocking content-sanity ``warning`` on ``source_wait``
+#: (likely a dead link / soft-404 / paywall "ghost source"). Deliberately
+#: conservative — advisory only, never a rejection. See :func:`_thin_content_warning`.
+_THIN_SOURCE_CHAR_THRESHOLD = 100
 
 
 def _source_view(source: Any) -> dict[str, Any]:
@@ -307,6 +313,14 @@ def register(mcp: Any) -> None:
         **partial progress** — a slow or failed source no longer discards the ones
         that did become ready.
 
+        A READY **web-page** entry may carry a non-blocking ``warning`` when its
+        indexed text is suspiciously thin (little/no extractable content) — a likely
+        dead link / soft-404 / paywalled "ghost source" that add-time status cannot
+        catch (a soft-404 serves HTTP 200). It is advisory only: the source is still
+        READY and still counts as ``ok``; verify the page with ``source_get_content``.
+        Only web-page sources are checked — short pasted text / transcripts are never
+        flagged.
+
         A single-source ``source`` ref that does not resolve (e.g. an unknown title)
         still raises NOT_FOUND before the wait — that is an input error, distinct
         from a resolved source the backend reports missing/failed/slow (which lands
@@ -330,12 +344,12 @@ def register(mcp: Any) -> None:
                         interval=interval,
                     ),
                 )
-                return _aggregate_wait_outcomes(nb_id, [outcome])
+                return await _aggregate_wait_outcomes(client, nb_id, [outcome])
             sources = await client.sources.list(nb_id)
             outcomes = await _wait_all_sources(
                 client, nb_id, [s.id for s in sources], timeout=timeout, interval=interval
             )
-            return _aggregate_wait_outcomes(nb_id, outcomes)
+            return await _aggregate_wait_outcomes(client, nb_id, outcomes)
 
     @mcp.tool
     async def source_add(
@@ -385,7 +399,9 @@ def register(mcp: Any) -> None:
         only AFTER processing. Confirm the outcome with ``source_wait`` or
         ``source_list(status="error")``. When the add response ALREADY reflects a
         failed import, ``source_add`` flags it inline (``status_label="error"`` plus
-        a top-level ``warning``) instead of looking like a clean add.
+        a top-level ``warning``) instead of looking like a clean add. ``source_wait``
+        additionally flags a READY web page whose fetched text is suspiciously thin
+        (a likely dead link / soft-404 / paywall) with a per-source ``warning``.
 
         **Batch mode** — pass ``urls`` (a list of **http/https URLs**, YouTube links
         included) to add many in one call instead of one round-trip each. Each entry
@@ -840,8 +856,10 @@ def _wait_bucket_entry(
     return {"source_id": error.source_id, "error": str(error)}
 
 
-def _aggregate_wait_outcomes(
-    notebook_id: str, outcomes: list[wait_core.SourceWaitOutcome]
+async def _aggregate_wait_outcomes(
+    client: NotebookLMClient,
+    notebook_id: str,
+    outcomes: list[wait_core.SourceWaitOutcome],
 ) -> dict[str, Any]:
     """Project per-source wait outcomes onto the unified aggregate wire shape.
 
@@ -850,14 +868,25 @@ def _aggregate_wait_outcomes(
     missing, so the all-sources mode reports partial progress instead of discarding
     the sources that did become ready. ``ok`` is ``True`` iff nothing landed in an
     error bucket.
+
+    READY web-page entries are additionally annotated with a non-blocking
+    content-sanity ``warning`` when their indexed text is suspiciously thin (a
+    likely dead link / soft-404 / paywall ghost source) — see
+    :func:`_annotate_thin_warnings`. The warning is purely advisory: a thin source
+    is still READY and the wait is still ``ok``.
     """
     ready: list[dict[str, Any]] = []
+    # Pair each ready view with its Source so the thin-content sanity check can
+    # read the kind + fetch the body without re-resolving.
+    ready_pairs: list[tuple[dict[str, Any], Source]] = []
     timed_out: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
     not_found: list[dict[str, str]] = []
     for outcome in outcomes:
         if isinstance(outcome, wait_core.SourceWaitReady):
-            ready.append(_source_view(outcome.source))
+            view = _source_view(outcome.source)
+            ready.append(view)
+            ready_pairs.append((view, outcome.source))
         elif isinstance(outcome, wait_core.SourceWaitTimeout):
             timed_out.append(_wait_bucket_entry(outcome.error))
         elif isinstance(outcome, wait_core.SourceWaitProcessingError):
@@ -869,6 +898,7 @@ def _aggregate_wait_outcomes(
             # would surface as a type error AND fail loudly at runtime rather than
             # being silently dropped from every bucket.
             raise AssertionError(f"unhandled SourceWaitOutcome: {outcome!r}")
+    await _annotate_thin_warnings(client, notebook_id, ready_pairs)
     return {
         "notebook_id": notebook_id,
         "ok": not (timed_out or failed or not_found),
@@ -877,3 +907,81 @@ def _aggregate_wait_outcomes(
         "failed": failed,
         "not_found": not_found,
     }
+
+
+async def _annotate_thin_warnings(
+    client: NotebookLMClient,
+    notebook_id: str,
+    ready_pairs: list[tuple[dict[str, Any], Source]],
+) -> None:
+    """Attach a thin-content ``warning`` to each ready web-page view, in place.
+
+    Fetches the indexed body for the ready web-page sources concurrently (reads;
+    the client already caps in-flight RPCs via its semaphore). Non-web-page sources
+    never incur a fetch (:func:`_thin_content_warning` returns ``None`` immediately
+    for them).
+
+    Drives explicit tasks and, on any escape (e.g. a propagating ``CancelledError``
+    — :func:`_thin_content_warning` swallows ``Exception`` but not ``BaseException``),
+    cancels + drains the still-running sibling fetches before re-raising, so a
+    cancelled wait never leaks a coroutine. Mirrors :func:`_wait_all_sources`.
+    """
+    if not ready_pairs:
+        return
+    tasks = [
+        asyncio.create_task(_thin_content_warning(client, notebook_id, source))
+        for _view, source in ready_pairs
+    ]
+    try:
+        warnings = await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    for (view, _source), warning in zip(ready_pairs, warnings, strict=True):
+        if warning is not None:
+            view["warning"] = warning
+
+
+async def _thin_content_warning(
+    client: NotebookLMClient, notebook_id: str, source: Source
+) -> str | None:
+    """Return a content-sanity warning for a READY web-page source, else ``None``.
+
+    A dead link / soft-404 / paywalled page is often ingested as a READY source
+    with little or no extractable text — a "ghost source" that the add-time status
+    cannot catch (a soft-404 serves HTTP 200). When such a READY ``web_page`` source
+    has fewer than :data:`_THIN_SOURCE_CHAR_THRESHOLD` characters of indexed text,
+    flag it so an agent can verify rather than trust it.
+
+    Scope + safety:
+
+    * **web-page only** — text / file / drive / youtube sources are skipped:
+      legitimately short pasted text or a short transcript must NEVER be flagged.
+    * **best-effort** — the body fetch reuses the same ``GET_SOURCE`` the
+      ``source_get_content`` tool issues; any failure degrades to ``None`` so the
+      sanity check can never break a wait. (``except Exception``, not
+      ``BaseException``, so ``CancelledError`` still propagates.)
+    * **never rejects** — it only annotates; the source stays READY.
+    """
+    if not source.is_ready or source.kind != SourceType.WEB_PAGE:
+        return None
+    try:
+        result = await content_core.execute_source_fulltext(
+            client,
+            content_core.SourceFulltextPlan(
+                notebook_id=notebook_id, source_id=source.id, output_format="text"
+            ),
+        )
+    except Exception:  # noqa: BLE001 - sanity check must never break a wait
+        return None
+    char_count = result.fulltext.char_count
+    if char_count >= _THIN_SOURCE_CHAR_THRESHOLD:
+        return None
+    return (
+        f"little/no text extracted ({char_count} chars) — may be empty, "
+        "not-yet-indexed, a soft-404/dead link, blocked, or paywalled; "
+        "verify with source_get_content."
+    )
