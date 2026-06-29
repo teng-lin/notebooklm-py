@@ -72,22 +72,30 @@ _UNEXPECTED_MESSAGE = "An unexpected internal error occurred."
 #:    ``/``, ``?``, whitespace, or end — so a token inside a full
 #:    ``https://host/files/dl/<tok>?x=1`` URL is redacted in place.
 #: 2. **Home-directory paths** (the OS username is PII / host disclosure). The
-#:    username segment allows at most one embedded space (covers ``First Last``
-#:    macOS/Windows account names) and REQUIRES a following path separator, so a
-#:    username with a space is redacted WITHOUT eating prose across multiple paths:
-#:    a naive ``[^/]+`` would greedily cross prose to a later ``/`` (e.g.
-#:    ``/home/alice or /home/bob/x`` would swallow ``" or "``). Deliberate bounds
-#:    (fail-safe): a bare terminal ``/home/<user>`` (no following component) and a
-#:    username with two+ spaces are left alone; ``/Users/Shared/…`` over-redacts —
-#:    all err toward not mangling the message. Generic absolute paths
-#:    (``/var``/``/tmp``) are intentionally NOT redacted (would mangle id-shaped
-#:    ``NOT_FOUND``/RPC text for little gain).
+#:    username matcher (:data:`_HOME_USER`) is a word token (alphanumerics /
+#:    underscore with INTERNAL dots/hyphens — ``john.doe``, ``web-admin`` — but no
+#:    leading/trailing punctuation, so a trailing ``.``/``:``/``)`` of surrounding
+#:    prose is never eaten). Two cases:
+#:      * a single-word username is redacted ANYWHERE (no trailing separator
+#:        needed — it has no space, so it cannot greedily cross prose), so a bare
+#:        terminal ``/home/alice`` and ``/home/alice: denied`` are both masked
+#:        while the prose survives;
+#:      * a ``First Last`` username (one space) is only redacted when followed by a
+#:        path separator, so the space cannot swallow following prose across
+#:        multiple paths (``/home/a or /home/b/x`` must not become ``/home/***/x``).
+#:    Deliberate fail-safe bounds: a two-word username NOT followed by a separator
+#:    masks only its first word; ``/Users/Shared/…`` over-redacts; both err toward
+#:    not mangling the message. Generic absolute paths (``/var``/``/tmp``) are
+#:    intentionally NOT redacted (would mangle id-shaped ``NOT_FOUND``/RPC text for
+#:    little gain). The token alternation is anchored on disjoint character classes
+#:    (no overlapping quantifiers), so there is no catastrophic-backtracking risk.
+_HOME_USER = r"\w+(?:[.-]+\w+)*"
 _EXTRA_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(/files/(?:dl|ul)/)[A-Za-z0-9._-]+"), r"\1***"),
-    (re.compile(r"(/(?:home|Users)/)[^/ \r\n]+(?: [^/ \r\n]+)?(?=/)"), r"\1***"),
+    (re.compile(rf"(/(?:home|Users)/)(?:{_HOME_USER} {_HOME_USER}(?=/)|{_HOME_USER})"), r"\1***"),
     (
         re.compile(
-            r"([A-Za-z]:[\\/]Users[\\/])[^\\/ \r\n]+(?: [^\\/ \r\n]+)?(?=[\\/])",
+            rf"([A-Za-z]:[\\/]Users[\\/])(?:{_HOME_USER} {_HOME_USER}(?=[\\/])|{_HOME_USER})",
             re.IGNORECASE,
         ),
         r"\1***",

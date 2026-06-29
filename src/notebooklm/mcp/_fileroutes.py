@@ -90,10 +90,15 @@ _HTML_SECURITY_HEADERS = {
 #: This mirrors the REST server's ``CATEGORY_STATUS`` but is defined locally — the
 #: MCP layer must NOT import ``notebooklm.server`` (it pulls ``fastapi``; the
 #: boundary is enforced by ``tests/_guardrails/test_mcp_boundary.py``). Deliberate
-#: deviation: ``AUTH`` / ``CONFIG`` → **502**, not 401/500. These routes are
-#: authenticated by the signed token, so a *server-side* broken Google session is
-#: an upstream-dependency failure (Bad Gateway) the token-bearing caller cannot fix
-#: by re-authenticating — 401 would be misleading.
+#: deviations from the REST table (because these routes are a *gateway* to the
+#: NotebookLM backend, not the backend itself): ``AUTH`` / ``CONFIG`` → **502**, not
+#: 401/500 — they are authenticated by the signed token, so a *server-side* broken
+#: Google session is an upstream-dependency failure (Bad Gateway) the token-bearing
+#: caller cannot fix by re-authenticating (401 would be misleading); and
+#: ``LIBRARY`` → **502**, not 500, for the same gateway reason (an unclassified
+#: library error reaching here is still an upstream failure, not an internal bug of
+#: the route). ``UNEXPECTED`` stays 500 (a genuine route bug) but is unreachable via
+#: :func:`_upstream_error_response`, which only takes ``NotebookLMError``.
 _FILE_ROUTE_STATUS: dict[ErrorCategory, int] = {
     ErrorCategory.NOT_FOUND: 404,
     ErrorCategory.AUTH: 502,

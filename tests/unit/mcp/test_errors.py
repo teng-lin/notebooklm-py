@@ -239,8 +239,8 @@ def test_redact_masks_home_directory_usernames(message, leaked, expected_fragmen
 @pytest.mark.parametrize(
     "message",
     [
-        # Bare terminal home dir (no following path component) is left alone so we
-        # never eat trailing prose.
+        # A single-word terminal username IS redacted, but surrounding prose /
+        # punctuation must survive verbatim.
         "/home/alice: permission denied",
         # Multi-path prose must NOT be eaten reaching for a later separator.
         "Could not find /home/alice or /home/bob/config",
@@ -255,16 +255,45 @@ def test_redact_never_eats_prose_between_paths(message) -> None:
             assert word in out
 
 
-def test_redact_does_not_eat_prose_first_segment_examples() -> None:
-    """Exact-output guards for the two multi-path prose cases."""
+def test_redact_masks_terminal_and_punctuation_bounded_usernames() -> None:
+    """A single-word username is redacted even without a trailing separator.
+
+    It cannot eat prose (the token stops at whitespace/punctuation), so requiring a
+    trailing ``/`` would needlessly leak terminal usernames (gemini #1695). Internal
+    dots/hyphens are part of the name; a trailing ``.``/``)`` of prose is preserved.
+    """
+    assert redact("dir is /home/alice") == "dir is /home/***"
+    assert redact("/home/alice: permission denied") == "/home/***: permission denied"
+    assert redact("Could not find /home/alice.") == "Could not find /home/***."
+    assert redact("see (/home/alice)") == "see (/home/***)"
+    assert redact("/home/john.doe/x") == "/home/***/x"  # internal dot kept inside name
+    assert redact("/home/web-admin") == "/home/***"  # internal hyphen kept inside name
+
+
+def test_redact_exact_output_for_multi_path_prose() -> None:
+    """Exact-output guards: every path component is masked, all prose survives."""
     assert (
         redact("Could not find /home/alice or /home/bob/config")
-        == "Could not find /home/alice or /home/***/config"
+        == "Could not find /home/*** or /home/***/config"
     )
+    # A two-word username NOT followed by a separator masks only its first word
+    # (documented fail-safe bound); the prose is still fully preserved.
     assert (
         redact("/Users/Alice Smith: permission denied for /Users/Bob/x")
-        == "/Users/Alice Smith: permission denied for /Users/***/x"
+        == "/Users/*** Smith: permission denied for /Users/***/x"
     )
+
+
+def test_redact_home_pattern_capture_group_is_only_the_prefix() -> None:
+    """The ``\\1`` capture is just the ``/home/`` prefix — the username is the part
+    dropped, not coincidentally preserved (gemini #1695 testing guidance)."""
+    from notebooklm.mcp._errors import _EXTRA_PATTERNS
+
+    home_pattern = _EXTRA_PATTERNS[1][0]
+    m = home_pattern.search("Could not find /home/alice")
+    assert m is not None
+    assert m.group(1) == "/home/"
+    assert m.group(0) == "/home/alice"  # the whole match (prefix + username) is replaced
 
 
 def test_unexpected_exception_message_is_generic_not_raw_text() -> None:
