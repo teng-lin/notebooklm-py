@@ -85,4 +85,11 @@ async def call_tool(
     """Call one MCP tool over the in-memory transport and return its structured content."""
     async with mcp_client(real_client) as client:
         result = await client.call_tool(name, args or {})
+    # Every tool in this suite returns a structured dict on success. Assert it here
+    # so a caller subscripting the result fails LOUDLY (with the tool name) instead
+    # of with an opaque ``NoneType`` subscript error — and so the assertion can't
+    # be silently masked into a passing test by a ``(x or {})`` fallback.
+    assert result.structured_content is not None, (
+        f"MCP tool {name!r} returned no structured content"
+    )
     return result.structured_content

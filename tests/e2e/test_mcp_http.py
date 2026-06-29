@@ -96,7 +96,10 @@ class TestMcpHttpWellKnown:
                 "/.well-known/oauth-authorization-server",
             ):
                 resp = await raw.get(path)
-                assert resp.status_code == 404, f"{path} unexpectedly served: {resp.status_code}"
+                assert resp.status_code == 404, (
+                    f"{path} unexpectedly served (fastmcp metadata behavior changed?): "
+                    f"{resp.status_code}"
+                )
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
@@ -174,7 +177,9 @@ class TestMcpHttpFileRoutes:
             # Confirm the source landed, live, through the MCP listing.
             async with im.mcp_client() as mcp:
                 listing = await mcp.call_tool("source_list", {"notebook": nb})
-            ids = [s["id"] for s in listing.structured_content["sources"]]
+            sc = listing.structured_content
+            assert sc is not None, "source_list returned no structured content"
+            ids = [s["id"] for s in sc["sources"]]
             assert source_id in ids
 
     @pytest.mark.asyncio
@@ -188,7 +193,9 @@ class TestMcpHttpFileRoutes:
         async with inprocess_mcp_server(client, file_transfer=_file_transfer()) as im:
             async with im.mcp_client() as mcp:
                 listing = await mcp.call_tool("artifact_list", {"notebook": generation_notebook_id})
-                candidate = pick_downloadable_artifact(listing.structured_content["artifacts"])
+                sc = listing.structured_content
+                assert sc is not None, "artifact_list returned no structured content"
+                candidate = pick_downloadable_artifact(sc["artifacts"])
                 if candidate is None:
                     pytest.skip("no existing downloadable artifact on the generation notebook")
 

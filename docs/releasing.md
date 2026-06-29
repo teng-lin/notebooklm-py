@@ -273,7 +273,8 @@ upload/download pages). Verify that by hand, once per release (~10 min):
 - [ ] **Download** the generated artifact via the signed link.
 
 Bootstrap / sanity helper for the upload+download halves (drives a RUNNING
-server's file routes, prints PASS/FAIL):
+server's file routes, prints PASS/FAIL). Requires the `mcp` extra (e.g.
+`uv sync --extra mcp`):
 
 ```bash
 python scripts/mcp_live_smoke.py \

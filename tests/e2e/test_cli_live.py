@@ -28,6 +28,13 @@ from .conftest import requires_auth, run_cli  # noqa: E402 - after importorskip 
 pytestmark = pytest.mark.e2e
 
 
+def _is_rate_limited(proc) -> bool:
+    """True only on the real limiter signal (HTTP 429 / "rate limit") — NOT any
+    message that merely contains "rate", which could mask an unrelated failure."""
+    blob = f"{proc.stdout}\n{proc.stderr}".lower()
+    return "rate limit" in blob or "429" in blob
+
+
 @requires_auth
 class TestCliLive:
     """The CLI binary against the live account."""
@@ -64,25 +71,34 @@ class TestCliLive:
             read_only_notebook_id,
             "--json",
         )
-        if proc.returncode != 0 and "rate" in (proc.stdout + proc.stderr).lower():
+        if proc.returncode != 0 and _is_rate_limited(proc):
             pytest.skip(f"chat rate-limited: {proc.stdout or proc.stderr}")
         assert proc.returncode == 0, proc.stderr
         payload = json.loads(proc.stdout)
         assert isinstance(payload, dict)
 
     def test_source_add_then_list_json(self, temp_notebook):
-        """``source add <url> -n <temp> --json`` then ``source list`` confirms it."""
+        """``source add <url> -n <temp> --json`` then ``source list`` confirms it.
+
+        Asserts the SPECIFIC added source id shows up in the live listing —
+        ``temp_notebook`` already seeds one source, so a bare ``assert sources``
+        would pass even if the add path no-op'd.
+        """
         nb = temp_notebook.id
         add = run_cli("source", "add", "https://example.com", "-n", nb, "--json")
         assert add.returncode == 0, add.stderr
-        assert isinstance(json.loads(add.stdout), dict)
+        added = json.loads(add.stdout)
+        assert isinstance(added, dict)
+        added_id = added.get("id") or added.get("source_id") or added.get("source", {}).get("id")
+        assert added_id, f"source add returned no id: {added}"
 
         listing = run_cli("source", "list", "-n", nb, "--json")
         assert listing.returncode == 0, listing.stderr
         payload = json.loads(listing.stdout)
         sources = payload if isinstance(payload, list) else payload.get("sources", [])
-        assert isinstance(sources, list)
-        assert sources, "expected at least the seeded + added sources"
+        assert any(s.get("id") == added_id for s in sources), (
+            f"added source {added_id!r} not found in the live listing"
+        )
 
     @pytest.mark.readonly
     def test_json_stdout_purity_on_failure(self):
@@ -111,7 +127,7 @@ class TestCliLive:
             generation_notebook_id,
             "--json",
         )
-        if proc.returncode != 0 and "rate" in (proc.stdout + proc.stderr).lower():
+        if proc.returncode != 0 and _is_rate_limited(proc):
             pytest.skip(f"generation rate-limited: {proc.stdout or proc.stderr}")
         assert proc.returncode == 0, proc.stderr
         payload = json.loads(proc.stdout)

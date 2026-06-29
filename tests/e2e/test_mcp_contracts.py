@@ -18,6 +18,7 @@ Requires auth and the ``mcp`` extra (``importorskip``); auto-marked ``e2e`` by
 
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -55,6 +56,13 @@ class TestSourceIdsContract:
             {"notebook": generation_notebook_id, "artifact_type": "report"},
         )
         assert omitted.get("task_id"), f"omitted source_ids did not generate: {omitted}"
+
+        # Brief pause so the second submit isn't racing the first on the same
+        # notebook — if the backend serializes generation it can reject a
+        # back-to-back submit with FAILED_PRECONDITION (not a RateLimitError, so
+        # the skip wrapper wouldn't catch it). The contract under test is source-id
+        # resolution, not concurrent submits.
+        await asyncio.sleep(3)
 
         empty = await _call(
             client,

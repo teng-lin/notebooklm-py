@@ -507,7 +507,10 @@ class TestMcpResearch:
         status = await _call(client, "research_status", {"notebook": nb})
         assert "status" in status
 
-        run_id = status.get("task_id") or started.get("task_id")
-        if run_id:
-            cancelled = await _call(client, "research_cancel", {"notebook": nb, "run_id": run_id})
-            assert cancelled["cancelled"] is True
+        # research_cancel MUST actually run — TOOL_COVERAGE claims it here, so a
+        # missing run id is a real failure (not a silent skip that would let the
+        # coverage matrix report a false positive).
+        run_id = started.get("task_id") or status.get("task_id")
+        assert run_id, f"research_start/status yielded no run id to cancel: {started} / {status}"
+        cancelled = await _call(client, "research_cancel", {"notebook": nb, "run_id": run_id})
+        assert cancelled["cancelled"] is True

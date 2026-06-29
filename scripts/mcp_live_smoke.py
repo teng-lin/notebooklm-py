@@ -90,8 +90,12 @@ async def _run(args: argparse.Namespace) -> bool:
     from fastmcp import Client
     from fastmcp.client.transports import StreamableHttpTransport
 
+    if not args.bearer:
+        _fail("no bearer token: pass --bearer or set $NOTEBOOKLM_MCP_TOKEN")
+        return False
+
     base_url = args.base_url.rstrip("/")
-    headers = {"Authorization": f"Bearer {args.bearer}"} if args.bearer else {}
+    headers = {"Authorization": f"Bearer {args.bearer}"}
     transport = StreamableHttpTransport(f"{base_url}/mcp", headers=headers)
 
     passed = True
@@ -148,7 +152,9 @@ async def _run(args: argparse.Namespace) -> bool:
         art_listing = await mcp.call_tool("artifact_list", {"notebook": dl_notebook})
         artifacts = (art_listing.structured_content or {}).get("artifacts", [])
         if args.artifact_type:
-            dl_type = args.artifact_type
+            # Tolerate underscored values copied from artifact metadata
+            # (slide_deck/mind_map/…); the download tool expects hyphens.
+            dl_type = args.artifact_type.replace("_", "-")
         else:
             candidate = next(
                 (
