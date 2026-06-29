@@ -88,6 +88,12 @@ async def test_source_add_file_with_config_returns_upload_url(mock_client, confi
     payload = config.signer.verify(token, op="ul")
     assert payload["title"] == "My Doc"
     assert payload["mime"] == "application/pdf"
+    # The response self-documents the agent-direct path so an agent doesn't fall
+    # back to the human "open in a browser" flow it can't perform.
+    agent = sc["agent_upload"]
+    assert agent["method"] == "POST"
+    assert agent["headers"]["Accept"] == "application/json"
+    assert sc["url"] in agent["example"]
 
 
 async def test_source_add_file_default_title_from_path_basename(mock_client, config) -> None:
