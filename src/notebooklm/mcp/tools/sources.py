@@ -38,13 +38,14 @@ from ...exceptions import (
     SourceTimeoutError,
     ValidationError,
 )
-from ...types import SourceType, source_status_to_str
+from ...types import source_status_to_str
 from ...urls import is_youtube_url
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors, tool_error_payload
 from .._filelink import UPLOAD_TTL, FileTransferConfig
 from .._resolve import resolve_notebook, resolve_source
+from ._content_sanity import _annotate_thin_warnings
 from ._passthrough import passthrough_child_id
 from ._preview import title_for_id
 
@@ -61,17 +62,6 @@ _DRIVE_MIME_CHOICES = ("google-doc", "google-slides", "google-sheets", "pdf")
 
 #: The default Drive MIME choice when the caller does not specify one.
 _DEFAULT_DRIVE_MIME = "google-doc"
-
-#: A READY ``web_page`` source whose indexed text is shorter than this many
-#: characters gets a non-blocking content-sanity ``warning`` on ``source_wait``
-#: (likely a dead link / soft-404 / paywall "ghost source"). Deliberately
-#: conservative — advisory only, never a rejection. See :func:`_thin_content_warning`.
-_THIN_SOURCE_CHAR_THRESHOLD = 100
-
-#: Per-source budget for the advisory thin-content body fetch. The check is
-#: best-effort and must not let ``source_wait`` overrun its own ``timeout`` waiting
-#: on a slow ``GET_SOURCE`` — a fetch that exceeds this degrades to no warning.
-_THIN_SOURCE_FETCH_TIMEOUT_SECONDS = 5.0
 
 
 def _source_view(source: Any) -> dict[str, Any]:
@@ -736,9 +726,17 @@ async def _add_url_batch(
     An ``"added"`` item also carries the source's ``status_label`` (the async-import
     status) and, when the add response already reflects a failed import
     (``is_error``), an inline ``warning`` — mirroring single mode's
-    :func:`_add_result_payload` failure-signaling (#1679) per entry.
+    :func:`_add_result_payload` failure-signaling (#1679) per entry. A
+    synchronously-READY web-page item may additionally carry a content-sanity
+    ``warning`` (thin / soft-404 body — see :func:`_thin_content_warning`); most
+    adds return still-PROCESSING, so this often does not fire here and such sources
+    surface the warning later via ``source_wait``.
     """
     results: list[dict[str, Any]] = []
+    # Keep each added item's Source alongside its result dict so a synchronously-ready
+    # web-page item can be annotated with the content-sanity warning after the loop,
+    # concurrently — never N×fetch in-loop (reuses :func:`_annotate_thin_warnings`).
+    ready_pairs: list[tuple[dict[str, Any], Source]] = []
     for entry in urls:
         try:
             src = await _add_one(
@@ -766,7 +764,12 @@ async def _add_url_batch(
                     "(status_label='error'). Delete it with source_delete, or list "
                     "failures via source_list(status='error')."
                 )
+            elif src.is_ready:
+                ready_pairs.append((item, src))
             results.append(item)
+    # Annotate any synchronously-ready web-page items with a thin / soft-404 warning
+    # (concurrent; web-page-filtered; degrades any fetch failure to no warning).
+    await _annotate_thin_warnings(client, notebook_id, ready_pairs)
     # Derive the tallies from `results` (single source of truth) rather than
     # maintaining parallel counters that must be kept in sync with each append.
     added = sum(1 for item in results if item["status"] == "added")
@@ -910,79 +913,3 @@ async def _aggregate_wait_outcomes(
         "failed": failed,
         "not_found": not_found,
     }
-
-
-async def _annotate_thin_warnings(
-    client: NotebookLMClient,
-    notebook_id: str,
-    ready_pairs: list[tuple[dict[str, Any], Source]],
-) -> None:
-    """Attach a thin-content ``warning`` to each ready web-page view, in place.
-
-    Fetches the indexed body for the ready web-page sources concurrently (reads,
-    capped by the client's RPC semaphore); non-web-page sources are filtered out up
-    front so they never schedule a no-op task. Drives explicit tasks and, on any
-    escape (e.g. a propagating ``CancelledError``), cancels + drains the still-running
-    sibling fetches before re-raising — no leaked coroutine. Mirrors
-    :func:`_wait_all_sources`.
-    """
-    web_page_pairs = [
-        (view, source) for view, source in ready_pairs if source.kind == SourceType.WEB_PAGE
-    ]
-    if not web_page_pairs:
-        return
-    tasks = [
-        asyncio.create_task(_thin_content_warning(client, notebook_id, source))
-        for _view, source in web_page_pairs
-    ]
-    try:
-        warnings = await asyncio.gather(*tasks)
-    except BaseException:
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        raise
-    for (view, _source), warning in zip(web_page_pairs, warnings, strict=True):
-        if warning is not None:
-            view["warning"] = warning
-
-
-async def _thin_content_warning(
-    client: NotebookLMClient, notebook_id: str, source: Source
-) -> str | None:
-    """Return a content-sanity warning for a READY web-page source, else ``None``.
-
-    A dead link / soft-404 / paywalled page is often ingested as a READY source
-    with little/no extractable text — a "ghost source" add-time status can't catch
-    (a soft-404 serves HTTP 200). Such a ``web_page`` source under
-    :data:`_THIN_SOURCE_CHAR_THRESHOLD` chars of indexed text is flagged so an agent
-    can verify rather than trust it. **web-page only** (short pasted text /
-    transcripts are legitimate, never flagged; callers also pre-filter).
-    **best-effort**: the body fetch reuses ``source_get_content``'s ``GET_SOURCE``,
-    bounded by :data:`_THIN_SOURCE_FETCH_TIMEOUT_SECONDS`; ANY failure (timeout,
-    transport, unexpected shape) degrades to ``None`` so it can never break a wait
-    (``except Exception`` — ``CancelledError`` still propagates). **Never rejects.**
-    """
-    if not source.is_ready or source.kind != SourceType.WEB_PAGE:
-        return None
-    try:
-        result = await asyncio.wait_for(
-            content_core.execute_source_fulltext(
-                client,
-                content_core.SourceFulltextPlan(
-                    notebook_id=notebook_id, source_id=source.id, output_format="text"
-                ),
-            ),
-            timeout=_THIN_SOURCE_FETCH_TIMEOUT_SECONDS,
-        )
-        char_count = result.fulltext.char_count
-    except Exception:  # noqa: BLE001 - sanity check must never break a wait
-        return None
-    if char_count >= _THIN_SOURCE_CHAR_THRESHOLD:
-        return None
-    return (
-        f"little/no text extracted ({char_count} chars) — may be empty, "
-        "not-yet-indexed, a soft-404/dead link, blocked, or paywalled; "
-        "verify with source_get_content."
-    )

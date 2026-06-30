@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP soft-404 body-pattern detection.** The `source_wait` content-sanity check
+  (#1698) now also flags a READY web page that sails past the thin-text threshold
+  but whose short body matches a dead-link / error-page boilerplate phrase (e.g.
+  "Whoops! broken link") — a soft-404 that ingests as a full-bodied 200. Body-only
+  (titles are never scanned), gated to sub-2000-char bodies, advisory-only (never
+  blocks), zero extra RPC (the body is already fetched). The batch
+  `source_add(urls=[...])` now surfaces the same warning per synchronously-ready
+  web-page item.
 - **MCP artifact rename & delete tools.** Two new MCP tools close the artifact
   CRUD gap (the server previously exposed create + read only): `artifact_rename`
   (title-only update) and `artifact_delete` (destructive, two-step `confirm`).

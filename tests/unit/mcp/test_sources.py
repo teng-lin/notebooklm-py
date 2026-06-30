@@ -850,6 +850,172 @@ async def test_source_wait_all_sources_thin_warning_per_item(mcp_call, mock_clie
     assert fetched_ids == {thin_id, ample_id}
 
 
+# ---------------------------------------------------------------------------
+# source_wait — soft-404 boilerplate body scan: a READY web_page that sails past
+# the char-thin rule but whose (short) body matches a dead-link / error-page
+# phrase is flagged. Body-only — the title is NEVER scanned.
+# ---------------------------------------------------------------------------
+
+
+async def test_source_wait_soft_404_body_phrase_warns(mcp_call, mock_client) -> None:
+    """A 1,766-char READY web_page whose body is 'Whoops! broken link' boilerplate
+    (well above the 100-char thin threshold) is flagged via the body phrase scan —
+    the regression for the reported soft-404."""
+    # Pad to EXACTLY 1766 chars so char_count == len(content) (the impl gates on
+    # char_count but scans content; keep the fixture honest to the reported case).
+    prefix = "Whoops! The page you requested has a broken link. "
+    body = prefix + "x" * (1766 - len(prefix))
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="Article | Example")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content=body, char_count=1766)
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    sc = result.structured_content
+    assert sc["ok"] is True
+    row = sc["ready"][0]
+    assert "warning" in row
+    assert "1766 chars" in row["warning"]
+    assert "soft-404" in row["warning"]
+    assert "source_get_content" in row["warning"]
+
+
+async def test_source_wait_long_healthy_body_with_phrase_not_flagged(mcp_call, mock_client) -> None:
+    """A healthy page at/above the 2000-char body-scan limit is NOT scanned, even if
+    its body happens to mention 'broken link' (length-gated out)."""
+    body = "We explain how to find a broken link on your site. " + "content " * 400
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="Fixing dead links")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content=body, char_count=2500)
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    assert result.structured_content["ready"][0].get("warning") is None
+
+
+async def test_source_wait_body_scan_limit_boundary_not_flagged(mcp_call, mock_client) -> None:
+    """Boundary: a body of EXACTLY _SOFT_404_BODY_SCAN_LIMIT (2000) chars is NOT
+    scanned (the gate is ``< limit``) — locks against an off-by-one if it ever
+    became ``<=``. The body contains a dead-link phrase, so a scan WOULD flag it."""
+    body = "Whoops! broken link. " + "x" * (2000 - len("Whoops! broken link. "))
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="Edge")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content=body, char_count=2000)
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    assert result.structured_content["ready"][0].get("warning") is None
+
+
+async def test_source_wait_no_phrase_short_body_not_flagged(mcp_call, mock_client) -> None:
+    """A short (sub-2000) healthy body with no dead-link phrase is not flagged."""
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="Real")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="A genuine short article body.", char_count=500)
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    assert result.structured_content["ready"][0].get("warning") is None
+
+
+async def test_source_wait_title_phrase_not_flagged(mcp_call, mock_client) -> None:
+    """Locks the no-title-scan contract: a page TITLED like an error-page topic
+    ("Broken Link Checker" / "HTTP 404 errors explained") with a clean, phrase-free
+    body is NOT flagged — only the body is scanned, never the title.
+
+    The body is deliberately sub-:data:`_SOFT_404_BODY_SCAN_LIMIT` (char_count=500)
+    so the phrase-scan path IS active — a regression that folded the title into the
+    scan would fire here and flip the assertion (a ``char_count >= 2000`` body would
+    short-circuit the scan and pass vacuously)."""
+    body = "A thorough guide to website maintenance tooling."
+    for title in ("Broken Link Checker", "HTTP 404 errors explained"):
+        mock_client.sources.wait_until_ready = AsyncMock(
+            return_value=FakeSource(id=SRC_ID, title=title)
+        )
+        mock_client.sources.get_fulltext = AsyncMock(
+            return_value=FakeFulltext(content=body, char_count=500)
+        )
+        result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+        assert result.structured_content["ready"][0].get("warning") is None
+
+
+# ---------------------------------------------------------------------------
+# source_add batch — content-sanity warning on synchronously-READY web_page items
+# (Task B reuses _annotate_thin_warnings). Most adds return PROCESSING (no fetch);
+# this covers the ready case + the leak guard (single mode never fetches).
+# ---------------------------------------------------------------------------
+
+
+async def test_source_add_batch_ready_soft_404_carries_warning(mcp_call, mock_client) -> None:
+    """A synchronously-READY web_page item whose body matches a dead-link phrase
+    carries the soft-404 warning in its batch result."""
+    body = "Whoops! that's a broken link. " + "filler " * 200
+    mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Dead"))
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content=body, char_count=1500)
+    )
+    result = await mcp_call("source_add", {"notebook": NB_ID, "urls": ["https://dead.example.com"]})
+    item = result.structured_content["results"][0]
+    assert item["status"] == "added"
+    assert "soft-404" in item["warning"]
+
+
+async def test_source_add_batch_ready_healthy_no_warning(mcp_call, mock_client) -> None:
+    """A ready item with ample, healthy body carries no warning."""
+    mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Real"))
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
+    result = await mcp_call("source_add", {"notebook": NB_ID, "urls": ["https://real.example.com"]})
+    assert "warning" not in result.structured_content["results"][0]
+
+
+async def test_source_add_batch_processing_item_not_fetched(mcp_call, mock_client) -> None:
+    """A still-PROCESSING added item is not content-checked (no fetch, no warning)."""
+    mock_client.sources.add_url = AsyncMock(
+        return_value=FakeNotReadySource(id=SRC_ID, title="Pending")
+    )
+    mock_client.sources.get_fulltext = AsyncMock()
+    result = await mcp_call(
+        "source_add", {"notebook": NB_ID, "urls": ["https://pending.example.com"]}
+    )
+    item = result.structured_content["results"][0]
+    assert item["status"] == "added"
+    assert "warning" not in item
+    mock_client.sources.get_fulltext.assert_not_called()
+
+
+async def test_source_add_batch_fetch_failure_does_not_abort(mcp_call, mock_client) -> None:
+    """A content-check fetch failure degrades to no warning — the item stays added
+    and the batch is never aborted."""
+    mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Flaky"))
+    mock_client.sources.get_fulltext = AsyncMock(side_effect=RuntimeError("transport boom"))
+    result = await mcp_call(
+        "source_add", {"notebook": NB_ID, "urls": ["https://flaky.example.com"]}
+    )
+    sc = result.structured_content
+    assert sc["added"] == 1
+    item = sc["results"][0]
+    assert item["status"] == "added"
+    assert "warning" not in item
+
+
+async def test_source_add_single_url_never_content_checked(mcp_call, mock_client) -> None:
+    """Leak guard: single-mode source_add(source_type='url') must NEVER fetch the
+    body — the content-sanity helper stays confined to batch + source_wait."""
+    mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="One"))
+    mock_client.sources.get_fulltext = AsyncMock()
+    await mcp_call(
+        "source_add",
+        {"notebook": NB_ID, "source_type": "url", "url": "https://one.example.com"},
+    )
+    mock_client.sources.get_fulltext.assert_not_called()
+
+
 async def test_source_add_text(mcp_call, mock_client) -> None:
     mock_client.sources.add_text = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Notes"))
     result = await mcp_call(
@@ -1080,6 +1246,12 @@ async def test_source_add_batch_all_success(mcp_call, mock_client) -> None:
         "https://example.com/b": FakeSource(id=SRC2_ID, title="B"),
     }
     mock_client.sources.add_url = AsyncMock(side_effect=lambda _nb, url: by_url[url])
+    # FakeSource is a READY web_page, so each added item is routed through the
+    # content-sanity helper (Task B) → mock get_fulltext with ample text so no thin
+    # warning is added and the strict-dict-equality below holds.
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
     result = await mcp_call(
         "source_add",
         {"notebook": NB_ID, "urls": ["https://example.com/a", "https://example.com/b"]},
@@ -1106,11 +1278,16 @@ async def test_source_add_batch_all_success(mcp_call, mock_client) -> None:
         ],
     }
     assert mock_client.sources.add_url.await_count == 2
+    # Both ready web_page items were content-checked.
+    assert mock_client.sources.get_fulltext.await_count == 2
 
 
 async def test_source_add_batch_partial_failure(mcp_call, mock_client) -> None:
     """One bad URL does NOT abort the batch and is reported per-item, not collapsed."""
     mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Good"))
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
     result = await mcp_call(
         "source_add",
         {"notebook": NB_ID, "urls": ["https://good.example.com", "ftp://bad.example.com"]},
@@ -1131,6 +1308,8 @@ async def test_source_add_batch_partial_failure(mcp_call, mock_client) -> None:
     assert bad["error"]["code"] == "VALIDATION"
     # The disallowed scheme is rejected by validate_url before reaching the client.
     mock_client.sources.add_url.assert_awaited_once_with(NB_ID, "https://good.example.com")
+    # The one ready item was content-checked; the rejected entry never reaches it.
+    mock_client.sources.get_fulltext.assert_awaited_once_with(NB_ID, SRC_ID, output_format="text")
 
 
 async def test_source_add_batch_non_url_entry_errors_not_text(mcp_call, mock_client) -> None:
@@ -1157,6 +1336,9 @@ async def test_source_add_batch_server_error_isolated(mcp_call, mock_client) -> 
     mock_client.sources.add_url = AsyncMock(
         side_effect=[NetworkError("boom"), FakeSource(id=SRC2_ID, title="Second")]
     )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
     result = await mcp_call(
         "source_add",
         {"notebook": NB_ID, "urls": ["https://first.example.com", "https://second.example.com"]},
@@ -1176,6 +1358,8 @@ async def test_source_add_batch_server_error_isolated(mcp_call, mock_client) -> 
         "status_label": "ready",
     }
     assert mock_client.sources.add_url.await_count == 2
+    # Only the one successfully-added ready item is content-checked.
+    mock_client.sources.get_fulltext.assert_awaited_once_with(NB_ID, SRC2_ID, output_format="text")
 
 
 async def test_source_add_batch_flags_failed_import(mcp_call, mock_client) -> None:
@@ -1212,6 +1396,9 @@ async def test_source_add_batch_allow_internal_passthrough(mcp_call, mock_client
     """``allow_internal`` is forwarded to every batch entry (and is not rejected)."""
     internal = "http://127.0.0.1:8080/x"
     mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Local"))
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
     result = await mcp_call(
         "source_add",
         {"notebook": NB_ID, "urls": [internal], "allow_internal": True},
@@ -1219,6 +1406,8 @@ async def test_source_add_batch_allow_internal_passthrough(mcp_call, mock_client
     sc = result.structured_content
     assert sc["added"] == 1
     mock_client.sources.add_url.assert_awaited_once_with(NB_ID, internal)
+    # The ready item is content-checked like any other added web_page.
+    mock_client.sources.get_fulltext.assert_awaited_once_with(NB_ID, SRC_ID, output_format="text")
 
 
 async def test_source_add_batch_internal_rejected_without_allow_internal(
@@ -1293,6 +1482,13 @@ async def test_source_add_batch_youtube_accepted(mcp_call, mock_client) -> None:
     """A YouTube URL in the batch is accepted and added via add_url."""
     yt = "https://www.youtube.com/watch?v=abc123"
     mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Vid"))
+    # FakeSource is a READY web_page → the Task B content-check fetches its body;
+    # mock ample text so no thin warning is added and the strict equality holds
+    # (without this the fetch hits a bare MagicMock and the swallowed error would let
+    # the test pass for the wrong reason).
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
     result = await mcp_call("source_add", {"notebook": NB_ID, "urls": [yt]})
     sc = result.structured_content
     assert sc["added"] == 1
@@ -1304,3 +1500,4 @@ async def test_source_add_batch_youtube_accepted(mcp_call, mock_client) -> None:
         "status_label": "ready",
     }
     mock_client.sources.add_url.assert_awaited_once_with(NB_ID, yt)
+    mock_client.sources.get_fulltext.assert_awaited_once_with(NB_ID, SRC_ID, output_format="text")
