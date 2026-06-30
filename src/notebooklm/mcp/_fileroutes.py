@@ -128,13 +128,16 @@ def _upstream_error_response(exc: NotebookLMError, *, note: str = "") -> PlainTe
     chokepoint the MCP tool errors use). ``.get(..., 502)`` is defense-in-depth —
     every category is in the table (pinned by a coverage test).
 
-    ``note`` is prepended verbatim (it does NOT pass through :func:`redact`), so a
-    caller must pass only a static, secret-free string with its own trailing
-    separator — never an exception/user-derived value.
+    An optional ``note`` is prepended as a human-facing prefix; the helper owns the
+    separating space and runs it through :func:`redact` too (defense-in-depth — it
+    should already be a static, secret-free label, e.g. the upload route's
+    bytes-arrived-but-add-failed hint, but redacting uniformly means a future
+    dynamic caller can't leak through it).
     """
     status = _FILE_ROUTE_STATUS.get(classify(exc).category, 502)
+    prefix = f"{redact(note)} " if note else ""
     return PlainTextResponse(
-        f"{note}Upstream NotebookLM error: {redact(str(exc))}",
+        f"{prefix}Upstream NotebookLM error: {redact(str(exc))}",
         status_code=status,
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
     )
@@ -442,7 +445,7 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 # re-sends the whole file (vs a mid-stream failure that did not).
                 return _upstream_error_response(
                     exc,
-                    note="Your file uploaded, but adding it as a source failed (a retry re-uploads it). ",
+                    note="Your file uploaded, but adding it as a source failed (a retry re-uploads it).",
                 )
             except OSError:
                 # A bad filename / fs error (e.g. a name that survives sanitization

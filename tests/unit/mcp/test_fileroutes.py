@@ -601,6 +601,8 @@ def test_upload_raised_server_error_is_502(monkeypatch, mock_client, config) -> 
     # The bytes already uploaded by the time the source-add RPC fails, so the body
     # tells the user a retry re-sends the whole file (vs a mid-stream failure).
     assert "Your file uploaded, but adding it as a source failed" in resp.text
+    assert "a retry re-uploads it" in resp.text  # the actionable half must not regress
+    assert "upstream 503" in resp.text  # the redacted upstream exc text still surfaces
 
 
 def test_upload_validation_error_redacts_local_path(monkeypatch, mock_client, config) -> None:
