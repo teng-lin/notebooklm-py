@@ -598,6 +598,9 @@ def test_upload_raised_server_error_is_502(monkeypatch, mock_client, config) -> 
     with starlette_testclient.TestClient(app) as client:
         resp = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
     assert resp.status_code == 502
+    # The bytes already uploaded by the time the source-add RPC fails, so the body
+    # tells the user a retry re-sends the whole file (vs a mid-stream failure).
+    assert "Your file uploaded, but adding it as a source failed" in resp.text
 
 
 def test_upload_validation_error_redacts_local_path(monkeypatch, mock_client, config) -> None:

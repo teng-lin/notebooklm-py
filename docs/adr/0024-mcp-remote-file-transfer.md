@@ -259,6 +259,10 @@ upgrade that changes either fails loudly. Handlers take `(request)` only and rea
   single tenant's own notebook**; a leaked download URL within 30 min streams one
   artifact. Single-tenant blast radius, short TTL — accepted; replay-burn is
   deliberately skipped (add a one-shot nonce store if this ever goes multi-tenant).
+  Note the tension: shortening `UPLOAD_TTL` to bound a leak also shrinks the
+  retry window — a 200 MiB upload over a poor link can take ~13 min, near the
+  15-min TTL, so a failed-then-retried upload can outlive the token. Don't shorten
+  `ul` without weighing that.
   A leaked upload token is also replayable *concurrently* (N parallel POSTs each
   spool up to 200 MiB before the running cap / source-add), so transient `/tmp`
   pressure is N×200 MiB — still token-gated, single-tenant, behind the tunnel, and
