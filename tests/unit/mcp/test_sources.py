@@ -502,6 +502,22 @@ async def test_source_describe_resolves_source_by_name(mcp_call, mock_client) ->
     mock_client.sources.get_guide.assert_awaited_once_with(NB_ID, SRC_ID)
 
 
+async def test_source_describe_existing_source_empty_guide_is_success(
+    mcp_call, mock_client
+) -> None:
+    """A real source with no guide yet (still processing) returns empty
+    summary/keywords — a valid state, NOT NOT_FOUND (distinct from a missing id)."""
+    mock_client.sources.get_or_none = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Paper"))
+    mock_client.sources.get_guide = AsyncMock(return_value=FakeGuide(summary="", keywords=()))
+    result = await mcp_call("source_describe", {"notebook": NB_ID, "source": SRC_ID})
+    assert result.structured_content == {
+        "notebook_id": NB_ID,
+        "source_id": SRC_ID,
+        "summary": "",
+        "keywords": [],
+    }
+
+
 async def test_source_describe_missing_full_uuid_is_not_found(mcp_call, mock_client) -> None:
     """A full-UUID ref skips list resolution, so a non-existent source reaches the
     existence guard → NOT_FOUND (not a misleading empty-guide success), and the

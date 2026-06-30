@@ -16,6 +16,7 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastmcp import Context
@@ -75,16 +76,25 @@ def register(mcp: Any) -> None:
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
+            if include_metadata:
+                # Two independent reads (description + metadata) → run concurrently
+                # (repo convention for independent RPCs). A NotebookLMError from
+                # either still propagates through ``mcp_errors``.
+                result, meta_result = await asyncio.gather(
+                    core.execute_notebook_describe(
+                        client, nb_id, resolve_notebook_id=passthrough_notebook_id
+                    ),
+                    core.execute_notebook_metadata(
+                        client, nb_id, resolve_notebook_id=passthrough_notebook_id
+                    ),
+                )
+                output = to_jsonable(result)
+                output["metadata"] = to_jsonable(meta_result.metadata)
+                return output
             result = await core.execute_notebook_describe(
                 client, nb_id, resolve_notebook_id=passthrough_notebook_id
             )
-            output = to_jsonable(result)
-            if include_metadata:
-                meta_result = await core.execute_notebook_metadata(
-                    client, nb_id, resolve_notebook_id=passthrough_notebook_id
-                )
-                output["metadata"] = to_jsonable(meta_result.metadata)
-            return output
+            return to_jsonable(result)
 
     @mcp.tool
     async def notebook_rename(ctx: Context, notebook: str, new_title: str) -> dict[str, Any]:
