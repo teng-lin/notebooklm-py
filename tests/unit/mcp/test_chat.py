@@ -319,6 +319,39 @@ async def test_chat_configure_no_goal(mcp_call, mock_client) -> None:
     mock_client.chat.configure.assert_awaited_once()
 
 
+async def test_chat_configure_mode_applies_preset(mcp_call, mock_client) -> None:
+    """A chat_mode selects the predefined preset via set_mode (not the custom branch)."""
+    mock_client.chat.set_mode = AsyncMock(return_value=None)
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    result = await mcp_call("chat_configure", {"notebook": NB_ID, "chat_mode": "learning-guide"})
+    sc = result.structured_content
+    assert sc["notebook_id"] == NB_ID
+    assert sc["mode"] == "learning-guide"
+    assert sc["persona"] is None and sc["response_length"] is None
+    mock_client.chat.set_mode.assert_awaited_once()
+    # The preset path must not also write the custom settings block.
+    mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_mode_rejects_combination(mcp_call, mock_client) -> None:
+    """chat_mode + goal/response_length is rejected, not silently dropped."""
+    mock_client.chat.set_mode = AsyncMock(return_value=None)
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("chat_configure", {"notebook": NB_ID, "chat_mode": "concise", "goal": "x"})
+    assert "chat_mode" in str(excinfo.value)
+    mock_client.chat.set_mode.assert_not_called()
+    mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_rejects_bad_mode(mcp_call, mock_client) -> None:
+    """An out-of-enum chat_mode is rejected at the Literal schema boundary, no RPC."""
+    mock_client.chat.set_mode = AsyncMock(return_value=None)
+    with pytest.raises(ToolError):
+        await mcp_call("chat_configure", {"notebook": NB_ID, "chat_mode": "podcast"})
+    mock_client.chat.set_mode.assert_not_called()
+
+
 async def test_chat_ask_strips_raw_response_and_lite_references(mcp_call, mock_client) -> None:
     """raw_response is never returned; default references are the lite subset."""
     mock_client.chat.ask = AsyncMock(

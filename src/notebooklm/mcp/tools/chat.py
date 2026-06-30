@@ -27,6 +27,7 @@ from typing import Any, Literal
 from fastmcp import Context
 
 from ..._app import chat as core
+from ..._app.chat import ChatModeChoice
 from ..._app.serialize import to_jsonable
 from ...exceptions import ValidationError
 from .._coerce import coerce_list
@@ -147,27 +148,44 @@ def register(mcp: Any) -> None:
     async def chat_configure(
         ctx: Context,
         notebook: str,
+        chat_mode: ChatModeChoice | None = None,
         goal: str | None = None,
         response_length: Literal["default", "longer", "shorter"] | None = None,
     ) -> dict[str, Any]:
         """Configure a notebook's chat behavior. Accepts a notebook name or ID.
 
-        ``goal`` is a free-text custom persona/goal for the assistant (selects the
-        CUSTOM chat goal); ``response_length`` is one of default|longer|shorter.
+        Two mutually-exclusive ways to configure:
 
-        NOTE: this writes the full chat-settings block — omitting a field resets it
-        to its default (e.g. setting only ``response_length`` clears a previously-set
-        custom ``goal``). Pass both to preserve both.
+        * ``chat_mode`` applies a predefined preset — one of ``default`` /
+          ``learning-guide`` / ``concise`` / ``detailed``. A preset *replaces* the
+          whole chat-settings block, so it cannot be combined with ``goal`` /
+          ``response_length`` (doing so is rejected, not silently dropped).
+        * ``goal`` (free-text custom persona/goal; selects the CUSTOM chat goal)
+          and/or ``response_length`` (``default`` / ``longer`` / ``shorter``) set a
+          custom configuration.
+
+        NOTE: in the custom (``goal`` / ``response_length``) branch this writes the
+        full chat-settings block, so an omitted field resets to its default (e.g.
+        setting only ``response_length`` clears a previously-set custom ``goal``).
+        Pass every field you want to keep. (A ``chat_mode`` preset has no sub-fields.)
         """
         client = get_client(ctx)
         with mcp_errors():
-            # ``response_length`` is a Literal, so FastMCP/Pydantic rejects an
-            # out-of-enum value at the schema boundary (no runtime check needed).
+            # ``chat_mode`` / ``response_length`` are Literals, so FastMCP/Pydantic
+            # rejects out-of-enum values at the schema boundary (no runtime check
+            # needed). A preset and a custom field can't both apply (execute_configure
+            # short-circuits on chat_mode), so reject the combination rather than
+            # silently dropping goal/response_length.
+            if chat_mode is not None and (goal is not None or response_length is not None):
+                raise ValidationError(
+                    "chat_mode applies a full preset and cannot be combined with "
+                    "goal/response_length; pass one style or the other."
+                )
             nb_id = await resolve_notebook(client, notebook)
             result = await core.execute_configure(
                 client,
                 nb_id,
-                chat_mode=None,
+                chat_mode=chat_mode,
                 persona=goal,
                 response_length=response_length,
             )
