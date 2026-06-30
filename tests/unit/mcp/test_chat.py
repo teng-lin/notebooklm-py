@@ -206,6 +206,21 @@ async def test_chat_ask_history_explicit_conversation_id_skips_resolve(
     mock_client.chat.get_history.assert_awaited_once_with(NB_ID, limit=4, conversation_id=CONV_ID)
 
 
+async def test_chat_ask_question_with_history_no_conversation(mcp_call, mock_client) -> None:
+    """Question + history>0 with no prior conversation: fresh ask, empty history, no fetch."""
+    mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+    mock_client.chat.get_history = AsyncMock()
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="42", conversation_id=CONV_ID)
+    )
+    result = await mcp_call("chat_ask", {"notebook": NB_ID, "question": "q", "history": 3})
+    assert result.structured_content["answer"] == "42"
+    assert result.structured_content["history"] == []
+    mock_client.chat.get_history.assert_not_awaited()
+    # No conversation resolved => the ask starts a fresh one.
+    assert mock_client.chat.ask.await_args.kwargs["conversation_id"] is None
+
+
 async def test_chat_ask_negative_history_rejected(mcp_call, mock_client) -> None:
     """A negative history (even with a question) is invalid input, not a silent ask."""
     mock_client.chat.ask = AsyncMock()
