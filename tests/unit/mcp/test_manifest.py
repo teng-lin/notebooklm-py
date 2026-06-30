@@ -5,8 +5,8 @@ in-memory FastMCP ``Client``, then pins:
 
 * the EXACT set of tool names — so a tool can't be silently added, removed, or
   renamed without updating this gate;
-* a tool-count ceiling (28) now reached exactly (28/28): the next tool needs a
-  justified ceiling bump;
+* a tool-count ceiling (32) with headroom (29/32): the next few tools are a
+  one-line bump, but an accidental explosion still trips the gate;
 * the ``destructiveHint`` annotation + a ``confirm`` parameter on every
   destructive (delete) tool; and
 * the ``readOnlyHint`` annotation on every read-only tool.
@@ -23,7 +23,7 @@ import pytest
 pytest.importorskip("fastmcp")
 
 
-#: The complete, pinned tool surface. 28 tools across 7 domains. Adding or
+#: The complete, pinned tool surface. 29 tools across 7 domains. Adding or
 #: removing a tool MUST update this set (and the ceiling below if it grows).
 EXPECTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -43,8 +43,9 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         # Chat (2)
         "chat_ask",
         "chat_configure",
-        # Notes (4)
+        # Notes (5)
         "note_create",
+        "note_get",
         "note_list",
         "note_update",
         "note_delete",
@@ -65,10 +66,10 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-#: Tool-count ceiling. The design target is ~25; 28 leaves a little headroom so a
-#: deliberate addition is a one-line bump, but an accidental explosion still
-#: trips the gate.
-TOOL_CEILING = 28
+#: Tool-count ceiling. The design target is ~25; 32 leaves headroom (issue
+#: #1685) so a deliberate addition is a one-line bump, but an accidental
+#: explosion still trips the gate.
+TOOL_CEILING = 32
 
 #: The destructive tools — each carries ``destructiveHint`` AND a ``confirm``
 #: parameter (the both-mode confirmation contract).
@@ -83,6 +84,7 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "notebook_describe",
         "source_list",
         "source_get_content",
+        "note_get",
         "note_list",
         "artifact_list",
         "artifact_status",

@@ -7,9 +7,10 @@ injected ``resolve_notebook_id`` / ``resolve_note_id`` callables shaped for the
 CLI; since the MCP adapter resolves refs up front it passes the shared
 pass-through resolvers, which return the already-resolved ids unchanged.
 
-Split into verbs (``note_create`` / ``note_list`` / ``note_update`` /
-``note_delete``), NOT an ``action`` enum. ``note_delete`` follows the two-step
-confirm contract; ``note_list`` is read-only.
+Split into verbs (``note_create`` / ``note_get`` / ``note_list`` /
+``note_update`` / ``note_delete``), NOT an ``action`` enum. ``note_delete``
+follows the two-step confirm contract; ``note_get`` / ``note_list`` are
+read-only. ``note_update`` updates content and/or title (title-only = rename).
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
@@ -22,6 +23,7 @@ from fastmcp import Context
 
 from ..._app import notes as core
 from ..._app.serialize import to_jsonable
+from ...exceptions import NoteNotFoundError, ValidationError
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client
 from .._errors import mcp_errors
@@ -64,18 +66,62 @@ def register(mcp: Any) -> None:
             notes = await client.notes.list(nb_id)
             return {"notebook_id": nb_id, "notes": to_jsonable(notes)}
 
-    @mcp.tool
-    async def note_update(ctx: Context, notebook: str, note: str, content: str) -> dict[str, Any]:
-        """Update a note's content. Accepts a notebook/note name or ID."""
+    @mcp.tool(annotations=READ_ONLY)
+    async def note_get(ctx: Context, notebook: str, note: str) -> dict[str, Any]:
+        """Fetch a single note with its full title and content.
+
+        Accepts a notebook/note name or ID. ``note_list`` returns the same fields
+        for every note in one call; reach for ``note_get`` when you already have a
+        note ref and want just that one. Raises a not-found error if the note does
+        not exist (e.g. a full-id ref that was deleted).
+        """
         client = get_client(ctx)
         with mcp_errors():
+            nb_id = await resolve_notebook(client, notebook)
+            note_id = await resolve_note(client, nb_id, note)
+            result = await core.execute_note_get(
+                client,
+                nb_id,
+                note_id,
+                resolve_notebook_id=passthrough_notebook_id,
+                resolve_note_id=passthrough_child_id,
+            )
+            # ``resolve_note`` raises for an unknown title/prefix, but its
+            # full-UUID fast-path skips the list — so a concrete-but-absent id
+            # reaches here as ``found=False``. Surface the same typed not-found.
+            if not result.found:
+                raise NoteNotFoundError(note_id)
+            return {
+                "notebook_id": result.notebook_id,
+                "note_id": result.note_id,
+                "note": to_jsonable(result.note),
+            }
+
+    @mcp.tool
+    async def note_update(
+        ctx: Context,
+        notebook: str,
+        note: str,
+        content: str | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a note's content and/or title. Accepts a notebook/note name or ID.
+
+        Supply ``content``, ``title``, or both. Passing only ``title`` renames the
+        note while leaving its body untouched; passing only ``content`` replaces
+        the body and keeps the title. At least one of the two is required.
+        """
+        client = get_client(ctx)
+        with mcp_errors():
+            if content is None and title is None:
+                raise ValidationError("provide 'content' and/or 'title' to update")
             nb_id = await resolve_notebook(client, notebook)
             note_id = await resolve_note(client, nb_id, note)
             result = await core.execute_note_save(
                 client,
                 nb_id,
                 note_id,
-                title=None,
+                title=title,
                 content=content,
                 resolve_notebook_id=passthrough_notebook_id,
                 resolve_note_id=passthrough_child_id,
