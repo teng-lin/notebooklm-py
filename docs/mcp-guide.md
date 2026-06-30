@@ -296,7 +296,7 @@ a single in-flight task.
 | **Notes** | `note_create(notebook, title, content)` · `note_get(notebook, note)` (one note with full title + content) · `note_list(notebook)` · `note_update(notebook, note, content?, title?)` (content and/or title; title-only = rename) · `note_delete(notebook, note, confirm)` |
 | **Artifacts** | `artifact_list(notebook)` · `artifact_generate(notebook, artifact_type, …)` · `artifact_status(notebook, task_id)` · `artifact_download(notebook, artifact_type, path, output_format?, artifact_id?)` · `artifact_rename(notebook, artifact, new_title)` · `artifact_delete(notebook, artifact, confirm)` |
 | **Research** | `research_start(notebook, query, source, mode)` · `research_status(notebook, task_id?)` · `research_import(notebook, task_id)` · `research_cancel(notebook, run_id)` |
-| **Server** | `server_info` — version + local auth health |
+| **Server** | `server_info(include_account?)` — version + local auth health; `include_account=true` adds an `account` block (tier, plan name, notebook/source limits) for quota pacing (best-effort, needs a live session) |
 
 Tools that only read are annotated read-only; the four `*_delete` tools are annotated destructive
 and require `confirm`. A host that honors MCP annotations can auto-allow the read-only calls and
