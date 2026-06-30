@@ -477,7 +477,7 @@ Wire it into an MCP client with either:
 - `notebooklm mcp install <client>` — auto-writes the server config for `claude-desktop`, `claude-code`, `cursor`, or `windsurf`; or
 - the one-click `.mcpb` desktop bundle built from `desktop-extension/` (Claude Desktop's "Install Extension").
 
-Full usage walkthrough (auth, transports, the 29 tools, workflows, troubleshooting): **[mcp-guide.md](mcp-guide.md)**.
+Full usage walkthrough (auth, transports, the 30 tools, workflows, troubleshooting): **[mcp-guide.md](mcp-guide.md)**.
 
 ---
 

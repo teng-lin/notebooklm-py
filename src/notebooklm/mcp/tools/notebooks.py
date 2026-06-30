@@ -62,15 +62,29 @@ def register(mcp: Any) -> None:
             return {"notebook_id": notebook_id, **record}
 
     @mcp.tool(annotations=READ_ONLY)
-    async def notebook_describe(ctx: Context, notebook: str) -> dict[str, Any]:
-        """Fetch a notebook's AI-generated description. Accepts a notebook name or ID."""
+    async def notebook_describe(
+        ctx: Context, notebook: str, include_metadata: bool = False
+    ) -> dict[str, Any]:
+        """Fetch a notebook's AI-generated description. Accepts a notebook name or ID.
+
+        Returns the resolved ``notebook_id`` plus the AI ``description``. Pass
+        ``include_metadata=True`` to additionally fetch the notebook's metadata
+        (details + source list) and surface it under a ``metadata`` key; the
+        default output (``include_metadata`` omitted) is unchanged.
+        """
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             result = await core.execute_notebook_describe(
                 client, nb_id, resolve_notebook_id=passthrough_notebook_id
             )
-            return to_jsonable(result)
+            output = to_jsonable(result)
+            if include_metadata:
+                meta_result = await core.execute_notebook_metadata(
+                    client, nb_id, resolve_notebook_id=passthrough_notebook_id
+                )
+                output["metadata"] = to_jsonable(meta_result.metadata)
+            return output
 
     @mcp.tool
     async def notebook_rename(ctx: Context, notebook: str, new_title: str) -> dict[str, Any]:

@@ -240,6 +240,49 @@ def register(mcp: Any) -> None:
             payload["output_format"] = output_format
             return payload
 
+    @mcp.tool(annotations=READ_ONLY)
+    async def source_describe(
+        ctx: Context,
+        notebook: str,
+        source: str,
+    ) -> dict[str, Any]:
+        """Return a source's AI summary + keywords for low-token triage.
+
+        Accepts a notebook/source name or ID. Returns the backend's AI-generated
+        ``summary`` (a short markdown overview) and ``keywords`` (the topic
+        keyword list) — a compact "what is this source about?" view.
+
+        Prefer this over ``source_get_content`` when triaging: it returns a tiny
+        AI digest instead of the full indexed text, so it is cheap to fan out
+        across many sources before deciding which to pull in full. Use
+        ``source_get_content`` when you need the actual body, and ``chat_ask`` to
+        query across sources.
+        """
+        client = get_client(ctx)
+        with mcp_errors():
+            nb_id = await resolve_notebook(client, notebook)
+            src_id = await resolve_source(client, nb_id, source)
+            # A full-UUID ref skips list resolution (the resolver trusts a full
+            # id), so a non-existent id reaches the guide RPC, which returns an
+            # EMPTY guide for a missing source — indistinguishable from a real
+            # source that simply has no guide yet. Guard existence first (same as
+            # ``source_get_content``) so a deleted source surfaces as NOT_FOUND
+            # rather than a misleading ``{summary: "", keywords: []}`` success.
+            existing = await content_core.execute_source_get(
+                client, content_core.SourceGetPlan(notebook_id=nb_id, source_id=src_id)
+            )
+            if existing.source is None:
+                raise SourceNotFoundError(src_id)
+            result = await content_core.execute_source_guide(
+                client, content_core.SourceGuidePlan(notebook_id=nb_id, source_id=src_id)
+            )
+            return {
+                "notebook_id": nb_id,
+                "source_id": result.source_id,
+                "summary": result.summary,
+                "keywords": list(result.keywords),
+            }
+
     @mcp.tool
     async def source_rename(
         ctx: Context, notebook: str, source: str, new_title: str

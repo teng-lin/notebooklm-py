@@ -20,6 +20,12 @@ pytest.importorskip("fastmcp")
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
 from notebooklm.exceptions import NotebookNotFoundError  # noqa: E402 - after importorskip guard
+from notebooklm.types import (  # noqa: E402 - after importorskip guard
+    Notebook,
+    NotebookMetadata,
+    SourceSummary,
+    SourceType,
+)
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
@@ -125,6 +131,56 @@ async def test_notebook_describe_resolves_by_name(mcp_call, mock_client) -> None
     result = await mcp_call("notebook_describe", {"notebook": "My Notebook"})
     assert result.structured_content["notebook_id"] == NB_ID
     mock_client.notebooks.get_description.assert_awaited_once_with(NB_ID)
+
+
+async def test_notebook_describe_default_has_no_metadata_block(mcp_call, mock_client) -> None:
+    """Regression guard: the default call (``include_metadata`` omitted) is
+    byte-identical to before — exactly ``{notebook_id, description}``, no
+    ``metadata`` key — and never reaches ``get_metadata``."""
+    mock_client.notebooks.get_description = AsyncMock(
+        return_value=FakeDescription(summary="A summary")
+    )
+    mock_client.notebooks.get_metadata = AsyncMock()
+    result = await mcp_call("notebook_describe", {"notebook": NB_ID})
+    assert result.structured_content == {
+        "notebook_id": NB_ID,
+        "description": {"summary": "A summary"},
+    }
+    assert "metadata" not in result.structured_content
+    mock_client.notebooks.get_metadata.assert_not_called()
+
+
+async def test_notebook_describe_include_metadata_adds_block(mcp_call, mock_client) -> None:
+    """``include_metadata=True`` appends a ``metadata`` block (notebook details +
+    source list) while preserving the default description fields."""
+    mock_client.notebooks.get_description = AsyncMock(
+        return_value=FakeDescription(summary="A summary")
+    )
+    mock_client.notebooks.get_metadata = AsyncMock(
+        return_value=NotebookMetadata(
+            notebook=Notebook(id=NB_ID, title="Research"),
+            sources=[SourceSummary(kind=SourceType.PDF, title="Doc", url=None)],
+        )
+    )
+    result = await mcp_call("notebook_describe", {"notebook": NB_ID, "include_metadata": True})
+    content = result.structured_content
+    # The default describe fields are preserved unchanged under the opt-in.
+    assert content["notebook_id"] == NB_ID
+    assert content["description"] == {"summary": "A summary"}
+    # ... and the metadata block carries the notebook details + source list.
+    assert content["metadata"] == {
+        "notebook": {
+            "id": NB_ID,
+            "title": "Research",
+            "created_at": None,
+            "sources_count": 0,
+            "is_owner": True,
+            "modified_at": None,
+        },
+        "sources": [{"kind": "pdf", "title": "Doc", "url": None}],
+    }
+    mock_client.notebooks.get_description.assert_awaited_once_with(NB_ID)
+    mock_client.notebooks.get_metadata.assert_awaited_once_with(NB_ID)
 
 
 async def test_notebook_rename(mcp_call, mock_client) -> None:

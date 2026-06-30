@@ -462,6 +462,58 @@ async def test_source_get_content_resolves_source_by_name(mcp_call, mock_client)
     mock_client.sources.get_or_none.assert_awaited_once_with(NB_ID, SRC_ID)
 
 
+@dataclass
+class FakeGuide:
+    """Stand-in for ``SourceGuide`` (what ``client.sources.get_guide`` returns).
+
+    ``execute_source_guide`` reads ``.summary`` / ``.keywords`` by attribute, so a
+    plain stub suffices — no need to build the real frozen dataclass.
+    """
+
+    summary: str = ""
+    keywords: tuple[str, ...] = ()
+
+
+async def test_source_describe(mcp_call, mock_client) -> None:
+    """Returns the AI summary + keywords (keywords as a JSON list)."""
+    mock_client.sources.get_or_none = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Paper"))
+    mock_client.sources.get_guide = AsyncMock(
+        return_value=FakeGuide(summary="A short overview.", keywords=("alpha", "beta"))
+    )
+    result = await mcp_call("source_describe", {"notebook": NB_ID, "source": SRC_ID})
+    assert result.structured_content == {
+        "notebook_id": NB_ID,
+        "source_id": SRC_ID,
+        "summary": "A short overview.",
+        "keywords": ["alpha", "beta"],
+    }
+    mock_client.sources.get_guide.assert_awaited_once_with(NB_ID, SRC_ID)
+
+
+async def test_source_describe_resolves_source_by_name(mcp_call, mock_client) -> None:
+    """A non-id ``source`` ref resolves by exact title within the notebook."""
+    mock_client.sources.list = AsyncMock(return_value=[FakeSource(id=SRC_ID, title="Paper")])
+    mock_client.sources.get_or_none = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Paper"))
+    mock_client.sources.get_guide = AsyncMock(
+        return_value=FakeGuide(summary="Body summary.", keywords=("topic",))
+    )
+    result = await mcp_call("source_describe", {"notebook": NB_ID, "source": "Paper"})
+    assert result.structured_content["source_id"] == SRC_ID
+    mock_client.sources.get_guide.assert_awaited_once_with(NB_ID, SRC_ID)
+
+
+async def test_source_describe_missing_full_uuid_is_not_found(mcp_call, mock_client) -> None:
+    """A full-UUID ref skips list resolution, so a non-existent source reaches the
+    existence guard → NOT_FOUND (not a misleading empty-guide success), and the
+    guide RPC is never attempted."""
+    mock_client.sources.get_or_none = AsyncMock(return_value=None)
+    mock_client.sources.get_guide = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("source_describe", {"notebook": NB_ID, "source": SRC_ID})
+    assert "NOT_FOUND" in str(excinfo.value)
+    mock_client.sources.get_guide.assert_not_called()
+
+
 async def test_source_rename(mcp_call, mock_client) -> None:
     mock_client.sources.rename = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Renamed"))
     result = await mcp_call(
