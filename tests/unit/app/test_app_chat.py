@@ -277,12 +277,15 @@ async def test_execute_configure_mode_with_empty_persona_ok() -> None:
     """An empty persona ("") is a no-op, so it does not block a preset."""
     client = _client()
     client.chat.set_mode = AsyncMock(return_value=None)
+    client.chat.configure = AsyncMock(return_value=None)
 
     result = await execute_configure(
         client, "nb_123", chat_mode="concise", persona="", response_length=None
     )
     assert result.mode == "concise"
     client.chat.set_mode.assert_awaited_once_with("nb_123", ChatMode.CONCISE)
+    # The preset short-circuits: the custom configure block must not be written.
+    client.chat.configure.assert_not_called()
 
 
 @pytest.mark.asyncio
