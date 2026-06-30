@@ -333,8 +333,8 @@ async def test_chat_configure_mode_applies_preset(mcp_call, mock_client) -> None
     mock_client.chat.configure.assert_not_called()
 
 
-async def test_chat_configure_mode_rejects_combination(mcp_call, mock_client) -> None:
-    """chat_mode + goal/response_length is rejected, not silently dropped."""
+async def test_chat_configure_mode_rejects_goal_combination(mcp_call, mock_client) -> None:
+    """chat_mode + a (truthy) goal is rejected, not silently dropped."""
     mock_client.chat.set_mode = AsyncMock(return_value=None)
     mock_client.chat.configure = AsyncMock(return_value=None)
     with pytest.raises(ToolError) as excinfo:
@@ -342,6 +342,32 @@ async def test_chat_configure_mode_rejects_combination(mcp_call, mock_client) ->
     assert "chat_mode" in str(excinfo.value)
     mock_client.chat.set_mode.assert_not_called()
     mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_mode_rejects_response_length_combination(
+    mcp_call, mock_client
+) -> None:
+    """chat_mode + response_length (a real setting, incl. 'default') is rejected."""
+    mock_client.chat.set_mode = AsyncMock(return_value=None)
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call(
+            "chat_configure",
+            {"notebook": NB_ID, "chat_mode": "detailed", "response_length": "longer"},
+        )
+    assert "chat_mode" in str(excinfo.value)
+    mock_client.chat.set_mode.assert_not_called()
+    mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_mode_with_empty_goal_ok(mcp_call, mock_client) -> None:
+    """An empty goal ("") is a no-op, so it does NOT block a chat_mode preset."""
+    mock_client.chat.set_mode = AsyncMock(return_value=None)
+    result = await mcp_call(
+        "chat_configure", {"notebook": NB_ID, "chat_mode": "concise", "goal": ""}
+    )
+    assert result.structured_content["mode"] == "concise"
+    mock_client.chat.set_mode.assert_awaited_once()
 
 
 async def test_chat_configure_rejects_bad_mode(mcp_call, mock_client) -> None:

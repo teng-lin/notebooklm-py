@@ -27,7 +27,7 @@ from typing import Any, Literal
 from fastmcp import Context
 
 from ..._app import chat as core
-from ..._app.chat import ChatModeChoice
+from ..._app.chat import ChatModeChoice, ResponseLengthChoice
 from ..._app.serialize import to_jsonable
 from ...exceptions import ValidationError
 from .._coerce import coerce_list
@@ -150,7 +150,7 @@ def register(mcp: Any) -> None:
         notebook: str,
         chat_mode: ChatModeChoice | None = None,
         goal: str | None = None,
-        response_length: Literal["default", "longer", "shorter"] | None = None,
+        response_length: ResponseLengthChoice | None = None,
     ) -> dict[str, Any]:
         """Configure a notebook's chat behavior. Accepts a notebook name or ID.
 
@@ -176,7 +176,10 @@ def register(mcp: Any) -> None:
             # needed). A preset and a custom field can't both apply (execute_configure
             # short-circuits on chat_mode), so reject the combination rather than
             # silently dropping goal/response_length.
-            if chat_mode is not None and (goal is not None or response_length is not None):
+            # An empty ``goal`` ("") is a no-op in execute_configure (only a truthy
+            # persona selects CUSTOM), so don't reject a preset for it; any explicit
+            # ``response_length`` (incl. "default") is a real setting, so reject that.
+            if chat_mode is not None and (goal or response_length is not None):
                 raise ValidationError(
                     "chat_mode applies a full preset and cannot be combined with "
                     "goal/response_length; pass one style or the other."
