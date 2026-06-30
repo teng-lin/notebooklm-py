@@ -293,7 +293,21 @@ async def execute_configure(
     a non-empty ``persona`` selects the ``CUSTOM`` goal. The ``goal_name`` is the
     lowercase enum name (e.g. ``"custom"``) for a stable, human-readable JSON
     contract.
+
+    A ``chat_mode`` preset replaces the whole chat-settings block (it
+    short-circuits to ``set_mode``), so it cannot be combined with a custom
+    ``persona`` / ``response_length`` — that combination is rejected here rather
+    than silently dropping the custom fields. An empty ``persona`` ("") is a no-op
+    (only a truthy persona selects CUSTOM) and so does not block a preset; any
+    explicit ``response_length`` (incl. ``"default"``) is a real setting and does.
+    This guard is transport-neutral, so both the CLI and the MCP tool inherit it.
     """
+    if chat_mode and (persona or response_length is not None):
+        raise ValidationError(
+            "A chat_mode preset cannot be combined with a custom persona/goal or "
+            "response_length; pass one style or the other."
+        )
+
     if chat_mode:
         try:
             mode = _MODE_MAP[chat_mode]

@@ -571,9 +571,10 @@ def register_chat_commands(cli):
         \b
         Examples:
           notebooklm configure --mode learning-guide
-          notebooklm configure --persona "Act as a chemistry tutor"
-          notebooklm configure --mode detailed --response-length longer
+          notebooklm configure --persona "Act as a chemistry tutor" --response-length longer
           notebooklm configure --mode concise --json   # Machine-readable output
+
+        A --mode preset cannot be combined with --persona/--response-length.
         """
         nb_id = require_notebook(notebook_id)
 

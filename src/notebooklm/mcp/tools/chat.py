@@ -172,18 +172,10 @@ def register(mcp: Any) -> None:
         client = get_client(ctx)
         with mcp_errors():
             # ``chat_mode`` / ``response_length`` are Literals, so FastMCP/Pydantic
-            # rejects out-of-enum values at the schema boundary (no runtime check
-            # needed). A preset and a custom field can't both apply (execute_configure
-            # short-circuits on chat_mode), so reject the combination rather than
-            # silently dropping goal/response_length.
-            # An empty ``goal`` ("") is a no-op in execute_configure (only a truthy
-            # persona selects CUSTOM), so don't reject a preset for it; any explicit
-            # ``response_length`` (incl. "default") is a real setting, so reject that.
-            if chat_mode is not None and (goal or response_length is not None):
-                raise ValidationError(
-                    "chat_mode applies a full preset and cannot be combined with "
-                    "goal/response_length; pass one style or the other."
-                )
+            # rejects out-of-enum values at the schema boundary. The preset-vs-custom
+            # mutual-exclusion (chat_mode cannot be combined with goal/response_length)
+            # is enforced transport-neutrally in ``execute_configure`` so the CLI and
+            # this tool share one rule.
             nb_id = await resolve_notebook(client, notebook)
             result = await core.execute_configure(
                 client,

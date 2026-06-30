@@ -253,6 +253,39 @@ async def test_execute_configure_mode_short_circuits_to_set_mode() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("persona", "response_length"), [("tutor", None), (None, "longer")])
+async def test_execute_configure_mode_with_custom_field_rejected(persona, response_length) -> None:
+    """A preset cannot be combined with a custom persona/response_length (no RPC)."""
+    client = _client()
+    client.chat.set_mode = AsyncMock(return_value=None)
+    client.chat.configure = AsyncMock(return_value=None)
+
+    with pytest.raises(ValidationError, match="chat_mode preset"):
+        await execute_configure(
+            client,
+            "nb_123",
+            chat_mode="detailed",
+            persona=persona,
+            response_length=response_length,
+        )
+    client.chat.set_mode.assert_not_called()
+    client.chat.configure.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_execute_configure_mode_with_empty_persona_ok() -> None:
+    """An empty persona ("") is a no-op, so it does not block a preset."""
+    client = _client()
+    client.chat.set_mode = AsyncMock(return_value=None)
+
+    result = await execute_configure(
+        client, "nb_123", chat_mode="concise", persona="", response_length=None
+    )
+    assert result.mode == "concise"
+    client.chat.set_mode.assert_awaited_once_with("nb_123", ChatMode.CONCISE)
+
+
+@pytest.mark.asyncio
 async def test_execute_configure_persona_selects_custom_goal() -> None:
     """A persona selects the CUSTOM goal, exposed as the lowercase enum name."""
     client = _client()

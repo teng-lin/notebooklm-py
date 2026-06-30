@@ -455,6 +455,27 @@ class TestConfigureJsonOutput:
         assert data["configured"] is True
         mock_client.chat.set_mode.assert_awaited_once()
 
+    def test_configure_mode_with_response_length_rejected(self, runner, mock_auth):
+        """`--mode` combined with `--response-length` is rejected, not silently dropped."""
+        mock_client = create_mock_client()
+        mock_client.chat.set_mode = AsyncMock(return_value=None)
+        mock_client.chat.configure = AsyncMock(return_value=None)
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["configure", "-n", "nb_123", "--mode", "detailed", "--response-length", "longer"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code != 0
+        assert "cannot be combined" in result.output
+        mock_client.chat.set_mode.assert_not_called()
+        mock_client.chat.configure.assert_not_called()
+
     def test_configure_persona_json(self, runner, mock_auth):
         mock_client = create_mock_client()
         mock_client.chat.configure = AsyncMock(return_value=None)
