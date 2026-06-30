@@ -182,12 +182,36 @@ async def test_chat_ask_recall_only(mcp_call, mock_client) -> None:
 
 
 async def test_chat_ask_recall_only_empty_conversation(mcp_call, mock_client) -> None:
-    """Recall against a notebook with no conversation => empty history, no echo."""
+    """Recall against a notebook with no conversation => empty history, no echo, no fetch."""
     mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
     mock_client.chat.get_history = AsyncMock(return_value=[])
     result = await mcp_call("chat_ask", {"notebook": NB_ID, "history": 5})
     assert result.structured_content["history"] == []
     assert "conversation_id" not in result.structured_content
+    # No conversation => skip get_history (it would just re-resolve the absent id).
+    mock_client.chat.get_history.assert_not_awaited()
+
+
+async def test_chat_ask_history_explicit_conversation_id_skips_resolve(
+    mcp_call, mock_client
+) -> None:
+    """An explicit conversation_id with history>0 must not pay the resolve round-trip."""
+    mock_client.chat.get_history = AsyncMock(return_value=[("q1", "a1")])
+    result = await mcp_call(
+        "chat_ask", {"notebook": NB_ID, "history": 2, "conversation_id": CONV_ID}
+    )
+    assert result.structured_content["history"] == [{"question": "q1", "answer": "a1"}]
+    assert result.structured_content["conversation_id"] == CONV_ID
+    mock_client.chat.get_conversation_id.assert_not_called()
+    mock_client.chat.get_history.assert_awaited_once_with(NB_ID, limit=4, conversation_id=CONV_ID)
+
+
+async def test_chat_ask_negative_history_rejected(mcp_call, mock_client) -> None:
+    """A negative history (even with a question) is invalid input, not a silent ask."""
+    mock_client.chat.ask = AsyncMock()
+    with pytest.raises(ToolError):
+        await mcp_call("chat_ask", {"notebook": NB_ID, "question": "q", "history": -1})
+    mock_client.chat.ask.assert_not_awaited()
 
 
 async def test_chat_ask_with_history_includes_both(mcp_call, mock_client) -> None:

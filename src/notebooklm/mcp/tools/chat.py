@@ -86,7 +86,9 @@ def register(mcp: Any) -> None:
             # A whitespace-only question counts as "no question" (recall path), so
             # a blank string can't slip past the guard into client.chat.ask.
             question = question.strip()
-            if not question and history <= 0:
+            if history < 0:
+                raise ValidationError("history must be >= 0.")
+            if not question and history == 0:
                 raise ValidationError(
                     "Provide a question to ask, or history>0 to recall prior turns."
                 )
@@ -100,12 +102,17 @@ def register(mcp: Any) -> None:
             # Fetch history first so it reflects the conversation *before* this
             # question (the new turn isn't double-reported in the recall list).
             # ``limit`` counts individual role-rows (~2 per Q&A pair), so double the
-            # caller's pair count to honor the {question, answer} contract.
+            # caller's pair count to honor the {question, answer} contract. With no
+            # conversation yet, skip the fetch — get_history would otherwise re-resolve
+            # the (still absent) conversation id for an empty result.
             if history > 0:
-                qa_pairs = await client.chat.get_history(
-                    nb_id, limit=history * 2, conversation_id=conversation_id
-                )
-                payload["history"] = [{"question": q, "answer": a} for q, a in qa_pairs]
+                if conversation_id is None:
+                    payload["history"] = []
+                else:
+                    qa_pairs = await client.chat.get_history(
+                        nb_id, limit=history * 2, conversation_id=conversation_id
+                    )
+                    payload["history"] = [{"question": q, "answer": a} for q, a in qa_pairs]
             if question:
                 # Tolerate ``source_ids`` sent as a JSON-array string / comma string /
                 # scalar, then resolve each ref (id/prefix/title) the same way every
