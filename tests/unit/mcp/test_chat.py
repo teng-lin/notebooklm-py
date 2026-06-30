@@ -163,6 +163,75 @@ async def test_chat_ask_whitespace_source_ids_uses_all(mcp_call, mock_client) ->
     assert mock_client.chat.ask.await_args.kwargs["source_ids"] is None
 
 
+async def test_chat_ask_recall_only(mcp_call, mock_client) -> None:
+    """Empty question + history>0 recalls pairs (no ask) and echoes the conversation."""
+    mock_client.chat.get_conversation_id = AsyncMock(return_value=CONV_ID)
+    mock_client.chat.get_history = AsyncMock(return_value=[("q1", "a1"), ("q2", "a2")])
+    mock_client.chat.ask = AsyncMock()
+    result = await mcp_call("chat_ask", {"notebook": NB_ID, "history": 5})
+    assert result.structured_content["history"] == [
+        {"question": "q1", "answer": "a1"},
+        {"question": "q2", "answer": "a2"},
+    ]
+    # Recall-only echoes the resolved conversation; no answer is produced.
+    assert result.structured_content["conversation_id"] == CONV_ID
+    assert "answer" not in result.structured_content
+    mock_client.chat.ask.assert_not_awaited()
+    # ``limit`` is doubled (role-rows ~2 per pair) and pinned to the resolved id.
+    mock_client.chat.get_history.assert_awaited_once_with(NB_ID, limit=10, conversation_id=CONV_ID)
+
+
+async def test_chat_ask_recall_only_empty_conversation(mcp_call, mock_client) -> None:
+    """Recall against a notebook with no conversation => empty history, no echo."""
+    mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+    mock_client.chat.get_history = AsyncMock(return_value=[])
+    result = await mcp_call("chat_ask", {"notebook": NB_ID, "history": 5})
+    assert result.structured_content["history"] == []
+    assert "conversation_id" not in result.structured_content
+
+
+async def test_chat_ask_with_history_includes_both(mcp_call, mock_client) -> None:
+    """Question + history>0 returns the answer and prior pairs, pinned to one id."""
+    mock_client.chat.get_conversation_id = AsyncMock(return_value=CONV_ID)
+    mock_client.chat.get_history = AsyncMock(return_value=[("q1", "a1")])
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="42", conversation_id=CONV_ID)
+    )
+    result = await mcp_call("chat_ask", {"notebook": NB_ID, "question": "what?", "history": 3})
+    assert result.structured_content["answer"] == "42"
+    assert result.structured_content["history"] == [{"question": "q1", "answer": "a1"}]
+    # History fetched with doubled limit, and both reads/writes pin the same id.
+    mock_client.chat.get_history.assert_awaited_once_with(NB_ID, limit=6, conversation_id=CONV_ID)
+    assert mock_client.chat.ask.await_args.kwargs["conversation_id"] == CONV_ID
+
+
+async def test_chat_ask_zero_history_skips_recall(mcp_call, mock_client) -> None:
+    """A plain ask (history defaults to 0) never touches the history/resolve path."""
+    mock_client.chat.get_history = AsyncMock()
+    mock_client.chat.ask = AsyncMock(
+        return_value=FakeAskResult(answer="x", conversation_id=CONV_ID)
+    )
+    result = await mcp_call("chat_ask", {"notebook": NB_ID, "question": "q"})
+    assert "history" not in result.structured_content
+    mock_client.chat.get_history.assert_not_awaited()
+    # The pure-ask hot path must not pay an extra get_conversation_id round-trip.
+    mock_client.chat.get_conversation_id.assert_not_called()
+
+
+async def test_chat_ask_requires_question_or_history(mcp_call, mock_client) -> None:
+    """Neither a question nor history>0 is a validation error, not a silent no-op."""
+    with pytest.raises(ToolError):
+        await mcp_call("chat_ask", {"notebook": NB_ID})
+
+
+async def test_chat_ask_whitespace_question_rejected(mcp_call, mock_client) -> None:
+    """A whitespace-only question with no history is rejected, not sent as a blank ask."""
+    mock_client.chat.ask = AsyncMock()
+    with pytest.raises(ToolError):
+        await mcp_call("chat_ask", {"notebook": NB_ID, "question": "   "})
+    mock_client.chat.ask.assert_not_awaited()
+
+
 @dataclass
 class FakeSource:
     id: str

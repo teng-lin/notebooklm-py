@@ -28,6 +28,7 @@ from fastmcp import Context
 
 from ..._app import chat as core
 from ..._app.serialize import to_jsonable
+from ...exceptions import ValidationError
 from .._coerce import coerce_list
 from .._context import get_client
 from .._errors import mcp_errors
@@ -47,12 +48,14 @@ def register(mcp: Any) -> None:
     async def chat_ask(
         ctx: Context,
         notebook: str,
-        question: str,
+        question: str = "",
         conversation_id: str | None = None,
         references: Literal["lite", "full"] = "lite",
         source_ids: list[str] | str | None = None,
+        history: int = 0,
     ) -> dict[str, Any]:
-        """Ask a notebook's sources a question. Accepts a notebook name or ID.
+        """Ask a notebook's sources a question, and/or recall prior turns. Accepts a
+        notebook name or ID.
 
         Pass ``conversation_id`` to continue a specific conversation; omit it to
         continue the notebook's most-recent conversation (or start a new one).
@@ -63,36 +66,74 @@ def register(mcp: Any) -> None:
         carry a source title that itself contains a comma — use a JSON array or a
         real list for those).
 
-        Returns the ``answer`` plus citation ``references``. The internal
-        ``raw_response`` debugging blob is never included. ``references`` controls
-        citation detail: ``lite`` (default) returns ``source_id`` / ``citation_number``
-        / ``cited_text``; ``full`` adds chunk-level char offsets and scores.
+        ``history`` (optional, default 0): the max number of prior Q&A pairs
+        (each a ``{question, answer}``) to also return (oldest-first), from the
+        conversation as it stood *before* this question. There is no unbounded
+        "all" value — pass a generously large number (e.g. 100) for the whole
+        conversation. Omit ``question`` (leave it empty) with ``history`` > 0 to
+        recall prior pairs without asking anything new; a recall-only call also
+        echoes the ``conversation_id`` it read. Pass neither and the call is
+        rejected.
+
+        Returns the ``answer`` plus citation ``references`` (when a question is
+        asked). The internal ``raw_response`` debugging blob is never included.
+        ``references`` controls citation detail: ``lite`` (default) returns
+        ``source_id`` / ``citation_number`` / ``cited_text``; ``full`` adds
+        chunk-level char offsets and scores.
         """
         client = get_client(ctx)
         with mcp_errors():
+            # A whitespace-only question counts as "no question" (recall path), so
+            # a blank string can't slip past the guard into client.chat.ask.
+            question = question.strip()
+            if not question and history <= 0:
+                raise ValidationError(
+                    "Provide a question to ask, or history>0 to recall prior turns."
+                )
             nb_id = await resolve_notebook(client, notebook)
-            # Tolerate ``source_ids`` sent as a JSON-array string / comma string /
-            # scalar, then resolve each ref (id/prefix/title) the same way every
-            # other source-accepting tool does. Omitted/empty stays None (=> all
-            # sources, mirroring ``client.chat.ask``'s None contract).
-            refs = coerce_list(source_ids)
-            resolved_source_ids = await resolve_sources(client, nb_id, refs) if refs else None
-            result = await client.chat.ask(
-                nb_id,
-                question,
-                source_ids=resolved_source_ids,
-                conversation_id=conversation_id,
-            )
-            payload = to_jsonable(result)
-            # Drop the debug-only raw wire-protocol blob (it just burns agent context).
-            payload.pop("raw_response", None)
-            if references == "lite":
-                # ``or []`` (not a get-default) so a null ``references`` value is
-                # tolerated, not iterated.
-                payload["references"] = [
-                    {k: ref[k] for k in _LITE_REFERENCE_FIELDS if ref.get(k) is not None}
-                    for ref in (payload.get("references") or [])
-                ]
+            # When recall and a new question both target the "most-recent"
+            # conversation, resolve it ONCE so the two awaits can't land on
+            # different conversations (and so recall-only can echo the id).
+            if conversation_id is None and history > 0:
+                conversation_id = await client.chat.get_conversation_id(nb_id)
+            payload: dict[str, Any] = {}
+            # Fetch history first so it reflects the conversation *before* this
+            # question (the new turn isn't double-reported in the recall list).
+            # ``limit`` counts individual role-rows (~2 per Q&A pair), so double the
+            # caller's pair count to honor the {question, answer} contract.
+            if history > 0:
+                qa_pairs = await client.chat.get_history(
+                    nb_id, limit=history * 2, conversation_id=conversation_id
+                )
+                payload["history"] = [{"question": q, "answer": a} for q, a in qa_pairs]
+            if question:
+                # Tolerate ``source_ids`` sent as a JSON-array string / comma string /
+                # scalar, then resolve each ref (id/prefix/title) the same way every
+                # other source-accepting tool does. Omitted/empty stays None (=> all
+                # sources, mirroring ``client.chat.ask``'s None contract).
+                refs = coerce_list(source_ids)
+                resolved_source_ids = await resolve_sources(client, nb_id, refs) if refs else None
+                result = await client.chat.ask(
+                    nb_id,
+                    question,
+                    source_ids=resolved_source_ids,
+                    conversation_id=conversation_id,
+                )
+                ask_payload = to_jsonable(result)
+                # Drop the debug-only raw wire-protocol blob (it just burns agent context).
+                ask_payload.pop("raw_response", None)
+                if references == "lite":
+                    # ``or []`` (not a get-default) so a null ``references`` value is
+                    # tolerated, not iterated.
+                    ask_payload["references"] = [
+                        {k: ref[k] for k in _LITE_REFERENCE_FIELDS if ref.get(k) is not None}
+                        for ref in (ask_payload.get("references") or [])
+                    ]
+                payload.update(ask_payload)
+            elif conversation_id is not None:
+                # Recall-only: echo the conversation we read so the caller can
+                # target it explicitly on a later turn (the ask path echoes its own).
+                payload["conversation_id"] = conversation_id
             return payload
 
     @mcp.tool
