@@ -19,6 +19,7 @@ generic error classification is covered by ``app/test_app_errors.py``).
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -34,6 +35,7 @@ from notebooklm._app.notebooks import (
     execute_notebook_metadata,
     execute_notebook_rename,
 )
+from notebooklm.exceptions import NotebookNotFoundError
 from notebooklm.types import (
     Notebook,
     NotebookDescription,
@@ -53,6 +55,10 @@ async def _resolve_nb(_client, nb_id, *, json_output=False):
     return f"full_{nb_id}"
 
 
+_CREATED_AT = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+_MODIFIED_AT = datetime(2026, 1, 3, 4, 5, 6, tzinfo=timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # create
 # ---------------------------------------------------------------------------
@@ -61,7 +67,14 @@ async def _resolve_nb(_client, nb_id, *, json_output=False):
 @pytest.mark.asyncio
 async def test_execute_notebook_create_projects_notebook() -> None:
     client = _client()
-    notebook = Notebook(id="nb_new", title="My notebook")
+    # Both timestamps already populated → the best-effort backfill is a no-op
+    # (no wasted GET re-read), so this stays a pure projection assertion.
+    notebook = Notebook(
+        id="nb_new",
+        title="My notebook",
+        created_at=_CREATED_AT,
+        modified_at=_MODIFIED_AT,
+    )
     client.notebooks.create = AsyncMock(return_value=notebook)
 
     result = await execute_notebook_create(client, "My notebook")
@@ -69,6 +82,104 @@ async def test_execute_notebook_create_projects_notebook() -> None:
     assert isinstance(result, NotebookCreateResult)
     assert result.notebook is notebook
     client.notebooks.create.assert_awaited_once_with("My notebook")
+    client.notebooks.get.assert_not_called()
+
+
+# The create RPC (CREATE_NOTEBOOK / CCqFvf) returns null created_at/modified_at;
+# the core does ONE best-effort GET re-read to backfill just those two slots so
+# every adapter (CLI/REST/MCP) surfaces populated timestamps on create (#1705,
+# lifting the MCP-only #1699 fix into the transport-neutral home).
+
+
+@pytest.mark.asyncio
+async def test_execute_notebook_create_backfills_null_timestamps() -> None:
+    client = _client()
+    created = Notebook(id="nb_new", title="New", sources_count=0, is_owner=True)
+    client.notebooks.create = AsyncMock(return_value=created)
+    # The GET diverges on every non-timestamp field to prove ONLY the two
+    # timestamp slots are taken from it; the create stays authoritative.
+    client.notebooks.get = AsyncMock(
+        return_value=Notebook(
+            id="nb_new",
+            title="Stale",
+            created_at=_CREATED_AT,
+            sources_count=9,
+            is_owner=False,
+            modified_at=_MODIFIED_AT,
+        )
+    )
+
+    nb = (await execute_notebook_create(client, "New")).notebook
+
+    assert nb.created_at == _CREATED_AT  # backfilled from GET
+    assert nb.modified_at == _MODIFIED_AT  # backfilled from GET
+    assert nb.title == "New"  # from create, not the divergent GET
+    assert nb.sources_count == 0  # from create
+    assert nb.is_owner is True  # from create
+    client.notebooks.get.assert_awaited_once_with("nb_new")
+
+
+@pytest.mark.asyncio
+async def test_execute_notebook_create_fills_only_the_null_slot() -> None:
+    """Per-key + additive: a populated create timestamp is never overwritten."""
+    client = _client()
+    created = Notebook(id="nb_new", title="New", created_at=_CREATED_AT)  # modified_at None
+    client.notebooks.create = AsyncMock(return_value=created)
+    client.notebooks.get = AsyncMock(
+        return_value=Notebook(
+            id="nb_new",
+            title="New",
+            created_at=datetime(2099, 1, 1, tzinfo=timezone.utc),  # must NOT win
+            modified_at=_MODIFIED_AT,
+        )
+    )
+
+    nb = (await execute_notebook_create(client, "New")).notebook
+
+    assert nb.created_at == _CREATED_AT  # create's value preserved, GET ignored
+    assert nb.modified_at == _MODIFIED_AT  # only the null slot filled from GET
+    client.notebooks.get.assert_awaited_once_with("nb_new")
+
+
+@pytest.mark.asyncio
+async def test_execute_notebook_create_reread_failure_falls_back() -> None:
+    """A failed GET re-read must not fail a successful create (best-effort)."""
+    client = _client()
+    client.notebooks.create = AsyncMock(return_value=Notebook(id="nb_new", title="New"))
+    client.notebooks.get = AsyncMock(side_effect=NotebookNotFoundError("nb_new"))
+
+    nb = (await execute_notebook_create(client, "New")).notebook  # must not raise
+
+    assert nb.created_at is None
+    assert nb.modified_at is None
+    client.notebooks.get.assert_awaited_once_with("nb_new")
+
+
+@pytest.mark.asyncio
+async def test_execute_notebook_create_reread_still_null_stays_null() -> None:
+    """If the GET itself still has null timestamps (propagation lag), stay null."""
+    client = _client()
+    client.notebooks.create = AsyncMock(return_value=Notebook(id="nb_new", title="New"))
+    client.notebooks.get = AsyncMock(return_value=Notebook(id="nb_new", title="New"))
+
+    nb = (await execute_notebook_create(client, "New")).notebook
+
+    assert nb.created_at is None
+    assert nb.modified_at is None
+    client.notebooks.get.assert_awaited_once_with("nb_new")
+
+
+@pytest.mark.asyncio
+async def test_execute_notebook_create_empty_id_skips_reread() -> None:
+    """No id → no ``get("")``; the create result is returned untouched."""
+    client = _client()
+    client.notebooks.create = AsyncMock(return_value=Notebook(id="", title="New"))
+    client.notebooks.get = AsyncMock()
+
+    nb = (await execute_notebook_create(client, "New")).notebook
+
+    assert nb.created_at is None
+    client.notebooks.get.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

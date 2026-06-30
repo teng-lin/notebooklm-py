@@ -26,6 +26,7 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -33,6 +34,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
     from ..types import Notebook, NotebookDescription, NotebookMetadata
+
+logger = logging.getLogger(__name__)
 
 #: Resolves a (possibly partial) notebook id to its full id. The CLI adapter
 #: injects ``cli.resolve.resolve_notebook_id``; it is read off the wrapper at
@@ -61,9 +64,59 @@ async def execute_notebook_create(
     The ``--use`` context switch is a CLI-side side effect (it writes the
     persisted active-notebook pointer), so it stays in the command layer; this
     core only creates the notebook and returns the typed result.
+
+    The returned notebook has its ``created_at`` / ``modified_at`` backfilled
+    best-effort (see :func:`_backfill_create_timestamps`) so every adapter
+    driving this core — CLI ``notebook create --json``, the REST create route,
+    and the MCP ``notebook_create`` tool — surfaces populated timestamps on
+    creation rather than ``null`` (#1705, lifting the MCP-only fix from #1699).
     """
     notebook = await client.notebooks.create(title)
+    await _backfill_create_timestamps(client, notebook)
     return NotebookCreateResult(notebook=notebook)
+
+
+async def _backfill_create_timestamps(
+    client: NotebookLMClient,
+    notebook: Notebook,
+) -> None:
+    """Best-effort: fill ``notebook``'s null ``created_at`` / ``modified_at``.
+
+    ``CREATE_NOTEBOOK`` (``CCqFvf``) returns a notebook whose ``meta[5]`` /
+    ``meta[8]`` timestamp slots are not yet populated, even though
+    ``GET_NOTEBOOK`` / ``notebook_list`` carry them (#1699). Do ONE re-read to
+    backfill just those two keys, skipping it when both are already present (no
+    wasted RPC) or the id is empty (no ``get("")``).
+
+    The fill is PER-KEY and strictly additive: a slot is filled only when the
+    create left it ``None`` AND the re-read has a value, so a populated create
+    timestamp is never touched and a lagging re-read that returns ``None``
+    cannot REGRESS a populated slot back to ``None``. The create already
+    committed server-side, so a re-read failure (eventual-consistency
+    ``NotebookNotFoundError``, a transport blip) degrades to the create
+    timestamps rather than failing the create; ``except Exception`` still lets
+    ``asyncio.CancelledError`` (a ``BaseException``) propagate.
+
+    Mutates ``notebook`` in place — it is the freshly created, unaliased object
+    this core is about to return, so an in-place fill is safe.
+    """
+    if not notebook.id:
+        return
+    if notebook.created_at is not None and notebook.modified_at is not None:
+        return
+    try:
+        fresh = await client.notebooks.get(notebook.id)
+    except Exception:
+        logger.debug(
+            "notebook create: timestamp re-read failed; returning create "
+            "result with unpopulated timestamps",
+            exc_info=True,
+        )
+        return
+    if notebook.created_at is None and fresh.created_at is not None:
+        notebook.created_at = fresh.created_at
+    if notebook.modified_at is None and fresh.modified_at is not None:
+        notebook.modified_at = fresh.modified_at
 
 
 # ---------------------------------------------------------------------------
