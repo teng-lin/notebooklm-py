@@ -41,6 +41,10 @@ class FakeSource:
 
     # ``kind``/``status`` are properties (not fields) → mirror real Source: dropped
     # by to_jsonable but read by the tool's _source_view to add string labels.
+    # NOTE: ``kind`` is hardcoded WEB_PAGE, so any source_wait test that lands this in
+    # the ``ready`` bucket triggers the #1698 thin-content fetch — mock
+    # ``client.sources.get_fulltext`` (ample content) or a swallowed error yields a
+    # green-for-the-wrong-reason pass. Use FakeReadyTextSource for a non-web-page READY.
     @property
     def is_ready(self) -> bool:
         return True

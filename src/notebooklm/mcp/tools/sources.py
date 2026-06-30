@@ -68,6 +68,11 @@ _DEFAULT_DRIVE_MIME = "google-doc"
 #: conservative — advisory only, never a rejection. See :func:`_thin_content_warning`.
 _THIN_SOURCE_CHAR_THRESHOLD = 100
 
+#: Per-source budget for the advisory thin-content body fetch. The check is
+#: best-effort and must not let ``source_wait`` overrun its own ``timeout`` waiting
+#: on a slow ``GET_SOURCE`` — a fetch that exceeds this degrades to no warning.
+_THIN_SOURCE_FETCH_TIMEOUT_SECONDS = 5.0
+
 
 def _source_view(source: Any) -> dict[str, Any]:
     """Serialize a Source with agent-readable string labels added.
@@ -314,12 +319,10 @@ def register(mcp: Any) -> None:
         that did become ready.
 
         A READY **web-page** entry may carry a non-blocking ``warning`` when its
-        indexed text is suspiciously thin (little/no extractable content) — a likely
-        dead link / soft-404 / paywalled "ghost source" that add-time status cannot
-        catch (a soft-404 serves HTTP 200). It is advisory only: the source is still
-        READY and still counts as ``ok``; verify the page with ``source_get_content``.
-        Only web-page sources are checked — short pasted text / transcripts are never
-        flagged.
+        indexed text is suspiciously thin — a likely dead link / soft-404 / paywalled
+        "ghost source" add-time status can't catch. Advisory only (still READY, still
+        ``ok``; verify with ``source_get_content``); short pasted text / transcripts
+        are never flagged.
 
         A single-source ``source`` ref that does not resolve (e.g. an unknown title)
         still raises NOT_FOUND before the wait — that is an input error, distinct
@@ -916,21 +919,21 @@ async def _annotate_thin_warnings(
 ) -> None:
     """Attach a thin-content ``warning`` to each ready web-page view, in place.
 
-    Fetches the indexed body for the ready web-page sources concurrently (reads;
-    the client already caps in-flight RPCs via its semaphore). Non-web-page sources
-    never incur a fetch (:func:`_thin_content_warning` returns ``None`` immediately
-    for them).
-
-    Drives explicit tasks and, on any escape (e.g. a propagating ``CancelledError``
-    — :func:`_thin_content_warning` swallows ``Exception`` but not ``BaseException``),
-    cancels + drains the still-running sibling fetches before re-raising, so a
-    cancelled wait never leaks a coroutine. Mirrors :func:`_wait_all_sources`.
+    Fetches the indexed body for the ready web-page sources concurrently (reads,
+    capped by the client's RPC semaphore); non-web-page sources are filtered out up
+    front so they never schedule a no-op task. Drives explicit tasks and, on any
+    escape (e.g. a propagating ``CancelledError``), cancels + drains the still-running
+    sibling fetches before re-raising — no leaked coroutine. Mirrors
+    :func:`_wait_all_sources`.
     """
-    if not ready_pairs:
+    web_page_pairs = [
+        (view, source) for view, source in ready_pairs if source.kind == SourceType.WEB_PAGE
+    ]
+    if not web_page_pairs:
         return
     tasks = [
         asyncio.create_task(_thin_content_warning(client, notebook_id, source))
-        for _view, source in ready_pairs
+        for _view, source in web_page_pairs
     ]
     try:
         warnings = await asyncio.gather(*tasks)
@@ -940,7 +943,7 @@ async def _annotate_thin_warnings(
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
-    for (view, _source), warning in zip(ready_pairs, warnings, strict=True):
+    for (view, _source), warning in zip(web_page_pairs, warnings, strict=True):
         if warning is not None:
             view["warning"] = warning
 
@@ -951,33 +954,31 @@ async def _thin_content_warning(
     """Return a content-sanity warning for a READY web-page source, else ``None``.
 
     A dead link / soft-404 / paywalled page is often ingested as a READY source
-    with little or no extractable text — a "ghost source" that the add-time status
-    cannot catch (a soft-404 serves HTTP 200). When such a READY ``web_page`` source
-    has fewer than :data:`_THIN_SOURCE_CHAR_THRESHOLD` characters of indexed text,
-    flag it so an agent can verify rather than trust it.
-
-    Scope + safety:
-
-    * **web-page only** — text / file / drive / youtube sources are skipped:
-      legitimately short pasted text or a short transcript must NEVER be flagged.
-    * **best-effort** — the body fetch reuses the same ``GET_SOURCE`` the
-      ``source_get_content`` tool issues; any failure degrades to ``None`` so the
-      sanity check can never break a wait. (``except Exception``, not
-      ``BaseException``, so ``CancelledError`` still propagates.)
-    * **never rejects** — it only annotates; the source stays READY.
+    with little/no extractable text — a "ghost source" add-time status can't catch
+    (a soft-404 serves HTTP 200). Such a ``web_page`` source under
+    :data:`_THIN_SOURCE_CHAR_THRESHOLD` chars of indexed text is flagged so an agent
+    can verify rather than trust it. **web-page only** (short pasted text /
+    transcripts are legitimate, never flagged; callers also pre-filter).
+    **best-effort**: the body fetch reuses ``source_get_content``'s ``GET_SOURCE``,
+    bounded by :data:`_THIN_SOURCE_FETCH_TIMEOUT_SECONDS`; ANY failure (timeout,
+    transport, unexpected shape) degrades to ``None`` so it can never break a wait
+    (``except Exception`` — ``CancelledError`` still propagates). **Never rejects.**
     """
     if not source.is_ready or source.kind != SourceType.WEB_PAGE:
         return None
     try:
-        result = await content_core.execute_source_fulltext(
-            client,
-            content_core.SourceFulltextPlan(
-                notebook_id=notebook_id, source_id=source.id, output_format="text"
+        result = await asyncio.wait_for(
+            content_core.execute_source_fulltext(
+                client,
+                content_core.SourceFulltextPlan(
+                    notebook_id=notebook_id, source_id=source.id, output_format="text"
+                ),
             ),
+            timeout=_THIN_SOURCE_FETCH_TIMEOUT_SECONDS,
         )
+        char_count = result.fulltext.char_count
     except Exception:  # noqa: BLE001 - sanity check must never break a wait
         return None
-    char_count = result.fulltext.char_count
     if char_count >= _THIN_SOURCE_CHAR_THRESHOLD:
         return None
     return (
