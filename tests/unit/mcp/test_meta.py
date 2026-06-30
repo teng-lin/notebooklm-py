@@ -24,7 +24,11 @@ from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
 
 def _write_authed_storage() -> None:
-    """Write a minimal SID-bearing storage_state.json at the resolved path."""
+    """Write a minimal SID-bearing storage_state.json at the resolved path.
+
+    Resolves the path at call time, so the caller MUST have already pointed
+    ``NOTEBOOKLM_HOME`` at a temp dir (``monkeypatch.setenv``) before calling.
+    """
     from notebooklm.paths import get_storage_path
 
     storage_path = get_storage_path()
@@ -176,6 +180,20 @@ async def test_server_info_include_account_degrades_on_rpc_error(
     # The diagnostic stays useful: version + auth block survive the degradation.
     assert result.structured_content["version"] == __version__
     assert result.structured_content["auth"]["authenticated"] is True
+
+
+async def test_server_info_include_account_degrades_when_tier_rpc_raises(
+    mcp_call, mock_client, tmp_path, monkeypatch
+) -> None:
+    """The tier RPC failing (not just the limits RPC) also degrades gracefully —
+    the two reads run concurrently, so either one raising must be caught."""
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    _write_authed_storage()
+    mock_client.settings.get_account_limits = AsyncMock(return_value=AccountLimits())
+    mock_client.settings.get_account_tier = AsyncMock(side_effect=RPCError("tier lookup failed"))
+    result = await mcp_call("server_info", {"include_account": True})
+    assert result.structured_content["account"]["available"] is False
+    assert "tier lookup failed" in result.structured_content["account"]["reason"]
 
 
 async def test_server_info_include_account_tier_none_is_available(
