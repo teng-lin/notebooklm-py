@@ -46,6 +46,7 @@ from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors
 from .._filelink import DOWNLOAD_TTL, FileTransferConfig
+from .._paginate import DEFAULT_LIMIT, paginate
 from .._resolve import resolve_artifact, resolve_notebook, resolve_sources
 from ._passthrough import passthrough_notebook_id
 from ._preview import title_for_id
@@ -398,13 +399,20 @@ def register(mcp: Any) -> None:
     """Register the artifact tools on ``mcp``."""
 
     @mcp.tool(annotations=READ_ONLY)
-    async def artifact_list(ctx: Context, notebook: str) -> dict[str, Any]:
-        """List a notebook's studio artifacts. Accepts a notebook name or ID."""
+    async def artifact_list(
+        ctx: Context, notebook: str, limit: int = DEFAULT_LIMIT
+    ) -> dict[str, Any]:
+        """List a notebook's studio artifacts. Accepts a notebook name or ID.
+
+        ``limit`` caps the returned page (default 50); the result also carries
+        ``total`` and ``has_more``.
+        """
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             artifacts = await client.artifacts.list(nb_id)
-            return {"notebook_id": nb_id, "artifacts": to_jsonable(artifacts)}
+            page, meta = paginate(to_jsonable(artifacts), limit)
+            return {"notebook_id": nb_id, "artifacts": page, **meta}
 
     @mcp.tool
     async def artifact_generate(

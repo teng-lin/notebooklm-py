@@ -26,6 +26,7 @@ from ..._app.serialize import to_jsonable
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client
 from .._errors import mcp_errors
+from .._paginate import DEFAULT_LIMIT, paginate
 from .._resolve import resolve_notebook
 from ._passthrough import passthrough_notebook_id
 from ._preview import title_for_id
@@ -35,12 +36,17 @@ def register(mcp: Any) -> None:
     """Register the notebook tools on ``mcp``."""
 
     @mcp.tool(annotations=READ_ONLY)
-    async def notebook_list(ctx: Context) -> dict[str, Any]:
-        """List all notebooks (id + title + metadata)."""
+    async def notebook_list(ctx: Context, limit: int = DEFAULT_LIMIT) -> dict[str, Any]:
+        """List all notebooks (id + title + metadata).
+
+        ``limit`` caps the returned page (default 50); the result also carries
+        ``total`` and ``has_more`` so you know whether to request a larger page.
+        """
         client = get_client(ctx)
         with mcp_errors():
             notebooks = await client.notebooks.list()
-            return {"notebooks": to_jsonable(notebooks)}
+            page, meta = paginate(to_jsonable(notebooks), limit)
+            return {"notebooks": page, **meta}
 
     @mcp.tool
     async def notebook_create(ctx: Context, title: str) -> dict[str, Any]:

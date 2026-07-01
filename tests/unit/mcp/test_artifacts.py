@@ -793,7 +793,9 @@ async def test_artifact_download_audio(mcp_call, mock_client, tmp_path) -> None:
     mock_client.artifacts.download_audio.assert_awaited_once()
 
 
-async def test_artifact_download_by_artifact_ref_infers_type(mcp_call, mock_client, tmp_path) -> None:
+async def test_artifact_download_by_artifact_ref_infers_type(
+    mcp_call, mock_client, tmp_path
+) -> None:
     """R3: an ``artifact`` name-or-id ref resolves to its type+id — no ``artifact_type``."""
     out = str(tmp_path / "out.mp3")
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])

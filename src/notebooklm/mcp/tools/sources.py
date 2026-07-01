@@ -44,6 +44,7 @@ from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors, tool_error_payload
 from .._filelink import UPLOAD_TTL, FileTransferConfig
+from .._paginate import DEFAULT_LIMIT, paginate
 from .._resolve import resolve_notebook, resolve_source
 from ._content_sanity import _annotate_thin_warnings
 from ._passthrough import passthrough_child_id
@@ -62,6 +63,10 @@ _DRIVE_MIME_CHOICES = ("google-doc", "google-slides", "google-sheets", "pdf")
 
 #: The default Drive MIME choice when the caller does not specify one.
 _DEFAULT_DRIVE_MIME = "google-doc"
+
+#: Default cap for ``source_get_content`` when ``max_chars`` is omitted — the body
+#: is bounded (not dumped whole) so a large source can't flood agent context.
+_DEFAULT_CONTENT_CHARS = 10_000
 
 
 def _source_view(source: Any) -> dict[str, Any]:
@@ -118,6 +123,7 @@ def register(mcp: Any) -> None:
         ctx: Context,
         notebook: str,
         status: Literal["ready", "processing", "error", "preparing"] | None = None,
+        limit: int = DEFAULT_LIMIT,
     ) -> dict[str, Any]:
         """List a notebook's sources. Accepts a notebook name or ID.
 
@@ -143,7 +149,8 @@ def register(mcp: Any) -> None:
             # filter. Uses the same source_status_to_str label _source_view emits.
             if status is not None:
                 sources = [s for s in sources if source_status_to_str(s.status) == status]
-            return {"notebook_id": nb_id, "sources": [_source_view(s) for s in sources]}
+            page, meta = paginate([_source_view(s) for s in sources], limit)
+            return {"notebook_id": nb_id, "sources": page, **meta}
 
     @mcp.tool(annotations=READ_ONLY)
     async def source_get_content(
@@ -154,7 +161,7 @@ def register(mcp: Any) -> None:
         max_chars: int | None = None,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """Fetch a source's metadata AND its full indexed text content.
+        """Fetch a source's metadata AND a bounded window of its indexed text.
 
         Accepts a notebook/source name or ID. Returns the source metadata (incl.
         string ``kind``/``status_label``) plus the extracted ``content``, the full
@@ -164,11 +171,13 @@ def register(mcp: Any) -> None:
         flattened plaintext; ``markdown`` preserves headings/tables/links/emphasis
         (requires the server's ``markdownify`` extra — otherwise a clean error).
 
-        For large sources, window the body with ``offset`` and ``max_chars`` (the
-        returned ``content`` is the slice ``[offset : offset+max_chars]``);
-        ``char_count`` is always the FULL length and ``truncated`` says whether the
-        returned slice is shorter than the remainder. Prefer ``chat_ask`` for
-        querying large sources rather than pulling the whole body.
+        The returned ``content`` is ALWAYS bounded: omitting ``max_chars`` caps it
+        at the first 10,000 characters (so a large source never dumps its whole body
+        into context). Read more by raising ``max_chars`` and/or paging with
+        ``offset`` — the slice is ``[offset : offset+max_chars]``. ``char_count`` is
+        always the FULL length and ``truncated`` says whether the returned slice
+        omits any remainder. Prefer ``chat_ask`` for querying large sources rather
+        than pulling the body.
 
         ``content`` is ``null`` (and ``char_count`` 0) when the source is not yet
         ready (still processing / errored) or has no extractable text, so this tool
@@ -222,12 +231,16 @@ def register(mcp: Any) -> None:
                 content = fulltext.fulltext.content or None
                 char_count = fulltext.fulltext.char_count
 
-            # Window the body if requested. ``char_count`` stays the FULL length;
-            # ``truncated`` reports whether the returned slice omits any remainder.
+            # Window the body. The returned ``content`` is ALWAYS bounded — omitting
+            # ``max_chars`` applies a default cap (not the full body) so a large
+            # source can't silently dump tens of thousands of tokens into context;
+            # pass a larger ``max_chars`` (and/or ``offset``) to read more.
+            # ``char_count`` stays the FULL length; ``truncated`` reports whether the
+            # returned slice omits any remainder.
             truncated = False
-            if content is not None and (offset > 0 or max_chars is not None):
-                end = len(content) if max_chars is None else offset + max_chars
-                windowed = content[offset:end]
+            if content is not None:
+                effective_max = _DEFAULT_CONTENT_CHARS if max_chars is None else max_chars
+                windowed = content[offset : offset + effective_max]
                 truncated = len(windowed) < (len(content) - offset)
                 # Normalize an empty slice (e.g. offset past the end) to None, matching
                 # the fetch-path contract (content is null when there's nothing to show).

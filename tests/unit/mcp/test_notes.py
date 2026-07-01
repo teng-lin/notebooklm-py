@@ -58,6 +58,8 @@ async def test_note_list(mcp_call, mock_client) -> None:
     assert result.structured_content == {
         "notebook_id": NB_ID,
         "notes": [{"id": NOTE_ID, "title": "N1", "content": "c"}],
+        "total": 1,
+        "has_more": False,
     }
     mock_client.notes.list.assert_awaited_once_with(NB_ID)
 

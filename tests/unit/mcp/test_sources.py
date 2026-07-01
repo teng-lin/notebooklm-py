@@ -159,6 +159,8 @@ async def test_source_list(mcp_call, mock_client) -> None:
     assert result.structured_content == {
         "notebook_id": NB_ID,
         "sources": [{"id": SRC_ID, "title": "Doc", "kind": "web_page", "status_label": "ready"}],
+        "total": 1,
+        "has_more": False,
     }
     mock_client.sources.list.assert_awaited_once_with(NB_ID)
 
@@ -182,6 +184,8 @@ async def test_source_list_status_filter(mcp_call, mock_client) -> None:
                 "status_label": "error",
             }
         ],
+        "total": 1,
+        "has_more": False,
     }
 
 
@@ -189,7 +193,12 @@ async def test_source_list_status_filter_no_match(mcp_call, mock_client) -> None
     """A filter matching nothing yields an empty list (notebook_id still present)."""
     mock_client.sources.list = AsyncMock(return_value=[FakeSource(id=SRC_ID, title="Ready Doc")])
     result = await mcp_call("source_list", {"notebook": NB_ID, "status": "error"})
-    assert result.structured_content == {"notebook_id": NB_ID, "sources": []}
+    assert result.structured_content == {
+        "notebook_id": NB_ID,
+        "sources": [],
+        "total": 0,
+        "has_more": False,
+    }
 
 
 async def test_source_list_invalid_status_filter_rejected(mcp_call, mock_client) -> None:
@@ -293,6 +302,20 @@ async def test_source_get_content_windowing(mcp_call, mock_client) -> None:
     )
     assert result2.structured_content["content"] == "hij"
     assert result2.structured_content["truncated"] is False
+
+
+async def test_source_get_content_default_cap(mcp_call, mock_client) -> None:
+    """Omitting max_chars caps the body at the default (10k), not the full text."""
+    big = "x" * 25_000
+    mock_client.sources.get_or_none = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Doc"))
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content=big, char_count=len(big))
+    )
+    result = await mcp_call("source_get_content", {"notebook": NB_ID, "source": SRC_ID})
+    sc = result.structured_content
+    assert len(sc["content"]) == 10_000  # bounded by the default cap
+    assert sc["char_count"] == 25_000  # full length still reported
+    assert sc["truncated"] is True
 
 
 async def test_source_get_content_negative_window_is_validation_error(
