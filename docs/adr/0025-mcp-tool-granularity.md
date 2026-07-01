@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-The MCP surface is **36 tools** (`tests/unit/mcp/test_manifest.py`, ceiling 40),
+The MCP surface is **35 tools** (`tests/unit/mcp/test_manifest.py`, ceiling 40),
 above the 5–15/server that current guidance recommends (Anthropic *Writing
 effective tools for agents*, Sep 2025; GitHub cut Copilot 40→13 for measurable
 accuracy + latency gains). A tool-interface review flagged that two tools carry
@@ -60,7 +60,7 @@ bounded content reads) proceed independently of this decision.
 
 ## Consequences
 
-- The surface stays at 36/40 with the two mega-tools intact (Tier-1 read-merges cut it from 37; the mega-tool decision here is unchanged); agents keep learning
+- The surface stays at 35/40 with the two mega-tools intact (Tier-1 read-merges cut it from 37; the mega-tool decision here is unchanged); agents keep learning
   `source_add` / `artifact_generate` validity partly by failed calls (mitigated by
   the leaner docstrings + examples).
 - We avoid a count-inflating refactor we cannot pay for with deferred loading.

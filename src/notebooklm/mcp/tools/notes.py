@@ -7,10 +7,11 @@ injected ``resolve_notebook_id`` / ``resolve_note_id`` callables shaped for the
 CLI; since the MCP adapter resolves refs up front it passes the shared
 pass-through resolvers, which return the already-resolved ids unchanged.
 
-Split into verbs (``note_create`` / ``note_get`` / ``note_list`` /
-``note_update`` / ``note_delete``), NOT an ``action`` enum. ``note_delete``
-follows the two-step confirm contract; ``note_get`` / ``note_list`` are
-read-only. ``note_update`` updates content and/or title (title-only = rename).
+Split into verbs (``note_create`` / ``note_list`` / ``note_update`` /
+``note_delete``), NOT an ``action`` enum. ``note_delete`` follows the two-step
+confirm contract; ``note_list`` is read-only (and single-fetches one note by ref
+when ``note`` is given). ``note_update`` updates content and/or title
+(title-only = rename).
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
@@ -62,50 +63,57 @@ def register(mcp: Any) -> None:
 
     @mcp.tool(annotations=READ_ONLY)
     async def note_list(
-        ctx: Context, notebook: str, limit: int = DEFAULT_LIMIT, offset: int = 0
+        ctx: Context,
+        notebook: str,
+        note: str | None = None,
+        limit: int = DEFAULT_LIMIT,
+        offset: int = 0,
     ) -> dict[str, Any]:
-        """List a notebook's notes. Accepts a notebook name or ID.
+        """List a notebook's notes, or fetch one by ref. Accepts a notebook name or ID.
 
-        Returns a bounded page: ``limit`` (default 50) notes from ``offset``, plus
-        ``total`` / ``offset`` / ``has_more``. Page with ``offset += limit``.
+        Omit ``note`` for a bounded page: ``limit`` (default 50) notes from
+        ``offset``, plus ``total`` / ``offset`` / ``has_more`` (page with
+        ``offset += limit``). Pass ``note`` (a note name or id) to return just that
+        one note — still in the ``notes`` list shape (a 1-element list, ``total`` 1)
+        — or a not-found error if the ref doesn't resolve. ``limit`` / ``offset``
+        are ignored when ``note`` is given.
         """
         client = get_client(ctx)
         with mcp_errors():
+            # Validate pagination args unconditionally, so ``note_list(note=x,
+            # limit=0)`` still errors even though they're ignored on the single-fetch
+            # path (matches ``paginate``'s bounds on the list path).
+            if limit < 1:
+                raise ValidationError("limit must be >= 1.")
+            if offset < 0:
+                raise ValidationError("offset must be >= 0.")
             nb_id = await resolve_notebook(client, notebook)
+            if note is not None:
+                # Single fetch by ref — the old ``note_get``, wrapped as a 1-element
+                # list so the return shape never branches on whether ``note`` is set.
+                note_id = await resolve_note(client, nb_id, note)
+                result = await core.execute_note_get(
+                    client,
+                    nb_id,
+                    note_id,
+                    resolve_notebook_id=passthrough_notebook_id,
+                    resolve_note_id=passthrough_child_id,
+                )
+                # ``resolve_note`` raises for an unknown title/prefix, but its
+                # full-UUID fast-path skips the list — so a concrete-but-absent id
+                # reaches here as ``found=False``. Surface the same typed not-found.
+                if not result.found:
+                    raise NoteNotFoundError(note_id)
+                return {
+                    "notebook_id": nb_id,
+                    "notes": [to_jsonable(result.note)],
+                    "total": 1,
+                    "offset": 0,
+                    "has_more": False,
+                }
             notes = await client.notes.list(nb_id)
             page, meta = paginate(to_jsonable(notes), limit, offset)
             return {"notebook_id": nb_id, "notes": page, **meta}
-
-    @mcp.tool(annotations=READ_ONLY)
-    async def note_get(ctx: Context, notebook: str, note: str) -> dict[str, Any]:
-        """Fetch a single note with its full title and content.
-
-        Accepts a notebook/note name or ID. ``note_list`` returns the same fields
-        for every note in one call; reach for ``note_get`` when you already have a
-        note ref and want just that one. Raises a not-found error if the note does
-        not exist (e.g. a full-id ref that was deleted).
-        """
-        client = get_client(ctx)
-        with mcp_errors():
-            nb_id = await resolve_notebook(client, notebook)
-            note_id = await resolve_note(client, nb_id, note)
-            result = await core.execute_note_get(
-                client,
-                nb_id,
-                note_id,
-                resolve_notebook_id=passthrough_notebook_id,
-                resolve_note_id=passthrough_child_id,
-            )
-            # ``resolve_note`` raises for an unknown title/prefix, but its
-            # full-UUID fast-path skips the list — so a concrete-but-absent id
-            # reaches here as ``found=False``. Surface the same typed not-found.
-            if not result.found:
-                raise NoteNotFoundError(note_id)
-            return {
-                "notebook_id": result.notebook_id,
-                "note_id": result.note_id,
-                "note": to_jsonable(result.note),
-            }
 
     @mcp.tool
     async def note_update(

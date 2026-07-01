@@ -5,7 +5,7 @@ in-memory FastMCP ``Client``, then pins:
 
 * the EXACT set of tool names — so a tool can't be silently added, removed, or
   renamed without updating this gate;
-* a tool-count ceiling (40): the current surface is 36 tools; the next tool
+* a tool-count ceiling (40): the current surface is 35 tools; the next tool
   stays under the ceiling, but an accidental explosion still trips the gate;
 * the ``destructiveHint`` annotation + a ``confirm`` parameter on every
   destructive (delete) tool; and
@@ -23,7 +23,7 @@ import pytest
 pytest.importorskip("fastmcp")
 
 
-#: The complete, pinned tool surface. 36 tools across 8 domains. Adding or
+#: The complete, pinned tool surface. 35 tools across 8 domains. Adding or
 #: removing a tool MUST update this set (and the ceiling below if it grows).
 EXPECTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -44,9 +44,8 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "chat_ask",
         "chat_configure",
         "suggest_prompts",
-        # Notes (5)
+        # Notes (4)
         "note_create",
-        "note_get",
         "note_list",
         "note_update",
         "note_delete",
@@ -76,9 +75,9 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
 
 #: Tool-count ceiling. The design target is ~25; the sharing domain (#1684) took
 #: the surface to 34, the artifact get-prompt/retry tools took it to 36, and
-#: suggest_prompts to 37; the Tier-1 read-merge (source_describe+source_get_content
-#: → source_read) brought it back to 36. The ceiling has headroom, but an
-#: accidental explosion still trips the gate.
+#: suggest_prompts to 37; the Tier-1 read-merges (source_describe+source_get_content
+#: → source_read, note_get → note_list(note?)) brought it to 35. The ceiling has
+#: headroom, but an accidental explosion still trips the gate.
 TOOL_CEILING = 40
 
 #: The destructive tools — each carries ``destructiveHint`` AND a ``confirm``
@@ -94,7 +93,6 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "notebook_describe",
         "source_list",
         "source_read",
-        "note_get",
         "note_list",
         "artifact_list",
         "artifact_status",
