@@ -31,9 +31,8 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import (
     FileResponse,
@@ -42,6 +41,7 @@ from starlette.responses import (
     PlainTextResponse,
     Response,
 )
+from starlette.types import Receive, Scope, Send
 
 from .._app import download as download_core
 from .._app import source_add as add_core
@@ -191,6 +191,33 @@ def _cleanup(path: str) -> None:
     shutil.rmtree(path, ignore_errors=True)
 
 
+class _SlotHeldFileResponse(FileResponse):
+    """A ``FileResponse`` that releases its download slot + temp dir only once the
+    body has finished streaming — or the client disconnected / the stream aborted.
+
+    Releasing at the END of the ASGI send loop (a ``finally``), not at handler
+    return, means the slot stays counted for the whole time the spooled artifact
+    occupies temp disk, so slow or deliberately-held streams still count against
+    ``_MAX_CONCURRENT_DOWNLOADS`` (a replayed token cannot accumulate uncounted
+    on-disk artifacts). The ``finally`` also guarantees the release when a client
+    disconnect or bad ``Range`` aborts the stream mid-flight, so a slot can never
+    leak and permanently wedge the cap. Error/early-return paths never construct
+    this response — the route's own ``finally`` releases those.
+    """
+
+    def __init__(self, *args: Any, temp_dir: str, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._temp_dir = temp_dir
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        global _inflight_downloads
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            _inflight_downloads -= 1
+            _cleanup(self._temp_dir)
+
+
 async def _passthrough_notebook(notebook_id: str) -> str:
     """Async pass-through notebook resolver (the token carries the full id)."""
     return notebook_id
@@ -280,16 +307,19 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
         _inflight_downloads += 1
-        # Release the slot + clean the temp dir in one outer ``finally`` on handler
-        # RETURN (before Starlette streams the file), NOT via the success-path
-        # ``BackgroundTask``: that task is skipped on client disconnect / cancellation
-        # / a bad Range mid-stream, which would leak a slot permanently and turn this
-        # anti-DoS cap into a DoS. The single ``finally`` also covers a ``mkdtemp``
-        # failure (the exact temp-disk exhaustion this cap defends against) and any
-        # unexpected error in the post-fetch code (``FileResponse`` init,
-        # ``artifact_title_to_filename``) — every non-success exit cleans the temp
-        # dir. The ``success`` flag hands temp ownership to the streamed response,
-        # whose own ``BackgroundTask`` removes it after the client finishes.
+        # Slot accounting has two disjoint owners, so the counter is decremented
+        # exactly once per accepted request:
+        #  * NON-success (mkdtemp failure, any error/early return, or an unexpected
+        #    exception in the post-fetch code like ``FileResponse`` init /
+        #    ``artifact_title_to_filename``) → the outer ``finally`` below releases
+        #    the slot AND cleans the temp dir. ``mkdtemp`` failure is the exact
+        #    temp-disk exhaustion this cap defends against, so it must release.
+        #  * SUCCESS → ownership passes to the returned ``_SlotHeldFileResponse``,
+        #    which releases the slot + cleans the temp dir only after the body has
+        #    finished streaming (or a disconnect/bad-Range aborts it). Holding the
+        #    slot for the whole stream keeps slow/held downloads counted (temp disk
+        #    stays bounded), and its ``finally`` guarantees release on disconnect so
+        #    a slot can never leak and wedge the cap.
         temp_dir: str | None = None
         success = False
         try:
@@ -354,18 +384,21 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
             download_name = download_core.artifact_title_to_filename(
                 title, Path(served).suffix, set()
             )
-            response = FileResponse(
+            response = _SlotHeldFileResponse(
                 served,
                 filename=download_name,
-                background=BackgroundTask(_cleanup, temp_dir),
+                temp_dir=temp_dir,
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
             success = True
             return response
         finally:
-            _inflight_downloads -= 1
-            if temp_dir is not None and not success:
-                _cleanup(temp_dir)
+            # Success hands slot + temp ownership to ``_SlotHeldFileResponse`` (released
+            # at end-of-stream); every other exit releases here.
+            if not success:
+                _inflight_downloads -= 1
+                if temp_dir is not None:
+                    _cleanup(temp_dir)
 
     @mcp.custom_route("/files/ul/{token}", methods=["GET"])
     async def upload_page_route(request: Request) -> Response:

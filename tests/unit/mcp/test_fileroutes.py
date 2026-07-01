@@ -188,6 +188,27 @@ def test_download_post_fetch_exception_cleans_temp_and_releases_slot(
     assert _fileroutes._inflight_downloads == before
 
 
+async def test_slot_held_response_releases_on_stream_abort(monkeypatch, tmp_path) -> None:
+    # The slot is held for the whole stream (so slow/held downloads still count),
+    # but released from the response's ``finally`` even when the stream aborts
+    # mid-flight (client disconnect / bad Range) — so a held slot can never leak.
+    temp_dir = str(tmp_path / "dl")
+    os.mkdir(temp_dir)
+    served = os.path.join(temp_dir, "artifact.mp3")
+    Path(served).write_bytes(b"AUDIO")
+
+    async def boom_call(self, *_a, **_k):
+        raise RuntimeError("client disconnected mid-stream")
+
+    monkeypatch.setattr(_fileroutes.FileResponse, "__call__", boom_call)
+    monkeypatch.setattr(_fileroutes, "_inflight_downloads", 1)
+    resp = _fileroutes._SlotHeldFileResponse(served, temp_dir=temp_dir)
+    with pytest.raises(RuntimeError):
+        await resp({"type": "http", "method": "GET", "headers": []}, None, None)
+    assert _fileroutes._inflight_downloads == 0  # slot released despite the abort
+    assert not os.path.exists(temp_dir)  # temp dir cleaned despite the abort
+
+
 def test_download_route_forwards_fmt_from_token(monkeypatch, mock_client, config) -> None:
     # The `fmt` carried in a dl token must reach build_download_plan (route-level
     # round trip; the tool-level test only checks the token encodes it).

@@ -318,11 +318,13 @@ narrow, but do not eliminate, that surface.
 - **HMAC integrity** — a token cannot be forged or its parameters tampered with;
   replay requires capturing a *legitimately issued* token.
 - **Download concurrency cap** — `_MAX_CONCURRENT_DOWNLOADS = 4` (added in the same
-  change, #1681, mirroring the existing upload cap) caps concurrent fetch+spool
-  operations, so a replayed token cannot fan out unbounded fresh Google fetches or
-  peak temp-disk spools (the amplification threat). The slot is released
-  deterministically on handler return (a `finally`, not the post-stream background
-  task), so a mid-stream disconnect cannot leak a slot and wedge the route.
+  change, #1681, mirroring the existing upload cap) bounds concurrent in-flight
+  downloads, so a replayed token cannot fan out unbounded fresh Google fetches or
+  accumulate unbounded spooled artifacts on temp disk. The slot is held for the
+  whole lifetime the artifact occupies temp disk — released from a `finally` at the
+  end of the response's stream (via a `FileResponse` subclass), so slow/held
+  streams still count against the cap **and** a mid-stream disconnect or aborted
+  `Range` can never leak a slot and wedge the route.
 
 **Decision — accept the replay-within-TTL residual; do NOT add `jti` tracking and
 do NOT shorten the TTLs now.**
