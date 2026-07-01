@@ -5,8 +5,8 @@ in-memory FastMCP ``Client``, then pins:
 
 * the EXACT set of tool names — so a tool can't be silently added, removed, or
   renamed without updating this gate;
-* a tool-count ceiling (32) with headroom (30/32): the next few tools are a
-  one-line bump, but an accidental explosion still trips the gate;
+* a tool-count ceiling (34) reached exactly (34/34): the next tool needs a
+  justified ceiling bump, but an accidental explosion still trips the gate;
 * the ``destructiveHint`` annotation + a ``confirm`` parameter on every
   destructive (delete) tool; and
 * the ``readOnlyHint`` annotation on every read-only tool.
@@ -23,7 +23,7 @@ import pytest
 pytest.importorskip("fastmcp")
 
 
-#: The complete, pinned tool surface. 30 tools across 7 domains. Adding or
+#: The complete, pinned tool surface. 34 tools across 8 domains. Adding or
 #: removing a tool MUST update this set (and the ceiling below if it grows).
 EXPECTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -62,20 +62,25 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "research_status",
         "research_import",
         "research_cancel",
+        # Sharing (4)
+        "share_status",
+        "share_set_access",
+        "share_set_user",
+        "share_remove_user",
         # Meta (1)
         "server_info",
     }
 )
 
-#: Tool-count ceiling. The design target is ~25; 32 leaves headroom (issue
-#: #1685) so a deliberate addition is a one-line bump, but an accidental
-#: explosion still trips the gate.
-TOOL_CEILING = 32
+#: Tool-count ceiling. The design target is ~25; the sharing domain (#1684) took
+#: the surface to 34 exactly. The next tool needs a justified bump, but an
+#: accidental explosion still trips the gate.
+TOOL_CEILING = 34
 
 #: The destructive tools — each carries ``destructiveHint`` AND a ``confirm``
 #: parameter (the both-mode confirmation contract).
 DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
-    {"notebook_delete", "source_delete", "note_delete", "artifact_delete"}
+    {"notebook_delete", "source_delete", "note_delete", "artifact_delete", "share_remove_user"}
 )
 
 #: Read-only tools — each carries ``readOnlyHint``.
@@ -91,6 +96,7 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "artifact_list",
         "artifact_status",
         "research_status",
+        "share_status",
         "server_info",
     }
 )

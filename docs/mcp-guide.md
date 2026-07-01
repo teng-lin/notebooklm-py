@@ -6,7 +6,7 @@
 > server and its dependencies only arrive with the `mcp` extra.
 
 The MCP server exposes NotebookLM to any [Model Context Protocol](https://modelcontextprotocol.io)
-client (Claude Desktop, Claude Code, Cursor, Windsurf, …) as a set of **30 tools** — manage
+client (Claude Desktop, Claude Code, Cursor, Windsurf, …) as a set of **34 tools** — manage
 notebooks and sources, chat over a notebook's sources, generate and download studio artifacts,
 and run deep research. It is a thin adapter over the same business logic the CLI uses, so it
 behaves identically to `notebooklm <command>`.
@@ -198,8 +198,8 @@ These conventions hold across every tool:
 - **Name *or* ID.** Every `notebook`/`source`/`note`/`artifact` argument accepts a human title **or**
   an ID (full, or a unique prefix). Use the matching `*_list` tool to discover them. An ambiguous name
   or prefix returns a `VALIDATION` error listing the candidates so you can retry with an exact ID.
-- **Destructive tools need confirmation.** `notebook_delete`, `source_delete`, `note_delete`, and
-  `artifact_delete` take `confirm` (default `false`). Called without it, they return a `needs_confirmation` preview
+- **Destructive tools need confirmation.** `notebook_delete`, `source_delete`, `note_delete`,
+  `artifact_delete`, and `share_remove_user` take `confirm` (default `false`). Called without it, they return a `needs_confirmation` preview
   (with the resolved title) and delete **nothing**; call again with `confirm=true` to execute.
 - **Long-running work is non-blocking.** `artifact_generate` returns immediately with a `task_id`;
   poll `artifact_status` until it's complete, then `artifact_download`. Research is the same shape:
@@ -296,9 +296,10 @@ a single in-flight task.
 | **Notes** | `note_create(notebook, title, content)` · `note_get(notebook, note)` (one note with full title + content) · `note_list(notebook)` · `note_update(notebook, note, content?, title?)` (content and/or title; title-only = rename) · `note_delete(notebook, note, confirm)` |
 | **Artifacts** | `artifact_list(notebook)` · `artifact_generate(notebook, artifact_type, …)` · `artifact_status(notebook, task_id)` · `artifact_download(notebook, artifact_type, path, output_format?, artifact_id?)` · `artifact_rename(notebook, artifact, new_title)` · `artifact_delete(notebook, artifact, confirm)` |
 | **Research** | `research_start(notebook, query, source, mode)` · `research_status(notebook, task_id?)` · `research_import(notebook, task_id)` · `research_cancel(notebook, run_id)` |
+| **Sharing** | `share_status(notebook)` (is_public/access/share_url/shared_users; enums as string labels; `view_level` omitted — the read API can't report it) · `share_set_access(notebook, public?, view_level?)` (link settings; `view_level`: full\|chat, echoed back only when set) · `share_set_user(notebook, email, permission?, notify?, message?)` (upsert grant; `permission`: editor\|viewer) · `share_remove_user(notebook, email, confirm)` |
 | **Server** | `server_info(include_account?)` — version + local auth health; `include_account=true` adds an `account` block (tier, plan name, notebook/source limits) for quota pacing (best-effort, needs a live session) |
 
-Tools that only read are annotated read-only; the four `*_delete` tools are annotated destructive
+Tools that only read are annotated read-only; the destructive tools (the four `*_delete` tools plus `share_remove_user`) are annotated destructive
 and require `confirm`. A host that honors MCP annotations can auto-allow the read-only calls and
 gate the destructive ones.
 

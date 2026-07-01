@@ -1192,6 +1192,7 @@ src/notebooklm/
 │       ├── notes.py             # note_create/list/update/delete over _app.notes
 │       ├── artifacts.py         # artifact_list/generate/status/download/rename/delete (enum dispatch over _app.generate + _app.download; stateless poll via _app.artifacts.poll_artifact; rename/delete over _app.artifacts kind-aware cores)
 │       ├── research.py          # research_start (client.research.start) + research_status (_app.research.poll_and_classify) + research_import
+│       ├── sharing.py           # share_status/set_access/set_user/remove_user (thin adapters over client.sharing; set_access folds public+view_level, set_user upserts add/update; string-labeled enums; view_level surfaced only when set)
 │       └── meta.py              # server_info — package version + auth-health over _app.auth_check (no notebook arg)
 ├── rpc/                         # RPC protocol layer
 │   ├── types.py                 # Method IDs and enums
