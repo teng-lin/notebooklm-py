@@ -44,7 +44,7 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         # Chat (3)
         "chat_ask",
         "chat_configure",
-        "chat_suggest_prompts",
+        "suggest_prompts",
         # Notes (5)
         "note_create",
         "note_get",
@@ -102,7 +102,7 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "artifact_get_prompt",
         "research_status",
         "share_status",
-        "chat_suggest_prompts",
+        "suggest_prompts",
         "server_info",
     }
 )
