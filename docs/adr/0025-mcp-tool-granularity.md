@@ -30,10 +30,13 @@ The decisive constraint: progressive disclosure is a **client/platform** feature
 The MCP spec (2025-06-18) has the server advertise its whole tool list via
 `tools/list`; there is **no server-forced deferred loading**. So an MCP server
 cannot guarantee a lean in-context surface for arbitrary clients (Claude
-Desktop/Code, Cursor, …). And the ceiling math is unforgiving: splitting
-`source_add` into `source_add_url` / `_file` / `_text` (keeping the existing batch
-mode) is **+3 tools = exactly 40**, leaving zero headroom; an `artifact_generate`
-split would breach 40 outright.
+Desktop/Code, Cursor, …). Ceiling math (**as of the Tier-1 read-merges, which took the
+surface from 37 to 35**): splitting `source_add` into `source_add_url` / `_file` /
+`_text` (keeping the existing batch mode) is **+3 tools = 38**, now within the 40
+ceiling with a little headroom — so the ceiling no longer blocks *that* split by
+itself; a full `artifact_generate` per-family split (+several) would still breach 40.
+(At authoring time the surface was 37, making the `source_add` split land at exactly
+40 — the Tier-1 merges since freed those two slots.)
 
 ## Decision
 
