@@ -288,6 +288,72 @@ upgrade that changes either fails loudly. Handlers take `(request)` only and rea
   (separate ASGI app, FastAPI `Depends`); the side-channel belongs on the MCP app.
   Shared *logic* is reused; the FastAPI plumbing is not.
 
+### Residual risk: signed-token replay within TTL (accepted)
+
+The signed `ul`/`dl` tokens are **multi-use within their TTL** — there is no
+nonce, no `jti` claim, and no single-use tracking. `FileLinkSigner.verify`
+(`_filelink.py`) checks the length cap, the HMAC, `exp`, and the `op` claim, but a
+token that passes those checks passes them **every time** until it expires. So:
+
+- A leaked **`ul`** token can add a source **repeatedly** — once per request —
+  until it expires (`UPLOAD_TTL` = 15 min), each time against the single tenant's
+  own notebook carried in the signed payload.
+- A leaked **`dl`** token can **re-exfiltrate** the current latest artifact of that
+  type until it expires (`DOWNLOAD_TTL` = 30 min). The token pins
+  `{nb, atype, fmt?, aid?}`, not a byte snapshot, so a replay serves whatever the
+  download core resolves at replay time.
+
+Leakage is plausible, not theoretical: the token rides in the URL **path**, so it
+is captured by claude.ai, browser history, tunnel access logs
+(Cloudflare/Tailscale), and any `Referer`. The `no-referrer` / `no-store` headers
+narrow, but do not eliminate, that surface.
+
+**Bounding factors already in place** (why the residual is small):
+
+- **Short TTLs** — 15 min (`ul`) / 30 min (`dl`) — cap the replay window.
+- **Ephemeral per-process signing key** — `secrets.token_bytes(32)` minted at
+  server start, so a restart invalidates every outstanding token unconditionally.
+- **Single-tenant scope** — the blast radius is the operator's own account and
+  their own notebooks; there is no cross-tenant escalation.
+- **HMAC integrity** — a token cannot be forged or its parameters tampered with;
+  replay requires capturing a *legitimately issued* token.
+- **Download concurrency cap** — `_MAX_CONCURRENT_DOWNLOADS = 4` (added in the same
+  change, #1681, mirroring the existing upload cap) caps concurrent fetch+spool
+  operations, so a replayed token cannot fan out unbounded fresh Google fetches or
+  peak temp-disk spools (the amplification threat). The slot is released
+  deterministically on handler return (a `finally`, not the post-stream background
+  task), so a mid-stream disconnect cannot leak a slot and wedge the route.
+
+**Decision — accept the replay-within-TTL residual; do NOT add `jti` tracking and
+do NOT shorten the TTLs now.**
+
+Reasons for **not** adding a single-use `jti` claim + seen-set:
+
+1. A seen-set **reintroduces the exact in-process server-side state** that the
+   stateless, token-is-the-state design (see *Stateless, token-encoded — no
+   registry, no sweeper*) deliberately eliminated — the registry and sweeper come
+   straight back.
+2. It **does not survive a restart**: an in-memory seen-set is empty after a
+   restart, so it is not a durable guarantee — and the ephemeral key already
+   invalidates *all* tokens on restart, so the only window a seen-set could guard
+   is one the key rotation already closes.
+3. It is **redundant with the short TTL + single-tenant scope**: the window is
+   already minutes-long and the blast radius is the operator's own account.
+
+Reasons for **not** shortening the TTLs now: they are already short, and further
+shrinking trades legitimate slow-upload / slow-download UX for marginal risk
+reduction. A 200 MiB upload over a poor link can take ~13 min — already close to
+the 15-min `ul` TTL — so a failed-then-retried upload can outlive an even shorter
+token.
+
+**What would change this decision.** Any of the following flips the tradeoff and
+warrants adding a `jti` claim + a bounded in-memory seen-set and/or shortening the
+TTLs:
+
+- the server becomes **multi-tenant** (cross-account blast radius appears);
+- the TTLs are **lengthened** for any reason (a larger replay window);
+- a **replay incident is reported** in practice.
+
 ### Why the REST server is out of scope
 
 The REST server (`server/` extra) **already** supports binary file transfer

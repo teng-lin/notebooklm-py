@@ -97,6 +97,70 @@ def test_download_good_token_streams_bytes_no_bearer(monkeypatch, mock_client, c
     assert resp.headers["cache-control"] == "no-store"
 
 
+def test_download_concurrency_cap_returns_429(monkeypatch, mock_client, config) -> None:
+    # Security: a leaked/replayable dl token must not drive unbounded parallel temp
+    # spools + Google fetches. At the in-flight cap, the next download is a fast 429
+    # (no temp dir, no fetch).
+    fetch = AsyncMock()
+    monkeypatch.setattr(_fileroutes.download_core, "execute_download", fetch)
+    monkeypatch.setattr(_fileroutes, "_inflight_downloads", _fileroutes._MAX_CONCURRENT_DOWNLOADS)
+    app = _build(mock_client, config)
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 429
+    fetch.assert_not_awaited()  # rejected before any temp dir / upstream fetch
+
+
+def test_download_success_releases_slot(monkeypatch, mock_client, config) -> None:
+    # The in-flight slot is released on handler return (a ``finally``), so a
+    # completed download leaves the counter where it started — no slow leak.
+    monkeypatch.setattr(
+        _fileroutes.download_core, "execute_download", _fake_download_writing(b"AUDIO")
+    )
+    before = _fileroutes._inflight_downloads
+    app = _build(mock_client, config)
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 200
+    assert _fileroutes._inflight_downloads == before
+
+
+def test_download_error_releases_slot(monkeypatch, mock_client, config) -> None:
+    # An error outcome (409) must also release the slot via the ``finally``.
+    async def fake(plan, client, *, notebook_resolver, artifact_resolver, progress=None):
+        return _fileroutes.download_core.DownloadResult(
+            outcome=_fileroutes.download_core.DownloadOutcome.NO_ARTIFACTS,
+            error="none yet",
+        )
+
+    monkeypatch.setattr(_fileroutes.download_core, "execute_download", fake)
+    before = _fileroutes._inflight_downloads
+    app = _build(mock_client, config)
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 409
+    assert _fileroutes._inflight_downloads == before
+
+
+def test_download_mkdtemp_failure_releases_slot(monkeypatch, mock_client, config) -> None:
+    # ``mkdtemp`` raising (ENOSPC — the very temp-disk exhaustion this cap guards
+    # against) must NOT leak the slot: it runs inside the counter's ``try``/``finally``.
+    def boom(*_a, **_k):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(_fileroutes.tempfile, "mkdtemp", boom)
+    before = _fileroutes._inflight_downloads
+    app = _build(mock_client, config)
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(app, raise_server_exceptions=False) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 500
+    assert _fileroutes._inflight_downloads == before
+
+
 def test_download_route_forwards_fmt_from_token(monkeypatch, mock_client, config) -> None:
     # The `fmt` carried in a dl token must reach build_download_plan (route-level
     # round trip; the tool-level test only checks the token encodes it).
