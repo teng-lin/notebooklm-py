@@ -22,6 +22,7 @@ Both bodies wrap in :func:`mcp_errors`. This module imports NO ``click`` /
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Literal
 
 from fastmcp import Context
@@ -142,14 +143,44 @@ def register(mcp: Any) -> None:
                         nb_id, limit=history * 2, conversation_id=conversation_id
                     )
                     payload["history"] = [{"question": q, "answer": a} for q, a in qa_pairs]
-            if question:
-                result = await client.chat.ask(
+            # The ask (client.chat.ask) and the suggestions (suggest_prompts,
+            # mode=4 = the chat "ask about the content" surface) are independent
+            # RPCs — run them concurrently when both are requested (repo convention).
+            # suggest_prompts has no _app core, so it's a direct client call (same
+            # as server_info reaching client.settings); its keyword-only args + the
+            # up-front-resolved source ids are passed explicitly. ``query`` steers
+            # off the question when one was asked (None => unsteered).
+            ask_coro = (
+                client.chat.ask(
                     nb_id,
                     question,
                     source_ids=resolved_source_ids,
                     conversation_id=conversation_id,
                 )
-                ask_payload = to_jsonable(result)
+                if question
+                else None
+            )
+            suggest_coro = (
+                client.notebooks.suggest_prompts(
+                    nb_id,
+                    source_ids=resolved_source_ids,
+                    mode=4,
+                    query=question or None,
+                )
+                if suggest_followups
+                else None
+            )
+            if ask_coro is not None and suggest_coro is not None:
+                ask_result, suggestions = await asyncio.gather(ask_coro, suggest_coro)
+            elif ask_coro is not None:
+                ask_result, suggestions = await ask_coro, None
+            elif suggest_coro is not None:
+                ask_result, suggestions = None, await suggest_coro
+            else:
+                ask_result, suggestions = None, None
+
+            if ask_result is not None:
+                ask_payload = to_jsonable(ask_result)
                 # Drop the debug-only raw wire-protocol blob (it just burns agent context).
                 ask_payload.pop("raw_response", None)
                 if references == "lite":
@@ -164,18 +195,7 @@ def register(mcp: Any) -> None:
                 # Recall-only: echo the conversation we read so the caller can
                 # target it explicitly on a later turn (the ask path echoes its own).
                 payload["conversation_id"] = conversation_id
-            if suggest_followups:
-                # mode=4 = the chat "ask about the content" surface. There is no
-                # _app core for this — call the client method directly (same as
-                # server_info reaching client.settings). Keyword args are required
-                # (suggest_prompts is keyword-only). ``query`` steers off the
-                # question when one was asked (None => unsteered).
-                suggestions = await client.notebooks.suggest_prompts(
-                    nb_id,
-                    source_ids=resolved_source_ids,
-                    mode=4,
-                    query=question or None,
-                )
+            if suggestions is not None:
                 payload["suggested_prompts"] = [
                     {"title": s.title, "prompt": s.prompt} for s in suggestions
                 ]

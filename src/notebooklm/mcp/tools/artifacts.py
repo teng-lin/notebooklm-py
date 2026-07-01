@@ -762,7 +762,7 @@ def register(mcp: Any) -> None:
                 "notebook_id": nb_id,
                 "artifact_id": art_id,
                 "task_id": result.task_id,
-                "status": str(result.status),
+                "status": result.status.value,
             }
 
     @mcp.tool(annotations=DESTRUCTIVE)
