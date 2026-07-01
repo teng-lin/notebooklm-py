@@ -204,6 +204,23 @@ async def test_server_info_include_account_degrades_when_tier_rpc_raises(
     assert "tier lookup failed" in result.structured_content["account"]["reason"]
 
 
+async def test_server_info_include_account_degrades_when_language_rpc_raises(
+    mcp_call, mock_client, tmp_path, monkeypatch
+) -> None:
+    """The output-language RPC failing (the third concurrent read) also degrades
+    gracefully — all three reads share one degrade handler."""
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    _write_authed_storage()
+    mock_client.settings.get_account_limits = AsyncMock(return_value=AccountLimits())
+    mock_client.settings.get_account_tier = AsyncMock(return_value=AccountTier())
+    mock_client.settings.get_output_language = AsyncMock(
+        side_effect=RPCError("language lookup failed")
+    )
+    result = await mcp_call("server_info", {"include_account": True})
+    assert result.structured_content["account"]["available"] is False
+    assert "language lookup failed" in result.structured_content["account"]["reason"]
+
+
 async def test_server_info_include_account_tier_none_is_available(
     mcp_call, mock_client, tmp_path, monkeypatch
 ) -> None:

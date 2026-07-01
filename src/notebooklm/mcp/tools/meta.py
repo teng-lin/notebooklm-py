@@ -84,7 +84,7 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
         "notebook_limit": limits.notebook_limit,
         "source_limit": limits.source_limit,
         # Global account output language (e.g. "en" / "ja" / "zh_Hans"); ``None``
-        # when unset. Read-only here — a setter is tracked separately (#1723).
+        # when unset or unparseable. Read-only here — a setter is tracked in #1723.
         "output_language": output_language,
     }
 
@@ -105,7 +105,7 @@ def register(mcp: Any) -> None:
         Set ``include_account=True`` to also fetch an ``account`` block for quota
         pacing: ``{available, tier, plan_name, notebook_limit, source_limit,
         output_language}`` (``output_language`` is the global account setting, e.g.
-        ``"en"``/``"ja"``, or ``None`` when unset). This needs a *live* session
+        ``"en"``/``"ja"``, or ``None`` when unset or unparseable). This needs a *live* session
         (a few reads), so it is off by default — the default call is a fast,
         network-free probe. When the session is missing or stale the block
         degrades to ``{available: False, reason: ...}`` rather than failing the
