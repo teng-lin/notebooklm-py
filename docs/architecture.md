@@ -1181,6 +1181,7 @@ src/notebooklm/
 │   ├── _resolve.py              # resolve_notebook/resolve_source/resolve_note/resolve_artifact — name + partial-id resolution over _app.resolve plus exact-title matching
 │   ├── _confirm.py              # needs_confirmation() both-mode envelope + READ_ONLY/DESTRUCTIVE ToolAnnotations
 │   ├── _coerce.py               # coerce_list(value) — tolerant list-param normalizer (real list/tuple, JSON-array string, comma string, scalar → list[str]; None stays None for the "all sources" contract); used by artifact_generate/chat_ask source_ids
+│   ├── _paginate.py             # paginate(items, limit) — bounded page + {total, has_more} for the *_list tools (client-side slice; RPCs don't page); DEFAULT_LIMIT=50
 │   └── tools/                   # Per-domain tool modules; each exposes register(mcp) wired by server.register_all
 │       ├── __init__.py          # Tools package marker (no click/rich/cli)
 │       ├── _content_sanity.py   # _annotate_thin_warnings/_thin_content_warning — advisory thin/soft-404 web-page warning over _app.source_content (used by source_wait + source_add batch)
