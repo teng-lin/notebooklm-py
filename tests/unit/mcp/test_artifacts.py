@@ -29,6 +29,7 @@ from notebooklm._types.mind_maps import MindMapKind  # noqa: E402
 from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     ArtifactNotFoundError,
     NotebookNotFoundError,
+    RateLimitError,
 )
 from notebooklm.mcp.tools.artifacts import _KIND_OPTIONS  # noqa: E402
 from notebooklm.types import Artifact, ArtifactType, GenerationState  # noqa: E402
@@ -714,6 +715,68 @@ async def test_artifact_generate_then_status_poll_shape(mcp_call, mock_client) -
 
 
 # ---------------------------------------------------------------------------
+# artifact_get_prompt
+# ---------------------------------------------------------------------------
+
+
+async def test_artifact_get_prompt(mcp_call, mock_client) -> None:
+    """Happy path: the stored prompt string flows through unchanged."""
+    mock_client.artifacts.get_prompt = AsyncMock(return_value="Summarize the intro")
+    result = await mcp_call("artifact_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
+    assert result.structured_content == {
+        "notebook_id": NB_ID,
+        "artifact_id": _ART_FULL,
+        "prompt": "Summarize the intro",
+    }
+    # Full-UUID ref fast-paths: the resolver never lists artifacts.
+    mock_client.artifacts.list.assert_not_called()
+    mock_client.artifacts.get_prompt.assert_awaited_once_with(NB_ID, _ART_FULL)
+
+
+async def test_artifact_get_prompt_none_is_success(mcp_call, mock_client) -> None:
+    """``prompt=None`` (artifact records no prompt) is a valid result, not an error."""
+    mock_client.artifacts.get_prompt = AsyncMock(return_value=None)
+    result = await mcp_call("artifact_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
+    assert result.structured_content == {
+        "notebook_id": NB_ID,
+        "artifact_id": _ART_FULL,
+        "prompt": None,
+    }
+
+
+async def test_artifact_get_prompt_resolves_by_title(mcp_call, mock_client) -> None:
+    """A title/prefix ref resolves to the artifact id before the prompt fetch."""
+    art = Artifact(
+        id=_ART_FULL,
+        title="Podcast 1",
+        _artifact_type=ArtifactTypeCode.AUDIO.value,
+        status=int(ArtifactStatus.COMPLETED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    mock_client.artifacts.list = AsyncMock(return_value=[art])
+    mock_client.artifacts.get_prompt = AsyncMock(return_value="From the podcast")
+    result = await mcp_call("artifact_get_prompt", {"notebook": NB_ID, "artifact": "Podcast 1"})
+    assert result.structured_content["artifact_id"] == _ART_FULL
+    assert result.structured_content["prompt"] == "From the podcast"
+    mock_client.artifacts.get_prompt.assert_awaited_once_with(NB_ID, _ART_FULL)
+
+
+async def test_artifact_get_prompt_unknown_id_projects_tool_error(mcp_call, mock_client) -> None:
+    """An unknown id raises ``ArtifactNotFoundError`` (mapped to NOT_FOUND).
+
+    ``get_prompt`` has no pre-list existence guard — the full-UUID ref reaches the
+    client, whose ``get_prompt`` raises for an absent artifact."""
+
+    def _raise(*_a: Any, **_k: Any) -> Any:
+        raise ArtifactNotFoundError(_ART_FULL)
+
+    mock_client.artifacts.get_prompt = AsyncMock(side_effect=_raise)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("artifact_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
+    assert "NOT_FOUND" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
 # artifact_download
 # ---------------------------------------------------------------------------
 
@@ -1073,6 +1136,68 @@ async def test_artifact_rename_not_found_projects_tool_error(mcp_call, mock_clie
     mock_client.artifacts.rename.assert_not_called()
     # The tool layer asserts the wrapped ToolError/NOT_FOUND; the raw
     # ArtifactNotFoundError is asserted at the resolver layer in test_resolve.py.
+
+
+# ---------------------------------------------------------------------------
+# artifact_retry
+# ---------------------------------------------------------------------------
+
+
+async def test_artifact_retry_happy_path(mcp_call, mock_client) -> None:
+    """A retry returns the kicked-off ``task_id`` (== artifact id) and new status."""
+    mock_client.artifacts.retry_failed = AsyncMock(
+        return_value=FakeStatus(task_id=_ART_FULL, status=GenerationState.IN_PROGRESS, url=None)
+    )
+    result = await mcp_call("artifact_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
+    assert result.structured_content == {
+        "notebook_id": NB_ID,
+        "artifact_id": _ART_FULL,
+        "task_id": _ART_FULL,
+        "status": "in_progress",
+    }
+    # Full-UUID ref fast-paths: the resolver never lists artifacts.
+    mock_client.artifacts.list.assert_not_called()
+    mock_client.artifacts.retry_failed.assert_awaited_once_with(NB_ID, _ART_FULL)
+
+
+async def test_artifact_retry_resolves_by_title(mcp_call, mock_client) -> None:
+    """A title/prefix ref resolves to the artifact id before the retry call."""
+    art = Artifact(
+        id=_ART_FULL,
+        title="Podcast 1",
+        _artifact_type=ArtifactTypeCode.AUDIO.value,
+        status=int(ArtifactStatus.FAILED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    mock_client.artifacts.list = AsyncMock(return_value=[art])
+    mock_client.artifacts.retry_failed = AsyncMock(
+        return_value=FakeStatus(task_id=_ART_FULL, status=GenerationState.IN_PROGRESS, url=None)
+    )
+    result = await mcp_call("artifact_retry", {"notebook": NB_ID, "artifact": "Podcast 1"})
+    assert result.structured_content["artifact_id"] == _ART_FULL
+    assert result.structured_content["task_id"] == _ART_FULL
+    mock_client.artifacts.retry_failed.assert_awaited_once_with(NB_ID, _ART_FULL)
+
+
+async def test_artifact_retry_not_found_projects_tool_error(mcp_call, mock_client) -> None:
+    """A prefix/title that matches no artifact projects NOT_FOUND at resolve time."""
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    mock_client.artifacts.retry_failed = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("artifact_retry", {"notebook": NB_ID, "artifact": "No Such Artifact"})
+    assert "NOT_FOUND" in str(excinfo.value)
+    mock_client.artifacts.retry_failed.assert_not_called()
+
+
+async def test_artifact_retry_refusal_projects_tool_error(mcp_call, mock_client) -> None:
+    """A synchronous client refusal (rate limit / quota) surfaces as a ToolError."""
+
+    def _raise(*_a: Any, **_k: Any) -> Any:
+        raise RateLimitError("quota exceeded")
+
+    mock_client.artifacts.retry_failed = AsyncMock(side_effect=_raise)
+    with pytest.raises(ToolError):
+        await mcp_call("artifact_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
 
 
 # ---------------------------------------------------------------------------

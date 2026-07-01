@@ -54,6 +54,7 @@ def register(mcp: Any) -> None:
         references: Literal["lite", "full"] = "lite",
         source_ids: list[str] | str | None = None,
         history: int = 0,
+        suggest_followups: bool = False,
     ) -> dict[str, Any]:
         """Ask a notebook's sources a question, and/or recall prior turns. Accepts a
         notebook name or ID.
@@ -81,6 +82,14 @@ def register(mcp: Any) -> None:
         ``references`` controls citation detail: ``lite`` (default) returns
         ``source_id`` / ``citation_number`` / ``cited_text``; ``full`` adds
         chunk-level char offsets and scores.
+
+        ``suggest_followups`` (optional, default ``False``): when ``True`` the
+        result also carries a ``suggested_prompts`` list of AI-suggested
+        follow-up questions (each a ``{title, prompt}``), scoped to the same
+        ``source_ids`` and steered by ``question`` when one is given. It works on
+        its own too — pass it with no ``question`` (and ``history`` 0) to get
+        suggested questions without asking anything. When omitted/``False`` the
+        result never contains a ``suggested_prompts`` key.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -89,11 +98,30 @@ def register(mcp: Any) -> None:
             question = question.strip()
             if history < 0:
                 raise ValidationError("history must be >= 0.")
-            if not question and history == 0:
+            if not question and history == 0 and not suggest_followups:
                 raise ValidationError(
-                    "Provide a question to ask, or history>0 to recall prior turns."
+                    "Provide a question to ask, history>0 to recall prior turns, "
+                    "or suggest_followups=true for suggested questions."
                 )
             nb_id = await resolve_notebook(client, notebook)
+            # Resolve source refs ONCE up front so both the ask path and the
+            # suggest path share the same ids. Tolerate ``source_ids`` sent as a
+            # JSON-array string / comma string / scalar, then resolve each ref
+            # (id/prefix/title) the same way every other source-accepting tool
+            # does. Omitted/empty stays None (=> all sources, mirroring
+            # ``client.chat.ask``'s None contract).
+            refs = coerce_list(source_ids)
+            # Resolve only when a path actually consumes the ids: the ask path
+            # (a question) or the suggest path (suggest_followups). A recall-only
+            # turn (history>0, no question, no suggest) does not scope by source, so
+            # leave refs unresolved to preserve the prior no-op — no extra
+            # ``sources.list`` round-trip and no ``SourceNotFoundError`` on a stale
+            # ref that the recall path would have ignored anyway.
+            resolved_source_ids = (
+                await resolve_sources(client, nb_id, refs)
+                if refs and (question or suggest_followups)
+                else None
+            )
             # When recall and a new question both target the "most-recent"
             # conversation, resolve it ONCE so the two awaits can't land on
             # different conversations (and so recall-only can echo the id).
@@ -115,12 +143,6 @@ def register(mcp: Any) -> None:
                     )
                     payload["history"] = [{"question": q, "answer": a} for q, a in qa_pairs]
             if question:
-                # Tolerate ``source_ids`` sent as a JSON-array string / comma string /
-                # scalar, then resolve each ref (id/prefix/title) the same way every
-                # other source-accepting tool does. Omitted/empty stays None (=> all
-                # sources, mirroring ``client.chat.ask``'s None contract).
-                refs = coerce_list(source_ids)
-                resolved_source_ids = await resolve_sources(client, nb_id, refs) if refs else None
                 result = await client.chat.ask(
                     nb_id,
                     question,
@@ -142,6 +164,21 @@ def register(mcp: Any) -> None:
                 # Recall-only: echo the conversation we read so the caller can
                 # target it explicitly on a later turn (the ask path echoes its own).
                 payload["conversation_id"] = conversation_id
+            if suggest_followups:
+                # mode=4 = the chat "ask about the content" surface. There is no
+                # _app core for this — call the client method directly (same as
+                # server_info reaching client.settings). Keyword args are required
+                # (suggest_prompts is keyword-only). ``query`` steers off the
+                # question when one was asked (None => unsteered).
+                suggestions = await client.notebooks.suggest_prompts(
+                    nb_id,
+                    source_ids=resolved_source_ids,
+                    mode=4,
+                    query=question or None,
+                )
+                payload["suggested_prompts"] = [
+                    {"title": s.title, "prompt": s.prompt} for s in suggestions
+                ]
             return payload
 
     @mcp.tool

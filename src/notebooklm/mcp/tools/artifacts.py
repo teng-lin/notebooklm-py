@@ -604,6 +604,22 @@ def register(mcp: Any) -> None:
             view = artifact_core.status_view(status)
             return {"notebook_id": nb_id, **to_jsonable(view)}
 
+    @mcp.tool(annotations=READ_ONLY)
+    async def artifact_get_prompt(ctx: Context, notebook: str, artifact: str) -> dict[str, Any]:
+        """Fetch the free-text prompt an artifact was generated from.
+
+        Accepts a notebook/artifact name or ID. Returns the stored ``prompt``
+        string, or ``null`` when the artifact records no prompt (e.g. a
+        note-backed mind map) — ``prompt=None`` is a valid result, not an error.
+        An unknown artifact id raises NOT_FOUND.
+        """
+        client = get_client(ctx)
+        with mcp_errors():
+            nb_id = await resolve_notebook(client, notebook)
+            artifact_id = await resolve_artifact(client, nb_id, artifact)
+            prompt = await artifact_core.get_artifact_prompt(client, nb_id, artifact_id)
+            return {"notebook_id": nb_id, "artifact_id": artifact_id, "prompt": prompt}
+
     @mcp.tool
     async def artifact_download(
         ctx: Context,
@@ -726,6 +742,27 @@ def register(mcp: Any) -> None:
                 "artifact_id": result.artifact_id,
                 "new_title": result.new_title,
                 "is_mind_map": result.is_mind_map,
+            }
+
+    @mcp.tool
+    async def artifact_retry(ctx: Context, notebook: str, artifact: str) -> dict[str, Any]:
+        """Retry a failed Studio artifact in place (the UI "Retry" action).
+
+        Accepts a notebook/artifact name or ID. Non-blocking: on acceptance it
+        returns the kicked-off ``task_id`` (equal to the artifact id) and the new
+        ``status``; poll ``artifact_status(notebook, task_id)`` until complete. A
+        synchronous refusal (rate limit / quota / not-retryable) surfaces as an error.
+        """
+        client = get_client(ctx)
+        with mcp_errors():
+            nb_id = await resolve_notebook(client, notebook)
+            art_id = await resolve_artifact(client, nb_id, artifact)
+            result = await artifact_core.retry_artifact(client, nb_id, art_id)
+            return {
+                "notebook_id": nb_id,
+                "artifact_id": art_id,
+                "task_id": result.task_id,
+                "status": str(result.status),
             }
 
     @mcp.tool(annotations=DESTRUCTIVE)
