@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastmcp import Context
 from fastmcp.server.dependencies import get_http_request
@@ -147,6 +147,19 @@ _KIND_OPTIONS: dict[str, dict[str, tuple[str, ...] | None]] = {
     "report": {"report_format": ("briefing-doc", "study-guide", "blog-post", "custom")},
 }
 
+#: The downloadable artifact-type keys (the ``artifact_type`` param's enum).
+DownloadType = Literal[
+    "audio",
+    "video",
+    "slide-deck",
+    "infographic",
+    "report",
+    "mind-map",
+    "data-table",
+    "quiz",
+    "flashcards",
+]
+
 #: Download type registry, rebuilt from the neutral ``_app.download`` types so this
 #: module never imports the Click-coupled ``cli/_download_specs.py``. Each row
 #: mirrors the corresponding CLI ``DownloadTypeSpec`` (name / kind / extension /
@@ -246,6 +259,13 @@ _DOWNLOAD_SPECS: dict[str, download_core.DownloadTypeSpec] = {
         help_summary="",
         help_examples="",
     ),
+}
+
+#: Reverse of ``_DOWNLOAD_SPECS`` — an artifact's ``ArtifactType`` (``.kind``) → the
+#: download-type key. Lets ``artifact_download`` derive ``artifact_type`` from an
+#: ``artifact`` name-or-id ref (so the caller need not repeat the type).
+_KIND_TO_DOWNLOAD_KEY: dict[Any, DownloadType] = {
+    spec.kind: cast(DownloadType, key) for key, spec in _DOWNLOAD_SPECS.items()
 }
 
 
@@ -624,31 +644,25 @@ def register(mcp: Any) -> None:
     async def artifact_download(
         ctx: Context,
         notebook: str,
-        artifact_type: Literal[
-            "audio",
-            "video",
-            "slide-deck",
-            "infographic",
-            "report",
-            "mind-map",
-            "data-table",
-            "quiz",
-            "flashcards",
-        ],
+        artifact: str | None = None,
+        artifact_type: DownloadType | None = None,
         path: str | None = None,
         output_format: Literal["pdf", "pptx", "json", "markdown", "html"] | None = None,
         artifact_id: str | None = None,
     ) -> Any:
         """Download a generated artifact. Accepts a notebook name or ID.
 
-        ``artifact_type`` is one of audio|video|slide-deck|infographic|report|
-        mind-map|data-table|quiz|flashcards. ``output_format`` overrides the
-        default file format where supported: slide-deck → pdf|pptx; quiz/flashcards
-        → json|markdown|html.
+        Target the artifact in ONE of two ways (exactly one):
+        * ``artifact`` — a name-or-id ref (title / id / unique-id-prefix), the same
+          form the other ``artifact_*`` tools take. The tool resolves it to the
+          artifact's type + id for you.
+        * ``artifact_type`` — one of audio|video|slide-deck|infographic|report|
+          mind-map|data-table|quiz|flashcards, optionally with ``artifact_id``
+          (full or unique-prefix) for a specific one; omit ``artifact_id`` to get
+          the latest artifact of that type.
 
-        ``artifact_id`` (optional; full or unique-prefix) targets a specific
-        artifact and overrides latest-by-type. If omitted, the latest artifact
-        of ``artifact_type`` is selected.
+        ``output_format`` overrides the default file format where supported:
+        slide-deck → pdf|pptx; quiz/flashcards → json|markdown|html.
 
         Over **stdio** the artifact is written to ``path`` (the output file on the
         server host; required). Over the **remote (http) connector** the server's
@@ -661,6 +675,33 @@ def register(mcp: Any) -> None:
         """
         client = get_client(ctx)
         with mcp_errors():
+            nb_id = await resolve_notebook(client, notebook)
+            # Two addressing modes (exactly one): an `artifact` name-or-id ref
+            # (resolved to its type + id, matching the sibling artifact_* tools) OR
+            # an explicit `artifact_type` (+ optional `artifact_id`; else latest of
+            # that type). The `artifact` ref path lists to derive the type — the
+            # remote broker still gets a concrete type before minting the link.
+            if artifact is not None:
+                if artifact_type is not None:
+                    raise ValidationError(
+                        "Provide either `artifact` (name/id) or `artifact_type`, not both."
+                    )
+                resolved_id = await resolve_artifact(client, nb_id, artifact)
+                items = await client.artifacts.list(nb_id)
+                match = next((a for a in items if a.id == resolved_id), None)
+                if match is None:
+                    raise ValidationError(
+                        f"Could not determine the type of artifact {artifact!r} "
+                        "(not found in the notebook's artifact list); pass `artifact_type`."
+                    )
+                artifact_type = _KIND_TO_DOWNLOAD_KEY.get(match.kind)
+                if artifact_type is None:
+                    raise ValidationError(
+                        f"Artifact {artifact!r} has a non-downloadable type {match.kind!r}."
+                    )
+                artifact_id = resolved_id
+            elif artifact_type is None:
+                raise ValidationError("Provide `artifact` (name/id) or `artifact_type`.")
             spec = _DOWNLOAD_SPECS.get(artifact_type)
             if spec is None:
                 raise ValidationError(
@@ -681,7 +722,6 @@ def register(mcp: Any) -> None:
                         f"output_format {output_format!r} is not valid for artifact_type "
                         f"{artifact_type!r}; expected one of {sorted(spec.format_choices)}"
                     )
-            nb_id = await resolve_notebook(client, notebook)
 
             cfg = get_file_transfer(ctx)
             if cfg is not None:

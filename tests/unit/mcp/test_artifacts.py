@@ -793,6 +793,38 @@ async def test_artifact_download_audio(mcp_call, mock_client, tmp_path) -> None:
     mock_client.artifacts.download_audio.assert_awaited_once()
 
 
+async def test_artifact_download_by_artifact_ref_infers_type(mcp_call, mock_client, tmp_path) -> None:
+    """R3: an ``artifact`` name-or-id ref resolves to its type+id — no ``artifact_type``."""
+    out = str(tmp_path / "out.mp3")
+    mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
+    mock_client.artifacts.download_audio = AsyncMock(return_value=out)
+    result = await mcp_call(
+        "artifact_download", {"notebook": NB_ID, "artifact": "Podcast", "path": out}
+    )
+    assert result.structured_content["outcome"] == "single_downloaded"
+    # The audio downloader was selected purely from the resolved artifact's kind.
+    mock_client.artifacts.download_audio.assert_awaited_once()
+
+
+async def test_artifact_download_ref_and_type_together_is_validation(mcp_call, mock_client) -> None:
+    """Passing both ``artifact`` and ``artifact_type`` is rejected (one addressing mode)."""
+    mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
+    with pytest.raises(ToolError) as exc:
+        await mcp_call(
+            "artifact_download",
+            {"notebook": NB_ID, "artifact": "Podcast", "artifact_type": "audio"},
+        )
+    assert "not both" in str(exc.value)
+
+
+async def test_artifact_download_neither_ref_nor_type_is_validation(mcp_call, mock_client) -> None:
+    """Omitting both ``artifact`` and ``artifact_type`` is rejected."""
+    mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
+    with pytest.raises(ToolError) as exc:
+        await mcp_call("artifact_download", {"notebook": NB_ID})
+    assert "artifact_type" in str(exc.value)
+
+
 async def test_artifact_download_quiz_with_format(mcp_call, mock_client, tmp_path) -> None:
     out = str(tmp_path / "quiz.md")
     mock_client.artifacts.list = AsyncMock(return_value=[_QUIZ_ARTIFACT])
