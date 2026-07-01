@@ -280,14 +280,18 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
         _inflight_downloads += 1
-        # Release in a ``finally`` on handler RETURN (before Starlette streams the
-        # file), NOT via the success-path ``BackgroundTask``: that task is skipped on
-        # client disconnect / cancellation / a bad Range mid-stream, which would leak
-        # a slot permanently and turn this anti-DoS cap into a DoS. Releasing here
-        # also covers a ``mkdtemp`` failure (the exact temp-disk-exhaustion this cap
-        # defends against). The cap therefore bounds concurrent fetch+spool work (the
-        # upstream-amplification threat); temp-dir cleanup keeps its own lifecycle
-        # (``_cleanup`` on error, ``BackgroundTask`` after a successful stream).
+        # Release the slot + clean the temp dir in one outer ``finally`` on handler
+        # RETURN (before Starlette streams the file), NOT via the success-path
+        # ``BackgroundTask``: that task is skipped on client disconnect / cancellation
+        # / a bad Range mid-stream, which would leak a slot permanently and turn this
+        # anti-DoS cap into a DoS. The single ``finally`` also covers a ``mkdtemp``
+        # failure (the exact temp-disk exhaustion this cap defends against) and any
+        # unexpected error in the post-fetch code (``FileResponse`` init,
+        # ``artifact_title_to_filename``) — every non-success exit cleans the temp
+        # dir. The ``success`` flag hands temp ownership to the streamed response,
+        # whose own ``BackgroundTask`` removes it after the client finishes.
+        temp_dir: str | None = None
+        success = False
         try:
             temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-dl-")
             temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
@@ -318,7 +322,6 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 # but is correctly a 400 too. Map it to a clean 400 instead of letting
                 # it bubble up as a Starlette 500. (The 409 below stays for the
                 # latest-by-type path when no completed artifact of that type exists.)
-                _cleanup(temp_dir)
                 return PlainTextResponse(
                     str(exc),
                     status_code=400,
@@ -330,14 +333,9 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 # a raw 500. Classify + redact it instead. (Failures that the core
                 # *returns* as a non-success ``DownloadResult`` fall through to the
                 # generic 409 below — that path already leaks nothing.)
-                _cleanup(temp_dir)
                 return _upstream_error_response(exc)
-            except BaseException:
-                _cleanup(temp_dir)
-                raise
 
             if result.outcome != download_core.DownloadOutcome.SINGLE_DOWNLOADED:
-                _cleanup(temp_dir)
                 return PlainTextResponse(
                     f"No completed {spec.name} artifact is available yet.",
                     status_code=409,
@@ -347,7 +345,6 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
             # inside our private dir — anything else is a bug, not a file we serve.
             served = result.output_path or temp_path
             if Path(temp_dir).resolve() not in Path(served).resolve().parents:
-                _cleanup(temp_dir)
                 return PlainTextResponse(
                     "Download produced an unexpected output path.", status_code=500
                 )
@@ -357,14 +354,18 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
             download_name = download_core.artifact_title_to_filename(
                 title, Path(served).suffix, set()
             )
-            return FileResponse(
+            response = FileResponse(
                 served,
                 filename=download_name,
                 background=BackgroundTask(_cleanup, temp_dir),
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
+            success = True
+            return response
         finally:
             _inflight_downloads -= 1
+            if temp_dir is not None and not success:
+                _cleanup(temp_dir)
 
     @mcp.custom_route("/files/ul/{token}", methods=["GET"])
     async def upload_page_route(request: Request) -> Response:

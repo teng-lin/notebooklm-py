@@ -161,6 +161,33 @@ def test_download_mkdtemp_failure_releases_slot(monkeypatch, mock_client, config
     assert _fileroutes._inflight_downloads == before
 
 
+def test_download_post_fetch_exception_cleans_temp_and_releases_slot(
+    monkeypatch, mock_client, config
+) -> None:
+    # An unexpected error AFTER a successful fetch (here: building the download name)
+    # must still clean the spooled temp dir (not just the error/early-return paths)
+    # and release the slot — the outer finally guarantees both.
+    monkeypatch.setattr(
+        _fileroutes.download_core, "execute_download", _fake_download_writing(b"AUDIO")
+    )
+
+    def boom(*_a, **_k):
+        raise RuntimeError("cannot build filename")
+
+    monkeypatch.setattr(_fileroutes.download_core, "artifact_title_to_filename", boom)
+    cleaned: list[str] = []
+    real_cleanup = _fileroutes._cleanup
+    monkeypatch.setattr(_fileroutes, "_cleanup", lambda d: (cleaned.append(d), real_cleanup(d))[1])
+    before = _fileroutes._inflight_downloads
+    app = _build(mock_client, config)
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(app, raise_server_exceptions=False) as client:
+        resp = client.get(_path(url))
+    assert resp.status_code == 500
+    assert cleaned, "temp dir must be cleaned on a post-fetch exception"
+    assert _fileroutes._inflight_downloads == before
+
+
 def test_download_route_forwards_fmt_from_token(monkeypatch, mock_client, config) -> None:
     # The `fmt` carried in a dl token must reach build_download_plan (route-level
     # round trip; the tool-level test only checks the token encodes it).
