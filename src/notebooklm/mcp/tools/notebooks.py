@@ -60,7 +60,7 @@ def register(mcp: Any) -> None:
             # adapter-level re-read here.
             record = to_jsonable(result.notebook)
             notebook_id = record.pop("id")
-            return {"notebook_id": notebook_id, **record}
+            return {"status": "created", "notebook_id": notebook_id, **record}
 
     @mcp.tool(annotations=READ_ONLY)
     async def notebook_describe(
@@ -105,7 +105,7 @@ def register(mcp: Any) -> None:
             result = await core.execute_notebook_rename(
                 client, nb_id, new_title, resolve_notebook_id=passthrough_notebook_id
             )
-            return to_jsonable(result)
+            return {"status": "renamed", **to_jsonable(result)}
 
     @mcp.tool(annotations=DESTRUCTIVE)
     async def notebook_delete(ctx: Context, notebook: str, confirm: bool = False) -> dict[str, Any]:

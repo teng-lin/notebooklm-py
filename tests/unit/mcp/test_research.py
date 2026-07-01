@@ -216,6 +216,7 @@ async def test_research_cancel(mcp_call, mock_client) -> None:
     mock_client.research.cancel = AsyncMock(return_value=None)
     result = await mcp_call("research_cancel", {"notebook": NB_ID, "run_id": TASK_ID})
     assert result.structured_content == {
+        "status": "cancelled",
         "notebook_id": NB_ID,
         "run_id": TASK_ID,
         "cancelled": True,

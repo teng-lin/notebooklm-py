@@ -99,6 +99,7 @@ def _add_result_payload(source: Any, base: dict[str, Any]) -> dict[str, Any]:
     backend echoes ERROR at add-time we say so immediately rather than letting it
     look like a successful add.
     """
+    base["status"] = "added"
     base["source"] = _source_view(source)
     if source.is_error:
         base["warning"] = (
@@ -299,7 +300,7 @@ def register(mcp: Any) -> None:
                 ),
                 resolve_source_id=passthrough_child_id,
             )
-            return to_jsonable(result)
+            return {"status": "renamed", **to_jsonable(result)}
 
     @mcp.tool(annotations=DESTRUCTIVE)
     async def source_delete(
@@ -817,6 +818,7 @@ async def _add_url_batch(
     # maintaining parallel counters that must be kept in sync with each append.
     added = sum(1 for item in results if item["status"] == "added")
     return {
+        "status": "added",
         "notebook_id": notebook_id,
         "added": added,
         "failed": len(results) - added,

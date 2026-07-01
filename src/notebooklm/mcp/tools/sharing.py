@@ -150,7 +150,7 @@ def register(mcp: Any) -> None:
             payload = _status_payload(status, include_view_level=False)
             if view_status is not None:
                 payload["view_level"] = _label(_VIEW_LEVEL_LABELS, view_status.view_level)
-            return payload
+            return {"status": "updated", **payload}
 
     @mcp.tool
     async def share_set_user(
@@ -180,7 +180,7 @@ def register(mcp: Any) -> None:
                 notify=notify,
                 welcome_message=message,
             )
-            return _status_payload(status)
+            return {"status": "updated", **_status_payload(status)}
 
     @mcp.tool(annotations=DESTRUCTIVE)
     async def share_remove_user(

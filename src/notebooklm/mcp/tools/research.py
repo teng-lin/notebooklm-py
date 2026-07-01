@@ -124,7 +124,12 @@ def register(mcp: Any) -> None:
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             await client.research.cancel(nb_id, run_id)
-            return {"notebook_id": nb_id, "run_id": run_id, "cancelled": True}
+            return {
+                "status": "cancelled",
+                "notebook_id": nb_id,
+                "run_id": run_id,
+                "cancelled": True,
+            }
 
     @mcp.tool
     async def research_import(ctx: Context, notebook: str, task_id: str) -> dict[str, Any]:
@@ -181,6 +186,7 @@ def register(mcp: Any) -> None:
             # we never import a *different* task's sources.
             imported = await client.research.import_sources(nb_id, task_id, status.sources)
             return {
+                "status": "imported",
                 "notebook_id": nb_id,
                 "task_id": task_id,
                 "imported": to_jsonable(imported),

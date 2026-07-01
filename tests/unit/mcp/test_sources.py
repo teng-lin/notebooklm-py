@@ -536,6 +536,7 @@ async def test_source_rename(mcp_call, mock_client) -> None:
         "source_rename", {"notebook": NB_ID, "source": SRC_ID, "new_title": "Renamed"}
     )
     assert result.structured_content == {
+        "status": "renamed",
         "source": {"id": SRC_ID, "title": "Renamed"},
         "notebook_id": NB_ID,
     }
@@ -1091,7 +1092,8 @@ async def test_source_add_text(mcp_call, mock_client) -> None:
         {"notebook": NB_ID, "source_type": "text", "text": "hello world", "title": "Notes"},
     )
     assert result.structured_content == {
-        "source": {"id": SRC_ID, "title": "Notes", "kind": "web_page", "status_label": "ready"}
+        "status": "added",
+        "source": {"id": SRC_ID, "title": "Notes", "kind": "web_page", "status_label": "ready"},
     }
     mock_client.sources.add_text.assert_awaited_once_with(NB_ID, "Notes", "hello world")
 
@@ -1102,7 +1104,8 @@ async def test_source_add_url(mcp_call, mock_client) -> None:
         "source_add", {"notebook": NB_ID, "source_type": "url", "url": "https://example.com/a"}
     )
     assert result.structured_content == {
-        "source": {"id": SRC_ID, "title": "Page", "kind": "web_page", "status_label": "ready"}
+        "status": "added",
+        "source": {"id": SRC_ID, "title": "Page", "kind": "web_page", "status_label": "ready"},
     }
     mock_client.sources.add_url.assert_awaited_once_with(NB_ID, "https://example.com/a")
 
@@ -1136,6 +1139,7 @@ async def test_source_add_drive(mcp_call, mock_client) -> None:
     )
     # SourceAddDriveResult carries the source plus the drive provenance fields.
     assert result.structured_content == {
+        "status": "added",
         "source": {"id": SRC_ID, "title": "Sheet", "kind": "web_page", "status_label": "ready"},
         "notebook_id": NB_ID,
         "file_id": "drivefile123",
@@ -1252,7 +1256,8 @@ async def test_source_add_single_metadata_not_rejected(mcp_call, mock_client) ->
         },
     )
     assert result.structured_content == {
-        "source": {"id": SRC_ID, "title": "Page", "kind": "web_page", "status_label": "ready"}
+        "status": "added",
+        "source": {"id": SRC_ID, "title": "Page", "kind": "web_page", "status_label": "ready"},
     }
     # The add actually proceeded (not silently rejected). A url source ignores
     # title/mime_type downstream — add_url takes only (notebook_id, url) — so the
@@ -1299,7 +1304,8 @@ async def test_source_add_youtube_accepts_youtube_url(mcp_call, mock_client) -> 
     mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Vid"))
     result = await mcp_call("source_add", {"notebook": NB_ID, "source_type": "youtube", "url": yt})
     assert result.structured_content == {
-        "source": {"id": SRC_ID, "title": "Vid", "kind": "web_page", "status_label": "ready"}
+        "status": "added",
+        "source": {"id": SRC_ID, "title": "Vid", "kind": "web_page", "status_label": "ready"},
     }
     mock_client.sources.add_url.assert_awaited_once_with(NB_ID, yt)
 
@@ -1325,6 +1331,7 @@ async def test_source_add_batch_all_success(mcp_call, mock_client) -> None:
         {"notebook": NB_ID, "urls": ["https://example.com/a", "https://example.com/b"]},
     )
     assert result.structured_content == {
+        "status": "added",
         "notebook_id": NB_ID,
         "added": 2,
         "failed": 0,

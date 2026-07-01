@@ -99,6 +99,7 @@ async def test_notebook_create_surfaces_backfilled_timestamps(mcp_call, mock_cli
     )
     result = await mcp_call("notebook_create", {"title": "New"})
     assert result.structured_content == {
+        "status": "created",
         "notebook_id": NB_ID,
         "title": "New",  # from create, NOT the divergent GET
         "created_at": CREATED_AT.isoformat(),  # backfilled by the core
@@ -186,7 +187,11 @@ async def test_notebook_describe_include_metadata_adds_block(mcp_call, mock_clie
 async def test_notebook_rename(mcp_call, mock_client) -> None:
     mock_client.notebooks.rename = AsyncMock(return_value=None)
     result = await mcp_call("notebook_rename", {"notebook": NB_ID, "new_title": "Renamed"})
-    assert result.structured_content == {"notebook_id": NB_ID, "new_title": "Renamed"}
+    assert result.structured_content == {
+        "status": "renamed",
+        "notebook_id": NB_ID,
+        "new_title": "Renamed",
+    }
     mock_client.notebooks.rename.assert_awaited_once_with(NB_ID, "Renamed")
 
 

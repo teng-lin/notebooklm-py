@@ -43,6 +43,7 @@ async def test_note_create(mcp_call, mock_client) -> None:
     )
     result = await mcp_call("note_create", {"notebook": NB_ID, "title": "Idea", "content": "body"})
     assert result.structured_content == {
+        "status": "created",
         "notebook_id": NB_ID,
         "title": "Idea",
         "note_id": NOTE_ID,

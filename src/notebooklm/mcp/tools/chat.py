@@ -55,7 +55,7 @@ SuggestSurface = Literal[
     "flashcards",
 ]
 
-#: ``suggest_prompts`` surface → the ``otmP3b`` (GeneratePromptSuggestions) ``mode``
+#: ``chat_suggest_prompts`` surface → the ``otmP3b`` (GeneratePromptSuggestions) ``mode``
 #: int. The mode selects the product surface + format the prompts are written for.
 #: Map established by the #1726 live investigation (2026-07-01): audio formats
 #: browser-verified (each Customize-dialog format card decoded its otmP3b mode),
@@ -274,10 +274,10 @@ def register(mcp: Any) -> None:
                 persona=goal,
                 response_length=response_length,
             )
-            return to_jsonable(result)
+            return {"status": "configured", **to_jsonable(result)}
 
     @mcp.tool(annotations=READ_ONLY)
-    async def suggest_prompts(
+    async def chat_suggest_prompts(
         ctx: Context,
         notebook: str,
         surface: SuggestSurface = "ask",

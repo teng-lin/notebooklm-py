@@ -49,11 +49,13 @@ def register(mcp: Any) -> None:
                 resolve_notebook_id=passthrough_notebook_id,
             )
             return {
+                "status": "created",
                 "notebook_id": result.notebook_id,
                 "title": result.title,
                 "note_id": result.note_id,
                 # The facade raises on failure (no degenerate result), so
                 # reaching here always means the note was really created.
+                # ``created`` kept for back-compat alongside the ``status`` envelope.
                 "created": True,
             }
 
