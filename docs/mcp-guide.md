@@ -297,7 +297,7 @@ a single in-flight task.
 | **Artifacts** | `artifact_list(notebook)` · `artifact_generate(notebook, artifact_type, …)` · `artifact_status(notebook, task_id)` · `artifact_download(notebook, artifact_type, path, output_format?, artifact_id?)` · `artifact_rename(notebook, artifact, new_title)` · `artifact_delete(notebook, artifact, confirm)` |
 | **Research** | `research_start(notebook, query, source, mode)` · `research_status(notebook, task_id?)` · `research_import(notebook, task_id)` · `research_cancel(notebook, run_id)` |
 | **Sharing** | `share_status(notebook)` (is_public/access/share_url/shared_users; enums as string labels; `view_level` omitted — the read API can't report it) · `share_set_access(notebook, public?, view_level?)` (link settings; `view_level`: full\|chat, echoed back only when set) · `share_set_user(notebook, email, permission?, notify?, message?)` (upsert grant; `permission`: editor\|viewer) · `share_remove_user(notebook, email, confirm)` |
-| **Server** | `server_info(include_account?)` — version + local auth health; `include_account=true` adds an `account` block (tier, plan name, notebook/source limits) for quota pacing (best-effort, needs a live session) |
+| **Server** | `server_info(include_account?)` — version + local auth health; `include_account=true` adds an `account` block (tier, plan name, notebook/source limits, global `output_language`) for quota pacing + language context (best-effort, needs a live session) |
 
 Tools that only read are annotated read-only; the destructive tools (the four `*_delete` tools plus `share_remove_user`) are annotated destructive
 and require `confirm`. A host that honors MCP annotations can auto-allow the read-only calls and

@@ -12,9 +12,10 @@ active profile are resolved via the neutral :mod:`notebooklm.paths` helpers, so
 this module imports NO ``click`` / ``rich`` / ``cli``.
 
 It also accepts an opt-in ``include_account`` flag that adds the account tier +
-notebook/source limits (for an agent to pace against quota). That block requires
-a *live* session, so it is off by default — the default call stays a fast,
-network-free auth-health probe that works even when unauthenticated.
+notebook/source limits + the global output language (for an agent to pace against
+quota and know which language artifacts generate in). That block requires a *live*
+session, so it is off by default — the default call stays a fast, network-free
+auth-health probe that works even when unauthenticated.
 """
 
 from __future__ import annotations
@@ -60,11 +61,15 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
         return {"available": False, "reason": "not authenticated"}
     client = get_client(ctx)
     try:
-        # Two independent reads → run concurrently (repo convention for
-        # independent RPCs). A NotebookLMError from either is still caught below.
-        limits, tier = await asyncio.gather(
+        # Three concurrent reads (repo convention: each public getter is
+        # self-contained). ``get_account_limits`` + ``get_output_language`` both hit
+        # GET_USER_SETTINGS, so this fires it twice — a client-layer single-fetch
+        # dedupe is tracked in #1724 (kept simple here; the adapter uses the public
+        # getters, not RPC internals). A NotebookLMError from any is caught below.
+        limits, tier, output_language = await asyncio.gather(
             client.settings.get_account_limits(),
             client.settings.get_account_tier(),
+            client.settings.get_output_language(),
         )
     except NotebookLMError as exc:  # degrade, don't sink the whole response
         # Route through the shared scrubber (same chokepoint as every other MCP
@@ -78,6 +83,9 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
         "plan_name": tier.plan_name,
         "notebook_limit": limits.notebook_limit,
         "source_limit": limits.source_limit,
+        # Global account output language (e.g. "en" / "ja" / "zh_Hans"); ``None``
+        # when unset. Read-only here — a setter is tracked separately (#1723).
+        "output_language": output_language,
     }
 
 
@@ -95,12 +103,14 @@ def register(mcp: Any) -> None:
         the server host.
 
         Set ``include_account=True`` to also fetch an ``account`` block for quota
-        pacing: ``{available, tier, plan_name, notebook_limit, source_limit}``.
-        This needs a *live* session (two RPCs), so it is off by default — the
-        default call is a fast, network-free probe. When the session is missing or
-        stale the block degrades to ``{available: False, reason: ...}`` rather than
-        failing the whole call; ``tier`` may be ``None`` even when ``available`` is
-        true (it is a best-effort signal).
+        pacing: ``{available, tier, plan_name, notebook_limit, source_limit,
+        output_language}`` (``output_language`` is the global account setting, e.g.
+        ``"en"``/``"ja"``, or ``None`` when unset). This needs a *live* session
+        (a few reads), so it is off by default — the default call is a fast,
+        network-free probe. When the session is missing or stale the block
+        degrades to ``{available: False, reason: ...}`` rather than failing the
+        whole call; ``tier`` may be ``None`` even when ``available`` is true (it
+        is a best-effort signal).
 
         The absolute on-disk storage path is deliberately **not** returned: it
         leaks the server-host OS username / filesystem layout to any (possibly

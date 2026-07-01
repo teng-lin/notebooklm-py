@@ -120,16 +120,18 @@ async def test_server_info_default_omits_account(
     _write_authed_storage()
     mock_client.settings.get_account_limits = AsyncMock()
     mock_client.settings.get_account_tier = AsyncMock()
+    mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info")
     assert "account" not in result.structured_content
     mock_client.settings.get_account_limits.assert_not_called()
     mock_client.settings.get_account_tier.assert_not_called()
+    mock_client.settings.get_output_language.assert_not_called()
 
 
 async def test_server_info_include_account_authenticated(
     mcp_call, mock_client, tmp_path, monkeypatch
 ) -> None:
-    """include_account=True + live session → account block with tier + limits."""
+    """include_account=True + live session → account block with tier + limits + language."""
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     _write_authed_storage()
     mock_client.settings.get_account_limits = AsyncMock(
@@ -138,6 +140,7 @@ async def test_server_info_include_account_authenticated(
     mock_client.settings.get_account_tier = AsyncMock(
         return_value=AccountTier(tier="NOTEBOOKLM_TIER_PRO", plan_name="Pro")
     )
+    mock_client.settings.get_output_language = AsyncMock(return_value="ja")
     result = await mcp_call("server_info", {"include_account": True})
     assert result.structured_content["account"] == {
         "available": True,
@@ -145,6 +148,7 @@ async def test_server_info_include_account_authenticated(
         "plan_name": "Pro",
         "notebook_limit": 100,
         "source_limit": 50,
+        "output_language": "ja",
     }
 
 
@@ -155,6 +159,7 @@ async def test_server_info_include_account_unauthenticated(
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path / "empty"))
     mock_client.settings.get_account_limits = AsyncMock()
     mock_client.settings.get_account_tier = AsyncMock()
+    mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info", {"include_account": True})
     assert result.structured_content["account"] == {
         "available": False,
@@ -162,6 +167,7 @@ async def test_server_info_include_account_unauthenticated(
     }
     mock_client.settings.get_account_limits.assert_not_called()
     mock_client.settings.get_account_tier.assert_not_called()
+    mock_client.settings.get_output_language.assert_not_called()
 
 
 async def test_server_info_include_account_degrades_on_rpc_error(
@@ -173,6 +179,7 @@ async def test_server_info_include_account_degrades_on_rpc_error(
     _write_authed_storage()
     mock_client.settings.get_account_limits = AsyncMock(side_effect=RPCError("session expired"))
     mock_client.settings.get_account_tier = AsyncMock()
+    mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info", {"include_account": True})
     account = result.structured_content["account"]
     assert account["available"] is False
@@ -191,6 +198,7 @@ async def test_server_info_include_account_degrades_when_tier_rpc_raises(
     _write_authed_storage()
     mock_client.settings.get_account_limits = AsyncMock(return_value=AccountLimits())
     mock_client.settings.get_account_tier = AsyncMock(side_effect=RPCError("tier lookup failed"))
+    mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info", {"include_account": True})
     assert result.structured_content["account"]["available"] is False
     assert "tier lookup failed" in result.structured_content["account"]["reason"]
@@ -205,6 +213,7 @@ async def test_server_info_include_account_tier_none_is_available(
     _write_authed_storage()
     mock_client.settings.get_account_limits = AsyncMock(return_value=AccountLimits())
     mock_client.settings.get_account_tier = AsyncMock(return_value=AccountTier())
+    mock_client.settings.get_output_language = AsyncMock(return_value=None)
     result = await mcp_call("server_info", {"include_account": True})
     assert result.structured_content["account"] == {
         "available": True,
@@ -212,6 +221,7 @@ async def test_server_info_include_account_tier_none_is_available(
         "plan_name": None,
         "notebook_limit": None,
         "source_limit": None,
+        "output_language": None,
     }
 
 
@@ -225,6 +235,7 @@ async def test_server_info_include_account_degraded_reason_is_scrubbed(
     leaky = RPCError("auth failed loading /home/secretuser/.notebooklm/storage_state.json")
     mock_client.settings.get_account_limits = AsyncMock(side_effect=leaky)
     mock_client.settings.get_account_tier = AsyncMock()
+    mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info", {"include_account": True})
     reason = result.structured_content["account"]["reason"]
     assert result.structured_content["account"]["available"] is False
