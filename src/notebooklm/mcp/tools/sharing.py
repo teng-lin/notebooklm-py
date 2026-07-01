@@ -119,27 +119,38 @@ def register(mcp: Any) -> None:
 
         Returns the updated status. ``view_level`` is echoed in the response ONLY
         when this call set it (the read API cannot otherwise report it). If both
-        fields are given they are applied as separate operations (``public`` first);
-        a failure on the second leaves the first applied.
+        fields are given they are applied as separate operations — the ``view_level``
+        restriction FIRST, then ``public`` — so a partial failure fails closed (the
+        notebook is never left more exposed than intended).
         """
         client = get_client(ctx)
         with mcp_errors():
-            if public is None and view_level is None:
-                raise ValidationError("Provide at least one of public / view_level.")
             nb_id = await resolve_notebook(client, notebook)
-            status: ShareStatus | None = None
-            if public is not None:
-                status = await client.sharing.set_public(nb_id, public)
+            # Apply the (possibly restricting) view_level BEFORE toggling public, so a
+            # failure on the public step can never leave the notebook public with a
+            # wider view level than intended (fail-closed). set_view_level's return is
+            # also the only authoritative source for the echoed view_level
+            # (get_status / set_public hardcode FULL_NOTEBOOK). The exhaustive branches
+            # keep ``status`` provably assigned (the ``else`` covers the both-None case).
+            view_status: ShareStatus | None = None
             if view_level is not None:
-                # Apply view_level LAST: its return carries the authoritative,
-                # just-set level (get_status/set_public hardcode FULL_NOTEBOOK).
-                status = await client.sharing.set_view_level(nb_id, _VIEW_LEVEL_INPUT[view_level])
-            # The guard above guarantees at least one branch ran; a hard raise (not
-            # assert — stripped under ``python -O``) narrows the type and fails loudly
-            # if a future edit ever breaks the invariant.
-            if status is None:  # pragma: no cover - unreachable given the guard above
-                raise ValidationError("internal error: share status unexpectedly None")
-            return _status_payload(status, include_view_level=view_level is not None)
+                view_status = await client.sharing.set_view_level(
+                    nb_id, _VIEW_LEVEL_INPUT[view_level]
+                )
+                status = view_status
+                if public is not None:
+                    status = await client.sharing.set_public(nb_id, public)  # authoritative, last
+            elif public is not None:
+                status = await client.sharing.set_public(nb_id, public)
+            else:
+                raise ValidationError("Provide at least one of public / view_level.")
+            # is_public / access come from ``status`` (public applied last when set);
+            # view_level is echoed from set_view_level's authoritative return, only
+            # when this call set it.
+            payload = _status_payload(status, include_view_level=False)
+            if view_status is not None:
+                payload["view_level"] = _label(_VIEW_LEVEL_LABELS, view_status.view_level)
+            return payload
 
     @mcp.tool
     async def share_set_user(
@@ -165,7 +176,7 @@ def register(mcp: Any) -> None:
             status = await client.sharing.add_user(
                 nb_id,
                 email,
-                _PERMISSION_INPUT[permission],
+                permission=_PERMISSION_INPUT[permission],
                 notify=notify,
                 welcome_message=message,
             )

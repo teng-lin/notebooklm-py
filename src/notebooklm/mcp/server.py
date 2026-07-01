@@ -55,7 +55,8 @@ def register_all(mcp: FastMCP) -> None:
 
     Kept as a single chokepoint so the manifest guardrail has one place to reason
     about the full tool set. Phase 2a wired the notebooks/sources/chat/notes
-    domains; Phase 2b added the artifacts/research/meta domains.
+    domains; Phase 2b added the artifacts/research/meta domains; the sharing
+    domain followed.
     """
     from .tools import artifacts, chat, meta, notebooks, notes, research, sharing, sources
 

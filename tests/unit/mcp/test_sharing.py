@@ -134,23 +134,29 @@ async def test_share_set_access_view_level_only_returns_value(mcp_call, mock_cli
     mock_client.sharing.set_view_level.assert_awaited_once_with(NB_ID, ShareViewLevel.CHAT_ONLY)
 
 
-async def test_share_set_access_both_applies_public_first_returns_view_level(
+async def test_share_set_access_both_fail_closed_order_returns_view_level(
     mcp_call, mock_client
 ) -> None:
-    """Both fields: public applied first, and the returned status carries the just-set
-    view_level (from set_view_level, NOT the FULL-hardcoded set_public status)."""
+    """Both fields: view_level (the restriction) is applied FIRST (fail-closed), and the
+    response echoes the just-set view_level from set_view_level, not set_public's
+    FULL-hardcoded status."""
     mock_client.sharing.set_public = AsyncMock(
-        return_value=FakeShareStatus(view_level=ShareViewLevel.FULL_NOTEBOOK)  # stale/hardcoded
+        return_value=FakeShareStatus(is_public=True, view_level=ShareViewLevel.FULL_NOTEBOOK)
     )
     mock_client.sharing.set_view_level = AsyncMock(
         return_value=FakeShareStatus(view_level=ShareViewLevel.CHAT_ONLY)  # authoritative
     )
     result = await mcp_call(
-        "share_set_access", {"notebook": NB_ID, "public": False, "view_level": "chat"}
+        "share_set_access", {"notebook": NB_ID, "public": True, "view_level": "chat"}
     )
-    assert result.structured_content["view_level"] == "chat"
-    mock_client.sharing.set_public.assert_awaited_once_with(NB_ID, False)
+    sc = result.structured_content
+    assert sc["view_level"] == "chat"  # from set_view_level, not set_public's FULL
+    assert sc["is_public"] is True  # from set_public (applied last, authoritative)
+    mock_client.sharing.set_public.assert_awaited_once_with(NB_ID, True)
     mock_client.sharing.set_view_level.assert_awaited_once_with(NB_ID, ShareViewLevel.CHAT_ONLY)
+    # Fail-closed: the restricting view_level is applied BEFORE toggling public.
+    call_names = [c[0] for c in mock_client.sharing.mock_calls]
+    assert call_names.index("set_view_level") < call_names.index("set_public")
 
 
 async def test_share_set_access_requires_a_field(mcp_call, mock_client) -> None:
@@ -182,7 +188,7 @@ async def test_share_set_user_defaults_viewer(mcp_call, mock_client) -> None:
     assert result.structured_content["shared_users"][0]["permission"] == "viewer"
     assert "view_level" not in result.structured_content
     mock_client.sharing.add_user.assert_awaited_once_with(
-        NB_ID, "a@b.com", SharePermission.VIEWER, notify=True, welcome_message=""
+        NB_ID, "a@b.com", permission=SharePermission.VIEWER, notify=True, welcome_message=""
     )
 
 
@@ -199,7 +205,7 @@ async def test_share_set_user_editor_with_message(mcp_call, mock_client) -> None
         },
     )
     mock_client.sharing.add_user.assert_awaited_once_with(
-        NB_ID, "a@b.com", SharePermission.EDITOR, notify=False, welcome_message="welcome"
+        NB_ID, "a@b.com", permission=SharePermission.EDITOR, notify=False, welcome_message="welcome"
     )
 
 
@@ -232,7 +238,8 @@ async def test_share_remove_user_needs_confirmation(mcp_call, mock_client) -> No
 
 
 async def test_share_remove_user_confirmed(mcp_call, mock_client) -> None:
-    mock_client.sharing.remove_user = AsyncMock(return_value=FakeShareStatus())
+    # The tool discards remove_user's return value, so no return_value is set here.
+    mock_client.sharing.remove_user = AsyncMock()
     result = await mcp_call(
         "share_remove_user", {"notebook": NB_ID, "email": "a@b.com", "confirm": True}
     )
