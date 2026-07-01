@@ -27,11 +27,10 @@ import pytest
 pytest.importorskip("fastmcp")
 
 
-#: Ratchet ceilings — calibrated to the current surface (be2686ec + phases 1–2)
-#: with ~4% headroom over the current ~36.5k. Move these DOWN as the surface gets
-#: leaner; a rise means description/param bloat that must be justified, not
-#: rubber-stamped.
-SCHEMA_CHAR_BUDGET = 38_000  # total serialized inputSchema + description chars (current ~36.5k)
+#: Ratchet ceilings — calibrated to the current surface (Tier-1 read-merge took it
+#: to ~36.1k). Move these DOWN as the surface gets leaner; a rise means
+#: description/param bloat that must be justified, not rubber-stamped.
+SCHEMA_CHAR_BUDGET = 37_000  # total serialized inputSchema + description chars (current ~36.1k)
 MAX_PARAMS_PER_TOOL = 22  # artifact_generate is the current high-water mark
 
 

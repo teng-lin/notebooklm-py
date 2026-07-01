@@ -64,7 +64,7 @@ _DRIVE_MIME_CHOICES = ("google-doc", "google-slides", "google-sheets", "pdf")
 #: The default Drive MIME choice when the caller does not specify one.
 _DEFAULT_DRIVE_MIME = "google-doc"
 
-#: Default cap for ``source_get_content`` when ``max_chars`` is omitted — the body
+#: Default cap for ``source_read`` (detail="full") when ``max_chars`` is omitted — the body
 #: is bounded (not dumped whole) so a large source can't flood agent context.
 _DEFAULT_CONTENT_CHARS = 10_000
 
@@ -95,7 +95,7 @@ def _add_result_payload(source: Any, base: dict[str, Any]) -> dict[str, Any]:
 
     Replaces ``base["source"]`` (the bare ``to_jsonable`` source dict) with the
     label-enriched :func:`_source_view` so ``source_add`` output reaches parity
-    with ``source_list`` / ``source_get_content`` (``kind`` + ``status_label``).
+    with ``source_list`` / ``source_read`` (``kind`` + ``status_label``).
 
     When the add response ALREADY reflects a failed import (``status`` == ERROR),
     surface it synchronously with a top-level ``warning``. Most imports are
@@ -154,54 +154,69 @@ def register(mcp: Any) -> None:
             return {"notebook_id": nb_id, "sources": page, **meta}
 
     @mcp.tool(annotations=READ_ONLY)
-    async def source_get_content(
+    async def source_read(
         ctx: Context,
         notebook: str,
         source: str,
+        detail: Literal["summary", "full"] = "full",
         output_format: Literal["text", "markdown"] = "text",
         max_chars: int | None = None,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """Fetch a source's metadata AND a bounded window of its indexed text.
+        """Read a source at one of two detail levels. Accepts a notebook/source name or ID.
 
-        Accepts a notebook/source name or ID. Returns the source metadata (incl.
-        string ``kind``/``status_label``) plus the extracted ``content``, the full
-        ``char_count``, and a ``truncated`` flag.
+        ``detail`` selects what you get back (two distinct shapes):
+        * ``summary`` — a tiny AI digest for low-token triage:
+          ``{notebook_id, source_id, summary, keywords}``. Cheap to fan out across
+          many sources before deciding which to pull in full.
+        * ``full`` (DEFAULT) — the source metadata (incl. string ``kind``/``status_label``)
+          plus the extracted ``content``, the full ``char_count``, and a
+          ``truncated`` flag. ``content`` is ALWAYS bounded: omitting ``max_chars``
+          caps it at the first 10,000 chars; raise ``max_chars`` and/or page with
+          ``offset`` (slice ``[offset : offset+max_chars]``). ``char_count`` stays
+          the FULL length. ``content`` is ``null`` (``char_count`` 0) when the
+          source isn't ready yet or has no extractable text.
 
-        ``output_format`` selects how the text is rendered: ``text`` (default) is
-        flattened plaintext; ``markdown`` preserves headings/tables/links/emphasis
-        (requires the server's ``markdownify`` extra — otherwise a clean error).
-
-        The returned ``content`` is ALWAYS bounded: omitting ``max_chars`` caps it
-        at the first 10,000 characters (so a large source never dumps its whole body
-        into context). Read more by raising ``max_chars`` and/or paging with
-        ``offset`` — the slice is ``[offset : offset+max_chars]``. ``char_count`` is
-        always the FULL length and ``truncated`` says whether the returned slice
-        omits any remainder. Prefer ``chat_ask`` for querying large sources rather
-        than pulling the body.
-
-        ``content`` is ``null`` (and ``char_count`` 0) when the source is not yet
-        ready (still processing / errored) or has no extractable text, so this tool
-        returns the metadata even before the body is available.
+        ``output_format`` (``text`` default / ``markdown``, needs the server's
+        ``markdownify`` extra) and ``max_chars`` / ``offset`` apply only to
+        ``detail="full"`` (ignored for ``summary``). Prefer ``chat_ask`` for
+        querying large sources rather than pulling the whole body.
         """
         client = get_client(ctx)
         with mcp_errors():
+            # Validate windowing args unconditionally — a bad value must error even
+            # in ``summary`` mode (where they are ignored), never silently pass.
             if max_chars is not None and max_chars < 0:
                 raise ValidationError(f"max_chars must be >= 0; got {max_chars}")
             if offset < 0:
                 raise ValidationError(f"offset must be >= 0; got {offset}")
             nb_id = await resolve_notebook(client, notebook)
             src_id = await resolve_source(client, nb_id, source)
+            # Shared existence guard (both modes). A full-UUID ref skips list
+            # resolution (the resolver trusts a full id), so a non-existent id
+            # reaches ``get_or_none`` and yields a ``None`` source — surface that as
+            # NOT_FOUND rather than a misleading empty success.
             result = await content_core.execute_source_get(
                 client, content_core.SourceGetPlan(notebook_id=nb_id, source_id=src_id)
             )
-            # A full-UUID ref skips list resolution (the resolver trusts a full
-            # id), so a non-existent id reaches ``get_or_none`` and yields a
-            # ``None`` source. Surface that as NOT_FOUND rather than returning
-            # ``{"source": null}`` as a success.
             if result.source is None:
                 raise SourceNotFoundError(src_id)
 
+            if detail == "summary":
+                # Guide RPC → the AI digest (a missing guide returns empty summary/
+                # keywords — the existence guard above already ruled out a deleted
+                # source, so this is a real "no guide yet", not a false success).
+                guide = await content_core.execute_source_guide(
+                    client, content_core.SourceGuidePlan(notebook_id=nb_id, source_id=src_id)
+                )
+                return {
+                    "notebook_id": nb_id,
+                    "source_id": guide.source_id,
+                    "summary": guide.summary,
+                    "keywords": list(guide.keywords),
+                }
+
+            # detail == "full":
             # Only fetch the body once the source is READY. A not-ready source
             # (still processing / errored) has no retrievable text yet, so return
             # its metadata with content=None instead of fetching. Gating on status
@@ -254,49 +269,6 @@ def register(mcp: Any) -> None:
             payload["truncated"] = truncated
             payload["output_format"] = output_format
             return payload
-
-    @mcp.tool(annotations=READ_ONLY)
-    async def source_describe(
-        ctx: Context,
-        notebook: str,
-        source: str,
-    ) -> dict[str, Any]:
-        """Return a source's AI summary + keywords for low-token triage.
-
-        Accepts a notebook/source name or ID. Returns the backend's AI-generated
-        ``summary`` (a short markdown overview) and ``keywords`` (the topic
-        keyword list) — a compact "what is this source about?" view.
-
-        Prefer this over ``source_get_content`` when triaging: it returns a tiny
-        AI digest instead of the full indexed text, so it is cheap to fan out
-        across many sources before deciding which to pull in full. Use
-        ``source_get_content`` when you need the actual body, and ``chat_ask`` to
-        query across sources.
-        """
-        client = get_client(ctx)
-        with mcp_errors():
-            nb_id = await resolve_notebook(client, notebook)
-            src_id = await resolve_source(client, nb_id, source)
-            # A full-UUID ref skips list resolution (the resolver trusts a full
-            # id), so a non-existent id reaches the guide RPC, which returns an
-            # EMPTY guide for a missing source — indistinguishable from a real
-            # source that simply has no guide yet. Guard existence first (same as
-            # ``source_get_content``) so a deleted source surfaces as NOT_FOUND
-            # rather than a misleading ``{summary: "", keywords: []}`` success.
-            existing = await content_core.execute_source_get(
-                client, content_core.SourceGetPlan(notebook_id=nb_id, source_id=src_id)
-            )
-            if existing.source is None:
-                raise SourceNotFoundError(src_id)
-            result = await content_core.execute_source_guide(
-                client, content_core.SourceGuidePlan(notebook_id=nb_id, source_id=src_id)
-            )
-            return {
-                "notebook_id": nb_id,
-                "source_id": result.source_id,
-                "summary": result.summary,
-                "keywords": list(result.keywords),
-            }
 
     @mcp.tool
     async def source_rename(
@@ -369,7 +341,7 @@ def register(mcp: Any) -> None:
         A READY **web-page** entry may carry a non-blocking ``warning`` when its
         indexed text is suspiciously thin — a likely dead link / soft-404 / paywalled
         "ghost source" add-time status can't catch. Advisory only (still READY, still
-        ``ok``; verify with ``source_get_content``); short pasted text / transcripts
+        ``ok``; verify with ``source_read`` (detail="full")); short pasted text / transcripts
         are never flagged.
 
         A single-source ``source`` ref that does not resolve (e.g. an unknown title)

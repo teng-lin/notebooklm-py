@@ -203,7 +203,7 @@ TOOL_COVERAGE: dict[str, str] = {
     # sources
     "source_add": "TestMcpSources.test_source_roundtrip / test_source_add_text",
     "source_list": "TestMcpSources.test_source_roundtrip",
-    "source_get_content": "TestMcpSources.test_source_roundtrip",
+    "source_read": "TestMcpSources.test_source_roundtrip",
     "source_rename": "TestMcpSources.test_source_roundtrip",
     "source_delete": "TestMcpSources.test_source_roundtrip",
     "source_wait": "TestMcpSources.test_source_roundtrip",
@@ -257,7 +257,7 @@ class TestMcpToolMatrix:
         """Each read-only tool dispatches live and returns a structured dict.
 
         Covers the read-only surface that is callable with only a notebook (or
-        nothing) plus ``source_get_content`` (a real source id is resolved from
+        nothing) plus ``source_read`` (a real source id is resolved from
         ``source_list``). ``artifact_status`` needs a live ``task_id`` and is
         instead covered by ``TestMcpArtifacts`` (the generation wiring smoke).
         """
@@ -276,12 +276,12 @@ class TestMcpToolMatrix:
         research = await _call(client, "research_status", {"notebook": nb})
         assert "status" in research
 
-        # source_get_content needs a real source id — resolve one from the listing.
+        # source_read needs a real source id — resolve one from the listing.
         listing = await _call(client, "source_list", {"notebook": nb})
         sources = listing.get("sources") or []
         if sources:
             src_id = sources[0]["id"]
-            content = await _call(client, "source_get_content", {"notebook": nb, "source": src_id})
+            content = await _call(client, "source_read", {"notebook": nb, "source": src_id})
             assert content["source"]["id"] == src_id
 
 
@@ -316,7 +316,7 @@ class TestMcpSources:
         ids = [s["id"] for s in listing["sources"]]
         assert src_id in ids
 
-        content = await _call(client, "source_get_content", {"notebook": nb, "source": src_id})
+        content = await _call(client, "source_read", {"notebook": nb, "source": src_id})
         assert content["source"]["id"] == src_id
 
         renamed = await _call(

@@ -127,7 +127,7 @@ async def _thin_content_warning(
 
     **web-page only** (short pasted text / transcripts are legitimate, never flagged;
     callers also pre-filter). **best-effort**: the body fetch reuses
-    ``source_get_content``'s ``GET_SOURCE``, bounded by
+    ``source_read``'s (detail="full") ``GET_SOURCE``, bounded by
     :data:`_THIN_SOURCE_FETCH_TIMEOUT_SECONDS`; ANY failure (timeout, transport,
     unexpected shape) degrades to ``None`` so it can never break a wait
     (``except Exception`` — ``CancelledError`` still propagates). **Never rejects.**
@@ -149,7 +149,7 @@ async def _thin_content_warning(
             return (
                 f"little/no text extracted ({char_count} chars) — may be empty, "
                 "not-yet-indexed, a soft-404/dead link, blocked, or paywalled; "
-                "verify with source_get_content."
+                'verify with source_read (detail="full").'
             )
         # ponytail: a short multi-word phrase scan over a length-gated body — no
         # liveness probe, no classifier; misses non-English / long-bodied error pages.
@@ -162,7 +162,7 @@ async def _thin_content_warning(
                 return (
                     f"ingested as ready ({char_count} chars) but the body matches a "
                     "dead-link / error-page pattern (e.g. 'broken link') — likely a "
-                    "soft-404; verify with source_get_content."
+                    'soft-404; verify with source_read (detail="full").'
                 )
     except Exception:  # noqa: BLE001 - sanity check must never break a wait
         return None

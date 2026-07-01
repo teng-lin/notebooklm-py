@@ -14,7 +14,7 @@ Tools covered and the cassette each replays:
   ``sources_add_file.yaml`` (``ADD_SOURCE_FILE`` → ``o4cbdc`` + upload POSTs);
   ``drive`` over ``sources_add_drive.yaml`` (``ADD_SOURCE`` → ``izAoDd``).
 * ``source_rename`` over ``sources_rename.yaml`` (``UPDATE_SOURCE`` → ``b7Wfje``).
-* ``source_get_content`` over ``sources_get_fulltext.yaml`` — consumes BOTH the
+* ``source_read`` over ``sources_get_fulltext.yaml`` — consumes BOTH the
   leading ``GET_NOTEBOOK`` (``rLM1Ne``, metadata via ``execute_source_get``) and
   the trailing ``hizoJc`` (``GET_SOURCE``, full text via ``execute_source_fulltext``).
 * ``source_wait`` (single + all) over ``sources_wait.yaml`` (= ``sources_list.yaml``
@@ -48,7 +48,7 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 # the id — but reusing the recorded id keeps intent obvious.
 SOURCES_LIST_NOTEBOOK_ID = "c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e"
 # A source id present in ``sources_list.yaml``'s ``GET_NOTEBOOK`` list (status
-# READY) — used by ``source_get_content`` / ``source_wait``, whose lookups
+# READY) — used by ``source_read`` / ``source_wait``, whose lookups
 # filter that list and must find a matching row.
 SOURCES_LIST_SOURCE_ID = "a474cd35-6c21-4e72-94a0-c38b5491b449"
 SOURCES_LIST_SOURCE_TITLE = (
@@ -75,7 +75,7 @@ RENAME_ECHOED_SOURCE_ID = "b1b9efdd-b2af-4974-ad97-16025c05f1d7"
 RENAME_ECHOED_TITLE = "VCR Test Renamed Source"
 
 # ``sources_get_fulltext.yaml`` GET_NOTEBOOK was recorded against this notebook;
-# ``source_get_content`` consumes its ``rLM1Ne`` (metadata) + ``hizoJc`` (full text).
+# ``source_read`` consumes its ``rLM1Ne`` (metadata) + ``hizoJc`` (full text).
 GET_CONTENT_NOTEBOOK_ID = "167481cd-23a3-4331-9a45-c8948900bf91"
 
 
@@ -187,7 +187,7 @@ async def test_mcp_source_add_url_over_vcr() -> None:
     assert isinstance(structured, dict)
     # The url flow wraps the added source under "source" (no notebook_id echo —
     # that is the drive flow's shape).
-    assert set(structured) == {"source"}
+    assert set(structured) == {"source", "status"}
     source = structured["source"]
     assert isinstance(source, dict)
     assert source["id"] == "20d66b0b-787f-480e-a9c1-6823f7a12d8e"
@@ -231,7 +231,7 @@ async def test_mcp_source_add_text_over_vcr() -> None:
 
     structured = result.structured_content
     assert isinstance(structured, dict)
-    assert set(structured) == {"source"}
+    assert set(structured) == {"source", "status"}
     source = structured["source"]
     assert isinstance(source, dict)
     # The recorded ADD_SOURCE echo titles the source from the recording, not the
@@ -267,7 +267,7 @@ async def test_mcp_source_add_file_over_vcr(tmp_path) -> None:
 
     structured = result.structured_content
     assert isinstance(structured, dict)
-    assert set(structured) == {"source"}
+    assert set(structured) == {"source", "status"}
     source = structured["source"]
     assert isinstance(source, dict)
     assert source["id"] == "dc84ca28-2629-49ac-aec3-de45f0ec93e4"
@@ -302,7 +302,7 @@ async def test_mcp_source_add_drive_over_vcr() -> None:
 
     structured = result.structured_content
     assert isinstance(structured, dict)
-    assert set(structured) == {"source", "notebook_id", "file_id", "mime_type"}
+    assert set(structured) == {"source", "notebook_id", "file_id", "mime_type", "status"}
     # The drive envelope echoes the request inputs alongside the added source.
     assert structured["notebook_id"] == ADD_DRIVE_NOTEBOOK_ID
     assert structured["file_id"] == "1AbCdEfGhIjKlMnOpQrStUvWxYz"
@@ -343,7 +343,7 @@ async def test_mcp_source_rename_over_vcr() -> None:
 
     structured = result.structured_content
     assert isinstance(structured, dict)
-    assert set(structured) == {"source", "notebook_id"}
+    assert set(structured) == {"source", "notebook_id", "status"}
     assert structured["notebook_id"] == RENAME_NOTEBOOK_ID
     source = structured["source"]
     assert isinstance(source, dict)
@@ -355,14 +355,14 @@ async def test_mcp_source_rename_over_vcr() -> None:
 
 
 # ---------------------------------------------------------------------------
-# source_get_content
+# source_read
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("sources_get_fulltext.yaml")
-async def test_mcp_source_get_content_over_vcr() -> None:
-    """``source_get_content`` returns the resolved source metadata AND its full text.
+async def test_mcp_source_read_over_vcr() -> None:
+    """``source_read`` returns the resolved source metadata AND its full text.
 
     ``execute_source_get`` calls ``client.sources.get_or_none`` (filters the
     notebook's ``GET_NOTEBOOK`` / ``rLM1Ne`` source list), then
@@ -373,7 +373,7 @@ async def test_mcp_source_get_content_over_vcr() -> None:
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
-            "source_get_content",
+            "source_read",
             {
                 "notebook": GET_CONTENT_NOTEBOOK_ID,
                 "source": SOURCES_LIST_SOURCE_ID,
@@ -403,11 +403,15 @@ async def test_mcp_source_get_content_over_vcr() -> None:
     # String labels accompany the raw codes (agent-readable).
     assert source["kind"] == "web_page"
     assert source["status_label"] == "ready"
-    # Full text came back from the recorded GET_SOURCE interaction.
+    # Full text came back from the recorded GET_SOURCE interaction, bounded by the
+    # default 10k cap: ``char_count`` is the FULL length, ``content`` is the (≤10k)
+    # returned window, and ``truncated`` reflects whether the window omits any tail.
     assert structured["output_format"] == "text"
-    assert structured["truncated"] is False
-    assert isinstance(structured["content"], str) and structured["content"]
-    assert structured["char_count"] == len(structured["content"])
+    content = structured["content"]
+    assert isinstance(content, str) and content
+    assert len(content) <= 10_000  # default cap applied
+    assert structured["char_count"] >= len(content)
+    assert structured["truncated"] == (structured["char_count"] > len(content))
 
 
 # ---------------------------------------------------------------------------

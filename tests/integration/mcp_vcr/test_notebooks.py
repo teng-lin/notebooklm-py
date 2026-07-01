@@ -72,6 +72,7 @@ async def test_mcp_notebook_create_over_vcr() -> None:
     # field will fail this assertion by design, forcing a conscious wire-shape
     # decision.
     assert set(structured) == {
+        "status",
         "notebook_id",
         "title",
         "created_at",
