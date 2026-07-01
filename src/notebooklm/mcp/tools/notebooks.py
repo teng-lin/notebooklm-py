@@ -36,16 +36,19 @@ def register(mcp: Any) -> None:
     """Register the notebook tools on ``mcp``."""
 
     @mcp.tool(annotations=READ_ONLY)
-    async def notebook_list(ctx: Context, limit: int = DEFAULT_LIMIT) -> dict[str, Any]:
+    async def notebook_list(
+        ctx: Context, limit: int = DEFAULT_LIMIT, offset: int = 0
+    ) -> dict[str, Any]:
         """List all notebooks (id + title + metadata).
 
-        ``limit`` caps the returned page (default 50); the result also carries
-        ``total`` and ``has_more`` so you know whether to request a larger page.
+        Returns a bounded page: ``limit`` (default 50) items from ``offset`` (default
+        0), plus ``total`` / ``offset`` / ``has_more``. Page forward by re-calling
+        with ``offset += limit`` while ``has_more`` is true.
         """
         client = get_client(ctx)
         with mcp_errors():
             notebooks = await client.notebooks.list()
-            page, meta = paginate(to_jsonable(notebooks), limit)
+            page, meta = paginate(to_jsonable(notebooks), limit, offset)
             return {"notebooks": page, **meta}
 
     @mcp.tool

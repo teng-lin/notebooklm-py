@@ -25,13 +25,20 @@ __all__ = ["paginate", "DEFAULT_LIMIT"]
 DEFAULT_LIMIT = 50
 
 
-def paginate(items: list[Any], limit: int) -> tuple[list[Any], dict[str, Any]]:
-    """Return ``(page, meta)`` — the first ``limit`` items plus pagination meta.
+def paginate(items: list[Any], limit: int, offset: int = 0) -> tuple[list[Any], dict[str, Any]]:
+    """Return ``(page, meta)`` — the ``items[offset : offset+limit]`` slice + meta.
 
-    ``meta`` is ``{"total": <full count>, "has_more": <bool>}``. ``limit`` must be
-    >= 1 (a bounded page is the point); pass a generously large number for "all".
+    ``meta`` is ``{"total": <full count>, "offset": <offset>, "has_more": <bool>}``.
+    ``limit`` must be >= 1 (a bounded page is the point) and ``offset`` >= 0; page
+    forward by re-calling with ``offset += limit`` until ``has_more`` is false.
     """
     if limit < 1:
         raise ValidationError("limit must be >= 1.")
-    page = items[:limit]
-    return page, {"total": len(items), "has_more": len(items) > len(page)}
+    if offset < 0:
+        raise ValidationError("offset must be >= 0.")
+    page = items[offset : offset + limit]
+    return page, {
+        "total": len(items),
+        "offset": offset,
+        "has_more": offset + len(page) < len(items),
+    }

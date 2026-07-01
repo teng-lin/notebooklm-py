@@ -400,18 +400,18 @@ def register(mcp: Any) -> None:
 
     @mcp.tool(annotations=READ_ONLY)
     async def artifact_list(
-        ctx: Context, notebook: str, limit: int = DEFAULT_LIMIT
+        ctx: Context, notebook: str, limit: int = DEFAULT_LIMIT, offset: int = 0
     ) -> dict[str, Any]:
         """List a notebook's studio artifacts. Accepts a notebook name or ID.
 
-        ``limit`` caps the returned page (default 50); the result also carries
-        ``total`` and ``has_more``.
+        Returns a bounded page: ``limit`` (default 50) artifacts from ``offset``,
+        plus ``total`` / ``offset`` / ``has_more``. Page with ``offset += limit``.
         """
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             artifacts = await client.artifacts.list(nb_id)
-            page, meta = paginate(to_jsonable(artifacts), limit)
+            page, meta = paginate(to_jsonable(artifacts), limit, offset)
             return {"notebook_id": nb_id, "artifacts": page, **meta}
 
     @mcp.tool
@@ -690,13 +690,17 @@ def register(mcp: Any) -> None:
             # that type). The `artifact` ref path lists to derive the type — the
             # remote broker still gets a concrete type before minting the link.
             if artifact is not None:
-                if artifact_type is not None:
+                if artifact_type is not None or artifact_id is not None:
                     raise ValidationError(
-                        "Provide either `artifact` (name/id) or `artifact_type`, not both."
+                        "Provide either `artifact` (name/id) or `artifact_type`"
+                        " (+ optional `artifact_id`), not both."
                     )
                 resolved_id = await resolve_artifact(client, nb_id, artifact)
                 items = await client.artifacts.list(nb_id)
-                match = next((a for a in items if a.id == resolved_id), None)
+                # ``resolve_artifact`` fast-paths a full UUID verbatim (no list), so
+                # ``resolved_id`` may differ in case from the listed id — match
+                # case-insensitively (mirrors the resolver's own casefold).
+                match = next((a for a in items if a.id.lower() == resolved_id.lower()), None)
                 if match is None:
                     raise ValidationError(
                         f"Could not determine the type of artifact {artifact!r} "

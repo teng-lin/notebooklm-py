@@ -124,6 +124,7 @@ def register(mcp: Any) -> None:
         notebook: str,
         status: Literal["ready", "processing", "error", "preparing"] | None = None,
         limit: int = DEFAULT_LIMIT,
+        offset: int = 0,
     ) -> dict[str, Any]:
         """List a notebook's sources. Accepts a notebook name or ID.
 
@@ -149,7 +150,7 @@ def register(mcp: Any) -> None:
             # filter. Uses the same source_status_to_str label _source_view emits.
             if status is not None:
                 sources = [s for s in sources if source_status_to_str(s.status) == status]
-            page, meta = paginate([_source_view(s) for s in sources], limit)
+            page, meta = paginate([_source_view(s) for s in sources], limit, offset)
             return {"notebook_id": nb_id, "sources": page, **meta}
 
     @mcp.tool(annotations=READ_ONLY)
@@ -831,7 +832,11 @@ async def _add_url_batch(
     # maintaining parallel counters that must be kept in sync with each append.
     added = sum(1 for item in results if item["status"] == "added")
     return {
-        "status": "added",
+        # "added" once at least one source was added; "error" when every item
+        # failed (so the top-level envelope can't claim success while
+        # ``results[].status`` all say error). ``added`` / ``failed`` carry the
+        # partial-success detail.
+        "status": "added" if added else "error",
         "notebook_id": notebook_id,
         "added": added,
         "failed": len(results) - added,

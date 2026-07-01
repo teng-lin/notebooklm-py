@@ -160,6 +160,7 @@ async def test_source_list(mcp_call, mock_client) -> None:
         "notebook_id": NB_ID,
         "sources": [{"id": SRC_ID, "title": "Doc", "kind": "web_page", "status_label": "ready"}],
         "total": 1,
+        "offset": 0,
         "has_more": False,
     }
     mock_client.sources.list.assert_awaited_once_with(NB_ID)
@@ -185,6 +186,7 @@ async def test_source_list_status_filter(mcp_call, mock_client) -> None:
             }
         ],
         "total": 1,
+        "offset": 0,
         "has_more": False,
     }
 
@@ -197,6 +199,7 @@ async def test_source_list_status_filter_no_match(mcp_call, mock_client) -> None
         "notebook_id": NB_ID,
         "sources": [],
         "total": 0,
+        "offset": 0,
         "has_more": False,
     }
 

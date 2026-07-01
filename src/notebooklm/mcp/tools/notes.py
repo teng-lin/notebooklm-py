@@ -61,17 +61,19 @@ def register(mcp: Any) -> None:
             }
 
     @mcp.tool(annotations=READ_ONLY)
-    async def note_list(ctx: Context, notebook: str, limit: int = DEFAULT_LIMIT) -> dict[str, Any]:
+    async def note_list(
+        ctx: Context, notebook: str, limit: int = DEFAULT_LIMIT, offset: int = 0
+    ) -> dict[str, Any]:
         """List a notebook's notes. Accepts a notebook name or ID.
 
-        ``limit`` caps the returned page (default 50); the result also carries
-        ``total`` and ``has_more``.
+        Returns a bounded page: ``limit`` (default 50) notes from ``offset``, plus
+        ``total`` / ``offset`` / ``has_more``. Page with ``offset += limit``.
         """
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             notes = await client.notes.list(nb_id)
-            page, meta = paginate(to_jsonable(notes), limit)
+            page, meta = paginate(to_jsonable(notes), limit, offset)
             return {"notebook_id": nb_id, "notes": page, **meta}
 
     @mcp.tool(annotations=READ_ONLY)

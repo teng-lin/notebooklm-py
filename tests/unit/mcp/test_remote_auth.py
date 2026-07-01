@@ -215,7 +215,12 @@ async def test_authenticated_tool_call_over_http_transport() -> None:
             tools = await mcp.list_tools()
             assert any(t.name == "notebook_list" for t in tools)
             result = await mcp.call_tool("notebook_list", {})
-            assert result.structured_content == {"notebooks": [], "total": 0, "has_more": False}
+            assert result.structured_content == {
+                "notebooks": [],
+                "total": 0,
+                "offset": 0,
+                "has_more": False,
+            }
             stub.notebooks.list.assert_awaited()  # dispatch really reached the client
 
         # Wrong bearer → rejected by the auth middleware with 401 (never a tool).
