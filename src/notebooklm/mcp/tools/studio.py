@@ -52,7 +52,12 @@ from ._studio_download import (
     _passthrough_download_notebook,
     _resolve_artifact_id,
 )
-from ._studio_items import STUDIO_KINDS, resolve_studio_item, studio_items
+from ._studio_items import (
+    STUDIO_KINDS,
+    resolve_studio_item,
+    studio_items,
+    summarize_studio_item,
+)
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
@@ -182,27 +187,27 @@ def register(mcp: Any) -> None:
         notebook: str,
         item: str | None = None,
         kind: str | None = None,
+        detail: Literal["summary", "full"] = "summary",
         limit: int = DEFAULT_LIMIT,
         offset: int = 0,
     ) -> dict[str, Any]:
         """List a notebook's Studio panel — text notes AND generated artifacts.
 
-        Accepts a notebook name or ID. Returns a merged ``items`` list; each item
-        carries ``id`` / ``title`` / ``type`` where ``type`` is ``note`` for a text
-        note or the artifact's hyphenated kind (``audio`` / ``video`` / ``report`` /
-        ``quiz`` / ``flashcards`` / ``mind-map`` / ``infographic`` / ``slide-deck`` /
-        ``data-table``). Notes also carry ``content``; artifacts carry
-        ``status_label`` and ``url``.
+        Accepts a notebook name or ID. Returns a merged ``items`` list; each item has
+        ``id`` / ``title`` / ``type`` (``note`` or a hyphenated artifact kind). Artifacts
+        carry ``status_label`` and ``url``.
 
-        * Default (list mode): a bounded page of ``limit`` (default 50) items from
-          ``offset``, plus ``total`` / ``offset`` / ``has_more`` (page with
-          ``offset += limit``).
-        * ``kind`` filters the list to one ``type`` before paging.
-        * ``item`` (a name or id — note OR artifact) fetches just that one item,
-          returned as a 1-element ``items`` list (``total`` 1); a ref that matches
-          nothing is a NOT_FOUND error. ``limit`` / ``offset`` are ignored when
-          ``item`` is given (but still validated). If ``kind`` is also given it
-          scopes the resolution — ``item`` is matched only among that ``type``.
+        * List mode: a bounded page of ``limit`` (default 50) from ``offset``, plus
+          ``total`` / ``offset`` / ``has_more``.
+        * ``detail`` (note-body token-saver): ``summary`` (default) gives each note a
+          bounded ``content_preview`` + full-body ``char_count`` instead of the whole
+          ``content``; ``full`` returns it. Artifacts are unaffected. Read a full body
+          via ``item=<ref>`` or ``detail="full"``.
+        * ``kind`` filters to one ``type``.
+        * ``item`` (name or id — note OR artifact) fetches just that item as a 1-element
+          list with the note's FULL ``content``; no match is a NOT_FOUND error.
+          ``limit`` / ``offset`` / ``detail`` are ignored with ``item``; ``kind`` scopes
+          the resolution.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -233,6 +238,12 @@ def register(mcp: Any) -> None:
             if kind is not None:
                 items = [it for it in items if it["type"] == kind]
             page, meta = paginate(items, limit, offset)
+            # Summarize only the returned page (not the whole list) so the note-body
+            # slicing is O(limit): default ``summary`` swaps each note's full body for a
+            # bounded ``content_preview`` + ``char_count`` (full body via ``detail="full"``
+            # or ``item=<ref>``); ``full`` leaves the projection untouched.
+            if detail == "summary":
+                page = [summarize_studio_item(it) for it in page]
             return {"notebook_id": nb_id, "items": page, **meta}
 
     @mcp.tool
@@ -497,10 +508,10 @@ def register(mcp: Any) -> None:
         server host; required). Over the **remote (http) connector** the server's
         filesystem is unreachable, so the tool instead returns a clickable
         ``resource_link`` plus ``{"status": "download_ready", "url": …}`` — a
-        short-lived signed URL; ``path`` is ignored. On the remote connector the
-        broker cannot list artifacts, so an ``artifact_id`` is validated lazily when
-        the link is opened (an unknown/ambiguous id then yields a 400), unlike
-        ``output_format``, which is validated up front at the tool call.
+        short-lived signed URL; ``path`` is ignored. On the remote connector an
+        explicit ``artifact_id`` (and ``output_format``) is validated up front at the
+        tool call — an unknown/ambiguous id fails immediately, not as a browser-side
+        400 when the link is opened.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -532,6 +543,17 @@ def register(mcp: Any) -> None:
                     raise ValidationError(
                         f"Artifact {artifact!r} has a non-downloadable type {match.kind!r}."
                     )
+                # The download core only ever serves COMPLETED artifacts (it filters
+                # ``is_completed``), so a ref that resolves to one still generating is not
+                # downloadable on EITHER transport. Reject it up front here (using the
+                # already-fetched ``match``, no extra list call) so remote mirrors the
+                # explicit-id pre-validation below — otherwise the remote broker would mint
+                # a signed URL that only 400s when opened (a resolved-but-incomplete ref).
+                if not match.is_completed:
+                    raise ValidationError(
+                        f"Artifact {artifact!r} is not finished generating "
+                        f"(status: {match.status_str}); wait for it to complete."
+                    )
                 artifact_id = resolved_id
             elif artifact_type is None:
                 raise ValidationError("Provide `artifact` (name/id) or `artifact_type`.")
@@ -560,6 +582,28 @@ def register(mcp: Any) -> None:
             if cfg is not None:
                 # Remote connector: broker a signed download URL (the server path is
                 # unreachable). `path` is accepted but ignored.
+                #
+                # Pre-validate an EXPLICIT artifact_id (the `artifact_type` + `artifact_id`
+                # path) BEFORE minting, so a bad/nonexistent id fails HERE as a structured
+                # error instead of a browser-side 400 when the signed link is opened. Skip:
+                # the `artifact` name/id ref path (already resolved + membership-checked
+                # above, so `artifact is not None`), and the `artifact_id is None` "latest"
+                # path (nothing to pre-validate).
+                if artifact is None and artifact_id is not None:
+                    # ``list(nb_id, spec.kind)`` is the SAME type-scoped fetch the remote
+                    # download route uses (``_list_for_download(nb_id, spec.kind)``): for a
+                    # non-mind-map kind it skips the mind-map sub-fetch, and MIND_MAP still
+                    # includes the note-backed rows — so pre-validation resolves over the
+                    # exact set the link will. Already type-scoped + real ``Artifact`` rows,
+                    # so only the completion filter is needed. ``_resolve_artifact_id``
+                    # (full-UUID fast-path / unique prefix / case-insensitive canonicalize)
+                    # raises ValidationError on a miss, AmbiguousIdError on an ambiguous prefix.
+                    candidates = [
+                        {"id": a.id, "title": a.title}
+                        for a in await client.artifacts.list(nb_id, spec.kind)
+                        if a.is_completed
+                    ]
+                    artifact_id = _resolve_artifact_id(candidates, artifact_id)
                 return _broker_download(cfg, nb_id, artifact_type, output_format, artifact_id)
             # No file-transfer config. On the remote (http) connector the server
             # filesystem is unreachable REGARDLESS of `path`, so fail clearly here —

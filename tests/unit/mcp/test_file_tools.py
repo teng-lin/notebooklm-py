@@ -20,21 +20,41 @@ import pytest
 # Skip cleanly when the `mcp` extra (fastmcp) is absent; see conftest.py.
 pytest.importorskip("fastmcp")
 
+from datetime import datetime, timezone  # noqa: E402 - after importorskip guard
+
 from fastmcp import Client  # noqa: E402 - after importorskip guard
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
 import notebooklm.mcp.tools._studio_download as art_mod  # noqa: E402 - after importorskip guard
 import notebooklm.mcp.tools.sources as src_mod  # noqa: E402 - after importorskip guard
+from notebooklm._types.artifacts import (  # noqa: E402 - after importorskip guard
+    ArtifactStatus,
+    ArtifactTypeCode,
+)
 from notebooklm.mcp._filelink import (  # noqa: E402 - after importorskip guard
     FileLinkSigner,
     FileTransferConfig,
 )
 from notebooklm.mcp.server import create_server  # noqa: E402 - after importorskip guard
+from notebooklm.types import Artifact, ArtifactType  # noqa: E402 - after importorskip guard
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
 BASE = "https://files.test"
 NB_ID = "11111111-1111-1111-1111-111111111111"
+
+_AID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+
+def _audio_artifact(art_id: str, title: str = "Podcast", *, completed: bool = True) -> Artifact:
+    """A real audio ``Artifact`` for the remote download pre-validation tests."""
+    return Artifact(
+        id=art_id,
+        title=title,
+        _artifact_type=ArtifactTypeCode.AUDIO.value,
+        status=int(ArtifactStatus.COMPLETED if completed else ArtifactStatus.PROCESSING),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
 
 
 @dataclass
@@ -242,24 +262,171 @@ async def test_artifact_download_stdio_missing_path_is_clear_error(mock_client) 
 
 
 async def test_artifact_download_remote_tool_encodes_aid(mock_client, config) -> None:
-    # under http transport (with config), studio_download returns download_ready
-    # and the minted token contains aid.
+    # under http transport (with config), an EXPLICIT artifact_id is pre-validated
+    # against the type-scoped list BEFORE the signed URL is minted, then the canonical
+    # id is encoded in the token.
+    mock_client.artifacts.list = AsyncMock(return_value=[_audio_artifact(_AID_A)])
     result = await _call(
         mock_client,
         config,
         "studio_download",
-        {
-            "notebook": NB_ID,
-            "artifact_type": "audio",
-            "artifact_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-        },
+        {"notebook": NB_ID, "artifact_type": "audio", "artifact_id": _AID_A},
     )
     sc = result.structured_content
     assert sc["status"] == "download_ready"
     # The structured payload echoes the targeted id (self-describing), not only the
     # token.
-    assert sc["artifact_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    assert sc["artifact_id"] == _AID_A
     url = sc["url"]
     token = url.split("/")[-1]
     payload = config.signer.verify(token, op="dl")
-    assert payload["aid"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    assert payload["aid"] == _AID_A
+    # Pre-validation used the SAME type-scoped fetch the remote route resolves over
+    # (skips the mind-map sub-fetch for a non-mind-map kind).
+    mock_client.artifacts.list.assert_awaited_once_with(NB_ID, ArtifactType.AUDIO)
+
+
+async def test_artifact_download_remote_mind_map_uses_type_scoped_list(mock_client, config) -> None:
+    # A note-backed mind-map id under artifact_type="mind-map" pre-validates over the
+    # SAME type-scoped fetch the route uses: list(nb_id, MIND_MAP) (which merges the
+    # note-backed rows), locking the faithfulness the code comment claims.
+    mm = Artifact(
+        id=_AID_A,
+        title="My Map",
+        _artifact_type=ArtifactTypeCode.MIND_MAP.value,
+        status=int(ArtifactStatus.COMPLETED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    mock_client.artifacts.list = AsyncMock(return_value=[mm])
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "mind-map", "artifact_id": _AID_A},
+    )
+    assert result.structured_content["status"] == "download_ready"
+    assert result.structured_content["artifact_id"] == _AID_A
+    mock_client.artifacts.list.assert_awaited_once_with(NB_ID, ArtifactType.MIND_MAP)
+
+
+async def test_artifact_download_remote_ref_to_incomplete_does_not_mint(
+    mock_client, config
+) -> None:
+    # A `artifact` ref that resolves to a real-but-still-generating artifact must NOT
+    # mint a URL on remote (it would 400 when opened, since the route serves only
+    # completed artifacts) — it fails up front with a clear structured error.
+    mock_client.artifacts.list = AsyncMock(
+        return_value=[_audio_artifact(_AID_A, "Podcast", completed=False)]
+    )
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            config,
+            "studio_download",
+            {"notebook": NB_ID, "artifact": "Podcast"},
+        )
+    assert "not finished generating" in str(excinfo.value)
+
+
+async def test_artifact_download_remote_uppercase_aid_canonicalized(mock_client, config) -> None:
+    # An UPPERCASE full-UUID artifact_id is canonicalized to the list's lowercase id
+    # before minting (the token must carry the canonical id, not the caller's casing).
+    mock_client.artifacts.list = AsyncMock(return_value=[_audio_artifact(_AID_A)])
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "audio", "artifact_id": _AID_A.upper()},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    assert sc["artifact_id"] == _AID_A  # canonical lowercase, not the uppercase input
+    token = sc["url"].split("/")[-1]
+    assert config.signer.verify(token, op="dl")["aid"] == _AID_A
+
+
+async def test_artifact_download_remote_unknown_aid_fails_before_mint(mock_client, config) -> None:
+    # A full-UUID artifact_id absent from the list fails at tool-call time (structured
+    # error) — no download_ready URL is handed out.
+    mock_client.artifacts.list = AsyncMock(return_value=[_audio_artifact(_AID_A)])
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            config,
+            "studio_download",
+            {
+                "notebook": NB_ID,
+                "artifact_type": "audio",
+                "artifact_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+            },
+        )
+    assert "not found" in str(excinfo.value)
+
+
+async def test_artifact_download_remote_incomplete_aid_excluded(mock_client, config) -> None:
+    # An id that exists but is NOT completed is filtered out by the is_completed
+    # candidate filter → fails at mint time (documents the deliberate semantics: an
+    # explicit id with zero completed matches fails here, not with a browser 400).
+    mock_client.artifacts.list = AsyncMock(return_value=[_audio_artifact(_AID_A, completed=False)])
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            config,
+            "studio_download",
+            {"notebook": NB_ID, "artifact_type": "audio", "artifact_id": _AID_A},
+        )
+    assert "not found" in str(excinfo.value)
+
+
+async def test_artifact_download_remote_ambiguous_aid_prefix_fails_before_mint(
+    mock_client, config
+) -> None:
+    # Two audio artifacts sharing a prefix + that prefix as artifact_id → ambiguous,
+    # fails at mint time (no URL).
+    mock_client.artifacts.list = AsyncMock(
+        return_value=[
+            _audio_artifact("cccccccc-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "A"),
+            _audio_artifact("cccccccc-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "B"),
+        ]
+    )
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            config,
+            "studio_download",
+            {"notebook": NB_ID, "artifact_type": "audio", "artifact_id": "cccccccc"},
+        )
+    assert "Ambiguous ID" in str(excinfo.value)
+
+
+async def test_artifact_download_remote_latest_skips_prevalidation(mock_client, config) -> None:
+    # The "latest" path (no artifact_id) must NOT pre-validate — it mints even with an
+    # empty list (the route resolves "latest" when the link is opened).
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "audio"},
+    )
+    assert result.structured_content["status"] == "download_ready"
+    # No explicit id → the pre-validation branch never ran.
+    mock_client.artifacts.list.assert_not_awaited()
+
+
+async def test_artifact_download_remote_ref_path_not_double_validated(mock_client, config) -> None:
+    # The `artifact` name/id ref path resolves + derives the type via a single
+    # list(nb_id) (no type argument); the explicit-id pre-validation branch must NOT
+    # fire (it would be a second list carrying spec.kind). Assert on CALL ARGS, not a
+    # bare await count: no artifacts.list call passed a second (artifact_type) positional.
+    mock_client.artifacts.list = AsyncMock(return_value=[_audio_artifact(_AID_A, "Podcast")])
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact": "Podcast"},
+    )
+    assert result.structured_content["status"] == "download_ready"
+    assert result.structured_content["artifact_id"] == _AID_A
+    # No list call carried the pre-validation's distinctive type-scoped positional.
+    assert all(len(call.args) < 2 for call in mock_client.artifacts.list.await_args_list)

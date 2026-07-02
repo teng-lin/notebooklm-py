@@ -38,7 +38,12 @@ __all__ = [
     "hyphenated_type",
     "resolve_studio_item",
     "studio_items",
+    "summarize_studio_item",
 ]
+
+#: Chars of a note body surfaced as ``content_preview`` in ``studio_list``'s default
+#: summary mode; the full body stays reachable via ``detail="full"`` or ``item=<ref>``.
+NOTE_PREVIEW_CHARS = 200
 
 #: A studio-item ref made only of hex digits and dashes takes the id/prefix path;
 #: anything else (a space, a non-hex letter, punctuation) is treated as a title.
@@ -131,6 +136,31 @@ async def studio_items(client: NotebookLMClient, nb_id: str) -> list[dict[str, A
             "url": getattr(art, "url", None),
         }
     return list(items.values())
+
+
+def summarize_studio_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Return ``studio_list``'s summary-mode projection of one merged item.
+
+    A ``note`` item's full ``content`` body is replaced with a bounded
+    ``content_preview`` (first :data:`NOTE_PREVIEW_CHARS` chars, ``…`` appended when
+    truncated) plus the full-body ``char_count``, so a READ_ONLY discovery listing of a
+    notebook with long notes doesn't spill every body into an agent's context. The full
+    body stays reachable via ``studio_list(detail="full")`` or ``studio_list(item=<ref>)``.
+
+    Keyed on ``type == "note"`` (not the presence of a ``content`` key), so artifact
+    items — which carry no ``content`` — pass through unchanged, and a note with an
+    empty/``None`` body is still summarized (``content_preview=""`` / ``char_count=0``).
+    """
+    if item.get("type") != "note":
+        return item
+    content = item.get("content") or ""
+    preview = content[:NOTE_PREVIEW_CHARS]
+    if len(content) > NOTE_PREVIEW_CHARS:
+        preview += "…"
+    summarized = {k: v for k, v in item.items() if k != "content"}
+    summarized["content_preview"] = preview
+    summarized["char_count"] = len(content)
+    return summarized
 
 
 def _match_studio_ref(

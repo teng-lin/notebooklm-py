@@ -153,9 +153,12 @@ async def test_studio_list_merges_notes_and_artifacts(mcp_call, mock_client) -> 
     assert sc["notebook_id"] == NB_ID
     items = sc["items"]
     by_type = {it["type"]: it for it in items}
-    # A text note item …
+    # A text note item — the default (summary) list gives a bounded preview + the
+    # full-body char_count, NOT the full ``content`` key (discovery token-saver).
     assert by_type["note"]["id"] == _NOTE_ID
-    assert by_type["note"]["content"] == "body"
+    assert by_type["note"]["content_preview"] == "body"
+    assert by_type["note"]["char_count"] == 4
+    assert "content" not in by_type["note"]
     # … and an artifact item (hyphenated type + status_label + url).
     assert by_type["audio"]["id"] == "art1"
     assert by_type["audio"]["status_label"] == "completed"
@@ -231,6 +234,95 @@ async def test_studio_list_rejects_unknown_kind(mcp_call, mock_client, bad) -> N
     with pytest.raises(ToolError) as exc:
         await mcp_call("studio_list", {"notebook": NB_ID, "kind": bad})
     assert "unknown kind" in str(exc.value)
+
+
+async def test_studio_list_summary_truncates_long_note(mcp_call, mock_client) -> None:
+    """A note longer than NOTE_PREVIEW_CHARS → preview capped at NOTE_PREVIEW_CHARS + ``…``,
+    ``char_count`` is the FULL body length, and the full ``content`` key is dropped."""
+    from notebooklm.mcp.tools._studio_items import NOTE_PREVIEW_CHARS
+
+    body = "x" * (NOTE_PREVIEW_CHARS + 50)
+    mock_client.notes.list = AsyncMock(
+        return_value=[FakeNote(id=_NOTE_ID, title="Long", content=body)]
+    )
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    result = await mcp_call("studio_list", {"notebook": NB_ID})
+    note = result.structured_content["items"][0]
+    assert note["content_preview"] == "x" * NOTE_PREVIEW_CHARS + "…"
+    assert note["char_count"] == NOTE_PREVIEW_CHARS + 50
+    assert "content" not in note
+
+
+@pytest.mark.parametrize(
+    "body, expected_preview, expected_count",
+    [
+        pytest.param("y" * 200, "y" * 200, 200, id="exactly-preview-chars-no-ellipsis"),
+        pytest.param("", "", 0, id="empty-body"),
+        pytest.param(None, "", 0, id="none-body"),
+    ],
+)
+async def test_studio_list_summary_boundary_and_empty(
+    mcp_call, mock_client, body, expected_preview, expected_count
+) -> None:
+    """Boundary/empty note bodies: exactly NOTE_PREVIEW_CHARS chars → no ``…``; an empty
+    or ``None`` body → ``content_preview=""`` / ``char_count=0`` (no crash)."""
+    mock_client.notes.list = AsyncMock(
+        return_value=[FakeNote(id=_NOTE_ID, title="Edge", content=body)]
+    )
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    result = await mcp_call("studio_list", {"notebook": NB_ID})
+    note = result.structured_content["items"][0]
+    assert note["content_preview"] == expected_preview
+    assert note["char_count"] == expected_count
+    assert "content" not in note
+
+
+async def test_studio_list_detail_full_returns_body(mcp_call, mock_client) -> None:
+    """``detail="full"`` returns each note's full ``content`` (no preview/char_count)."""
+    mock_client.notes.list = AsyncMock(
+        return_value=[FakeNote(id=_NOTE_ID, title="My Note", content="the full body")]
+    )
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    result = await mcp_call("studio_list", {"notebook": NB_ID, "detail": "full"})
+    note = result.structured_content["items"][0]
+    assert note["content"] == "the full body"
+    assert "content_preview" not in note
+    assert "char_count" not in note
+
+
+async def test_studio_list_item_single_fetch_returns_full_body(mcp_call, mock_client) -> None:
+    """``item=<note ref>`` returns the note's FULL ``content`` even under the default
+    summary mode — the single-fetch path is how a full body stays reachable."""
+    body = "z" * 500
+    mock_client.notes.list = AsyncMock(
+        return_value=[FakeNote(id=_NOTE_ID, title="My Note", content=body)]
+    )
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    result = await mcp_call("studio_list", {"notebook": NB_ID, "item": "My Note"})
+    note = result.structured_content["items"][0]
+    assert note["content"] == body
+    assert "content_preview" not in note
+
+
+async def test_studio_list_summary_leaves_artifacts_untouched(mcp_call, mock_client) -> None:
+    """An artifact item (no body) is identical in summary vs full — no preview/char_count."""
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[_completed_artifact("art1", "My Podcast")])
+    summary = await mcp_call("studio_list", {"notebook": NB_ID})
+    full = await mcp_call("studio_list", {"notebook": NB_ID, "detail": "full"})
+    assert summary.structured_content["items"] == full.structured_content["items"]
+    art = summary.structured_content["items"][0]
+    assert "content_preview" not in art
+    assert "char_count" not in art
+
+
+async def test_studio_list_rejects_bad_detail(mcp_call, mock_client) -> None:
+    """A ``detail`` outside the summary|full enum is rejected at the schema boundary
+    (mirrors ``source_read``'s invalid-``detail`` test)."""
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    with pytest.raises(ToolError):
+        await mcp_call("studio_list", {"notebook": NB_ID, "detail": "bogus"})
 
 
 # ---------------------------------------------------------------------------
