@@ -7,11 +7,9 @@ injected ``resolve_notebook_id`` / ``resolve_note_id`` callables shaped for the
 CLI; since the MCP adapter resolves refs up front it passes the shared
 pass-through resolvers, which return the already-resolved ids unchanged.
 
-Split into verbs (``note_create`` / ``note_list`` / ``note_update`` /
-``note_delete``), NOT an ``action`` enum. ``note_delete`` follows the two-step
-confirm contract; ``note_list`` is read-only (and single-fetches one note by ref
-when ``note`` is given). ``note_update`` updates content and/or title
-(title-only = rename).
+Verbs: ``note_save`` (create-or-update upsert — create when ``note`` is omitted,
+update when given), ``note_list`` (read-only; single-fetches one note by ref when
+``note`` is given), ``note_delete`` (two-step confirm). NOT an ``action`` enum.
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
@@ -38,27 +36,64 @@ def register(mcp: Any) -> None:
     """Register the note tools on ``mcp``."""
 
     @mcp.tool
-    async def note_create(ctx: Context, notebook: str, title: str, content: str) -> dict[str, Any]:
-        """Create a note in a notebook. Accepts a notebook name or ID."""
+    async def note_save(
+        ctx: Context,
+        notebook: str,
+        note: str | None = None,
+        title: str | None = None,
+        content: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a note, or update an existing one (upsert). Accepts a notebook name or ID.
+
+        Mode is chosen SOLELY by ``note``:
+        * ``note`` omitted → **create** a new note; ``title`` AND ``content`` are
+          both required. Returns ``status="created"``.
+        * ``note`` given (a note name or id) → **update** that note; supply ``title``
+          and/or ``content`` (at least one — title-only renames, content-only
+          replaces the body). A ref that doesn't resolve is a not-found error, NEVER
+          a stray create. Returns ``status="updated"``.
+        """
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
-            result = await core.execute_note_create(
+            if note is None:
+                if not title or not content:
+                    raise ValidationError(
+                        "title and content are required to create a note "
+                        "(omit 'note' to create, or pass 'note' to update)."
+                    )
+                result = await core.execute_note_create(
+                    client,
+                    nb_id,
+                    title,
+                    content,
+                    resolve_notebook_id=passthrough_notebook_id,
+                )
+                return {
+                    "status": "created",
+                    "notebook_id": result.notebook_id,
+                    "note_id": result.note_id,
+                    "title": result.title,
+                    # ``created`` kept for back-compat alongside the ``status`` envelope.
+                    "created": True,
+                }
+            # update
+            if title is None and content is None:
+                raise ValidationError("provide 'title' and/or 'content' to update a note.")
+            note_id = await resolve_note(client, nb_id, note)
+            saved = await core.execute_note_save(
                 client,
                 nb_id,
-                title,
-                content,
+                note_id,
+                title=title,
+                content=content,
                 resolve_notebook_id=passthrough_notebook_id,
+                resolve_note_id=passthrough_child_id,
             )
             return {
-                "status": "created",
-                "notebook_id": result.notebook_id,
-                "title": result.title,
-                "note_id": result.note_id,
-                # The facade raises on failure (no degenerate result), so
-                # reaching here always means the note was really created.
-                # ``created`` kept for back-compat alongside the ``status`` envelope.
-                "created": True,
+                "status": "updated",
+                "notebook_id": saved.notebook_id,
+                "note_id": saved.note_id,
             }
 
     @mcp.tool(annotations=READ_ONLY)
@@ -114,41 +149,6 @@ def register(mcp: Any) -> None:
             notes = await client.notes.list(nb_id)
             page, meta = paginate(to_jsonable(notes), limit, offset)
             return {"notebook_id": nb_id, "notes": page, **meta}
-
-    @mcp.tool
-    async def note_update(
-        ctx: Context,
-        notebook: str,
-        note: str,
-        content: str | None = None,
-        title: str | None = None,
-    ) -> dict[str, Any]:
-        """Update a note's content and/or title. Accepts a notebook/note name or ID.
-
-        Supply ``content``, ``title``, or both. Passing only ``title`` renames the
-        note while leaving its body untouched; passing only ``content`` replaces
-        the body and keeps the title. At least one of the two is required.
-        """
-        client = get_client(ctx)
-        with mcp_errors():
-            if content is None and title is None:
-                raise ValidationError("provide 'content' and/or 'title' to update")
-            nb_id = await resolve_notebook(client, notebook)
-            note_id = await resolve_note(client, nb_id, note)
-            result = await core.execute_note_save(
-                client,
-                nb_id,
-                note_id,
-                title=title,
-                content=content,
-                resolve_notebook_id=passthrough_notebook_id,
-                resolve_note_id=passthrough_child_id,
-            )
-            return {
-                "status": "updated",
-                "notebook_id": result.notebook_id,
-                "note_id": result.note_id,
-            }
 
     @mcp.tool(annotations=DESTRUCTIVE)
     async def note_delete(

@@ -48,7 +48,7 @@ NOTE_UPDATE_NOTE_ID = "39f5e968-5eab-4a8a-9bd7-d10756febe0c"  # mcp_note_update.
 
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("notes_create.yaml")
-async def test_mcp_note_create_over_vcr() -> None:
+async def test_mcp_note_save_create_over_vcr() -> None:
     """``note_create`` creates a note through the real client over VCR.
 
     End-to-end: ``note_create`` tool -> ``resolve_notebook`` (full UUID, no
@@ -62,7 +62,7 @@ async def test_mcp_note_create_over_vcr() -> None:
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
-            "note_create",
+            "note_save",
             {
                 "notebook": NOTE_CREATE_NOTEBOOK_ID,
                 "title": "VCR Test Note",
@@ -159,7 +159,7 @@ async def test_mcp_note_delete_two_step_confirm_over_vcr() -> None:
 
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("mcp_note_update.yaml")
-async def test_mcp_note_update_over_vcr() -> None:
+async def test_mcp_note_save_update_over_vcr() -> None:
     """``note_update`` updates a note's content through the real client over VCR.
 
     End-to-end: ``note_update`` tool -> ``resolve_notebook`` / ``resolve_note``
@@ -176,7 +176,7 @@ async def test_mcp_note_update_over_vcr() -> None:
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
-            "note_update",
+            "note_save",
             {
                 "notebook": NOTE_UPDATE_NOTEBOOK_ID,
                 "note": NOTE_UPDATE_NOTE_ID,

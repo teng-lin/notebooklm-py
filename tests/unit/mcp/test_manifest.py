@@ -5,7 +5,7 @@ in-memory FastMCP ``Client``, then pins:
 
 * the EXACT set of tool names — so a tool can't be silently added, removed, or
   renamed without updating this gate;
-* a tool-count ceiling (40): the current surface is 35 tools; the next tool
+* a tool-count ceiling (40): the current surface is 34 tools; the next tool
   stays under the ceiling, but an accidental explosion still trips the gate;
 * the ``destructiveHint`` annotation + a ``confirm`` parameter on every
   destructive (delete) tool; and
@@ -23,7 +23,7 @@ import pytest
 pytest.importorskip("fastmcp")
 
 
-#: The complete, pinned tool surface. 35 tools across 8 domains. Adding or
+#: The complete, pinned tool surface. 34 tools across 8 domains. Adding or
 #: removing a tool MUST update this set (and the ceiling below if it grows).
 EXPECTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -44,10 +44,9 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "chat_ask",
         "chat_configure",
         "suggest_prompts",
-        # Notes (4)
-        "note_create",
+        # Notes (3)
+        "note_save",
         "note_list",
-        "note_update",
         "note_delete",
         # Artifacts (8)
         "studio_list",
