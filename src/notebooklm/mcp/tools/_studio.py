@@ -65,10 +65,14 @@ def hyphenated_type(kind: ArtifactType) -> str:
     return _ARTIFACT_TYPE_HYPHEN.get(kind, kind.value)
 
 
-#: Every valid Studio ``type`` / ``kind`` value: ``note`` plus each artifact kind's
-#: hyphenated form. Used to reject an unknown ``kind`` filter up front rather than
-#: silently returning an empty page (or a false NOT_FOUND on the by-ref path).
-STUDIO_KINDS: frozenset[str] = frozenset({"note"} | {hyphenated_type(t) for t in ArtifactType})
+#: Valid Studio ``kind`` FILTER values: ``note`` plus each concrete artifact kind's
+#: hyphenated form. Used to reject an unknown ``kind`` up front rather than silently
+#: returning an empty page (or a false NOT_FOUND on the by-ref path). ``unknown`` is
+#: a pass-through *display* value for an unrecognized artifact, NOT a filterable kind,
+#: so it is excluded here.
+STUDIO_KINDS: frozenset[str] = frozenset(
+    {"note"} | {hyphenated_type(t) for t in ArtifactType if t is not ArtifactType.UNKNOWN}
+)
 
 
 @dataclass(frozen=True)

@@ -424,7 +424,8 @@ def register(mcp: Any) -> None:
         * ``item`` (a name or id — note OR artifact) fetches just that one item,
           returned as a 1-element ``items`` list (``total`` 1); a ref that matches
           nothing is a NOT_FOUND error. ``limit`` / ``offset`` are ignored when
-          ``item`` is given (but still validated).
+          ``item`` is given (but still validated). If ``kind`` is also given it
+          scopes the resolution — ``item`` is matched only among that ``type``.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -880,6 +881,7 @@ def register(mcp: Any) -> None:
         """
         client = get_client(ctx)
         with mcp_errors():
+            item = item.strip()
             nb_id = await resolve_notebook(client, notebook)
             try:
                 resolved = await resolve_studio_item(client, nb_id, item)
@@ -888,23 +890,23 @@ def register(mcp: Any) -> None:
                 # send down the artifact delete path (a present note would have been
                 # found in the merged list), preserving delete-by-id idempotency.
                 # A non-UUID (prefix/title) miss stays a real NOT_FOUND.
-                if not FULL_ID_PATTERN.fullmatch(item.strip()):
+                if not FULL_ID_PATTERN.fullmatch(item):
                     raise
                 if not confirm:
                     return needs_confirmation(
                         {
                             "action": "delete_studio_item",
                             "notebook_id": nb_id,
-                            "item_id": item.strip(),
+                            "item_id": item,
                             "type": None,
                             "title": None,
                         }
                     )
-                was_note_backed = await artifact_core.delete_artifact(client, nb_id, item.strip())
+                was_note_backed = await artifact_core.delete_artifact(client, nb_id, item)
                 return {
                     "status": "deleted",
                     "notebook_id": nb_id,
-                    "item_id": item.strip(),
+                    "item_id": item,
                     "type": "mind-map" if was_note_backed else "unknown",
                     "was_note_backed": was_note_backed,
                 }
@@ -925,6 +927,9 @@ def register(mcp: Any) -> None:
                     "notebook_id": nb_id,
                     "item_id": resolved.item_id,
                     "type": "note",
+                    # Always present for a stable wire shape (a text note is never a
+                    # note-backed mind-map artifact).
+                    "was_note_backed": False,
                 }
             was_note_backed = await artifact_core.delete_artifact(client, nb_id, resolved.item_id)
             return {

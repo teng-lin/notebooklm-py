@@ -221,10 +221,11 @@ async def test_studio_list_kind_filter(mcp_call, mock_client) -> None:
     assert items[0]["id"] == _NOTE_ID
 
 
-@pytest.mark.parametrize("bad", ["mind_map", "slide_deck", "note-backed", "bogus"])
+@pytest.mark.parametrize("bad", ["mind_map", "slide_deck", "note-backed", "bogus", "unknown"])
 async def test_studio_list_rejects_unknown_kind(mcp_call, mock_client, bad) -> None:
     """An unknown/underscored ``kind`` is a clean VALIDATION error, not a silently
-    empty page (or a false NOT_FOUND on the by-ref path)."""
+    empty page (or a false NOT_FOUND on the by-ref path). ``unknown`` is a display-only
+    pass-through value, not a filterable kind, so it's rejected too."""
     mock_client.notes.list = AsyncMock(return_value=[])
     mock_client.artifacts.list = AsyncMock(return_value=[])
     with pytest.raises(ToolError) as exc:
@@ -1382,6 +1383,7 @@ async def test_studio_delete_note_routes_to_note_delete(mcp_call, mock_client) -
         "notebook_id": NB_ID,
         "item_id": _NOTE_ID,
         "type": "note",
+        "was_note_backed": False,
     }
     mock_client.notes.delete.assert_awaited_once_with(NB_ID, _NOTE_ID)
     mock_client.artifacts.delete.assert_not_called()
