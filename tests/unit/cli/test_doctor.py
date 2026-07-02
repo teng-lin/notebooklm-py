@@ -51,7 +51,10 @@ def _invoke_json(runner, args: list[str], *, exit_code: int = 0) -> dict:
 def test_doctor_reports_clean_profile_layout(runner, isolated_notebooklm_home):
     home = isolated_notebooklm_home
     profile_dir = _make_profile(home)
-    _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
+    )
     _write_json(home / "config.json", {"default_profile": "default"})
 
     data = _invoke_json(runner, [])
@@ -61,7 +64,7 @@ def test_doctor_reports_clean_profile_layout(runner, isolated_notebooklm_home):
     assert data["checks"]["migration"] == {"status": "pass", "detail": "complete"}
     assert data["checks"]["auth"] == {
         "status": "pass",
-        "detail": "local SID cookie present (1 cookies)",
+        "detail": "local auth cookies present (2 cookies)",
     }
     assert data["checks"]["config"] == {
         "status": "pass",
@@ -77,7 +80,10 @@ def test_doctor_reports_clean_profile_layout(runner, isolated_notebooklm_home):
 
 def test_doctor_reports_legacy_layout_without_startup_migration(runner, isolated_notebooklm_home):
     home = isolated_notebooklm_home
-    _write_json(home / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+    _write_json(
+        home / "storage_state.json",
+        _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
+    )
 
     data = _invoke_json(runner, ["--storage", str(home / "unused.json")], exit_code=1)
 
@@ -88,7 +94,7 @@ def test_doctor_reports_legacy_layout_without_startup_migration(runner, isolated
     assert data["checks"]["profile_dir"]["status"] == "fail"
     assert data["checks"]["auth"] == {
         "status": "pass",
-        "detail": "local SID cookie present (1 cookies)",
+        "detail": "local auth cookies present (2 cookies)",
     }
 
 
@@ -149,6 +155,20 @@ def test_doctor_reports_cookies_missing_sid(runner, isolated_notebooklm_home):
     data = _invoke_json(runner, [], exit_code=1)
 
     assert data["checks"]["auth"] == {"status": "fail", "detail": "SID cookie missing"}
+
+
+def test_doctor_warns_when_psidts_missing(runner, isolated_notebooklm_home):
+    """SID but no __Secure-1PSIDTS warns (not fails) and keeps exit 0 (issue #1753)."""
+    home = isolated_notebooklm_home
+    profile_dir = _make_profile(home)
+    _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+    _write_json(home / "config.json", {"default_profile": "default"})
+
+    # A lone SID is a warn, not a failure, so doctor still exits 0.
+    data = _invoke_json(runner, [], exit_code=0)
+
+    assert data["checks"]["auth"]["status"] == "warn"
+    assert "__Secure-1PSIDTS missing" in data["checks"]["auth"]["detail"]
 
 
 def test_doctor_warns_when_config_default_profile_is_missing(runner, isolated_notebooklm_home):
@@ -318,7 +338,10 @@ def test_doctor_text_mode_exits_zero_when_all_pass(runner, isolated_notebooklm_h
     """
     home = isolated_notebooklm_home
     profile_dir = _make_profile(home)
-    _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
+    )
     _write_json(home / "config.json", {"default_profile": "default"})
 
     result = runner.invoke(cli, ["doctor"])

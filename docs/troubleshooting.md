@@ -98,6 +98,31 @@ security find-generic-password -s 'Chrome Safe Storage' -a 'Chrome' -w >/dev/nul
 ```
 Prints `OK` without prompting → keychain is unlocked and your user has access; the prompt you saw is the per-binary ACL re-asking for a new caller (your Python). Click *Always Allow* once and that binary is permanently approved. If it prompts → run `security unlock-keychain` first.
 
+#### Windows: `Missing required cookies: __Secure-1PSIDTS` after login, and `--browser-cookies` "Could not decrypt"
+
+On Windows, both credential paths can leave you without `__Secure-1PSIDTS` (the rotating freshness partner of `__Secure-1PSID` that every real RPC needs — see [Automatic Token Refresh](#automatic-token-refresh) above), so `notebooklm login` reports success but `notebooklm list` then fails with `Missing required cookies: __Secure-1PSIDTS` (issue [#1753](https://github.com/teng-lin/notebooklm-py/issues/1753)). Two distinct causes are in play:
+
+- **`notebooklm login --browser chrome` (Playwright flow).** The interactive browser completes Google sign-in, but Google may serve an automation-detected session *without* the token-binding cookie (and sometimes without the secondary-binding cookies `OSID` / `APISID` + `SAPISID` the automatic `RotateCookies` recovery needs to re-mint it). When that happens the saved `storage_state.json` is genuinely incomplete and re-running the same flow reproduces it.
+- **`notebooklm login --browser-cookies chrome` (or `edge`) → `Could not decrypt chrome cookies`.** Chrome 127+ (and current Edge) protect the cookie database with **App-Bound Encryption (ABE)**: the decryption key is bound to the browser process via a Windows service, so no external process can read it. This blocks every cookie-extraction library (`rookiepy`, `browser-cookie3`, `pycookiecheat`), not just `notebooklm-py`. There is no flag that bypasses ABE.
+
+Note that `notebooklm doctor` may still say the auth check passed with an older client — the check historically only looked for `SID`. Current versions surface a **warn** row when `__Secure-1PSIDTS` is missing (`auth check --test` has always reported the real error). Trust `notebooklm auth check --test` / `notebooklm list` over a green `doctor` for "is this session actually usable".
+
+Workarounds, most reliable first:
+
+1. **Use Firefox as the cookie source.** Firefox stores cookies in a plain SQLite DB — **no App-Bound Encryption** — so extraction just works. Sign in to Google in Firefox, then:
+   ```bash
+   notebooklm login --browser-cookies firefox
+   ```
+   (If your Google session lives in a Multi-Account Containers tab, use the explicit `firefox::Container` / `firefox::none` syntax — see the [macOS section above](#macos---browser-cookies-prompts-for-your-password) for the container notes.) This is the simplest fix for the ABE case.
+
+2. **Set up a master token (best for unattended / long-lived use).** `notebooklm login --master-token` (needs the `[headless]` extra: `pip install "notebooklm-py[headless]"`) stores a durable `master_token.json` beside your profile. When cookies are missing or fully expired, the client re-mints a complete, fresh cookie jar — including `__Secure-1PSIDTS` — from the master token in-process, so it does not depend on what the browser login happened to hand back. If Google blocks sign-in inside the automated capture window ("This browser or app may not be secure"), use the CDP-attach or manual `oauth_token` variants described in the [master-token troubleshooting note](#automatic-token-refresh) above. See also [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).
+
+3. **Retry the Playwright login on a fresh profile.** Sometimes a stale persistent profile is the culprit rather than automation detection:
+   ```bash
+   notebooklm login --fresh
+   ```
+   If three attempts (normal, `--fresh` + password, `--fresh` + passkey) all reproduce the missing cookie, treat it as the automation-detection case and switch to Firefox or a master token above.
+
 #### "Unauthorized" or redirect to login page
 
 **Cause:** Session cookies expired (happens every few weeks).

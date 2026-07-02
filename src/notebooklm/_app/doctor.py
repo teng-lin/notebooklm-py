@@ -114,12 +114,35 @@ def _check_auth(storage_path: Path) -> dict[str, str]:
         if not isinstance(cookies, list):
             raise ValueError("cookies is not a list")
         cookie_names = {c.get("name") for c in cookies if isinstance(c, dict)}
-        if "SID" in cookie_names:
+        if "SID" not in cookie_names:
+            return {"status": "fail", "detail": "SID cookie missing"}
+        # SID alone does not make a session usable. Google's homepage check also
+        # requires __Secure-1PSIDTS — the rotating freshness partner of
+        # __Secure-1PSID and the second half of the Tier-1 MINIMUM_REQUIRED_COOKIES
+        # set every real RPC enforces. It legitimately rotates and can be re-minted
+        # at runtime (RotateCookies), so a static, offline probe like doctor must
+        # not call its absence a hard failure — that would false-negative a
+        # recoverable session. But its absence is the #1 reason a session that
+        # looks authenticated is actually unusable (issue #1753; common on Windows,
+        # where Chrome 127+ App-Bound Encryption blocks --browser-cookies decryption
+        # and automated login can be served a session without the token-binding
+        # cookie). Surface it as a warn so doctor stops greenlighting an unusable
+        # session, without flipping the exit code on a session that may still heal.
+        if "__Secure-1PSIDTS" not in cookie_names:
             return {
-                "status": "pass",
-                "detail": f"local SID cookie present ({len(cookie_names)} cookies)",
+                "status": "warn",
+                "detail": (
+                    f"SID present but __Secure-1PSIDTS missing ({len(cookie_names)} cookies); "
+                    "the session may be unusable until the cookie is refreshed. "
+                    "Re-run 'notebooklm login'; on Windows (Chrome 127+ App-Bound "
+                    "Encryption) use '--browser-cookies firefox' or set up "
+                    "'notebooklm login --master-token'."
+                ),
             }
-        return {"status": "fail", "detail": "SID cookie missing"}
+        return {
+            "status": "pass",
+            "detail": f"local auth cookies present ({len(cookie_names)} cookies)",
+        }
     except (json.JSONDecodeError, OSError, ValueError) as e:
         return {"status": "fail", "detail": f"invalid storage file: {e}"}
 

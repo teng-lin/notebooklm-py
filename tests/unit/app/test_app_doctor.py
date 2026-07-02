@@ -96,7 +96,10 @@ def _storage(cookies: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
 
 def test_reports_clean_profile_layout(home: Path) -> None:
     profile_dir = _make_profile(home)
-    _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
+    )
     _write_json(home / "config.json", {"default_profile": "default"})
 
     report = _run()
@@ -106,7 +109,7 @@ def test_reports_clean_profile_layout(home: Path) -> None:
     assert report.checks["migration"] == {"status": "pass", "detail": "complete"}
     assert report.checks["auth"] == {
         "status": "pass",
-        "detail": "local SID cookie present (1 cookies)",
+        "detail": "local auth cookies present (2 cookies)",
     }
     assert report.checks["config"] == {
         "status": "pass",
@@ -125,16 +128,19 @@ def test_reports_clean_profile_layout(home: Path) -> None:
 
 
 def test_reports_legacy_layout_without_migration(home: Path) -> None:
-    _write_json(home / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+    _write_json(
+        home / "storage_state.json",
+        _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
+    )
 
     report = _run()
 
     assert report.checks["migration"] == {"status": "fail", "detail": "legacy layout detected"}
     assert report.checks["profile_dir"]["status"] == "fail"
-    # Legacy storage_state.json still carries a SID -> auth passes.
+    # Legacy storage_state.json still carries the Tier-1 cookie set -> auth passes.
     assert report.checks["auth"] == {
         "status": "pass",
-        "detail": "local SID cookie present (1 cookies)",
+        "detail": "local auth cookies present (2 cookies)",
     }
     assert report.has_failures
 
@@ -209,6 +215,24 @@ def test_reports_cookies_missing_sid(home: Path) -> None:
     report = _run()
 
     assert report.checks["auth"] == {"status": "fail", "detail": "SID cookie missing"}
+
+
+def test_warns_when_sid_present_but_psidts_missing(home: Path) -> None:
+    """SID without __Secure-1PSIDTS is a warn, not a pass or a fail (issue #1753).
+
+    The session looks authenticated (SID present) but is missing the Tier-1
+    freshness partner every real RPC enforces. doctor must stop greenlighting
+    it, yet not hard-fail a session that may still re-mint the cookie at
+    runtime — so it lands as a warn that does not flip ``has_failures``.
+    """
+    profile_dir = _make_profile(home)
+    _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+
+    report = _run()
+
+    assert report.checks["auth"]["status"] == "warn"
+    assert "__Secure-1PSIDTS missing" in report.checks["auth"]["detail"]
+    assert not report.has_failures
 
 
 # ---------------------------------------------------------------------------

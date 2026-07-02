@@ -253,6 +253,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`notebooklm doctor` no longer greenlights a session that is missing
+  `__Secure-1PSIDTS`** (#1753). The auth check previously passed on `SID`
+  presence alone, so a login that captured only half the Tier-1 cookie set — a
+  common outcome on Windows, where Chrome 127+ App-Bound Encryption blocks
+  `--browser-cookies` decryption and an automation-detected Playwright login can
+  be served a session without the rotating token-binding cookie — reported "All
+  checks passed" even though every real RPC then failed with `Missing required
+  cookies: __Secure-1PSIDTS`. Doctor now emits a **warn** row (not a hard fail —
+  the cookie legitimately rotates and can be re-minted at runtime, so a static
+  offline probe must not false-negative a recoverable session) pointing at the
+  Firefox `--browser-cookies` and `--master-token` workarounds. `auth check
+  --test` already reported the real error and is unchanged. New
+  [troubleshooting.md](docs/troubleshooting.md) section documents the Windows
+  App-Bound Encryption limitation and its workarounds.
+
 - **Video Overview visual-style values now match the live NotebookLM Web UI**
   (#1594). `VideoStyle` previously used stale numeric values, so several named
   styles could serialize as the wrong style on the wire. `CUSTOM` now reflects
