@@ -598,12 +598,31 @@ def register(mcp: Any) -> None:
                     # so only the completion filter is needed. ``_resolve_artifact_id``
                     # (full-UUID fast-path / unique prefix / case-insensitive canonicalize)
                     # raises ValidationError on a miss, AmbiguousIdError on an ambiguous prefix.
-                    candidates = [
-                        {"id": a.id, "title": a.title}
-                        for a in await client.artifacts.list(nb_id, spec.kind)
-                        if a.is_completed
-                    ]
-                    artifact_id = _resolve_artifact_id(candidates, artifact_id)
+                    typed = await client.artifacts.list(nb_id, spec.kind)
+                    candidates = [{"id": a.id, "title": a.title} for a in typed if a.is_completed]
+                    try:
+                        artifact_id = _resolve_artifact_id(candidates, artifact_id)
+                    except ValidationError:
+                        # The is_completed filter drops a still-generating artifact from the
+                        # candidates, so a full id for one surfaces as a bare "not found".
+                        # Detect that case from the SAME already-fetched list (no extra RPC)
+                        # and give the actionable message the ``artifact`` ref path gives, so
+                        # an agent that just read the id from studio_list waits instead of
+                        # retry-looping. (A prefix/ambiguous ref falls through to the original.)
+                        incomplete = next(
+                            (
+                                a
+                                for a in typed
+                                if not a.is_completed and a.id.lower() == artifact_id.lower()
+                            ),
+                            None,
+                        )
+                        if incomplete is not None:
+                            raise ValidationError(
+                                f"Artifact {artifact_id!r} is not finished generating "
+                                f"(status: {incomplete.status_str}); wait for it to complete."
+                            ) from None
+                        raise
                 return _broker_download(cfg, nb_id, artifact_type, output_format, artifact_id)
             # No file-transfer config. On the remote (http) connector the server
             # filesystem is unreachable REGARDLESS of `path`, so fail clearly here —

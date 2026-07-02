@@ -364,9 +364,9 @@ async def test_artifact_download_remote_unknown_aid_fails_before_mint(mock_clien
 
 
 async def test_artifact_download_remote_incomplete_aid_excluded(mock_client, config) -> None:
-    # An id that exists but is NOT completed is filtered out by the is_completed
-    # candidate filter → fails at mint time (documents the deliberate semantics: an
-    # explicit id with zero completed matches fails here, not with a browser 400).
+    # A full id that exists but is NOT completed is dropped by the is_completed filter,
+    # yet surfaces the SAME actionable "not finished generating" message the ref path
+    # gives (detected from the already-fetched list, no browser 400, no extra RPC).
     mock_client.artifacts.list = AsyncMock(return_value=[_audio_artifact(_AID_A, completed=False)])
     with pytest.raises(ToolError) as excinfo:
         await _call(
@@ -375,7 +375,7 @@ async def test_artifact_download_remote_incomplete_aid_excluded(mock_client, con
             "studio_download",
             {"notebook": NB_ID, "artifact_type": "audio", "artifact_id": _AID_A},
         )
-    assert "not found" in str(excinfo.value)
+    assert "not finished generating" in str(excinfo.value)
 
 
 async def test_artifact_download_remote_ambiguous_aid_prefix_fails_before_mint(

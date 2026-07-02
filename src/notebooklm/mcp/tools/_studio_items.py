@@ -152,7 +152,9 @@ def summarize_studio_item(item: dict[str, Any]) -> dict[str, Any]:
     empty/``None`` body is still summarized (``content_preview=""`` / ``char_count=0``).
     """
     if item.get("type") != "note":
-        return item
+        # Return a fresh dict (not the original ref) so the projection's contract is
+        # symmetric — a caller can never mutate the in-flight items list through it.
+        return dict(item)
     content = item.get("content") or ""
     preview = content[:NOTE_PREVIEW_CHARS]
     if len(content) > NOTE_PREVIEW_CHARS:
