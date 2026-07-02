@@ -226,7 +226,9 @@ class SettingsAPI:
             self._GET_SETTINGS_PREFIX,
             self._GET_SETTINGS_TAIL,
             method_id=RPCMethod.GET_USER_SETTINGS.value,
-            source="_settings.get_output_language",
+            # Describes the extraction site, not any one public caller — this
+            # helper backs both get_output_language() and get_user_settings().
+            source="_settings._extract_output_language",
         )
         self._log_language_result(language, "Current output language")
         return language

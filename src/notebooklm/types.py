@@ -139,6 +139,8 @@ _CITED_SOURCE_SELECTION_TYPE_HINT_GLOBALS = (ResearchSourceInput,)
 
 __all__ = [
     # Dataclasses
+    "AccountLimits",
+    "UserSettings",
     "CitedSourceSelection",
     "ConnectionLimits",
     "ClientMetricsSnapshot",

@@ -1,4 +1,6 @@
 [
+  "AccountLimits",
+  "UserSettings",
   "CitedSourceSelection",
   "ConnectionLimits",
   "ClientMetricsSnapshot",
