@@ -1,32 +1,26 @@
-"""MCP Studio mutating-tool VCR tests (reuse-only).
+"""MCP Studio mutating-tool VCR tests.
 
 Full-stack coverage (MCP tool -> ``artifacts.py`` Studio adapter -> real
-``NotebookLMClient`` -> VCR-replayed RPC) for the Studio ops that were unit-only
-before #1733 and whose exact RPC sequence a recorded cassette already holds:
-``studio_retry`` and ``studio_get_prompt``. Reuses the SAME cassettes the CLI
-``artifact`` VCR suite recorded — ``NOTEBOOKLM_VCR_RECORD`` is deliberately NOT set.
+``NotebookLMClient`` -> VCR-replayed RPC) for every Studio mutating/read op that
+was unit-only before #1733: ``studio_retry``, ``studio_get_prompt``,
+``studio_rename``, and ``studio_delete`` (both cross-type routes). Replay only —
+``NOTEBOOKLM_VCR_RECORD`` is deliberately NOT set here.
 
-Every tool is invoked with FULL canonical UUIDs (the cassette's recorded
-notebook/artifact ids) so :func:`resolve_notebook` / :func:`resolve_artifact`
-take their full-UUID fast path and never add a ``LIST_NOTEBOOKS`` /
-``LIST_ARTIFACTS`` preflight the cassette lacks. The batchexecute body matcher is
-shape-only, so the id VALUES are decorative — the RPC *sequence* and body *shape*
-are what replay.
+Two cassette provenances:
 
-NOT covered here — both need a live-auth recording session to capture a RPC
-sequence no existing cassette holds (see #1733):
+* ``studio_retry`` / ``studio_get_prompt`` REUSE cassettes the CLI ``artifact``
+  VCR suite already recorded (``artifacts_retry_failed.yaml`` / ``artifacts_list.yaml``).
+* ``studio_rename`` / ``studio_delete`` needed a bespoke recording — their
+  merged-list / kind-probe preflight issues ``GET_NOTES_AND_MIND_MAPS`` (``cFji9``)
+  **twice or thrice** + ``LIST_ARTIFACTS`` (``gArtLc``) before the mutation RPC, a
+  sequence no CLI cassette holds. The ``mcp_studio_*.yaml`` cassettes were recorded
+  against a throwaway scratch notebook by ``tests/scripts/record_mcp_studio_cassettes.py``.
 
-* ``studio_delete``'s cross-type routing — its merged notes+artifacts preflight
-  issues ``GET_NOTES_AND_MIND_MAPS`` (``cFji9``) **twice** + ``LIST_ARTIFACTS``
-  (``gArtLc``) before the delete RPC.
-* ``studio_rename`` — its kind-aware ``mind_maps.list`` probe likewise issues
-  ``cFji9`` **twice** + ``gArtLc`` (``list_note_backed`` + the interactive-map
-  ``artifacts.list``) before ``RENAME_ARTIFACT`` (``rc3d8d``); the CLI
-  ``artifacts_rename.yaml`` predates that probe and carries a single ``cFji9``.
-
-Both are otherwise unit-covered (``tests/unit/mcp/test_artifacts.py``) and their
-underlying mutation RPCs (``V5N4be`` / ``AH0mwd`` / ``rc3d8d``) are already
-VCR-exercised by the CLI suite, so neither introduces an un-tested wire shape.
+Every tool is invoked with the FULL canonical UUIDs recorded in each cassette so
+:func:`resolve_notebook` / :func:`resolve_artifact` take their full-UUID fast path.
+For ``studio_delete`` / ``studio_rename`` the id VALUES are load-bearing (not
+decorative): the tool resolves the ``item`` over the merged list response, so the
+ref must match an id actually recorded there.
 """
 
 from __future__ import annotations
@@ -49,6 +43,13 @@ RETRY_ARTIFACT_ID = "11111111-2222-3333-4444-555555555555"
 # stored generation prompt (decoded from the recorded response).
 PROMPT_NOTEBOOK_ID = "c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e"
 PROMPT_ARTIFACT_ID = "fdd20d4a-f422-42b3-896c-60997035f4ca"
+
+# mcp_studio_*.yaml — recorded (scratch-notebook) ids. The notebook holds ONE note
+# and ONE report; studio_delete/rename resolve these ids over the merged list, so
+# the values must match the ids the recorded LIST responses carry.
+STUDIO_NOTEBOOK_ID = "9b8fb5be-3897-4360-8d19-fc7eae295747"
+STUDIO_REPORT_ID = "6384b603-5734-433c-b2d8-62b490ad4a54"
+STUDIO_NOTE_ID = "a1384eaf-25fa-43eb-ac76-8154f45c0a05"
 
 
 @pytest.mark.asyncio
@@ -99,3 +100,88 @@ async def test_mcp_studio_get_prompt_over_vcr() -> None:
     # This artifact records a prompt — a real string, not the valid-but-empty None.
     assert isinstance(structured["prompt"], str)
     assert structured["prompt"]
+
+
+@pytest.mark.asyncio
+@notebooklm_vcr.use_cassette("mcp_studio_rename.yaml")
+async def test_mcp_studio_rename_over_vcr() -> None:
+    """``studio_rename`` retitles a regular artifact through the real client over VCR.
+
+    End-to-end: tool -> ``resolve_artifact`` (full UUID, no list) ->
+    ``rename_artifact`` -> a kind-aware ``mind_maps.list`` probe
+    (``list_note_backed`` ``cFji9`` + ``artifacts.list`` ``gArtLc`` + facade
+    ``cFji9``; the id is NOT a mind map) -> ``client.artifacts.rename`` ->
+    ``RENAME_ARTIFACT`` (``rc3d8d``). Pins the ``{"status": "renamed", ...,
+    "is_mind_map": False}`` wire shape — the mutating rename RPC a mocked test
+    cannot validate.
+    """
+    async with build_mcp_client() as mcp_client:
+        result = await mcp_client.call_tool(
+            "studio_rename",
+            {
+                "notebook": STUDIO_NOTEBOOK_ID,
+                "artifact": STUDIO_REPORT_ID,
+                "new_title": "Renamed by VCR",
+            },
+        )
+
+    structured = result.structured_content
+    assert isinstance(structured, dict)
+    assert structured["status"] == "renamed"
+    assert structured["notebook_id"] == STUDIO_NOTEBOOK_ID
+    assert structured["artifact_id"] == STUDIO_REPORT_ID
+    assert structured["new_title"] == "Renamed by VCR"
+    assert structured["is_mind_map"] is False
+
+
+@pytest.mark.asyncio
+@notebooklm_vcr.use_cassette("mcp_studio_delete_note.yaml")
+async def test_mcp_studio_delete_note_over_vcr() -> None:
+    """``studio_delete`` of a NOTE routes to the note system (cross-type routing).
+
+    The headline #1733 proof: end-to-end, the merged notes+artifacts preflight
+    (``GET_NOTES_AND_MIND_MAPS`` ``cFji9`` ×2 + ``LIST_ARTIFACTS`` ``gArtLc``)
+    resolves ``item`` as a ``note`` and routes it to ``execute_note_delete`` ->
+    ``DELETE_NOTE`` (``AH0mwd``) — NOT the artifact delete path. ``confirm=True`` is
+    required; the default preview does not touch the wire.
+    """
+    async with build_mcp_client() as mcp_client:
+        result = await mcp_client.call_tool(
+            "studio_delete",
+            {"notebook": STUDIO_NOTEBOOK_ID, "item": STUDIO_NOTE_ID, "confirm": True},
+        )
+
+    structured = result.structured_content
+    assert isinstance(structured, dict)
+    assert structured["status"] == "deleted"
+    assert structured["notebook_id"] == STUDIO_NOTEBOOK_ID
+    assert structured["item_id"] == STUDIO_NOTE_ID
+    # Resolved as a note -> note-delete route (proves the cross-type discriminator).
+    assert structured["type"] == "note"
+    assert structured["was_note_backed"] is False
+
+
+@pytest.mark.asyncio
+@notebooklm_vcr.use_cassette("mcp_studio_delete_artifact.yaml")
+async def test_mcp_studio_delete_artifact_over_vcr() -> None:
+    """``studio_delete`` of a regular artifact routes to the artifact delete RPC.
+
+    The other cross-type branch: the merged preflight (``cFji9`` ×2 + ``gArtLc``)
+    resolves ``item`` as a ``report``, then ``delete_artifact``'s note-backed probe
+    (``list_note_backed`` ``cFji9``) finds no match and routes to
+    ``client.artifacts.delete`` -> ``DELETE_ARTIFACT`` (``V5N4be``).
+    """
+    async with build_mcp_client() as mcp_client:
+        result = await mcp_client.call_tool(
+            "studio_delete",
+            {"notebook": STUDIO_NOTEBOOK_ID, "item": STUDIO_REPORT_ID, "confirm": True},
+        )
+
+    structured = result.structured_content
+    assert isinstance(structured, dict)
+    assert structured["status"] == "deleted"
+    assert structured["notebook_id"] == STUDIO_NOTEBOOK_ID
+    assert structured["item_id"] == STUDIO_REPORT_ID
+    assert structured["type"] == "report"
+    # A regular artifact, not a note-backed mind map -> artifacts.delete path.
+    assert structured["was_note_backed"] is False
