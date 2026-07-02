@@ -26,8 +26,10 @@ from typing import TYPE_CHECKING, Any, Literal
 from fastmcp import Context
 from fastmcp.server.dependencies import get_http_request
 
+from ..._app import labels as labels_core
 from ..._app import source_add as add_core
 from ..._app import source_content as content_core
+from ..._app import source_listing as listing_core
 from ..._app import source_mutations as mut_core
 from ..._app import source_wait as wait_core
 from ..._app.serialize import to_jsonable
@@ -40,12 +42,13 @@ from ...exceptions import (
 )
 from ...types import source_status_to_str
 from ...urls import is_youtube_url
+from .._coerce import coerce_list
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors, tool_error_payload
 from .._filelink import UPLOAD_TTL, FileTransferConfig
 from .._paginate import DEFAULT_LIMIT, paginate
-from .._resolve import resolve_notebook, resolve_source
+from .._resolve import resolve_notebook, resolve_source, resolve_sources
 from ._content_sanity import _annotate_thin_warnings
 from ._passthrough import passthrough_child_id
 from ._preview import title_for_id
@@ -123,28 +126,29 @@ def register(mcp: Any) -> None:
         ctx: Context,
         notebook: str,
         status: Literal["ready", "processing", "error", "preparing"] | None = None,
+        label: str | None = None,
         limit: int = DEFAULT_LIMIT,
         offset: int = 0,
     ) -> dict[str, Any]:
         """List a notebook's sources. Accepts a notebook name or ID.
 
-        Each source carries string ``kind`` / ``status_label`` labels (not just the
-        raw type/status codes) so an agent never has to guess the enums.
+        Each source carries string ``kind`` / ``status_label`` labels alongside the
+        raw codes, so an agent never has to guess the enums.
 
-        Pass ``status`` to return only sources whose ``status_label`` matches —
-        filter by the SAME label the listing emits. ``error`` is a failed import
-        (the "ghost row" left by a broken ``source_add``); use
-        ``source_list(status="error")`` to find them without paging the whole list,
-        then clean up with ``source_delete``. Omitting ``status`` returns every
-        source (unchanged behavior).
+        Pass ``status`` to return only sources whose ``status_label`` matches.
+        ``error`` is a failed import (the "ghost row" from a broken ``source_add``);
+        use ``source_list(status="error")`` to find them, then clean up with
+        ``source_delete``. Omitting ``status`` returns every source.
 
-        A ``label`` filter is not offered yet: labels are a notebook-level concept,
-        not a per-source attribute, so there is nothing to filter on here today.
+        Pass ``label`` (name or ID) to restrict to that label's members; composes
+        with ``status`` (resolves by ID, unambiguous prefix, or exact name).
         """
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
-            sources = await client.sources.list(nb_id)
+            sources = await listing_core.fetch_sources(
+                client, nb_id, label_filter=label, label_resolver=labels_core.resolve_label_id
+            )
             # Filter on the raw Source BEFORE serializing, so _source_view (which
             # runs to_jsonable) is only paid for the sources that survive the
             # filter. Uses the same source_status_to_str label _source_view emits.
@@ -320,34 +324,32 @@ def register(mcp: Any) -> None:
         ctx: Context,
         notebook: str,
         source: str | None = None,
+        sources: list[str] | str | None = None,
         timeout: float = 120.0,
         interval: float = 1.0,
     ) -> dict[str, Any]:
         """Wait for sources to finish processing. Accepts a notebook name or ID.
 
-        Waits for a single source when ``source`` (name or ID) is given, otherwise
-        for every source in the notebook. BOTH modes return the SAME structured
-        aggregate, so an agent never has to branch on the shape:
+        Waits for a subset when ``sources`` (list or comma/JSON string) is given, a
+        single source when ``source`` (name or ID) is given, else every source. All
+        three modes return the SAME structured aggregate, so an agent never has to
+        branch on the shape:
 
             {"notebook_id", "ok", "ready", "timed_out", "failed", "not_found"}
 
-        ``ready`` holds the sources that reached READY (each with ``kind`` /
-        ``status_label`` labels); ``timed_out`` / ``failed`` / ``not_found`` hold
-        ``{"source_id", "error"}`` entries for the sources that did not. ``ok`` is
-        ``true`` iff all three error buckets are empty. The all-sources mode reports
-        **partial progress** — a slow or failed source no longer discards the ones
-        that did become ready.
+        ``ready`` holds sources that reached READY (with ``kind`` / ``status_label``
+        labels); ``timed_out`` / ``failed`` / ``not_found`` hold ``{"source_id",
+        "error"}`` entries. ``ok`` is ``true`` iff all error buckets are empty. Subset
+        and all-sources modes report **partial progress** (a slow or failed source no
+        longer discards the ones that did become ready).
 
-        A READY **web-page** entry may carry a non-blocking ``warning`` when its
-        indexed text is suspiciously thin — a likely dead link / soft-404 / paywalled
-        "ghost source" add-time status can't catch. Advisory only (still READY, still
-        ``ok``; verify with ``source_read`` (detail="full")); short pasted text / transcripts
-        are never flagged.
+        A READY **web-page** entry may carry a non-blocking ``warning`` when its indexed
+        text is suspiciously thin (likely dead link / soft-404 / paywall); advisory only
+        (still READY, still ``ok`` — verify with ``source_read`` (detail="full")).
 
-        A single-source ``source`` ref that does not resolve (e.g. an unknown title)
-        still raises NOT_FOUND before the wait — that is an input error, distinct
-        from a resolved source the backend reports missing/failed/slow (which lands
-        in a bucket).
+        An unresolved ref in ``sources`` / ``source`` raises NOT_FOUND before the wait —
+        an input error, distinct from a resolved source the backend reports missing /
+        failed / slow (which lands in a bucket).
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -355,8 +357,26 @@ def register(mcp: Any) -> None:
                 raise ValidationError(f"timeout must be >= 0; got {timeout}")
             if interval <= 0:
                 raise ValidationError(f"interval must be > 0; got {interval}")
+
+            coerced = coerce_list(sources)
+            if source is not None and coerced is not None:
+                raise ValidationError(
+                    "pass either 'source' (one) or 'sources' (a subset), not both"
+                )
+
             nb_id = await resolve_notebook(client, notebook)
-            if source is not None:
+
+            if coerced is not None:
+                if not coerced:
+                    raise ValidationError(
+                        "'sources' was empty; omit it to wait on all sources, or pass at least one source ref"
+                    )
+                src_ids = await resolve_sources(client, nb_id, coerced)
+                outcomes = await _wait_all_sources(
+                    client, nb_id, src_ids, timeout=timeout, interval=interval
+                )
+                return await _aggregate_wait_outcomes(client, nb_id, outcomes)
+            elif source is not None:
                 src_id = await resolve_source(client, nb_id, source)
                 outcome = await wait_core.execute_source_wait(
                     client,
@@ -368,11 +388,16 @@ def register(mcp: Any) -> None:
                     ),
                 )
                 return await _aggregate_wait_outcomes(client, nb_id, [outcome])
-            sources = await client.sources.list(nb_id)
-            outcomes = await _wait_all_sources(
-                client, nb_id, [s.id for s in sources], timeout=timeout, interval=interval
-            )
-            return await _aggregate_wait_outcomes(client, nb_id, outcomes)
+            else:
+                sources_list = await client.sources.list(nb_id)
+                outcomes = await _wait_all_sources(
+                    client,
+                    nb_id,
+                    [s.id for s in sources_list],
+                    timeout=timeout,
+                    interval=interval,
+                )
+                return await _aggregate_wait_outcomes(client, nb_id, outcomes)
 
     @mcp.tool
     async def source_add(
