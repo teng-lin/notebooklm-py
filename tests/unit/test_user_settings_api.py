@@ -8,13 +8,11 @@ from notebooklm._settings import (
     SettingsAPI,
     _extract_language,
     build_get_user_settings_params,
-    build_get_user_tier_params,
     extract_account_limits,
-    extract_account_tier,
 )
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
-from notebooklm.types import AccountLimits, AccountTier
+from notebooklm.types import AccountLimits
 
 
 def test_build_get_user_settings_params_returns_fresh_params():
@@ -24,31 +22,6 @@ def test_build_get_user_settings_params_returns_fresh_params():
     assert first == [None, [1, None, None, None, None, None, None, None, None, None, [1]]]
     assert first is not second
     assert first[1] is not second[1]
-
-
-def test_build_get_user_tier_params_returns_fresh_params():
-    first = build_get_user_tier_params()
-    second = build_get_user_tier_params()
-
-    assert first == [
-        [
-            [
-                [None, "1", 627],
-                [None, None, None, None, None, None, None, None, None, [None, None, 2]],
-                1,
-            ]
-        ]
-    ]
-    assert first is not second
-    assert first[0] is not second[0]
-
-
-def test_get_user_tier_params_match_captured_request_shape():
-    params = build_get_user_tier_params()
-
-    assert params[0][0][0] == [None, "1", 627]
-    assert params[0][0][1][9] == [None, None, 2]
-    assert params[0][0][2] == 1
 
 
 def test_extract_account_limits_from_user_settings_response():
@@ -87,77 +60,6 @@ def test_extract_account_limits_returns_empty_for_malformed_response(response):
     assert limits.source_limit is None
 
 
-def test_extract_account_tier_from_nested_response():
-    response = [[[[None, "1", 627], [[1613, [None, "NOTEBOOKLM_TIER_PRO"]]], 0]]]
-
-    assert extract_account_tier(response) == AccountTier(
-        tier="NOTEBOOKLM_TIER_PRO",
-        plan_name="Google AI Pro",
-    )
-
-
-def test_extract_account_tier_returns_empty_for_malformed_response():
-    assert extract_account_tier([[["no tier here"]]]) == AccountTier()
-
-
-@pytest.mark.parametrize("response", [None, []])
-def test_extract_account_tier_handles_empty_response(response):
-    assert extract_account_tier(response) == AccountTier()
-
-
-def test_extract_account_tier_preserves_unknown_tier_string():
-    response = [[["NOTEBOOKLM_TIER_FUTURE"]]]
-
-    assert extract_account_tier(response) == AccountTier(
-        tier="NOTEBOOKLM_TIER_FUTURE",
-        plan_name=None,
-    )
-
-
-@pytest.mark.parametrize(
-    ("tier_string", "expected_plan"),
-    [
-        ("NOTEBOOKLM_TIER_STANDARD", "Standard"),
-        ("NOTEBOOKLM_TIER_PLUS", "Google AI Plus"),
-        ("NOTEBOOKLM_TIER_PRO", "Google AI Pro"),
-        ("NOTEBOOKLM_TIER_PRO_CONSUMER_USER", "Google AI Pro"),
-        ("NOTEBOOKLM_TIER_PRO_DASHER_END_USER", "Google Workspace Pro"),
-        ("NOTEBOOKLM_TIER_ULTRA", "Google AI Ultra"),
-    ],
-)
-def test_extract_account_tier_maps_all_known_plan_names(tier_string, expected_plan):
-    """Every tier in ``_TIER_PLAN_NAMES`` must round-trip through the parser.
-
-    Locks in the plan-name lookup table so future tier additions can't
-    silently drift between :func:`extract_account_tier` and the
-    :class:`AccountTier` ``plan_name`` mapping.
-    """
-    response = [[[[None, "1", 627], [[1613, [None, tier_string]]], 0]]]
-
-    assert extract_account_tier(response) == AccountTier(
-        tier=tier_string,
-        plan_name=expected_plan,
-    )
-
-
-def test_extract_account_tier_against_recorded_cassette_shape():
-    """Parser handles the real GET_USER_TIER envelope recorded against the live API.
-
-    Mirrors the deeply-nested response shape captured by the live API in
-    ``tests/cassettes/settings_get_user_tier.yaml`` so the unit test fails
-    fast if the parser drifts away from the live wire format — without
-    requiring the cassette to be present.
-    """
-    # Shape mirrors ``[[[[None, "1", 627], [[1613, [None, "<tier>"]]], 0]]]``
-    # which is what the wrb.fr envelope's inner JSON decodes to.
-    response = [[[[None, "1", 627], [[1613, [None, "NOTEBOOKLM_TIER_PRO"]]], 0]]]
-
-    result = extract_account_tier(response)
-
-    assert result.tier == "NOTEBOOKLM_TIER_PRO"
-    assert result.plan_name == "Google AI Pro"
-
-
 @pytest.mark.asyncio
 async def test_get_account_limits_calls_user_settings_rpc():
     from tests._fixtures.fake_core import make_fake_core
@@ -175,31 +77,6 @@ async def test_get_account_limits_calls_user_settings_rpc():
     core.rpc_executor.rpc_call.assert_awaited_once_with(
         RPCMethod.GET_USER_SETTINGS,
         [None, [1, None, None, None, None, None, None, None, None, None, [1]]],
-        source_path="/",
-    )
-
-
-@pytest.mark.asyncio
-async def test_get_account_tier_calls_user_tier_rpc():
-    from tests._fixtures.fake_core import make_fake_core
-
-    core = make_fake_core(rpc_call=AsyncMock(return_value=[[[[None, "NOTEBOOKLM_TIER_STANDARD"]]]]))
-    api = SettingsAPI(core.rpc_executor)
-
-    tier = await api.get_account_tier()
-
-    assert tier == AccountTier(tier="NOTEBOOKLM_TIER_STANDARD", plan_name="Standard")
-    core.rpc_executor.rpc_call.assert_awaited_once_with(
-        RPCMethod.GET_USER_TIER,
-        [
-            [
-                [
-                    [None, "1", 627],
-                    [None, None, None, None, None, None, None, None, None, [None, None, 2]],
-                    1,
-                ]
-            ]
-        ],
         source_path="/",
     )
 

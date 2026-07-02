@@ -611,12 +611,12 @@ class TestResearchGoldenDecoded:
 
 
 # =============================================================================
-# Settings (ZwVcOc get, hT54vc set, ozz5Z tier)
+# Settings (ZwVcOc get, hT54vc set)
 # =============================================================================
 
 
 class TestSettingsGoldenDecoded:
-    """Pin decoded settings values (language codes, account tier)."""
+    """Pin decoded settings values (language codes)."""
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -646,25 +646,6 @@ class TestSettingsGoldenDecoded:
         assert_decoded_equals(original, "fr", field="settings_set_output_language.original")
         assert_decoded_equals(result, "en", field="settings_set_output_language.set result")
         assert_decoded_equals(restored, "fr", field="settings_set_output_language.restore result")
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("settings_get_user_tier.yaml")
-    async def test_get_account_tier_decoded_golden(self):
-        """``settings.get_account_tier`` decodes the recorded tier token (ozz5Z)."""
-        async with vcr_client() as client:
-            tier = await client.settings.get_account_tier()
-
-        assert_decoded_equals(
-            tier.tier,
-            "NOTEBOOKLM_TIER_PRO_CONSUMER_USER",
-            field="settings_get_user_tier.tier",
-        )
-        # The recorded token is a real consumer Pro account; it now maps to a plan
-        # name (previously decoded to None — the bug this change fixes).
-        assert_decoded_equals(
-            tier.plan_name, "Google AI Pro", field="settings_get_user_tier.plan_name"
-        )
 
 
 # =============================================================================
@@ -910,7 +891,6 @@ def test_golden_values_visible_in_cassette_bytes() -> None:
         ("notebooks_list.yaml", "1768311605"),  # list[0].modified_at
         ("notebooks_get.yaml", "1767921609"),  # get.created_at
         ("notebooks_get.yaml", "1768963937"),  # get.modified_at
-        ("settings_get_user_tier.yaml", "NOTEBOOKLM_TIER_PRO_CONSUMER_USER"),
         ("artifacts_export_report.yaml", "1bAgBGlybk82LZfbz6IPCwpQ12E4hlDQsuWTVWJVEHfM"),
         ("research_poll.yaml", "32b1e6c3-863f-4502-8509-fe9d5801db14"),
         ("generate_mind_map_chain.yaml", "208ac8c0-5206-4e93-ae24-4b83ce14084b"),

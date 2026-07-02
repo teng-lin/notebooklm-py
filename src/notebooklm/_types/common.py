@@ -127,14 +127,6 @@ class AccountLimits:
 
 
 @dataclass(frozen=True)
-class AccountTier:
-    """Raw NotebookLM tier metadata returned by the homepage tier RPC."""
-
-    tier: str | None = None
-    plan_name: str | None = None
-
-
-@dataclass(frozen=True)
 class CitedSourceSelection:
     """Result of applying cited-only filtering to research sources."""
 

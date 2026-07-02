@@ -488,19 +488,6 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
         # Use "en" as safe language code
         return [[[None, [[None, None, None, None, ["en"]]]]]]
 
-    # GET_USER_TIER: read subscription tier from homepage context (no notebook required)
-    # Params mirror build_get_user_tier_params() in src/notebooklm/_settings.py.
-    if method == RPCMethod.GET_USER_TIER:
-        return [
-            [
-                [
-                    [None, "1", 627],
-                    [None, None, None, None, None, None, None, None, None, [None, None, 2]],
-                    1,
-                ]
-            ]
-        ]
-
     # Methods that require a notebook ID
     if not notebook_id:
         return None

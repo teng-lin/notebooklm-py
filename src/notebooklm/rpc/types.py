@@ -61,8 +61,7 @@ class RPCMethod(str, Enum):
     source of truth for what the RPC *actually does* — our enum member name is a
     reverse-engineered label that is sometimes narrower or older than the real
     method. Where the two diverge (e.g. ``LIST_NOTEBOOKS -> ListRecentlyViewedProjects``,
-    ``GENERATE_MIND_MAP -> ActOnSources``, ``GET_USER_TIER -> FetchRecommendations``
-    on a *promotions* service), the comment is the authoritative semantics and
+    ``GENERATE_MIND_MAP -> ActOnSources``), the comment is the authoritative semantics and
     the divergence is documented at the call site too. The member names
     themselves are part of the internal RPC contract and are intentionally left
     unchanged; only the clarifying comments were corrected.
@@ -162,12 +161,6 @@ class RPCMethod(str, Enum):
     GET_USER_SETTINGS = "ZwVcOc"
     # -> MutateAccount (generic account mutator; we only set the output language)
     SET_USER_SETTINGS = "hT54vc"
-    # -> DasherGrowthPromotionService.FetchRecommendations. WARNING: this is a
-    # *promotions/growth* recommendations endpoint on a DIFFERENT service, NOT a
-    # subscription-tier lookup. The "tier" we surface is a NOTEBOOKLM_TIER_* string
-    # scraped from the recommendations payload (a promotion-eligibility signal that
-    # tracks the plan), not an authoritative tier field. See _settings.extract_account_tier.
-    GET_USER_TIER = "ozz5Z"
 
 
 class ArtifactTypeCode(int, Enum):

@@ -11,7 +11,7 @@ round-trip — ``test_fetch`` is off).
 active profile are resolved via the neutral :mod:`notebooklm.paths` helpers, so
 this module imports NO ``click`` / ``rich`` / ``cli``.
 
-It also accepts an opt-in ``include_account`` flag that adds the account tier +
+It also accepts an opt-in ``include_account`` flag that adds the account
 notebook/source limits + the global output language (for an agent to pace against
 quota and know which language artifacts generate in). That block requires a *live*
 session, so it is off by default — the default call stays a fast, network-free
@@ -47,7 +47,7 @@ def _no_env_auth_json() -> str:
 
 
 async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]:
-    """Best-effort account identity + tier + limits for quota pacing.
+    """Best-effort account identity + limits for quota pacing.
 
     ``email`` / ``authuser`` are the signed-in Google account, sourced from the
     client (in-memory ``AuthTokens`` → persisted metadata → a single live
@@ -58,14 +58,11 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     skipped when unauthenticated (``live_fallback=authenticated``) — identity is
     then whatever the profile has on disk.
 
-    The tier/limits/language fields need a *live* session. The local auth probe
+    The limits/language fields need a *live* session. The local auth probe
     only proves on-disk storage health, not a live token, so ``include_account``
     can still hit an expired session. Rather than sink the whole ``server_info``
     response, that degrades to ``available: False`` with a short (scrubbed) reason
-    (identity still included) — keeping the diagnostic useful. ``get_account_tier``
-    always returns an :class:`AccountTier`, but its ``tier`` field is best-effort
-    and may be ``None`` even on success (that is ``available: True`` with
-    ``tier: None``, NOT an error).
+    (identity still included) — keeping the diagnostic useful.
     """
     client = get_client(ctx)
     # Identity from a single source (the client). Never raises. ``live_fallback`` is
@@ -78,14 +75,13 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     if not authenticated:
         return {**identity, "available": False, "reason": "not authenticated"}
     try:
-        # Three concurrent reads (repo convention: each public getter is
+        # Two concurrent reads (repo convention: each public getter is
         # self-contained). ``get_account_limits`` + ``get_output_language`` both hit
         # GET_USER_SETTINGS, so this fires it twice — a client-layer single-fetch
         # dedupe is tracked in #1724 (kept simple here; the adapter uses the public
         # getters, not RPC internals). A NotebookLMError from any is caught below.
-        limits, tier, output_language = await asyncio.gather(
+        limits, output_language = await asyncio.gather(
             client.settings.get_account_limits(),
-            client.settings.get_account_tier(),
             client.settings.get_output_language(),
         )
     except NotebookLMError as exc:  # degrade, don't sink the whole response
@@ -97,8 +93,6 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     return {
         **identity,
         "available": True,
-        "tier": tier.tier,
-        "plan_name": tier.plan_name,
         "notebook_limit": limits.notebook_limit,
         "source_limit": limits.source_limit,
         # Global account output language (e.g. "en" / "ja" / "zh_Hans"); ``None``
@@ -124,15 +118,13 @@ def register(mcp: Any) -> None:
         signed-in identity ``{email, authuser}`` (in-memory/persisted first, then a
         single live ``WIZ_global_data`` probe when authenticated — ``email`` is
         ``None`` only when it can't be discovered at all) plus quota-pacing fields
-        ``{available, tier, plan_name,
-        notebook_limit, source_limit, output_language}`` (``output_language`` is the
-        global account setting, e.g. ``"en"``/``"ja"``, or ``None`` when unset or
-        unparseable). The quota fields need a *live* session (a few reads), so the
-        block is off by default — the default call is a fast, network-free probe.
-        When the session is missing or stale the quota fields degrade to
-        ``{available: False, reason: ...}`` (identity still included) rather than
-        failing the whole call; ``tier`` may be ``None`` even when ``available`` is
-        true (it is a best-effort signal).
+        ``{available, notebook_limit, source_limit, output_language}``
+        (``output_language`` is the global account setting, e.g. ``"en"``/``"ja"``,
+        or ``None`` when unset or unparseable). The quota fields need a *live*
+        session (a few reads), so the block is off by default — the default call is
+        a fast, network-free probe. When the session is missing or stale the quota
+        fields degrade to ``{available: False, reason: ...}`` (identity still
+        included) rather than failing the whole call.
 
         The absolute on-disk storage path is deliberately **not** returned: it
         leaks the server-host OS username / filesystem layout to any (possibly

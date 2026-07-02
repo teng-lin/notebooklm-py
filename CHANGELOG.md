@@ -236,6 +236,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `fetch_tokens_passive`, …) are unchanged. See
   [docs/deprecations.md](docs/deprecations.md).
 
+### Removed
+
+- **`SettingsAPI.get_account_tier()` and the `AccountTier` type** (BREAKING).
+  `client.settings.get_account_tier()`, `notebooklm.AccountTier` /
+  `notebooklm.types.AccountTier`, and the underlying `GET_USER_TIER` RPC are
+  removed. The tier came from `FetchRecommendations`, a **promotions** endpoint,
+  and was a promotion-eligibility signal that could not distinguish free from
+  paid — both a free and a Pro account reported
+  `NOTEBOOKLM_TIER_PRO_CONSUMER_USER`. Use `client.settings.get_account_limits()`
+  (`AccountLimits.notebook_limit` / `source_limit`) for quota decisions instead.
+  The MCP `server_info(include_account=True)` account block drops its `tier` and
+  `plan_name` keys (now `{email, authuser, available, notebook_limit,
+  source_limit, output_language}`). See
+  [docs/deprecations.md](docs/deprecations.md).
+
 ### Fixed
 
 - **Video Overview visual-style values now match the live NotebookLM Web UI**

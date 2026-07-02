@@ -161,7 +161,6 @@ PHASE_2_FILES: list[str] = [
     "tests/integration/test_research_deep_poll_vcr.py",
     "tests/integration/test_save_chat_as_note_integration.py",
     "tests/integration/test_settings_integration.py",
-    "tests/integration/test_settings_vcr.py",
     "tests/integration/test_sharing_integration.py",
     "tests/integration/test_sources_integration.py",
     "tests/integration/test_vcr_comprehensive.py",

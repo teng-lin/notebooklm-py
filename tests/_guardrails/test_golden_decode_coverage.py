@@ -197,9 +197,6 @@ GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
     RPCMethod.SET_USER_SETTINGS: (
         (_GOLDEN_EXPANSION, "TestSettingsGoldenDecoded::test_set_output_language_decoded_golden"),
     ),
-    RPCMethod.GET_USER_TIER: (
-        (_GOLDEN_EXPANSION, "TestSettingsGoldenDecoded::test_get_account_tier_decoded_golden"),
-    ),
     # --- artifacts ---
     RPCMethod.CREATE_ARTIFACT: (
         (_GOLDEN_EXPANSION, "TestArtifactsWriteGoldenDecoded::test_generate_report_decoded_golden"),

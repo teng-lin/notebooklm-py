@@ -49,7 +49,7 @@ from notebooklm.exceptions import (
     ValidationError,
     WaitTimeoutError,
 )
-from notebooklm.types import AccountLimits, AccountTier, GenerationStatus
+from notebooklm.types import AccountLimits, GenerationStatus
 
 
 class TestExceptionHierarchy:
@@ -257,11 +257,9 @@ class TestExceptionHierarchy:
         assert "no status" in str(err)
 
     def test_account_types_are_exported_from_package(self):
-        """Account limit and tier types are available from the public package namespace."""
+        """Account limit types are available from the public package namespace."""
         assert notebooklm.AccountLimits is AccountLimits
-        assert notebooklm.AccountTier is AccountTier
         assert "AccountLimits" in notebooklm.__all__
-        assert "AccountTier" in notebooklm.__all__
 
 
 class TestNotFoundErrorUmbrella:

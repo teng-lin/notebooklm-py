@@ -6,7 +6,7 @@ from typing import Any
 
 from ._runtime.contracts import RpcCaller
 from .rpc import RPCMethod, safe_index
-from .types import AccountLimits, AccountTier
+from .types import AccountLimits
 
 logger = logging.getLogger(__name__)
 
@@ -14,16 +14,6 @@ logger = logging.getLogger(__name__)
 _ACCOUNT_LIMITS_PATH = (0, 1)
 _NOTEBOOK_LIMIT_INDEX = 1
 _SOURCE_LIMIT_INDEX = 2
-_TIER_PREFIX = "NOTEBOOKLM_TIER_"
-_TIER_PLAN_NAMES = {
-    "NOTEBOOKLM_TIER_STANDARD": "Standard",
-    "NOTEBOOKLM_TIER_PLUS": "Google AI Plus",
-    "NOTEBOOKLM_TIER_PRO": "Google AI Pro",
-    # Consumer Google AI Pro reports this variant (live-observed 2026-06-16); same plan.
-    "NOTEBOOKLM_TIER_PRO_CONSUMER_USER": "Google AI Pro",
-    "NOTEBOOKLM_TIER_PRO_DASHER_END_USER": "Google Workspace Pro",
-    "NOTEBOOKLM_TIER_ULTRA": "Google AI Ultra",
-}
 
 
 def build_get_user_settings_params() -> list[Any]:
@@ -37,26 +27,6 @@ def build_get_user_settings_params() -> list[Any]:
     return [
         None,
         [1, None, None, None, None, None, None, None, None, None, [1]],
-    ]
-
-
-def build_get_user_tier_params() -> list[Any]:
-    """Build GET_USER_TIER params for the NotebookLM homepage context.
-
-    Despite the ``GET_USER_TIER`` enum name, the live endpoint is
-    ``FetchRecommendations`` on ``DasherGrowthPromotionService`` — a
-    promotions/growth recommendations fetch scoped to the homepage context,
-    not a subscription-tier lookup. We read the tier off the recommendations
-    payload as a best-effort signal (see :func:`extract_account_tier`).
-    """
-    return [
-        [
-            [
-                [None, "1", 627],
-                [None, None, None, None, None, None, None, None, None, [None, None, 2]],
-                1,
-            ]
-        ]
     ]
 
 
@@ -156,37 +126,6 @@ def extract_account_limits(data: list | None) -> AccountLimits:
         source_limit=source_limit,
         raw_limits=raw_limits,
     )
-
-
-def _find_tier_string(value: Any) -> str | None:
-    """Find the first ``NOTEBOOKLM_TIER_*`` string in a nested response.
-
-    The response is a promotions/recommendations payload (the live endpoint is
-    ``FetchRecommendations``), so the tier string is embedded at an unstable
-    depth — hence the stack-walk rather than a fixed index path.
-    """
-    stack = [value]
-    while stack:
-        item = stack.pop()
-        if isinstance(item, str) and item.startswith(_TIER_PREFIX):
-            return item
-        if isinstance(item, list):
-            stack.extend(reversed(item))
-    return None
-
-
-def extract_account_tier(data: list | None) -> AccountTier:
-    """Extract the NotebookLM tier signal from GET_USER_TIER response data.
-
-    GET_USER_TIER is the live ``FetchRecommendations`` promotions endpoint, so
-    ``data`` is a recommendations payload rather than an account record. The
-    returned ``AccountTier.tier`` is the ``NOTEBOOKLM_TIER_*`` string embedded
-    in that payload — a promotion-eligibility signal that tracks the plan, not
-    an authoritative subscription-tier field. Returns an empty ``AccountTier``
-    when no such string is present.
-    """
-    tier = _find_tier_string(data)
-    return AccountTier(tier=tier, plan_name=_TIER_PLAN_NAMES.get(tier) if tier else None)
 
 
 class SettingsAPI:
@@ -311,35 +250,6 @@ class SettingsAPI:
         else:
             logger.debug("Could not parse account limits from response")
         return limits
-
-    async def get_account_tier(self) -> AccountTier:
-        """Get the NotebookLM tier signal for the current account.
-
-        .. note::
-            This calls the homepage promotions endpoint (live method
-            ``FetchRecommendations`` on ``DasherGrowthPromotionService``), not a
-            dedicated tier API. The returned tier is a ``NOTEBOOKLM_TIER_*``
-            string scraped from the recommendations payload — a best-effort
-            signal that tracks the subscription plan rather than an
-            authoritative tier field. It may be absent even for a paid account.
-
-        Returns:
-            AccountTier with the raw tier string and a friendly plan name when known.
-        """
-        logger.debug("Fetching user tier")
-
-        result = await self._rpc.rpc_call(
-            RPCMethod.GET_USER_TIER,
-            build_get_user_tier_params(),
-            source_path="/",
-        )
-
-        tier = extract_account_tier(result)
-        if tier.tier:
-            logger.debug("NotebookLM account tier: %s", tier.tier)
-        else:
-            logger.debug("Could not parse account tier from response")
-        return tier
 
     def _log_language_result(self, language: str | None, success_prefix: str) -> None:
         """Log the result of a language operation."""

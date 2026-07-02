@@ -117,7 +117,6 @@ from .exceptions import (
 # Public API: Types and dataclasses
 from .types import (
     AccountLimits,
-    AccountTier,
     Artifact,
     ArtifactType,
     AskResult,
@@ -193,7 +192,6 @@ __all__ = [
     "reset_request_id",
     # Types
     "AccountLimits",
-    "AccountTier",
     "ConnectionLimits",
     "ClientMetricsSnapshot",
     "RpcTelemetryEvent",

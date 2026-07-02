@@ -19,7 +19,7 @@ pytest.importorskip("fastmcp")
 
 from notebooklm import __version__  # noqa: E402 - after importorskip guard
 from notebooklm.exceptions import RPCError  # noqa: E402 - after importorskip guard
-from notebooklm.types import AccountLimits, AccountTier  # noqa: E402 - after importorskip guard
+from notebooklm.types import AccountLimits  # noqa: E402 - after importorskip guard
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
@@ -120,19 +120,17 @@ async def test_server_info_default_omits_account(
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     _write_authed_storage()
     mock_client.settings.get_account_limits = AsyncMock()
-    mock_client.settings.get_account_tier = AsyncMock()
     mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info")
     assert "account" not in result.structured_content
     mock_client.settings.get_account_limits.assert_not_called()
-    mock_client.settings.get_account_tier.assert_not_called()
     mock_client.settings.get_output_language.assert_not_called()
 
 
 async def test_server_info_include_account_authenticated(
     mcp_call, mock_client, tmp_path, monkeypatch
 ) -> None:
-    """include_account=True + live session → account block with identity + tier + limits."""
+    """include_account=True + live session → account block with identity + limits."""
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     _write_authed_storage()
     mock_client.get_account_email = AsyncMock(return_value="alice@example.com")
@@ -140,17 +138,12 @@ async def test_server_info_include_account_authenticated(
     mock_client.settings.get_account_limits = AsyncMock(
         return_value=AccountLimits(notebook_limit=100, source_limit=50)
     )
-    mock_client.settings.get_account_tier = AsyncMock(
-        return_value=AccountTier(tier="NOTEBOOKLM_TIER_PRO", plan_name="Pro")
-    )
     mock_client.settings.get_output_language = AsyncMock(return_value="ja")
     result = await mcp_call("server_info", {"include_account": True})
     assert result.structured_content["account"] == {
         "email": "alice@example.com",
         "authuser": 1,
         "available": True,
-        "tier": "NOTEBOOKLM_TIER_PRO",
-        "plan_name": "Pro",
         "notebook_limit": 100,
         "source_limit": 50,
         "output_language": "ja",
@@ -165,7 +158,6 @@ async def test_server_info_include_account_unauthenticated(
     """include_account=True but no storage → degraded, and no RPC is attempted."""
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path / "empty"))
     mock_client.settings.get_account_limits = AsyncMock()
-    mock_client.settings.get_account_tier = AsyncMock()
     mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info", {"include_account": True})
     assert result.structured_content["account"] == {
@@ -177,7 +169,6 @@ async def test_server_info_include_account_unauthenticated(
     # Identity is still surfaced, but the live probe is suppressed offline.
     mock_client.get_account_email.assert_awaited_once_with(live_fallback=False)
     mock_client.settings.get_account_limits.assert_not_called()
-    mock_client.settings.get_account_tier.assert_not_called()
     mock_client.settings.get_output_language.assert_not_called()
 
 
@@ -191,7 +182,6 @@ async def test_server_info_include_account_degrades_on_rpc_error(
     mock_client.get_account_email = AsyncMock(return_value="alice@example.com")
     mock_client.get_account_authuser = MagicMock(return_value=1)
     mock_client.settings.get_account_limits = AsyncMock(side_effect=RPCError("session expired"))
-    mock_client.settings.get_account_tier = AsyncMock()
     mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info", {"include_account": True})
     account = result.structured_content["account"]
@@ -205,30 +195,14 @@ async def test_server_info_include_account_degrades_on_rpc_error(
     assert result.structured_content["auth"]["authenticated"] is True
 
 
-async def test_server_info_include_account_degrades_when_tier_rpc_raises(
-    mcp_call, mock_client, tmp_path, monkeypatch
-) -> None:
-    """The tier RPC failing (not just the limits RPC) also degrades gracefully —
-    the two reads run concurrently, so either one raising must be caught."""
-    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
-    _write_authed_storage()
-    mock_client.settings.get_account_limits = AsyncMock(return_value=AccountLimits())
-    mock_client.settings.get_account_tier = AsyncMock(side_effect=RPCError("tier lookup failed"))
-    mock_client.settings.get_output_language = AsyncMock()
-    result = await mcp_call("server_info", {"include_account": True})
-    assert result.structured_content["account"]["available"] is False
-    assert "tier lookup failed" in result.structured_content["account"]["reason"]
-
-
 async def test_server_info_include_account_degrades_when_language_rpc_raises(
     mcp_call, mock_client, tmp_path, monkeypatch
 ) -> None:
-    """The output-language RPC failing (the third concurrent read) also degrades
-    gracefully — all three reads share one degrade handler."""
+    """The output-language RPC failing (the other concurrent read) also degrades
+    gracefully — both reads share one degrade handler."""
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     _write_authed_storage()
     mock_client.settings.get_account_limits = AsyncMock(return_value=AccountLimits())
-    mock_client.settings.get_account_tier = AsyncMock(return_value=AccountTier())
     mock_client.settings.get_output_language = AsyncMock(
         side_effect=RPCError("language lookup failed")
     )
@@ -237,15 +211,13 @@ async def test_server_info_include_account_degrades_when_language_rpc_raises(
     assert "language lookup failed" in result.structured_content["account"]["reason"]
 
 
-async def test_server_info_include_account_tier_none_is_available(
+async def test_server_info_include_account_success_with_null_fields(
     mcp_call, mock_client, tmp_path, monkeypatch
 ) -> None:
-    """tier RPC is best-effort: a bare AccountTier() (tier None) is available:True,
-    not an error (locks the documented success-with-null-tier contract)."""
+    """Bare limits + no language is available:True (locks the success-with-null contract)."""
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     _write_authed_storage()
     mock_client.settings.get_account_limits = AsyncMock(return_value=AccountLimits())
-    mock_client.settings.get_account_tier = AsyncMock(return_value=AccountTier())
     mock_client.settings.get_output_language = AsyncMock(return_value=None)
     result = await mcp_call("server_info", {"include_account": True})
     # Default mock identity (email None, authuser 0) is tolerated on the success path.
@@ -253,8 +225,6 @@ async def test_server_info_include_account_tier_none_is_available(
         "email": None,
         "authuser": 0,
         "available": True,
-        "tier": None,
-        "plan_name": None,
         "notebook_limit": None,
         "source_limit": None,
         "output_language": None,
@@ -270,7 +240,6 @@ async def test_server_info_include_account_degraded_reason_is_scrubbed(
     _write_authed_storage()
     leaky = RPCError("auth failed loading /home/secretuser/.notebooklm/storage_state.json")
     mock_client.settings.get_account_limits = AsyncMock(side_effect=leaky)
-    mock_client.settings.get_account_tier = AsyncMock()
     mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info", {"include_account": True})
     reason = result.structured_content["account"]["reason"]

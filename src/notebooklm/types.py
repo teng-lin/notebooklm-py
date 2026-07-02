@@ -27,7 +27,6 @@ from ._types.chat import (
 )
 from ._types.common import (
     AccountLimits,
-    AccountTier,
     CitedSourceSelection,
     ClientMetricsSnapshot,
     ConnectionLimits,
@@ -225,7 +224,6 @@ __all__ = [
 
 for _public_common_type in (
     AccountLimits,
-    AccountTier,
     CitedSourceSelection,
     ClientMetricsSnapshot,
     ConnectionLimits,

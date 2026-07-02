@@ -76,7 +76,7 @@ GenerationState, GenerationStatus, AskResult
 NotebookDescription, ConversationTurn
 ShareStatus, SharedUser, SourceFulltext
 NotebookMetadata, SourceSummary
-AccountLimits, AccountTier
+AccountLimits
 ChatReference, ReportSuggestion, PromptSuggestion, SuggestedTopic
 MindMapKind, MindMapResult
 ResearchStart, ResearchStatus, ResearchTask, ResearchSource

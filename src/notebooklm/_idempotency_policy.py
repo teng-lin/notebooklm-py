@@ -416,12 +416,6 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
         RPCMethod.SET_USER_SETTINGS: (
             "set user settings to caller-supplied values; replay leaves the same state"
         ),
-        # Live method FetchRecommendations on DasherGrowthPromotionService — a
-        # read-only promotions/recommendations fetch, not a tier lookup (the
-        # "tier" is scraped from the recommendations payload). Replay-safe.
-        RPCMethod.GET_USER_TIER: (
-            "read-only promotions/recommendations fetch; replay does not mutate account state"
-        ),
         RPCMethod.LIST_LABELS: "read-only label list; replay does not mutate label state",
         RPCMethod.UPDATE_LABEL: (
             "default (rename / set-emoji) sets label fields to caller-supplied values; "

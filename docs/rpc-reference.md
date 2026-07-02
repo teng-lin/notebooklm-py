@@ -71,7 +71,6 @@
 | `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_notebooks.py` |
 | `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_settings.py` |
 | `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_settings.py` |
-| `ozz5Z` | GET_USER_TIER | Get current NotebookLM subscription tier | `_settings.py` |
 
 ### Content Type Codes (ArtifactTypeCode)
 
@@ -2287,43 +2286,6 @@ await rpc_call(
 ## User Settings
 
 Global user settings that affect all notebooks in an account.
-
-### RPC: GET_USER_TIER (ozz5Z)
-
-**Source:** `_settings.py::get_account_tier()`
-
-Get the current NotebookLM subscription tier from the homepage context.
-
-```python
-params = [
-    [
-        [
-            [
-                [None, "1", 627],
-                [None, None, None, None, None, None, None, None, None, [None, None, 2]],
-                1,
-            ]
-        ]
-    ]
-]
-
-await rpc_call(
-    RPCMethod.GET_USER_TIER,
-    params,
-    source_path="/",
-)
-
-# Response includes a string like:
-# "NOTEBOOKLM_TIER_STANDARD"           - Free tier
-# "NOTEBOOKLM_TIER_PLUS"               - Google AI Plus
-# "NOTEBOOKLM_TIER_PRO"                - Google AI Pro
-# "NOTEBOOKLM_TIER_PRO_DASHER_END_USER"- Google Workspace Pro (Dasher domain)
-# "NOTEBOOKLM_TIER_ULTRA"              - Google AI Ultra
-#
-# Source of truth: src/notebooklm/_settings.py::_TIER_PLAN_NAMES
-# Treat this as internal account metadata. Use GET_USER_SETTINGS limits for
-# notebook/source quota decisions.
-```
 
 ### RPC: GET_USER_SETTINGS (ZwVcOc)
 

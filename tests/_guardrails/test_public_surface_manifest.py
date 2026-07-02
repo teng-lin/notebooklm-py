@@ -312,7 +312,6 @@ _REEXPORTED_RPC_ENUMS = [
 
 _TOP_LEVEL_TYPE_EXPORTS = [
     "AccountLimits",
-    "AccountTier",
     "Artifact",
     "ArtifactType",
     "AskResult",

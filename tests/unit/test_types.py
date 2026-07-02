@@ -140,7 +140,6 @@ class TestTimestampParsing:
 
 _PUBLIC_MOVABLE_CLASSES = [
     "AccountLimits",
-    "AccountTier",
     "Artifact",
     "ArtifactType",
     "AskResult",
@@ -220,7 +219,6 @@ def test_representative_public_dataclasses_pickle_round_trip():
     from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode
     from notebooklm.types import (
         AccountLimits,
-        AccountTier,
         Artifact,
         AskResult,
         ChatReference,
@@ -254,7 +252,6 @@ def test_representative_public_dataclasses_pickle_round_trip():
     shared_user = SharedUser(email="reader@example.com", permission=SharePermission.VIEWER)
     instances = [
         AccountLimits(notebook_limit=10, source_limit=50, raw_limits=("raw",)),
-        AccountTier(tier="plus", plan_name="Plus"),
         Artifact(
             id="artifact_1",
             title="Audio",

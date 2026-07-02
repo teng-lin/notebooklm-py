@@ -3,8 +3,7 @@
 Moved from ``tests/unit/`` to ``tests/integration/``.
 Mock-backed (``pytest_httpx``); ``allow_no_vcr`` opts out of the
 integration-tree VCR enforcement hook in ``tests/integration/conftest.py``.
-Cassette-backed coverage lives in ``tests/integration/test_settings_vcr.py``
-and ``tests/integration/test_vcr_comprehensive.py``.
+Cassette-backed coverage lives in ``tests/integration/test_vcr_comprehensive.py``.
 """
 
 import json
@@ -176,19 +175,6 @@ class TestSettingsAPI:
         assert result.notebook_limit == 500
         assert result.source_limit == 300
         assert result.raw_limits == (6, 500, 300, 500000, 2)
-
-    @pytest.mark.asyncio
-    async def test_get_account_tier(self, httpx_mock: HTTPXMock, auth_tokens, build_rpc_response):
-        """Test getting account tier."""
-        response_data = [[[[None, "1", 627], [[1613, [None, "NOTEBOOKLM_TIER_STANDARD"]]], 0]]]
-        response = build_rpc_response(RPCMethod.GET_USER_TIER, response_data)
-        httpx_mock.add_response(content=response.encode())
-
-        async with NotebookLMClient(auth_tokens) as client:
-            result = await client.settings.get_account_tier()
-
-        assert result.tier == "NOTEBOOKLM_TIER_STANDARD"
-        assert result.plan_name == "Standard"
 
 
 class TestLoginLanguageSync:

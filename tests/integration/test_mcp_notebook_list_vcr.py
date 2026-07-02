@@ -34,7 +34,7 @@ import pytest
 pytest.importorskip("fastmcp")
 
 # Add tests directory to path for the ``vcr_config`` import (mirrors
-# ``test_settings_vcr.py`` and the other top-level VCR integration tests).
+# the other top-level VCR integration tests).
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
