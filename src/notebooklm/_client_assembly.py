@@ -170,6 +170,10 @@ def _assemble_client(
     # runs this exact function, so tests exercise the same code path as
     # production.
     client._auth = auth
+    # Per-client memo for ``get_account_email`` (a successful live probe runs at
+    # most once per process). Set here — not in ``__init__`` — so the factory-built
+    # shell has it too (test_client_factory_parity, incidents #1196/#1225).
+    client._account_email_cache = None
 
     # Production default: the client's own ``refresh_auth`` bound method.
     # The test factory overrides this (typically with ``None`` or a fake)

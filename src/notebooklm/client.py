@@ -298,13 +298,14 @@ class NotebookLMClient:
             cookie_rotator=cookie_rotator,
             chat_timeout=chat_timeout,
         )
-        # Per-client memo for the signed-in account email so a *successful* live
-        # probe (used only when neither the in-memory ``AuthTokens`` nor persisted
-        # storage carries one) runs at most once per process. A failed/undiscoverable
-        # probe is NOT memoized (stays ``None``), so a genuinely account-less profile
-        # re-probes on each call — acceptable for the rare ``include_account`` path.
-        # ``None`` = not yet resolved.
-        self._account_email_cache: str | None = None
+
+    #: Per-client memo for the signed-in account email so a *successful* live probe
+    #: (used only when neither the in-memory ``AuthTokens`` nor persisted storage
+    #: carries one) runs at most once per process. A failed/undiscoverable probe is
+    #: NOT memoized (stays ``None``), so a genuinely account-less profile re-probes on
+    #: each call — acceptable for the rare ``include_account`` path. Assigned in
+    #: ``_assemble_client`` (factory-shell parity); ``None`` = not yet resolved.
+    _account_email_cache: str | None
 
     @property
     def auth(self) -> AuthTokens:
