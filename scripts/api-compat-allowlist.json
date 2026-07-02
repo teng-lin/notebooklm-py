@@ -380,12 +380,12 @@
     {
       "code": "removed-export",
       "object": "notebooklm.AccountTier",
-      "reason": "v0.8.0 #1735: removed the unreliable promotions-based AccountTier public type. The tier came from FetchRecommendations (a promotions endpoint) and could not distinguish free from paid; the authoritative signal is AccountLimits. See CHANGELOG.md and docs/deprecations.md."
+      "reason": "v0.8.0 #1738: removed the unreliable promotions-based AccountTier public type. The tier came from FetchRecommendations (a promotions endpoint) and could not distinguish free from paid; the authoritative signal is AccountLimits. See CHANGELOG.md and docs/deprecations.md."
     },
     {
       "code": "removed-member",
       "object": "notebooklm.NotebookLMClient.settings.get_account_tier",
-      "reason": "v0.8.0 #1735: removed SettingsAPI.get_account_tier(). The tier came from GET_USER_TIER (FetchRecommendations, a promotions endpoint) and could not distinguish free from paid; use client.settings.get_account_limits() for quota decisions. See CHANGELOG.md and docs/deprecations.md."
+      "reason": "v0.8.0 #1738: removed SettingsAPI.get_account_tier(). The tier came from GET_USER_TIER (FetchRecommendations, a promotions endpoint) and could not distinguish free from paid; use client.settings.get_account_limits() for quota decisions. See CHANGELOG.md and docs/deprecations.md."
     },
     {
       "code": "removed-member",
@@ -395,7 +395,7 @@
     {
       "code": "removed-enum-member",
       "object": "notebooklm.rpc.RPCMethod.GET_USER_TIER",
-      "reason": "v0.8.0 #1735: removed the GET_USER_TIER (ozz5Z) RPC method with the AccountTier feature. It mapped to FetchRecommendations, a promotions endpoint, not a subscription-tier lookup. See CHANGELOG.md and docs/deprecations.md."
+      "reason": "v0.8.0 #1738: removed the GET_USER_TIER (ozz5Z) RPC method with the AccountTier feature. It mapped to FetchRecommendations, a promotions endpoint, not a subscription-tier lookup. See CHANGELOG.md and docs/deprecations.md."
     },
     {
       "code": "removed-export",
