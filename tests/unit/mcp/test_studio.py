@@ -1516,6 +1516,31 @@ async def test_studio_delete_note_backed_mind_map_by_title(mcp_call, mock_client
     mock_client.artifacts.delete.assert_not_called()
 
 
+async def test_studio_delete_note_backed_mind_map_by_uppercase_full_uuid(
+    mcp_call, mock_client
+) -> None:
+    """An UPPERCASE full UUID in the delete carve-out is normalized to canonical
+    lowercase before delegating, so the core's CASE-SENSITIVE ``list_note_backed``
+    probe still finds the note-backed map and clears it via ``notes.delete``.
+    Mirrors the studio_rename uppercase carve-out fix; regression: without the
+    ``item.lower()`` the probe would miss → ``was_note_backed=False`` / ``unknown``."""
+    mm_id = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[FakeMindMap(id=mm_id)])
+    mock_client.notes.delete = AsyncMock()
+    mock_client.artifacts.delete = AsyncMock()
+    result = await mcp_call(
+        "studio_delete",
+        {"notebook": NB_ID, "item": mm_id.upper(), "confirm": True},
+    )
+    assert result.structured_content["was_note_backed"] is True
+    assert result.structured_content["type"] == "mind-map"
+    # The echoed id + the core call use the canonical lowercase form, not the input.
+    assert result.structured_content["item_id"] == mm_id
+    mock_client.notes.delete.assert_awaited_once_with(NB_ID, mm_id)
+
+
 async def test_artifact_delete_absent_full_uuid_is_idempotent(mcp_call, mock_client) -> None:
     """Deleting an already-absent full UUID is a no-error no-op: the merged list
     holds neither a note nor an artifact for it, so the full-UUID carve-out routes

@@ -709,6 +709,11 @@ def register(mcp: Any) -> None:
                 # A non-UUID (prefix/title) miss stays a real NOT_FOUND.
                 if not FULL_ID_PATTERN.fullmatch(item):
                     raise
+                # Normalize to canonical lowercase (like the studio_rename carve-out):
+                # delete_artifact's note-backed-mind-map probe scans mind_maps.list
+                # CASE-SENSITIVELY, so an uppercase UUID would miss the mind-map route
+                # and mislabel it. Backend ids are canonically lowercase.
+                item = item.lower()
                 if not confirm:
                     return needs_confirmation(
                         {
