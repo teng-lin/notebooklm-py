@@ -417,13 +417,79 @@ async def test_chat_configure_goal_and_length(mcp_call, mock_client) -> None:
     mock_client.chat.configure.assert_awaited_once()
 
 
-async def test_chat_configure_no_goal(mcp_call, mock_client) -> None:
+async def test_chat_configure_empty_rejected(mcp_call, mock_client) -> None:
     mock_client.chat.configure = AsyncMock(return_value=None)
-    result = await mcp_call("chat_configure", {"notebook": NB_ID})
-    sc = result.structured_content
-    assert sc["notebook_id"] == NB_ID
-    assert sc["goal_name"] is None
-    mock_client.chat.configure.assert_awaited_once()
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("chat_configure", {"notebook": NB_ID})
+    assert "at least one setting" in str(excinfo.value)
+    mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_goal_only_rejected(mcp_call, mock_client) -> None:
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("chat_configure", {"notebook": NB_ID, "goal": "tutor"})
+    assert "Pass BOTH goal and response_length" in str(excinfo.value)
+    mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_length_only_rejected(mcp_call, mock_client) -> None:
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("chat_configure", {"notebook": NB_ID, "response_length": "longer"})
+    assert "Pass BOTH goal and response_length" in str(excinfo.value)
+    mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_length_default_only_rejected(mcp_call, mock_client) -> None:
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("chat_configure", {"notebook": NB_ID, "response_length": "default"})
+    assert "Pass BOTH goal and response_length" in str(excinfo.value)
+    mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_empty_goal_only_rejected(mcp_call, mock_client) -> None:
+    """An empty goal is not-supplied, so goal: "" with no length is a bare/empty call."""
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("chat_configure", {"notebook": NB_ID, "goal": ""})
+    assert "at least one setting" in str(excinfo.value)
+    mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_empty_goal_with_length_rejected(mcp_call, mock_client) -> None:
+    """goal: "" + a length is a length-ONLY (partial) write, not a both-supplied call.
+
+    Pins ``bool(goal)`` (not ``goal is not None``): an empty goal counts as
+    not-supplied, so pairing it with a response_length is still the partial-reset
+    footgun and must be rejected.
+    """
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call(
+            "chat_configure", {"notebook": NB_ID, "goal": "", "response_length": "longer"}
+        )
+    assert "Pass BOTH goal and response_length" in str(excinfo.value)
+    mock_client.chat.configure.assert_not_called()
+
+
+async def test_chat_configure_rejects_before_resolving_notebook(mcp_call, mock_client) -> None:
+    """The guard runs BEFORE resolve_notebook: an invalid call by *title* never lists.
+
+    ``NB_ID`` is a full UUID that fast-paths without a ``notebooks.list`` round-trip,
+    so the other rejection tests can't prove ordering. A title forces resolution to
+    call ``client.notebooks.list`` — asserting it stays uncalled pins that the
+    fail-loud guard short-circuits ahead of any network work.
+    """
+    mock_client.chat.configure = AsyncMock(return_value=None)
+    mock_client.notebooks.list = AsyncMock(
+        return_value=[FakeNotebook(id=NB_ID, title="My Notebook")]
+    )
+    with pytest.raises(ToolError):
+        await mcp_call("chat_configure", {"notebook": "My Notebook", "goal": "tutor"})
+    mock_client.notebooks.list.assert_not_called()
+    mock_client.chat.configure.assert_not_called()
 
 
 async def test_chat_configure_mode_applies_preset(mcp_call, mock_client) -> None:

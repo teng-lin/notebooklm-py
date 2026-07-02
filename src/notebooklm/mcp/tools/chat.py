@@ -251,16 +251,44 @@ def register(mcp: Any) -> None:
           whole chat-settings block, so it cannot be combined with ``goal`` /
           ``response_length`` (doing so is rejected, not silently dropped).
         * ``goal`` (free-text custom persona/goal; selects the CUSTOM chat goal)
-          and/or ``response_length`` (``default`` / ``longer`` / ``shorter``) set a
+          and ``response_length`` (``default`` / ``longer`` / ``shorter``) set a
           custom configuration.
 
-        NOTE: in the custom (``goal`` / ``response_length``) branch this writes the
-        full chat-settings block, so an omitted field resets to its default (e.g.
-        setting only ``response_length`` clears a previously-set custom ``goal``).
-        Pass every field you want to keep. (A ``chat_mode`` preset has no sub-fields.)
+        The custom configuration branch writes the full settings block with no
+        server-side merge. To prevent silently resetting prior config, a custom
+        configuration requires BOTH ``goal`` and ``response_length`` together; a
+        partial custom write or a bare call is rejected. To change only the
+        response length without a custom goal, use a ``chat_mode`` preset (e.g.
+        ``concise`` for shorter or ``detailed`` for longer).
         """
         client = get_client(ctx)
         with mcp_errors():
+            # A custom configuration writes the FULL chat-settings block (no server-side
+            # merge and no client getter to read-merge), so an omitted field silently resets
+            # to its default. Fail loud instead of clobbering: require BOTH goal and
+            # response_length together, and reject a bare call. (A chat_mode preset has no
+            # sub-fields, so this only gates the custom branch.) "Supplied" matches the core:
+            # an empty goal ("") is a no-op (core uses `if persona:`), and any explicit
+            # response_length — incl. "default" — is a real setting.
+            if chat_mode is None:
+                goal_supplied = bool(goal)
+                length_supplied = response_length is not None
+                if not goal_supplied and not length_supplied:
+                    raise ValidationError(
+                        "chat_configure needs at least one setting: a chat_mode preset "
+                        "(default / learning-guide / concise / detailed), or BOTH goal and "
+                        "response_length for a custom configuration. A bare call would reset "
+                        "every chat setting to its default."
+                    )
+                if goal_supplied != length_supplied:
+                    raise ValidationError(
+                        "A custom chat_configure writes the full settings block, so the "
+                        "omitted field would reset to its default (there is no partial "
+                        "merge). Pass BOTH goal and response_length. To change only the "
+                        "response length without a custom goal, use a chat_mode preset "
+                        "(concise = shorter, detailed = longer)."
+                    )
+
             # ``chat_mode`` / ``response_length`` are Literals, so FastMCP/Pydantic
             # rejects out-of-enum values at the schema boundary. The preset-vs-custom
             # mutual-exclusion (chat_mode cannot be combined with goal/response_length)

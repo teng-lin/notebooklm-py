@@ -359,9 +359,7 @@ class TestMcpChat:
         """``chat_configure`` then ``chat_ask`` returns a non-empty answer."""
         nb = read_only_notebook_id
 
-        configured = await _call(
-            client, "chat_configure", {"notebook": nb, "response_length": "shorter"}
-        )
+        configured = await _call(client, "chat_configure", {"notebook": nb, "chat_mode": "concise"})
         assert isinstance(configured, dict)
 
         answer = await _call(
