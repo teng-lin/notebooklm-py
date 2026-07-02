@@ -241,6 +241,20 @@ def test_store_bound_evicts_soonest_to_expire(monkeypatch) -> None:
     assert {"b", "c", "d"} <= set(store._seen)
 
 
+def test_store_recommit_same_jti_does_not_evict_at_cap(monkeypatch) -> None:
+    # Re-committing an already-recorded jti refreshes its exp in place; it must NOT evict
+    # a different valid entry (order-independence at the size cap). The route can't drive
+    # a double-commit — try_begin gates it — but commit stays self-consistent regardless.
+    monkeypatch.setattr(filelink, "_MAX_SEEN_JTIS", 2)
+    store = ConsumedJtiStore()
+    base = int(time.time()) + 10_000  # far future → sweep never fires
+    store.commit("a", base + 1)
+    store.commit("b", base + 5)  # store is now full (2/2)
+    store.commit("a", base + 9)  # re-commit "a" — must refresh, not evict "b"
+    assert set(store._seen) == {"a", "b"}
+    assert store._seen["a"] == base + 9  # exp refreshed in place
+
+
 def test_config_jti_store_excluded_from_equality_and_default_constructed() -> None:
     # `compare=False` keeps the frozen config comparable by (signer, base_url) only —
     # the store is a mutable, dict-bearing object that must not drive __eq__/__hash__.

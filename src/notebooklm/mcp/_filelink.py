@@ -199,8 +199,12 @@ class ConsumedJtiStore:
     _active: set[str] = field(default_factory=set)
 
     def _sweep(self, now: int) -> None:
-        for jti in [j for j, exp in self._seen.items() if exp <= now]:
-            del self._seen[jti]
+        # ``exp < now`` (strict), matching ``verify``'s ``time.time() > exp`` rejection:
+        # a jti is dropped only once its token is already expired *and* rejectable, never
+        # while ``verify`` would still accept the token — so the sweep opens no re-claim
+        # window at the exact expiry second. ``now`` is the caller's ``int(time.time())``.
+        for expired_jti in [j for j, exp in self._seen.items() if exp < now]:
+            del self._seen[expired_jti]
 
     def try_begin(self, jti: str) -> bool:
         """Atomically claim ``jti`` for a single upload.
@@ -223,11 +227,14 @@ class ConsumedJtiStore:
         """
         self._active.discard(jti)
         self._sweep(int(time.time()))
-        if len(self._seen) >= _MAX_SEEN_JTIS:
-            # Practically unreachable (single-tenant; one jti per file-tool call; all
-            # <= TTL and swept). Evict the soonest-to-expire entry — the least loss of
-            # protection, since it is closest to natural expiry anyway. ``_seen`` is
-            # non-empty here (the cap is >= 1), so ``min`` is safe.
+        if jti not in self._seen and len(self._seen) >= _MAX_SEEN_JTIS:
+            # Only evict when this commit actually GROWS the set (jti is new). Re-committing
+            # an already-recorded jti just refreshes its exp in place, so it must not evict
+            # a different valid entry and shrink the protection window. Practically
+            # unreachable (single-tenant; one jti per file-tool call; all TTL-swept). Evict
+            # the soonest-to-expire entry — the least loss of protection, since it is
+            # closest to natural expiry anyway. ``_seen`` is non-empty here, so ``min`` is
+            # safe.
             del self._seen[min(self._seen, key=self._seen.__getitem__)]
         self._seen[jti] = exp
 
