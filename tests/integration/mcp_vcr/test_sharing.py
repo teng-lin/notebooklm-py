@@ -39,9 +39,9 @@ from .conftest import build_mcp_client
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
-# Recorded notebook id shared by the cli_share_* / sharing_* cassettes (decoded
-# from each cassette's request body). Decorative for matching — pins the full-UUID
-# resolver fast path so no LIST_NOTEBOOKS RPC is issued.
+# The single recorded notebook id shared by all four cli_share_* / sharing_*
+# cassettes. Decorative for matching — pins the full-UUID resolver fast path so no
+# LIST_NOTEBOOKS RPC is issued.
 SHARE_NOTEBOOK_ID = "62e5c8db-3dd2-407c-8d19-32ae4ae799db"
 
 
@@ -68,6 +68,9 @@ async def test_mcp_share_status_over_vcr() -> None:
     assert isinstance(structured["shared_users"], list)
     for user in structured["shared_users"]:
         assert user["permission"] in {"owner", "editor", "viewer"}
+    # share_url is always projected by _status_payload (may be None) — pin its
+    # presence so a dropped key regresses loudly.
+    assert "share_url" in structured
     # view_level is intentionally NOT surfaced by the read path.
     assert "view_level" not in structured
 
@@ -89,6 +92,8 @@ async def test_mcp_share_set_user_over_vcr() -> None:
                 "notebook": SHARE_NOTEBOOK_ID,
                 "email": "collaborator@example.com",
                 "permission": "editor",
+                # notify is shape-irrelevant (the freq matcher collapses the bool),
+                # so False here replays fine against the notify=True recording.
                 "notify": False,
             },
         )
