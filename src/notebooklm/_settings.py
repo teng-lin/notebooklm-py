@@ -6,7 +6,7 @@ from typing import Any
 
 from ._runtime.contracts import RpcCaller
 from .rpc import RPCMethod, safe_index
-from .types import AccountLimits
+from .types import AccountLimits, UserSettings
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +203,50 @@ class SettingsAPI:
         self._log_language_result(current_language, "Output language is now")
         return current_language
 
+    async def _fetch_user_settings(self) -> Any:
+        """Fetch the raw GET_USER_SETTINGS response (one POST)."""
+        logger.debug("Fetching user settings")
+        return await self._rpc.rpc_call(
+            RPCMethod.GET_USER_SETTINGS,
+            build_get_user_settings_params(),
+            source_path="/",
+        )
+
+    def _extract_limits(self, result: Any) -> AccountLimits:
+        limits = extract_account_limits(result)
+        if limits.notebook_limit is not None:
+            logger.debug("Notebook limit from user settings: %s", limits.notebook_limit)
+        else:
+            logger.debug("Could not parse account limits from response")
+        return limits
+
+    def _extract_output_language(self, result: Any) -> str | None:
+        language = _extract_language(
+            result,
+            self._GET_SETTINGS_PREFIX,
+            self._GET_SETTINGS_TAIL,
+            method_id=RPCMethod.GET_USER_SETTINGS.value,
+            source="_settings.get_output_language",
+        )
+        self._log_language_result(language, "Current output language")
+        return language
+
+    async def get_user_settings(self) -> UserSettings:
+        """Fetch user settings once, returning both limits and output language.
+
+        A single ``GET_USER_SETTINGS`` response carries both payloads, so callers
+        that need both (e.g. MCP ``server_info``) should use this instead of
+        firing ``get_account_limits`` and ``get_output_language`` separately.
+
+        Returns:
+            UserSettings with parsed account limits and output language.
+        """
+        result = await self._fetch_user_settings()
+        return UserSettings(
+            limits=self._extract_limits(result),
+            output_language=self._extract_output_language(result),
+        )
+
     async def get_output_language(self) -> str | None:
         """Get the current output language setting.
 
@@ -212,23 +256,7 @@ class SettingsAPI:
             The current language code (e.g., "en", "ja", "zh_Hans"),
             or None if not set or couldn't be parsed.
         """
-        logger.debug("Fetching user settings to get output language")
-
-        result = await self._rpc.rpc_call(
-            RPCMethod.GET_USER_SETTINGS,
-            build_get_user_settings_params(),
-            source_path="/",
-        )
-
-        current_language = _extract_language(
-            result,
-            self._GET_SETTINGS_PREFIX,
-            self._GET_SETTINGS_TAIL,
-            method_id=RPCMethod.GET_USER_SETTINGS.value,
-            source="_settings.get_output_language",
-        )
-        self._log_language_result(current_language, "Current output language")
-        return current_language
+        return self._extract_output_language(await self._fetch_user_settings())
 
     async def get_account_limits(self) -> AccountLimits:
         """Get account-level limits advertised by NotebookLM user settings.
@@ -236,20 +264,7 @@ class SettingsAPI:
         Returns:
             AccountLimits with parsed notebook/source limits when present.
         """
-        logger.debug("Fetching user settings to get account limits")
-
-        result = await self._rpc.rpc_call(
-            RPCMethod.GET_USER_SETTINGS,
-            build_get_user_settings_params(),
-            source_path="/",
-        )
-
-        limits = extract_account_limits(result)
-        if limits.notebook_limit is not None:
-            logger.debug("Notebook limit from user settings: %s", limits.notebook_limit)
-        else:
-            logger.debug("Could not parse account limits from response")
-        return limits
+        return self._extract_limits(await self._fetch_user_settings())
 
     def _log_language_result(self, language: str | None, success_prefix: str) -> None:
         """Log the result of a language operation."""

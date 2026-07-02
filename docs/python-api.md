@@ -1767,6 +1767,7 @@ await client.notes.delete_mind_map(nb_id, mind_map_id)
 |--------|------------|---------|-------------|
 | `get_output_language()` | none | `Optional[str]` | Get current output language setting |
 | `get_account_limits()` | none | `AccountLimits` | Get account-level limits such as max notebooks and sources per notebook |
+| `get_user_settings()` | none | `UserSettings` | Get account limits **and** output language in a single request (both share one server call) |
 | `set_output_language(language)` | `str` | `Optional[str]` | Set output language for artifact generation |
 
 **Example:**
@@ -1778,6 +1779,10 @@ print(f"Current language: {lang}")  # e.g., "en", "ja", "zh_Hans"
 # Get server-reported account limits
 limits = await client.settings.get_account_limits()
 print(f"Notebook limit: {limits.notebook_limit}")
+
+# Need both limits and language? One request instead of two:
+settings = await client.settings.get_user_settings()
+print(settings.limits.notebook_limit, settings.output_language)
 
 # Set language for artifact generation
 result = await client.settings.set_output_language("ja")  # Japanese
@@ -2251,6 +2256,20 @@ class AccountLimits:
     notebook_limit: int | None = None  # Max notebooks the account can hold
     source_limit: int | None = None    # Max sources per notebook
     raw_limits: tuple[Any, ...] = ()   # Untouched RPC payload for forensic use
+```
+
+### UserSettings
+
+Returned by `client.settings.get_user_settings()`. A single account-settings
+request carries both the account limits and the output language, so this is the
+one-call path when you need both (`get_account_limits()` and
+`get_output_language()` each make their own request).
+
+```python
+@dataclass(frozen=True)
+class UserSettings:
+    limits: AccountLimits = AccountLimits()  # Account-level quota limits
+    output_language: str | None = None       # Global output language, or None
 ```
 
 ### SourceFulltext

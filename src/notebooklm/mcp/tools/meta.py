@@ -20,7 +20,6 @@ auth-health probe that works even when unauthenticated.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from fastmcp import Context
@@ -75,15 +74,10 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     if not authenticated:
         return {**identity, "available": False, "reason": "not authenticated"}
     try:
-        # Two concurrent reads (repo convention: each public getter is
-        # self-contained). ``get_account_limits`` + ``get_output_language`` both hit
-        # GET_USER_SETTINGS, so this fires it twice — a client-layer single-fetch
-        # dedupe is tracked in #1724 (kept simple here; the adapter uses the public
-        # getters, not RPC internals). A NotebookLMError from any is caught below.
-        limits, output_language = await asyncio.gather(
-            client.settings.get_account_limits(),
-            client.settings.get_output_language(),
-        )
+        # Both account limits and output language ride one GET_USER_SETTINGS
+        # response (#1724): a single fetch instead of two identical POSTs.
+        settings = await client.settings.get_user_settings()
+        limits, output_language = settings.limits, settings.output_language
     except NotebookLMError as exc:  # degrade, don't sink the whole response
         # Route through the shared scrubber (same chokepoint as every other MCP
         # error): a NotebookLMError on the auth/config path can carry the on-disk

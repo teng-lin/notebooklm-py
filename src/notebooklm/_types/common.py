@@ -127,6 +127,20 @@ class AccountLimits:
 
 
 @dataclass(frozen=True)
+class UserSettings:
+    """A single GET_USER_SETTINGS response, parsed into its two payloads.
+
+    Both ``get_account_limits`` and ``get_output_language`` read the same
+    ``GET_USER_SETTINGS`` response; ``get_user_settings`` returns both from one
+    fetch so callers that need both (e.g. MCP ``server_info``) avoid a duplicate
+    POST.
+    """
+
+    limits: AccountLimits = field(default_factory=AccountLimits)
+    output_language: str | None = None
+
+
+@dataclass(frozen=True)
 class CitedSourceSelection:
     """Result of applying cited-only filtering to research sources."""
 

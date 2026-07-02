@@ -32,6 +32,7 @@ from ._types.common import (
     ConnectionLimits,
     RpcTelemetryEvent,
     UnknownTypeWarning,
+    UserSettings,
 )
 from ._types.labels import Label
 from ._types.mind_maps import MindMap, MindMapKind
@@ -229,6 +230,7 @@ for _public_common_type in (
     ConnectionLimits,
     RpcTelemetryEvent,
     UnknownTypeWarning,
+    UserSettings,
 ):
     _public_common_type.__module__ = __name__
 del _public_common_type

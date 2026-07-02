@@ -12,7 +12,7 @@ from notebooklm._settings import (
 )
 from notebooklm.exceptions import UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
-from notebooklm.types import AccountLimits
+from notebooklm.types import AccountLimits, UserSettings
 
 
 def test_build_get_user_settings_params_returns_fresh_params():
@@ -79,6 +79,43 @@ async def test_get_account_limits_calls_user_settings_rpc():
         [None, [1, None, None, None, None, None, None, None, None, None, [1]]],
         source_path="/",
     )
+
+
+@pytest.mark.asyncio
+async def test_get_user_settings_fetches_once_returns_both():
+    from tests._fixtures.fake_core import make_fake_core
+
+    # Realistic full GET response: limits at [0][1], language flags at [0][2].
+    response = [[None, [6, 200, 100, 500000, 1], [True, None, None, True, ["fr"]]]]
+    core = make_fake_core(rpc_call=AsyncMock(return_value=response))
+    api = SettingsAPI(core.rpc_executor)
+
+    settings = await api.get_user_settings()
+
+    assert settings == UserSettings(
+        limits=AccountLimits(
+            notebook_limit=200, source_limit=100, raw_limits=(6, 200, 100, 500000, 1)
+        ),
+        output_language="fr",
+    )
+    core.rpc_executor.rpc_call.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_user_settings_preserves_getter_contracts():
+    """The combined method keeps each getter's semantics: limits stay tolerant of a
+    malformed response, while language envelope drift still raises."""
+    from tests._fixtures.fake_core import make_fake_core
+
+    # Junk inner: no [0][1] limits shape, no [0][2] flags block.
+    core = make_fake_core(rpc_call=AsyncMock(return_value=[["junk"]]))
+    api = SettingsAPI(core.rpc_executor)
+
+    with pytest.raises(UnknownRPCMethodError):
+        await api.get_user_settings()
+
+    # Same response through the tolerant getter never raises.
+    assert await api.get_account_limits() == AccountLimits()
 
 
 # ---------------------------------------------------------------------------

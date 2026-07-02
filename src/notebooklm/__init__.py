@@ -172,6 +172,7 @@ from .types import (
     SuggestedTopic,
     # Warnings
     UnknownTypeWarning,
+    UserSettings,
     VideoFormat,
     VideoStyle,
 )
@@ -192,6 +193,7 @@ __all__ = [
     "reset_request_id",
     # Types
     "AccountLimits",
+    "UserSettings",
     "ConnectionLimits",
     "ClientMetricsSnapshot",
     "RpcTelemetryEvent",
