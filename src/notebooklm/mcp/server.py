@@ -39,8 +39,9 @@ SERVER_INSTRUCTIONS = (
     "tools accept a name OR an id (full or unique prefix); use the matching "
     "*_list tool to discover them. Long-running generation is split into a "
     "non-blocking generate step (returns a task_id) plus status polling. "
-    "Destructive tools require `confirm=true`; called without it they return a "
-    "`needs_confirmation` preview. Errors arrive as `CODE: message "
+    "Destructive tools — and sharing-widening tools (making a notebook public, "
+    "granting a user access) — require `confirm=true`; called without it they "
+    "return a `needs_confirmation` preview. Errors arrive as `CODE: message "
     "(retriable=…)`."
 )
 

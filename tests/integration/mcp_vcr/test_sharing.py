@@ -95,6 +95,10 @@ async def test_mcp_share_set_user_over_vcr() -> None:
                 # notify is shape-irrelevant (the freq matcher collapses the bool),
                 # so False here replays fine against the notify=True recording.
                 "notify": False,
+                # confirm-gated (#1742): required to reach the mutating grant RPC;
+                # confirm=True skips the gate's get_status, so add_user's own
+                # QDyure+JFMDGd is the only traffic → matches the recording.
+                "confirm": True,
             },
         )
 
@@ -119,7 +123,9 @@ async def test_mcp_share_set_access_public_over_vcr() -> None:
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
             "share_set_access",
-            {"notebook": SHARE_NOTEBOOK_ID, "public": True},
+            # confirm-gated (#1742): confirm=True skips the widening get_status probe,
+            # so set_public's own QDyure+JFMDGd matches the recorded 2-RPC cassette.
+            {"notebook": SHARE_NOTEBOOK_ID, "public": True, "confirm": True},
         )
 
     structured = result.structured_content

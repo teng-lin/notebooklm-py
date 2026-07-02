@@ -84,6 +84,14 @@ DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
     {"notebook_delete", "source_delete", "studio_delete", "share_remove_user"}
 )
 
+#: Mutating tools with a ``confirm`` gate that is NOT the delete-destructive
+#: contract: they carry a ``confirm`` param (default ``False``) but deliberately
+#: no ``destructiveHint`` — the gate is on the *widening* direction only, so the
+#: safe paths (restricting / view-level-only) must not warn like a delete. The
+#: gate is *conditional* for ``share_set_access`` (fires only on restricted→public
+#: widening) and *unconditional* for ``share_set_user`` (every grant/regrade).
+CONFIRM_GATED_MUTATING_TOOLS: frozenset[str] = frozenset({"share_set_access", "share_set_user"})
+
 #: Read-only tools — each carries ``readOnlyHint``.
 READ_ONLY_TOOLS: frozenset[str] = frozenset(
     {
@@ -150,6 +158,40 @@ async def test_read_only_and_destructive_are_disjoint() -> None:
     assert not (READ_ONLY_TOOLS & DESTRUCTIVE_TOOLS)
     assert READ_ONLY_TOOLS <= EXPECTED_TOOLS
     assert DESTRUCTIVE_TOOLS <= EXPECTED_TOOLS
+
+
+@pytest.mark.parametrize("name", sorted(CONFIRM_GATED_MUTATING_TOOLS))
+async def test_confirm_gated_mutating_tools(name, tools_by_name) -> None:
+    """Confirm-gated widening tools expose a boolean ``confirm`` (default False,
+    NOT required) and carry NEITHER ``destructiveHint`` nor ``readOnlyHint`` — the
+    gate is on the widening direction only, so hosts must not treat them as deletes
+    (``destructiveHint``) nor auto-allow them (``readOnlyHint``)."""
+    tool = tools_by_name[name]
+    schema = tool.inputSchema
+    confirm = schema.get("properties", {}).get("confirm")
+    assert confirm is not None, f"{name} must expose a 'confirm' parameter"
+    assert confirm.get("type") == "boolean", f"{name} 'confirm' must be boolean"
+    assert confirm.get("default") is False, f"{name} 'confirm' must default to False"
+    assert "confirm" not in schema.get("required", []), f"{name} 'confirm' must be optional"
+    if tool.annotations is not None:
+        assert not tool.annotations.destructiveHint, f"{name} must not be destructiveHint"
+        assert not tool.annotations.readOnlyHint, f"{name} must not be read-only"
+
+
+async def test_share_set_user_notify_defaults_false(tools_by_name) -> None:
+    """``share_set_user`` defaults ``notify=False`` in its schema — an email is
+    opt-in, not the default (guards the #1742 no-spam contract for schema readers)."""
+    notify = tools_by_name["share_set_user"].inputSchema.get("properties", {}).get("notify")
+    assert notify is not None, "share_set_user must expose a 'notify' parameter"
+    assert notify.get("default") is False, "share_set_user 'notify' must default to False"
+
+
+async def test_confirm_gated_tools_disjoint_from_read_only_and_destructive() -> None:
+    """The confirm-gated widening tools are their own category — not read-only, not
+    delete-destructive — and all belong to the pinned surface."""
+    assert not (CONFIRM_GATED_MUTATING_TOOLS & READ_ONLY_TOOLS)
+    assert not (CONFIRM_GATED_MUTATING_TOOLS & DESTRUCTIVE_TOOLS)
+    assert CONFIRM_GATED_MUTATING_TOOLS <= EXPECTED_TOOLS
 
 
 async def test_studio_rename_is_plain_mutating_tool(tools_by_name) -> None:

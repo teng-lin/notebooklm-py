@@ -108,24 +108,41 @@ def register(mcp: Any) -> None:
         notebook: str,
         public: bool | None = None,
         view_level: Literal["full", "chat"] | None = None,
+        confirm: bool = False,
     ) -> dict[str, Any]:
         """Set a notebook's link-access settings. Accepts a notebook name or ID.
 
-        Provide at least one of:
-        * ``public`` — ``True`` = anyone with the link, ``False`` = restricted to
-          explicitly-shared users.
-        * ``view_level`` — what shared viewers can access: ``full`` (chat + sources
-          + notes) or ``chat`` (chat interface only).
+        Provide ``public`` (``True`` = anyone-with-link, ``False`` = restricted)
+        and/or ``view_level`` (``full`` or ``chat``). Public *widening*
+        (``public=True`` on a restricted notebook) returns a ``needs_confirmation``
+        preview unless ``confirm=True``; restricting and ``view_level`` changes are
+        not gated.
 
-        Returns the updated status. ``view_level`` is echoed in the response ONLY
-        when this call set it (the read API cannot otherwise report it). If both
-        fields are given they are applied as separate operations — the ``view_level``
-        restriction FIRST, then ``public`` — so a partial failure fails closed (the
-        notebook is never left more exposed than intended).
+        Returns the updated status (or preview). ``view_level`` is echoed only when
+        set here (the read API can't report it); with both fields it is applied
+        before ``public`` so a partial failure fails closed.
         """
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
+            if public is True and not confirm:
+                # Gate only a genuine widening (restricted → anyone-with-link). Read
+                # current state to skip a spurious confirm on an already-public
+                # notebook. Benign TOCTOU: if the notebook flips to restricted between
+                # this read and set_public below, the confirmed-less re-widen is the
+                # caller's own explicit public=True intent, so not worth locking.
+                current = await client.sharing.get_status(nb_id)
+                if not current.is_public:
+                    preview: dict[str, Any] = {
+                        "action": "share_set_access",
+                        "notebook_id": nb_id,
+                        "change": "restricted -> anyone_with_link",
+                    }
+                    if view_level is not None:
+                        # The confirmed call also sets view_level — surface it so the
+                        # preview describes every side effect it would apply.
+                        preview["view_level"] = view_level
+                    return needs_confirmation(preview)
             # Apply the (possibly restricting) view_level BEFORE toggling public, so a
             # failure on the public step can never leave the notebook public with a
             # wider view level than intended (fail-closed). set_view_level's return is
@@ -158,21 +175,32 @@ def register(mcp: Any) -> None:
         notebook: str,
         email: str,
         permission: Literal["editor", "viewer"] = "viewer",
-        notify: bool = True,
+        notify: bool = False,
         message: str = "",
+        confirm: bool = False,
     ) -> dict[str, Any]:
         """Grant or change a user's access to a notebook. Accepts a notebook name or ID.
 
-        Upsert by email: shares the notebook with a new user, or changes an existing
-        user's permission (the backend uses one operation for both). ``permission``
-        is ``editor`` or ``viewer`` (OWNER cannot be assigned). ``notify`` sends an
-        email — it fires on a permission *change* too, so pass ``notify=False`` for
-        a silent re-grade. ``message`` is an optional welcome note. Returns the
-        updated status.
+        Confirm-gated: every grant/regrade returns a ``needs_confirmation`` preview
+        unless ``confirm=True``. Upsert by email (one backend op for an add or a
+        permission change). ``permission``: ``editor`` or ``viewer`` (not OWNER).
+        ``notify`` (default ``False``) emails the user on grant/re-grade; ``message``
+        is an optional welcome note. Returns the updated status (or a preview).
         """
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
+            if not confirm:
+                return needs_confirmation(
+                    {
+                        "action": "share_set_user",
+                        "notebook_id": nb_id,
+                        "email": email,
+                        "permission": permission,
+                        "notify": notify,
+                        "has_message": bool(message),
+                    }
+                )
             status = await client.sharing.add_user(
                 nb_id,
                 email,
