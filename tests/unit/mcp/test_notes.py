@@ -19,7 +19,6 @@ pytest.importorskip("fastmcp")
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
 from notebooklm.exceptions import NoteNotFoundError  # noqa: E402 - after importorskip guard
-from notebooklm.types import Note  # noqa: E402 - after importorskip guard
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
@@ -60,64 +59,6 @@ async def test_note_save_create_requires_title_and_content(mcp_call, mock_client
         await mcp_call("note_save", {"notebook": NB_ID, **payload})
     assert "required to create" in str(exc.value)
     mock_client.notes.create.assert_not_called()
-
-
-async def test_note_list(mcp_call, mock_client) -> None:
-    mock_client.notes.list = AsyncMock(return_value=[FakeNote(id=NOTE_ID, title="N1", content="c")])
-    result = await mcp_call("note_list", {"notebook": NB_ID})
-    assert result.structured_content == {
-        "notebook_id": NB_ID,
-        "notes": [{"id": NOTE_ID, "title": "N1", "content": "c"}],
-        "total": 1,
-        "offset": 0,
-        "has_more": False,
-    }
-    mock_client.notes.list.assert_awaited_once_with(NB_ID)
-
-
-async def test_note_list_single_by_ref(mcp_call, mock_client) -> None:
-    """note_list(note=…) fetches one note, returned in the 1-element list shape.
-
-    Wires get_or_none → _app.execute_note_get → serialized note. ``execute_note_get``
-    isinstance-checks the real Note type, so the mock must return one.
-    """
-    mock_client.notes.get_or_none = AsyncMock(
-        return_value=Note(id=NOTE_ID, notebook_id=NB_ID, title="N1", content="full body")
-    )
-    result = await mcp_call("note_list", {"notebook": NB_ID, "note": NOTE_ID})
-    sc = result.structured_content
-    assert sc["notebook_id"] == NB_ID
-    assert (sc["total"], sc["offset"], sc["has_more"]) == (1, 0, False)
-    assert len(sc["notes"]) == 1
-    note = sc["notes"][0]
-    assert note["id"] == NOTE_ID
-    assert note["title"] == "N1"
-    assert note["content"] == "full body"
-    mock_client.notes.get_or_none.assert_awaited_once_with(NB_ID, NOTE_ID)
-    # The list RPC is NOT used on the single-fetch path.
-    mock_client.notes.list.assert_not_called()
-
-
-async def test_note_list_single_not_found_projects_tool_error(mcp_call, mock_client) -> None:
-    # A concrete-but-absent id (full-UUID fast-path skips the list) reaches the
-    # tool as found=False → projected as the typed NOT_FOUND error (preserves the
-    # old note_get semantics: a specific-ref miss is an error, not an empty list).
-    mock_client.notes.get_or_none = AsyncMock(return_value=None)
-    with pytest.raises(ToolError) as excinfo:
-        await mcp_call("note_list", {"notebook": NB_ID, "note": NOTE_ID})
-    assert "NOT_FOUND" in str(excinfo.value)
-
-
-@pytest.mark.parametrize(("arg", "value"), [("limit", 0), ("offset", -1)])
-async def test_note_list_single_still_validates_pagination(
-    mcp_call, mock_client, arg, value
-) -> None:
-    """`limit`/`offset` are validated even with `note` set (where they're ignored)."""
-    mock_client.notes.get_or_none = AsyncMock()
-    with pytest.raises(ToolError) as excinfo:
-        await mcp_call("note_list", {"notebook": NB_ID, "note": NOTE_ID, arg: value})
-    assert arg in str(excinfo.value)
-    mock_client.notes.get_or_none.assert_not_called()
 
 
 async def test_note_save_update(mcp_call, mock_client) -> None:
@@ -174,58 +115,6 @@ async def test_note_save_update_no_fields_errors(mcp_call, mock_client) -> None:
         await mcp_call("note_save", {"notebook": NB_ID, "note": NOTE_ID})
     assert "VALIDATION" in str(excinfo.value)
     mock_client.notes.update.assert_not_called()
-
-
-async def test_note_delete_without_confirm_previews(mcp_call, mock_client) -> None:
-    mock_client.notes.list = AsyncMock(
-        return_value=[FakeNote(id=NOTE_ID, title="Doomed", content="c")]
-    )
-    mock_client.notes.delete = AsyncMock(return_value=None)
-    result = await mcp_call("note_delete", {"notebook": NB_ID, "note": NOTE_ID})
-    assert result.structured_content == {
-        "status": "needs_confirmation",
-        "preview": {
-            "action": "delete_note",
-            "notebook_id": NB_ID,
-            "note_id": NOTE_ID,
-            "title": "Doomed",
-        },
-    }
-    mock_client.notes.delete.assert_not_called()
-
-
-async def test_note_delete_with_confirm_deletes(mcp_call, mock_client) -> None:
-    mock_client.notes.delete = AsyncMock(return_value=None)
-    result = await mcp_call("note_delete", {"notebook": NB_ID, "note": NOTE_ID, "confirm": True})
-    assert result.structured_content == {
-        "status": "deleted",
-        "notebook_id": NB_ID,
-        "note_id": NOTE_ID,
-    }
-    mock_client.notes.delete.assert_awaited_once_with(NB_ID, NOTE_ID)
-
-
-async def test_note_delete_confirm_preview_then_delete(mcp_call, mock_client) -> None:
-    """Two-step flow: preview by name first, then the confirmed delete runs."""
-    mock_client.notes.list = AsyncMock(
-        return_value=[FakeNote(id=NOTE_ID, title="Target", content="c")]
-    )
-    mock_client.notes.delete = AsyncMock(return_value=None)
-
-    preview = await mcp_call("note_delete", {"notebook": NB_ID, "note": "Target"})
-    assert preview.structured_content["status"] == "needs_confirmation"
-    assert preview.structured_content["preview"]["note_id"] == NOTE_ID
-    mock_client.notes.delete.assert_not_called()
-
-    confirmed = await mcp_call(
-        "note_delete", {"notebook": NB_ID, "note": "Target", "confirm": True}
-    )
-    assert confirmed.structured_content == {
-        "status": "deleted",
-        "notebook_id": NB_ID,
-        "note_id": NOTE_ID,
-    }
-    mock_client.notes.delete.assert_awaited_once_with(NB_ID, NOTE_ID)
 
 
 async def test_note_save_update_not_found_projects_tool_error(mcp_call, mock_client) -> None:

@@ -1,9 +1,11 @@
 """MCP artifact-tool VCR test (reuse-only).
 
-``studio_list`` over ``artifacts_list.yaml`` — the studio-artifact list wire
-shape (``{"notebook_id", "artifacts": [...]}``). ``client.artifacts.list``
-issues ``LIST_ARTIFACTS`` (``gArtLc``) + the note-backed mind-map merge
-``GET_NOTES_AND_MIND_MAPS`` (``cFji9``), both recorded in the cassette.
+``studio_list`` over ``mind_maps_interactive.yaml`` — the merged Studio-panel
+wire shape (``{"notebook_id", "items": [...], "total", "offset", "has_more"}``).
+The unified list reads notes AND artifacts, issuing ``GET_NOTES_AND_MIND_MAPS``
+(``cFji9``, notes.list) + ``LIST_ARTIFACTS`` (``gArtLc``) + ``GET_NOTES_AND_MIND_MAPS``
+(``cFji9``, the artifacts.list mind-map facade) — the exact three-RPC sequence that
+cassette records.
 
 ``studio_download`` over ``artifacts_download_report.yaml`` — the typed
 ``DownloadResult`` wire shape, end-to-end, with the report file actually written.
@@ -92,34 +94,66 @@ def _recorded_generate_source_ids(cassette: str) -> list[str]:
     raise AssertionError(f"no recorded R7cb6c source ids found in {cassette}")
 
 
-@pytest.mark.asyncio
-@notebooklm_vcr.use_cassette("artifacts_list.yaml")
-async def test_mcp_artifact_list_over_vcr() -> None:
-    """``studio_list`` returns the recorded artifacts through the real client.
+#: ``mind_maps_interactive.yaml`` was recorded against this notebook and holds
+#: exactly the merged-read RPC sequence ``cFji9`` (notes.list) + ``gArtLc`` +
+#: ``cFji9`` (artifacts.list's mind-map facade) the unified ``studio_list`` needs.
+STUDIO_LIST_NOTEBOOK_ID = "f7d1e2b6-2334-4016-b81d-aded7b3fa9b6"
 
-    End-to-end: FastMCP ``Client`` → ``studio_list`` tool →
-    ``client.artifacts.list()`` → recorded ``LIST_ARTIFACTS`` (``gArtLc``) +
-    ``GET_NOTES_AND_MIND_MAPS`` (``cFji9``) RPCs.
+#: The hyphenated ``type`` vocabulary a merged studio item may carry.
+_STUDIO_TYPES = frozenset(
+    {
+        "note",
+        "audio",
+        "video",
+        "report",
+        "quiz",
+        "flashcards",
+        "mind-map",
+        "infographic",
+        "slide-deck",
+        "data-table",
+        "unknown",
+    }
+)
+
+
+@pytest.mark.asyncio
+@notebooklm_vcr.use_cassette("mind_maps_interactive.yaml")
+async def test_mcp_studio_list_over_vcr() -> None:
+    """``studio_list`` merges notes + artifacts through the real client over VCR.
+
+    End-to-end: FastMCP ``Client`` → ``studio_list`` tool → concurrent
+    ``client.notes.list`` (``GET_NOTES_AND_MIND_MAPS`` ``cFji9``) +
+    ``client.artifacts.list`` (``LIST_ARTIFACTS`` ``gArtLc`` + the note-backed
+    mind-map merge ``cFji9``) — the exact three-RPC sequence recorded in
+    ``mind_maps_interactive.yaml``.
+
+    Pins the merged ``items`` wire shape: the key is ``items`` (never
+    ``notes``/``artifacts``), each item carries a hyphenated ``type`` discriminator,
+    the pagination meta is present, and the notebook's interactive mind map surfaces
+    as a ``mind-map`` item.
     """
     async with build_mcp_client() as mcp_client:
-        result = await mcp_client.call_tool("studio_list", {"notebook": ARTIFACT_NOTEBOOK_ID})
+        result = await mcp_client.call_tool("studio_list", {"notebook": STUDIO_LIST_NOTEBOOK_ID})
 
     structured = result.structured_content
     assert isinstance(structured, dict)
-    assert structured["notebook_id"] == ARTIFACT_NOTEBOOK_ID
-    artifacts = structured["artifacts"]
-    assert isinstance(artifacts, list)
-    assert artifacts, "expected at least one recorded artifact from the cassette"
-    first = artifacts[0]
-    assert isinstance(first, dict)
-    # ``to_jsonable`` serializes the declared ``Artifact`` dataclass fields (the
-    # user-facing ``type_id`` / ``kind`` are ``@property``, so they are NOT on
-    # the wire). Pin the real serialized fields decoded from the positional row:
-    # a non-empty id, a title, the integer artifact-type code, and the status.
-    assert first.get("id"), "recorded artifact is missing an id"
-    assert "title" in first
-    assert isinstance(first.get("_artifact_type"), int), "missing decoded artifact-type code"
-    assert isinstance(first.get("status"), int), "missing decoded status code"
+    assert structured["notebook_id"] == STUDIO_LIST_NOTEBOOK_ID
+    items = structured["items"]
+    assert isinstance(items, list)
+    assert items, "expected at least one recorded studio item from the cassette"
+    # Pagination meta rides alongside the merged list.
+    assert structured["total"] == len(items) if not structured["has_more"] else True
+    assert structured["offset"] == 0
+    types = set()
+    for it in items:
+        assert isinstance(it, dict)
+        assert it.get("id"), "studio item is missing an id"
+        assert "title" in it
+        assert it["type"] in _STUDIO_TYPES, f"unexpected studio type: {it['type']!r}"
+        types.add(it["type"])
+    # The recording is a mind-map notebook, so a ``mind-map`` item is present.
+    assert "mind-map" in types, f"expected a mind-map item; got types {sorted(types)}"
 
 
 @pytest.mark.asyncio

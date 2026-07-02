@@ -40,9 +40,6 @@ from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
     call_tool as _call,
 )
 from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
-    download_type as _download_type,
-)
-from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
     mcp_client as _mcp_client,
 )
 from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
@@ -104,14 +101,14 @@ class TestMcpManifest:
             "chat_ask",
             "studio_list",
             "research_status",
-            "note_list",
+            "note_save",
             "server_info",
         }
         missing = core - set(by_name)
         assert not missing, f"core tools missing from the manifest: {sorted(missing)}"
 
         # Every delete is DESTRUCTIVE and exposes a ``confirm`` parameter.
-        for name in ("notebook_delete", "source_delete", "note_delete"):
+        for name in ("notebook_delete", "source_delete", "studio_delete"):
             tool = by_name[name]
             assert tool.annotations is not None, f"{name} has no annotations"
             assert tool.annotations.destructiveHint is True, f"{name} missing destructiveHint"
@@ -211,17 +208,14 @@ TOOL_COVERAGE: dict[str, str] = {
     "chat_ask": "TestMcpChat.test_configure_then_ask",
     "chat_configure": "TestMcpChat.test_configure_then_ask",
     # notes
-    "note_create": "TestMcpNotes.test_note_crud",
-    "note_list": "TestMcpNotes.test_note_crud",
-    "note_update": "TestMcpNotes.test_note_crud",
-    "note_delete": "TestMcpNotes.test_note_crud",
-    # artifacts
-    "studio_list": "TestMcpArtifacts.test_artifact_list",
+    "note_save": "TestMcpNotes.test_note_crud",
+    # studio (notes + artifacts unified)
+    "studio_list": "TestMcpArtifacts.test_artifact_list / TestMcpNotes.test_note_crud",
     "studio_generate": "TestMcpArtifacts.test_generate_report_wiring (variants)",
     "studio_status": "TestMcpArtifacts.test_generate_report_wiring (variants)",
     "studio_download": "TestMcpArtifacts.test_download_existing_artifact",
     "studio_rename": "tests/unit/mcp/test_artifacts.py (kind-aware rename; no live mutation)",
-    "studio_delete": "tests/unit/mcp/test_artifacts.py (kind-aware delete; no live mutation)",
+    "studio_delete": "TestMcpNotes.test_note_crud (note path) + tests/unit/mcp/test_artifacts.py (artifact path)",
     # research
     "research_start": "TestMcpResearch.test_start_status_cancel (variants)",
     "research_status": "TestMcpResearch.test_status_readonly",
@@ -268,7 +262,7 @@ class TestMcpToolMatrix:
         assert isinstance(await _call(client, "server_info"), dict)
 
         # Notebook-scoped reads.
-        for name in ("notebook_describe", "source_list", "studio_list", "note_list"):
+        for name in ("notebook_describe", "source_list", "studio_list"):
             structured = await _call(client, name, {"notebook": nb})
             assert isinstance(structured, dict), f"{name} returned {type(structured)}"
 
@@ -380,7 +374,11 @@ class TestMcpChat:
 
 @requires_auth
 class TestMcpNotes:
-    """Note domain: create / list / update / delete through MCP tools."""
+    """Note domain: create / list / update / delete via the consolidated Studio surface.
+
+    ``note_save`` upserts (create then update); reading + deleting a note fold into
+    the cross-type ``studio_list`` / ``studio_delete`` tools.
+    """
 
     @pytest.mark.asyncio
     async def test_note_crud(self, client, temp_notebook):
@@ -388,31 +386,34 @@ class TestMcpNotes:
 
         created = await _call(
             client,
-            "note_create",
+            "note_save",
             {"notebook": nb, "title": "E2E MCP Note", "content": "Initial body."},
         )
         note_id = created["note_id"]
         assert note_id
-        # note_create returns a `created: True` bool (NOT a `status` key like
-        # note_update/note_delete — the tool return shapes are asymmetric).
+        # note_save create returns a `created: True` bool alongside status="created".
         assert created["created"] is True
 
-        listing = await _call(client, "note_list", {"notebook": nb})
-        assert note_id in [n["id"] for n in listing["notes"]]
+        # The note surfaces in the merged Studio panel as a ``note``-typed item.
+        listing = await _call(client, "studio_list", {"notebook": nb})
+        note_item = next((it for it in listing["items"] if it["id"] == note_id), None)
+        assert note_item is not None
+        assert note_item["type"] == "note"
 
         updated = await _call(
-            client, "note_update", {"notebook": nb, "note": note_id, "content": "Updated body."}
+            client, "note_save", {"notebook": nb, "note": note_id, "content": "Updated body."}
         )
         assert updated["status"] == "updated"
         assert updated["note_id"] == note_id
 
-        preview = await _call(client, "note_delete", {"notebook": nb, "note": note_id})
+        preview = await _call(client, "studio_delete", {"notebook": nb, "item": note_id})
         assert preview["status"] == "needs_confirmation"
         deleted = await _call(
-            client, "note_delete", {"notebook": nb, "note": note_id, "confirm": True}
+            client, "studio_delete", {"notebook": nb, "item": note_id, "confirm": True}
         )
         assert deleted["status"] == "deleted"
-        assert deleted["note_id"] == note_id
+        assert deleted["item_id"] == note_id
+        assert deleted["type"] == "note"
 
 
 @requires_auth
@@ -423,9 +424,9 @@ class TestMcpArtifacts:
     @pytest.mark.asyncio
     @pytest.mark.readonly
     async def test_artifact_list(self, client, generation_notebook_id):
-        """``studio_list`` returns the notebook's artifacts as a list."""
+        """``studio_list`` returns the notebook's merged notes+artifacts as a list."""
         structured = await _call(client, "studio_list", {"notebook": generation_notebook_id})
-        assert isinstance(structured["artifacts"], list)
+        assert isinstance(structured["items"], list)
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
@@ -437,11 +438,12 @@ class TestMcpArtifacts:
         never depends on cross-file test ordering.
         """
         listing = await _call(client, "studio_list", {"notebook": generation_notebook_id})
-        candidate = _pick_downloadable_artifact(listing["artifacts"])
+        candidate = _pick_downloadable_artifact(listing["items"])
         if candidate is None:
             pytest.skip("no existing downloadable artifact on the generation notebook")
 
-        dl_type = _download_type(candidate["_artifact_type"])
+        # A merged item's hyphenated ``type`` IS the studio_download key.
+        dl_type = candidate["type"]
         out_path = tmp_path / f"artifact-{dl_type}"
         result = await _call(
             client,

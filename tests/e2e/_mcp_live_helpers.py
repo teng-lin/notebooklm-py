@@ -21,41 +21,38 @@ from fastmcp import Client
 from notebooklm import NotebookLMClient
 from notebooklm.mcp.server import create_server
 
-#: Serialized ``Artifact._artifact_type`` values (underscored) whose download is
-#: wired through ``artifact_download``. The download tool's spec keys are
-#: hyphenated, so callers translate ``_`` → ``-`` (see :func:`download_type`).
+#: Merged ``studio_list`` item ``type`` values (hyphenated, the shared Studio
+#: vocabulary) whose download is wired through ``studio_download``. An item's
+#: ``type`` doubles as the ``studio_download`` ``artifact_type`` key, so no
+#: translation is needed (unlike the old underscored ``_artifact_type`` codes).
 DOWNLOADABLE_ARTIFACT_TYPES = {
     "audio",
     "video",
-    "slide_deck",
+    "slide-deck",
     "infographic",
     "report",
-    "mind_map",
-    "data_table",
+    "mind-map",
+    "data-table",
     "quiz",
     "flashcards",
 }
 
 
-def download_type(serialized_artifact_type: str) -> str:
-    """Map a serialized ``_artifact_type`` (``slide_deck``) to a download key (``slide-deck``)."""
-    return serialized_artifact_type.replace("_", "-")
+def pick_downloadable_artifact(items: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Return the first ready, downloadable artifact among merged studio ``items``.
 
-
-def pick_downloadable_artifact(artifacts: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Return the first ready, downloadable artifact in ``artifacts`` (or ``None``).
-
-    "Ready" tolerates a missing ``status`` (some serializations omit it) as well
-    as the terminal ``ready``/``completed`` states; "downloadable" is membership
-    in :data:`DOWNLOADABLE_ARTIFACT_TYPES`. Lets a test reuse whatever artifact a
-    notebook already has and skip cleanly when none qualifies.
+    Operates on the unified ``studio_list`` item shape: a hyphenated ``type``
+    discriminator (``note`` items and non-downloadable types are skipped) plus a
+    tolerant ``status_label`` check ("ready" tolerates a missing/None label as well
+    as the terminal ``ready``/``completed`` states). Lets a test reuse whatever
+    artifact a notebook already has and skip cleanly when none qualifies.
     """
     return next(
         (
-            a
-            for a in artifacts
-            if a.get("_artifact_type") in DOWNLOADABLE_ARTIFACT_TYPES
-            and a.get("status") in (None, "ready", "completed")
+            it
+            for it in items
+            if it.get("type") in DOWNLOADABLE_ARTIFACT_TYPES
+            and it.get("status_label") in (None, "ready", "completed")
         ),
         None,
     )

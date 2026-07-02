@@ -1187,11 +1187,12 @@ src/notebooklm/
 │       ├── _content_sanity.py   # _annotate_thin_warnings/_thin_content_warning — advisory thin/soft-404 web-page warning over _app.source_content (used by source_wait + source_add batch)
 │       ├── _passthrough.py      # Shared pass-through resolvers (passthrough_notebook_id/passthrough_child_id) for the CLI-shaped _app executors
 │       ├── _preview.py          # title_for_id() — shared id→title lookup for the delete tools' needs_confirmation previews
+│       ├── _studio.py           # cross-type Studio plumbing: studio_items (merge notes+artifacts into one items list) + resolve_studio_item (cross-type ref → StudioResolvedItem) for studio_list/studio_delete (split from artifacts.py for the ADR-0008 size budget)
 │       ├── notebooks.py         # notebook_list/create/describe/rename/delete over _app.notebooks
 │       ├── sources.py           # source_list/read/rename/delete/wait/add over _app.source_* (add: url/text/file/youtube via source_add, drive via source_mutations)
 │       ├── chat.py              # chat_ask (client.chat.ask + get_history recall + suggest_followups) + chat_configure (_app.chat.execute_configure) + suggest_prompts (client.notebooks.suggest_prompts surface selector)
-│       ├── notes.py             # note_create/list/update/delete over _app.notes
-│       ├── artifacts.py         # studio_list/generate/status/download/rename/delete (enum dispatch over _app.generate + _app.download; stateless poll via _app.artifacts.poll_artifact; rename/delete over _app.artifacts kind-aware cores)
+│       ├── notes.py             # note_save (create-or-update upsert) over _app.notes; note reading/deleting fold into the cross-type Studio tools
+│       ├── artifacts.py         # hosts the Studio tools: studio_list (merges notes+artifacts via _studio.studio_items) / generate / status / download / rename / retry / get_prompt / studio_delete (cross-type via _studio.resolve_studio_item: note→_app.notes.execute_note_delete, artifact→_app.artifacts.delete_artifact); enum dispatch over _app.generate + _app.download; stateless poll via _app.artifacts.poll_artifact; rename over _app.artifacts kind-aware core
 │       ├── research.py          # research_start (client.research.start) + research_status (_app.research.poll_and_classify) + research_import
 │       ├── sharing.py           # share_status/set_access/set_user/remove_user (thin adapters over client.sharing; set_access folds public+view_level, set_user upserts add/update; string-labeled enums; view_level surfaced only when set)
 │       └── meta.py              # server_info — package version + auth-health over _app.auth_check (no notebook arg)

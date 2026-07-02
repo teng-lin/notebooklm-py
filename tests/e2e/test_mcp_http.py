@@ -31,7 +31,6 @@ from notebooklm.mcp._filelink import (  # noqa: E402 - after importorskip guard
 )
 
 from ._mcp_live_helpers import (  # noqa: E402 - after importorskip guard
-    download_type,
     pick_downloadable_artifact,
 )
 from .conftest import (  # noqa: E402 - after importorskip guard
@@ -192,16 +191,17 @@ class TestMcpHttpFileRoutes:
         """
         async with inprocess_mcp_server(client, file_transfer=_file_transfer()) as im:
             async with im.mcp_client() as mcp:
-                listing = await mcp.call_tool("artifact_list", {"notebook": generation_notebook_id})
+                listing = await mcp.call_tool("studio_list", {"notebook": generation_notebook_id})
                 sc = listing.structured_content
-                assert sc is not None, "artifact_list returned no structured content"
-                candidate = pick_downloadable_artifact(sc["artifacts"])
+                assert sc is not None, "studio_list returned no structured content"
+                candidate = pick_downloadable_artifact(sc["items"])
                 if candidate is None:
                     pytest.skip("no existing downloadable artifact on the generation notebook")
 
-                dl_type = download_type(candidate["_artifact_type"])
+                # A merged item's hyphenated ``type`` IS the studio_download key.
+                dl_type = candidate["type"]
                 result = await mcp.call_tool(
-                    "artifact_download",
+                    "studio_download",
                     {"notebook": generation_notebook_id, "artifact_type": dl_type},
                 )
             structured = result.structured_content

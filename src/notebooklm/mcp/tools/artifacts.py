@@ -36,10 +36,11 @@ from pydantic import AnyUrl
 from ..._app import artifacts as artifact_core
 from ..._app import download as download_core
 from ..._app import generate as generate_core
+from ..._app import notes as note_core
 from ..._app.language import is_supported_language
-from ..._app.resolve import resolve_ref
+from ..._app.resolve import FULL_ID_PATTERN, resolve_ref
 from ..._app.serialize import to_jsonable
-from ...exceptions import ValidationError
+from ...exceptions import NotFoundError, ValidationError
 from ...types import ArtifactType
 from .._coerce import coerce_list
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
@@ -49,7 +50,7 @@ from .._filelink import DOWNLOAD_TTL, FileTransferConfig
 from .._paginate import DEFAULT_LIMIT, paginate
 from .._resolve import resolve_artifact, resolve_notebook, resolve_sources
 from ._passthrough import passthrough_notebook_id
-from ._preview import title_for_id
+from ._studio import STUDIO_KINDS, resolve_studio_item, studio_items
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
@@ -400,19 +401,61 @@ def register(mcp: Any) -> None:
 
     @mcp.tool(annotations=READ_ONLY)
     async def studio_list(
-        ctx: Context, notebook: str, limit: int = DEFAULT_LIMIT, offset: int = 0
+        ctx: Context,
+        notebook: str,
+        item: str | None = None,
+        kind: str | None = None,
+        limit: int = DEFAULT_LIMIT,
+        offset: int = 0,
     ) -> dict[str, Any]:
-        """List a notebook's studio artifacts. Accepts a notebook name or ID.
+        """List a notebook's Studio panel — text notes AND generated artifacts.
 
-        Returns a bounded page: ``limit`` (default 50) artifacts from ``offset``,
-        plus ``total`` / ``offset`` / ``has_more``. Page with ``offset += limit``.
+        Accepts a notebook name or ID. Returns a merged ``items`` list; each item
+        carries ``id`` / ``title`` / ``type`` where ``type`` is ``note`` for a text
+        note or the artifact's hyphenated kind (``audio`` / ``video`` / ``report`` /
+        ``quiz`` / ``flashcards`` / ``mind-map`` / ``infographic`` / ``slide-deck`` /
+        ``data-table``). Notes also carry ``content``; artifacts carry
+        ``status_label`` and ``url``.
+
+        * Default (list mode): a bounded page of ``limit`` (default 50) items from
+          ``offset``, plus ``total`` / ``offset`` / ``has_more`` (page with
+          ``offset += limit``).
+        * ``kind`` filters the list to one ``type`` before paging.
+        * ``item`` (a name or id — note OR artifact) fetches just that one item,
+          returned as a 1-element ``items`` list (``total`` 1); a ref that matches
+          nothing is a NOT_FOUND error. ``limit`` / ``offset`` are ignored when
+          ``item`` is given (but still validated).
         """
         client = get_client(ctx)
         with mcp_errors():
+            # Validate pagination bounds unconditionally (inside ``mcp_errors`` so
+            # the VALIDATION wire-contract applies) — ``studio_list(item=x,
+            # limit=0)`` errors even though they're ignored on the single-fetch path.
+            if limit < 1:
+                raise ValidationError("limit must be >= 1.")
+            if offset < 0:
+                raise ValidationError("offset must be >= 0.")
+            if kind is not None and kind not in STUDIO_KINDS:
+                raise ValidationError(
+                    f"unknown kind {kind!r}; valid: {', '.join(sorted(STUDIO_KINDS))}."
+                )
             nb_id = await resolve_notebook(client, notebook)
-            artifacts = await client.artifacts.list(nb_id)
-            page, meta = paginate(to_jsonable(artifacts), limit, offset)
-            return {"notebook_id": nb_id, "artifacts": page, **meta}
+            if item is not None:
+                # Single fetch by ref over the merged list; the resolved item's full
+                # projection rides on ``.raw`` so this never re-lists.
+                resolved = await resolve_studio_item(client, nb_id, item, kind)
+                return {
+                    "notebook_id": nb_id,
+                    "items": [resolved.raw],
+                    "total": 1,
+                    "offset": 0,
+                    "has_more": False,
+                }
+            items = await studio_items(client, nb_id)
+            if kind is not None:
+                items = [it for it in items if it["type"] == kind]
+            page, meta = paginate(items, limit, offset)
+            return {"notebook_id": nb_id, "items": page, **meta}
 
     @mcp.tool
     async def studio_generate(
@@ -819,42 +862,76 @@ def register(mcp: Any) -> None:
 
     @mcp.tool(annotations=DESTRUCTIVE)
     async def studio_delete(
-        ctx: Context, notebook: str, artifact: str, confirm: bool = False
+        ctx: Context, notebook: str, item: str, confirm: bool = False
     ) -> dict[str, Any]:
-        """Delete a studio artifact (irreversible). Accepts a notebook/artifact name or ID.
+        """Delete a Studio item (irreversible) — a text note OR an artifact.
 
-        Covers every artifact type, including both mind-map kinds: note-backed
-        maps are *cleared* via the note system (not hard-removed — Google may
-        garbage collect them later), interactive maps and regular artifacts are
-        removed via the artifact delete RPC. The kind routing is handled by the
-        shared ``_app`` core.
+        Accepts a notebook name or ID plus an ``item`` name-or-id ref resolved over
+        the merged notes+artifacts list. Routing is by resolved type: a ``note`` is
+        deleted via the note system; an artifact via the artifact delete RPC (which
+        itself *clears* a note-backed mind map through the note system rather than
+        hard-removing it — Google may garbage collect it later).
 
         Two-step confirmation: with ``confirm=False`` (default) it returns a
-        ``needs_confirmation`` preview of the resolved artifact without deleting;
-        call again with ``confirm=True`` to perform the delete. Deleting an
-        already-absent full id is idempotent (no error).
+        ``needs_confirmation`` preview of the resolved item without deleting; call
+        again with ``confirm=True`` to perform the delete. Deleting an already-absent
+        full id is idempotent (no error) — it routes down the artifact path (a
+        present note would have been found in the list).
         """
         client = get_client(ctx)
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
-            art_id = await resolve_artifact(client, nb_id, artifact)
+            try:
+                resolved = await resolve_studio_item(client, nb_id, item)
+            except NotFoundError:
+                # Idempotent-on-missing carve-out: an absent FULL UUID is safe to
+                # send down the artifact delete path (a present note would have been
+                # found in the merged list), preserving delete-by-id idempotency.
+                # A non-UUID (prefix/title) miss stays a real NOT_FOUND.
+                if not FULL_ID_PATTERN.fullmatch(item.strip()):
+                    raise
+                if not confirm:
+                    return needs_confirmation(
+                        {
+                            "action": "delete_studio_item",
+                            "notebook_id": nb_id,
+                            "item_id": item.strip(),
+                            "type": None,
+                            "title": None,
+                        }
+                    )
+                was_note_backed = await artifact_core.delete_artifact(client, nb_id, item.strip())
+                return {
+                    "status": "deleted",
+                    "notebook_id": nb_id,
+                    "item_id": item.strip(),
+                    "type": "mind-map" if was_note_backed else "unknown",
+                    "was_note_backed": was_note_backed,
+                }
             if not confirm:
-                # Best-effort title for the preview; a full-UUID that is absent
-                # from the list resolves to None, which is fine for the preview.
-                title = title_for_id(await client.artifacts.list(nb_id), art_id)
                 return needs_confirmation(
                     {
-                        "action": "delete_artifact",
+                        "action": "delete_studio_item",
                         "notebook_id": nb_id,
-                        "artifact_id": art_id,
-                        "title": title,
+                        "item_id": resolved.item_id,
+                        "type": resolved.type,
+                        "title": resolved.title,
                     }
                 )
-            was_note_backed = await artifact_core.delete_artifact(client, nb_id, art_id)
+            if resolved.type == "note":
+                await note_core.execute_note_delete(client, nb_id, resolved.item_id)
+                return {
+                    "status": "deleted",
+                    "notebook_id": nb_id,
+                    "item_id": resolved.item_id,
+                    "type": "note",
+                }
+            was_note_backed = await artifact_core.delete_artifact(client, nb_id, resolved.item_id)
             return {
                 "status": "deleted",
                 "notebook_id": nb_id,
-                "artifact_id": art_id,
+                "item_id": resolved.item_id,
+                "type": resolved.type,
                 "was_note_backed": was_note_backed,
             }
 

@@ -95,26 +95,26 @@ class TestConfirmGating:
     """Destructive tools without ``confirm`` preview-only; the entity survives."""
 
     @pytest.mark.asyncio
-    async def test_note_delete_without_confirm_does_not_delete(self, client, temp_notebook):
+    async def test_studio_delete_without_confirm_does_not_delete(self, client, temp_notebook):
         nb = temp_notebook.id
         created = await _call(
             client,
-            "note_create",
+            "note_save",
             {"notebook": nb, "title": "Confirm-Gate Note", "content": "Body."},
         )
         note_id = created["note_id"]
 
-        # No confirm → preview only.
-        preview = await _call(client, "note_delete", {"notebook": nb, "note": note_id})
+        # No confirm → preview only (cross-type studio_delete resolves the note).
+        preview = await _call(client, "studio_delete", {"notebook": nb, "item": note_id})
         assert preview["status"] == "needs_confirmation"
 
         # The note must still exist (the no-confirm call did NOT delete).
-        listing = await _call(client, "note_list", {"notebook": nb})
-        assert note_id in [n["id"] for n in listing["notes"]]
+        listing = await _call(client, "studio_list", {"notebook": nb})
+        assert note_id in [it["id"] for it in listing["items"]]
 
         # Clean up with an explicit confirm.
         deleted = await _call(
-            client, "note_delete", {"notebook": nb, "note": note_id, "confirm": True}
+            client, "studio_delete", {"notebook": nb, "item": note_id, "confirm": True}
         )
         assert deleted["status"] == "deleted"
 
