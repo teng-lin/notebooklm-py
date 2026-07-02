@@ -254,12 +254,9 @@ def register(mcp: Any) -> None:
           and ``response_length`` (``default`` / ``longer`` / ``shorter``) set a
           custom configuration.
 
-        The custom configuration branch writes the full settings block with no
-        server-side merge. To prevent silently resetting prior config, a custom
-        configuration requires BOTH ``goal`` and ``response_length`` together; a
-        partial custom write or a bare call is rejected. To change only the
-        response length without a custom goal, use a ``chat_mode`` preset (e.g.
-        ``concise`` for shorter or ``detailed`` for longer).
+        A custom config writes the whole block with no merge, so ``goal`` and
+        ``response_length`` are required together — a partial or bare call is
+        rejected, not silently reset. To set verbosity only, use a preset.
         """
         client = get_client(ctx)
         with mcp_errors():
