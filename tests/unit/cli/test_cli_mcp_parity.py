@@ -37,7 +37,7 @@ from notebooklm.cli import helpers as helpers_module  # noqa: E402
 from notebooklm.cli.resolve import resolve_notebook_id, resolve_source_ids  # noqa: E402
 from notebooklm.mcp._resolve import resolve_notebook  # noqa: E402
 from notebooklm.mcp.server import create_server  # noqa: E402
-from notebooklm.mcp.tools.artifacts import _passthrough_sources  # noqa: E402
+from notebooklm.mcp.tools.studio import _passthrough_sources  # noqa: E402
 from notebooklm.notebooklm_cli import cli  # noqa: E402
 from notebooklm.types import Artifact, GenerationState  # noqa: E402
 
@@ -319,7 +319,7 @@ def test_explicit_source_ids_parity(
 #: ``data-table`` expose no per-kind options. ``mind-map`` renders via a different client
 #: path (``mind_maps.generate`` / ``generate_mind_map``, see #1653) so it is NOT in this
 #: matrix; its ``map_kind`` + ``instructions`` parity is covered in
-#: ``tests/unit/mcp/test_artifacts.py``.
+#: ``tests/unit/mcp/test_studio.py``.
 _OPTION_CASES = [
     (
         "audio",

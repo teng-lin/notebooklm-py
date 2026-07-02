@@ -47,9 +47,9 @@ PROMPT_ARTIFACT_ID = "fdd20d4a-f422-42b3-896c-60997035f4ca"
 # mcp_studio_*.yaml — recorded (scratch-notebook) ids. The notebook holds ONE note
 # and ONE report; studio_delete/rename resolve these ids over the merged list, so
 # the values must match the ids the recorded LIST responses carry.
-STUDIO_NOTEBOOK_ID = "9b8fb5be-3897-4360-8d19-fc7eae295747"
-STUDIO_REPORT_ID = "6384b603-5734-433c-b2d8-62b490ad4a54"
-STUDIO_NOTE_ID = "a1384eaf-25fa-43eb-ac76-8154f45c0a05"
+STUDIO_NOTEBOOK_ID = "06d9adf2-f2d7-41e8-8587-5a92bd1f1a53"
+STUDIO_REPORT_ID = "5acb7fe5-800e-4dc7-89a6-5cedd55c1ad9"
+STUDIO_NOTE_ID = "d1706a9f-b959-413d-ae6d-52e0d35c6e72"
 
 
 @pytest.mark.asyncio
@@ -107,20 +107,21 @@ async def test_mcp_studio_get_prompt_over_vcr() -> None:
 async def test_mcp_studio_rename_over_vcr() -> None:
     """``studio_rename`` retitles a regular artifact through the real client over VCR.
 
-    End-to-end: tool -> ``resolve_artifact`` (full UUID, no list) ->
-    ``rename_artifact`` -> a kind-aware ``mind_maps.list`` probe
-    (``list_note_backed`` ``cFji9`` + ``artifacts.list`` ``gArtLc`` + facade
-    ``cFji9``; the id is NOT a mind map) -> ``client.artifacts.rename`` ->
-    ``RENAME_ARTIFACT`` (``rc3d8d``). Pins the ``{"status": "renamed", ...,
-    "is_mind_map": False}`` wire shape — the mutating rename RPC a mocked test
-    cannot validate.
+    End-to-end: tool -> cross-type ``resolve_studio_item`` (merged notes+artifacts
+    preflight: ``GET_NOTES_AND_MIND_MAPS`` ``cFji9`` + ``LIST_ARTIFACTS`` ``gArtLc``)
+    resolves the report as an artifact -> ``rename_artifact`` -> a kind-aware
+    ``mind_maps.list`` probe (``list_note_backed`` ``cFji9`` + ``artifacts.list``
+    ``gArtLc`` + facade ``cFji9``; the id is NOT a mind map) ->
+    ``client.artifacts.rename`` -> ``RENAME_ARTIFACT`` (``rc3d8d``). Pins the
+    ``{"status": "renamed", "type": "report", ..., "is_mind_map": False}`` wire
+    shape — the mutating rename RPC a mocked test cannot validate.
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
             "studio_rename",
             {
                 "notebook": STUDIO_NOTEBOOK_ID,
-                "artifact": STUDIO_REPORT_ID,
+                "item": STUDIO_REPORT_ID,
                 "new_title": "Renamed by VCR",
             },
         )
@@ -129,7 +130,8 @@ async def test_mcp_studio_rename_over_vcr() -> None:
     assert isinstance(structured, dict)
     assert structured["status"] == "renamed"
     assert structured["notebook_id"] == STUDIO_NOTEBOOK_ID
-    assert structured["artifact_id"] == STUDIO_REPORT_ID
+    assert structured["item_id"] == STUDIO_REPORT_ID
+    assert structured["type"] == "report"
     assert structured["new_title"] == "Renamed by VCR"
     assert structured["is_mind_map"] is False
 

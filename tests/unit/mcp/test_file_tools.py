@@ -23,7 +23,7 @@ pytest.importorskip("fastmcp")
 from fastmcp import Client  # noqa: E402 - after importorskip guard
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
-import notebooklm.mcp.tools.artifacts as art_mod  # noqa: E402 - after importorskip guard
+import notebooklm.mcp.tools._studio_download as art_mod  # noqa: E402 - after importorskip guard
 import notebooklm.mcp.tools.sources as src_mod  # noqa: E402 - after importorskip guard
 from notebooklm.mcp._filelink import (  # noqa: E402 - after importorskip guard
     FileLinkSigner,
@@ -237,7 +237,7 @@ async def test_artifact_download_stdio_missing_path_is_clear_error(mock_client) 
 
 
 # The stdio path-download happy path (file_transfer absent) is already covered by
-# ``test_artifacts.py::test_artifact_download_audio`` (its server has no file
+# ``test_studio.py::test_artifact_download_audio`` (its server has no file
 # transfer), so it is not duplicated here.
 
 

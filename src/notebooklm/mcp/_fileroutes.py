@@ -50,7 +50,7 @@ from ..exceptions import NotebookLMError, ValidationError
 from ._context import get_client_from_app
 from ._errors import redact
 from ._filelink import FileLinkError, FileTransferConfig
-from .tools.artifacts import _DOWNLOAD_SPECS, _resolve_artifact_id
+from .tools._studio_download import _DOWNLOAD_SPECS, _resolve_artifact_id
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP

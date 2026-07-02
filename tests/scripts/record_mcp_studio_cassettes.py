@@ -1,11 +1,13 @@
 """Maintainer helper: record the MCP Studio mutating-op cassettes against live API.
 
-``studio_delete`` (cross-type note∩artifact routing) and ``studio_rename`` each
-issue ``GET_NOTES_AND_MIND_MAPS`` (``cFji9``) TWICE + ``LIST_ARTIFACTS`` (``gArtLc``)
-as a merged-list / kind-probe preflight BEFORE their mutation RPC — a sequence no
-CLI cassette holds. This script drives the **MCP server** (real ``NotebookLMClient``,
-auth from your ``~/.notebooklm`` profile) under VCR record mode so the recorded
-``f.req`` shapes are exactly what the Studio tools emit.
+``studio_delete`` and ``studio_rename`` are both cross-type (note∩artifact): they
+resolve ``item`` over the merged list, then route by resolved type. That issues
+``GET_NOTES_AND_MIND_MAPS`` (``cFji9``) + ``LIST_ARTIFACTS`` (``gArtLc``) several
+times — a merged-list resolve preflight plus, on the artifact path, a kind-aware
+``mind_maps`` probe — BEFORE the mutation RPC, a sequence no CLI cassette holds.
+This script drives the **MCP server** (real ``NotebookLMClient``, auth from your
+``~/.notebooklm`` profile) under VCR record mode so the recorded ``f.req`` shapes
+are exactly what the Studio tools emit.
 
 It is SELF-CONTAINED and DESTRUCTIVE-SAFE: it creates a throwaway scratch notebook
 (one text source, one text note, one generated report), records the three cassettes
@@ -13,7 +15,7 @@ against THAT notebook, then deletes the scratch notebook in a ``finally``. It ne
 touches any pre-existing notebook.
 
 Records (into ``tests/cassettes``):
-  * ``mcp_studio_rename.yaml``        — studio_rename(report) → cFji9×2 + gArtLc + rc3d8d
+  * ``mcp_studio_rename.yaml``        — studio_rename(report) → cFji9×4 + gArtLc×3 + rc3d8d
   * ``mcp_studio_delete_note.yaml``   — studio_delete(note)   → cFji9×2 + gArtLc + AH0mwd
   * ``mcp_studio_delete_artifact.yaml`` — studio_delete(report) → cFji9×3 + gArtLc + V5N4be
 
@@ -102,20 +104,24 @@ async def main() -> None:
             )
             print(f"generating report: task_id={gen.get('task_id')}")
 
-            # The artifact only needs to APPEAR in the studio listing to be
-            # rename/delete-able (a pending row is fine). The generation task_id is
-            # not guaranteed to equal the listed artifact id, so grab the report
-            # row's own id from studio_list (the fresh notebook has exactly one).
+            # The mutations resolve `item` over the MERGED notes+artifacts list, so
+            # both the note and the report must be stably present there before we
+            # record — otherwise resolve_studio_item misses and the op degrades to the
+            # full-UUID carve-out (type "unknown"), which is NOT the cross-type route
+            # these cassettes exist to pin. Settle until BOTH resolve to their expected
+            # type via studio_list(item=…) on the SAME listing, and grab the report's
+            # own listed id there (the generation task_id may differ from it).
             art_id: str | None = None
             for _ in range(40):
                 items = _sc(await mcp.call_tool("studio_list", {"notebook": nb_id}))["items"]
                 reports = [it for it in items if it.get("type") == "report"]
-                if reports:
+                has_note = any(it.get("id") == note_id and it.get("type") == "note" for it in items)
+                if reports and has_note:
                     art_id = str(reports[0]["id"])
                     break
                 await asyncio.sleep(3)
             if art_id is None:
-                raise SystemExit("generated report never appeared in studio_list")
+                raise SystemExit("note+report never co-appeared in studio_list")
             print(f"report artifact: {art_id}")
 
             # --- RECORD (each op in its own cassette) ---------------------------
@@ -123,7 +129,7 @@ async def main() -> None:
                 r = _sc(
                     await mcp.call_tool(
                         "studio_rename",
-                        {"notebook": nb_id, "artifact": art_id, "new_title": "Renamed by VCR"},
+                        {"notebook": nb_id, "item": art_id, "new_title": "Renamed by VCR"},
                     )
                 )
                 print("rename ->", r)

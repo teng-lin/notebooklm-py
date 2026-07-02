@@ -26,10 +26,12 @@ keeping note **authoring** distinct. Net **35 → 32 tools**.
 
 1. **Rename** `artifact_*` → `studio_*` (8 tools). Internal `client.artifacts.*`,
    `ArtifactType`, and the `artifact`/`artifact_type`/`artifact_id` params are
-   unchanged — MCP-adapter-only. The module file stays `tools/artifacts.py` (a
-   rename would churn `server.py`/`_fileroutes.py` imports for no functional gain);
-   cross-type plumbing lives in the sibling `tools/_studio.py` (extracted to stay
-   under the ADR-0008 1000-line module cap).
+   unchanged — MCP-adapter-only. The tool module is `tools/studio.py` (renamed from
+   `tools/artifacts.py` once `studio_rename` went cross-type — see point 5 — and the
+   module needed a split anyway); cross-type plumbing lives in
+   `tools/_studio_items.py` and the download registry/helpers shared with
+   `_fileroutes.py` in `tools/_studio_download.py`, both extracted to stay under the
+   ADR-0008 1000-line module cap.
 
 2. **`note_save`** — an upsert folding `note_create` + `note_update` (−1). Mode is
    keyed solely on `note`: omitted → create (title+content required); given →
@@ -48,11 +50,21 @@ keeping note **authoring** distinct. Net **35 → 32 tools**.
    mind maps through the note system). Preview is unified as
    `action:"delete_studio_item"` with `item_id`/`type`/`title`.
 
-`studio_rename` stays artifact-scoped: there was never a `note_rename` to fold
-(notes rename via `note_save(note, title)`), so spanning it would be 0-count and
-would route note renames through a title-only `execute_note_save` (`content=None`)
-with no server-confirmed "None = leave unchanged" guarantee — a content-loss risk
-the content-preserving CLI path (`execute_note_rename`) deliberately avoids.
+5. **`studio_rename(notebook, item, new_title)`** — cross-type, mirroring
+   `studio_delete`. Resolves `item` over the merged list and routes by resolved
+   type: `note` → the content-preserving `execute_note_rename` (get-then-update,
+   so the body is never dropped), artifact → the artifact rename RPC (which routes
+   note-backed mind maps back through the note system). Returns `item_id`/`type`
+   (was `artifact_id`) plus `new_title`/`is_mind_map`. An absent *full UUID* takes
+   the same idempotent carve-out as `studio_delete` (route to the artifact path,
+   which probes `mind_maps.list`), so rename-by-id of a note-backed mind map that
+   is not in the merged list still works.
+
+   Earlier this stayed artifact-scoped on the reasoning that folding note rename
+   would route through a title-only `execute_note_save(content=None)` with no
+   server-confirmed "None = leave unchanged" guarantee. Using the
+   content-preserving `execute_note_rename` core removes that risk, so the tool now
+   spans notes for surface symmetry with `studio_list`/`studio_delete`.
 
 ## Consequences
 

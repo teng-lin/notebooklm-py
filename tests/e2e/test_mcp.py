@@ -214,8 +214,8 @@ TOOL_COVERAGE: dict[str, str] = {
     "studio_generate": "TestMcpArtifacts.test_generate_report_wiring (variants)",
     "studio_status": "TestMcpArtifacts.test_generate_report_wiring (variants)",
     "studio_download": "TestMcpArtifacts.test_download_existing_artifact",
-    "studio_rename": "tests/unit/mcp/test_artifacts.py (kind-aware rename; no live mutation)",
-    "studio_delete": "TestMcpNotes.test_note_crud (note path) + tests/unit/mcp/test_artifacts.py (artifact path)",
+    "studio_rename": "tests/unit/mcp/test_studio.py (cross-type note/artifact rename; no live mutation)",
+    "studio_delete": "TestMcpNotes.test_note_crud (note path) + tests/unit/mcp/test_studio.py (artifact path)",
     # research
     "research_start": "TestMcpResearch.test_start_status_cancel (variants)",
     "research_status": "TestMcpResearch.test_status_readonly",

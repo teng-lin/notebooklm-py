@@ -31,8 +31,8 @@ from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     NotebookNotFoundError,
     RateLimitError,
 )
-from notebooklm.mcp.tools.artifacts import _KIND_OPTIONS  # noqa: E402
-from notebooklm.types import Artifact, ArtifactType, GenerationState  # noqa: E402
+from notebooklm.mcp.tools.studio import _KIND_OPTIONS  # noqa: E402
+from notebooklm.types import Artifact, ArtifactType, GenerationState, Note  # noqa: E402
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
@@ -683,7 +683,7 @@ def test_kind_options_match_core_maps() -> None:
     silently drift — the parity tests only exercise valid values and would miss a
     *subset* drift (MCP wrongly rejecting a value the core accepts)."""
     from notebooklm._app import generate_plans as gp
-    from notebooklm.mcp.tools.artifacts import _KIND_OPTIONS
+    from notebooklm.mcp.tools.studio import _KIND_OPTIONS
 
     assert _KIND_OPTIONS["audio"]["audio_format"] == tuple(gp._AUDIO_FORMAT_MAP)
     assert _KIND_OPTIONS["audio"]["audio_length"] == tuple(gp._AUDIO_LENGTH_MAP)
@@ -1202,17 +1202,19 @@ async def test_artifact_rename_regular_typed_artifact(mcp_call, mock_client) -> 
         status=int(ArtifactStatus.COMPLETED),
         created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
+    mock_client.notes.list = AsyncMock(return_value=[])
     mock_client.artifacts.list = AsyncMock(return_value=[art])
     mock_client.mind_maps.list = AsyncMock(return_value=[])
     mock_client.artifacts.rename = AsyncMock()
     result = await mcp_call(
         "studio_rename",
-        {"notebook": NB_ID, "artifact": "aaaaaaaa-aaaa", "new_title": "Renamed"},
+        {"notebook": NB_ID, "item": "aaaaaaaa-aaaa", "new_title": "Renamed"},
     )
     assert result.structured_content == {
         "status": "renamed",
         "notebook_id": NB_ID,
-        "artifact_id": _ART_FULL,
+        "item_id": _ART_FULL,
+        "type": "audio",
         "new_title": "Renamed",
         "is_mind_map": False,
     }
@@ -1225,6 +1227,7 @@ async def test_artifact_rename_regular_typed_artifact(mcp_call, mock_client) -> 
 async def test_artifact_rename_interactive_mind_map_by_title(mcp_call, mock_client) -> None:
     """A mind map resolved by title routes through ``mind_maps.rename`` (is_mind_map true)."""
     mm_id = "mmmmmmmm-mmmm-mmmm-mmmm-mmmmmmmmmmmm"
+    mock_client.notes.list = AsyncMock(return_value=[])
     mock_client.artifacts.list = AsyncMock(
         return_value=[FakeArtifact(id=mm_id, title="My Map", kind=ArtifactType.MIND_MAP)]
     )
@@ -1234,46 +1237,126 @@ async def test_artifact_rename_interactive_mind_map_by_title(mcp_call, mock_clie
     mock_client.mind_maps.rename = AsyncMock()
     result = await mcp_call(
         "studio_rename",
-        {"notebook": NB_ID, "artifact": "My Map", "new_title": "Renamed Map"},
+        {"notebook": NB_ID, "item": "My Map", "new_title": "Renamed Map"},
     )
     assert result.structured_content["is_mind_map"] is True
-    assert result.structured_content["artifact_id"] == mm_id
+    assert result.structured_content["item_id"] == mm_id
+    assert result.structured_content["type"] == "mind-map"
     mock_client.mind_maps.rename.assert_awaited_once()
     mock_client.artifacts.rename.assert_not_called()
 
 
 async def test_artifact_rename_note_backed_mind_map_by_full_uuid(mcp_call, mock_client) -> None:
-    """A full-UUID ref reaches the core unlisted; the core's ``mind_maps.list`` probe
-    finds the note-backed map → ``mind_maps.rename`` with its kind."""
+    """A note-backed mind map absent from the merged list still renames by full UUID:
+    the cross-type resolve misses, the full-UUID carve-out routes to the artifact
+    core, whose ``mind_maps.list`` probe finds it → ``mind_maps.rename`` with its kind."""
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[])
     mock_client.mind_maps.list = AsyncMock(
         return_value=[FakeMindMap(id=_ART_FULL, kind=MindMapKind.NOTE_BACKED)]
     )
     mock_client.mind_maps.rename = AsyncMock()
     result = await mcp_call(
         "studio_rename",
-        {"notebook": NB_ID, "artifact": _ART_FULL, "new_title": "Renamed"},
+        {"notebook": NB_ID, "item": _ART_FULL, "new_title": "Renamed"},
     )
     assert result.structured_content["is_mind_map"] is True
-    assert result.structured_content["artifact_id"] == _ART_FULL
-    # Full-UUID fast-path: the resolver never lists artifacts.
-    mock_client.artifacts.list.assert_not_called()
+    assert result.structured_content["item_id"] == _ART_FULL
+    assert result.structured_content["type"] == "mind-map"
     mock_client.mind_maps.rename.assert_awaited_once()
     assert mock_client.mind_maps.rename.await_args.kwargs["kind"] == MindMapKind.NOTE_BACKED
 
 
+async def test_artifact_rename_note_backed_mind_map_by_uppercase_full_uuid(
+    mcp_call, mock_client
+) -> None:
+    """An UPPERCASE full UUID in the carve-out is normalized to canonical lowercase
+    before delegating, so the artifact core's CASE-SENSITIVE ``mind_maps.list`` probe
+    still finds the note-backed map. Regression: without the ``item.lower()`` the probe
+    would miss and the tool would mislabel it ``type="unknown"`` / ``is_mind_map=False``."""
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    mock_client.mind_maps.list = AsyncMock(
+        return_value=[FakeMindMap(id=_ART_FULL, kind=MindMapKind.NOTE_BACKED)]
+    )
+    mock_client.mind_maps.rename = AsyncMock()
+    result = await mcp_call(
+        "studio_rename",
+        {"notebook": NB_ID, "item": _ART_FULL.upper(), "new_title": "Renamed"},
+    )
+    assert result.structured_content["is_mind_map"] is True
+    assert result.structured_content["type"] == "mind-map"
+    # The echoed id is the canonical lowercase form, not the uppercase input.
+    assert result.structured_content["item_id"] == _ART_FULL
+    mock_client.mind_maps.rename.assert_awaited_once()
+
+
+async def test_studio_rename_note_routes_to_note_rename(mcp_call, mock_client) -> None:
+    """A resolved NOTE renames via the content-preserving note core (never the
+    artifact rename RPC), returning ``type="note"`` / ``is_mind_map=False``."""
+    mock_client.notes.list = AsyncMock(
+        return_value=[FakeNote(id=_NOTE_ID, title="My Note", content="body")]
+    )
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    mock_client.notes.get_or_none = AsyncMock(
+        return_value=Note(id=_NOTE_ID, notebook_id=NB_ID, title="My Note", content="body")
+    )
+    mock_client.notes.update = AsyncMock()
+    result = await mcp_call(
+        "studio_rename",
+        {"notebook": NB_ID, "item": _NOTE_ID, "new_title": "Renamed Note"},
+    )
+    assert result.structured_content == {
+        "status": "renamed",
+        "notebook_id": NB_ID,
+        "item_id": _NOTE_ID,
+        "type": "note",
+        "new_title": "Renamed Note",
+        "is_mind_map": False,
+    }
+    # Content-preserving: the update carries the existing body, only the title changes.
+    mock_client.notes.update.assert_awaited_once_with(
+        NB_ID, _NOTE_ID, content="body", title="Renamed Note"
+    )
+    mock_client.artifacts.rename.assert_not_called()
+
+
+async def test_studio_rename_note_vanished_race_projects_not_found(mcp_call, mock_client) -> None:
+    """A note resolved from the list but gone by the content-preserving ``get``
+    (a concurrent delete won the race) projects NOT_FOUND, not a silent success.
+
+    ``execute_note_rename`` returns ``found=False`` when ``get_or_none`` yields a
+    non-``Note``; the tool maps that to a ``ToolError``/NOT_FOUND and never writes."""
+    mock_client.notes.list = AsyncMock(
+        return_value=[FakeNote(id=_NOTE_ID, title="My Note", content="body")]
+    )
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    mock_client.notes.get_or_none = AsyncMock(return_value=None)
+    mock_client.notes.update = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call(
+            "studio_rename",
+            {"notebook": NB_ID, "item": _NOTE_ID, "new_title": "Renamed Note"},
+        )
+    assert "NOT_FOUND" in str(excinfo.value)
+    mock_client.notes.update.assert_not_called()
+    mock_client.artifacts.rename.assert_not_called()
+
+
 async def test_artifact_rename_not_found_projects_tool_error(mcp_call, mock_client) -> None:
-    """A prefix/title that matches no artifact projects NOT_FOUND (resolver raises
-    ``ArtifactNotFoundError``, which ``mcp_errors`` maps to a ``ToolError``)."""
+    """A non-UUID (prefix/title) ref that matches no note or artifact projects
+    NOT_FOUND (the cross-type resolver raises, ``mcp_errors`` maps to ``ToolError``)."""
+    mock_client.notes.list = AsyncMock(return_value=[])
     mock_client.artifacts.list = AsyncMock(return_value=[])
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
             "studio_rename",
-            {"notebook": NB_ID, "artifact": "No Such Artifact", "new_title": "X"},
+            {"notebook": NB_ID, "item": "No Such Artifact", "new_title": "X"},
         )
     assert "NOT_FOUND" in str(excinfo.value)
     mock_client.artifacts.rename.assert_not_called()
     # The tool layer asserts the wrapped ToolError/NOT_FOUND; the raw
-    # ArtifactNotFoundError is asserted at the resolver layer in test_resolve.py.
+    # NotFoundError is asserted at the resolver layer in test_resolve.py.
 
 
 # ---------------------------------------------------------------------------

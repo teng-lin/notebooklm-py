@@ -9,7 +9,7 @@ can accept the param typed ``list[str] | str | None`` and pre-parse it.
 
 ``None`` is preserved as ``None`` (callers treat ``None`` as "unset" — for
 ``source_ids`` that means "all sources", which is DISTINCT from an explicit empty
-list meaning "zero sources"; see the source-ids contract in ``tools/artifacts.py``
+list meaning "zero sources"; see the source-ids contract in ``tools/studio.py``
 and #1652). An empty/whitespace-only string yields ``[]``.
 
 This module imports NO ``click`` / ``rich`` / ``cli`` — only stdlib ``json``.

@@ -1,4 +1,4 @@
-"""Cross-type Studio helpers shared by the Studio (``artifacts.py``) tools.
+"""Cross-type Studio helpers shared by the Studio (``studio.py``) tools.
 
 The Studio surface presents a notebook's **notes AND generated artifacts** as one
 merged panel. These helpers own that merge + the cross-type reference resolution
@@ -9,7 +9,7 @@ used by ``studio_list(item=…)`` and ``studio_delete``:
 * :func:`_resolve_studio_item` resolves a ref (note OR artifact) over that merged
   list, raising the public NOT_FOUND / ambiguous errors on a miss / collision.
 
-Split out of ``artifacts.py`` to keep that module under the ADR-0008 size budget;
+Split out of ``studio.py`` to keep that module under the ADR-0008 size budget;
 it is cohesive (all cross-type note∩artifact plumbing) rather than an arbitrary
 slice. This module imports NO ``click`` / ``rich`` / ``cli``.
 """
