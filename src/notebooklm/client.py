@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 #   names are exactly the previously-importable names the annotations no
 #   longer reference.
 from ._artifacts import ArtifactsAPI
+from ._auth.account import _probe_authuser, get_account_email_for_storage, write_account_metadata
 from ._auth.account import authuser_query as authuser_query
 from ._auth.extraction import extract_wiz_field as extract_wiz_field
 from ._auth.session import refresh_auth_session
@@ -297,6 +298,13 @@ class NotebookLMClient:
             cookie_rotator=cookie_rotator,
             chat_timeout=chat_timeout,
         )
+        # Per-client memo for the signed-in account email so a *successful* live
+        # probe (used only when neither the in-memory ``AuthTokens`` nor persisted
+        # storage carries one) runs at most once per process. A failed/undiscoverable
+        # probe is NOT memoized (stays ``None``), so a genuinely account-less profile
+        # re-probes on each call — acceptable for the rare ``include_account`` path.
+        # ``None`` = not yet resolved.
+        self._account_email_cache: str | None = None
 
     @property
     def auth(self) -> AuthTokens:
@@ -739,6 +747,68 @@ class NotebookLMClient:
             cookie_persistence=self._collaborators.cookie_persistence,
             allow_headless=allow_headless,
         )
+
+    def get_account_authuser(self) -> int:
+        """Return the ``authuser`` index of the signed-in account (0 = default).
+
+        Read from the in-memory :class:`AuthTokens` (populated at construction from
+        the profile's persisted metadata or inline ``NOTEBOOKLM_AUTH_JSON``);
+        network-free. Falls back to ``0`` for pre-account-binding profiles.
+        """
+        return self._auth.authuser
+
+    async def get_account_email(self, *, live_fallback: bool = True) -> str | None:
+        """Return the signed-in Google account email, or ``None`` if undiscoverable.
+
+        Resolution order (first two are network-free):
+
+        1. The in-memory :class:`AuthTokens` (``account_email``) — set at
+           construction from persisted metadata OR inline ``NOTEBOOKLM_AUTH_JSON``.
+        2. The persisted profile metadata (belt-and-braces for a profile whose
+           in-memory value wasn't populated).
+        3. When ``live_fallback`` is true, a single probe of the active
+           ``authuser`` page (``WIZ_global_data``) on the open session; on success
+           it is persisted back so the next call is network-free.
+
+        ``GET_USER_SETTINGS`` carries no identity, hence this separate source.
+        Never raises for network or on-disk faults — a probe transport error or a
+        self-heal write failure degrades to ``None`` / a no-op. A closed client
+        (calling outside ``async with``) is the only surfaced error, from
+        :meth:`Kernel.get_http_client`, and only on the live-fallback path.
+        """
+        if self._account_email_cache is not None:
+            return self._account_email_cache or None
+        email = self._auth.account_email
+        if not email and self._auth.storage_path is not None:
+            email = get_account_email_for_storage(self._auth.storage_path)
+        if email:
+            self._account_email_cache = email
+            return email
+        if not live_fallback:
+            return None
+        authuser = self._auth.authuser
+        try:
+            email = await _probe_authuser(self._collaborators.kernel.get_http_client(), authuser)
+        except httpx.HTTPError as e:  # transport blip → undiscoverable, not fatal
+            logger.debug("account-email live probe failed: %s", type(e).__name__)
+            return None
+        if not email:
+            return None
+        self._account_email_cache = email
+        if self._auth.storage_path is not None:
+            # Self-heal so the next call (and next process) is network-free. Blocking
+            # FileLock I/O → off the event loop. Best-effort: a corrupt storage file
+            # raises RuntimeError (not OSError), so catch both.
+            try:
+                await asyncio.to_thread(
+                    write_account_metadata,
+                    self._auth.storage_path,
+                    authuser=authuser,
+                    email=email,
+                )
+            except (OSError, RuntimeError) as e:
+                logger.debug("account-email self-heal write failed: %s", type(e).__name__)
+        return email
 
 
 class _FromStorageContext:

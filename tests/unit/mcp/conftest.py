@@ -77,6 +77,11 @@ def mock_client() -> MagicMock:
     # public `.list` fallback they mock (the fast path is covered by the _app
     # download tests, which use the real client).
     client.artifacts._list_for_download = None
+    # Identity accessors used by ``server_info(include_account=True)`` — both are
+    # top-level client methods (not namespace attrs), so pin them explicitly:
+    # ``get_account_email`` is awaited, ``get_account_authuser`` is sync.
+    client.get_account_email = AsyncMock(return_value=None)
+    client.get_account_authuser = MagicMock(return_value=0)
     return client
 
 

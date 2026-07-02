@@ -10,6 +10,7 @@ honors.
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -131,9 +132,11 @@ async def test_server_info_default_omits_account(
 async def test_server_info_include_account_authenticated(
     mcp_call, mock_client, tmp_path, monkeypatch
 ) -> None:
-    """include_account=True + live session → account block with tier + limits + language."""
+    """include_account=True + live session → account block with identity + tier + limits."""
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     _write_authed_storage()
+    mock_client.get_account_email = AsyncMock(return_value="alice@example.com")
+    mock_client.get_account_authuser = MagicMock(return_value=1)
     mock_client.settings.get_account_limits = AsyncMock(
         return_value=AccountLimits(notebook_limit=100, source_limit=50)
     )
@@ -143,6 +146,8 @@ async def test_server_info_include_account_authenticated(
     mock_client.settings.get_output_language = AsyncMock(return_value="ja")
     result = await mcp_call("server_info", {"include_account": True})
     assert result.structured_content["account"] == {
+        "email": "alice@example.com",
+        "authuser": 1,
         "available": True,
         "tier": "NOTEBOOKLM_TIER_PRO",
         "plan_name": "Pro",
@@ -150,6 +155,8 @@ async def test_server_info_include_account_authenticated(
         "source_limit": 50,
         "output_language": "ja",
     }
+    # The live probe is enabled only when the local auth check passed.
+    mock_client.get_account_email.assert_awaited_once_with(live_fallback=True)
 
 
 async def test_server_info_include_account_unauthenticated(
@@ -162,9 +169,13 @@ async def test_server_info_include_account_unauthenticated(
     mock_client.settings.get_output_language = AsyncMock()
     result = await mcp_call("server_info", {"include_account": True})
     assert result.structured_content["account"] == {
+        "email": None,
+        "authuser": 0,
         "available": False,
         "reason": "not authenticated",
     }
+    # Identity is still surfaced, but the live probe is suppressed offline.
+    mock_client.get_account_email.assert_awaited_once_with(live_fallback=False)
     mock_client.settings.get_account_limits.assert_not_called()
     mock_client.settings.get_account_tier.assert_not_called()
     mock_client.settings.get_output_language.assert_not_called()
@@ -177,6 +188,8 @@ async def test_server_info_include_account_degrades_on_rpc_error(
     the account block reports unavailable while version/auth stay intact."""
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     _write_authed_storage()
+    mock_client.get_account_email = AsyncMock(return_value="alice@example.com")
+    mock_client.get_account_authuser = MagicMock(return_value=1)
     mock_client.settings.get_account_limits = AsyncMock(side_effect=RPCError("session expired"))
     mock_client.settings.get_account_tier = AsyncMock()
     mock_client.settings.get_output_language = AsyncMock()
@@ -184,6 +197,9 @@ async def test_server_info_include_account_degrades_on_rpc_error(
     account = result.structured_content["account"]
     assert account["available"] is False
     assert "session expired" in account["reason"]
+    # Identity survives the quota-read degradation.
+    assert account["email"] == "alice@example.com"
+    assert account["authuser"] == 1
     # The diagnostic stays useful: version + auth block survive the degradation.
     assert result.structured_content["version"] == __version__
     assert result.structured_content["auth"]["authenticated"] is True
@@ -232,7 +248,10 @@ async def test_server_info_include_account_tier_none_is_available(
     mock_client.settings.get_account_tier = AsyncMock(return_value=AccountTier())
     mock_client.settings.get_output_language = AsyncMock(return_value=None)
     result = await mcp_call("server_info", {"include_account": True})
+    # Default mock identity (email None, authuser 0) is tolerated on the success path.
     assert result.structured_content["account"] == {
+        "email": None,
+        "authuser": 0,
         "available": True,
         "tier": None,
         "plan_name": None,

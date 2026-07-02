@@ -508,6 +508,12 @@ cancellation:
   underlying `httpx.AsyncClient`.
 - **`refresh_auth()`** runs the shared refresh task under `asyncio.shield`;
   cancelling a waiter does not kill the shared refresh.
+- **`get_account_email(live_fallback=True)`** returns the signed-in Google account
+  email (or `None`): the in-memory `AuthTokens` / persisted profile metadata first
+  (network-free), then — when `live_fallback` and the client is open — a single
+  `WIZ_global_data` page probe that's persisted back for next time. Never raises for
+  network/on-disk faults. `get_account_authuser()` returns the matching account
+  index (0 = default), network-free.
 - **Upload finalize** is shielded; on cancel signal we issue a best-effort
   Scotty (Google's internal resumable upload service) cancel to release the
   server-side upload slot.
@@ -850,6 +856,10 @@ class NotebookLMClient:
     ):
 
     async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:
+
+    async def get_account_email(self, *, live_fallback: bool = True) -> str | None:
+
+    def get_account_authuser(self) -> int:
 
     async def rpc_call(
         self,
