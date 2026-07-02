@@ -93,6 +93,8 @@ async def test_mcp_research_start_fast_over_vcr() -> None:
     # ``report_id`` is None for fast research; ``query`` echoes the request.
     assert structured["report_id"] is None
     assert structured["query"] == "Python programming best practices"
+    # Fast runs poll under ``task_id`` — ``poll_task_id`` mirrors it.
+    assert structured["poll_task_id"] == structured["task_id"]
 
 
 @pytest.mark.asyncio
@@ -120,6 +122,9 @@ async def test_mcp_research_start_deep_over_vcr() -> None:
     assert structured["notebook_id"] == RESEARCH_NOTEBOOK_ID
     assert structured["task_id"], "expected a server-recorded research task id"
     assert structured["mode"] == "deep"
+    # Deep runs poll under ``report_id`` — ``poll_task_id`` mirrors it, NOT the
+    # (unpollable sessionId) ``task_id``.
+    assert structured["poll_task_id"] == structured["report_id"]
     # Deep research records a separate report id.
     assert structured["report_id"], "expected a deep-research report id"
 
@@ -145,12 +150,16 @@ async def test_mcp_research_status_in_progress_over_vcr() -> None:
     assert isinstance(structured, dict)
     assert structured["notebook_id"] == RESEARCH_NOTEBOOK_ID
     assert structured["task_id"] == PINNED_TASK_ID
+    assert structured["poll_task_id"] == PINNED_TASK_ID
     assert structured["kind"] == "in_progress"
     assert structured["status"] == "in_progress"
     # The pinned task carries its recorded query; no sources/report yet.
     assert structured["query"], "expected the recorded research query"
     assert structured["sources"] == []
-    assert structured["report"] == ""
+    # The report is omitted by default (include_report=False); only its size
+    # (0 here) is surfaced.
+    assert structured["report"] is None
+    assert structured["report_char_count"] == 0
 
 
 @pytest.mark.asyncio

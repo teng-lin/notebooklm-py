@@ -513,7 +513,15 @@ class TestMcpResearch:
         # research_cancel MUST actually run — TOOL_COVERAGE claims it here, so a
         # missing run id is a real failure (not a silent skip that would let the
         # coverage matrix report a false positive).
-        run_id = started.get("task_id") or status.get("task_id")
+        run_id = started.get("poll_task_id") or status.get("poll_task_id")
         assert run_id, f"research_start/status yielded no run id to cancel: {started} / {status}"
         cancelled = await _call(client, "research_cancel", {"notebook": nb, "run_id": run_id})
-        assert cancelled["cancelled"] is True
+        # A freshly-started fast run is normally still in_progress at this
+        # immediate poll, so the preflight fires the cancel (cancel_requested
+        # True). Tolerate the race where it already reached a terminal state
+        # (completed/failed) between start and preflight — then the tool honestly
+        # reports cancel_requested False rather than a no-op "cancelled" lie.
+        assert cancelled["cancel_requested"] is True or cancelled["status"] in (
+            "completed",
+            "failed",
+        )

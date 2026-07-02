@@ -212,7 +212,7 @@ These conventions hold across every tool:
   `research_start` → `research_status` → `research_import`.
 - **Mutation envelope.** Synchronous create/rename/update/delete tools return a top-level
   `status` string naming the outcome — one of `created`, `renamed`, `updated`, `deleted`,
-  `removed`, `added`, `imported`, `cancelled`, `configured` (plus the `needs_confirmation` /
+  `removed`, `added`, `imported`, `cancel_requested`, `configured` (plus the `needs_confirmation` /
   `upload_required` / `download_ready` flow values) — alongside the affected id(s). An agent can
   branch on `status` uniformly instead of learning a different success shape per tool. Two
   carve-outs: the **long-running starters** `studio_generate` / `research_start` return a
@@ -295,14 +295,18 @@ validation error, not a silent no-op.
 
 ```text
 task = research_start(notebook="Quantum Computing", query="post-quantum cryptography", source="web", mode="deep")
-research_status(notebook="Quantum Computing", task_id=task["task_id"])
-research_import(notebook="Quantum Computing", task_id=task["task_id"])
+research_status(notebook="Quantum Computing", task_id=task["poll_task_id"])
+research_import(notebook="Quantum Computing", task_id=task["poll_task_id"])
 ```
 
-`source` is `web` or `drive`; `mode` is `fast` or `deep`. Pass the `task_id`
-returned by `research_start` when polling or importing so the request is pinned
-to the intended research task; omitting it is allowed only when the notebook has
-a single in-flight task.
+`source` is `web` or `drive`; `mode` is `fast` or `deep`. Pass the
+`poll_task_id` returned by `research_start` when polling, importing, or
+cancelling so the request is pinned to the intended research task — it is the
+one id that drives polling (for a **deep** run it is the `report_id`; the raw
+`task_id` is an unpollable sessionId). Omitting the pin on `research_status` is
+allowed only when the notebook has a single in-flight task. `research_status`
+omits the large report by default — pass `include_report=true` to fetch it once
+`completed`.
 
 ## Tool reference
 
@@ -313,7 +317,7 @@ a single in-flight task.
 | **Chat** | `chat_ask(notebook, question?, conversation_id?, references?, source_ids?, history?, suggest_followups?)` (`references`: lite\|full; never returns the raw debug blob; `source_ids` scopes to specific sources — list, JSON-array string, or comma string; omit for all; `history`>0 also returns up to N prior `{question, answer}` pairs — omit `question` to recall only; `suggest_followups=true` also returns `suggested_prompts` (3 questions to ask — works question-less too)) · `chat_configure(notebook, chat_mode?, goal?, response_length?)` (`chat_mode`: default\|learning-guide\|concise\|detailed — a preset, mutually exclusive with `goal`/`response_length`; a custom config writes the full block with no merge, so `goal` **and** `response_length` are required together — a bare or partial call is rejected; to change only verbosity use a preset (`concise`=shorter, `detailed`=longer)) · `suggest_prompts(notebook, surface?, source_ids?, query?)` (READ_ONLY; `surface`: ask\|audio-deep-dive\|audio-brief\|audio-critique\|audio-debate\|video-explainer\|video-short\|quiz\|flashcards — returns `{title, prompt}` suggestions to steer that studio surface; `ask` (default) = chat questions) |
 | **Notes** | `note_save(notebook, note?, title?, content?)` (upsert: omit `note` to **create** — `title` AND `content` required; pass a `note` ref to **update** — `title` and/or `content`, title-only = rename). Reading and deleting notes fold into the Studio row below. |
 | **Studio** | `studio_list(notebook, item?, kind?, detail?, limit?, offset?)` (the unified Studio panel — **notes AND artifacts** merged into one `items` list; each item has `id`/`title`/`type` where `type` is `note` or a hyphenated artifact kind; artifacts add `status_label`/`url`; `detail=summary` (default) gives each note a bounded `content_preview` + full-body `char_count` to keep a discovery listing low-token, `detail=full` returns the whole note `content`; `kind` filters to one `type`; `item` fetches one note-or-artifact by ref as a 1-element list, always with the note's full `content`) · `studio_generate(notebook, artifact_type, …)` · `studio_status(notebook, task_id)` · `studio_get_prompt(notebook, artifact)` (the free-text prompt an artifact was generated from; `null` if none) · `studio_download(notebook, artifact? \| artifact_type?, path?, output_format?, artifact_id?)` (target by `artifact` name-or-id ref **or** by `artifact_type` [+ `artifact_id` for a specific one, else latest]) · `studio_rename(notebook, item, new_title)` (cross-type: renames a note OR an artifact resolved from the merged list) · `studio_retry(notebook, artifact)` (re-run a failed artifact in place; task_id == artifact_id) · `studio_delete(notebook, item, confirm)` (cross-type: deletes a note OR an artifact resolved from the merged list) |
-| **Research** | `research_start(notebook, query, source, mode)` · `research_status(notebook, task_id?)` · `research_import(notebook, task_id)` · `research_cancel(notebook, run_id)` |
+| **Research** | `research_start(notebook, query, source, mode)` (returns `poll_task_id` — the one id status/import/cancel drive off) · `research_status(notebook, task_id?, include_report?, report_max_chars?, source_limit?, source_offset?)` (report + per-source `report_markdown` omitted unless `include_report`) · `research_import(notebook, task_id)` · `research_cancel(notebook, run_id)` (sends the cancel unless the run is already terminal → `cancel_requested`) |
 | **Sharing** | `share_status(notebook)` (is_public/access/share_url/shared_users; enums as string labels; `view_level` omitted — the read API can't report it) · `share_set_access(notebook, public?, view_level?, confirm)` (link settings; `view_level`: full\|chat, echoed back only when set; `confirm` gates public widening restricted→public) · `share_set_user(notebook, email, permission?, notify?, message?, confirm)` (upsert grant; `permission`: editor\|viewer; `notify` defaults `false`; `confirm` gates every grant) · `share_remove_user(notebook, email, confirm)` |
 | **Server** | `server_info(include_account?)` — version + local auth health; `include_account=true` adds an `account` block: signed-in identity (`email`, `authuser`) plus notebook/source limits and global `output_language` for quota pacing + language context (best-effort; identity is network-free from the profile, the quota fields need a live session). `email` is real account PII, returned only under this opt-in flag |
 

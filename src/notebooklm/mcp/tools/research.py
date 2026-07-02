@@ -12,6 +12,15 @@ Thin adapters over the research surface:
   (a single non-blocking poll classified into render fields).
 * ``research_import`` polls the notebook's completed research, then imports its
   sources via ``client.research.import_sources``.
+* ``research_cancel`` preflights the run via ``poll_and_classify`` and sends the
+  fire-and-forget cancel unless the run is already terminal (``completed`` /
+  ``failed``); a transiently-absent just-started run (replication lag) is still
+  cancelled, and ``cancel_requested`` + ``run_status_before`` report honestly.
+
+One id value threads the whole flow — the ``poll_task_id`` surfaced by
+``research_start`` (deep's ``report_id`` / fast's ``task_id``). Pass it to
+``research_status`` / ``research_import`` (as ``task_id``) and ``research_cancel``
+(as ``run_id``); the per-tool param names differ but the value is the same.
 
 Although the design sketch lists ``research_start(query, …)`` without a notebook
 argument, ``client.research.start`` is notebook-scoped (it needs a
@@ -50,9 +59,11 @@ def register(mcp: Any) -> None:
     ) -> dict[str, Any]:
         """Start a research session in a notebook. Accepts a notebook name or ID.
 
-        Non-blocking: returns the started task; poll ``research_status(notebook)``
-        until it reports ``completed``, then ``research_import(notebook, task_id)``
-        to add the found sources.
+        Non-blocking. Carry the returned ``poll_task_id`` into
+        ``research_status`` / ``research_import`` / ``research_cancel`` — it is
+        the single id that drives polling (the tool resolves deep's ``report_id``
+        vs fast's ``task_id`` for you). Poll ``research_status`` until
+        ``completed``, then ``research_import`` to add the found sources.
 
         ``source`` is ``web`` (default) or ``drive``. ``mode`` is ``fast``
         (default) or ``deep`` (deep is web-only).
@@ -65,78 +76,184 @@ def register(mcp: Any) -> None:
                 raise ValidationError("mode 'deep' is web-only; use source 'web' for deep research")
             nb_id = await resolve_notebook(client, notebook)
             result = await client.research.start(nb_id, query, source, mode)
-            return {"notebook_id": nb_id, **to_jsonable(result)}
+            # ``poll_task_id`` is the one id status/import/cancel drive off, chosen
+            # by mode (NOT ``report_id or task_id`` — that would wrongly pick a
+            # fast run's ``report_id`` if the backend ever set one). Deep runs poll
+            # under ``report_id`` (its ``task_id`` is an unpollable sessionId), so a
+            # deep run without a ``report_id`` is unpollable — fail loud rather than
+            # hand back the sessionId trap. Fast runs poll under ``task_id``.
+            if mode == "deep":
+                if not result.report_id:
+                    # The run started server-side but has no pollable/cancellable
+                    # handle — surface the raw session id so the caller can still
+                    # trace/report it (it can't be polled or cancelled).
+                    raise ValidationError(
+                        f"deep research start returned no report_id (session "
+                        f"{result.task_id!r}); this run cannot be polled or "
+                        "cancelled — retry"
+                    )
+                poll_task_id = result.report_id
+            else:
+                poll_task_id = result.task_id
+            # ``poll_task_id`` is placed AFTER the spread so a future
+            # ``ResearchStart`` field can never clobber it.
+            return {"notebook_id": nb_id, **to_jsonable(result), "poll_task_id": poll_task_id}
 
     @mcp.tool(annotations=READ_ONLY)
     async def research_status(
-        ctx: Context, notebook: str, task_id: str | None = None
+        ctx: Context,
+        notebook: str,
+        task_id: str | None = None,
+        include_report: bool = False,
+        report_max_chars: int = 20000,
+        source_limit: int | None = None,
+        source_offset: int = 0,
     ) -> dict[str, Any]:
         """Check a notebook's research status. Accepts a notebook name or ID.
 
-        Returns ``status`` (no_research|in_progress|completed|not_found), the
-        polled ``task_id``, plus the found ``sources`` and any ``report`` once
-        complete. Poll until ``completed``, then pass the returned ``task_id`` to
-        ``research_import``.
+        Returns ``status`` (no_research|in_progress|completed|failed|not_found),
+        the polled ``poll_task_id``, the found ``sources``, and report metadata.
+        Poll until ``completed``, then pass ``poll_task_id`` to ``research_import``.
 
-        ``task_id`` (optional) pins a specific task when several research tasks
-        are in flight in the notebook — pass the value from ``research_start``.
-        Omit it for a single in-flight task; when omitted with two or more tasks
-        running, the poll is ambiguous and errors (pass ``task_id`` to select).
-        A pinned ``task_id`` that is not among the polled tasks reports
-        ``status="not_found"``.
+        The large deep ``report`` and each source's ``report_markdown`` are
+        omitted by default; set ``include_report=True`` (optionally
+        ``report_max_chars``) to include them, truncated to that length.
+        ``report_char_count`` is the full size; ``report_truncated`` is true
+        whenever the returned ``report`` omits text (truncated OR omitted).
+        ``source_limit`` / ``source_offset`` page ``sources``;
+        ``sources_total`` / ``sources_returned`` describe the window.
+
+        ``task_id`` (optional) pins one task when several are in flight — pass a
+        ``poll_task_id``. Omit it for a single task; omitting it with two or more
+        running errors as ambiguous. An unmatched pin reports ``not_found``.
         """
         client = get_client(ctx)
         with mcp_errors():
+            # Validate windowing bounds BEFORE the poll so a bad request never
+            # spends a read-only RPC. Reject an explicit empty/whitespace pin too:
+            # ``poll`` treats a falsy ``task_id`` as an UNFILTERED poll, so ``""``
+            # must not silently degrade into "any task" (``None`` stays the
+            # legitimate unfiltered path).
+            if report_max_chars < 1:
+                raise ValidationError("report_max_chars must be >= 1")
+            if source_limit is not None and source_limit < 0:
+                raise ValidationError("source_limit must be >= 0")
+            if source_offset < 0:
+                raise ValidationError("source_offset must be >= 0")
+            if task_id is not None and not task_id.strip():
+                raise ValidationError(
+                    "task_id must be a non-empty id (omit it to poll a single task)"
+                )
+            # Normalize a padded pin so surrounding whitespace never reaches the
+            # backend as a spurious mismatch.
+            task_id = task_id.strip() if task_id is not None else None
+
             nb_id = await resolve_notebook(client, notebook)
             result = await research_core.poll_and_classify(client, nb_id, task_id)
+
+            # Report content lives in TWO places — the top-level ``report`` AND
+            # each source's ``report_markdown`` — so BOTH are gated by
+            # ``include_report`` or a deep report leaks through the source rows.
+            all_sources = to_jsonable(result.sources)
+            sources_total = len(all_sources)
+            end = None if source_limit is None else source_offset + source_limit
+            windowed = all_sources[source_offset:end]
+            for src in windowed:
+                if "report_markdown" not in src:
+                    continue
+                if include_report:
+                    src["report_markdown"] = src["report_markdown"][:report_max_chars]
+                else:
+                    del src["report_markdown"]
+
+            report_char_count = len(result.report)
+            report = result.report[:report_max_chars] if include_report else None
+            # ``report_truncated`` means "the returned ``report`` does not contain
+            # the full text" — true both when ``include_report`` truncated it AND
+            # when it was omitted (``report=None``) yet a report exists. So a caller
+            # can trust the flag without special-casing the omitted path.
+            report_truncated = len(report or "") < report_char_count
+
             return {
                 "notebook_id": nb_id,
                 "task_id": result.task_id,
+                "poll_task_id": result.task_id,
                 "kind": result.kind,
                 "status": result.status,
                 "query": result.query,
-                "sources": to_jsonable(result.sources),
+                "sources": windowed,
+                "sources_total": sources_total,
+                "sources_returned": len(windowed),
+                "sources_offset": source_offset,
                 "summary": result.summary,
-                "report": result.report,
+                "report": report,
+                "report_char_count": report_char_count,
+                "report_truncated": report_truncated,
             }
 
     @mcp.tool
     async def research_cancel(ctx: Context, notebook: str, run_id: str) -> dict[str, Any]:
         """Cancel an in-flight research run in a notebook.
 
-        Accepts a notebook name or ID and the ``run_id`` to cancel: pass the
-        ``task_id`` reported by ``research_status``. (For a **deep** run that is
-        the ``report_id`` returned by ``research_start``, NOT its ``task_id``,
-        which is a sessionId — so prefer the ``research_status`` value to avoid
-        the trap.)
+        Accepts a notebook name or ID and the ``run_id`` to cancel — pass a
+        ``poll_task_id`` from ``research_start`` / ``research_status``.
 
-        Fire-and-forget: the server returns nothing to confirm the cancel and
-        does not validate ``run_id``, so this always reports
-        ``{"cancelled": true}`` without asserting the run existed. Poll
-        ``research_status`` afterward to confirm — a cancelled in-progress run
-        surfaces as ``failed``.
-
-        The ``notebook`` is routing context only, not a scoping boundary: the
-        server keys the cancel on ``run_id`` alone, so a valid ``run_id`` is
-        cancelled regardless of which notebook is named.
+        Preflights the named notebook and sends the cancel unless the run is
+        already TERMINAL (``completed`` / ``failed``), which returns
+        ``cancel_requested: false`` with the observed ``status`` and no RPC.
+        Otherwise it cancels and returns ``cancel_requested: true`` with
+        ``run_status_before`` (the preflight status). A run polled right after
+        ``research_start`` can transiently read ``not_found`` / ``no_research``
+        (replication lag), so those are cancelled too rather than silently
+        suppressed — the RPC is a harmless no-op for a genuinely unknown id. The
+        cancel is fire-and-forget; poll ``research_status`` afterward to confirm
+        (a cancelled in-progress run surfaces as ``failed``).
         """
         client = get_client(ctx)
         with mcp_errors():
+            # Reject an empty/whitespace run_id BEFORE preflight: ``poll`` treats
+            # a falsy task_id as an UNFILTERED poll, so ``run_id=""`` would match
+            # some other in-flight task and cancel the wrong run.
+            if not run_id or not run_id.strip():
+                raise ValidationError("run_id is required to cancel a research run")
+            run_id = run_id.strip()
             nb_id = await resolve_notebook(client, notebook)
+            # Preflight (``run_id`` as the discriminator → typed NOT_FOUND
+            # sentinel, never raises). Only an already-TERMINAL run
+            # (``completed`` / ``failed``) is left alone — those states are stable,
+            # so cancelling is a meaningless no-op we can honestly skip.
+            status = await research_core.poll_and_classify(client, nb_id, run_id)
+            if status.status in ("completed", "failed"):
+                return {
+                    "status": status.status,
+                    "notebook_id": nb_id,
+                    "run_id": run_id,
+                    "cancel_requested": False,
+                }
+            # Otherwise send the fire-and-forget cancel. For ``in_progress`` this
+            # is the obvious path; for ``not_found`` / ``no_research`` we STILL send
+            # it, because a poll immediately after ``research_start`` can transiently
+            # miss a valid just-started run (replication lag — the research wait path
+            # treats this as lag, not terminal absence). Suppressing the cancel here
+            # would silently leave that run running; the RPC is a harmless no-op for
+            # a genuinely unknown id. ``run_status_before`` surfaces what the
+            # preflight actually observed so a caller can tell a confirmed-running
+            # cancel from an unconfirmed (lag-or-unknown) one.
             await client.research.cancel(nb_id, run_id)
             return {
-                "status": "cancelled",
+                "status": "cancel_requested",
                 "notebook_id": nb_id,
                 "run_id": run_id,
-                "cancelled": True,
+                "cancel_requested": True,
+                "run_status_before": status.status,
             }
 
     @mcp.tool
     async def research_import(ctx: Context, notebook: str, task_id: str) -> dict[str, Any]:
         """Import a completed research task's sources into the notebook.
 
-        Accepts a notebook name or ID and the ``task_id`` from ``research_start``
-        / ``research_status``.
+        Accepts a notebook name or ID and the ``task_id`` to import — pass the
+        ``poll_task_id`` from ``research_start`` / ``research_status``.
 
         The supplied ``task_id`` is the task discriminator: the notebook is
         polled FOR THAT TASK so only its found sources are imported — never the
@@ -147,6 +264,12 @@ def register(mcp: Any) -> None:
         """
         client = get_client(ctx)
         with mcp_errors():
+            # Reject an empty/whitespace task_id: ``poll`` treats a falsy id as an
+            # UNFILTERED poll, which would let an empty pin import whatever task
+            # the notebook happens to have in flight (cross-wire).
+            if not task_id or not task_id.strip():
+                raise ValidationError("task_id is required to import a research task")
+            task_id = task_id.strip()
             nb_id = await resolve_notebook(client, notebook)
             # Poll FOR THE REQUESTED task so the polled sources belong to it.
             # ``poll`` returns the typed ``NOT_FOUND`` sentinel (status
