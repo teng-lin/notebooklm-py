@@ -68,8 +68,9 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     ``tier: None``, NOT an error).
     """
     client = get_client(ctx)
-    # Identity from a single source (the client). Network-free unless authenticated
-    # and neither the in-memory nor persisted email is set; never raises.
+    # Identity from a single source (the client). Never raises. ``live_fallback`` is
+    # gated on ``authenticated`` — suppress the live WIZ probe when the session is
+    # already known stale (it would just fail), so the unauth path stays network-free.
     identity: dict[str, Any] = {
         "email": await client.get_account_email(live_fallback=authenticated),
         "authuser": client.get_account_authuser(),
