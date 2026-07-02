@@ -1,6 +1,6 @@
 """CLI ↔ MCP adapter parity for artifact generation.
 
-Both the CLI ``generate`` command and the MCP ``artifact_generate`` tool are thin
+Both the CLI ``generate`` command and the MCP ``studio_generate`` tool are thin
 adapters over the *same* ``_app/generate`` core, but each plugs in its own
 notebook/source resolvers. When those resolvers disagree, the two surfaces drift
 apart even though every per-adapter unit test passes — which is exactly how #1652
@@ -236,9 +236,9 @@ def _cli_capture(argv: list[str], namespace: str, method: str, setup: Any = None
 
 
 def _mcp_generate_call(artifact_type: str, method: str, extra: dict[str, Any]) -> Any:
-    """Drive the MCP ``artifact_generate`` tool; return the captured generate-method call."""
+    """Drive the MCP ``studio_generate`` tool; return the captured generate-method call."""
     client, exc = _drive_mcp(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB, "artifact_type": artifact_type, **extra},
         setup=lambda c: setattr(c.artifacts, method, AsyncMock(return_value=_FakeStatus())),
     )
@@ -413,7 +413,7 @@ def test_explicit_option_parity(
 
 
 def test_mind_map_instructions_parity() -> None:
-    """CLI ``generate mind-map`` and MCP ``artifact_generate`` deliver the SAME
+    """CLI ``generate mind-map`` and MCP ``studio_generate`` deliver the SAME
     ``instructions`` to ``client.mind_maps.generate`` (interactive default).
 
     Mind-map is excluded from the matrices above (its interactive path goes through
@@ -424,7 +424,7 @@ def test_mind_map_instructions_parity() -> None:
     note = "focus on the timeline"
 
     mcp_client, mcp_exc = _drive_mcp(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB, "artifact_type": "mind-map", "instructions": note},
         setup=lambda c: setattr(c.mind_maps, "generate", AsyncMock(return_value={"id": "mm1"})),
     )
@@ -528,7 +528,7 @@ _AUDIO_ARTIFACT = Artifact(
 
 
 def test_download_audio_parity(tmp_path: Any) -> None:
-    """download: MCP ``artifact_download`` and CLI ``download audio`` resolve the same
+    """download: MCP ``studio_download`` and CLI ``download audio`` resolve the same
     artifact and call ``client.artifacts.download_audio`` identically (via the shared
     ``execute_download``)."""
     out = str(tmp_path / "out.mp3")
@@ -538,7 +538,7 @@ def test_download_audio_parity(tmp_path: Any) -> None:
         client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
 
     mcp = _mcp_capture(
-        "artifact_download",
+        "studio_download",
         {"notebook": NB, "artifact_type": "audio", "path": out},
         "artifacts",
         "download_audio",
