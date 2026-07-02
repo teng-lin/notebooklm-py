@@ -50,14 +50,14 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "note_update",
         "note_delete",
         # Artifacts (8)
-        "artifact_list",
-        "artifact_generate",
-        "artifact_status",
-        "artifact_get_prompt",
-        "artifact_download",
-        "artifact_rename",
-        "artifact_retry",
-        "artifact_delete",
+        "studio_list",
+        "studio_generate",
+        "studio_status",
+        "studio_get_prompt",
+        "studio_download",
+        "studio_rename",
+        "studio_retry",
+        "studio_delete",
         # Research (4)
         "research_start",
         "research_status",
@@ -83,7 +83,7 @@ TOOL_CEILING = 40
 #: The destructive tools — each carries ``destructiveHint`` AND a ``confirm``
 #: parameter (the both-mode confirmation contract).
 DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
-    {"notebook_delete", "source_delete", "note_delete", "artifact_delete", "share_remove_user"}
+    {"notebook_delete", "source_delete", "note_delete", "studio_delete", "share_remove_user"}
 )
 
 #: Read-only tools — each carries ``readOnlyHint``.
@@ -94,9 +94,9 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "source_list",
         "source_read",
         "note_list",
-        "artifact_list",
-        "artifact_status",
-        "artifact_get_prompt",
+        "studio_list",
+        "studio_status",
+        "studio_get_prompt",
         "research_status",
         "share_status",
         "suggest_prompts",
@@ -155,51 +155,51 @@ async def test_read_only_and_destructive_are_disjoint() -> None:
     assert DESTRUCTIVE_TOOLS <= EXPECTED_TOOLS
 
 
-async def test_artifact_rename_is_plain_mutating_tool(tools_by_name) -> None:
-    """``artifact_rename`` mutates but is neither read-only nor destructive.
+async def test_studio_rename_is_plain_mutating_tool(tools_by_name) -> None:
+    """``studio_rename`` mutates but is neither read-only nor destructive.
 
     A title-only update carries default annotations (no ``readOnlyHint``, no
     ``destructiveHint``) and no ``confirm`` gate — so it must stay out of both the
     read-only and destructive pinned sets.
     """
-    assert "artifact_rename" in tools_by_name
-    assert "artifact_rename" not in READ_ONLY_TOOLS
-    assert "artifact_rename" not in DESTRUCTIVE_TOOLS
-    tool = tools_by_name["artifact_rename"]
+    assert "studio_rename" in tools_by_name
+    assert "studio_rename" not in READ_ONLY_TOOLS
+    assert "studio_rename" not in DESTRUCTIVE_TOOLS
+    tool = tools_by_name["studio_rename"]
     if tool.annotations is not None:
         assert not tool.annotations.readOnlyHint
         assert not tool.annotations.destructiveHint
     assert "confirm" not in tool.inputSchema.get("properties", {})
 
 
-async def test_artifact_retry_is_plain_mutating_tool(tools_by_name) -> None:
-    """``artifact_retry`` mutates but is neither read-only nor destructive.
+async def test_studio_retry_is_plain_mutating_tool(tools_by_name) -> None:
+    """``studio_retry`` mutates but is neither read-only nor destructive.
 
     Kicking off a retry carries default annotations (no ``readOnlyHint``, no
     ``destructiveHint``) and no ``confirm`` gate — so it must stay out of both the
     read-only and destructive pinned sets.
     """
-    assert "artifact_retry" in tools_by_name
-    assert "artifact_retry" not in READ_ONLY_TOOLS
-    assert "artifact_retry" not in DESTRUCTIVE_TOOLS
-    tool = tools_by_name["artifact_retry"]
+    assert "studio_retry" in tools_by_name
+    assert "studio_retry" not in READ_ONLY_TOOLS
+    assert "studio_retry" not in DESTRUCTIVE_TOOLS
+    tool = tools_by_name["studio_retry"]
     if tool.annotations is not None:
         assert not tool.annotations.readOnlyHint
         assert not tool.annotations.destructiveHint
     assert "confirm" not in tool.inputSchema.get("properties", {})
 
 
-async def test_artifact_download_advertises_artifact_id_and_format_enum(tools_by_name) -> None:
-    """``artifact_download`` advertises the ``artifact_id`` param and an enumerated
+async def test_studio_download_advertises_artifact_id_and_format_enum(tools_by_name) -> None:
+    """``studio_download`` advertises the ``artifact_id`` param and an enumerated
     ``output_format`` so an agent's tool schema can target a specific artifact and
     pick a valid format (issue #1668)."""
     import json
 
-    tool = tools_by_name["artifact_download"]
+    tool = tools_by_name["studio_download"]
     properties = tool.inputSchema.get("properties", {})
-    assert "artifact_id" in properties, "artifact_download must expose 'artifact_id'"
-    assert "artifact" in properties, "artifact_download must expose the 'artifact' name-or-id ref"
-    assert "output_format" in properties, "artifact_download must expose 'output_format'"
+    assert "artifact_id" in properties, "studio_download must expose 'artifact_id'"
+    assert "artifact" in properties, "studio_download must expose the 'artifact' name-or-id ref"
+    assert "output_format" in properties, "studio_download must expose 'output_format'"
     # output_format is a Literal union → the schema (possibly under anyOf for the
     # optional ``| None``) must enumerate every supported format value.
     fmt_schema = json.dumps(properties["output_format"])

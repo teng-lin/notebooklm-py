@@ -102,7 +102,7 @@ class TestMcpManifest:
             "notebook_delete",
             "source_list",
             "chat_ask",
-            "artifact_list",
+            "studio_list",
             "research_status",
             "note_list",
             "server_info",
@@ -120,7 +120,7 @@ class TestMcpManifest:
             )
 
         # Every read tool carries readOnlyHint.
-        for name in ("notebook_list", "source_list", "artifact_list", "server_info"):
+        for name in ("notebook_list", "source_list", "studio_list", "server_info"):
             tool = by_name[name]
             assert tool.annotations is not None, f"{name} has no annotations"
             assert tool.annotations.readOnlyHint is True, f"{name} missing readOnlyHint"
@@ -216,12 +216,12 @@ TOOL_COVERAGE: dict[str, str] = {
     "note_update": "TestMcpNotes.test_note_crud",
     "note_delete": "TestMcpNotes.test_note_crud",
     # artifacts
-    "artifact_list": "TestMcpArtifacts.test_artifact_list",
-    "artifact_generate": "TestMcpArtifacts.test_generate_report_wiring (variants)",
-    "artifact_status": "TestMcpArtifacts.test_generate_report_wiring (variants)",
-    "artifact_download": "TestMcpArtifacts.test_download_existing_artifact",
-    "artifact_rename": "tests/unit/mcp/test_artifacts.py (kind-aware rename; no live mutation)",
-    "artifact_delete": "tests/unit/mcp/test_artifacts.py (kind-aware delete; no live mutation)",
+    "studio_list": "TestMcpArtifacts.test_artifact_list",
+    "studio_generate": "TestMcpArtifacts.test_generate_report_wiring (variants)",
+    "studio_status": "TestMcpArtifacts.test_generate_report_wiring (variants)",
+    "studio_download": "TestMcpArtifacts.test_download_existing_artifact",
+    "studio_rename": "tests/unit/mcp/test_artifacts.py (kind-aware rename; no live mutation)",
+    "studio_delete": "tests/unit/mcp/test_artifacts.py (kind-aware delete; no live mutation)",
     # research
     "research_start": "TestMcpResearch.test_start_status_cancel (variants)",
     "research_status": "TestMcpResearch.test_status_readonly",
@@ -258,7 +258,7 @@ class TestMcpToolMatrix:
 
         Covers the read-only surface that is callable with only a notebook (or
         nothing) plus ``source_read`` (a real source id is resolved from
-        ``source_list``). ``artifact_status`` needs a live ``task_id`` and is
+        ``source_list``). ``studio_status`` needs a live ``task_id`` and is
         instead covered by ``TestMcpArtifacts`` (the generation wiring smoke).
         """
         nb = read_only_notebook_id
@@ -268,7 +268,7 @@ class TestMcpToolMatrix:
         assert isinstance(await _call(client, "server_info"), dict)
 
         # Notebook-scoped reads.
-        for name in ("notebook_describe", "source_list", "artifact_list", "note_list"):
+        for name in ("notebook_describe", "source_list", "studio_list", "note_list"):
             structured = await _call(client, name, {"notebook": nb})
             assert isinstance(structured, dict), f"{name} returned {type(structured)}"
 
@@ -423,8 +423,8 @@ class TestMcpArtifacts:
     @pytest.mark.asyncio
     @pytest.mark.readonly
     async def test_artifact_list(self, client, generation_notebook_id):
-        """``artifact_list`` returns the notebook's artifacts as a list."""
-        structured = await _call(client, "artifact_list", {"notebook": generation_notebook_id})
+        """``studio_list`` returns the notebook's artifacts as a list."""
+        structured = await _call(client, "studio_list", {"notebook": generation_notebook_id})
         assert isinstance(structured["artifacts"], list)
 
     @pytest.mark.asyncio
@@ -436,7 +436,7 @@ class TestMcpArtifacts:
         e2e populates them nightly). Skips cleanly when none is present so this
         never depends on cross-file test ordering.
         """
-        listing = await _call(client, "artifact_list", {"notebook": generation_notebook_id})
+        listing = await _call(client, "studio_list", {"notebook": generation_notebook_id})
         candidate = _pick_downloadable_artifact(listing["artifacts"])
         if candidate is None:
             pytest.skip("no existing downloadable artifact on the generation notebook")
@@ -445,7 +445,7 @@ class TestMcpArtifacts:
         out_path = tmp_path / f"artifact-{dl_type}"
         result = await _call(
             client,
-            "artifact_download",
+            "studio_download",
             {
                 "notebook": generation_notebook_id,
                 "artifact_type": dl_type,
@@ -462,20 +462,20 @@ class TestMcpArtifacts:
     @pytest.mark.asyncio
     @pytest.mark.variants
     async def test_generate_report_wiring(self, client, generation_notebook_id):
-        """Wiring smoke: ``artifact_generate`` threads through and returns a
-        ``task_id``; one ``artifact_status`` poll dispatches. Does NOT poll to
+        """Wiring smoke: ``studio_generate`` threads through and returns a
+        ``task_id``; one ``studio_status`` poll dispatches. Does NOT poll to
         completion (the RPC health of generation is proven by ``test_generation``)."""
         generated = await _call(
             client,
-            "artifact_generate",
+            "studio_generate",
             {"notebook": generation_notebook_id, "artifact_type": "report"},
         )
         task_id = generated.get("task_id")
-        assert task_id, f"artifact_generate returned no task_id: {generated}"
+        assert task_id, f"studio_generate returned no task_id: {generated}"
 
         status = await _call(
             client,
-            "artifact_status",
+            "studio_status",
             {"notebook": generation_notebook_id, "task_id": task_id},
         )
         assert status["notebook_id"] == generation_notebook_id

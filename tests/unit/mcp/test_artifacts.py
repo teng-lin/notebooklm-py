@@ -3,7 +3,7 @@
 Drives each tool through the in-memory FastMCP ``Client`` against a server bound
 to the mocked ``NotebookLMClient``, asserting the serialized
 ``structured_content``. Covers each tool's happy path, name-vs-id resolution
-reaching the tool, the per-``type`` ``artifact_generate`` / ``artifact_download``
+reaching the tool, the per-``type`` ``studio_generate`` / ``studio_download``
 enum dispatch, the start→status poll shape, and error projection.
 """
 
@@ -114,7 +114,7 @@ class FakeStatus:
 
 
 # ---------------------------------------------------------------------------
-# artifact_list
+# studio_list
 # ---------------------------------------------------------------------------
 
 
@@ -122,7 +122,7 @@ async def test_artifact_list(mcp_call, mock_client) -> None:
     mock_client.artifacts.list = AsyncMock(
         return_value=[FakeArtifact(id="art1", title="My Podcast")]
     )
-    result = await mcp_call("artifact_list", {"notebook": NB_ID})
+    result = await mcp_call("studio_list", {"notebook": NB_ID})
     sc = result.structured_content
     assert sc["notebook_id"] == NB_ID
     assert sc["artifacts"][0]["id"] == "art1"
@@ -144,19 +144,19 @@ async def test_artifact_list_resolves_notebook_by_name(mcp_call, mock_client) ->
         return_value=[FakeNotebook(id=NB_ID, title="My Notebook")]
     )
     mock_client.artifacts.list = AsyncMock(return_value=[])
-    result = await mcp_call("artifact_list", {"notebook": "My Notebook"})
+    result = await mcp_call("studio_list", {"notebook": "My Notebook"})
     assert result.structured_content["notebook_id"] == NB_ID
     mock_client.artifacts.list.assert_awaited_with(NB_ID)
 
 
 # ---------------------------------------------------------------------------
-# artifact_generate
+# studio_generate
 # ---------------------------------------------------------------------------
 
 
 async def test_artifact_generate_audio(mcp_call, mock_client) -> None:
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
-    result = await mcp_call("artifact_generate", {"notebook": NB_ID, "artifact_type": "audio"})
+    result = await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "audio"})
     assert result.structured_content["kind"] == "audio"
     assert result.structured_content["task_id"] == TASK_ID
     mock_client.artifacts.generate_audio.assert_awaited_once()
@@ -166,21 +166,21 @@ async def test_artifact_generate_audio(mcp_call, mock_client) -> None:
 
 async def test_artifact_generate_quiz_routes_to_quiz(mcp_call, mock_client) -> None:
     mock_client.artifacts.generate_quiz = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
-    result = await mcp_call("artifact_generate", {"notebook": NB_ID, "artifact_type": "quiz"})
+    result = await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "quiz"})
     assert result.structured_content["kind"] == "quiz"
     mock_client.artifacts.generate_quiz.assert_awaited_once()
 
 
 async def test_artifact_generate_video_routes_to_video(mcp_call, mock_client) -> None:
     mock_client.artifacts.generate_video = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
-    await mcp_call("artifact_generate", {"notebook": NB_ID, "artifact_type": "video"})
+    await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "video"})
     mock_client.artifacts.generate_video.assert_awaited_once()
 
 
 async def test_artifact_generate_report_routes_to_report(mcp_call, mock_client) -> None:
     mock_client.artifacts.generate_report = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "report", "report_format": "study-guide"},
     )
     mock_client.artifacts.generate_report.assert_awaited_once()
@@ -193,7 +193,7 @@ async def test_artifact_generate_passes_source_ids(mcp_call, mock_client) -> Non
     src_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "audio", "source_ids": [src_a, src_b]},
     )
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
@@ -213,7 +213,7 @@ async def test_artifact_generate_resolves_source_id_prefix(mcp_call, mock_client
     mock_client.sources.list = AsyncMock(return_value=[_Src(id=full)])
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "audio", "source_ids": [full[:12]]},
     )
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
@@ -237,7 +237,7 @@ async def test_artifact_generate_two_title_refs_list_once_order_preserved(
     )
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "audio", "source_ids": ["Beta", "Alpha"]},
     )
     mock_client.sources.list.assert_awaited_once_with(NB_ID)
@@ -251,7 +251,7 @@ async def test_artifact_generate_omitting_source_ids_uses_all(mcp_call, mock_cli
     for source-needing kinds (quiz/audio/flashcards), returning a null id surfaced as
     '… generation is unavailable'."""
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
-    await mcp_call("artifact_generate", {"notebook": NB_ID, "artifact_type": "audio"})
+    await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "audio"})
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
     assert kwargs["source_ids"] is None
 
@@ -261,7 +261,7 @@ async def test_artifact_generate_empty_source_ids_uses_all(mcp_call, mock_client
     never [] (which the backend refuses). Pins the full empty-vs-None contract."""
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate", {"notebook": NB_ID, "artifact_type": "audio", "source_ids": []}
+        "studio_generate", {"notebook": NB_ID, "artifact_type": "audio", "source_ids": []}
     )
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
     assert kwargs["source_ids"] is None
@@ -277,7 +277,7 @@ async def test_artifact_generate_source_ids_json_string(mcp_call, mock_client) -
     """``source_ids`` sent as a JSON-array string is tolerated (coerce_list)."""
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "audio", "source_ids": f'["{_SRC_A}","{_SRC_B}"]'},
     )
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
@@ -288,7 +288,7 @@ async def test_artifact_generate_source_ids_comma_string(mcp_call, mock_client) 
     """``source_ids`` sent as a comma-separated string is tolerated (coerce_list)."""
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "audio", "source_ids": f"{_SRC_A},{_SRC_B}"},
     )
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
@@ -299,7 +299,7 @@ async def test_artifact_generate_source_ids_scalar_string(mcp_call, mock_client)
     """``source_ids`` sent as a bare scalar string is tolerated (coerce_list)."""
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "audio", "source_ids": _SRC_A},
     )
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
@@ -310,7 +310,7 @@ async def test_artifact_generate_source_ids_empty_string_uses_all(mcp_call, mock
     """An empty string coerces to [] => collapses to None (all sources)."""
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "audio", "source_ids": ""},
     )
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
@@ -321,7 +321,7 @@ async def test_artifact_generate_source_ids_whitespace_uses_all(mcp_call, mock_c
     """A whitespace-only string coerces to [] => collapses to None (all sources)."""
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "audio", "source_ids": "   "},
     )
     kwargs = mock_client.artifacts.generate_audio.await_args.kwargs
@@ -331,7 +331,7 @@ async def test_artifact_generate_source_ids_whitespace_uses_all(mcp_call, mock_c
 async def test_artifact_generate_unknown_type_is_validation_error(mcp_call, mock_client) -> None:
     """An unknown artifact_type is rejected at the Literal schema boundary."""
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("artifact_generate", {"notebook": NB_ID, "artifact_type": "bogus"})
+        await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "bogus"})
     assert "audio" in str(excinfo.value) and "report" in str(excinfo.value)
 
 
@@ -340,7 +340,7 @@ async def test_artifact_generate_bad_language_is_validation_error(mcp_call, mock
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_generate",
+            "studio_generate",
             {"notebook": NB_ID, "artifact_type": "audio", "language": "klingon"},
         )
     assert "VALIDATION" in str(excinfo.value)
@@ -351,7 +351,7 @@ async def test_artifact_generate_valid_language_passes(mcp_call, mock_client) ->
     """A supported language code is accepted and forwarded."""
     mock_client.artifacts.generate_audio = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     result = await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "audio", "language": "es"},
     )
     assert result.structured_content["kind"] == "audio"
@@ -359,7 +359,7 @@ async def test_artifact_generate_valid_language_passes(mcp_call, mock_client) ->
 
 
 # ---------------------------------------------------------------------------
-# artifact_generate — per-kind options (#1654)
+# studio_generate — per-kind options (#1654)
 # ---------------------------------------------------------------------------
 
 
@@ -367,7 +367,7 @@ async def test_artifact_generate_video_options(mcp_call, mock_client) -> None:
     """video format/style/style_prompt all reach generate_video (custom style path)."""
     mock_client.artifacts.generate_video = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {
             "notebook": NB_ID,
             "artifact_type": "video",
@@ -385,7 +385,7 @@ async def test_artifact_generate_video_options(mcp_call, mock_client) -> None:
 async def test_artifact_generate_slide_deck_options(mcp_call, mock_client) -> None:
     mock_client.artifacts.generate_slide_deck = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {
             "notebook": NB_ID,
             "artifact_type": "slide-deck",
@@ -401,7 +401,7 @@ async def test_artifact_generate_slide_deck_options(mcp_call, mock_client) -> No
 async def test_artifact_generate_infographic_options(mcp_call, mock_client) -> None:
     mock_client.artifacts.generate_infographic = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {
             "notebook": NB_ID,
             "artifact_type": "infographic",
@@ -419,7 +419,7 @@ async def test_artifact_generate_infographic_options(mcp_call, mock_client) -> N
 async def test_artifact_generate_mind_map_interactive_default(mcp_call, mock_client) -> None:
     """Omitted ``map_kind`` defaults to interactive → routes to ``mind_maps.generate``."""
     mock_client.mind_maps.generate = AsyncMock(return_value={"id": "mm1"})
-    await mcp_call("artifact_generate", {"notebook": NB_ID, "artifact_type": "mind-map"})
+    await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "mind-map"})
     mock_client.mind_maps.generate.assert_awaited_once()
     mock_client.artifacts.generate_mind_map.assert_not_called()
 
@@ -428,7 +428,7 @@ async def test_artifact_generate_mind_map_note_backed_routes(mcp_call, mock_clie
     """``map_kind=note-backed`` routes to ``artifacts.generate_mind_map`` instead."""
     mock_client.artifacts.generate_mind_map = AsyncMock(return_value={"id": "mm1"})
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {"notebook": NB_ID, "artifact_type": "mind-map", "map_kind": "note-backed"},
     )
     mock_client.artifacts.generate_mind_map.assert_awaited_once()
@@ -444,7 +444,7 @@ async def test_artifact_generate_mind_map_forwards_instructions(mcp_call, mock_c
     """
     mock_client.mind_maps.generate = AsyncMock(return_value={"id": "mm1"})
     await mcp_call(
-        "artifact_generate",
+        "studio_generate",
         {
             "notebook": NB_ID,
             "artifact_type": "mind-map",
@@ -476,7 +476,7 @@ async def test_artifact_generate_cross_kind_style_is_validation_error(
     """
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_generate",
+            "studio_generate",
             {"notebook": NB_ID, "artifact_type": artifact_type, **opts},
         )
     msg = str(excinfo.value)
@@ -528,7 +528,7 @@ async def test_artifact_generate_bad_option_value_is_schema_boundary_error(
     rejection from the runtime path (both list the accepted members)."""
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_generate",
+            "studio_generate",
             {"notebook": NB_ID, "artifact_type": artifact_type, **opts},
         )
     msg = str(excinfo.value)
@@ -564,7 +564,7 @@ async def test_artifact_generate_wrong_kind_option_is_validation_error(
     """
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_generate",
+            "studio_generate",
             {"notebook": NB_ID, "artifact_type": artifact_type, **opts},
         )
     assert "VALIDATION" in str(excinfo.value)
@@ -576,7 +576,7 @@ async def test_artifact_generate_wrong_kind_message_for_optionless_kind(
     """A kind with no per-kind options reports that clearly (not ``accepts []``)."""
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_generate",
+            "studio_generate",
             {"notebook": NB_ID, "artifact_type": "cinematic-video", "style": "classic"},
         )
     assert "no per-kind options" in str(excinfo.value)
@@ -587,7 +587,7 @@ async def test_artifact_generate_style_prompt_requires_custom(mcp_call, mock_cli
     mock_client.artifacts.generate_video = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_generate",
+            "studio_generate",
             {"notebook": NB_ID, "artifact_type": "video", "style_prompt": "hand-drawn"},
         )
     assert "VALIDATION" in str(excinfo.value)
@@ -622,7 +622,7 @@ def test_kind_options_match_core_maps() -> None:
 async def test_artifact_generate_exposes_new_option_params(mcp_list_tools) -> None:
     """The agent-facing tool schema exposes every new per-kind option parameter."""
     tools = await mcp_list_tools()
-    schema = next(t for t in tools if t.name == "artifact_generate").inputSchema
+    schema = next(t for t in tools if t.name == "studio_generate").inputSchema
     properties = schema.get("properties", {})
     for param in (
         "video_format",
@@ -634,7 +634,7 @@ async def test_artifact_generate_exposes_new_option_params(mcp_list_tools) -> No
         "detail",
         "map_kind",
     ):
-        assert param in properties, f"artifact_generate must expose {param!r}"
+        assert param in properties, f"studio_generate must expose {param!r}"
 
 
 async def test_artifact_generate_option_params_expose_enums(mcp_list_tools) -> None:
@@ -648,7 +648,7 @@ async def test_artifact_generate_option_params_expose_enums(mcp_list_tools) -> N
     /``difficulty`` are shared by quiz+flashcards (identical today — assert the union so
     a future flashcards-specific set is still covered)."""
     tools = await mcp_list_tools()
-    schema = next(t for t in tools if t.name == "artifact_generate").inputSchema
+    schema = next(t for t in tools if t.name == "studio_generate").inputSchema
     props = schema.get("properties", {})
 
     # Single-kind option params: enum == that kind's choice set.
@@ -684,20 +684,20 @@ async def test_artifact_generate_free_text_params_have_no_enum(mcp_list_tools) -
     Uses the same nested-aware ``_schema_enum`` helper so an accidental conversion that
     hid an ``enum`` inside an ``anyOf`` branch would still be caught."""
     tools = await mcp_list_tools()
-    schema = next(t for t in tools if t.name == "artifact_generate").inputSchema
+    schema = next(t for t in tools if t.name == "studio_generate").inputSchema
     props = schema.get("properties", {})
     assert _schema_enum(props["style_prompt"]) is None
     assert _schema_enum(props["language"]) is None
 
 
 # ---------------------------------------------------------------------------
-# artifact_status (stateless poll)
+# studio_status (stateless poll)
 # ---------------------------------------------------------------------------
 
 
 async def test_artifact_status(mcp_call, mock_client) -> None:
     mock_client.artifacts.poll_status = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
-    result = await mcp_call("artifact_status", {"notebook": NB_ID, "task_id": TASK_ID})
+    result = await mcp_call("studio_status", {"notebook": NB_ID, "task_id": TASK_ID})
     assert result.structured_content["task_id"] == TASK_ID
     assert result.structured_content["is_complete"] is True
     assert result.structured_content["status"] == GenerationState.COMPLETED.value
@@ -709,26 +709,26 @@ async def test_artifact_generate_then_status_poll_shape(mcp_call, mock_client) -
     mock_client.artifacts.generate_audio = AsyncMock(
         return_value=FakeStatus(task_id=TASK_ID, status=GenerationState.PENDING, url=None)
     )
-    started = await mcp_call("artifact_generate", {"notebook": NB_ID, "artifact_type": "audio"})
+    started = await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "audio"})
     task_id = started.structured_content["task_id"]
     assert task_id == TASK_ID
 
     mock_client.artifacts.poll_status = AsyncMock(
         return_value=FakeStatus(task_id=TASK_ID, status=GenerationState.COMPLETED)
     )
-    polled = await mcp_call("artifact_status", {"notebook": NB_ID, "task_id": task_id})
+    polled = await mcp_call("studio_status", {"notebook": NB_ID, "task_id": task_id})
     assert polled.structured_content["is_complete"] is True
 
 
 # ---------------------------------------------------------------------------
-# artifact_get_prompt
+# studio_get_prompt
 # ---------------------------------------------------------------------------
 
 
 async def test_artifact_get_prompt(mcp_call, mock_client) -> None:
     """Happy path: the stored prompt string flows through unchanged."""
     mock_client.artifacts.get_prompt = AsyncMock(return_value="Summarize the intro")
-    result = await mcp_call("artifact_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
+    result = await mcp_call("studio_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
     assert result.structured_content == {
         "notebook_id": NB_ID,
         "artifact_id": _ART_FULL,
@@ -742,7 +742,7 @@ async def test_artifact_get_prompt(mcp_call, mock_client) -> None:
 async def test_artifact_get_prompt_none_is_success(mcp_call, mock_client) -> None:
     """``prompt=None`` (artifact records no prompt) is a valid result, not an error."""
     mock_client.artifacts.get_prompt = AsyncMock(return_value=None)
-    result = await mcp_call("artifact_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
+    result = await mcp_call("studio_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
     assert result.structured_content == {
         "notebook_id": NB_ID,
         "artifact_id": _ART_FULL,
@@ -761,7 +761,7 @@ async def test_artifact_get_prompt_resolves_by_title(mcp_call, mock_client) -> N
     )
     mock_client.artifacts.list = AsyncMock(return_value=[art])
     mock_client.artifacts.get_prompt = AsyncMock(return_value="From the podcast")
-    result = await mcp_call("artifact_get_prompt", {"notebook": NB_ID, "artifact": "Podcast 1"})
+    result = await mcp_call("studio_get_prompt", {"notebook": NB_ID, "artifact": "Podcast 1"})
     assert result.structured_content["artifact_id"] == _ART_FULL
     assert result.structured_content["prompt"] == "From the podcast"
     mock_client.artifacts.get_prompt.assert_awaited_once_with(NB_ID, _ART_FULL)
@@ -778,12 +778,12 @@ async def test_artifact_get_prompt_unknown_id_projects_tool_error(mcp_call, mock
 
     mock_client.artifacts.get_prompt = AsyncMock(side_effect=_raise)
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("artifact_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
+        await mcp_call("studio_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
     assert "NOT_FOUND" in str(excinfo.value)
 
 
 # ---------------------------------------------------------------------------
-# artifact_download
+# studio_download
 # ---------------------------------------------------------------------------
 
 
@@ -792,7 +792,7 @@ async def test_artifact_download_audio(mcp_call, mock_client, tmp_path) -> None:
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
     mock_client.artifacts.download_audio = AsyncMock(return_value=out)
     result = await mcp_call(
-        "artifact_download", {"notebook": NB_ID, "artifact_type": "audio", "path": out}
+        "studio_download", {"notebook": NB_ID, "artifact_type": "audio", "path": out}
     )
     assert result.structured_content["outcome"] == "single_downloaded"
     assert result.structured_content["output_path"] == out
@@ -807,7 +807,7 @@ async def test_artifact_download_by_artifact_ref_infers_type(
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
     mock_client.artifacts.download_audio = AsyncMock(return_value=out)
     result = await mcp_call(
-        "artifact_download", {"notebook": NB_ID, "artifact": "Podcast", "path": out}
+        "studio_download", {"notebook": NB_ID, "artifact": "Podcast", "path": out}
     )
     assert result.structured_content["outcome"] == "single_downloaded"
     # The audio downloader was selected purely from the resolved artifact's kind,
@@ -822,7 +822,7 @@ async def test_artifact_download_ref_and_type_together_is_validation(mcp_call, m
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
     with pytest.raises(ToolError) as exc:
         await mcp_call(
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact": "Podcast", "artifact_type": "audio"},
         )
     assert "not both" in str(exc.value)
@@ -833,7 +833,7 @@ async def test_artifact_download_ref_and_id_together_is_validation(mcp_call, moc
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
     with pytest.raises(ToolError) as exc:
         await mcp_call(
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact": "Podcast", "artifact_id": "art1"},
         )
     assert "not both" in str(exc.value)
@@ -843,7 +843,7 @@ async def test_artifact_download_neither_ref_nor_type_is_validation(mcp_call, mo
     """Omitting both ``artifact`` and ``artifact_type`` is rejected."""
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
     with pytest.raises(ToolError) as exc:
-        await mcp_call("artifact_download", {"notebook": NB_ID})
+        await mcp_call("studio_download", {"notebook": NB_ID})
     assert "artifact_type" in str(exc.value)
 
 
@@ -852,7 +852,7 @@ async def test_artifact_download_quiz_with_format(mcp_call, mock_client, tmp_pat
     mock_client.artifacts.list = AsyncMock(return_value=[_QUIZ_ARTIFACT])
     mock_client.artifacts.download_quiz = AsyncMock(return_value=out)
     result = await mcp_call(
-        "artifact_download",
+        "studio_download",
         {"notebook": NB_ID, "artifact_type": "quiz", "path": out, "output_format": "markdown"},
     )
     assert result.structured_content["outcome"] == "single_downloaded"
@@ -864,7 +864,7 @@ async def test_artifact_download_unknown_type_is_validation_error(mcp_call, mock
     """An unknown download artifact_type is rejected at the Literal schema boundary."""
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_download", {"notebook": NB_ID, "artifact_type": "bogus", "path": "/tmp/x"}
+            "studio_download", {"notebook": NB_ID, "artifact_type": "bogus", "path": "/tmp/x"}
         )
     assert "audio" in str(excinfo.value) and "flashcards" in str(excinfo.value)
 
@@ -877,7 +877,7 @@ async def test_artifact_download_bad_format_for_supported_type_is_validation(
     mock_client.artifacts.list = AsyncMock(return_value=[_QUIZ_ARTIFACT])
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact_type": "quiz", "path": out, "output_format": "bogus"},
         )
     assert "validation error" in str(excinfo.value)
@@ -891,7 +891,7 @@ async def test_artifact_download_bad_format_cross_validation_is_validation(
     mock_client.artifacts.list = AsyncMock(return_value=[_QUIZ_ARTIFACT])
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact_type": "quiz", "path": out, "output_format": "pdf"},
         )
     assert "VALIDATION" in str(excinfo.value)
@@ -906,7 +906,7 @@ async def test_artifact_download_format_for_unsupported_type_is_validation(
     mock_client.artifacts.download_audio = AsyncMock(return_value=out)
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact_type": "audio", "path": out, "output_format": "pdf"},
         )
     assert "VALIDATION" in str(excinfo.value)
@@ -917,7 +917,7 @@ async def test_artifact_download_no_artifacts(mcp_call, mock_client, tmp_path) -
     out = str(tmp_path / "out.mp3")
     mock_client.artifacts.list = AsyncMock(return_value=[])
     result = await mcp_call(
-        "artifact_download", {"notebook": NB_ID, "artifact_type": "audio", "path": out}
+        "studio_download", {"notebook": NB_ID, "artifact_type": "audio", "path": out}
     )
     assert result.structured_content["outcome"] == "no_artifacts"
 
@@ -943,7 +943,7 @@ async def test_artifact_download_by_full_id(mcp_call, mock_client, tmp_path) -> 
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT_1, _AUDIO_ARTIFACT_2])
     mock_client.artifacts.download_audio = AsyncMock(return_value=out)
     result = await mcp_call(
-        "artifact_download",
+        "studio_download",
         {
             "notebook": NB_ID,
             "artifact_type": "audio",
@@ -963,7 +963,7 @@ async def test_artifact_download_by_unique_prefix(mcp_call, mock_client, tmp_pat
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT_1, _AUDIO_ARTIFACT_2])
     mock_client.artifacts.download_audio = AsyncMock(return_value=out)
     result = await mcp_call(
-        "artifact_download",
+        "studio_download",
         {
             "notebook": NB_ID,
             "artifact_type": "audio",
@@ -987,7 +987,7 @@ async def test_artifact_download_by_id_not_found(mcp_call, mock_client, tmp_path
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT_1, _AUDIO_ARTIFACT_2])
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_download",
+            "studio_download",
             {
                 "notebook": NB_ID,
                 "artifact_type": "audio",
@@ -1007,7 +1007,7 @@ async def test_artifact_download_by_uppercase_full_id(mcp_call, mock_client, tmp
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT_1, _AUDIO_ARTIFACT_2])
     mock_client.artifacts.download_audio = AsyncMock(return_value=out)
     result = await mcp_call(
-        "artifact_download",
+        "studio_download",
         {
             "notebook": NB_ID,
             "artifact_type": "audio",
@@ -1041,7 +1041,7 @@ async def test_artifact_download_by_id_ambiguous_prefix(mcp_call, mock_client, t
     mock_client.artifacts.list = AsyncMock(return_value=[art_same_1, art_same_2])
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_download",
+            "studio_download",
             {
                 "notebook": NB_ID,
                 "artifact_type": "audio",
@@ -1058,7 +1058,7 @@ async def test_artifact_download_latest_preserved(mcp_call, mock_client, tmp_pat
     mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT_1, _AUDIO_ARTIFACT_2])
     mock_client.artifacts.download_audio = AsyncMock(return_value=out)
     result = await mcp_call(
-        "artifact_download",
+        "studio_download",
         {
             "notebook": NB_ID,
             "artifact_type": "audio",
@@ -1083,20 +1083,20 @@ async def test_artifact_status_not_found_projects_tool_error(mcp_call, mock_clie
 
     mock_client.artifacts.poll_status = AsyncMock(side_effect=_raise)
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("artifact_status", {"notebook": NB_ID, "task_id": TASK_ID})
+        await mcp_call("studio_status", {"notebook": NB_ID, "task_id": TASK_ID})
     assert "NOT_FOUND" in str(excinfo.value)
 
 
 async def test_artifact_list_notebook_not_found_projects_tool_error(mcp_call, mock_client) -> None:
     mock_client.notebooks.list = AsyncMock(return_value=[])
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("artifact_list", {"notebook": "No Such Notebook"})
+        await mcp_call("studio_list", {"notebook": "No Such Notebook"})
     assert "NOT_FOUND" in str(excinfo.value)
     _ = NotebookNotFoundError  # imported for symmetry with sibling suites
 
 
 # ---------------------------------------------------------------------------
-# artifact_rename
+# studio_rename
 # ---------------------------------------------------------------------------
 
 _ART_FULL = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -1122,7 +1122,7 @@ async def test_artifact_rename_regular_typed_artifact(mcp_call, mock_client) -> 
     mock_client.mind_maps.list = AsyncMock(return_value=[])
     mock_client.artifacts.rename = AsyncMock()
     result = await mcp_call(
-        "artifact_rename",
+        "studio_rename",
         {"notebook": NB_ID, "artifact": "aaaaaaaa-aaaa", "new_title": "Renamed"},
     )
     assert result.structured_content == {
@@ -1149,7 +1149,7 @@ async def test_artifact_rename_interactive_mind_map_by_title(mcp_call, mock_clie
     )
     mock_client.mind_maps.rename = AsyncMock()
     result = await mcp_call(
-        "artifact_rename",
+        "studio_rename",
         {"notebook": NB_ID, "artifact": "My Map", "new_title": "Renamed Map"},
     )
     assert result.structured_content["is_mind_map"] is True
@@ -1166,7 +1166,7 @@ async def test_artifact_rename_note_backed_mind_map_by_full_uuid(mcp_call, mock_
     )
     mock_client.mind_maps.rename = AsyncMock()
     result = await mcp_call(
-        "artifact_rename",
+        "studio_rename",
         {"notebook": NB_ID, "artifact": _ART_FULL, "new_title": "Renamed"},
     )
     assert result.structured_content["is_mind_map"] is True
@@ -1183,7 +1183,7 @@ async def test_artifact_rename_not_found_projects_tool_error(mcp_call, mock_clie
     mock_client.artifacts.list = AsyncMock(return_value=[])
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_rename",
+            "studio_rename",
             {"notebook": NB_ID, "artifact": "No Such Artifact", "new_title": "X"},
         )
     assert "NOT_FOUND" in str(excinfo.value)
@@ -1193,7 +1193,7 @@ async def test_artifact_rename_not_found_projects_tool_error(mcp_call, mock_clie
 
 
 # ---------------------------------------------------------------------------
-# artifact_retry
+# studio_retry
 # ---------------------------------------------------------------------------
 
 
@@ -1202,7 +1202,7 @@ async def test_artifact_retry_happy_path(mcp_call, mock_client) -> None:
     mock_client.artifacts.retry_failed = AsyncMock(
         return_value=FakeStatus(task_id=_ART_FULL, status=GenerationState.IN_PROGRESS, url=None)
     )
-    result = await mcp_call("artifact_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
+    result = await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
     assert result.structured_content == {
         "notebook_id": NB_ID,
         "artifact_id": _ART_FULL,
@@ -1227,7 +1227,7 @@ async def test_artifact_retry_resolves_by_title(mcp_call, mock_client) -> None:
     mock_client.artifacts.retry_failed = AsyncMock(
         return_value=FakeStatus(task_id=_ART_FULL, status=GenerationState.IN_PROGRESS, url=None)
     )
-    result = await mcp_call("artifact_retry", {"notebook": NB_ID, "artifact": "Podcast 1"})
+    result = await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": "Podcast 1"})
     assert result.structured_content["artifact_id"] == _ART_FULL
     assert result.structured_content["task_id"] == _ART_FULL
     mock_client.artifacts.retry_failed.assert_awaited_once_with(NB_ID, _ART_FULL)
@@ -1238,7 +1238,7 @@ async def test_artifact_retry_not_found_projects_tool_error(mcp_call, mock_clien
     mock_client.artifacts.list = AsyncMock(return_value=[])
     mock_client.artifacts.retry_failed = AsyncMock()
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("artifact_retry", {"notebook": NB_ID, "artifact": "No Such Artifact"})
+        await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": "No Such Artifact"})
     assert "NOT_FOUND" in str(excinfo.value)
     mock_client.artifacts.retry_failed.assert_not_called()
 
@@ -1251,11 +1251,11 @@ async def test_artifact_retry_refusal_projects_tool_error(mcp_call, mock_client)
 
     mock_client.artifacts.retry_failed = AsyncMock(side_effect=_raise)
     with pytest.raises(ToolError):
-        await mcp_call("artifact_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
+        await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
 
 
 # ---------------------------------------------------------------------------
-# artifact_delete
+# studio_delete
 # ---------------------------------------------------------------------------
 
 
@@ -1273,7 +1273,7 @@ async def test_artifact_delete_confirm_false_previews(mcp_call, mock_client) -> 
     # No list_note_backed mock: the confirm=False path returns the preview before
     # ever reaching the delete core (which is what probes list_note_backed).
     result = await mcp_call(
-        "artifact_delete",
+        "studio_delete",
         {"notebook": NB_ID, "artifact": "aaaaaaaa-aaaa"},
     )
     assert result.structured_content["status"] == "needs_confirmation"
@@ -1298,7 +1298,7 @@ async def test_artifact_delete_regular_confirmed(mcp_call, mock_client) -> None:
     mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
     mock_client.artifacts.delete = AsyncMock()
     result = await mcp_call(
-        "artifact_delete",
+        "studio_delete",
         {"notebook": NB_ID, "artifact": "aaaaaaaa-aaaa", "confirm": True},
     )
     assert result.structured_content == {
@@ -1318,7 +1318,7 @@ async def test_artifact_delete_note_backed_by_full_uuid_confirmed(mcp_call, mock
     mock_client.notes.delete = AsyncMock()
     mock_client.artifacts.delete = AsyncMock()
     result = await mcp_call(
-        "artifact_delete",
+        "studio_delete",
         {"notebook": NB_ID, "artifact": _ART_FULL, "confirm": True},
     )
     assert result.structured_content["was_note_backed"] is True
@@ -1339,7 +1339,7 @@ async def test_artifact_delete_note_backed_by_title_confirmed(mcp_call, mock_cli
     mock_client.notes.delete = AsyncMock()
     mock_client.artifacts.delete = AsyncMock()
     result = await mcp_call(
-        "artifact_delete",
+        "studio_delete",
         {"notebook": NB_ID, "artifact": "My Map", "confirm": True},
     )
     assert result.structured_content["was_note_backed"] is True
@@ -1356,7 +1356,7 @@ async def test_artifact_delete_absent_full_uuid_is_idempotent(mcp_call, mock_cli
     mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
     mock_client.artifacts.delete = AsyncMock()
     result = await mcp_call(
-        "artifact_delete",
+        "studio_delete",
         {"notebook": NB_ID, "artifact": absent, "confirm": True},
     )
     assert result.structured_content == {
@@ -1376,7 +1376,7 @@ async def test_artifact_delete_absent_prefix_projects_tool_error(mcp_call, mock_
     mock_client.artifacts.delete = AsyncMock()
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
-            "artifact_delete",
+            "studio_delete",
             {"notebook": NB_ID, "artifact": "No Such Artifact", "confirm": True},
         )
     assert "NOT_FOUND" in str(excinfo.value)

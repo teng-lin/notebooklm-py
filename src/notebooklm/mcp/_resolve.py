@@ -220,7 +220,7 @@ async def resolve_sources(
 ) -> list[str]:
     """Resolve many source references within a notebook, listing sources at most once.
 
-    The per-tool callers ``chat_ask`` / ``artifact_generate`` previously resolved N
+    The per-tool callers ``chat_ask`` / ``studio_generate`` previously resolved N
     refs via ``asyncio.gather(resolve_source(...) for ref in refs)``, which fired one
     ``client.sources.list(notebook_id)`` per non-UUID ref — N identical concurrent
     list RPCs. This resolves the whole batch against a single source-list snapshot.

@@ -2,17 +2,17 @@
 
 Thin adapters over the transport-neutral artifact cores:
 
-* ``artifact_list`` reads ``client.artifacts.list`` directly (like ``source_list``).
-* ``artifact_generate`` is a hybrid over the neutral ``generate`` core: it builds a
+* ``studio_list`` reads ``client.artifacts.list`` directly (like ``source_list``).
+* ``studio_generate`` is a hybrid over the neutral ``generate`` core: it builds a
   :class:`~notebooklm._app.generate.GenerationPlan` via ``build_generation_plan``
   (which enum-maps + validates the per-kind options) and drives
   ``execute_generation`` with **pass-through** notebook/source resolvers (MCP has
   already resolved the notebook id and supplies full source ids). Each ``type``
   routes to the matching ``client.artifacts.generate_*`` method.
-* ``artifact_status`` is the **stateless** poll path (``_app.artifacts.poll_artifact``
+* ``studio_status`` is the **stateless** poll path (``_app.artifacts.poll_artifact``
   → ``client.artifacts.poll_status``) so an agent can poll a ``task_id`` across
   separate tool calls without holding server state.
-* ``artifact_download`` is a hybrid over the neutral ``download`` core: each
+* ``studio_download`` is a hybrid over the neutral ``download`` core: each
   ``type`` selects a :class:`~notebooklm._app.download.DownloadTypeSpec` row and
   ``build_download_plan`` + ``execute_download`` run with pass-through resolvers.
 
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from ...client import NotebookLMClient
 
 #: Per-kind default option values mirroring the CLI ``generate`` Click ``Choice``
-#: defaults, so a bare ``artifact_generate(notebook, type=…)`` succeeds without
+#: defaults, so a bare ``studio_generate(notebook, type=…)`` succeeds without
 #: the agent restating every enum. The agent can override any of these by passing
 #: the matching keyword; ``build_generation_plan`` enum-maps + validates them.
 _KIND_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -263,7 +263,7 @@ _DOWNLOAD_SPECS: dict[str, download_core.DownloadTypeSpec] = {
 }
 
 #: Reverse of ``_DOWNLOAD_SPECS`` — an artifact's ``ArtifactType`` (``.kind``) → the
-#: download-type key. Lets ``artifact_download`` derive ``artifact_type`` from an
+#: download-type key. Lets ``studio_download`` derive ``artifact_type`` from an
 #: ``artifact`` name-or-id ref (so the caller need not repeat the type).
 _KIND_TO_DOWNLOAD_KEY: dict[Any, DownloadType] = {
     spec.kind: cast(DownloadType, key) for key, spec in _DOWNLOAD_SPECS.items()
@@ -353,7 +353,7 @@ def _broker_download(
     artifact_id: str | None = None,
 ) -> ToolResult:
     """Mint a signed download URL + a clickable ``resource_link`` for a remote
-    ``artifact_download``.
+    ``studio_download``.
 
     Returns a :class:`ToolResult` carrying BOTH a ``resource_link`` content item
     (claude.ai renders it clickable) and the structured ``download_ready`` payload.
@@ -399,7 +399,7 @@ def register(mcp: Any) -> None:
     """Register the artifact tools on ``mcp``."""
 
     @mcp.tool(annotations=READ_ONLY)
-    async def artifact_list(
+    async def studio_list(
         ctx: Context, notebook: str, limit: int = DEFAULT_LIMIT, offset: int = 0
     ) -> dict[str, Any]:
         """List a notebook's studio artifacts. Accepts a notebook name or ID.
@@ -415,7 +415,7 @@ def register(mcp: Any) -> None:
             return {"notebook_id": nb_id, "artifacts": page, **meta}
 
     @mcp.tool
-    async def artifact_generate(
+    async def studio_generate(
         ctx: Context,
         notebook: str,
         artifact_type: Literal[
@@ -484,7 +484,7 @@ def register(mcp: Any) -> None:
         """Start generating a studio artifact. Accepts a notebook name or ID.
 
         Non-blocking: returns immediately with a ``task_id``; poll
-        ``artifact_status(notebook, task_id)`` until ``is_complete`` is true.
+        ``studio_status(notebook, task_id)`` until ``is_complete`` is true.
 
         ``artifact_type`` selects the artifact kind (each routes to its own
         generator):
@@ -618,10 +618,10 @@ def register(mcp: Any) -> None:
             return _generation_payload(nb_id, result)
 
     @mcp.tool(annotations=READ_ONLY)
-    async def artifact_status(ctx: Context, notebook: str, task_id: str) -> dict[str, Any]:
+    async def studio_status(ctx: Context, notebook: str, task_id: str) -> dict[str, Any]:
         """Poll a generation task's status. Accepts a notebook name or ID.
 
-        Stateless: pass the ``task_id`` returned by ``artifact_generate``. Returns
+        Stateless: pass the ``task_id`` returned by ``studio_generate``. Returns
         ``status`` / ``url`` / ``error`` / ``is_complete``; call repeatedly until
         ``is_complete`` is true.
         """
@@ -633,7 +633,7 @@ def register(mcp: Any) -> None:
             return {"notebook_id": nb_id, **to_jsonable(view)}
 
     @mcp.tool(annotations=READ_ONLY)
-    async def artifact_get_prompt(ctx: Context, notebook: str, artifact: str) -> dict[str, Any]:
+    async def studio_get_prompt(ctx: Context, notebook: str, artifact: str) -> dict[str, Any]:
         """Fetch the free-text prompt an artifact was generated from.
 
         Accepts a notebook/artifact name or ID. Returns the stored ``prompt``
@@ -649,7 +649,7 @@ def register(mcp: Any) -> None:
             return {"notebook_id": nb_id, "artifact_id": artifact_id, "prompt": prompt}
 
     @mcp.tool
-    async def artifact_download(
+    async def studio_download(
         ctx: Context,
         notebook: str,
         artifact: str | None = None,
@@ -750,7 +750,7 @@ def register(mcp: Any) -> None:
                     "NOTEBOOKLM_MCP_PUBLIC_URL on the server to enable it"
                 )
             if path is None:
-                raise ValidationError("artifact_download requires 'path' on the stdio transport")
+                raise ValidationError("studio_download requires 'path' on the stdio transport")
 
             args: dict[str, Any] = {
                 "notebook_id": nb_id,
@@ -771,7 +771,7 @@ def register(mcp: Any) -> None:
             return to_jsonable(result)
 
     @mcp.tool
-    async def artifact_rename(
+    async def studio_rename(
         ctx: Context, notebook: str, artifact: str, new_title: str
     ) -> dict[str, Any]:
         """Rename a studio artifact (title only). Accepts a notebook/artifact name or ID.
@@ -797,12 +797,12 @@ def register(mcp: Any) -> None:
             }
 
     @mcp.tool
-    async def artifact_retry(ctx: Context, notebook: str, artifact: str) -> dict[str, Any]:
+    async def studio_retry(ctx: Context, notebook: str, artifact: str) -> dict[str, Any]:
         """Retry a failed Studio artifact in place (the UI "Retry" action).
 
         Accepts a notebook/artifact name or ID. Non-blocking: on acceptance it
         returns the kicked-off ``task_id`` (equal to the artifact id) and the new
-        ``status``; poll ``artifact_status(notebook, task_id)`` until complete. A
+        ``status``; poll ``studio_status(notebook, task_id)`` until complete. A
         synchronous refusal (rate limit / quota / not-retryable) surfaces as an error.
         """
         client = get_client(ctx)
@@ -818,7 +818,7 @@ def register(mcp: Any) -> None:
             }
 
     @mcp.tool(annotations=DESTRUCTIVE)
-    async def artifact_delete(
+    async def studio_delete(
         ctx: Context, notebook: str, artifact: str, confirm: bool = False
     ) -> dict[str, Any]:
         """Delete a studio artifact (irreversible). Accepts a notebook/artifact name or ID.
@@ -864,7 +864,7 @@ def _generation_payload(
 ) -> dict[str, Any]:
     """Project a :class:`GenerationExecutionResult` onto the wire shape.
 
-    Surfaces the ``task_id`` an agent polls with ``artifact_status`` plus the
+    Surfaces the ``task_id`` an agent polls with ``studio_status`` plus the
     generation outcome (status / url / error) or, for mind maps, the rendered
     map. Mind-map generation renders synchronously (no ``task_id`` to poll).
     """

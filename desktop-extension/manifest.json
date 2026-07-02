@@ -51,7 +51,7 @@
       "description": "Ask a question over a notebook's sources"
     },
     {
-      "name": "artifact_generate",
+      "name": "studio_generate",
       "description": "Generate audio, video, quizzes, flashcards, reports, or mind maps"
     },
     {

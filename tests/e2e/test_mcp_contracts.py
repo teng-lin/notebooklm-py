@@ -1,7 +1,7 @@
 """Live-only contract tests for the MCP tools — the behaviours that mocked unit
 tests structurally cannot prove, against the real NotebookLM API.
 
-The headline case is the ``source_ids`` collapse (#1652): the ``artifact_generate``
+The headline case is the ``source_ids`` collapse (#1652): the ``studio_generate``
 tool deliberately maps BOTH an omitted ``source_ids`` AND an explicit
 ``source_ids=[]`` to ``None`` ("all sources"), shielding callers from the raw
 backend behaviour where ``[]`` means "zero sources" (which the backend refuses).
@@ -52,7 +52,7 @@ class TestSourceIdsContract:
         """
         omitted = await _call(
             client,
-            "artifact_generate",
+            "studio_generate",
             {"notebook": generation_notebook_id, "artifact_type": "report"},
         )
         assert omitted.get("task_id"), f"omitted source_ids did not generate: {omitted}"
@@ -66,7 +66,7 @@ class TestSourceIdsContract:
 
         empty = await _call(
             client,
-            "artifact_generate",
+            "studio_generate",
             {
                 "notebook": generation_notebook_id,
                 "artifact_type": "report",
@@ -144,7 +144,7 @@ class TestErrorProjection:
         with pytest.raises(ToolError) as excinfo:
             await _call(
                 client,
-                "artifact_generate",
+                "studio_generate",
                 {"notebook": read_only_notebook_id, "artifact_type": "not-a-real-type"},
             )
         assert "VALIDATION" in str(excinfo.value)

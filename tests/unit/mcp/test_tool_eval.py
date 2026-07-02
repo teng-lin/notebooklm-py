@@ -10,7 +10,7 @@ bloat:
 * **schema-ambiguity proxy** — per-tool visible param count. A tool with a huge
   param list is the "one tool mirrors N backend operations" smell (ADR-0025's
   mega-tool discussion). Ratcheting the max catches a `source_add` /
-  `artifact_generate` that grows further, or a new mega-tool.
+  `studio_generate` that grows further, or a new mega-tool.
 
 Live tool-selection accuracy is intentionally NOT measured here (it needs a real
 model); it is out of scope for this offline harness.
@@ -31,7 +31,7 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = 36_500  # total serialized inputSchema + description chars (current ~36.0k)
-MAX_PARAMS_PER_TOOL = 22  # artifact_generate is the current high-water mark
+MAX_PARAMS_PER_TOOL = 22  # studio_generate is the current high-water mark
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ async def test_surface_schema_cost_within_budget(tools_by_name) -> None:
     )
 
 
-@pytest.mark.parametrize("name", ["artifact_generate", "source_add"])
+@pytest.mark.parametrize("name", ["studio_generate", "source_add"])
 async def test_mega_tools_do_not_grow(name, tools_by_name) -> None:
     """The known mega-tools stay under the param ceiling (ADR-0025: don't split, don't grow)."""
     assert _param_count(tools_by_name[name]) <= MAX_PARAMS_PER_TOOL

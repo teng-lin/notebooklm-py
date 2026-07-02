@@ -137,7 +137,7 @@ CATEGORY_TABLE: dict[ErrorCategory, tuple[str, str | None]] = {
     ),
     ErrorCategory.ARTIFACT_TIMEOUT: (
         "ARTIFACT_TIMEOUT",
-        "Generation is still running; poll artifact_status with the task_id.",
+        "Generation is still running; poll studio_status with the task_id.",
     ),
     ErrorCategory.TIMEOUT: (
         "TIMEOUT",

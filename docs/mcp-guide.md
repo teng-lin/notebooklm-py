@@ -167,7 +167,7 @@ credential. Multi-tenant hosting is out of scope for this single-tenant setup.
 ### File upload & download (remote)
 
 The MCP/JSON-RPC channel can't carry binaries, so over a remote connector
-`source_add type=file` and `artifact_download` broker a **short-lived signed URL**
+`source_add type=file` and `studio_download` broker a **short-lived signed URL**
 served by the same container; your browser does the byte transfer (see
 [ADR-0024](adr/0024-mcp-remote-file-transfer.md)). This is the standard pattern for
 remote MCP file transfer — MCP has no native file-upload primitive, and its native
@@ -184,7 +184,7 @@ bearer-only deploy → the two file tools return a clear "not configured" error
   also `PUT` a file it already holds to that link from its **code-execution sandbox** —
   but that requires Code Execution enabled **and your server domain whitelisted** in
   claude.ai Settings → Capabilities → additional allowed domains, or the `PUT` fails.)
-- **Download an artifact:** `artifact_download` returns a `download_ready` link (a
+- **Download an artifact:** `studio_download` returns a `download_ready` link (a
   clickable `resource_link`); open it to stream the podcast/video/PDF to your device.
 - Links are HMAC-signed and short-lived (upload 15 min, download 30 min) and expire on
   a server restart. Google Drive (`source_add` with a Drive id) remains a no-browser
@@ -199,20 +199,20 @@ These conventions hold across every tool:
   an ID (full, or a unique prefix). Use the matching `*_list` tool to discover them. An ambiguous name
   or prefix returns a `VALIDATION` error listing the candidates so you can retry with an exact ID.
 - **Destructive tools need confirmation.** `notebook_delete`, `source_delete`, `note_delete`,
-  `artifact_delete`, and `share_remove_user` take `confirm` (default `false`). Called without it, they return a `needs_confirmation` preview
+  `studio_delete`, and `share_remove_user` take `confirm` (default `false`). Called without it, they return a `needs_confirmation` preview
   (with the resolved title) and delete **nothing**; call again with `confirm=true` to execute.
-- **Long-running work is non-blocking.** `artifact_generate` returns immediately with a `task_id`;
-  poll `artifact_status` until it's complete, then `artifact_download`. Research is the same shape:
+- **Long-running work is non-blocking.** `studio_generate` returns immediately with a `task_id`;
+  poll `studio_status` until it's complete, then `studio_download`. Research is the same shape:
   `research_start` → `research_status` → `research_import`.
 - **Mutation envelope.** Synchronous create/rename/update/delete tools return a top-level
   `status` string naming the outcome — one of `created`, `renamed`, `updated`, `deleted`,
   `removed`, `added`, `imported`, `cancelled`, `configured` (plus the `needs_confirmation` /
   `upload_required` / `download_ready` flow values) — alongside the affected id(s). An agent can
   branch on `status` uniformly instead of learning a different success shape per tool. Two
-  carve-outs: the **long-running starters** `artifact_generate` / `research_start` return a
+  carve-outs: the **long-running starters** `studio_generate` / `research_start` return a
   `task_id` (the handle *is* the result — poll it) rather than a mutation status — as does the
-  re-runner `artifact_retry` (its `task_id` equals the artifact id); and the **read** tools
-  `artifact_status` / `research_status` key `status` to a lifecycle vocabulary
+  re-runner `studio_retry` (its `task_id` equals the artifact id); and the **read** tools
+  `studio_status` / `research_status` key `status` to a lifecycle vocabulary
   (`in_progress` / `completed` / …), a *different* enum. (Batch
   `source_add` reports `added` once ≥1 succeeded, `error` if all failed — see the `added` /
   `failed` tallies + per-item `results[].status` for partial outcomes.)
@@ -264,15 +264,15 @@ applies to every entry.
 ### Generate and download a studio artifact
 
 ```text
-task = artifact_generate(notebook="Quantum Computing", artifact_type="audio")
-artifact_status(notebook="Quantum Computing", task_id="<task_id from above>")   # poll until complete
-artifact_download(notebook="Quantum Computing", artifact_type="audio", path="podcast.mp3")
+task = studio_generate(notebook="Quantum Computing", artifact_type="audio")
+studio_status(notebook="Quantum Computing", task_id="<task_id from above>")   # poll until complete
+studio_download(notebook="Quantum Computing", artifact_type="audio", path="podcast.mp3")
 
 # Target a specific/older artifact instead of the latest-by-type (full ID or unique prefix):
-artifact_download(notebook="Quantum Computing", artifact_type="audio", path="old_podcast.mp3", artifact_id="aaaaaaaa-aaaa")
+studio_download(notebook="Quantum Computing", artifact_type="audio", path="old_podcast.mp3", artifact_id="aaaaaaaa-aaaa")
 
 # Per-kind styling options are agent-settable, e.g. a custom-styled video:
-artifact_generate(notebook="Quantum Computing", artifact_type="video",
+studio_generate(notebook="Quantum Computing", artifact_type="video",
                   style="custom", style_prompt="hand-drawn diagrams")
 ```
 
@@ -306,7 +306,7 @@ a single in-flight task.
 | **Sources** | `source_list(notebook, status?, limit?, offset?)` (each source has string `kind`/`status_label`; `status` filters to one of ready\|processing\|error\|preparing — e.g. `status="error"` finds failed imports) · `source_read(notebook, source, detail?, output_format?, max_chars?, offset?)` (`detail=full` (default) → metadata + a bounded slice of the indexed text: `max_chars` caps `content` (default 10k), `offset` pages, plus a `truncated` flag and the full `char_count`; `detail=summary` → low-token triage: AI summary **+ keywords**, not the body; `output_format`: text\|markdown) · `source_rename(notebook, source, new_title)` · `source_delete(notebook, source, confirm)` · `source_wait(notebook, source?, timeout, interval)` (a READY web page with thin/empty text, or a short body matching a dead-link / soft-404 boilerplate pattern, carries a non-blocking `warning`) · `source_add(notebook, source_type, ..., allow_internal?)` (single; echoes `kind`/`status_label`, flags a failed import inline with a `warning`) / `source_add(notebook, urls=[...], allow_internal?)` (batch → per-item `results`; a synchronously-ready web-page item may also carry the same content-sanity `warning`) |
 | **Chat** | `chat_ask(notebook, question?, conversation_id?, references?, source_ids?, history?, suggest_followups?)` (`references`: lite\|full; never returns the raw debug blob; `source_ids` scopes to specific sources — list, JSON-array string, or comma string; omit for all; `history`>0 also returns up to N prior `{question, answer}` pairs — omit `question` to recall only; `suggest_followups=true` also returns `suggested_prompts` (3 questions to ask — works question-less too)) · `chat_configure(notebook, chat_mode?, goal?, response_length?)` (`chat_mode`: default\|learning-guide\|concise\|detailed — a preset, mutually exclusive with `goal`/`response_length`) · `suggest_prompts(notebook, surface?, source_ids?, query?)` (READ_ONLY; `surface`: ask\|audio-deep-dive\|audio-brief\|audio-critique\|audio-debate\|video-explainer\|video-short\|quiz\|flashcards — returns `{title, prompt}` suggestions to steer that studio surface; `ask` (default) = chat questions) |
 | **Notes** | `note_create(notebook, title, content)` · `note_list(notebook, note?, limit?, offset?)` (omit `note` for a page; pass a `note` ref to fetch one — returned as a 1-element `notes` list) · `note_update(notebook, note, content?, title?)` (content and/or title; title-only = rename) · `note_delete(notebook, note, confirm)` |
-| **Artifacts** | `artifact_list(notebook, limit?, offset?)` · `artifact_generate(notebook, artifact_type, …)` · `artifact_status(notebook, task_id)` · `artifact_get_prompt(notebook, artifact)` (the free-text prompt an artifact was generated from; `null` if none) · `artifact_download(notebook, artifact? \| artifact_type?, path?, output_format?, artifact_id?)` (target by `artifact` name-or-id ref **or** by `artifact_type` [+ `artifact_id` for a specific one, else latest]) · `artifact_rename(notebook, artifact, new_title)` · `artifact_retry(notebook, artifact)` (re-run a failed artifact in place; task_id == artifact_id) · `artifact_delete(notebook, artifact, confirm)` |
+| **Artifacts** | `studio_list(notebook, limit?, offset?)` · `studio_generate(notebook, artifact_type, …)` · `studio_status(notebook, task_id)` · `studio_get_prompt(notebook, artifact)` (the free-text prompt an artifact was generated from; `null` if none) · `studio_download(notebook, artifact? \| artifact_type?, path?, output_format?, artifact_id?)` (target by `artifact` name-or-id ref **or** by `artifact_type` [+ `artifact_id` for a specific one, else latest]) · `studio_rename(notebook, artifact, new_title)` · `studio_retry(notebook, artifact)` (re-run a failed artifact in place; task_id == artifact_id) · `studio_delete(notebook, artifact, confirm)` |
 | **Research** | `research_start(notebook, query, source, mode)` · `research_status(notebook, task_id?)` · `research_import(notebook, task_id)` · `research_cancel(notebook, run_id)` |
 | **Sharing** | `share_status(notebook)` (is_public/access/share_url/shared_users; enums as string labels; `view_level` omitted — the read API can't report it) · `share_set_access(notebook, public?, view_level?)` (link settings; `view_level`: full\|chat, echoed back only when set) · `share_set_user(notebook, email, permission?, notify?, message?)` (upsert grant; `permission`: editor\|viewer) · `share_remove_user(notebook, email, confirm)` |
 | **Server** | `server_info(include_account?)` — version + local auth health; `include_account=true` adds an `account` block (tier, plan name, notebook/source limits, global `output_language`) for quota pacing + language context (best-effort, needs a live session) |

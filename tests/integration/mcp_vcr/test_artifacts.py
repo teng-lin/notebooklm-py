@@ -1,11 +1,11 @@
 """MCP artifact-tool VCR test (reuse-only).
 
-``artifact_list`` over ``artifacts_list.yaml`` — the studio-artifact list wire
+``studio_list`` over ``artifacts_list.yaml`` — the studio-artifact list wire
 shape (``{"notebook_id", "artifacts": [...]}``). ``client.artifacts.list``
 issues ``LIST_ARTIFACTS`` (``gArtLc``) + the note-backed mind-map merge
 ``GET_NOTES_AND_MIND_MAPS`` (``cFji9``), both recorded in the cassette.
 
-``artifact_download`` over ``artifacts_download_report.yaml`` — the typed
+``studio_download`` over ``artifacts_download_report.yaml`` — the typed
 ``DownloadResult`` wire shape, end-to-end, with the report file actually written.
 This pairing was originally DROPPED because the download path issued
 ``LIST_ARTIFACTS`` (``gArtLc``) *twice* (the executor listed to select, then
@@ -13,16 +13,16 @@ This pairing was originally DROPPED because the download path issued
 cassette. #1488 collapsed that to a single list (the executor threads the
 already-fetched rows into the download method), so the shape now replays cleanly.
 
-``artifact_status`` over ``artifacts_list.yaml`` — the stateless poll path
+``studio_status`` over ``artifacts_list.yaml`` — the stateless poll path
 (``_app.artifacts.poll_artifact`` → ``client.artifacts.poll_status`` → a single
 ``LIST_ARTIFACTS`` ``gArtLc`` RPC, which scans the listed rows for the polled
-task id). Reuses the SAME ``artifacts_list.yaml`` cassette as ``artifact_list``:
+task id). Reuses the SAME ``artifacts_list.yaml`` cassette as ``studio_list``:
 both consume exactly one ``gArtLc`` interaction, so each is its own
 single-interaction test. The polled task id is a real artifact id recorded in
 that list (a completed report), so the status resolves to ``completed`` with a
 media url rather than ``not_found``.
 
-``artifact_generate`` over ``artifacts_generate_report.yaml`` /
+``studio_generate`` over ``artifacts_generate_report.yaml`` /
 ``artifacts_generate_quiz.yaml`` — the non-blocking generation path
 (``_app.generate.execute_generation`` → ``client.artifacts.generate_*`` →
 ``CREATE_ARTIFACT`` ``R7cb6c``). The MCP tool sends ``source_ids`` straight
@@ -63,7 +63,7 @@ ARTIFACT_NOTEBOOK_ID = "c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e"
 GENERATE_NOTEBOOK_ID = "f66923f0-1df4-4ffe-9822-3ed63c558b1c"
 
 # A completed report artifact id recorded in ``artifacts_list.yaml``'s ``gArtLc``
-# response — pinned so ``artifact_status`` resolves it to ``completed`` (with a
+# response — pinned so ``studio_status`` resolves it to ``completed`` (with a
 # media url) instead of ``not_found``.
 COMPLETED_ARTIFACT_ID = "575a9e5d-40fb-44a4-b2d3-21a573bdb547"
 
@@ -71,7 +71,7 @@ COMPLETED_ARTIFACT_ID = "575a9e5d-40fb-44a4-b2d3-21a573bdb547"
 def _recorded_generate_source_ids(cassette: str) -> list[str]:
     """Decode the source ids from a generate cassette's recorded ``R7cb6c`` body.
 
-    ``artifact_generate`` forwards ``source_ids`` verbatim (pass-through
+    ``studio_generate`` forwards ``source_ids`` verbatim (pass-through
     resolver), and the ``freq`` batchexecute matcher compares LIST LENGTHS, so
     the replayed request must carry the same number of source ids the cassette
     recorded. Reading them from the cassette (rather than hard-coding the 40+
@@ -95,14 +95,14 @@ def _recorded_generate_source_ids(cassette: str) -> list[str]:
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("artifacts_list.yaml")
 async def test_mcp_artifact_list_over_vcr() -> None:
-    """``artifact_list`` returns the recorded artifacts through the real client.
+    """``studio_list`` returns the recorded artifacts through the real client.
 
-    End-to-end: FastMCP ``Client`` → ``artifact_list`` tool →
+    End-to-end: FastMCP ``Client`` → ``studio_list`` tool →
     ``client.artifacts.list()`` → recorded ``LIST_ARTIFACTS`` (``gArtLc``) +
     ``GET_NOTES_AND_MIND_MAPS`` (``cFji9``) RPCs.
     """
     async with build_mcp_client() as mcp_client:
-        result = await mcp_client.call_tool("artifact_list", {"notebook": ARTIFACT_NOTEBOOK_ID})
+        result = await mcp_client.call_tool("studio_list", {"notebook": ARTIFACT_NOTEBOOK_ID})
 
     structured = result.structured_content
     assert isinstance(structured, dict)
@@ -125,9 +125,9 @@ async def test_mcp_artifact_list_over_vcr() -> None:
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("artifacts_download_report.yaml")
 async def test_mcp_artifact_download_over_vcr(tmp_path) -> None:
-    """``artifact_download`` selects + writes the latest report through the real client.
+    """``studio_download`` selects + writes the latest report through the real client.
 
-    End-to-end: FastMCP ``Client`` → ``artifact_download`` tool →
+    End-to-end: FastMCP ``Client`` → ``studio_download`` tool →
     ``execute_download`` (single ``LIST_ARTIFACTS`` post-#1488) →
     ``client.artifacts.download_report`` → recorded download RPC. Asserts the
     typed ``DownloadResult`` wire shape AND that the file was really written
@@ -136,7 +136,7 @@ async def test_mcp_artifact_download_over_vcr(tmp_path) -> None:
     out = tmp_path / "report.md"
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
-            "artifact_download",
+            "studio_download",
             {
                 "notebook": ARTIFACT_NOTEBOOK_ID,
                 "artifact_type": "report",
@@ -156,20 +156,20 @@ async def test_mcp_artifact_download_over_vcr(tmp_path) -> None:
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("artifacts_list.yaml")
 async def test_mcp_artifact_status_over_vcr() -> None:
-    """``artifact_status`` polls one artifact's status through the real client.
+    """``studio_status`` polls one artifact's status through the real client.
 
-    End-to-end: FastMCP ``Client`` → ``artifact_status`` tool →
+    End-to-end: FastMCP ``Client`` → ``studio_status`` tool →
     ``_app.artifacts.poll_artifact`` → ``client.artifacts.poll_status`` → a single
     recorded ``LIST_ARTIFACTS`` (``gArtLc``) RPC (the poll lists the notebook's
     artifacts and finds the row matching ``task_id``). Reuses the same
-    ``artifacts_list.yaml`` cassette as ``artifact_list`` — each test consumes
+    ``artifacts_list.yaml`` cassette as ``studio_list`` — each test consumes
     exactly one ``gArtLc`` interaction. The pinned task id is a completed report
     recorded in that list, so the status resolves to ``completed`` (not
     ``not_found``). Asserts the serialized ``ArtifactStatusView`` wire shape.
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
-            "artifact_status",
+            "studio_status",
             {"notebook": ARTIFACT_NOTEBOOK_ID, "task_id": COMPLETED_ARTIFACT_ID},
         )
 
@@ -189,9 +189,9 @@ async def test_mcp_artifact_status_over_vcr() -> None:
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("artifacts_generate_report.yaml")
 async def test_mcp_artifact_generate_report_over_vcr() -> None:
-    """``artifact_generate`` (report) starts generation through the real client.
+    """``studio_generate`` (report) starts generation through the real client.
 
-    End-to-end: FastMCP ``Client`` → ``artifact_generate`` tool →
+    End-to-end: FastMCP ``Client`` → ``studio_generate`` tool →
     ``_app.generate.execute_generation`` → ``client.artifacts.generate_report`` →
     recorded ``CREATE_ARTIFACT`` (``R7cb6c``) RPC. Non-blocking: the tool returns
     a pollable ``task_id`` immediately (``wait=False``); it does NOT poll to
@@ -201,7 +201,7 @@ async def test_mcp_artifact_generate_report_over_vcr() -> None:
     source_ids = _recorded_generate_source_ids("artifacts_generate_report.yaml")
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
-            "artifact_generate",
+            "studio_generate",
             {
                 "notebook": GENERATE_NOTEBOOK_ID,
                 "artifact_type": "report",
@@ -224,7 +224,7 @@ async def test_mcp_artifact_generate_report_over_vcr() -> None:
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("artifacts_generate_quiz.yaml")
 async def test_mcp_artifact_generate_quiz_over_vcr() -> None:
-    """``artifact_generate`` (quiz) starts generation through the real client.
+    """``studio_generate`` (quiz) starts generation through the real client.
 
     Same path as the report variant but routed to ``client.artifacts.generate_quiz``
     over ``artifacts_generate_quiz.yaml`` — a second ``artifact_type`` confirms the
@@ -233,7 +233,7 @@ async def test_mcp_artifact_generate_quiz_over_vcr() -> None:
     source_ids = _recorded_generate_source_ids("artifacts_generate_quiz.yaml")
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
-            "artifact_generate",
+            "studio_generate",
             {
                 "notebook": GENERATE_NOTEBOOK_ID,
                 "artifact_type": "quiz",

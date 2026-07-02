@@ -57,7 +57,7 @@ This produces `notebooklm-mcp.mcpb`, a zip of `manifest.json` + `run_server.py`.
 - **Claude Desktop:** double-click `notebooklm-mcp.mcpb`, or
   *Settings → Extensions → Install Extension…* and pick the file. Restart
   Claude Desktop; the NotebookLM tools (e.g. `notebook_list`, `chat_ask`,
-  `artifact_generate`) appear in the tool picker.
+  `studio_generate`) appear in the tool picker.
 
 For other MCP clients (Claude Code, Cursor, Windsurf) that read a JSON config
 instead of a `.mcpb`, use the CLI installer instead:

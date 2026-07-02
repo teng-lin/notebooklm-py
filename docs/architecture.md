@@ -1180,7 +1180,7 @@ src/notebooklm/
 │   ├── _errors.py               # Structured tool-error projection (CATEGORY_TABLE/ERROR_CODES/mcp_errors/to_tool_error/tool_error_payload) over _app.errors.classify
 │   ├── _resolve.py              # resolve_notebook/resolve_source/resolve_note/resolve_artifact — name + partial-id resolution over _app.resolve plus exact-title matching
 │   ├── _confirm.py              # needs_confirmation() both-mode envelope + READ_ONLY/DESTRUCTIVE ToolAnnotations
-│   ├── _coerce.py               # coerce_list(value) — tolerant list-param normalizer (real list/tuple, JSON-array string, comma string, scalar → list[str]; None stays None for the "all sources" contract); used by artifact_generate/chat_ask source_ids
+│   ├── _coerce.py               # coerce_list(value) — tolerant list-param normalizer (real list/tuple, JSON-array string, comma string, scalar → list[str]; None stays None for the "all sources" contract); used by studio_generate/chat_ask source_ids
 │   ├── _paginate.py             # paginate(items, limit) — bounded page + {total, has_more} for the *_list tools (client-side slice; RPCs don't page); DEFAULT_LIMIT=50
 │   └── tools/                   # Per-domain tool modules; each exposes register(mcp) wired by server.register_all
 │       ├── __init__.py          # Tools package marker (no click/rich/cli)
@@ -1191,7 +1191,7 @@ src/notebooklm/
 │       ├── sources.py           # source_list/read/rename/delete/wait/add over _app.source_* (add: url/text/file/youtube via source_add, drive via source_mutations)
 │       ├── chat.py              # chat_ask (client.chat.ask + get_history recall + suggest_followups) + chat_configure (_app.chat.execute_configure) + suggest_prompts (client.notebooks.suggest_prompts surface selector)
 │       ├── notes.py             # note_create/list/update/delete over _app.notes
-│       ├── artifacts.py         # artifact_list/generate/status/download/rename/delete (enum dispatch over _app.generate + _app.download; stateless poll via _app.artifacts.poll_artifact; rename/delete over _app.artifacts kind-aware cores)
+│       ├── artifacts.py         # studio_list/generate/status/download/rename/delete (enum dispatch over _app.generate + _app.download; stateless poll via _app.artifacts.poll_artifact; rename/delete over _app.artifacts kind-aware cores)
 │       ├── research.py          # research_start (client.research.start) + research_status (_app.research.poll_and_classify) + research_import
 │       ├── sharing.py           # share_status/set_access/set_user/remove_user (thin adapters over client.sharing; set_access folds public+view_level, set_user upserts add/update; string-labeled enums; view_level surfaced only when set)
 │       └── meta.py              # server_info — package version + auth-health over _app.auth_check (no notebook arg)

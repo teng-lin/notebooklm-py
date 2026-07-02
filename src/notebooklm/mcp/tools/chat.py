@@ -295,7 +295,7 @@ def register(mcp: Any) -> None:
         * ``quiz`` / ``flashcards`` — prompts to steer quiz / flashcard generation.
 
         Each result is a ready-to-send instruction you can pass to the matching
-        generator (``chat_ask`` for ``ask``; ``artifact_generate``'s ``prompt`` for
+        generator (``chat_ask`` for ``ask``; ``studio_generate``'s ``prompt`` for
         the studio formats). ``source_ids`` (optional) scopes the suggestions to
         specific sources; omit for all. ``query`` optionally steers the suggestions.
 

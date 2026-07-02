@@ -1,5 +1,5 @@
 """Tool-branch tests for the remote file-transfer behavior of ``source_add`` and
-``artifact_download``.
+``studio_download``.
 
 Three branches each: file-transfer configured → a signed-URL payload; http without
 config → a clean "not configured" error; and (config absent) stdio → the existing
@@ -137,13 +137,13 @@ async def test_source_add_file_stdio_keeps_path_behavior(mock_client) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# artifact_download
+# studio_download
 # --------------------------------------------------------------------------- #
 async def test_artifact_download_with_config_returns_resource_link(mock_client, config) -> None:
     result = await _call(
         mock_client,
         config,
-        "artifact_download",
+        "studio_download",
         {"notebook": NB_ID, "artifact_type": "audio"},
     )
     sc = result.structured_content
@@ -161,7 +161,7 @@ async def test_artifact_download_with_config_carries_format(mock_client, config)
     result = await _call(
         mock_client,
         config,
-        "artifact_download",
+        "studio_download",
         {"notebook": NB_ID, "artifact_type": "quiz", "output_format": "markdown"},
     )
     token = result.structured_content["url"].rsplit("/", 1)[1]
@@ -173,7 +173,7 @@ async def test_artifact_download_config_rejects_bad_format(mock_client, config) 
         await _call(
             mock_client,
             config,
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact_type": "audio", "output_format": "pdf"},
         )
     assert "VALIDATION" in str(excinfo.value)
@@ -186,7 +186,7 @@ async def test_artifact_download_config_rejects_invalid_format_value(mock_client
         await _call(
             mock_client,
             config,
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact_type": "slide-deck", "output_format": "docx"},
         )
     assert "validation error" in str(excinfo.value)
@@ -200,7 +200,7 @@ async def test_artifact_download_http_without_config_is_not_configured_error(
         await _call(
             mock_client,
             None,
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact_type": "audio"},
         )
     assert "not configured" in str(excinfo.value)
@@ -217,7 +217,7 @@ async def test_artifact_download_http_without_config_with_path_still_not_configu
         await _call(
             mock_client,
             None,
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact_type": "audio", "path": "/tmp/out.mp3"},
         )
     assert "not configured" in str(excinfo.value)
@@ -229,7 +229,7 @@ async def test_artifact_download_stdio_missing_path_is_clear_error(mock_client) 
         await _call(
             mock_client,
             None,
-            "artifact_download",
+            "studio_download",
             {"notebook": NB_ID, "artifact_type": "audio"},
         )
     assert "requires 'path'" in str(excinfo.value)
@@ -242,12 +242,12 @@ async def test_artifact_download_stdio_missing_path_is_clear_error(mock_client) 
 
 
 async def test_artifact_download_remote_tool_encodes_aid(mock_client, config) -> None:
-    # under http transport (with config), artifact_download returns download_ready
+    # under http transport (with config), studio_download returns download_ready
     # and the minted token contains aid.
     result = await _call(
         mock_client,
         config,
-        "artifact_download",
+        "studio_download",
         {
             "notebook": NB_ID,
             "artifact_type": "audio",
