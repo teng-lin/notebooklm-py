@@ -223,6 +223,9 @@ async def test_share_set_access_already_public_needs_no_confirmation(mcp_call, m
     result = await mcp_call("share_set_access", {"notebook": NB_ID, "public": True})
     assert result.structured_content["status"] == "updated"
     mock_client.sharing.set_public.assert_awaited_once_with(NB_ID, True)
+    # The single state-read that discovered "already public" is pinned so a refactor
+    # that skips it (and would then wrongly gate) is caught.
+    mock_client.sharing.get_status.assert_awaited_once_with(NB_ID)
 
 
 async def test_share_set_access_restricting_needs_no_confirmation(mcp_call, mock_client) -> None:

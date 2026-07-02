@@ -173,9 +173,12 @@ async def test_confirm_gated_mutating_tools(name, tools_by_name) -> None:
     assert confirm.get("type") == "boolean", f"{name} 'confirm' must be boolean"
     assert confirm.get("default") is False, f"{name} 'confirm' must default to False"
     assert "confirm" not in schema.get("required", []), f"{name} 'confirm' must be optional"
-    if tool.annotations is not None:
-        assert not tool.annotations.destructiveHint, f"{name} must not be destructiveHint"
-        assert not tool.annotations.readOnlyHint, f"{name} must not be read-only"
+    # ``annotations`` is None for a bare ``@mcp.tool`` (no hints) — which already
+    # satisfies "not destructive / not read-only". Fold None into falsy hints so the
+    # assertion is unconditional (never vacuously skipped) rather than guarded.
+    ann = tool.annotations
+    assert not (ann and ann.destructiveHint), f"{name} must not be destructiveHint"
+    assert not (ann and ann.readOnlyHint), f"{name} must not be read-only"
 
 
 async def test_share_set_user_notify_defaults_false(tools_by_name) -> None:
