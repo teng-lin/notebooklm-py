@@ -150,26 +150,29 @@ user-tamperable); the **filename** (which the token cannot know — it is minted
 before the user picks a file) arrives as the sanitized `?filename=` query param
 from the browser/sandbox and seeds the temp file's basename+extension.
 
-### Stateless, token-encoded — no registry, no sweeper
+### Stateless, token-encoded — no registry, one scoped inline sweeper (`ul`)
 
 The signed token **encodes the operation parameters**, so the handlers hold no
 server-side state:
 
-- download token payload: `{op:"dl", nb, atype, fmt?, aid?, exp}`
-- upload token payload:   `{op:"ul", nb, title?, mime?, exp}`
+- download token payload: `{op:"dl", nb, atype, fmt?, aid?, exp, jti}`
+- upload token payload:   `{op:"ul", nb, title?, mime?, exp, jti}`
 
 Carrying `title`/`mime` in the upload token preserves the current
 `source_add type=file` parameters across the browser round-trip — and because
 they are signed, the uploader cannot tamper with them.
 
 Token = `base64url(json(payload)) + "." + base64url(HMAC-SHA256(key, body))`
-(stdlib `hmac`/`hashlib`/`base64`/`json` — no new dependency; `itsdangerous` is
-not installed). Verify enforces a max token length **before** any decode/HMAC
-work, re-pads base64url, recomputes the MAC in constant time
+(stdlib `hmac`/`hashlib`/`base64`/`json`/`secrets` — no new dependency;
+`itsdangerous` is not installed). Verify enforces a max token length **before** any
+decode/HMAC work, re-pads base64url, recomputes the MAC in constant time
 (`hmac.compare_digest`), and checks `exp`.
 
-This drops the ref-registry + TTL-sweeper that a stateful design would need.
-The token is the state.
+There is **no ref-registry and no *background* sweeper**. The one piece of state
+is the `ul` single-use tracker added by #1746 (see *Residual risk* below): an
+ephemeral, bounded, **inline-swept** in-process set of consumed `jti`s that dies
+with the process just like the signing key. `dl` remains fully stateless
+(multi-use within its TTL). For downloads the token is still the state.
 
 ### Auth model (verified against fastmcp 3.2.0)
 
@@ -250,24 +253,28 @@ upgrade that changes either fails loudly. Handlers take `(request)` only and rea
 - Reuses the proven cores: `_app.download` + `download_core.execute_download`, the
   `source_add` file core + `validate_upload_path`, the 200 MiB cap, the temp-spool
   + `BackgroundTask` cleanup patterns from `server/routes/*`.
-- No new dependency; no persistent state; no background sweeper.
+- No new dependency; no persistent state; no background sweeper (the #1746 `ul`
+  single-use tracker is an ephemeral, inline-swept in-process set — no background task).
 - stdio behavior unchanged.
 
 **Negative / risks**
 - Depends on FastMCP not force-gating custom routes (pinned by a regression test).
 - A leaked upload URL within its 15-min TTL lets someone add a source **to the
   single tenant's own notebook**; a leaked download URL within 30 min streams one
-  artifact. Single-tenant blast radius, short TTL — accepted; replay-burn is
-  deliberately skipped (add a one-shot nonce store if this ever goes multi-tenant).
-  Note the tension: shortening `UPLOAD_TTL` to bound a leak also shrinks the
-  retry window — a 200 MiB upload over a poor link can take ~13 min, near the
-  15-min TTL, so a failed-then-retried upload can outlive the token. Don't shorten
-  `ul` without weighing that.
-  A leaked upload token is also replayable *concurrently* (N parallel POSTs each
-  spool up to 200 MiB before the running cap / source-add), so transient `/tmp`
-  pressure is N×200 MiB — still token-gated, single-tenant, behind the tunnel, and
-  self-cleaning (`finally: _cleanup`). Accepted; add a global in-flight-upload
-  semaphore / aggregate temp-byte budget only if this is ever multi-tenant.
+  artifact. Single-tenant blast radius, short TTL. **Update (#1746):** `ul` replay-burn
+  is **no longer skipped** — upload tokens are now single-use (one *successful* add per
+  token), because a leaked `ul` link is a content-agnostic write/injection primitive
+  (see *Residual risk* below). `dl` replay-burn **is** still deliberately skipped
+  (multi-use within its 30-min TTL — Range/resume needs it). Note the tension:
+  shortening `UPLOAD_TTL` to bound a leak also shrinks the retry window — a 200 MiB
+  upload over a poor link can take ~13 min, near the 15-min TTL — so `ul` single-use
+  is recorded **on success only**, leaving a failed-then-retried upload able to reuse
+  the same link. Don't shorten `ul` without weighing that.
+  A leaked upload token's *concurrent* replay is now also bounded by the atomic jti
+  claim (`try_begin`): a second concurrent POST of the same token is rejected before it
+  spools, so the pre-#1746 N×200 MiB concurrent-spool window collapses to the narrow
+  race of two POSTs that both pass the claim before either commits — itself capped by
+  `_MAX_CONCURRENT_UPLOADS` and self-cleaning (`finally: _cleanup`).
 - Two new internet-facing routes on the tunnel — covered by: a streamed byte cap
   (real defense) plus a `Content-Length` early-reject (413); `title`/`mime` carried
   in the signed token (not user-tamperable) and the `?filename` basename-sanitized;
@@ -288,73 +295,81 @@ upgrade that changes either fails loudly. Handlers take `(request)` only and rea
   (separate ASGI app, FastAPI `Depends`); the side-channel belongs on the MCP app.
   Shared *logic* is reused; the FastAPI plumbing is not.
 
-### Residual risk: signed-token replay within TTL (accepted)
+### Residual risk: signed-token replay within TTL (`ul` now single-use — #1746; `dl` accepted)
 
-The signed `ul`/`dl` tokens are **multi-use within their TTL** — there is no
-nonce, no `jti` claim, and no single-use tracking. `FileLinkSigner.verify`
-(`_filelink.py`) checks the length cap, the HMAC, `exp`, and the `op` claim, but a
-token that passes those checks passes them **every time** until it expires. So:
+`FileLinkSigner.verify` (`_filelink.py`) checks the length cap, the HMAC, `exp`, and
+the `op` claim; a token that passes those checks passes them **every time** until it
+expires. Leakage is plausible, not theoretical: the token rides in the URL **path**,
+so it is captured by claude.ai, browser history, tunnel access logs
+(Cloudflare/Tailscale), and any `Referer`. The `no-referrer` / `no-store` headers
+narrow, but do not eliminate, that surface. The two ops differ in blast radius:
 
-- A leaked **`ul`** token can add a source **repeatedly** — once per request —
-  until it expires (`UPLOAD_TTL` = 15 min), each time against the single tenant's
-  own notebook carried in the signed payload.
+- A leaked **`ul`** token is a **content-agnostic write primitive**: its payload is
+  only `{nb, title?, mime?}` and the uploaded bytes are the raw request body, so
+  whoever holds the link can POST **arbitrary content** (≤200 MiB) as a *source* into
+  the owner's notebook — a content / prompt-injection vector, not merely a same-file
+  replay.
 - A leaked **`dl`** token can **re-exfiltrate** the current latest artifact of that
   type until it expires (`DOWNLOAD_TTL` = 30 min). The token pins
   `{nb, atype, fmt?, aid?}`, not a byte snapshot, so a replay serves whatever the
   download core resolves at replay time.
 
-Leakage is plausible, not theoretical: the token rides in the URL **path**, so it
-is captured by claude.ai, browser history, tunnel access logs
-(Cloudflare/Tailscale), and any `Referer`. The `no-referrer` / `no-store` headers
-narrow, but do not eliminate, that surface.
+**Decision (updated by #1746): `ul` is single-use; `dl` stays multi-use.**
 
-**Bounding factors already in place** (why the residual is small):
+`ul` — **single-use enforced.** Every token now carries a random `jti` (128-bit
+`secrets`, injected by `sign()` and covered by the MAC). The `/files/ul` POST route
+atomically **claims** the jti (`ConsumedJtiStore.try_begin`) before spooling and
+**commits** (burns) it only after a *successful* `source_add`; a failed / aborted /
+429'd upload **rolls back** the claim from the route's `finally` so the link can be
+retried. Consequences:
 
-- **Short TTLs** — 15 min (`ul`) / 30 min (`dl`) — cap the replay window.
-- **Ephemeral per-process signing key** — `secrets.token_bytes(32)` minted at
-  server start, so a restart invalidates every outstanding token unconditionally.
-- **Single-tenant scope** — the blast radius is the operator's own account and
-  their own notebooks; there is no cross-tenant escalation.
-- **HMAC integrity** — a token cannot be forged or its parameters tampered with;
-  replay requires capturing a *legitimately issued* token.
-- **Download concurrency cap** — `_MAX_CONCURRENT_DOWNLOADS = 4` (added in the same
-  change, #1681, mirroring the existing upload cap) bounds concurrent in-flight
-  downloads, so a replayed token cannot fan out unbounded fresh Google fetches or
-  accumulate unbounded spooled artifacts on temp disk. The slot is held for the
-  whole lifetime the artifact occupies temp disk — released from a `finally` at the
-  end of the response's stream (via a `FileResponse` subclass), so slow/held
-  streams still count against the cap **and** a mid-stream disconnect or aborted
-  `Range` can never leak a slot and wedge the route.
+- A sequential replay (the realistic leaked-from-logs case) is rejected with a flat
+  403 before any spool, once the token's one successful use has happened.
+- The atomic claim also rejects a *concurrent* duplicate POST before it spools,
+  collapsing the pre-#1746 N×200 MiB concurrent-spool window to the narrow race of two
+  POSTs that both pass the claim before either commits (bounded by
+  `_MAX_CONCURRENT_UPLOADS`).
+- Recording **on success only** preserves the large-file retry window this ADR
+  protects (a 200 MiB upload over a poor link can take ~13 min): a failed upload does
+  not burn the link.
 
-**Decision — accept the replay-within-TTL residual; do NOT add `jti` tracking and
-do NOT shorten the TTLs now.**
+`dl` — **replay-within-TTL accepted (multi-use).** The `jti` is present but **not**
+enforced for downloads, because `GET /files/dl/{token}` is streamed directly and a
+`Range`/resumable client legitimately re-issues the GET (a reconnect with `Range:`)
+to resume a dropped stream — single-use would 403 the resume and break large-artifact
+downloads. `dl` is also lower severity (re-reads the *same* artifact; not a write
+primitive) and is already bounded by:
 
-Reasons for **not** adding a single-use `jti` claim + seen-set:
+- **Short TTL** — 30 min caps the replay window.
+- **Ephemeral per-process signing key** — `secrets.token_bytes(32)` minted at server
+  start invalidates every outstanding token on restart.
+- **Single-tenant scope** — blast radius is the operator's own account; no cross-tenant
+  escalation.
+- **HMAC integrity** — a token cannot be forged or tampered with; replay needs a
+  *legitimately issued* token.
+- **Download concurrency cap** — `_MAX_CONCURRENT_DOWNLOADS = 4` (#1681) bounds
+  concurrent in-flight downloads and holds each slot for the artifact's whole temp-disk
+  lifetime, released from a `finally` at end-of-stream (a `FileResponse` subclass), so
+  a replay cannot fan out unbounded fetches and a disconnect/aborted `Range` cannot
+  leak a slot.
 
-1. A seen-set **reintroduces the exact in-process server-side state** that the
-   stateless, token-is-the-state design (see *Stateless, token-encoded — no
-   registry, no sweeper*) deliberately eliminated — the registry and sweeper come
-   straight back.
-2. It **does not survive a restart**: an in-memory seen-set is empty after a
-   restart, so it is not a durable guarantee — and the ephemeral key already
-   invalidates *all* tokens on restart, so the only window a seen-set could guard
-   is one the key rotation already closes.
-3. It is **redundant with the short TTL + single-tenant scope**: the window is
-   already minutes-long and the blast radius is the operator's own account.
+**Why the `ul` reversal is consistent with the stateless design.** The two original
+objections to a `jti` seen-set are answered, not ignored: the store is **ephemeral,
+bounded (8192), and inline-swept** — it dies with the process exactly like the signing
+key, and its non-durability across a restart is moot because the key rotation already
+invalidates every token on restart. There is still **no ref-registry and no background
+sweeper**; `dl` remains fully stateless.
 
-Reasons for **not** shortening the TTLs now: they are already short, and further
-shrinking trades legitimate slow-upload / slow-download UX for marginal risk
-reduction. A 200 MiB upload over a poor link can take ~13 min — already close to
-the 15-min `ul` TTL — so a failed-then-retried upload can outlive an even shorter
-token.
-
-**What would change this decision.** Any of the following flips the tradeoff and
-warrants adding a `jti` claim + a bounded in-memory seen-set and/or shortening the
-TTLs:
-
-- the server becomes **multi-tenant** (cross-account blast radius appears);
-- the TTLs are **lengthened** for any reason (a larger replay window);
-- a **replay incident is reported** in practice.
+**What triggered the reversal, and what would change it further.** The original ADR
+enumerated three conditions that would flip the tradeoff — multi-tenant, TTLs
+lengthened, or a reported replay incident. #1746 is **none of those**; it is an added
+**fourth** trigger: the 2026-07-02 multi-model MCP gap review **re-weighted the `ul`
+severity** — reframing a leaked upload token as a *write / content-injection
+primitive* rather than a same-file re-read — which raised it above the "re-exfiltrate
+low-sensitivity metadata" framing the original decision weighed. The three original
+conditions still stand as reasons to revisit **`dl`** single-use and/or shorten the
+TTLs; none has fired for `dl`, and `dl`'s Range/resume constraint is the standing
+reason it stays multi-use.
 
 ### Why the REST server is out of scope
 

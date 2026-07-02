@@ -20,6 +20,7 @@ import notebooklm.mcp._filelink as filelink
 from notebooklm.mcp._filelink import (
     DOWNLOAD_TTL,
     UPLOAD_TTL,
+    ConsumedJtiStore,
     FileLinkError,
     FileLinkSigner,
     FileTransferConfig,
@@ -158,3 +159,94 @@ def test_config_builds_ttl_scoped_urls() -> None:
     down_exp = signer.verify(down.rsplit("/", 1)[1], op="dl")["exp"]
     assert UPLOAD_TTL == 15 * 60 and DOWNLOAD_TTL == 30 * 60
     assert down_exp - up_exp >= DOWNLOAD_TTL - UPLOAD_TTL - 2
+
+
+# --------------------------------------------------------------------------- #
+# jti minting (single-use support — #1746)
+# --------------------------------------------------------------------------- #
+def test_sign_injects_unique_jti_per_mint() -> None:
+    # Every token carries a random jti (CSPRNG), so two mints of the SAME payload get
+    # DIFFERENT jtis — the property the ul single-use tracker keys off.
+    signer = _signer()
+    p1 = signer.verify(signer.sign({"op": "ul", "nb": "n1"}, ttl=60), op="ul")
+    p2 = signer.verify(signer.sign({"op": "ul", "nb": "n1"}, ttl=60), op="ul")
+    assert isinstance(p1["jti"], str) and p1["jti"]
+    assert isinstance(p2["jti"], str) and p2["jti"]
+    assert p1["jti"] != p2["jti"]
+
+
+def test_jti_is_covered_by_the_mac() -> None:
+    # The jti is injected into the signed body, so tampering with it (keeping the old
+    # MAC) is rejected — same guarantee as any other payload field.
+    signer = _signer()
+    token = signer.sign({"op": "ul", "nb": "n1"}, ttl=60)
+    body_b64, mac_b64 = token.split(".")
+    payload = json.loads(_b64url_decode(body_b64))
+    payload["jti"] = "attacker-chosen-jti"
+    forged_body = (
+        base64.urlsafe_b64encode(
+            json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+        )
+        .rstrip(b"=")
+        .decode()
+    )
+    with pytest.raises(FileLinkError):
+        signer.verify(f"{forged_body}.{mac_b64}", op="ul")
+
+
+# --------------------------------------------------------------------------- #
+# ConsumedJtiStore lifecycle
+# --------------------------------------------------------------------------- #
+def test_store_try_begin_then_commit_makes_jti_single_use() -> None:
+    store = ConsumedJtiStore()
+    exp = int(time.time()) + 60
+    assert store.try_begin("j1") is True  # first claim wins
+    assert store.try_begin("j1") is False  # concurrent duplicate rejected (still active)
+    store.commit("j1", exp)
+    assert store.try_begin("j1") is False  # consumed → permanently rejected
+
+
+def test_store_rollback_frees_jti_for_retry() -> None:
+    # A claimed-but-not-committed jti (failed/aborted upload) is released, so the same
+    # link can be retried — the record-on-success behavior ADR-0024 relies on.
+    store = ConsumedJtiStore()
+    assert store.try_begin("j1") is True
+    store.rollback("j1")
+    assert store.try_begin("j1") is True  # reusable after rollback
+
+
+def test_store_sweeps_expired_seen_entries_on_commit() -> None:
+    # Expired jtis are inline-swept (memory reclamation) when a later commit runs; a
+    # live one is retained. A swept jti being re-claimable is harmless — verify()
+    # rejects the expired token itself on the exp check.
+    store = ConsumedJtiStore()
+    now = int(time.time())
+    store.commit("old", now - 10)  # already expired
+    store.commit("fresh", now + 60)  # live
+    assert "old" not in store._seen
+    assert "fresh" in store._seen
+    assert store.try_begin("old") is True  # swept → re-claimable (harmless)
+
+
+def test_store_bound_evicts_soonest_to_expire(monkeypatch) -> None:
+    monkeypatch.setattr(filelink, "_MAX_SEEN_JTIS", 3)
+    store = ConsumedJtiStore()
+    base = int(time.time()) + 10_000  # all far-future so the sweep never fires
+    store.commit("a", base + 1)
+    store.commit("b", base + 5)
+    store.commit("c", base + 9)
+    store.commit("d", base + 7)  # over cap → evict the soonest-to-expire ("a")
+    assert len(store._seen) <= 3
+    assert "a" not in store._seen  # soonest-to-expire evicted
+    assert {"b", "c", "d"} <= set(store._seen)
+
+
+def test_config_jti_store_excluded_from_equality_and_default_constructed() -> None:
+    # `compare=False` keeps the frozen config comparable by (signer, base_url) only —
+    # the store is a mutable, dict-bearing object that must not drive __eq__/__hash__.
+    signer = _signer()
+    a = FileTransferConfig(signer=signer, base_url="https://h.example")
+    b = FileTransferConfig(signer=signer, base_url="https://h.example")
+    assert isinstance(a.jti_store, ConsumedJtiStore)  # default-constructed
+    a.jti_store.try_begin("j1")  # mutate one store
+    assert a == b  # equality ignores the (now diverged) stores

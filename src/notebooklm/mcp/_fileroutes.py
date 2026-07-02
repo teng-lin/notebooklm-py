@@ -60,6 +60,12 @@ if TYPE_CHECKING:
 #: ``Content-Length``, and authoritatively via the running byte cap below.
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
+#: One opaque 403 message shared by every ``/files/ul`` POST rejection — a bad
+#: signature/expiry, a missing/malformed ``jti``, or an already-consumed / mid-flight
+#: single-use token. Keeping them identical means the response never reveals WHICH
+#: check failed, so a probing client gets no oracle.
+_UPLOAD_LINK_REJECTED = "This upload link is invalid or has expired."
+
 #: Cap concurrent in-flight uploads. The per-request byte cap bounds ONE upload to
 #: 200 MiB, but a leaked/replayable ``ul`` token (valid for its full TTL) could
 #: otherwise drive N parallel streams = N×200 MiB of transient temp disk →
@@ -424,7 +430,15 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         try:
             payload = config.signer.verify(token, op="ul")
         except FileLinkError:
-            return PlainTextResponse("This upload link is invalid or has expired.", status_code=403)
+            return PlainTextResponse(_UPLOAD_LINK_REJECTED, status_code=403)
+        # Single-use (jti) guard — ``ul`` only (ADR-0024, #1746). A leaked upload token
+        # is a content-agnostic WRITE primitive (anyone can POST arbitrary bytes as a
+        # source), so unlike ``dl`` (which stays multi-use for Range/resume) an upload
+        # token authorizes exactly one *successful* add. ``sign`` always injects a str
+        # ``jti``, so a missing/non-str one means a malformed/hand-built token → 403.
+        jti = payload.get("jti")
+        if not isinstance(jti, str) or not jti:
+            return PlainTextResponse(_UPLOAD_LINK_REJECTED, status_code=403)
         # Early 413 on a declared over-cap body (the running cap below is the real
         # defense — a chunked / under-stated Content-Length slips past this).
         declared = request.headers.get("content-length")
@@ -439,93 +453,125 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         except RuntimeError:
             return PlainTextResponse("Server is not ready.", status_code=500)
 
-        # Bound aggregate temp-disk: reject (fast, no disk touched) when too many
-        # uploads are already streaming. The counter is mutated only between awaits
-        # in this single-process async server, so no lock is needed.
-        global _inflight_uploads
-        if _inflight_uploads >= _MAX_CONCURRENT_UPLOADS:
-            return PlainTextResponse(
-                "Too many concurrent uploads in progress; retry shortly.", status_code=429
-            )
-        _inflight_uploads += 1
+        # Atomically claim the single-use jti BEFORE any concurrency slot / spool: a
+        # sequential replay (jti already consumed) or a concurrent duplicate (jti
+        # already mid-upload) is rejected here with a flat 403. Placed after the cheap
+        # validations above (which never mark the token active, so nothing to release)
+        # and before the slot. ``try_begin`` runs no ``await``, so the check-and-mark
+        # is atomic on the one event loop.
+        if not config.jti_store.try_begin(jti):
+            return PlainTextResponse(_UPLOAD_LINK_REJECTED, status_code=403)
+        committed = False
         try:
-            # Filename: the raw fetch body omits it, so it arrives sanitized via
-            # ?filename=. Content-type: the signed token's mime WINS; the request
-            # Content-Type header is the fallback. Strip any ``; charset=…`` params
-            # off the header so only the bare MIME type reaches the backend.
-            filename = _safe_upload_name(request.query_params.get("filename"))
-            raw_mime = payload.get("mime") or request.headers.get("content-type")
-            mime = raw_mime.split(";")[0].strip() if raw_mime else None
-
-            temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-ul-")  # mkdtemp is 0o700
-            temp_path = os.path.join(temp_dir, filename)
+            # Bound aggregate temp-disk: reject (fast, no disk touched) when too many
+            # uploads are already streaming. The counter is mutated only between awaits
+            # in this single-process async server, so no lock is needed.
+            global _inflight_uploads
+            if _inflight_uploads >= _MAX_CONCURRENT_UPLOADS:
+                return PlainTextResponse(
+                    "Too many concurrent uploads in progress; retry shortly.", status_code=429
+                )
+            _inflight_uploads += 1
             try:
-                fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                total = 0
-                with os.fdopen(fd, "wb") as out:
-                    async for chunk in request.stream():
-                        if not chunk:
-                            continue
-                        total += len(chunk)
-                        if total > MAX_UPLOAD_BYTES:
-                            return PlainTextResponse(
-                                "Upload exceeds the size limit.", status_code=413
-                            )
-                        out.write(chunk)
-                plan = add_core.build_source_add_plan(
-                    content=os.path.realpath(temp_path),
-                    source_type="file",
-                    title=payload.get("title"),
-                    mime_type=str(mime) if mime is not None else None,
-                    follow_symlinks=False,
-                    validate_path=add_core.validate_upload_path,
-                    looks_path_shaped=add_core.looks_like_path,
-                )
-                result = await add_core.execute_source_add(
-                    client,
-                    add_core.SourceAddExecutionPlan(notebook_id=str(payload.get("nb")), plan=plan),
-                )
-                source_id = str(result.source.id)
-                # The documented sandbox-`curl`/PUT path (an agent uploading a file
-                # it holds) gets clean JSON when it asks for it; a human browser gets
-                # the HTML page.
-                if "application/json" in request.headers.get("accept", ""):
-                    return JSONResponse(
-                        {"status": "added", "source_id": source_id},
+                # Filename: the raw fetch body omits it, so it arrives sanitized via
+                # ?filename=. Content-type: the signed token's mime WINS; the request
+                # Content-Type header is the fallback. Strip any ``; charset=…`` params
+                # off the header so only the bare MIME type reaches the backend.
+                filename = _safe_upload_name(request.query_params.get("filename"))
+                raw_mime = payload.get("mime") or request.headers.get("content-type")
+                mime = raw_mime.split(";")[0].strip() if raw_mime else None
+
+                temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-ul-")  # mkdtemp is 0o700
+                temp_path = os.path.join(temp_dir, filename)
+                try:
+                    fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    total = 0
+                    with os.fdopen(fd, "wb") as out:
+                        async for chunk in request.stream():
+                            if not chunk:
+                                continue
+                            total += len(chunk)
+                            if total > MAX_UPLOAD_BYTES:
+                                return PlainTextResponse(
+                                    "Upload exceeds the size limit.", status_code=413
+                                )
+                            out.write(chunk)
+                    plan = add_core.build_source_add_plan(
+                        content=os.path.realpath(temp_path),
+                        source_type="file",
+                        title=payload.get("title"),
+                        mime_type=str(mime) if mime is not None else None,
+                        follow_symlinks=False,
+                        validate_path=add_core.validate_upload_path,
+                        looks_path_shaped=add_core.looks_like_path,
+                    )
+                    result = await add_core.execute_source_add(
+                        client,
+                        add_core.SourceAddExecutionPlan(
+                            notebook_id=str(payload.get("nb")), plan=plan
+                        ),
+                    )
+                    source_id = str(result.source.id)
+                    # Burn the single-use jti now the add SUCCEEDED — before the
+                    # JSON-vs-HTML branch so BOTH return paths consume it. Recording only
+                    # on success means a failed/aborted upload (handled by the outer
+                    # ``finally`` rollback) leaves the link usable for retry, honoring
+                    # ADR-0024's large-file retry window. ``exp`` was validated as an int
+                    # by ``verify``.
+                    config.jti_store.commit(jti, payload["exp"])
+                    committed = True
+                    # The documented sandbox-`curl`/PUT path (an agent uploading a file
+                    # it holds) gets clean JSON when it asks for it; a human browser gets
+                    # the HTML page.
+                    if "application/json" in request.headers.get("accept", ""):
+                        return JSONResponse(
+                            {"status": "added", "source_id": source_id},
+                            headers={
+                                "Cache-Control": "no-store",
+                                "Referrer-Policy": "no-referrer",
+                            },
+                        )
+                    return HTMLResponse(
+                        "<!doctype html><html><body style='font-family:system-ui'>"
+                        f"<h2>Source added</h2><p>id = <code>{html.escape(source_id)}</code></p>"
+                        "<p>You can close this tab and return to your assistant.</p>"
+                        "</body></html>",
+                        headers=_HTML_SECURITY_HEADERS,
+                    )
+                except ValidationError as exc:
+                    # ValidationError ⊂ NotebookLMError, so this MUST precede the
+                    # NotebookLMError handler. ``validate_upload_path`` rejections can
+                    # embed the local file path, so the detail is redacted.
+                    return PlainTextResponse(
+                        f"Upload rejected: {redact(str(exc))}",
+                        status_code=400,
                         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
                     )
-                return HTMLResponse(
-                    "<!doctype html><html><body style='font-family:system-ui'>"
-                    f"<h2>Source added</h2><p>id = <code>{html.escape(source_id)}</code></p>"
-                    "<p>You can close this tab and return to your assistant.</p>"
-                    "</body></html>",
-                    headers=_HTML_SECURITY_HEADERS,
-                )
-            except ValidationError as exc:
-                # ValidationError ⊂ NotebookLMError, so this MUST precede the
-                # NotebookLMError handler. ``validate_upload_path`` rejections can
-                # embed the local file path, so the detail is redacted.
-                return PlainTextResponse(
-                    f"Upload rejected: {redact(str(exc))}",
-                    status_code=400,
-                    headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
-                )
-            except NotebookLMError as exc:
-                # An upstream auth/server/rate-limit error from execute_source_add
-                # (add_file → RPC) would otherwise escape as a raw 500. The bytes
-                # already finished uploading by here, so tell the user a retry
-                # re-sends the whole file (vs a mid-stream failure that did not).
-                return _upstream_error_response(
-                    exc,
-                    note="Your file uploaded, but adding it as a source failed (a retry re-uploads it).",
-                )
-            except OSError:
-                # A bad filename / fs error (e.g. a name that survives sanitization
-                # but the fs rejects) is a clean 400, not a bare 500.
-                return PlainTextResponse("Upload could not be processed.", status_code=400)
+                except NotebookLMError as exc:
+                    # An upstream auth/server/rate-limit error from execute_source_add
+                    # (add_file → RPC) would otherwise escape as a raw 500. The bytes
+                    # already finished uploading by here, so tell the user a retry
+                    # re-sends the whole file (vs a mid-stream failure that did not).
+                    return _upstream_error_response(
+                        exc,
+                        note="Your file uploaded, but adding it as a source failed "
+                        "(a retry re-uploads it).",
+                    )
+                except OSError:
+                    # A bad filename / fs error (e.g. a name that survives sanitization
+                    # but the fs rejects) is a clean 400, not a bare 500.
+                    return PlainTextResponse("Upload could not be processed.", status_code=400)
+                finally:
+                    # Always remove the temp dir — on success (bytes already uploaded), a
+                    # rejection, an fs error, or a mid-stream client disconnect.
+                    _cleanup(temp_dir)
             finally:
-                # Always remove the temp dir — on success (bytes already uploaded), a
-                # rejection, an fs error, or a mid-stream client disconnect.
-                _cleanup(temp_dir)
+                _inflight_uploads -= 1
         finally:
-            _inflight_uploads -= 1
+            # Release a claimed-but-not-committed jti so the link can be retried: this
+            # covers the 429, the validation / upstream / OSError returns, and a
+            # mid-stream disconnect (``CancelledError`` ⊂ ``BaseException``, which
+            # ``finally`` still runs on — an ``except Exception`` would miss it and wedge
+            # the jti in the active set). A committed upload keeps the jti burned.
+            if not committed:
+                config.jti_store.rollback(jti)

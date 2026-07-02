@@ -10,9 +10,14 @@ running byte cap, ``?filename`` handling, temp cleanup, and the lifespan-unset 5
 
 from __future__ import annotations
 
+import base64
 import contextlib
+import hashlib
+import hmac
+import json
 import os
 import tempfile
+import time
 from collections.abc import AsyncIterator, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -604,6 +609,134 @@ def test_upload_post_cleans_temp_on_success(monkeypatch, mock_client, config) ->
         resp = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
     assert resp.status_code == 200
     assert cleaned and not Path(cleaned[0]).exists()
+
+
+# --------------------------------------------------------------------------- #
+# Upload single-use (jti) enforcement — #1746
+# --------------------------------------------------------------------------- #
+def test_upload_single_use_replay_rejected(mock_client, config) -> None:
+    # Security (#1746): a leaked ul token is a content-agnostic write primitive. After
+    # ONE successful add it is burned — a second POST with the same token 403s, and only
+    # the first request actually added a source.
+    add_file = AsyncMock(return_value=MagicMock(id="src-1"))
+    mock_client.sources.add_file = add_file
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        first = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+        second = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+    assert first.status_code == 200
+    assert second.status_code == 403  # jti consumed → replay rejected
+    add_file.assert_awaited_once()  # only the first request added a source
+
+
+def test_upload_page_get_does_not_consume_jti(mock_client, config) -> None:
+    # Loading the upload PAGE (GET) only calls verify(), it must NOT claim the jti — else
+    # the user's subsequent POST would 403 before they ever upload.
+    add_file = AsyncMock(return_value=MagicMock(id="src-1"))
+    mock_client.sources.add_file = add_file
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        page = client.get(_path(url))
+        posted = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+    assert page.status_code == 200  # page rendered
+    assert posted.status_code == 200  # POST still works — GET never burned the token
+
+
+def test_upload_failed_add_frees_jti_for_retry(monkeypatch, mock_client, config) -> None:
+    # record-on-success: a failed add rolls the jti back (via the route's finally), so the
+    # SAME link is retryable — honors ADR-0024's large-file retry window.
+    from notebooklm.exceptions import ServerError
+
+    calls = {"n": 0}
+
+    async def fake(client, exec_plan):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ServerError("upstream 503")
+        return MagicMock(source=MagicMock(id="src-ok"))
+
+    monkeypatch.setattr(_fileroutes.add_core, "execute_source_add", fake)
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        first = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+        second = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+    assert first.status_code == 502  # add failed → jti rolled back
+    assert second.status_code == 200  # retry with the same link succeeds
+    assert "src-ok" in second.text
+
+
+def test_upload_429_does_not_burn_jti(monkeypatch, mock_client, config) -> None:
+    # A 429 (concurrency cap) is not a use of the token: the claim is rolled back in the
+    # outer finally, so the same link works once a slot frees up.
+    add_file = AsyncMock(return_value=MagicMock(id="src-1"))
+    mock_client.sources.add_file = add_file
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        monkeypatch.setattr(_fileroutes, "_inflight_uploads", _fileroutes._MAX_CONCURRENT_UPLOADS)
+        capped = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+        monkeypatch.setattr(_fileroutes, "_inflight_uploads", 0)
+        retried = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+    assert capped.status_code == 429
+    assert retried.status_code == 200  # the 429 rolled the claim back → link still usable
+
+
+def test_upload_midstream_413_does_not_burn_jti(monkeypatch, mock_client, config) -> None:
+    # The over-cap early-return INSIDE the streaming loop is a distinct rollback path
+    # from the pre-slot 429 and the post-stream error paths: it must also release the
+    # claim (via the outer finally) so a corrected retry on the same link works.
+    monkeypatch.setattr(_fileroutes, "MAX_UPLOAD_BYTES", 5)
+    mock_client.sources.add_file = AsyncMock(return_value=MagicMock(id="src-1"))
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+
+    def big_body() -> Iterator[bytes]:
+        yield b"abcd"
+        yield b"efgh"  # streams past the 5-byte cap → mid-stream 413
+
+    with starlette_testclient.TestClient(app) as client:
+        capped = client.post(_path(url) + "?filename=a.pdf", content=big_body())
+        retried = client.post(_path(url) + "?filename=a.pdf", content=b"ok")
+    assert capped.status_code == 413
+    assert retried.status_code == 200  # mid-stream 413 rolled the claim back
+
+
+def test_download_multi_use_range_resume_preserved(monkeypatch, mock_client, config) -> None:
+    # RANGE/RESUME GUARDRAIL: dl tokens stay multi-use so a resumed download (a second
+    # GET, e.g. a Range reconnect) is not 403'd. Do NOT regress this — any future dl
+    # single-use must first solve resume.
+    monkeypatch.setattr(
+        _fileroutes.download_core, "execute_download", _fake_download_writing(b"AUDIO")
+    )
+    app = _build(mock_client, config)
+    url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
+    with starlette_testclient.TestClient(app) as client:
+        first = client.get(_path(url))
+        second = client.get(_path(url))  # a Range/resume re-GET must still stream
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.content == b"AUDIO" and second.content == b"AUDIO"
+
+
+def test_upload_missing_jti_token_403(mock_client, config) -> None:
+    # A validly-signed ul token whose payload carries NO jti (older / hand-built) is
+    # rejected by the defensive guard. Built directly with the fixture key (b"k"*32),
+    # mirroring test_filelink's tamper construction, so the MAC is valid but jti absent.
+    key = b"k" * 32
+    body = {"exp": int(time.time()) + 60, "nb": NB, "op": "ul"}  # no jti
+    encoded = (
+        base64.urlsafe_b64encode(json.dumps(body, separators=(",", ":"), sort_keys=True).encode())
+        .rstrip(b"=")
+        .decode()
+    )
+    mac = hmac.new(key, encoded.encode("ascii"), hashlib.sha256).digest()
+    token = f"{encoded}.{base64.urlsafe_b64encode(mac).rstrip(b'=').decode()}"
+    app = _build(mock_client, config)
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.post(f"/files/ul/{token}?filename=a.pdf", content=b"DATA")
+    assert resp.status_code == 403
 
 
 # --------------------------------------------------------------------------- #

@@ -11,13 +11,23 @@ Token wire format::
     base64url(json(payload)) + "." + base64url(HMAC-SHA256(key, body))
 
 where ``body`` is the base64url(json(payload)) string the MAC is computed over.
-Stdlib ``hmac``/``hashlib``/``base64``/``json`` only — no new dependency
+Stdlib ``hmac``/``hashlib``/``base64``/``json``/``secrets`` only — no new dependency
 (``itsdangerous`` is not installed). :meth:`FileLinkSigner.verify` enforces a max
 token length **before** any decode/HMAC work, re-pads base64url, recomputes the
 MAC in constant time (:func:`hmac.compare_digest`), checks ``exp``, and matches
 the operation. The signing key is an ephemeral ``secrets.token_bytes(32)`` minted
 at server start (a restart invalidating outstanding links is acceptable and
 removes a secret to manage).
+
+Every minted token also carries a random ``jti`` (like ``exp``, injected by
+:meth:`FileLinkSigner.sign` and covered by the MAC). ``jti`` powers a **scoped
+single-use** guarantee for the ``ul`` (upload) op: the ``/files/ul`` POST route
+claims + burns the jti via :class:`ConsumedJtiStore` so a leaked upload link
+cannot be replayed as a content-injection write primitive (ADR-0024, #1746). The
+store is an ephemeral, bounded, inline-swept in-process set that dies with the
+process just like the signing key — there is no *background* sweeper. Downloads
+(``dl``) stay multi-use so ``Range``/resumable clients keep working; their jti is
+present but not enforced.
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
@@ -29,6 +39,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -95,11 +106,16 @@ class FileLinkSigner:
     def sign(self, payload: dict[str, Any], ttl: int) -> str:
         """Return a signed token for ``payload`` valid for ``ttl`` seconds.
 
-        ``exp`` is injected here (callers never set it). The MAC covers the
-        encoded body, so neither the parameters nor the expiry are tamperable.
+        ``exp`` and a random ``jti`` are injected here (callers never set either).
+        The MAC covers the encoded body, so neither the parameters, the expiry, nor
+        the jti are tamperable. The ``jti`` (128-bit CSPRNG, ``secrets``) uniquely
+        names the token so the ``ul`` route can enforce single-use
+        (:class:`ConsumedJtiStore`); it is injected for every op uniformly, but only
+        ``ul`` enforces it (``dl`` stays multi-use for Range/resume).
         """
         body = dict(payload)
         body["exp"] = int(time.time()) + ttl
+        body["jti"] = secrets.token_urlsafe(16)
         encoded = _b64url(json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8"))
         mac = hmac.new(self.key, encoded.encode("ascii"), hashlib.sha256).digest()
         return f"{encoded}.{_b64url(mac)}"
@@ -149,18 +165,96 @@ class FileLinkSigner:
         return payload
 
 
+#: Cap on the consumed-jti record. The server mints one jti per file-tool call and
+#: every entry is inline-swept once its token's ``exp`` passes (≤ ``UPLOAD_TTL``), so
+#: the live set is tiny in practice; an attacker cannot mint jtis (no key). This bound
+#: is pure defense-in-depth against a runaway — 8192 is generous headroom.
+_MAX_SEEN_JTIS = 8192
+
+
+@dataclass
+class ConsumedJtiStore:
+    """Bounded, TTL-swept record of consumed single-use upload token ids (``jti``),
+    plus the set of ids currently mid-upload.
+
+    Single process / single tenant: every method is fully synchronous and contains NO
+    ``await``, so it runs atomically w.r.t. other coroutines on the one server event
+    loop (no coroutine interleaves mid-method) — the same rule the ``_fileroutes``
+    in-flight counters rely on, so no lock is needed. The store dies with the process,
+    like the ephemeral signing key.
+
+    Lifecycle per upload: :meth:`try_begin` (atomic claim) → :meth:`commit` (success,
+    permanent) OR :meth:`rollback` (failure / abort / 429, freeing the jti for retry).
+    ``try_begin`` being the single atomic check-and-mark closes the concurrent-replay
+    race; ``commit`` / ``rollback`` are driven from the route's ``finally`` so a client
+    disconnect (``CancelledError`` — which ``finally`` still runs on) can never wedge a
+    jti in the active set.
+    """
+
+    #: jti -> exp (unix seconds); a permanently-burned single-use upload token.
+    _seen: dict[str, int] = field(default_factory=dict)
+    #: jtis currently mid-upload (claimed, not yet committed/rolled back). Bounded by
+    #: the concurrent request count and always released in the route's ``finally``, so
+    #: it needs no sweep or size cap.
+    _active: set[str] = field(default_factory=set)
+
+    def _sweep(self, now: int) -> None:
+        for jti in [j for j, exp in self._seen.items() if exp <= now]:
+            del self._seen[jti]
+
+    def try_begin(self, jti: str) -> bool:
+        """Atomically claim ``jti`` for a single upload.
+
+        Return ``False`` if the jti was already consumed (:attr:`_seen`) or is already
+        mid-upload (:attr:`_active`) — a sequential replay or a concurrent duplicate;
+        otherwise mark it active and return ``True``. No ``await`` runs between the
+        check and the mark, so on the single server event loop the claim is atomic.
+        """
+        if jti in self._active or jti in self._seen:
+            return False
+        self._active.add(jti)
+        return True
+
+    def commit(self, jti: str, exp: int) -> None:
+        """Burn ``jti`` permanently (its upload succeeded).
+
+        Sweeps expired entries and enforces the size bound here — the only mutating hot
+        path — so :meth:`try_begin` stays O(1).
+        """
+        self._active.discard(jti)
+        self._sweep(int(time.time()))
+        if len(self._seen) >= _MAX_SEEN_JTIS:
+            # Practically unreachable (single-tenant; one jti per file-tool call; all
+            # <= TTL and swept). Evict the soonest-to-expire entry — the least loss of
+            # protection, since it is closest to natural expiry anyway. ``_seen`` is
+            # non-empty here (the cap is >= 1), so ``min`` is safe.
+            del self._seen[min(self._seen, key=self._seen.__getitem__)]
+        self._seen[jti] = exp
+
+    def rollback(self, jti: str) -> None:
+        """Release a claimed-but-unfinished ``jti`` (upload failed / aborted / 429) so
+        the same link can be retried — honors ADR-0024's large-file retry window."""
+        self._active.discard(jti)
+
+
 @dataclass(frozen=True)
 class FileTransferConfig:
     """Resolved file-transfer config: the signer + the validated public base URL.
 
     Carried on :class:`~notebooklm.mcp._context.AppState`. The two file tools mint
     URLs through :meth:`upload_url` / :meth:`download_url`; the ``/files/*`` routes
-    verify the tokens with the same :attr:`signer`. ``base_url`` is a bare https
-    origin (validated by ``_validate_bare_https_origin``).
+    verify the tokens with the same :attr:`signer` and enforce ``ul`` single-use via
+    :attr:`jti_store`. ``base_url`` is a bare https origin (validated by
+    ``_validate_bare_https_origin``).
     """
 
     signer: FileLinkSigner
     base_url: str
+    #: In-process single-use tracker for ``ul`` tokens. ``compare=False`` keeps this
+    #: frozen dataclass hashable/comparable by (signer, base_url) only — the store is a
+    #: mutable, dict-bearing (unhashable) object, so including it in ``__eq__``/
+    #: ``__hash__`` would make every config unhashable and equality depend on live state.
+    jti_store: ConsumedJtiStore = field(default_factory=ConsumedJtiStore, compare=False)
 
     def upload_url(self, payload: dict[str, Any]) -> str:
         """Sign ``payload`` with the upload TTL and build the ``/files/ul`` URL.
