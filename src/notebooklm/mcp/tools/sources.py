@@ -10,8 +10,8 @@ flow through ``_app.source_add`` (``build_source_add_plan`` + ``execute_source_a
 ``drive`` flows through ``_app.source_mutations.execute_source_add_drive`` (the
 neutral ``source_add`` core has no Drive path). It also has a batch mode
 (``urls=[...]``) that adds many http(s) URLs sequentially and returns an explicit
-per-item result list. ``source_wait`` waits for one source when ``source`` is
-given, else every source in the notebook.
+per-item result list. ``source_wait`` waits for a subset when ``sources`` is
+given, one source when ``source`` is given, else every source in the notebook.
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
@@ -358,20 +358,26 @@ def register(mcp: Any) -> None:
             if interval <= 0:
                 raise ValidationError(f"interval must be > 0; got {interval}")
 
+            # All input guards fire BEFORE any I/O (fail-fast, like the bounds
+            # checks above): the empty-``sources`` and mutual-exclusion errors must
+            # not be masked by a notebook NOT_FOUND from ``resolve_notebook``.
             coerced = coerce_list(sources)
             if source is not None and coerced is not None:
                 raise ValidationError(
                     "pass either 'source' (one) or 'sources' (a subset), not both"
                 )
+            if coerced is not None and not coerced:
+                raise ValidationError(
+                    "'sources' was empty; omit it to wait on all sources, or pass at least one source ref"
+                )
 
             nb_id = await resolve_notebook(client, notebook)
 
             if coerced is not None:
-                if not coerced:
-                    raise ValidationError(
-                        "'sources' was empty; omit it to wait on all sources, or pass at least one source ref"
-                    )
-                src_ids = await resolve_sources(client, nb_id, coerced)
+                # Dedupe: distinct refs can resolve to the same id (title + its id,
+                # or a literal repeat), which would spawn redundant pollers and emit
+                # duplicate ``ready`` rows. ``dict.fromkeys`` preserves input order.
+                src_ids = list(dict.fromkeys(await resolve_sources(client, nb_id, coerced)))
                 outcomes = await _wait_all_sources(
                     client, nb_id, src_ids, timeout=timeout, interval=interval
                 )

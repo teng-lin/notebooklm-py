@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -30,6 +31,7 @@ from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
 )
 from notebooklm.mcp._errors import tool_error_payload  # noqa: E402 - after importorskip guard
 from notebooklm.rpc.types import SourceStatus  # noqa: E402 - after importorskip guard
+from notebooklm.types import Label  # noqa: E402 - after importorskip guard
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
@@ -1710,6 +1712,58 @@ async def test_source_wait_empty_sources_raises(mcp_call, mock_client) -> None:
     assert "was empty" in str(excinfo.value)
 
 
+async def test_source_wait_subset_json_array_string(mcp_call, mock_client) -> None:
+    """Subset mode: accepts a JSON-array string, coerced to a list (end-to-end)."""
+    mock_client.sources.wait_until_ready = _dispatch_wait_until_ready(
+        {
+            SRC_ID: FakeSource(id=SRC_ID, title="A"),
+            SRC2_ID: FakeSource(id=SRC2_ID, title="B"),
+        }
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
+    result = await mcp_call(
+        "source_wait", {"notebook": NB_ID, "sources": f'["{SRC_ID}","{SRC2_ID}"]'}
+    )
+    sc = result.structured_content
+    _assert_aggregate_shape(sc)
+    assert sc["ok"] is True
+    assert {row["id"] for row in sc["ready"]} == {SRC_ID, SRC2_ID}
+
+
+async def test_source_wait_subset_dedupes(mcp_call, mock_client) -> None:
+    """Subset mode: a repeated ref collapses to one poll + one ready row."""
+    mock_client.sources.wait_until_ready = _dispatch_wait_until_ready(
+        {SRC_ID: FakeSource(id=SRC_ID, title="A")}
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "sources": [SRC_ID, SRC_ID]})
+    sc = result.structured_content
+    _assert_aggregate_shape(sc)
+    assert [row["id"] for row in sc["ready"]] == [SRC_ID]
+    # Deduped BEFORE waiting: the source is polled exactly once, not twice.
+    assert mock_client.sources.wait_until_ready.call_count == 1
+
+
+async def test_source_wait_empty_sources_fails_before_notebook_lookup(
+    mcp_call, mock_client
+) -> None:
+    """Empty-``sources`` is an input error that fires BEFORE any I/O.
+
+    A bad notebook ref must NOT mask the VALIDATION error: the guard runs before
+    ``resolve_notebook``, so ``client.notebooks.list`` is never awaited.
+    """
+    mock_client.notebooks.list = AsyncMock(side_effect=AssertionError("resolve_notebook ran"))
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("source_wait", {"notebook": "no-such-notebook", "sources": []})
+    assert "VALIDATION" in str(excinfo.value)
+    assert "was empty" in str(excinfo.value)
+    mock_client.notebooks.list.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # source_list label filter (#1745)
 # ---------------------------------------------------------------------------
@@ -1717,9 +1771,6 @@ async def test_source_wait_empty_sources_raises(mcp_call, mock_client) -> None:
 
 async def test_source_list_label_filter(mcp_call, mock_client) -> None:
     """Filtering source list by label returns only member sources."""
-    from unittest.mock import MagicMock
-
-    from notebooklm.types import Label
 
     mock_client.labels = MagicMock()
     mock_client.labels.list = AsyncMock(
@@ -1738,9 +1789,6 @@ async def test_source_list_label_filter(mcp_call, mock_client) -> None:
 
 async def test_source_list_label_and_status_filter(mcp_call, mock_client) -> None:
     """Label and status filters compose to further narrow the result."""
-    from unittest.mock import MagicMock
-
-    from notebooklm.types import Label
 
     mock_client.labels = MagicMock()
     mock_client.labels.list = AsyncMock(
@@ -1762,8 +1810,6 @@ async def test_source_list_label_and_status_filter(mcp_call, mock_client) -> Non
 
 async def test_source_list_unknown_label_raises(mcp_call, mock_client) -> None:
     """An unknown label raises NOT_FOUND structured error."""
-    from unittest.mock import MagicMock
-
     mock_client.labels = MagicMock()
     mock_client.labels.list = AsyncMock(return_value=[])
 
@@ -1774,9 +1820,6 @@ async def test_source_list_unknown_label_raises(mcp_call, mock_client) -> None:
 
 async def test_source_list_ambiguous_label_raises(mcp_call, mock_client) -> None:
     """An ambiguous label token raises AMBIGUOUS_* structured error."""
-    from unittest.mock import MagicMock
-
-    from notebooklm.types import Label
 
     mock_client.labels = MagicMock()
     mock_client.labels.list = AsyncMock(
