@@ -77,6 +77,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from notebooklm._atomic_io import atomic_write_json
+from notebooklm.paths import get_profile_dir
 
 from ._urlcheck import _validate_bare_https_origin
 
@@ -141,15 +142,27 @@ class OAuthConfig:
     trust_proxy: bool = field(default=False)
 
 
-def get_oauth_config() -> OAuthConfig | None:
+def get_oauth_config(profile: str | None = None) -> OAuthConfig | None:
     """Resolve the OAuth config from env, or ``None`` when OAuth is off.
 
     OFF when neither var is set. When EITHER is set the user intends OAuth, so BOTH
     are required (fail closed), the password must clear a strength bar, and the base
     URL must be https (the MCP SDK rejects non-HTTPS non-localhost issuers anyway).
 
+    ``state_path`` (where issued tokens + registered clients persist, 0600) is
+    resolved through the SAME canonical profile resolver the client runtime uses
+    (:func:`notebooklm.paths.get_profile_dir`), so it always tracks the profile the
+    server actually drives — the ``--profile`` flag, ``NOTEBOOKLM_PROFILE``, the
+    ``notebooklm use``-set active profile, or the ``~/.notebooklm`` home default
+    (#1765). Pass ``profile`` to bind an explicit one; ``None`` resolves the active
+    profile.
+
+    Args:
+        profile: Explicit auth profile to persist OAuth state under. ``None``
+            resolves the active profile via the standard precedence.
+
     Raises:
-        SystemExit: partial/invalid config (clear message).
+        SystemExit: partial/invalid config, or a malformed ``profile`` name.
     """
     password = os.environ.get(OAUTH_PASSWORD_ENV) or ""
     base_url = (os.environ.get(OAUTH_BASE_URL_ENV) or "").strip()
@@ -174,11 +187,15 @@ def get_oauth_config() -> OAuthConfig | None:
     # fine.) The same check guards the file-transfer base URL — shared helper.
     _validate_bare_https_origin(base_url, OAUTH_BASE_URL_ENV)
 
-    state_path: Path | None = None
-    home = os.environ.get("NOTEBOOKLM_HOME")
-    profile = os.environ.get("NOTEBOOKLM_PROFILE")
-    if home and profile:
-        state_path = Path(home) / "profiles" / profile / "oauth_state.json"
+    # Persist OAuth state under the SAME profile dir the client runtime drives —
+    # not a separate raw-env derivation that silently diverged (#1765). Honors the
+    # --profile flag / NOTEBOOKLM_PROFILE / active profile / ~/.notebooklm default.
+    try:
+        state_path: Path = get_profile_dir(profile) / "oauth_state.json"
+    except ValueError as exc:
+        # Malformed profile name (e.g. path traversal). Fail clean on the http
+        # startup path instead of leaking a traceback.
+        raise SystemExit(str(exc)) from exc
 
     # Opt-in trusted-proxy: only reached once OAuth is fully configured, so it never
     # fires on the OAuth-off path. Default off keeps the throttle keyed on the socket peer.
@@ -460,7 +477,14 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
             "r2a": dict(self._refresh_to_access_map),
         }
         try:
-            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            parent = self._state_path.parent
+            parent.mkdir(parents=True, exist_ok=True)
+            # Persistence is on by default now (#1765), so this dir may be created here
+            # before any `login`. oauth_state.json is a full-account secret, so hold the
+            # profile dir to the same 0700 invariant get_profile_dir enforces — a bare
+            # umask mkdir could leave it group/other-listable.
+            if os.name == "posix":
+                parent.chmod(0o700)
             atomic_write_json(self._state_path, data)  # POSIX-atomic, 0600, filelock
         except OSError as exc:  # disk error must not crash an active server
             logger.warning("Could not persist OAuth state to %s: %s", self._state_path, exc)
@@ -509,15 +533,9 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
 def build_oauth_provider(config: OAuthConfig) -> AuthProvider:
     """Build the self-hosted OAuth provider from validated config.
 
-    Runs once at HTTP-server startup. Warns (once) when OAuth is enabled but state is not
-    persisted — issued tokens + registered clients then live in memory only and a restart
-    silently forces every client to re-register and the owner to re-login."""
-    if config.state_path is None:
-        logger.warning(
-            "OAuth is enabled but state is not persisted (set NOTEBOOKLM_HOME and "
-            "NOTEBOOKLM_PROFILE); issued tokens and registered clients are in-memory only "
-            "and a restart forces re-login."
-        )
+    Runs once at HTTP-server startup. ``config.state_path`` is resolved by
+    :func:`get_oauth_config` under the active profile dir, so issued tokens +
+    registered clients persist (0600) across restarts by default (#1765)."""
     return SelfHostedOAuthProvider(
         password=config.password,
         base_url=config.base_url,

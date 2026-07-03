@@ -109,6 +109,33 @@ def test_explicit_http_transport_binds_loopback(monkeypatch: pytest.MonkeyPatch)
     assert captured["auth"] is None
 
 
+def test_http_threads_profile_into_oauth_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#1765 regression guard: the ``--profile`` flag must reach ``get_oauth_config`` so
+    OAuth state persists under the profile the server actually drives. Without this, the
+    entrypoint could silently regress to ``get_oauth_config()`` and the direct unit test
+    would still pass."""
+    seen: dict[str, object] = {}
+
+    def spy_get_oauth_config(profile: str | None = None):
+        seen["profile"] = profile
+        return None  # OAuth off → loopback needs no auth, so main() proceeds
+
+    monkeypatch.setattr(entry, "get_oauth_config", spy_get_oauth_config)
+    monkeypatch.setattr(
+        entry,
+        "create_server",
+        lambda *, profile=None, client_factory=None, auth=None, file_transfer=None: MagicMock(),
+    )
+    monkeypatch.delenv("NOTEBOOKLM_MCP_TOKEN", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND", raising=False)
+
+    entry.main(
+        ["--transport", "http", "--host", "127.0.0.1", "--port", "8124", "--profile", "work"]
+    )
+
+    assert seen["profile"] == "work"
+
+
 def test_http_default_port_is_9420(monkeypatch: pytest.MonkeyPatch) -> None:
     """The default HTTP port is 9420 (no --port / NOTEBOOKLM_MCP_PORT)."""
     fake_server = MagicMock()

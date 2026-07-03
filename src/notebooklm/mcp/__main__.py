@@ -243,7 +243,8 @@ def main(argv: list[str] | None = None) -> None:
         # optional self-hosted OAuth (claude.ai) are both env-driven; get_oauth_config()
         # raises on partial/weak/non-https config (fail closed).
         token = get_configured_token()
-        oauth_config = get_oauth_config()
+        # Bind OAuth state persistence to the SAME profile the server drives (#1765).
+        oauth_config = get_oauth_config(profile=args.profile)
         _check_http_auth_required(host, token, oauth_config)
         oauth = build_oauth_provider(oauth_config) if oauth_config else None
         # Optional remote file transfer: built only here (http path), validated, and

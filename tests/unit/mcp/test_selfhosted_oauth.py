@@ -125,6 +125,30 @@ def test_config_ok_with_state_path(_clear_env: None, monkeypatch: pytest.MonkeyP
     assert cfg.state_path.parts[-3:] == ("profiles", "server", "oauth_state.json")
 
 
+def test_config_state_path_honors_profile_without_env(
+    _clear_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1765: state_path resolves through the canonical profile resolver. An explicit
+    profile (the --profile flag) is honored even when NOTEBOOKLM_PROFILE is unset (the
+    old code read env only and ignored it), and with NOTEBOOKLM_HOME also unset it still
+    resolves to a real path under the default home instead of silently going None."""
+    monkeypatch.setenv(OAUTH_PASSWORD_ENV, _PW)
+    monkeypatch.setenv(OAUTH_BASE_URL_ENV, "https://host.example.com")
+    cfg = get_oauth_config(profile="work")  # no HOME/PROFILE env set
+    assert cfg is not None and cfg.state_path is not None
+    assert cfg.state_path.parts[-3:] == ("profiles", "work", "oauth_state.json")
+
+
+def test_config_rejects_malformed_profile(
+    _clear_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A path-traversal profile name fails clean (SystemExit), not a raw traceback."""
+    monkeypatch.setenv(OAUTH_PASSWORD_ENV, _PW)
+    monkeypatch.setenv(OAUTH_BASE_URL_ENV, "https://host.example.com")
+    with pytest.raises(SystemExit):
+        get_oauth_config(profile="../escape")
+
+
 # --------------------------------------------------------------------------- routes / DCR
 def test_provider_routes_include_login_and_register() -> None:
     p = _provider()
@@ -406,24 +430,13 @@ def test_throttle_separates_buckets_by_cf_header_when_trusted() -> None:
             assert r.status_code == 401  # never 429 — each IP has only one failure
 
 
-# --------------------------------------------------------------------------- #1761 startup warning
-def test_build_oauth_provider_warns_when_state_not_persisted(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """OAuth on but state_path None → one startup WARNING naming the persistence env vars."""
-    cfg = OAuthConfig(password=_PW, base_url="https://h.example.com", state_path=None)
-    with caplog.at_level(logging.WARNING, logger="notebooklm.mcp._oauth"):
-        provider = build_oauth_provider(cfg)
-    assert isinstance(provider, SelfHostedOAuthProvider)
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 1
-    assert "NOTEBOOKLM_HOME" in warnings[0].message and "NOTEBOOKLM_PROFILE" in warnings[0].message
-
-
-def test_build_oauth_provider_no_warn_when_state_persisted(
+# --------------------------------------------------------------------------- build_oauth_provider
+def test_build_oauth_provider_wires_state_without_warning(
     tmp_path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """With a state_path set, the non-persistence warning must NOT fire."""
+    """#1765: state_path now always resolves (get_oauth_config binds it to the active
+    profile dir), so build_oauth_provider just wires it through — the old "state not
+    persisted" startup warning was removed and must not fire."""
     cfg = OAuthConfig(
         password=_PW, base_url="https://h.example.com", state_path=tmp_path / "oauth_state.json"
     )
