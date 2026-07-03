@@ -37,6 +37,10 @@ services:
       # (registered clients + tokens) persists under the mounted profile volume.
       NOTEBOOKLM_MCP_OAUTH_PASSWORD: ${NOTEBOOKLM_MCP_OAUTH_PASSWORD:-}
       NOTEBOOKLM_MCP_OAUTH_BASE_URL: ${NOTEBOOKLM_MCP_OAUTH_BASE_URL:-}
+      # Optional (Cloudflare profile only): trust the tunnel's CF-Connecting-IP header as
+      # the per-IP login-throttle key. Default off → throttle keys on the socket peer (the
+      # tunnel egress), i.e. one global bucket. Tailscale Funnel does not set this header.
+      NOTEBOOKLM_MCP_TRUST_PROXY: ${NOTEBOOKLM_MCP_TRUST_PROXY:-}
       # Point the app at the mounted profile, independent of the (arbitrary) uid's
       # home. The host dir is always mounted as the profile literally named
       # "server"; NOTEBOOKLM_HOME/profiles/server is where the app reads+writes.

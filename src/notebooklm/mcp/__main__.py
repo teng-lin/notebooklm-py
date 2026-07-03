@@ -254,7 +254,19 @@ def main(argv: list[str] | None = None) -> None:
             auth=build_auth(token, oauth),
             file_transfer=file_transfer,
         )
-        server.run(transport="http", host=host, port=_resolve_port(args.port))
+        # proxy_headers=False: Uvicorn defaults to rewriting the peer address from
+        # X-Forwarded-For when the immediate client is a trusted host, which would let a
+        # request forge its own source IP and defeat the OAuth login throttle's per-IP
+        # keying (which reads request.client.host). We do the trusted-proxy decision
+        # ourselves via NOTEBOOKLM_MCP_TRUST_PROXY (CF-Connecting-IP only), so keep the ASGI
+        # peer the true socket peer. Nothing here derives security from the forwarded scheme
+        # (OAuth endpoints + signed links use the explicitly-configured base URL).
+        server.run(
+            transport="http",
+            host=host,
+            port=_resolve_port(args.port),
+            uvicorn_config={"proxy_headers": False},
+        )
     else:
         # show_banner=False keeps FastMCP's startup banner out of the host's logs
         # (and off stdout — stdio requires uncontaminated JSON-RPC).

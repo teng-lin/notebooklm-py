@@ -9,6 +9,7 @@ register→authorize→login→token→verify flow.
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import pytest
 
@@ -18,6 +19,7 @@ from fastmcp.server.auth import MultiAuth  # noqa: E402
 from mcp.server.auth.provider import AuthorizationParams  # noqa: E402
 from mcp.shared.auth import OAuthClientInformationFull  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
+from starlette.datastructures import Headers  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
 from notebooklm.mcp._auth import McpBearerAuthProvider, build_auth  # noqa: E402
@@ -27,8 +29,11 @@ from notebooklm.mcp._oauth import (  # noqa: E402
     OAUTH_BASE_URL_ENV,
     OAUTH_PASSWORD_ENV,
     THROTTLE_MAX_FAILURES,
+    TRUST_PROXY_ENV,
     OAuthConfig,
     SelfHostedOAuthProvider,
+    _client_ip,
+    build_oauth_provider,
     get_oauth_config,
 )
 
@@ -37,8 +42,23 @@ _PW = "a-strong-random-password-1234567890"
 
 @pytest.fixture
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for k in (OAUTH_PASSWORD_ENV, OAUTH_BASE_URL_ENV, "NOTEBOOKLM_HOME", "NOTEBOOKLM_PROFILE"):
+    for k in (
+        OAUTH_PASSWORD_ENV,
+        OAUTH_BASE_URL_ENV,
+        TRUST_PROXY_ENV,
+        "NOTEBOOKLM_HOME",
+        "NOTEBOOKLM_PROFILE",
+    ):
         monkeypatch.delenv(k, raising=False)
+
+
+class _FakeRequest:
+    """Minimal Request stand-in for `_client_ip`: case-insensitive `.headers` (Starlette
+    `Headers`) plus a `.client` with `.host` (or `None` to exercise the no-peer branch)."""
+
+    def __init__(self, *, cf: str | None, peer: str | None) -> None:
+        self.headers = Headers({"cf-connecting-ip": cf} if cf is not None else {})
+        self.client = None if peer is None else type("C", (), {"host": peer})()
 
 
 def _provider(tmp_path=None) -> SelfHostedOAuthProvider:
@@ -288,3 +308,125 @@ def test_fail_times_drops_empty_entries() -> None:
     p._fail_times["1.2.3.4"] = [0.0]  # an ancient failure (epoch), outside the window
     assert p._throttled("1.2.3.4") is None
     assert "1.2.3.4" not in p._fail_times
+
+
+# --------------------------------------------------------------------------- #1761 trusted-proxy
+def test_client_ip_ignores_cf_header_when_untrusted() -> None:
+    """Default (flag off): CF-Connecting-IP is NOT trusted — key on the socket peer, so a
+    forged header can't dodge the throttle when the origin is exposed directly."""
+    req = _FakeRequest(cf="9.9.9.9", peer="10.0.0.1")
+    assert _client_ip(req, trust_proxy=False) == "10.0.0.1"
+
+
+def test_client_ip_honors_cf_header_when_trusted() -> None:
+    """Flag on (trusted proxy sets the header): key on CF-Connecting-IP."""
+    req = _FakeRequest(cf="9.9.9.9", peer="10.0.0.1")
+    assert _client_ip(req, trust_proxy=True) == "9.9.9.9"
+
+
+def test_client_ip_empty_cf_header_falls_back_to_peer() -> None:
+    """Even when trusted, a present-but-blank CF-Connecting-IP must NOT become a '' key —
+    fall back to the socket peer."""
+    assert _client_ip(_FakeRequest(cf="   ", peer="10.0.0.1"), trust_proxy=True) == "10.0.0.1"
+
+
+def test_client_ip_no_peer_returns_unknown() -> None:
+    """No socket peer and no trusted header → the 'unknown' fallback (bounded key)."""
+    assert _client_ip(_FakeRequest(cf="9.9.9.9", peer=None), trust_proxy=False) == "unknown"
+
+
+def test_config_resolves_trust_proxy_flag(
+    _clear_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """get_oauth_config reads NOTEBOOKLM_MCP_TRUST_PROXY (=='1' → True; unset → False)."""
+    monkeypatch.setenv(OAUTH_PASSWORD_ENV, _PW)
+    monkeypatch.setenv(OAUTH_BASE_URL_ENV, "https://host.example.com")
+    off = get_oauth_config()
+    assert off is not None and off.trust_proxy is False
+    monkeypatch.setenv(TRUST_PROXY_ENV, "1")
+    on = get_oauth_config()
+    assert on is not None and on.trust_proxy is True
+
+
+def test_provider_stores_trust_proxy() -> None:
+    p = SelfHostedOAuthProvider(password=_PW, base_url="https://h.example.com", trust_proxy=True)
+    assert p._trust_proxy is True
+
+
+def test_throttle_keys_on_peer_not_spoofed_cf_header() -> None:
+    """End-to-end through /login: with the flag OFF, THROTTLE_MAX_FAILURES wrong POSTs — each
+    with a FRESH sid and a DIFFERENT spoofed CF-Connecting-IP — still trip the throttle,
+    proving the varying header is NOT the key (all failures bucket under the one peer).
+
+    A fresh sid per POST is required: one sid burns after MAX_LOGIN_ATTEMPTS (< the throttle
+    threshold) and a burned sid returns the expired form WITHOUT recording a failure."""
+    assert MAX_LOGIN_ATTEMPTS < THROTTLE_MAX_FAILURES  # guards the fresh-sid necessity
+    p = _provider()  # trust_proxy defaults False
+    client = _client()
+    asyncio.run(p.register_client(client))
+    with TestClient(Starlette(routes=p.get_routes())) as c:
+        for i in range(THROTTLE_MAX_FAILURES):
+            sid = asyncio.run(p.authorize(client, _params())).split("sid=")[1]
+            r = c.post(
+                "/login",
+                data={"sid": sid, "password": "nope"},
+                headers={"cf-connecting-ip": f"203.0.113.{i}"},  # varies every request
+                follow_redirects=False,
+            )
+            assert r.status_code == 401
+        # next attempt (a fresh sid, another distinct spoofed IP) is throttled → the header
+        # was never the key; the socket peer bucketed all failures together.
+        sid = asyncio.run(p.authorize(client, _params())).split("sid=")[1]
+        r = c.post(
+            "/login",
+            data={"sid": sid, "password": "nope"},
+            headers={"cf-connecting-ip": "203.0.113.250"},
+            follow_redirects=False,
+        )
+    assert r.status_code == 429
+
+
+def test_throttle_separates_buckets_by_cf_header_when_trusted() -> None:
+    """Inverse of the above: with trust_proxy=True, distinct CF-Connecting-IP values bucket
+    SEPARATELY, so wrong POSTs from many spoofed IPs do NOT trip the throttle — proving the
+    trusted path keys on the header. (Each distinct IP accrues a single failure < threshold.)"""
+    p = SelfHostedOAuthProvider(password=_PW, base_url="https://host.example.com", trust_proxy=True)
+    client = _client()
+    asyncio.run(p.register_client(client))
+    with TestClient(Starlette(routes=p.get_routes())) as c:
+        for i in range(THROTTLE_MAX_FAILURES + 1):
+            sid = asyncio.run(p.authorize(client, _params())).split("sid=")[1]
+            r = c.post(
+                "/login",
+                data={"sid": sid, "password": "nope"},
+                headers={"cf-connecting-ip": f"198.51.100.{i}"},  # a fresh IP each time
+                follow_redirects=False,
+            )
+            assert r.status_code == 401  # never 429 — each IP has only one failure
+
+
+# --------------------------------------------------------------------------- #1761 startup warning
+def test_build_oauth_provider_warns_when_state_not_persisted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """OAuth on but state_path None → one startup WARNING naming the persistence env vars."""
+    cfg = OAuthConfig(password=_PW, base_url="https://h.example.com", state_path=None)
+    with caplog.at_level(logging.WARNING, logger="notebooklm.mcp._oauth"):
+        provider = build_oauth_provider(cfg)
+    assert isinstance(provider, SelfHostedOAuthProvider)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "NOTEBOOKLM_HOME" in warnings[0].message and "NOTEBOOKLM_PROFILE" in warnings[0].message
+
+
+def test_build_oauth_provider_no_warn_when_state_persisted(
+    tmp_path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """With a state_path set, the non-persistence warning must NOT fire."""
+    cfg = OAuthConfig(
+        password=_PW, base_url="https://h.example.com", state_path=tmp_path / "oauth_state.json"
+    )
+    with caplog.at_level(logging.WARNING, logger="notebooklm.mcp._oauth"):
+        provider = build_oauth_provider(cfg)
+    assert isinstance(provider, SelfHostedOAuthProvider)
+    assert not [r for r in caplog.records if r.levelno == logging.WARNING]

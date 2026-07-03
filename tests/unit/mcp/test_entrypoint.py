@@ -98,7 +98,9 @@ def test_explicit_http_transport_binds_loopback(monkeypatch: pytest.MonkeyPatch)
 
     entry.main(["--transport", "http", "--host", "127.0.0.1", "--port", "8123"])
 
-    fake_server.run.assert_called_once_with(transport="http", host="127.0.0.1", port=8123)
+    fake_server.run.assert_called_once_with(
+        transport="http", host="127.0.0.1", port=8123, uvicorn_config={"proxy_headers": False}
+    )
     # Loopback + no token → unauthenticated (today's local-dev behavior preserved).
     assert captured["auth"] is None
 
@@ -117,7 +119,27 @@ def test_http_default_port_is_9420(monkeypatch: pytest.MonkeyPatch) -> None:
 
     entry.main(["--transport", "http"])
 
-    fake_server.run.assert_called_once_with(transport="http", host="127.0.0.1", port=9420)
+    fake_server.run.assert_called_once_with(
+        transport="http", host="127.0.0.1", port=9420, uvicorn_config={"proxy_headers": False}
+    )
+
+
+def test_http_run_disables_uvicorn_proxy_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The HTTP run path must pass uvicorn_config proxy_headers=False so Uvicorn does NOT
+    rewrite the ASGI peer from X-Forwarded-For — otherwise a request could forge its source
+    IP and defeat the OAuth login throttle's per-IP keying (which reads request.client.host)."""
+    fake_server = MagicMock()
+    monkeypatch.setattr(
+        entry,
+        "create_server",
+        lambda *, profile=None, client_factory=None, auth=None, file_transfer=None: fake_server,
+    )
+    monkeypatch.delenv("NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_MCP_TOKEN", raising=False)
+
+    entry.main(["--transport", "http"])
+
+    assert fake_server.run.call_args.kwargs["uvicorn_config"] == {"proxy_headers": False}
 
 
 def test_bogus_transport_env_default_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -203,7 +225,9 @@ def test_http_non_loopback_with_token_attaches_auth(monkeypatch: pytest.MonkeyPa
 
     entry.main(["--transport", "http", "--host", "0.0.0.0", "--port", "8000"])
 
-    fake_server.run.assert_called_once_with(transport="http", host="0.0.0.0", port=8000)
+    fake_server.run.assert_called_once_with(
+        transport="http", host="0.0.0.0", port=8000, uvicorn_config={"proxy_headers": False}
+    )
     assert isinstance(captured["auth"], McpBearerAuthProvider)
 
 

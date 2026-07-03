@@ -85,6 +85,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "OAUTH_BASE_URL_ENV",
     "OAUTH_PASSWORD_ENV",
+    "TRUST_PROXY_ENV",
     "OAuthConfig",
     "SelfHostedOAuthProvider",
     "build_oauth_provider",
@@ -95,6 +96,11 @@ __all__ = [
 #: enable OAuth; unset → bearer-only (Phase A unchanged).
 OAUTH_PASSWORD_ENV = "NOTEBOOKLM_MCP_OAUTH_PASSWORD"
 OAUTH_BASE_URL_ENV = "NOTEBOOKLM_MCP_OAUTH_BASE_URL"
+#: Opt-in: trust the proxy-set ``CF-Connecting-IP`` header as the login-throttle key
+#: (``"1"`` to enable). Default off → key on the socket peer. Only set this when a trusted
+#: proxy (e.g. the Cloudflare tunnel) authoritatively sets the header; if the origin is
+#: exposed directly, a client could forge ``CF-Connecting-IP`` to dodge the per-IP throttle.
+TRUST_PROXY_ENV = "NOTEBOOKLM_MCP_TRUST_PROXY"
 
 #: The password is the gate, so insist it's strong (the primary brute-force defense).
 MIN_PASSWORD_LEN = 16
@@ -130,6 +136,9 @@ class OAuthConfig:
     password: str = field(repr=False)
     base_url: str = field(repr=True)
     state_path: Path | None = field(default=None)  # persist target; None → no persistence
+    # Trust the proxy-set CF-Connecting-IP header for throttle keying (default off — the
+    # socket peer is used unless an operator asserts a trusted proxy sets the header).
+    trust_proxy: bool = field(default=False)
 
 
 def get_oauth_config() -> OAuthConfig | None:
@@ -171,19 +180,31 @@ def get_oauth_config() -> OAuthConfig | None:
     if home and profile:
         state_path = Path(home) / "profiles" / profile / "oauth_state.json"
 
-    return OAuthConfig(password=password, base_url=base_url, state_path=state_path)
+    # Opt-in trusted-proxy: only reached once OAuth is fully configured, so it never
+    # fires on the OAuth-off path. Default off keeps the throttle keyed on the socket peer.
+    trust_proxy = os.environ.get(TRUST_PROXY_ENV) == "1"
+
+    return OAuthConfig(
+        password=password, base_url=base_url, state_path=state_path, trust_proxy=trust_proxy
+    )
 
 
-def _client_ip(request: Request) -> str:
-    """Best-effort client IP for per-IP throttling. Behind the Cloudflare tunnel the
-    real client is in ``CF-Connecting-IP`` (Cloudflare sets it authoritatively, and the
-    tunnel admits no direct origin traffic, so it can't be spoofed in the intended
-    deploy). Falls back to the socket peer. CAVEAT: if the origin is exposed directly
-    (no tunnel/proxy), a client could spoof ``CF-Connecting-IP`` to dodge the throttle —
-    but the throttle is only secondary; the strong-password check is the real wall."""
-    cf = request.headers.get("cf-connecting-ip")
-    if cf:
-        return cf.strip()
+def _client_ip(request: Request, *, trust_proxy: bool) -> str:
+    """Best-effort client IP for per-IP login throttling.
+
+    The proxy-set ``CF-Connecting-IP`` header is trusted ONLY when ``trust_proxy`` is set
+    (``NOTEBOOKLM_MCP_TRUST_PROXY=1``) — i.e. the operator asserts a trusted proxy (the
+    Cloudflare tunnel) authoritatively sets it. Default off: an exposed-directly origin
+    would otherwise let a client forge ``CF-Connecting-IP`` to dodge the per-IP throttle,
+    so we key on the socket peer instead. With the flag off behind a tunnel the peer is the
+    tunnel egress, degrading the throttle to a single global bucket — strictly MORE
+    restrictive, never a spoof bypass. Secondary defense either way; the strong-password
+    check is the real wall. A present-but-empty header falls back to the peer so it can't
+    poison the bucket with a ``""`` key."""
+    if trust_proxy:
+        cf = (request.headers.get("cf-connecting-ip") or "").strip()
+        if cf:
+            return cf
     return request.client.host if request.client else "unknown"
 
 
@@ -191,7 +212,13 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
     """``InMemoryOAuthProvider`` + a password-gated ``/authorize``, with DoS bounds and
     file-backed persistence of clients + tokens."""
 
-    def __init__(self, password: str, base_url: str, state_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        password: str,
+        base_url: str,
+        state_path: Path | None = None,
+        trust_proxy: bool = False,
+    ) -> None:
         super().__init__(
             base_url=base_url,
             # DCR is OFF by default — without this NO /register route is mounted and
@@ -212,6 +239,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         # run them OFF the event loop so a burst can't stall request servicing.
         self._kdf_limiter = anyio.CapacityLimiter(4)
         self._state_path = state_path
+        self._trust_proxy = trust_proxy
         # sid -> _Pending(client, validated params, expiry_ts, attempts). Pre-auth + bounded.
         self._pending: dict[str, _Pending] = {}
         # per-IP failed-login timestamps (throttle).
@@ -285,7 +313,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
             redirect = str(entry.params.redirect_uri) if entry else None
             return self._render_form(sid, redirect_uri=redirect)
 
-        ip = _client_ip(request)
+        ip = _client_ip(request, trust_proxy=self._trust_proxy)
         retry_after = self._throttled(ip)
         if retry_after is not None:
             return Response(
@@ -479,7 +507,20 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
 
 
 def build_oauth_provider(config: OAuthConfig) -> AuthProvider:
-    """Build the self-hosted OAuth provider from validated config."""
+    """Build the self-hosted OAuth provider from validated config.
+
+    Runs once at HTTP-server startup. Warns (once) when OAuth is enabled but state is not
+    persisted — issued tokens + registered clients then live in memory only and a restart
+    silently forces every client to re-register and the owner to re-login."""
+    if config.state_path is None:
+        logger.warning(
+            "OAuth is enabled but state is not persisted (set NOTEBOOKLM_HOME and "
+            "NOTEBOOKLM_PROFILE); issued tokens and registered clients are in-memory only "
+            "and a restart forces re-login."
+        )
     return SelfHostedOAuthProvider(
-        password=config.password, base_url=config.base_url, state_path=config.state_path
+        password=config.password,
+        base_url=config.base_url,
+        state_path=config.state_path,
+        trust_proxy=config.trust_proxy,
     )

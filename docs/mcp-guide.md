@@ -130,6 +130,11 @@ cp deploy/.env.example deploy/.env                              # edit per the s
 3. `.env`: `NOTEBOOKLM_MCP_OAUTH_BASE_URL=https://notebooklm.yourdomain.com` (bare origin).
 4. Run: `cd deploy && make dev` (Cloudflare is the default profile).
 
+> Optional: set `NOTEBOOKLM_MCP_TRUST_PROXY=1` to key the per-IP login throttle on the
+> tunnel's `CF-Connecting-IP` header. Default off keys on the socket peer (the tunnel
+> egress) — one global throttle bucket. Only enable it behind a trusted proxy that sets the
+> header; an exposed-directly origin could forge it to dodge the throttle.
+
 ### Tunnel B — Tailscale Funnel (no domain — free, stable `*.ts.net` HTTPS)
 Best when you don't own a domain: Tailscale Funnel gives a stable public HTTPS hostname on
 Tailscale's domain, free on the personal plan, no DNS to manage. **One-time tailnet setup in
