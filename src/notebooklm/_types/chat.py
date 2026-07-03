@@ -40,8 +40,10 @@ class ChatSettings:
             notebook has never been configured.
         response_length: The active response verbosity (``ChatResponseLength``).
             ``DEFAULT`` when never configured.
-        custom_prompt: The custom persona text when ``goal`` is ``CUSTOM``, else
-            ``None``.
+        custom_prompt: The active custom-persona text — populated only when
+            ``goal`` is ``CUSTOM``, else ``None``. (The server may retain an
+            inactive prompt draft under a non-CUSTOM goal; it is not surfaced
+            here because it is not the active persona.)
     """
 
     goal: ChatGoal

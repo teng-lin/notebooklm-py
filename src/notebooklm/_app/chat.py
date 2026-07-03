@@ -334,10 +334,11 @@ async def execute_configure(
             response_length=None,
         )
 
-    # "Supplied" matches the historical truthiness: an empty persona ("") is a
-    # no-op (only a truthy persona selects CUSTOM), and any explicit
-    # response_length (incl. "default") is a real setting.
-    persona_supplied = bool(persona)
+    # "Supplied" gates the persona slot on ``persona.strip()`` (repo convention:
+    # an empty OR whitespace-only prompt is a no-op, never sent to the server),
+    # so only a non-blank persona selects CUSTOM. Any explicit response_length
+    # (incl. "default") is a real setting.
+    persona_supplied = bool(persona and persona.strip())
     length_supplied = response_length is not None
 
     mapped_length: ChatResponseLength | None = None

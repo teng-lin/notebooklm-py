@@ -596,6 +596,18 @@ class TestUnwrapChatSettings:
         row = unwrap_chat_settings(_nb_info([[2, "p"], [4]]), source="t")
         assert (row.goal_code, row.response_length_code, row.custom_prompt) == (2, 4, "p")
 
+    def test_default_with_retained_draft_prompt_is_not_surfaced(self) -> None:
+        """A prompt retained under goal code 1 (DEFAULT) is an inactive draft → custom_prompt None.
+
+        Live-verified: the server keeps the prompt string when a preset is applied
+        over a persona (``[[1, "…"], …]``), but it is inactive under DEFAULT and
+        ``configure()`` cannot round-trip it, so ``get_settings`` reports None.
+        """
+        row = unwrap_chat_settings(
+            _nb_info([[1, "You are a helpful science tutor"], [1]]), source="t"
+        )
+        assert (row.goal_code, row.response_length_code, row.custom_prompt) == (1, 1, None)
+
     @pytest.mark.parametrize(
         "nb_info",
         [
@@ -621,7 +633,9 @@ class TestUnwrapChatSettings:
             [[1], ["notint"]],  # non-int length code
             [[True], [1]],  # bool goal code (bool is an int subclass) — rejected
             [[1], [False]],  # bool length code — rejected
-            [[2, 123], [1]],  # non-str custom prompt
+            [[2, 123], [1]],  # CUSTOM with a non-str prompt
+            [[2], [1]],  # CUSTOM goal missing its persona prompt
+            [[2, ""], [1]],  # CUSTOM goal with an empty persona prompt
         ],
     )
     def test_malformed_block_raises(self, block: object) -> None:

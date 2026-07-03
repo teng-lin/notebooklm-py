@@ -115,6 +115,10 @@ _CHAT_SETTINGS_POS = 7
 _DEFAULT_GOAL_CODE = 1
 _DEFAULT_LENGTH_CODE = 1
 
+# ``ChatGoal.CUSTOM`` — the only goal whose persona prompt is *active*. Bare int
+# to keep this layer enum-free.
+_CUSTOM_GOAL_CODE = 2
+
 # ``GET_CONVERSATION_TURNS`` method id, threaded into ``safe_index`` /
 # ``UnknownRPCMethodError`` so drift diagnostics point at the right RPC.
 _TURNS_METHOD_ID = RPCMethod.GET_CONVERSATION_TURNS.value
@@ -302,9 +306,6 @@ def unwrap_chat_settings(nb_info: Any, *, source: str) -> ChatSettingsRow:
         )
     goal_code = safe_index(goal_array, 0, method_id=_GET_NOTEBOOK_METHOD_ID, source=source)
     length_code = safe_index(length_array, 0, method_id=_GET_NOTEBOOK_METHOD_ID, source=source)
-    # ``custom_prompt`` is present only for the CUSTOM goal; a shorter goal array
-    # legitimately means "no persona" (single-level read on a bound local).
-    custom_prompt = goal_array[1] if len(goal_array) > 1 else None
     # ``type(...) is int`` (not ``isinstance``) so a drifted bool code — ``bool``
     # is an ``int`` subclass — is rejected as malformed, not silently decoded to
     # DEFAULT/DEFAULT.
@@ -316,14 +317,27 @@ def unwrap_chat_settings(nb_info: Any, *, source: str) -> ChatSettingsRow:
             source=source,
             data_at_failure=reprlib.repr(block),
         )
-    if custom_prompt is not None and not isinstance(custom_prompt, str):
-        raise UnknownRPCMethodError(
-            f"chat-settings custom prompt holds {type(custom_prompt).__name__} (expected str)",
-            method_id=_GET_NOTEBOOK_METHOD_ID,
-            path=(_CHAT_SETTINGS_POS, 0, 1),
-            source=source,
-            data_at_failure=reprlib.repr(block),
-        )
+    # The custom prompt is the *active* persona, meaningful only for the CUSTOM
+    # goal. The server retains a prompt string under a non-CUSTOM goal as an
+    # inactive DRAFT — live-verified: applying a preset over a persona leaves
+    # ``[[1, "…"], …]`` — but that draft is not an active persona and
+    # ``configure()`` cannot round-trip it (it serializes the prompt only for
+    # CUSTOM), so it is not surfaced. Conversely a CUSTOM goal REQUIRES a
+    # non-empty prompt (``configure()`` enforces this on write), so a CUSTOM goal
+    # without one is decode drift — raise here rather than let the length-only
+    # merge fail later in ``configure()`` with a ValidationError.
+    custom_prompt: str | None = None
+    if goal_code == _CUSTOM_GOAL_CODE:
+        prompt_value = goal_array[1] if len(goal_array) > 1 else None
+        if not isinstance(prompt_value, str) or not prompt_value:
+            raise UnknownRPCMethodError(
+                "chat-settings CUSTOM goal is missing its persona prompt",
+                method_id=_GET_NOTEBOOK_METHOD_ID,
+                path=(_CHAT_SETTINGS_POS, 0),
+                source=source,
+                data_at_failure=reprlib.repr(block),
+            )
+        custom_prompt = prompt_value
     return ChatSettingsRow(goal_code, length_code, custom_prompt)
 
 

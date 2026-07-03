@@ -450,6 +450,50 @@ async def test_execute_configure_empty_persona_no_length_is_bare_reset() -> None
 
 
 @pytest.mark.asyncio
+async def test_execute_configure_whitespace_persona_no_length_is_bare_reset() -> None:
+    """A whitespace-only persona is a no-op (repo convention), so alone it's a bare reset."""
+    client = _client()
+    client.chat.configure = AsyncMock(return_value=None)
+    client.chat.get_settings = AsyncMock()
+
+    result = await execute_configure(
+        client, "nb_123", chat_mode=None, persona="   ", response_length=None
+    )
+
+    client.chat.get_settings.assert_not_awaited()
+    assert result.goal_name is None
+    client.chat.configure.assert_awaited_once_with(
+        "nb_123", goal=None, response_length=None, custom_prompt=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_configure_whitespace_persona_with_length_merges() -> None:
+    """A whitespace-only persona + a length is a length-only partial write (persona not-supplied)."""
+    client = _client()
+    client.chat.configure = AsyncMock(return_value=None)
+    client.chat.get_settings = AsyncMock(
+        return_value=ChatSettings(
+            goal=ChatGoal.CUSTOM,
+            response_length=ChatResponseLength.DEFAULT,
+            custom_prompt="keep me",
+        )
+    )
+
+    await execute_configure(
+        client, "nb_123", chat_mode=None, persona="   ", response_length="longer"
+    )
+
+    client.chat.get_settings.assert_awaited_once_with("nb_123")
+    client.chat.configure.assert_awaited_once_with(
+        "nb_123",
+        goal=ChatGoal.CUSTOM,
+        response_length=ChatResponseLength.LONGER,
+        custom_prompt="keep me",
+    )
+
+
+@pytest.mark.asyncio
 async def test_execute_configure_empty_persona_with_length_merges() -> None:
     """persona="" + a length is a length-only partial write (empty persona not-supplied)."""
     client = _client()
