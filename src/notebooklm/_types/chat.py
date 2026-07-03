@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from ..rpc.types import ChatGoal, ChatResponseLength
+
 
 class ChatMode(Enum):
     """Predefined chat modes for common use cases."""
@@ -22,6 +24,29 @@ class ConversationTurn:
     query: str
     answer: str
     turn_number: int
+
+
+@dataclass(frozen=True)
+class ChatSettings:
+    """A notebook's current chat configuration, read from the server (#1751).
+
+    Returned by :meth:`ChatAPI.get_settings`. Lets a partial ``configure`` merge
+    (read-modify-write) instead of clobbering the fields it doesn't touch — the
+    server stores the whole chat-settings block with no merge, so preserving an
+    omitted field requires reading the current value first.
+
+    Attributes:
+        goal: The active chat goal/persona (``ChatGoal``). ``DEFAULT`` when the
+            notebook has never been configured.
+        response_length: The active response verbosity (``ChatResponseLength``).
+            ``DEFAULT`` when never configured.
+        custom_prompt: The custom persona text when ``goal`` is ``CUSTOM``, else
+            ``None``.
+    """
+
+    goal: ChatGoal
+    response_length: ChatResponseLength
+    custom_prompt: str | None = None
 
 
 @dataclass

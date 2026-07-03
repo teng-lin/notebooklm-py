@@ -10,7 +10,14 @@ import notebooklm.auth as auth_module
 import notebooklm.cli.context as context_module
 from notebooklm.cli import helpers as helpers_module
 from notebooklm.notebooklm_cli import cli
-from notebooklm.types import AskResult, ChatReference, Note
+from notebooklm.types import (
+    AskResult,
+    ChatGoal,
+    ChatReference,
+    ChatResponseLength,
+    ChatSettings,
+    Note,
+)
 
 from .conftest import create_mock_client, inject_client
 
@@ -512,6 +519,45 @@ class TestConfigureJsonOutput:
         assert data["response_length"] == "longer"
         assert data["configured"] is True
         mock_client.chat.configure.assert_awaited_once()
+
+    def test_configure_persona_only_merges_preserving_length(self, runner, mock_auth):
+        """persona-only CLI configure merges: the current response_length is preserved (#1751)."""
+        mock_client = create_mock_client()
+        mock_client.chat.configure = AsyncMock(return_value=None)
+        mock_client.chat.get_settings = AsyncMock(
+            return_value=ChatSettings(
+                goal=ChatGoal.DEFAULT,
+                response_length=ChatResponseLength.SHORTER,
+                custom_prompt=None,
+            )
+        )
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["configure", "-n", "nb_123", "--persona", "tutor", "--json"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 0, result.output
+        import json
+
+        data = json.loads(result.output)
+        # Delta reporting: JSON echoes only what THIS call set.
+        assert data["goal"] == "custom"
+        assert data["persona"] == "tutor"
+        assert data["response_length"] is None
+        # But the write preserves the current SHORTER length instead of clobbering it.
+        mock_client.chat.get_settings.assert_awaited_once_with("nb_123")
+        mock_client.chat.configure.assert_awaited_once_with(
+            "nb_123",
+            goal=ChatGoal.CUSTOM,
+            response_length=ChatResponseLength.SHORTER,
+            custom_prompt="tutor",
+        )
 
     def test_configure_no_flags_json(self, runner, mock_auth):
         """`configure --json` with no other flags should still emit valid JSON.

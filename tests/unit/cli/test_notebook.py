@@ -1069,8 +1069,18 @@ class TestNotebookConfigure:
         assert "Chat mode set to: learning-guide" in result.output
 
     def test_notebook_configure_persona(self, runner, mock_auth):
+        from notebooklm.types import ChatGoal, ChatResponseLength, ChatSettings
+
         mock_client = create_mock_client()
         mock_client.chat.configure = AsyncMock(return_value=None)
+        # persona-only is a partial merge → the core reads current settings first.
+        mock_client.chat.get_settings = AsyncMock(
+            return_value=ChatSettings(
+                goal=ChatGoal.DEFAULT,
+                response_length=ChatResponseLength.DEFAULT,
+                custom_prompt=None,
+            )
+        )
 
         with patch.object(
             auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
@@ -1087,8 +1097,18 @@ class TestNotebookConfigure:
         assert "persona" in result.output
 
     def test_notebook_configure_response_length(self, runner, mock_auth):
+        from notebooklm.types import ChatGoal, ChatResponseLength, ChatSettings
+
         mock_client = create_mock_client()
         mock_client.chat.configure = AsyncMock(return_value=None)
+        # response-length-only is a partial merge → the core reads current settings first.
+        mock_client.chat.get_settings = AsyncMock(
+            return_value=ChatSettings(
+                goal=ChatGoal.DEFAULT,
+                response_length=ChatResponseLength.DEFAULT,
+                custom_prompt=None,
+            )
+        )
 
         with patch.object(
             auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock

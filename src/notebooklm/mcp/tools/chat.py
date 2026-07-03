@@ -261,45 +261,32 @@ def register(mcp: Any) -> None:
 
         Two mutually-exclusive ways to configure:
 
-        * ``chat_mode`` applies a predefined preset — one of ``default`` /
-          ``learning-guide`` / ``concise`` / ``detailed``. A preset *replaces* the
-          whole chat-settings block, so it cannot be combined with ``goal`` /
-          ``response_length`` (doing so is rejected, not silently dropped).
-        * ``goal`` (free-text custom persona/goal; selects the CUSTOM chat goal)
-          and ``response_length`` (``default`` / ``longer`` / ``shorter``) set a
-          custom configuration.
-
-        A custom config writes the whole block with no merge, so ``goal`` and
-        ``response_length`` are required together — a partial or bare call is
-        rejected, not silently reset. To set verbosity only, use a preset.
+        * ``chat_mode`` is a preset — one of ``default`` / ``learning-guide`` /
+          ``concise`` / ``detailed``. It replaces the whole block, so it can't be
+          combined with ``goal`` / ``response_length`` (that's rejected).
+        * ``goal`` (custom persona; selects the CUSTOM goal) and
+          ``response_length`` (``default`` / ``longer`` / ``shorter``) set a custom
+          config. A partial call (just one) merges with the current settings — the
+          omitted field is preserved. Only a bare call (no preset, neither field)
+          is rejected, as it would reset every setting to its default.
         """
         client = get_client(ctx)
         with mcp_errors():
-            # A custom configuration writes the FULL chat-settings block (no server-side
-            # merge and no client getter to read-merge), so an omitted field silently resets
-            # to its default. Fail loud instead of clobbering: require BOTH goal and
-            # response_length together, and reject a bare call. (A chat_mode preset has no
-            # sub-fields, so this only gates the custom branch.) "Supplied" matches the core:
-            # an empty goal ("") is a no-op (core uses `if persona:`), and any explicit
-            # response_length — incl. "default" — is a real setting.
-            if chat_mode is None:
-                goal_supplied = bool(goal)
-                length_supplied = response_length is not None
-                if not goal_supplied and not length_supplied:
-                    raise ValidationError(
-                        "chat_configure needs at least one setting: a chat_mode preset "
-                        "(default / learning-guide / concise / detailed), or BOTH goal and "
-                        "response_length for a custom configuration. A bare call would reset "
-                        "every chat setting to its default."
-                    )
-                if goal_supplied != length_supplied:
-                    raise ValidationError(
-                        "A custom chat_configure writes the full settings block, so the "
-                        "omitted field would reset to its default (there is no partial "
-                        "merge). Pass BOTH goal and response_length. To change only the "
-                        "response length without a custom goal, use a chat_mode preset "
-                        "(concise = shorter, detailed = longer)."
-                    )
+            # A partial custom config now merges (read-modify-write in
+            # execute_configure), so goal/response_length are NO LONGER required
+            # together — the omitted field is preserved. The one call still worth
+            # rejecting is a fully bare one (no preset, no goal, no length): that
+            # resets every setting to default, which is almost never what an agent
+            # meant. "Supplied" matches the core: an empty goal ("") is a no-op
+            # (core uses `if persona:`), and any explicit response_length —
+            # incl. "default" — is a real setting.
+            if chat_mode is None and not goal and response_length is None:
+                raise ValidationError(
+                    "chat_configure needs at least one setting: a chat_mode preset "
+                    "(default / learning-guide / concise / detailed), a custom goal, "
+                    "and/or a response_length. A bare call would reset every chat "
+                    "setting to its default."
+                )
 
             # ``chat_mode`` / ``response_length`` are Literals, so FastMCP/Pydantic
             # rejects out-of-enum values at the schema boundary. The preset-vs-custom

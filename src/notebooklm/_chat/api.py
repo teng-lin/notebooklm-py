@@ -16,15 +16,17 @@ from .._conversation_cache import ConversationCache
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._loop_bound import LoopBoundPrimitive
 from .._notebook_metadata import NotebookSourceIdProvider
+from .._notebooks import build_get_notebook_params
 from .._request_types import AuthSnapshot
 from .._row_adapters.chat import (
     ConversationTurnRow,
+    unwrap_chat_settings,
     unwrap_conversation_turns,
     unwrap_last_conversation_id,
 )
 from .._runtime.config import DEFAULT_CHAT_TIMEOUT
 from .._runtime.contracts import LoopGuard, RpcCaller
-from ..exceptions import ChatError, NetworkError, ValidationError
+from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError, ValidationError
 from .notes import save_chat_answer_as_note
 from .transport import chat_aware_authed_post
 from .wire import (
@@ -52,6 +54,7 @@ from ..types import (
     AskResult,
     ChatMode,
     ChatReference,
+    ChatSettings,
     ConversationTurn,
     Note,
 )
@@ -721,6 +724,12 @@ class ChatAPI(LoopBoundPrimitive):
     ) -> None:
         """Configure chat persona and response settings for a notebook.
 
+        Writes the WHOLE chat-settings block with no server-side merge: an
+        omitted ``goal`` / ``response_length`` resets that field to its default.
+        This is the low-level primitive — for a partial, merge-preserving update
+        (CLI ``configure`` / MCP ``chat_configure``) go through
+        ``_app.chat.execute_configure``, which reads :meth:`get_settings` first.
+
         Args:
             notebook_id: The notebook ID.
             goal: Chat persona/goal (ChatGoal enum: DEFAULT, CUSTOM, LEARNING_GUIDE).
@@ -772,6 +781,58 @@ class ChatAPI(LoopBoundPrimitive):
 
         goal, length, prompt = mode_configs[mode]
         await self.configure(notebook_id, goal, length, prompt)
+
+    async def get_settings(self, notebook_id: str) -> ChatSettings:
+        """Read the notebook's current chat configuration.
+
+        Decodes the chat-settings block from ``GET_NOTEBOOK`` so a *partial*
+        ``configure`` can merge (read-modify-write) instead of clobbering the
+        fields it doesn't touch — the server stores the whole block with no
+        merge (see :meth:`configure`). A notebook that has never been configured
+        reads back as ``DEFAULT``/``DEFAULT`` with no persona.
+
+        Args:
+            notebook_id: The notebook ID.
+
+        Returns:
+            The current :class:`ChatSettings` (goal, response length, persona).
+
+        Raises:
+            UnknownRPCMethodError: if the GET_NOTEBOOK chat-settings block has
+                drifted from the expected shape — raised rather than silently
+                defaulting, which on the merge path would clobber a field the
+                caller meant to preserve (the #1751 footgun).
+        """
+        params = build_get_notebook_params(notebook_id)
+        result = await self._rpc.rpc_call(
+            RPCMethod.GET_NOTEBOOK,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+        )
+        nb_info = safe_index(
+            result,
+            0,
+            method_id=RPCMethod.GET_NOTEBOOK.value,
+            source="ChatAPI.get_settings",
+        )
+        row = unwrap_chat_settings(nb_info, source="ChatAPI.get_settings")
+        # Map the raw codes to enums here (the row layer stays enum-free). An
+        # unknown code — a new server-side enum member — is decode drift, so
+        # surface it as UnknownRPCMethodError (with the GET_NOTEBOOK method id)
+        # rather than a bare ValueError, matching the rest of the decode path.
+        try:
+            goal = ChatGoal(row.goal_code)
+            length = ChatResponseLength(row.response_length_code)
+        except ValueError as exc:
+            raise UnknownRPCMethodError(
+                f"unknown chat-settings enum code "
+                f"(goal={row.goal_code!r}, response_length={row.response_length_code!r})",
+                method_id=RPCMethod.GET_NOTEBOOK.value,
+                path=(7,),
+                source="ChatAPI.get_settings",
+                data_at_failure=reprlib.repr((row.goal_code, row.response_length_code)),
+            ) from exc
+        return ChatSettings(goal=goal, response_length=length, custom_prompt=row.custom_prompt)
 
     async def save_answer_as_note(
         self,

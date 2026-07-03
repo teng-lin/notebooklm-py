@@ -147,6 +147,8 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `history --show-all` | Show full Q&A content (not preview) | `notebooklm history --show-all` |
 | `history --no-truncate` | Disable the 50-char preview cap on the Question/Answer columns in the table view (the existing `-l/--limit` flag is unchanged: it caps the number of Q&A turns fetched server-side) | `notebooklm history --no-truncate` |
 
+Setting just one of `configure --persona` / `--response-length` **merges** with the current settings — the field you omit is preserved, not reset. A bare `configure` with no flags resets all custom chat settings to their defaults. (A `--mode` preset cannot be combined with `--persona`/`--response-length`.)
+
 ### Source Commands (`notebooklm source <cmd>`)
 
 Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, audio, video, images), Google Drive documents, and pasted text.

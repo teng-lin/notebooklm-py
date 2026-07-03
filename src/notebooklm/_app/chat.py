@@ -294,6 +294,16 @@ async def execute_configure(
     lowercase enum name (e.g. ``"custom"``) for a stable, human-readable JSON
     contract.
 
+    ``client.chat.configure`` writes the WHOLE chat-settings block with no
+    server-side merge, so a *partial* custom update (exactly one of ``persona`` /
+    ``response_length``) would clobber the omitted field (#1751). To prevent that,
+    a partial update first reads ``client.chat.get_settings`` and preserves the
+    unspecified field (read-modify-write). Two paths deliberately skip the read:
+    a **bare** call (neither field) keeps the documented reset-to-defaults
+    affordance, and a call supplying **both** fields already has a complete block.
+    The result still reports only what THIS call changed (the delta), so a merge
+    does not widen the JSON contract.
+
     A ``chat_mode`` preset replaces the whole chat-settings block (it
     short-circuits to ``set_mode``), so it cannot be combined with a custom
     ``persona`` / ``response_length`` — that combination is rejected here rather
@@ -324,25 +334,64 @@ async def execute_configure(
             response_length=None,
         )
 
-    goal = ChatGoal.CUSTOM if persona else None
+    # "Supplied" matches the historical truthiness: an empty persona ("") is a
+    # no-op (only a truthy persona selects CUSTOM), and any explicit
+    # response_length (incl. "default") is a real setting.
+    persona_supplied = bool(persona)
+    length_supplied = response_length is not None
+
+    mapped_length: ChatResponseLength | None = None
     if response_length:
         try:
-            length = _RESPONSE_LENGTH_MAP[response_length]
+            mapped_length = _RESPONSE_LENGTH_MAP[response_length]
         except KeyError as exc:
             raise ValidationError(
                 f"Unknown response length {response_length!r}; "
                 f"expected one of {sorted(_RESPONSE_LENGTH_MAP)}"
             ) from exc
+
+    write_goal: ChatGoal | None
+    write_length: ChatResponseLength | None
+    write_prompt: str | None
+    if not persona_supplied and not length_supplied:
+        # Bare `configure` — the documented reset-to-defaults affordance. No read
+        # (client.chat.configure maps None → DEFAULT for both fields).
+        write_goal, write_length, write_prompt = None, None, None
+    elif persona_supplied and length_supplied:
+        # Both fields given — a complete block, nothing to preserve, single write.
+        write_goal, write_length, write_prompt = ChatGoal.CUSTOM, mapped_length, persona
     else:
-        length = None
+        # True partial — read current settings and preserve the omitted field, so
+        # setting one custom field no longer clobbers the other (#1751). A read
+        # failure/drift raises (fails loud) rather than silently clobbering.
+        current = await client.chat.get_settings(notebook_id)
+        if persona_supplied:
+            write_goal, write_length, write_prompt = (
+                ChatGoal.CUSTOM,
+                current.response_length,
+                persona,
+            )
+        else:
+            write_goal, write_length, write_prompt = (
+                current.goal,
+                mapped_length,
+                current.custom_prompt,
+            )
 
     await client.chat.configure(
-        notebook_id, goal=goal, response_length=length, custom_prompt=persona
+        notebook_id,
+        goal=write_goal,
+        response_length=write_length,
+        custom_prompt=write_prompt,
     )
+    # ConfigureResult reports the DELTA (what THIS call set), not the merged
+    # effective state — `goal_name`/`persona`/`response_length` stay in the
+    # "what you changed" vocabulary the CLI prose + `--json` envelope have always
+    # used, so a partial merge doesn't silently widen the JSON contract.
     return ConfigureResult(
         notebook_id=notebook_id,
         mode=None,
-        goal_name=goal.name.lower() if goal else None,
+        goal_name=ChatGoal.CUSTOM.name.lower() if persona_supplied else None,
         persona=persona,
         response_length=response_length,
     )

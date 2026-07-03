@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from notebooklm._types.artifacts import Artifact, GenerationState, GenerationStatus
-from notebooklm._types.chat import AskResult
+from notebooklm._types.chat import AskResult, ChatSettings
 from notebooklm._types.common import AccountLimits
 from notebooklm._types.notebooks import Notebook, PromptSuggestion
 from notebooklm._types.notes import Note
@@ -38,7 +38,14 @@ from notebooklm.exceptions import (
     SourceProcessingError,
     SourceTimeoutError,
 )
-from notebooklm.rpc.types import ShareAccess, SharePermission, ShareViewLevel, SourceStatus
+from notebooklm.rpc.types import (
+    ChatGoal,
+    ChatResponseLength,
+    ShareAccess,
+    SharePermission,
+    ShareViewLevel,
+    SourceStatus,
+)
 
 #: download-spec kind -> internal artifact type-code.
 _KIND_CODE = {
@@ -258,6 +265,10 @@ class FakeChat:
 
     async def set_mode(self, notebook_id: str, mode: Any) -> None:
         self._s.last_configure = {"notebook_id": notebook_id, "mode": mode}
+
+    async def get_settings(self, notebook_id: str) -> ChatSettings:
+        self._s.last_get_settings = notebook_id
+        return self._s.chat_settings
 
     async def configure(
         self,
@@ -603,6 +614,14 @@ class FakeClient:
         self.chat_error: Exception | None = None
         self.last_share_notify: bool | None = None
         self.last_configure: dict[str, Any] | None = None
+        self.last_get_settings: str | None = None
+        # Current chat settings returned by FakeChat.get_settings (drives the
+        # partial-configure read-modify-write merge). Defaults to DEFAULT/DEFAULT.
+        self.chat_settings: ChatSettings = ChatSettings(
+            goal=ChatGoal.DEFAULT,
+            response_length=ChatResponseLength.DEFAULT,
+            custom_prompt=None,
+        )
         self.last_research_start: dict[str, Any] | None = None
         self.deep_missing_report_id: bool = False
 

@@ -23,6 +23,7 @@ from ._types.chat import (
     AskResult,
     ChatMode,
     ChatReference,
+    ChatSettings,
     ConversationTurn,
 )
 from ._types.common import (
@@ -162,6 +163,7 @@ __all__ = [
     "ChatReference",
     "AskResult",
     "ChatMode",
+    "ChatSettings",
     "PromptSuggestion",
     "SharedUser",
     "ShareStatus",
@@ -244,6 +246,7 @@ for _public_moved_type in (
     AskResult,
     ChatMode,
     ChatReference,
+    ChatSettings,
     ConversationTurn,
     GenerationState,
     GenerationStatus,

@@ -17,7 +17,7 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm.rpc import ChatGoal, ChatResponseLength, RPCMethod
-from notebooklm.types import ChatMode
+from notebooklm.types import ChatMode, ChatSettings
 
 pytestmark = pytest.mark.characterization
 
@@ -240,6 +240,64 @@ class TestChatAPI:
             await client.chat.set_mode("nb_123", ChatMode.CONCISE)
         request = httpx_mock.get_request()
         assert RPCMethod.RENAME_NOTEBOOK in str(request.url)
+
+    @pytest.mark.asyncio
+    async def test_get_settings_decodes_custom_persona(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """get_settings reads GET_NOTEBOOK and decodes the nb_info[7] block (#1751)."""
+        nb_info = [0, 1, 2, 3, 4, 5, 6, [[2, "chemistry tutor"], [4]]]
+        response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [nb_info])
+        httpx_mock.add_response(content=response.encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            settings = await client.chat.get_settings("nb_123")
+        assert settings == ChatSettings(
+            goal=ChatGoal.CUSTOM,
+            response_length=ChatResponseLength.LONGER,
+            custom_prompt="chemistry tutor",
+        )
+        request = httpx_mock.get_request()
+        assert RPCMethod.GET_NOTEBOOK in str(request.url)
+
+    @pytest.mark.asyncio
+    async def test_get_settings_never_configured_is_defaults(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A never-configured notebook returns null at nb_info[7] → DEFAULT/DEFAULT."""
+        nb_info = [0, 1, 2, 3, 4, 5, 6, None]
+        response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [nb_info])
+        httpx_mock.add_response(content=response.encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            settings = await client.chat.get_settings("nb_123")
+        assert settings == ChatSettings(
+            goal=ChatGoal.DEFAULT,
+            response_length=ChatResponseLength.DEFAULT,
+            custom_prompt=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_settings_unknown_enum_code_raises_drift(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """An unknown goal/length code (new server enum) surfaces as decode drift."""
+        from notebooklm.exceptions import UnknownRPCMethodError
+
+        # goal_code 7 is not a known ChatGoal member.
+        nb_info = [0, 1, 2, 3, 4, 5, 6, [[7], [1]]]
+        response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [nb_info])
+        httpx_mock.add_response(content=response.encode())
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(UnknownRPCMethodError):
+                await client.chat.get_settings("nb_123")
 
     def test_get_cached_turns_empty(self, auth_tokens):
         """Test getting cached turns for new conversation."""

@@ -87,15 +87,33 @@ __all__ = [
     "AnswerRow",
     "CitationRow",
     "CitationDetail",
+    "ChatSettingsRow",
     "ConversationTurnRow",
     "ErrorPayloadRow",
     "PassageRow",
     "StreamFrameRow",
     "TextLeafRow",
     "SavedChatNoteRow",
+    "unwrap_chat_settings",
     "unwrap_conversation_turns",
     "unwrap_last_conversation_id",
 ]
+
+# ``GET_NOTEBOOK`` (``rLM1Ne``) method id, threaded into ``safe_index`` /
+# ``UnknownRPCMethodError`` so chat-settings drift points at the right RPC.
+_GET_NOTEBOOK_METHOD_ID = RPCMethod.GET_NOTEBOOK.value
+
+# Position of the chat-settings block inside a GET_NOTEBOOK ``nb_info`` row.
+# Live-verified (#1751): mirrors the write slot ``ChatAPI.configure`` targets at
+# ``params[1][0][7]``.
+_CHAT_SETTINGS_POS = 7
+
+# Enum codes a never-configured notebook decodes to (GET_NOTEBOOK returns
+# ``null`` at the chat-settings slot). ``1`` == ``ChatGoal.DEFAULT`` ==
+# ``ChatResponseLength.DEFAULT``; kept as bare ints so this positional layer
+# stays enum-free — the code→enum mapping lives in ``ChatAPI.get_settings``.
+_DEFAULT_GOAL_CODE = 1
+_DEFAULT_LENGTH_CODE = 1
 
 # ``GET_CONVERSATION_TURNS`` method id, threaded into ``safe_index`` /
 # ``UnknownRPCMethodError`` so drift diagnostics point at the right RPC.
@@ -200,6 +218,113 @@ def unwrap_conversation_turns(turns_data: Any, *, source: str) -> list[Any]:
             data_at_failure=reprlib.repr(turns_data),
         )
     return turns
+
+
+@dataclass(frozen=True)
+class ChatSettingsRow:
+    """Decoded chat-settings block from a ``GET_NOTEBOOK`` ``nb_info`` row (#1751).
+
+    Holds RAW enum codes (not ``ChatGoal`` / ``ChatResponseLength``) so this
+    positional layer stays enum-free; ``ChatAPI.get_settings`` maps the codes to
+    enums and builds the public ``ChatSettings``. Built by
+    :func:`unwrap_chat_settings`.
+    """
+
+    goal_code: int
+    response_length_code: int
+    custom_prompt: str | None = None
+
+
+def unwrap_chat_settings(nb_info: Any, *, source: str) -> ChatSettingsRow:
+    """Decode the chat-settings block at ``nb_info[7]`` of a GET_NOTEBOOK row.
+
+    Wire shape (live-verified #1751): ``nb_info[7] = [[goal_code, custom_prompt?],
+    [length_code]]`` — e.g. ``[[2, "persona"], [4]]`` = CUSTOM persona + LONGER,
+    ``[[1], [1]]`` = DEFAULT/DEFAULT. Mirrors the write shape ``ChatAPI.configure``
+    sends at ``params[1][0][7]``.
+
+    Absence-vs-malformed policy (ADR-0011 / #1485):
+
+    * **Never-configured stays soft** — an explicit ``null`` at the slot maps to
+      the DEFAULT/DEFAULT codes with no prompt (there is genuinely nothing to
+      preserve).
+    * **Present-but-malformed RAISES** — a too-short ``nb_info``, a truthy
+      non-list block, or a block whose goal/length arrays are missing/empty/
+      non-int is genuine drift and raises :class:`UnknownRPCMethodError`, NOT a
+      silent default. On the read-modify-write ``configure`` path a silent
+      default would clobber the field the caller meant to preserve — the exact
+      #1751 footgun — so the read fails loud instead.
+
+    Args:
+        nb_info: The ``result[0]`` notebook-info list from GET_NOTEBOOK.
+        source: Caller label for drift diagnostics (e.g. ``"ChatAPI.get_settings"``).
+    """
+    if not isinstance(nb_info, list) or len(nb_info) <= _CHAT_SETTINGS_POS:
+        raise UnknownRPCMethodError(
+            f"GET_NOTEBOOK nb_info holds {type(nb_info).__name__} with no chat-settings "
+            f"slot at [{_CHAT_SETTINGS_POS}]",
+            method_id=_GET_NOTEBOOK_METHOD_ID,
+            path=(),
+            source=source,
+            data_at_failure=reprlib.repr(nb_info),
+        )
+    block = nb_info[_CHAT_SETTINGS_POS]
+    if block is None:
+        # Never configured — nothing to preserve; DEFAULT/DEFAULT, no persona.
+        return ChatSettingsRow(_DEFAULT_GOAL_CODE, _DEFAULT_LENGTH_CODE, None)
+    if not isinstance(block, list):
+        raise UnknownRPCMethodError(
+            f"chat-settings block holds {type(block).__name__} (expected [[goal],[length]])",
+            method_id=_GET_NOTEBOOK_METHOD_ID,
+            path=(_CHAT_SETTINGS_POS,),
+            source=source,
+            data_at_failure=reprlib.repr(block),
+        )
+    goal_array = safe_index(block, 0, method_id=_GET_NOTEBOOK_METHOD_ID, source=source)
+    length_array = safe_index(block, 1, method_id=_GET_NOTEBOOK_METHOD_ID, source=source)
+    if not isinstance(goal_array, list) or not goal_array:
+        raise UnknownRPCMethodError(
+            f"chat-settings goal array holds {type(goal_array).__name__} "
+            "(expected [goal_code, custom_prompt?])",
+            method_id=_GET_NOTEBOOK_METHOD_ID,
+            path=(_CHAT_SETTINGS_POS, 0),
+            source=source,
+            data_at_failure=reprlib.repr(block),
+        )
+    if not isinstance(length_array, list) or not length_array:
+        raise UnknownRPCMethodError(
+            f"chat-settings length array holds {type(length_array).__name__} "
+            "(expected [length_code])",
+            method_id=_GET_NOTEBOOK_METHOD_ID,
+            path=(_CHAT_SETTINGS_POS, 1),
+            source=source,
+            data_at_failure=reprlib.repr(block),
+        )
+    goal_code = safe_index(goal_array, 0, method_id=_GET_NOTEBOOK_METHOD_ID, source=source)
+    length_code = safe_index(length_array, 0, method_id=_GET_NOTEBOOK_METHOD_ID, source=source)
+    # ``custom_prompt`` is present only for the CUSTOM goal; a shorter goal array
+    # legitimately means "no persona" (single-level read on a bound local).
+    custom_prompt = goal_array[1] if len(goal_array) > 1 else None
+    # ``type(...) is int`` (not ``isinstance``) so a drifted bool code — ``bool``
+    # is an ``int`` subclass — is rejected as malformed, not silently decoded to
+    # DEFAULT/DEFAULT.
+    if type(goal_code) is not int or type(length_code) is not int:
+        raise UnknownRPCMethodError(
+            f"chat-settings codes are not ints (goal={goal_code!r}, length={length_code!r})",
+            method_id=_GET_NOTEBOOK_METHOD_ID,
+            path=(_CHAT_SETTINGS_POS,),
+            source=source,
+            data_at_failure=reprlib.repr(block),
+        )
+    if custom_prompt is not None and not isinstance(custom_prompt, str):
+        raise UnknownRPCMethodError(
+            f"chat-settings custom prompt holds {type(custom_prompt).__name__} (expected str)",
+            method_id=_GET_NOTEBOOK_METHOD_ID,
+            path=(_CHAT_SETTINGS_POS, 0, 1),
+            source=source,
+            data_at_failure=reprlib.repr(block),
+        )
+    return ChatSettingsRow(goal_code, length_code, custom_prompt)
 
 
 @dataclass(frozen=True)

@@ -43,7 +43,7 @@ from notebooklm._app.chat import (
 from notebooklm._app.events import ProgressEvent, ProgressSink
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc.types import ChatGoal, ChatResponseLength
-from notebooklm.types import AskResult, ChatMode, Note
+from notebooklm.types import AskResult, ChatMode, ChatSettings, Note
 
 
 class _RecordingSink:
@@ -333,6 +333,143 @@ async def test_execute_configure_no_flags_leaves_goal_and_length_none() -> None:
     assert result.response_length is None
     client.chat.configure.assert_awaited_once_with(
         "nb_123", goal=None, response_length=None, custom_prompt=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_configure_no_flags_skips_getter() -> None:
+    """The bare reset path must NOT read current settings (no round-trip, no merge)."""
+    client = _client()
+    client.chat.configure = AsyncMock(return_value=None)
+    client.chat.get_settings = AsyncMock()
+
+    await execute_configure(client, "nb_123", chat_mode=None, persona=None, response_length=None)
+
+    client.chat.get_settings.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_configure_both_supplied_skips_getter() -> None:
+    """When both fields are given the block is complete — a single write, no getter read."""
+    client = _client()
+    client.chat.configure = AsyncMock(return_value=None)
+    client.chat.get_settings = AsyncMock()
+
+    result = await execute_configure(
+        client, "nb_123", chat_mode=None, persona="tutor", response_length="longer"
+    )
+
+    client.chat.get_settings.assert_not_awaited()
+    assert result.goal_name == "custom"
+    assert result.persona == "tutor"
+    assert result.response_length == "longer"
+    client.chat.configure.assert_awaited_once_with(
+        "nb_123",
+        goal=ChatGoal.CUSTOM,
+        response_length=ChatResponseLength.LONGER,
+        custom_prompt="tutor",
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_configure_persona_only_preserves_length() -> None:
+    """persona-only merges: the omitted response_length is preserved from current (#1751)."""
+    client = _client()
+    client.chat.configure = AsyncMock(return_value=None)
+    client.chat.get_settings = AsyncMock(
+        return_value=ChatSettings(
+            goal=ChatGoal.DEFAULT,
+            response_length=ChatResponseLength.SHORTER,
+            custom_prompt=None,
+        )
+    )
+
+    result = await execute_configure(
+        client, "nb_123", chat_mode=None, persona="chemistry tutor", response_length=None
+    )
+
+    client.chat.get_settings.assert_awaited_once_with("nb_123")
+    # Effective write preserves SHORTER; result reports only the delta (persona).
+    client.chat.configure.assert_awaited_once_with(
+        "nb_123",
+        goal=ChatGoal.CUSTOM,
+        response_length=ChatResponseLength.SHORTER,
+        custom_prompt="chemistry tutor",
+    )
+    assert result.goal_name == "custom"
+    assert result.persona == "chemistry tutor"
+    assert result.response_length is None
+
+
+@pytest.mark.asyncio
+async def test_execute_configure_length_only_preserves_goal_and_prompt() -> None:
+    """length-only merges: the omitted CUSTOM goal + persona are preserved from current (#1751)."""
+    client = _client()
+    client.chat.configure = AsyncMock(return_value=None)
+    client.chat.get_settings = AsyncMock(
+        return_value=ChatSettings(
+            goal=ChatGoal.CUSTOM,
+            response_length=ChatResponseLength.DEFAULT,
+            custom_prompt="keep this persona",
+        )
+    )
+
+    result = await execute_configure(
+        client, "nb_123", chat_mode=None, persona=None, response_length="longer"
+    )
+
+    client.chat.get_settings.assert_awaited_once_with("nb_123")
+    client.chat.configure.assert_awaited_once_with(
+        "nb_123",
+        goal=ChatGoal.CUSTOM,
+        response_length=ChatResponseLength.LONGER,
+        custom_prompt="keep this persona",
+    )
+    # Delta reporting: persona/goal_name stay None because THIS call didn't set them.
+    assert result.goal_name is None
+    assert result.persona is None
+    assert result.response_length == "longer"
+
+
+@pytest.mark.asyncio
+async def test_execute_configure_empty_persona_no_length_is_bare_reset() -> None:
+    """persona="" with no length is a bare reset (empty persona is a no-op), no getter."""
+    client = _client()
+    client.chat.configure = AsyncMock(return_value=None)
+    client.chat.get_settings = AsyncMock()
+
+    result = await execute_configure(
+        client, "nb_123", chat_mode=None, persona="", response_length=None
+    )
+
+    client.chat.get_settings.assert_not_awaited()
+    assert result.goal_name is None
+    client.chat.configure.assert_awaited_once_with(
+        "nb_123", goal=None, response_length=None, custom_prompt=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_configure_empty_persona_with_length_merges() -> None:
+    """persona="" + a length is a length-only partial write (empty persona not-supplied)."""
+    client = _client()
+    client.chat.configure = AsyncMock(return_value=None)
+    client.chat.get_settings = AsyncMock(
+        return_value=ChatSettings(
+            goal=ChatGoal.LEARNING_GUIDE,
+            response_length=ChatResponseLength.DEFAULT,
+            custom_prompt=None,
+        )
+    )
+
+    await execute_configure(client, "nb_123", chat_mode=None, persona="", response_length="shorter")
+
+    client.chat.get_settings.assert_awaited_once_with("nb_123")
+    client.chat.configure.assert_awaited_once_with(
+        "nb_123",
+        goal=ChatGoal.LEARNING_GUIDE,
+        response_length=ChatResponseLength.SHORTER,
+        custom_prompt=None,
     )
 
 

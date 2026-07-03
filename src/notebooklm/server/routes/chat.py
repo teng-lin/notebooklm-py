@@ -79,10 +79,10 @@ async def configure(notebook_id: str, body: ChatConfigure, client: ClientDep) ->
     for a custom configuration; the two styles cannot be combined (rejected with
     400, not silently dropped).
 
-    NOTE: in the custom (``goal`` / ``response_length``) branch this writes the
-    full chat-settings block, so an omitted field resets to its default (e.g.
-    setting only ``response_length`` clears a previously-set custom ``goal``).
-    Pass every field you want to keep. (A ``chat_mode`` preset has no sub-fields.)
+    A **partial** custom call (just ``goal`` or just ``response_length``) merges
+    with the current settings — the field you omit is preserved, not reset. Only
+    a bare call (no ``chat_mode`` and neither custom field) resets every chat
+    setting to its default.
     """
     # The preset-vs-custom mutual-exclusion + enum validation live in the shared
     # ``execute_configure`` core, so the CLI, MCP, and this route enforce one rule.

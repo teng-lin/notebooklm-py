@@ -577,6 +577,10 @@ def register_chat_commands(cli):
           notebooklm configure --mode concise --json   # Machine-readable output
 
         A --mode preset cannot be combined with --persona/--response-length.
+
+        Setting just one of --persona/--response-length merges with the current
+        settings (the field you omit is preserved). A bare `configure` with no
+        flags resets all custom chat settings to their defaults.
         """
         nb_id = require_notebook(notebook_id)
 

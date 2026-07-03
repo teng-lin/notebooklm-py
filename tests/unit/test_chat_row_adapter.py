@@ -20,6 +20,7 @@ import pytest
 
 from notebooklm._row_adapters.chat import (
     AnswerRow,
+    ChatSettingsRow,
     CitationDetail,
     CitationRow,
     ConversationTurnRow,
@@ -28,6 +29,7 @@ from notebooklm._row_adapters.chat import (
     SavedChatNoteRow,
     StreamFrameRow,
     TextLeafRow,
+    unwrap_chat_settings,
     unwrap_conversation_turns,
     unwrap_last_conversation_id,
 )
@@ -550,3 +552,83 @@ class TestSavedChatNoteRow:
         for raw in (None, "x", 7, {"k": 1}, [[7]], [["id", 1, 2]]):
             # Reading every property must not raise on any malformed shape.
             assert SavedChatNoteRow(raw).note_id in (None, "id")
+
+
+def _nb_info(block: object) -> list[object]:
+    """A GET_NOTEBOOK ``nb_info`` row with ``block`` at the chat-settings slot [7]."""
+    return [0, 1, 2, 3, 4, 5, 6, block]
+
+
+class TestUnwrapChatSettings:
+    """``unwrap_chat_settings`` decodes the GET_NOTEBOOK chat-settings block (#1751).
+
+    Live-verified shapes (scratch-notebook probe): ``nb_info[7]`` is
+    ``[[goal, custom_prompt?], [length]]`` or ``null`` when never configured.
+    """
+
+    def test_null_block_is_never_configured_defaults(self) -> None:
+        row = unwrap_chat_settings(_nb_info(None), source="t")
+        assert isinstance(row, ChatSettingsRow)
+        # 1 == ChatGoal.DEFAULT == ChatResponseLength.DEFAULT; no persona.
+        assert (row.goal_code, row.response_length_code, row.custom_prompt) == (1, 1, None)
+
+    def test_default_default(self) -> None:
+        row = unwrap_chat_settings(_nb_info([[1], [1]]), source="t")
+        assert (row.goal_code, row.response_length_code, row.custom_prompt) == (1, 1, None)
+
+    def test_learning_guide_longer(self) -> None:
+        row = unwrap_chat_settings(_nb_info([[3], [4]]), source="t")
+        assert (row.goal_code, row.response_length_code, row.custom_prompt) == (3, 4, None)
+
+    def test_default_shorter(self) -> None:
+        row = unwrap_chat_settings(_nb_info([[1], [5]]), source="t")
+        assert (row.goal_code, row.response_length_code, row.custom_prompt) == (1, 5, None)
+
+    def test_custom_default_carries_persona(self) -> None:
+        row = unwrap_chat_settings(_nb_info([[2, "persona text"], [1]]), source="t")
+        assert (row.goal_code, row.response_length_code, row.custom_prompt) == (
+            2,
+            1,
+            "persona text",
+        )
+
+    def test_custom_longer_carries_persona(self) -> None:
+        row = unwrap_chat_settings(_nb_info([[2, "p"], [4]]), source="t")
+        assert (row.goal_code, row.response_length_code, row.custom_prompt) == (2, 4, "p")
+
+    @pytest.mark.parametrize(
+        "nb_info",
+        [
+            [0, 1],  # too short — no slot at [7]
+            "not-a-list",  # not a list
+            None,  # not a list
+        ],
+    )
+    def test_missing_slot_raises(self, nb_info: object) -> None:
+        with pytest.raises(UnknownRPCMethodError):
+            unwrap_chat_settings(nb_info, source="t")
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            99,  # truthy non-list block
+            "settings",  # truthy non-list block
+            [[], [1]],  # empty goal array
+            [[1], []],  # empty length array
+            [[1], "x"],  # non-list length array
+            ["x", [1]],  # non-list goal array
+            [["notint"], [1]],  # non-int goal code
+            [[1], ["notint"]],  # non-int length code
+            [[True], [1]],  # bool goal code (bool is an int subclass) — rejected
+            [[1], [False]],  # bool length code — rejected
+            [[2, 123], [1]],  # non-str custom prompt
+        ],
+    )
+    def test_malformed_block_raises(self, block: object) -> None:
+        with pytest.raises(UnknownRPCMethodError):
+            unwrap_chat_settings(_nb_info(block), source="t")
+
+    def test_drift_diagnostic_carries_get_notebook_method_id(self) -> None:
+        with pytest.raises(UnknownRPCMethodError) as excinfo:
+            unwrap_chat_settings(_nb_info(99), source="ChatAPI.get_settings")
+        assert excinfo.value.method_id == RPCMethod.GET_NOTEBOOK.value
