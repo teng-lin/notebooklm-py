@@ -39,7 +39,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from starlette.background import BackgroundTask
+from starlette.types import Receive, Scope, Send
 
 from ..._app import artifacts as artifact_core
 from ..._app import download as download_core
@@ -324,6 +324,28 @@ async def poll(
     return projected
 
 
+class _CleanupFileResponse(FileResponse):
+    """A ``FileResponse`` that removes its private temp dir once the body has
+    finished streaming — or the client disconnected / the stream aborted.
+
+    Cleaning in a ``finally`` around the ASGI ``__call__`` (not via a
+    ``BackgroundTask``, which Starlette drops when the client disconnects
+    mid-stream) guarantees the spooled artifact's temp dir is always removed, so a
+    disconnect can never leak it. Error / early-return paths never construct this
+    response — the route's own ``finally`` cleans those.
+    """
+
+    def __init__(self, *args: Any, temp_dir: str, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._temp_dir = temp_dir
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            _cleanup(self._temp_dir)
+
+
 @router.post("/download")
 async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) -> FileResponse:
     """Download a completed artifact, streaming from a server-generated temp path."""
@@ -337,8 +359,13 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
     # (download.py); an isolated empty dir avoids that, and we assert the served
     # path stays inside it so a surprising resolved path can never be streamed.
     temp_dir = tempfile.mkdtemp(prefix="nblm-download-")
-    temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
+    # On SUCCESS, ownership of the temp dir passes to the returned
+    # ``_CleanupFileResponse`` (cleans after streaming, disconnect-safe); every
+    # other exit — validation, a not-ready 409, an unexpected raise — cleans in the
+    # ``finally`` below.
+    success = False
     try:
+        temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
         args: dict[str, Any] = {
             "notebook_id": notebook_id,
             "output_path": temp_path,
@@ -357,33 +384,31 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
             notebook_resolver=passthrough_download_notebook,
             artifact_resolver=passthrough_artifact_id,
         )
-    except BaseException:
-        _cleanup(temp_dir)
-        raise
 
-    # No completed artifact of this kind exists yet (not ready), or a pre-download
-    # error — surface as 409, not 500, and clean up the unused temp dir.
-    if result.outcome != download_core.DownloadOutcome.SINGLE_DOWNLOADED:
-        _cleanup(temp_dir)
-        detail = (
-            safe_detail(result.error)
-            if result.error
-            else (f"No completed {body.type} artifact is available yet")
+        # No completed artifact of this kind exists yet (not ready), or a
+        # pre-download error — surface as 409, not 500.
+        if result.outcome != download_core.DownloadOutcome.SINGLE_DOWNLOADED:
+            detail = (
+                safe_detail(result.error)
+                if result.error
+                else (f"No completed {body.type} artifact is available yet")
+            )
+            raise HTTPException(status_code=409, detail=detail)
+
+        # Stream the actual written file. The core may resolve a conflict to a
+        # different name, but it must stay inside our private dir — anything else is
+        # a bug, not a file we serve.
+        served = result.output_path or temp_path
+        if Path(temp_dir).resolve() not in Path(served).resolve().parents:
+            raise ValidationError("Download produced an unexpected output path")
+        response = _CleanupFileResponse(
+            served, filename=os.path.basename(served), temp_dir=temp_dir
         )
-        raise HTTPException(status_code=409, detail=detail)
-
-    # Stream the actual written file. The core may resolve a conflict to a
-    # different name, but it must stay inside our private dir — anything else is a
-    # bug, not a file we serve.
-    served = result.output_path or temp_path
-    if Path(temp_dir).resolve() not in Path(served).resolve().parents:
-        _cleanup(temp_dir)
-        raise ValidationError("Download produced an unexpected output path")
-    return FileResponse(
-        served,
-        filename=os.path.basename(served),
-        background=BackgroundTask(_cleanup, temp_dir),
-    )
+        success = True
+        return response
+    finally:
+        if not success:
+            _cleanup(temp_dir)
 
 
 def _cleanup(path: str) -> None:

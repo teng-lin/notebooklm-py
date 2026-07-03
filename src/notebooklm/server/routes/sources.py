@@ -26,12 +26,13 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel
 
 from ..._app import source_add as add_core
+from ..._app import source_content as content_core
 from ..._app.serialize import to_jsonable
 from ...client import NotebookLMClient
 from .._context import get_client, get_pending
@@ -54,18 +55,12 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 _UPLOAD_CHUNK = 1024 * 1024
 
 
-def _safe_upload_name(filename: str | None) -> str:
-    """Return a safe basename for the spooled upload file.
-
-    The resumable-upload init derives the upload filename from the temp path and
-    the source-id extraction keys off it, so the file must keep the caller's
-    *real* name (with its extension — the API 400s on an extensionless one).
-    :func:`os.path.basename` strips any directory components (the path-traversal
-    guard); the file is then created inside a private ``mkdtemp`` directory, so
-    even an odd basename is isolated. Falls back to ``"upload"`` for an empty
-    name and bounds the length.
-    """
-    return (os.path.basename(filename or "") or "upload")[:255]
+#: Safe-basename sanitizer for a spooled upload. Aliased to the shared neutral
+#: helper (:func:`notebooklm._app.source_add.safe_upload_name`) so the REST
+#: ``add_file`` route and the MCP ``/files/ul`` route sanitize identically —
+#: control chars stripped, ``.``/``..`` and slashes rejected, extension preserved
+#: on stem-truncation (the old ``basename(...)[:255]`` could drop the extension).
+_safe_upload_name = add_core.safe_upload_name
 
 
 class SourceAddUrl(BaseModel):
@@ -185,6 +180,11 @@ async def add_file(
 ) -> dict[str, Any]:
     """Add a file source by spooling the multipart upload to a temp file.
 
+    The multipart request MUST send a ``Content-Length`` header: a chunked
+    (no-Content-Length) multipart upload is rejected with ``411`` by design, so
+    the size can be bounded before any part is spooled to disk (see the app
+    middleware in ``app.py``).
+
     The upload is spooled into a private ``0o700`` ``mkdtemp`` directory, named
     after the caller's basename (see :func:`_safe_upload_name`). The real name
     matters: the resumable-upload init derives the upload filename from the path,
@@ -230,6 +230,71 @@ async def add_file(
         )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@router.get("/{source_id}/content")
+async def get_source_content(
+    notebook_id: str,
+    source_id: str,
+    client: ClientDep,
+    detail: Annotated[Literal["full", "summary"], Query()] = "full",
+    output_format: Annotated[Literal["text", "markdown"], Query()] = "text",
+    max_chars: Annotated[int | None, Query(ge=0)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Read a source's content (distinct from the status-poll ``GET /{source_id}``).
+
+    ``detail=full`` (default) returns the extracted body, bounded by ``max_chars``
+    (default 10,000) and windowed by ``offset``, with the FULL ``char_count`` and a
+    ``truncated`` flag. ``content`` is ``null`` (``char_count`` 0) when the source
+    is not READY yet or has no extractable text. A resolved id the backend no
+    longer has is a 404 (existence-gated), never a false empty success. Unlike the
+    status-poll ``GET /{source_id}`` route, this requires a *listable* source: a
+    known-but-not-yet-listable (pending) id is a 404 here, not a pending indicator.
+
+    ``output_format`` (``text`` default / ``markdown``) selects the extracted-body
+    format for ``detail=full`` (ignored for ``summary``); ``markdown`` needs the
+    server's ``markdownify`` extra and otherwise fails with a deterministic
+    ``config`` error. Mirrors the MCP ``source_read`` tool's ``output_format``.
+
+    ``detail=summary`` returns the AI source-guide digest ``{summary, keywords}``
+    for cheap low-token triage.
+    """
+    if detail == "summary":
+        # Existence guard so a missing source is a 404, not an empty guide.
+        guard = await content_core.execute_source_get(
+            client, content_core.SourceGetPlan(notebook_id=notebook_id, source_id=source_id)
+        )
+        if guard.source is None:
+            raise HTTPException(status_code=404, detail="Source not found")
+        guide = await content_core.execute_source_guide(
+            client, content_core.SourceGuidePlan(notebook_id=notebook_id, source_id=source_id)
+        )
+        return {
+            "notebook_id": notebook_id,
+            "source_id": guide.source_id,
+            "summary": guide.summary,
+            "keywords": list(guide.keywords),
+        }
+
+    read = await content_core.execute_source_read(
+        client,
+        content_core.SourceReadPlan(
+            notebook_id=notebook_id,
+            source_id=source_id,
+            output_format=output_format,
+            max_chars=max_chars,
+            offset=offset,
+        ),
+    )
+    return {
+        "notebook_id": notebook_id,
+        "source_id": source_id,
+        "content": read.content,
+        "char_count": read.char_count,
+        "truncated": read.truncated,
+        "output_format": output_format,
+    }
 
 
 @router.delete("/{source_id}", status_code=204)

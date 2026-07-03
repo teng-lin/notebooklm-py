@@ -20,8 +20,9 @@ from notebooklm._types.artifacts import Artifact, GenerationState, GenerationSta
 from notebooklm._types.chat import AskResult
 from notebooklm._types.notebooks import Notebook
 from notebooklm._types.notes import Note
+from notebooklm._types.research import SourceGuide
 from notebooklm._types.sharing import SharedUser, ShareStatus
-from notebooklm._types.sources import Source
+from notebooklm._types.sources import Source, SourceFulltext
 from notebooklm.exceptions import NotebookNotFoundError, NoteNotFoundError
 from notebooklm.rpc.types import ShareAccess, SharePermission, ShareViewLevel, SourceStatus
 
@@ -80,6 +81,17 @@ class FakeSources:
 
     async def get_or_none(self, notebook_id: str, source_id: str) -> Source | None:
         return self._s.sources_store.get(notebook_id, {}).get(source_id)
+
+    async def get_fulltext(
+        self, notebook_id: str, source_id: str, *, output_format: str = "text"
+    ) -> SourceFulltext:
+        content = self._s.fulltext_store.get((notebook_id, source_id), "")
+        return SourceFulltext(
+            source_id=source_id, title="", content=content, char_count=len(content)
+        )
+
+    async def get_guide(self, notebook_id: str, source_id: str) -> SourceGuide:
+        return self._s.guide_store.get((notebook_id, source_id), SourceGuide())
 
     async def add_url(self, notebook_id: str, url: str) -> Source:
         return self._add(notebook_id, title=url, url=url)
@@ -285,6 +297,8 @@ class FakeClient:
         self.public_shares: dict[str, bool] = {}
         self.share_view_levels: dict[str, ShareViewLevel] = {}
         self.shared_users: dict[str, dict[str, SharedUser]] = {}
+        self.fulltext_store: dict[tuple[str, str], str] = {}
+        self.guide_store: dict[tuple[str, str], SourceGuide] = {}
 
         self.new_source_status: SourceStatus = SourceStatus.PROCESSING
         self.hide_new_sources: bool = False

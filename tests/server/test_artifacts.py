@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 
 from fastapi.testclient import TestClient
 
@@ -221,6 +222,58 @@ def test_generation_payload_outcome_without_task_id_is_not_recorded() -> None:
     payload = artifacts_route._generation_payload("nb-1", result, pending)
     assert payload["task_id"] == ""
     assert not pending.knows("nb-1", "")
+
+
+def test_download_temp_dir_cleaned_on_normal_completion(
+    authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
+) -> None:
+    import pytest
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    made: list[str] = []
+    real_mkdtemp = tempfile.mkdtemp
+
+    def _tracking_mkdtemp(*args: object, **kwargs: object) -> str:
+        d = real_mkdtemp(*args, **kwargs)
+        made.append(d)
+        return d
+
+    monkeypatch.setattr(artifacts_route.tempfile, "mkdtemp", _tracking_mkdtemp)
+    fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "audio")}
+    resp = authed_client.post("/v1/notebooks/nb-1/artifacts/download", json={"type": "audio"})
+    assert resp.status_code == 200
+    assert resp.content == fake_client.download_bytes
+    # After the TestClient fully consumed the streamed body, the temp dir the
+    # download spooled into is gone (the _CleanupFileResponse finally ran).
+    assert made and not os.path.exists(made[0])
+
+
+async def test_cleanup_file_response_cleans_on_disconnect(tmp_path: object) -> None:
+    # Simulate a client disconnect mid-stream: super().__call__ raises, and the
+    # subclass's finally must still remove the temp dir (a BackgroundTask would be
+    # dropped on disconnect and leak it).
+    temp_dir = tempfile.mkdtemp(prefix="nblm-disconnect-", dir=str(tmp_path))
+    served = os.path.join(temp_dir, "artifact.mp3")
+    with open(served, "wb") as fh:
+        fh.write(b"bytes")
+
+    resp = artifacts_route._CleanupFileResponse(served, temp_dir=temp_dir)
+
+    class _Boom(Exception):
+        pass
+
+    async def _receive() -> dict[str, object]:
+        return {"type": "http.disconnect"}
+
+    async def _send(message: dict[str, object]) -> None:
+        raise _Boom  # abort mid-stream, as a disconnect would
+
+    scope = {"type": "http", "method": "GET", "headers": []}
+    try:
+        await resp(scope, _receive, _send)
+    except BaseException:
+        pass
+    assert not os.path.exists(temp_dir)
 
 
 def test_download_spec_exhaustiveness() -> None:

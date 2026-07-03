@@ -34,7 +34,6 @@ from ..._app import source_mutations as mut_core
 from ..._app import source_wait as wait_core
 from ..._app.serialize import to_jsonable
 from ...exceptions import (
-    ConfigurationError,
     SourceNotFoundError,
     SourceProcessingError,
     SourceTimeoutError,
@@ -66,10 +65,6 @@ _DRIVE_MIME_CHOICES = ("google-doc", "google-slides", "google-sheets", "pdf")
 
 #: The default Drive MIME choice when the caller does not specify one.
 _DEFAULT_DRIVE_MIME = "google-doc"
-
-#: Default cap for ``source_read`` (detail="full") when ``max_chars`` is omitted — the body
-#: is bounded (not dumped whole) so a large source can't flood agent context.
-_DEFAULT_CONTENT_CHARS = 10_000
 
 
 def _source_view(source: Any) -> dict[str, Any]:
@@ -190,23 +185,25 @@ def register(mcp: Any) -> None:
         with mcp_errors():
             # Validate windowing args unconditionally — a bad value must error even
             # in ``summary`` mode (where they are ignored), never silently pass.
+            # (``execute_source_read`` re-validates for the full path; this keeps the
+            # error raised BEFORE any notebook I/O and covers the summary path too.)
             if max_chars is not None and max_chars < 0:
                 raise ValidationError(f"max_chars must be >= 0; got {max_chars}")
             if offset < 0:
                 raise ValidationError(f"offset must be >= 0; got {offset}")
             nb_id = await resolve_notebook(client, notebook)
             src_id = await resolve_source(client, nb_id, source)
-            # Shared existence guard (both modes). A full-UUID ref skips list
-            # resolution (the resolver trusts a full id), so a non-existent id
-            # reaches ``get_or_none`` and yields a ``None`` source — surface that as
-            # NOT_FOUND rather than a misleading empty success.
-            result = await content_core.execute_source_get(
-                client, content_core.SourceGetPlan(notebook_id=nb_id, source_id=src_id)
-            )
-            if result.source is None:
-                raise SourceNotFoundError(src_id)
 
             if detail == "summary":
+                # Existence guard: a full-UUID ref skips list resolution (the
+                # resolver trusts a full id), so a non-existent id reaches
+                # ``get_or_none`` and yields a ``None`` source — surface NOT_FOUND
+                # rather than a misleading empty success.
+                get_result = await content_core.execute_source_get(
+                    client, content_core.SourceGetPlan(notebook_id=nb_id, source_id=src_id)
+                )
+                if get_result.source is None:
+                    raise SourceNotFoundError(src_id)
                 # Guide RPC → the AI digest (a missing guide returns empty summary/
                 # keywords — the existence guard above already ruled out a deleted
                 # source, so this is a real "no guide yet", not a false success).
@@ -220,59 +217,31 @@ def register(mcp: Any) -> None:
                     "keywords": list(guide.keywords),
                 }
 
-            # detail == "full":
-            # Only fetch the body once the source is READY. A not-ready source
-            # (still processing / errored) has no retrievable text yet, so return
-            # its metadata with content=None instead of fetching. Gating on status
-            # (rather than catching the fulltext fetch's SourceNotFoundError) keeps
-            # a genuine "source is gone" — e.g. deleted between these two calls —
-            # propagating as NOT_FOUND instead of masquerading as "no content".
-            content: str | None = None
-            char_count = 0
-            if result.source.is_ready:
-                try:
-                    fulltext = await content_core.execute_source_fulltext(
-                        client,
-                        content_core.SourceFulltextPlan(
-                            notebook_id=nb_id, source_id=src_id, output_format=output_format
-                        ),
-                    )
-                except ImportError as exc:
-                    # ``output_format='markdown'`` needs the optional ``markdownify``
-                    # extra, which the server may not have installed. Surface a
-                    # deterministic CONFIG error (with the install hint) rather than
-                    # the bug-class UNEXPECTED a bare ImportError would project as.
-                    # Restrict the remap to the markdown path: an ImportError on the
-                    # text path (or a future regression) is genuinely unexpected and
-                    # must keep propagating as such, not be mislabeled CONFIG.
-                    if output_format != "markdown":
-                        raise
-                    raise ConfigurationError(str(exc)) from exc
-                content = fulltext.fulltext.content or None
-                char_count = fulltext.fulltext.char_count
-
-            # Window the body. The returned ``content`` is ALWAYS bounded — omitting
-            # ``max_chars`` applies a default cap (not the full body) so a large
-            # source can't silently dump tens of thousands of tokens into context;
-            # pass a larger ``max_chars`` (and/or ``offset``) to read more.
-            # ``char_count`` stays the FULL length; ``truncated`` reports whether the
-            # returned slice omits any remainder.
-            truncated = False
-            if content is not None:
-                effective_max = _DEFAULT_CONTENT_CHARS if max_chars is None else max_chars
-                windowed = content[offset : offset + effective_max]
-                truncated = len(windowed) < (len(content) - offset)
-                # Normalize an empty slice (e.g. offset past the end) to None, matching
-                # the fetch-path contract (content is null when there's nothing to show).
-                content = windowed or None
-
-            payload = to_jsonable(result)
-            payload["source"] = _source_view(result.source)
-            payload["content"] = content
-            payload["char_count"] = char_count
-            payload["truncated"] = truncated
-            payload["output_format"] = output_format
-            return payload
+            # detail == "full": the existence/ready gate + ready-only fulltext fetch
+            # + max_chars/offset windowing live in the shared ``execute_source_read``
+            # core (also driven by the REST content route), so both surfaces stay in
+            # lock-step. A resolved-but-missing source raises NOT_FOUND; a not-ready
+            # source returns content=None; the markdown ImportError→CONFIG remap and
+            # the default cap are handled inside the core.
+            read = await content_core.execute_source_read(
+                client,
+                content_core.SourceReadPlan(
+                    notebook_id=nb_id,
+                    source_id=src_id,
+                    output_format=output_format,
+                    max_chars=max_chars,
+                    offset=offset,
+                ),
+            )
+            return {
+                "notebook_id": nb_id,
+                "source_id": src_id,
+                "source": _source_view(read.source),
+                "content": read.content,
+                "char_count": read.char_count,
+                "truncated": read.truncated,
+                "output_format": output_format,
+            }
 
     @mcp.tool
     async def source_rename(

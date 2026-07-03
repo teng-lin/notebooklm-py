@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import html
 import os
-import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -160,36 +159,11 @@ def _upstream_error_response(exc: NotebookLMError, *, note: str = "") -> PlainTe
     )
 
 
-def _safe_upload_name(filename: str | None) -> str:
-    """Return a safe basename for the spooled upload file.
-
-    The browser's ``fetch(body: file)`` does NOT send the filename, so the page
-    passes it as ``?filename=``; NotebookLM 400s on an extensionless name and the
-    source-id extraction keys off the real basename+extension, so we must keep the
-    caller's name. :func:`os.path.basename` strips directory components (the
-    path-traversal guard), and the file lands in a private ``mkdtemp`` dir so an odd
-    basename is isolated. An empty/extensionless-default falls back to
-    ``"upload.bin"`` (never extensionless). Re-implemented locally on purpose — the
-    REST route's twin lives behind the ``server`` extra (``fastapi``), which this
-    ``mcp``-only module must not import.
-    """
-    # Strip control chars (NUL would make ``os.open`` raise ``ValueError``; the rest
-    # are never legitimate in a filename), normalize ``\`` so a Windows-style
-    # ``C:\dir\x.pdf`` from a sandbox PUT yields its real leaf, then take the
-    # basename (the path-traversal guard). Reject the directory-cursor names
-    # ``.``/``..`` (which would target an existing dir and fail ``O_EXCL`` → 500) —
-    # fall back to a safe extensioned default.
-    cleaned = re.sub(r"[\x00-\x1f]", "", filename or "").replace("\\", "/")
-    base = os.path.basename(cleaned)
-    if not base or base in (".", ".."):
-        return "upload.bin"
-    if len(base) > 255:
-        # Truncate the STEM, not the whole name — lopping a pathological 300-char
-        # name to 255 could drop the extension, and NotebookLM 400s on an
-        # extensionless upload. Keep the suffix.
-        suffix = Path(base).suffix[:255]
-        base = Path(base).stem[: 255 - len(suffix)] + suffix
-    return base
+#: Safe-basename sanitizer for a spooled upload. Aliased to the shared neutral
+#: helper (:func:`notebooklm._app.source_add.safe_upload_name`) so the MCP
+#: ``/files/ul`` route and the REST ``add_file`` route sanitize identically
+#: (strip control chars, reject ``.``/``..``, basename the path, stem-truncate).
+_safe_upload_name = add_core.safe_upload_name
 
 
 def _cleanup(path: str) -> None:

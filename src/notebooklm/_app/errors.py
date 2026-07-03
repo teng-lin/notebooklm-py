@@ -117,6 +117,36 @@ class ErrorCategory(Enum):
     UNEXPECTED = "unexpected"
 
 
+#: Short remediation hint for each :class:`ErrorCategory`, or ``None`` when no
+#: useful action exists beyond reading the message. This is the single neutral
+#: source of truth for the hint text shared by the MCP projector (which pairs it
+#: with its own manifest ``code`` in ``mcp/_errors.CATEGORY_TABLE``) and the REST
+#: error body (``server/_errors``), so the two surfaces cannot drift. Covers
+#: EVERY category (pinned by the adapter coverage tests).
+CATEGORY_HINTS: dict[ErrorCategory, str | None] = {
+    ErrorCategory.NOT_FOUND: (
+        "Check the id/name with the matching *_list tool; the resource may have been deleted."
+    ),
+    ErrorCategory.AUTH: "Re-authenticate (run `notebooklm login`) and retry.",
+    ErrorCategory.RATE_LIMITED: "Back off and retry after a short delay.",
+    ErrorCategory.VALIDATION: "Fix the invalid argument and retry; this will not succeed unchanged.",
+    ErrorCategory.CONFIG: "Check the auth profile / storage configuration.",
+    ErrorCategory.NETWORK: "Transient connectivity issue; retry.",
+    ErrorCategory.NOTEBOOK_LIMIT: "Notebook quota is exhausted; delete an existing notebook first.",
+    ErrorCategory.ARTIFACT_TIMEOUT: (
+        "Generation is still running; poll studio_status with the task_id."
+    ),
+    ErrorCategory.TIMEOUT: "The operation did not finish in time; retry or poll for completion.",
+    ErrorCategory.SERVER: "Upstream NotebookLM error; retry after a short delay.",
+    ErrorCategory.RPC: None,
+    ErrorCategory.SOURCE_MUTATION: (
+        "Resolve the source reference (it was missing, ambiguous, or needs confirmation)."
+    ),
+    ErrorCategory.LIBRARY: None,
+    ErrorCategory.UNEXPECTED: None,
+}
+
+
 @dataclass(frozen=True)
 class ClassifiedError:
     """The neutral classification of an exception.
@@ -144,6 +174,18 @@ _RETRIABLE_CATEGORIES = frozenset(
         ErrorCategory.NETWORK,
     }
 )
+
+
+def is_retriable(category: ErrorCategory) -> bool:
+    """Return whether retrying an operation that failed with ``category`` may succeed.
+
+    The single neutral source of the retriability decision (the same
+    :data:`_RETRIABLE_CATEGORIES` set that backs :func:`classify`), so a surface
+    that only knows a *category* (e.g. the REST server projecting a hand-raised
+    ``HTTPException`` status onto a category, where there is no exception to
+    :func:`classify`) can read the same flag without re-deriving it.
+    """
+    return category in _RETRIABLE_CATEGORIES
 
 
 def _normalized_rpc_code(exc: ClientError) -> int | None:

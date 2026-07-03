@@ -15,11 +15,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from ..exceptions import ConfigurationError, SourceNotFoundError, ValidationError
+
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
     from ..types import Source, SourceFulltext
 
 FulltextFormat = Literal["text", "markdown"]
+
+#: Default cap on the returned body when ``max_chars`` is omitted — the content is
+#: bounded (not dumped whole) so a large source can't flood a caller's context.
+DEFAULT_CONTENT_CHARS = 10_000
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +136,105 @@ async def execute_source_guide(
 
 
 # ---------------------------------------------------------------------------
+# source read (existence/ready-gated fulltext with windowing)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SourceReadPlan:
+    """Prepared inputs for :func:`execute_source_read`.
+
+    ``max_chars`` ``None`` applies :data:`DEFAULT_CONTENT_CHARS`; ``offset`` and a
+    non-negative ``max_chars`` window the body (``content[offset:offset+max]``).
+    """
+
+    notebook_id: str
+    source_id: str
+    output_format: FulltextFormat = "text"
+    max_chars: int | None = None
+    offset: int = 0
+
+
+@dataclass(frozen=True)
+class SourceReadResult:
+    """The resolved source plus its (windowed) content.
+
+    ``content`` is ``None`` and ``char_count`` 0 when the source is not READY
+    (still processing / errored) or has no extractable text; ``char_count`` is
+    always the FULL indexed length, and ``truncated`` reports whether the returned
+    slice omits any remainder.
+    """
+
+    source: Source
+    content: str | None
+    char_count: int
+    truncated: bool
+
+
+async def execute_source_read(client: NotebookLMClient, plan: SourceReadPlan) -> SourceReadResult:
+    """Read a source's body with an existence + ready gate and windowing.
+
+    Mirrors the MCP ``source_read`` (detail="full") core so both the MCP tool and
+    the REST content route share one implementation:
+
+    * ``execute_source_get`` is the **existence guard** — a resolved id the backend
+      no longer has raises :class:`SourceNotFoundError` (surfacing NOT_FOUND rather
+      than a misleading empty success).
+    * The body is fetched via ``execute_source_fulltext`` **only when the source is
+      READY**. Gating on status (rather than catching the fulltext fetch's
+      :class:`SourceNotFoundError`) keeps a genuine "source is gone" — e.g. deleted
+      between the two calls — propagating as NOT_FOUND instead of masquerading as
+      "no content".
+    * ``output_format='markdown'`` needs the optional ``markdownify`` extra; an
+      :class:`ImportError` on that path is remapped to a deterministic
+      :class:`ConfigurationError` (the text path re-raises — a genuine bug).
+    """
+    if plan.max_chars is not None and plan.max_chars < 0:
+        raise ValidationError(f"max_chars must be >= 0; got {plan.max_chars}")
+    if plan.offset < 0:
+        raise ValidationError(f"offset must be >= 0; got {plan.offset}")
+
+    get_result = await execute_source_get(
+        client, SourceGetPlan(notebook_id=plan.notebook_id, source_id=plan.source_id)
+    )
+    if get_result.source is None:
+        raise SourceNotFoundError(plan.source_id)
+    source = get_result.source
+
+    content: str | None = None
+    char_count = 0
+    if source.is_ready:
+        try:
+            fulltext_result = await execute_source_fulltext(
+                client,
+                SourceFulltextPlan(
+                    notebook_id=plan.notebook_id,
+                    source_id=plan.source_id,
+                    output_format=plan.output_format,
+                ),
+            )
+        except ImportError as exc:
+            if plan.output_format != "markdown":
+                raise
+            raise ConfigurationError(str(exc)) from exc
+        content = fulltext_result.fulltext.content or None
+        char_count = fulltext_result.fulltext.char_count
+
+    truncated = False
+    if content is not None:
+        effective_max = DEFAULT_CONTENT_CHARS if plan.max_chars is None else plan.max_chars
+        windowed = content[plan.offset : plan.offset + effective_max]
+        truncated = len(windowed) < (len(content) - plan.offset)
+        # Normalize an empty slice (e.g. offset past the end) to None, matching the
+        # fetch-path contract (content is null when there's nothing to show).
+        content = windowed or None
+
+    return SourceReadResult(
+        source=source, content=content, char_count=char_count, truncated=truncated
+    )
+
+
+# ---------------------------------------------------------------------------
 # source stale
 # ---------------------------------------------------------------------------
 
@@ -169,6 +274,7 @@ async def execute_source_stale(
 
 
 __all__ = [
+    "DEFAULT_CONTENT_CHARS",
     "FulltextFormat",
     "SourceFulltextPlan",
     "SourceFulltextResult",
@@ -176,10 +282,13 @@ __all__ = [
     "SourceGetResult",
     "SourceGuidePlan",
     "SourceGuideResult",
+    "SourceReadPlan",
+    "SourceReadResult",
     "SourceStalePlan",
     "SourceStaleResult",
     "execute_source_fulltext",
     "execute_source_get",
     "execute_source_guide",
+    "execute_source_read",
     "execute_source_stale",
 ]

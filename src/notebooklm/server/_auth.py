@@ -29,6 +29,7 @@ import os
 from fastapi import HTTPException, Request
 
 __all__ = [
+    "ALLOW_EXTERNAL_BIND_ENV",
     "SERVER_TOKEN_ENV",
     "get_configured_token",
     "require_auth",
@@ -36,6 +37,13 @@ __all__ = [
 
 #: Env var carrying the bearer token the server validates every request against.
 SERVER_TOKEN_ENV = "NOTEBOOKLM_SERVER_TOKEN"
+
+#: Env var that opts a deployment into serving non-loopback peers (a public bind
+#: behind a trusted proxy). When UNSET (the default), the auth dependency enforces
+#: loopback on the real PEER address — not the spoofable ``Host`` header — so a
+#: ``--host 0.0.0.0`` bind plus a forged ``Host: 127.0.0.1`` cannot reach ``/v1``.
+#: Shared with the launcher's bind guard (:mod:`.__main__`).
+ALLOW_EXTERNAL_BIND_ENV = "NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND"
 
 #: Hostnames always treated as loopback even though they are not numeric IP
 #: literals. An empty host is intentionally absent — it must be rejected.
@@ -94,6 +102,28 @@ def _host_is_loopback(host_header: str) -> bool:
         return False
 
 
+def _peer_is_loopback(request: Request) -> bool:
+    """Return whether the request's PEER address is a loopback interface.
+
+    Reads ``request.client.host`` — the actual transport-level source address,
+    which a remote caller cannot spoof (unlike the ``Host`` header). ``None`` when
+    the ASGI server did not populate a client address (treated as non-loopback,
+    fail closed).
+    """
+    client = request.client
+    if client is None:
+        return False
+    try:
+        return ipaddress.ip_address(client.host).is_loopback
+    except ValueError:
+        return False
+
+
+def _allow_external_bind() -> bool:
+    """Whether the deployment opted into serving non-loopback peers."""
+    return os.environ.get(ALLOW_EXTERNAL_BIND_ENV) == "1"
+
+
 def _extract_bearer(authorization: str | None) -> str | None:
     """Return the token from an ``Authorization: Bearer <token>`` header, or None."""
     if not authorization:
@@ -107,12 +137,22 @@ async def require_auth(request: Request) -> None:
     """FastAPI dependency: enforce the loopback-Host + bearer-token gate.
 
     Raises:
-        HTTPException: ``403`` if the ``Host`` is not a loopback literal
-            (DNS-rebinding guard, checked first); ``401`` if the bearer token is
-            missing/empty/mismatched or no token is configured.
+        HTTPException: ``403`` if the request originates off-loopback — enforced on
+            the unspoofable PEER address (``request.client.host``), with the
+            ``Host``-header literal kept as a supplemental DNS-rebinding guard;
+            both are skipped when ``NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND=1``.
+            ``401`` if the bearer token is missing/empty/mismatched or no token is
+            configured.
     """
-    if not _host_is_loopback(request.headers.get("host", "")):
-        raise HTTPException(status_code=403, detail="Host not allowed")
+    if not _allow_external_bind():
+        # Enforce loopback on the real PEER address first (unspoofable). A
+        # ``--host 0.0.0.0`` bind plus a forged ``Host: 127.0.0.1`` no longer
+        # reaches here. The Host-header check stays as a supplemental
+        # DNS-rebinding guard for the loopback-bound case.
+        if not _peer_is_loopback(request):
+            raise HTTPException(status_code=403, detail="Peer address is not loopback")
+        if not _host_is_loopback(request.headers.get("host", "")):
+            raise HTTPException(status_code=403, detail="Host not allowed")
 
     configured = get_configured_token()
     presented = _extract_bearer(request.headers.get("authorization"))

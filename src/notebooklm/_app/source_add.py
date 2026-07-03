@@ -23,6 +23,8 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 from __future__ import annotations
 
 import ipaddress
+import os
+import re
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -38,6 +40,68 @@ if TYPE_CHECKING:
     from ..client import NotebookLMClient
 
 SourceAddType = Literal["url", "text", "file", "youtube"]
+
+#: Maximum length of a file's basename on the common filesystems (ext4, APFS,
+#: NTFS) — measured in **bytes**, not characters. A multibyte name (emoji, CJK)
+#: can blow past this while looking short by ``len()``, so truncation is
+#: byte-aware.
+_MAX_BASENAME_BYTES = 255
+
+#: Control chars stripped from an upload name: C0 (``\x00-\x1f``), DEL (``\x7f``),
+#: and the C1 range (``\x80-\x9f``). None are legitimate in a filename, and a NUL
+#: would make ``os.open`` raise ``ValueError``.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    """Return ``text`` clipped to at most ``max_bytes`` UTF-8 bytes.
+
+    Never splits a multibyte character — a trailing partial sequence left by the
+    byte clip is dropped (``decode(..., "ignore")``).
+    """
+    if max_bytes <= 0:
+        return ""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    return encoded[:max_bytes].decode("utf-8", "ignore")
+
+
+def safe_upload_name(filename: str | None) -> str:
+    """Return a safe basename for a spooled upload file, preserving the extension.
+
+    Shared by every transport that spools a caller-named upload to a private
+    ``mkdtemp`` dir (the REST ``add_file`` route and the MCP ``/files/ul`` route).
+    NotebookLM 400s on an extensionless upload and the source-id extraction keys
+    off the real basename+extension, so the caller's name must survive — but
+    safely:
+
+    * control chars are stripped — C0 (``\\x00-\\x1f``), DEL (``\\x7f``), and the
+      C1 range (``\\x80-\\x9f``); a NUL would make ``os.open`` raise
+      ``ValueError`` and none are legitimate in a filename;
+    * ``\\`` is normalized so a Windows-style ``C:\\dir\\x.pdf`` yields its real
+      leaf, then :func:`os.path.basename` strips directory components (the
+      path-traversal guard);
+    * the directory-cursor names ``.`` / ``..`` fall back to a safe extensioned
+      default (they would target an existing dir and fail ``O_EXCL``);
+    * an over-long name is truncated on its **stem** (never the extension), by
+      UTF-8 **byte** length so a multibyte name (emoji, CJK) stays under the
+      255-byte filesystem basename limit rather than only under 255 *characters*.
+
+    An empty / cursor / extensionless-default input falls back to ``"upload.bin"``
+    (never extensionless).
+    """
+    cleaned = _CONTROL_CHARS.sub("", filename or "").replace("\\", "/")
+    base = os.path.basename(cleaned)
+    if not base or base in (".", ".."):
+        return "upload.bin"
+    if len(base.encode("utf-8")) <= _MAX_BASENAME_BYTES:
+        return base
+    # Preserve the extension: clip it first (in the pathological all-suffix case),
+    # then give the stem whatever byte budget remains.
+    suffix = _truncate_utf8(Path(base).suffix, _MAX_BASENAME_BYTES)
+    stem_budget = _MAX_BASENAME_BYTES - len(suffix.encode("utf-8"))
+    return _truncate_utf8(Path(base).stem, stem_budget) + suffix
 
 
 class SourceAddValidationError(ValidationError):
@@ -402,6 +466,7 @@ __all__ = [
     "build_source_add_plan",
     "execute_source_add",
     "looks_like_path",
+    "safe_upload_name",
     "validate_upload_path",
     "validate_url",
 ]

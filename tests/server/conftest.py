@@ -63,16 +63,23 @@ def app(fake_client: FakeClient) -> Any:
 
 @pytest.fixture
 def raw_client(app: Any) -> Iterator[TestClient]:
-    """A TestClient WITHOUT auth headers (for auth-rejection tests)."""
+    """A TestClient WITHOUT auth headers (for auth-rejection tests).
+
+    ``client=("127.0.0.1", …)`` gives requests a loopback PEER address so the
+    unspoofable peer-loopback guard passes — leaving the Host-header /
+    bearer-token gates as the thing under test.
+    """
     # raise_server_exceptions=False so a projected 500 envelope (the UNEXPECTED
     # bug path) is returned rather than re-raised into the test.
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app, client=("127.0.0.1", 5555), raise_server_exceptions=False) as client:
         yield client
 
 
 @pytest.fixture
 def authed_client(app: Any) -> Iterator[TestClient]:
-    """A TestClient with a valid bearer token + loopback Host on every request."""
+    """A TestClient with a valid bearer token + loopback Host + loopback peer."""
     headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
-    with TestClient(app, headers=headers, raise_server_exceptions=False) as client:
+    with TestClient(
+        app, headers=headers, client=("127.0.0.1", 5555), raise_server_exceptions=False
+    ) as client:
         yield client

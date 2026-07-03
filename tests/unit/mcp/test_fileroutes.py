@@ -505,6 +505,9 @@ def test_upload_post_missing_filename_defaults_to_extensioned_name(mock_client, 
     [
         ("a\x00b.pdf", "ab.pdf"),  # NUL stripped (would make os.open raise)
         ("a\x01\x1fb.pdf", "ab.pdf"),  # other control chars stripped too
+        ("a\x7fb.pdf", "ab.pdf"),  # DEL stripped
+        ("a\x85b.pdf", "ab.pdf"),  # C1 control (NEL) stripped
+        ("a\x80\x9fb.pdf", "ab.pdf"),  # C1 range stripped
         ("..", "upload.bin"),  # directory cursor → safe default
         (".", "upload.bin"),
         ("", "upload.bin"),
@@ -517,6 +520,16 @@ def test_safe_upload_name_hardening(raw, expected) -> None:
     # Security: odd filenames must normalize to a harmless leaf, never reach
     # os.open as a NUL/cursor name (which would 500).
     assert _fileroutes._safe_upload_name(raw) == expected
+
+
+def test_safe_upload_name_truncates_by_bytes_preserving_extension() -> None:
+    # A multibyte name (emoji = 4 UTF-8 bytes each) must be clipped to the 255-BYTE
+    # filesystem basename limit, not merely 255 characters, and keep its extension.
+    name = _fileroutes._safe_upload_name("😀" * 300 + ".pdf")
+    assert len(name.encode("utf-8")) <= 255
+    assert name.endswith(".pdf")
+    # No partial multibyte char survives the byte clip.
+    assert name.encode("utf-8").decode("utf-8") == name
 
 
 def test_upload_dotdot_filename_defaults_cleanly_not_500(mock_client, config) -> None:

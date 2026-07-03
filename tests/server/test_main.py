@@ -74,10 +74,12 @@ def test_build_parser_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     for var in ("NOTEBOOKLM_SERVER_HOST", "NOTEBOOKLM_SERVER_PORT", "NOTEBOOKLM_LOG_LEVEL"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.delenv(SERVER_TOKEN_ENV, raising=False)
+    monkeypatch.delenv(launcher.SERVER_TOKEN_FILE_ENV, raising=False)
     args = launcher._build_parser().parse_args([])
     assert args.host == "127.0.0.1"
     assert args.port == "8000"  # kept as a string; converted later by _resolve_port
-    assert args.token is None
+    assert args.token is None  # deprecated flag defaults to None (never env-seeded)
+    assert args.token_file is None
     assert args.log_level == "INFO"
 
 
@@ -85,11 +87,14 @@ def test_build_parser_reads_env_defaults(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("NOTEBOOKLM_SERVER_HOST", "::1")
     monkeypatch.setenv("NOTEBOOKLM_SERVER_PORT", "9001")
     monkeypatch.setenv("NOTEBOOKLM_LOG_LEVEL", "DEBUG")
-    monkeypatch.setenv(SERVER_TOKEN_ENV, "env-secret")
+    # The bearer token no longer feeds --token (deprecated); --token-file reads its
+    # own env default instead.
+    monkeypatch.setenv(launcher.SERVER_TOKEN_FILE_ENV, "/etc/nblm/token")
     args = launcher._build_parser().parse_args([])
     assert args.host == "::1"
     assert args.port == "9001"
-    assert args.token == "env-secret"
+    assert args.token is None
+    assert args.token_file == "/etc/nblm/token"
     assert args.log_level == "DEBUG"
 
 
@@ -145,21 +150,48 @@ def _stub_uvicorn_run(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 
 def test_main_runs_server_with_resolved_args(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = _stub_uvicorn_run(monkeypatch)
-    launcher.main(
-        ["--host", "127.0.0.1", "--port", "8123", "--token", "secret", "--log-level", "WARNING"]
-    )
+    monkeypatch.setenv(SERVER_TOKEN_ENV, "env-secret")
+    launcher.main(["--host", "127.0.0.1", "--port", "8123", "--log-level", "WARNING"])
     assert captured["app"] == "APP"
     assert captured["host"] == "127.0.0.1"
     assert captured["port"] == 8123  # _resolve_port converts the string to an int
     assert captured["log_level"] == "warning"  # uvicorn wants a lowercase level
+    # Default (loopback) mode: proxy headers OFF so request.client.host is the real
+    # socket peer (the loopback guard's basis), not a spoofable X-Forwarded-For.
+    assert captured["proxy_headers"] is False
 
 
-def test_main_seeds_token_env_from_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_rejects_deprecated_token_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_uvicorn_run(monkeypatch)
+    monkeypatch.setenv(SERVER_TOKEN_ENV, "env-secret")
+    # --token leaks via `ps`; it is refused outright even when a valid env token
+    # would otherwise let the server start.
+    with pytest.raises(SystemExit):
+        launcher.main(["--host", "127.0.0.1", "--token", "argv-secret"])
+
+
+def test_main_loads_token_from_file(monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
+    from pathlib import Path
+
     _stub_uvicorn_run(monkeypatch)
     monkeypatch.delenv(SERVER_TOKEN_ENV, raising=False)
-    launcher.main(["--host", "127.0.0.1", "--token", "flag-token"])
-    # The --token flag seeds the env the auth dependency later reads.
-    assert os.environ[SERVER_TOKEN_ENV] == "flag-token"
+    token_path = Path(str(tmp_path)) / "token.txt"
+    token_path.write_text("file-token\n", encoding="utf-8")
+    launcher.main(["--host", "127.0.0.1", "--token-file", str(token_path)])
+    # The file's contents (stripped) seed the env the auth dependency reads; only
+    # the PATH ever appeared on argv.
+    assert os.environ[SERVER_TOKEN_ENV] == "file-token"
+
+
+def test_main_empty_token_file_refuses(monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
+    from pathlib import Path
+
+    _stub_uvicorn_run(monkeypatch)
+    monkeypatch.delenv(SERVER_TOKEN_ENV, raising=False)
+    token_path = Path(str(tmp_path)) / "empty.txt"
+    token_path.write_text("   \n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        launcher.main(["--host", "127.0.0.1", "--token-file", str(token_path)])
 
 
 def test_main_refuses_without_token(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,13 +203,17 @@ def test_main_refuses_without_token(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_main_refuses_non_loopback_host(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_uvicorn_run(monkeypatch)
+    monkeypatch.setenv(SERVER_TOKEN_ENV, "env-secret")
     monkeypatch.delenv(launcher.ALLOW_EXTERNAL_BIND_ENV, raising=False)
     with pytest.raises(SystemExit):
-        launcher.main(["--host", "0.0.0.0", "--token", "secret"])
+        launcher.main(["--host", "0.0.0.0"])
 
 
 def test_main_allows_external_bind_with_optin(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = _stub_uvicorn_run(monkeypatch)
+    monkeypatch.setenv(SERVER_TOKEN_ENV, "env-secret")
     monkeypatch.setenv(launcher.ALLOW_EXTERNAL_BIND_ENV, "1")
-    launcher.main(["--host", "0.0.0.0", "--token", "secret"])
+    launcher.main(["--host", "0.0.0.0"])
     assert captured["host"] == "0.0.0.0"
+    # External-bind opt-in (behind a trusted proxy): forwarded headers are honored.
+    assert captured["proxy_headers"] is True

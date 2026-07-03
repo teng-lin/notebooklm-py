@@ -287,7 +287,7 @@ def test_redact_exact_output_for_multi_path_prose() -> None:
 def test_redact_home_pattern_capture_group_is_only_the_prefix() -> None:
     """The ``\\1`` capture is just the ``/home/`` prefix — the username is the part
     dropped, not coincidentally preserved (gemini #1695 testing guidance)."""
-    from notebooklm.mcp._errors import _EXTRA_PATTERNS
+    from notebooklm._redact import _EXTRA_PATTERNS
 
     home_pattern = _EXTRA_PATTERNS[1][0]
     m = home_pattern.search("Could not find /home/alice")

@@ -2,7 +2,14 @@
 
 The REST server surfaces every failure as an HTTP status plus a typed body::
 
-    {"error": {"category": "<category>", "message": "<scrubbed>"}}
+    {"error": {"category": "<category>", "message": "<scrubbed>",
+               "retriable": <bool>, "hint"?: "<remediation>"}}
+
+The ``retriable`` flag and optional ``hint`` are present on EVERY response whose
+status maps to a neutral :class:`~notebooklm._app.errors.ErrorCategory` — both
+classified library errors and hand-raised ``HTTPException``s (401/404/411/413/
+422/…) — drawn from the shared ``_app.errors`` tables so the two paths cannot
+drift. HTTP-protocol-only statuses (409/410) carry just ``category`` + ``message``.
 
 The **category** decision is delegated to
 :func:`notebooklm._app.errors.classify` (the single neutral source of truth
@@ -29,8 +36,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .._app.errors import ErrorCategory, classify
-from .._logging import scrub_secrets
+from .._app.errors import CATEGORY_HINTS, ErrorCategory, classify, is_retriable
+from .._redact import redact as _shared_redact
 from ..exceptions import NotebookLMError
 
 __all__ = [
@@ -44,26 +51,37 @@ __all__ = [
 #: Maximum wire length for an error message before it is truncated.
 _MAX_MESSAGE = 300
 
-#: Category label for an ``HTTPException`` raised explicitly by a route or the
-#: auth dependency, keyed by HTTP status. Keeps the ``{"error": {...}}`` envelope
-#: uniform across *both* classified library errors and hand-raised
-#: ``HTTPException``s (the R9 single-shape contract), instead of letting FastAPI
-#: emit its default ``{"detail": ...}`` for the latter. Statuses not listed fall
-#: back to a coarse class label (see :func:`_http_category`).
-_STATUS_CATEGORY: dict[int, str] = {
-    400: ErrorCategory.VALIDATION.value,
-    401: ErrorCategory.AUTH.value,
-    403: ErrorCategory.AUTH.value,
-    404: ErrorCategory.NOT_FOUND.value,
+#: The neutral :class:`ErrorCategory` an ``HTTPException`` raised explicitly by a
+#: route or the auth dependency (keyed by HTTP status) projects onto. Keeps the
+#: ``{"error": {...}}`` envelope uniform across *both* classified library errors
+#: and hand-raised ``HTTPException``s (the R9 single-shape contract), instead of
+#: letting FastAPI emit its default ``{"detail": ...}`` for the latter. Because
+#: the status resolves to a neutral category, the hand-raised body ALSO carries
+#: the SAME ``retriable`` + ``hint`` enrichment as a classified library error
+#: (drawn from the shared ``_app.errors`` tables — never re-derived here), so the
+#: wire contract is uniform. Statuses not listed here get a coarse label and no
+#: enrichment (see :data:`_STATUS_LABEL` / :func:`_http_category_label`).
+_STATUS_CATEGORY: dict[int, ErrorCategory] = {
+    400: ErrorCategory.VALIDATION,
+    401: ErrorCategory.AUTH,
+    403: ErrorCategory.AUTH,
+    404: ErrorCategory.NOT_FOUND,
+    411: ErrorCategory.VALIDATION,
+    413: ErrorCategory.VALIDATION,
+    422: ErrorCategory.VALIDATION,
+    429: ErrorCategory.RATE_LIMITED,
+    500: ErrorCategory.UNEXPECTED,
+    502: ErrorCategory.SERVER,
+    503: ErrorCategory.SERVER,
+    504: ErrorCategory.TIMEOUT,
+}
+
+#: HTTP-protocol-only statuses with no neutral :class:`ErrorCategory`. They get a
+#: coarse label for the envelope ``category`` and NO ``retriable`` / ``hint``
+#: enrichment (there is no category to draw those from).
+_STATUS_LABEL: dict[int, str] = {
     409: "conflict",
     410: "gone",
-    413: ErrorCategory.VALIDATION.value,
-    422: ErrorCategory.VALIDATION.value,
-    429: ErrorCategory.RATE_LIMITED.value,
-    500: ErrorCategory.UNEXPECTED.value,
-    502: ErrorCategory.SERVER.value,
-    503: ErrorCategory.SERVER.value,
-    504: ErrorCategory.TIMEOUT.value,
 }
 
 #: Generic message returned for an unexpected (non-library) exception — a bug's
@@ -92,19 +110,17 @@ CATEGORY_STATUS: dict[ErrorCategory, int] = {
 
 
 def _redact(message: object) -> str:
-    """Scrub secrets, collapse whitespace, and length-cap a message for the wire.
+    """Scrub secrets + local paths, collapse whitespace, and length-cap for the wire.
 
+    Delegates to the shared, transport-neutral
+    :func:`notebooklm._redact.redact` — the SAME chokepoint the MCP projector
+    uses — so a home-directory path (``/home/<user>/…``) or a signed ``/files/*``
+    URL token in an exception string is masked on BOTH surfaces, not just MCP.
     SDK exception messages are already designed to be secret-free (raw responses
-    are truncated at construction, per ADR-0019), but the server runs every
-    wire-bound message through :func:`notebooklm._logging.scrub_secrets` as
-    defense-in-depth (so a stray ``Authorization``/``Cookie`` fragment in any
-    exception or upstream error string is masked), then collapses whitespace and
-    caps the length so a schema-drift dump cannot bloat or over-disclose the body.
+    are truncated at construction, per ADR-0019); this is defense-in-depth plus
+    the length cap so a schema-drift dump cannot bloat or over-disclose the body.
     """
-    scrubbed = " ".join(scrub_secrets(message).split())
-    if len(scrubbed) > _MAX_MESSAGE:
-        scrubbed = scrubbed[:_MAX_MESSAGE] + "…"
-    return scrubbed
+    return _shared_redact(message, max_length=_MAX_MESSAGE)
 
 
 def safe_detail(message: object) -> str:
@@ -117,13 +133,17 @@ def safe_detail(message: object) -> str:
     return _redact(message)
 
 
-def _http_category(status: int) -> str:
+def _http_category_label(status: int) -> str:
     """Map an HTTP status to its envelope ``category`` label.
 
-    Uses the explicit :data:`_STATUS_CATEGORY` table, falling back to a coarse
-    class label so an unanticipated status still yields a non-empty category.
+    Prefers the neutral :data:`_STATUS_CATEGORY` category (its ``.value``), then
+    the coarse :data:`_STATUS_LABEL`, falling back to a class label so an
+    unanticipated status still yields a non-empty category.
     """
-    label = _STATUS_CATEGORY.get(status)
+    category = _STATUS_CATEGORY.get(status)
+    if category is not None:
+        return category.value
+    label = _STATUS_LABEL.get(status)
     if label is not None:
         return label
     if 400 <= status < 500:
@@ -151,15 +171,29 @@ def http_error_response(status: int, detail: object) -> JSONResponse:
     """Build the typed envelope for a hand-raised ``HTTPException``.
 
     Renders ``HTTPException``s (the auth dependency's 401/403, an artifact poll's
-    404/409/410, an oversized-upload 413) through the same
-    ``{"error": {"category": ..., "message": ...}}`` shape as classified library
-    errors, so the wire contract is uniform. The ``detail`` is scrubbed +
-    length-capped via :func:`_redact`.
+    404/409/410, an oversized-upload 413, a chunked-multipart 411, a
+    request-body 422, a content-route 404) through the same
+    ``{"error": {"category": ..., "message": ..., "retriable": ..., "hint"?: ...}}``
+    shape as classified library errors, so the wire contract is uniform across
+    EVERY REST error response. When the status maps to a neutral
+    :class:`ErrorCategory` (:data:`_STATUS_CATEGORY`), the body carries the SAME
+    ``retriable`` flag and (where present) ``hint`` as a classified error — both
+    read from the shared ``_app.errors`` tables (:func:`is_retriable` +
+    :data:`CATEGORY_HINTS`), never re-derived here. Statuses with only a coarse
+    label (:data:`_STATUS_LABEL`, e.g. 409/410) omit both. The ``detail`` is
+    scrubbed + length-capped via :func:`_redact`.
     """
-    return JSONResponse(
-        status_code=status,
-        content={"error": {"category": _http_category(status), "message": _redact(detail)}},
-    )
+    body: dict[str, object] = {
+        "category": _http_category_label(status),
+        "message": _redact(detail),
+    }
+    category = _STATUS_CATEGORY.get(status)
+    if category is not None:
+        body["retriable"] = is_retriable(category)
+        hint = CATEGORY_HINTS.get(category)
+        if hint is not None:
+            body["hint"] = hint
+    return JSONResponse(status_code=status, content={"error": body})
 
 
 def error_response(exc: BaseException) -> JSONResponse:
@@ -169,14 +203,25 @@ def error_response(exc: BaseException) -> JSONResponse:
     :data:`CATEGORY_STATUS`; the category is never re-derived. The message is the
     scrubbed ``str(exc)`` for library errors, and a fixed generic string for an
     unexpected (non-library) bug — whose ``str(exc)`` is never echoed.
+
+    The body also carries the neutral ``retriable`` flag (from :func:`classify`,
+    so an agent client can branch a back-off) and, where the category has one, a
+    ``hint`` — both drawn from the SAME shared tables the MCP surface uses
+    (:func:`classify` + :data:`CATEGORY_HINTS`), never re-derived here.
     """
-    category = classify(exc).category
+    classified = classify(exc)
+    category = classified.category
     status = CATEGORY_STATUS[category]
     message = _UNEXPECTED_MESSAGE if category is ErrorCategory.UNEXPECTED else _redact(str(exc))
-    return JSONResponse(
-        status_code=status,
-        content={"error": {"category": category.value, "message": message}},
-    )
+    body: dict[str, object] = {
+        "category": category.value,
+        "message": message,
+        "retriable": classified.retriable,
+    }
+    hint = CATEGORY_HINTS.get(category)
+    if hint is not None:
+        body["hint"] = hint
+    return JSONResponse(status_code=status, content={"error": body})
 
 
 def install_exception_handlers(app: FastAPI) -> None:

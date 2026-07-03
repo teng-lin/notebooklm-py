@@ -85,7 +85,9 @@ def real_authed_client() -> Iterator[TestClient]:
 
     app = create_app(client_factory=factory)
     headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
-    with TestClient(app, headers=headers, raise_server_exceptions=False) as c:
+    with TestClient(
+        app, headers=headers, client=("127.0.0.1", 5555), raise_server_exceptions=False
+    ) as c:
         yield c
 
 

@@ -22,6 +22,8 @@ from notebooklm.server._auth import _host_is_loopback  # noqa: E402
 from notebooklm.server._errors import _redact  # noqa: E402
 from notebooklm.server._pending import _MAX_ENTRIES, PendingRegistry  # noqa: E402
 
+from .conftest import TEST_TOKEN  # noqa: E402
+
 
 class TestHostLoopbackGuard:
     @pytest.mark.parametrize(
@@ -98,8 +100,10 @@ class TestUploadPreBufferLimit:
         monkeypatch.setattr(fake_client.sources, "add_file", spy)
         monkeypatch.setattr(app_module, "MAX_UPLOAD_BYTES", 8)
 
-        headers = {"Authorization": "Bearer test-token", "Host": "127.0.0.1"}
-        with TestClient(app, headers=headers, raise_server_exceptions=False) as c:
+        headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
+        with TestClient(
+            app, headers=headers, client=("127.0.0.1", 5555), raise_server_exceptions=False
+        ) as c:
             resp = c.post(
                 "/v1/notebooks/nb-1/sources/file",
                 files={"file": ("big.txt", b"x" * 4096, "text/plain")},
@@ -107,6 +111,72 @@ class TestUploadPreBufferLimit:
         assert resp.status_code == 413
         assert called["add_file"] is False
         assert resp.json()["error"]["category"] == "validation"
+
+
+class TestChunkedMultipartRejected:
+    def test_multipart_without_content_length_is_411(self, app: Any) -> None:
+        from fastapi.testclient import TestClient
+
+        # A generator body makes httpx use chunked transfer-encoding (no
+        # Content-Length), the exact bypass a running-cap-after-spool leaves open.
+        def _chunks() -> Any:
+            yield b"--b\r\nContent-Disposition: form-data; name=file; filename=x\r\n\r\n"
+            yield b"data\r\n--b--\r\n"
+
+        headers = {
+            "Authorization": f"Bearer {TEST_TOKEN}",
+            "Host": "127.0.0.1",
+            "Content-Type": "multipart/form-data; boundary=b",
+        }
+        with TestClient(
+            app, headers=headers, client=("127.0.0.1", 5555), raise_server_exceptions=False
+        ) as c:
+            resp = c.post("/v1/notebooks/nb-1/sources/file", content=_chunks())
+        assert resp.status_code == 411
+        assert resp.json()["error"]["category"] == "validation"
+
+
+class TestPeerLoopbackGuard:
+    def test_non_loopback_peer_rejected_even_with_spoofed_host(self, app: Any) -> None:
+        from fastapi.testclient import TestClient
+
+        # Off-loopback PEER address + a forged loopback Host header: the
+        # unspoofable peer-address check rejects it (the Host spoof does not help).
+        headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
+        with TestClient(
+            app, headers=headers, client=("8.8.8.8", 5555), raise_server_exceptions=False
+        ) as c:
+            resp = c.get("/v1/notebooks")
+        assert resp.status_code == 403
+        assert resp.json()["error"]["category"] == "auth"
+
+    @pytest.mark.parametrize("peer_host", ["::1", "::ffff:127.0.0.1"])
+    def test_ipv6_loopback_peer_allowed(self, app: Any, peer_host: str) -> None:
+        from fastapi.testclient import TestClient
+
+        # An IPv6 loopback peer (``::1``) and the IPv4-mapped loopback
+        # (``::ffff:127.0.0.1``) both satisfy the unspoofable peer-loopback guard.
+        headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
+        with TestClient(
+            app, headers=headers, client=(peer_host, 5555), raise_server_exceptions=False
+        ) as c:
+            resp = c.get("/v1/notebooks")
+        assert resp.status_code == 200
+
+    def test_external_bind_optin_allows_non_loopback_peer(
+        self, app: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fastapi.testclient import TestClient
+
+        from notebooklm.server._auth import ALLOW_EXTERNAL_BIND_ENV
+
+        monkeypatch.setenv(ALLOW_EXTERNAL_BIND_ENV, "1")
+        headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "example.com"}
+        with TestClient(
+            app, headers=headers, client=("8.8.8.8", 5555), raise_server_exceptions=False
+        ) as c:
+            resp = c.get("/v1/notebooks")
+        assert resp.status_code == 200
 
 
 class TestNoContentResponses:
@@ -154,14 +224,25 @@ class TestUploadPathSafety:
         assert os.path.isabs(path) and ".." not in path
 
     def test_safe_upload_name(self) -> None:
+        # Now the shared neutral helper (_app.source_add.safe_upload_name): control
+        # chars stripped, . / .. rejected, extension preserved on truncation.
         from notebooklm.server.routes.sources import _safe_upload_name
 
         assert _safe_upload_name("report.pdf") == "report.pdf"
         assert _safe_upload_name("../../etc/passwd") == "passwd"  # traversal stripped
         assert _safe_upload_name("a/b/c.txt") == "c.txt"
-        assert _safe_upload_name("") == "upload"  # empty fallback
-        assert _safe_upload_name(None) == "upload"
-        assert len(_safe_upload_name("x" * 500)) <= 255  # length-bounded
+        assert _safe_upload_name("a\x00b.pdf") == "ab.pdf"  # control chars stripped
+        assert _safe_upload_name("a\x7fb.pdf") == "ab.pdf"  # DEL stripped
+        assert _safe_upload_name("a\x85b.pdf") == "ab.pdf"  # C1 control stripped
+        assert _safe_upload_name("..") == "upload.bin"  # directory cursor rejected
+        assert _safe_upload_name("") == "upload.bin"  # empty fallback
+        assert _safe_upload_name(None) == "upload.bin"
+        # Length-bounded AND extension-preserving (stem truncated, ".pdf" kept).
+        long = _safe_upload_name("x" * 500 + ".pdf")
+        assert len(long) <= 255 and long.endswith(".pdf")
+        # Multibyte names are bounded by BYTE length (255), not char count.
+        emoji = _safe_upload_name("😀" * 300 + ".pdf")
+        assert len(emoji.encode("utf-8")) <= 255 and emoji.endswith(".pdf")
 
 
 class TestGenerateSourceDefaulting:
@@ -199,9 +280,11 @@ class TestErrorEnvelopeShape:
     def test_missing_token_401_uses_envelope(self, app: Any) -> None:
         from fastapi.testclient import TestClient
 
-        # Loopback Host clears the rebinding guard; the wrong token trips the 401.
+        # Loopback peer + Host clear the rebinding guard; the wrong token trips 401.
         headers = {"Authorization": "Bearer wrong-token", "Host": "127.0.0.1"}
-        with TestClient(app, headers=headers, raise_server_exceptions=False) as c:
+        with TestClient(
+            app, headers=headers, client=("127.0.0.1", 5555), raise_server_exceptions=False
+        ) as c:
             resp = c.get("/v1/notebooks")
         assert resp.status_code == 401
         body = resp.json()

@@ -102,19 +102,26 @@ def create_app(*, client_factory: ClientFactory | None = None) -> FastAPI:
         # route reads/parses the body — Starlette's multipart parser spools file
         # parts to disk unbounded, so a post-parse check is too late (the body is
         # already on disk). This Content-Length pre-check is the actual disk-
-        # exhaustion mitigation. Residual: a chunked request (no Content-Length)
-        # bypasses it, and Starlette still spools the full part before the upload
-        # handler's per-chunk check can reject it — so that per-chunk check caps
-        # only the copy into our own temp file, not Starlette's spool. Acceptable
-        # for a single-user loopback-only server; revisit if ever exposed wider.
-        # Nothing legitimate exceeds the upload cap, so applying it to every
-        # request is safe.
+        # exhaustion mitigation. Nothing legitimate exceeds the upload cap, so
+        # applying it to every request is safe.
+        content_type = request.headers.get("content-type", "")
+        is_multipart = content_type.lstrip().lower().startswith("multipart/form-data")
         content_length = request.headers.get("content-length")
-        if content_length is not None:
+        if content_length is None:
+            # A chunked (no-Content-Length) multipart upload would otherwise let
+            # Starlette spool the full part to disk before any per-chunk cap runs.
+            # Require an up-front declared length for multipart so the size can be
+            # bounded before a byte is spooled; other verbs (GET/JSON) are
+            # unaffected. Route through the shared projector for a uniform envelope.
+            if is_multipart:
+                return http_error_response(411, "Content-Length is required for multipart uploads")
+        else:
             try:
                 declared = int(content_length)
             except ValueError:
                 declared = -1
+            if declared < 0 and is_multipart:
+                return http_error_response(411, "A valid Content-Length is required for uploads")
             if declared > MAX_UPLOAD_BYTES:
                 # Route through the shared projector so the envelope shape +
                 # lowercase category match every other error response.

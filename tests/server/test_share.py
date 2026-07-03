@@ -79,6 +79,28 @@ def test_add_update_and_remove_user(authed_client: TestClient, fake_client: Fake
     assert "reader@example.com" not in fake_client.shared_users["nb-1"]
 
 
+def test_add_user_notify_defaults_off(authed_client: TestClient, fake_client: FakeClient) -> None:
+    """Omitting ``notify`` must NOT email the third party (default flipped to False)."""
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/share/users",
+        json={"email": "reader@example.com", "permission": "viewer"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["notify"] is False
+    assert fake_client.last_share_notify is False
+
+
+def test_add_user_notify_opt_in(authed_client: TestClient, fake_client: FakeClient) -> None:
+    """An explicit ``notify=true`` still emails."""
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/share/users",
+        json={"email": "reader@example.com", "permission": "viewer", "notify": True},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["notify"] is True
+    assert fake_client.last_share_notify is True
+
+
 def test_set_view_level(authed_client: TestClient) -> None:
     resp = authed_client.post("/v1/notebooks/nb-1/share/view-level", json={"level": "chat"})
 

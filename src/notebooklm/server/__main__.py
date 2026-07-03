@@ -18,14 +18,17 @@ import ipaddress
 import logging
 import os
 import sys
+from pathlib import Path
 
-from ._auth import SERVER_TOKEN_ENV, get_configured_token
+from ._auth import ALLOW_EXTERNAL_BIND_ENV, SERVER_TOKEN_ENV, get_configured_token
 from .app import create_app
 
 __all__ = ["main"]
 
-#: Env var that opts a deployment into binding to a non-loopback interface.
-ALLOW_EXTERNAL_BIND_ENV = "NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND"
+#: Env var pointing at a file whose contents are the bearer token. Preferred over
+#: the deprecated ``--token`` flag, whose value is visible to other local users
+#: via ``ps``.
+SERVER_TOKEN_FILE_ENV = "NOTEBOOKLM_SERVER_TOKEN_FILE"
 
 #: Hostnames always treated as loopback even though they are not numeric IP
 #: literals. An empty / whitespace host is intentionally NOT here — it must be
@@ -81,9 +84,42 @@ def _check_token_configured() -> None:
     if get_configured_token() is None:
         raise SystemExit(
             f"Refusing to start the REST server without a bearer token. Set "
-            f"{SERVER_TOKEN_ENV} to a secret value (a credential-fronting server "
-            f"must never run tokenless)."
+            f"{SERVER_TOKEN_ENV} (or point {SERVER_TOKEN_FILE_ENV} / --token-file at "
+            f"a file containing it) — a credential-fronting server must never run "
+            f"tokenless."
         )
+
+
+def _reject_argv_token(token: str | None) -> None:
+    """Refuse the deprecated ``--token`` flag (it leaks via ``ps``).
+
+    A bearer token passed on the command line is visible to any other local user
+    via the process table, so it is never accepted. The token must come from
+    ``NOTEBOOKLM_SERVER_TOKEN`` or a token file instead.
+    """
+    if token is not None:
+        raise SystemExit(
+            "The --token flag is deprecated and insecure: a token on the command "
+            "line is visible to other local users via `ps`. Set the "
+            f"{SERVER_TOKEN_ENV} environment variable, or pass --token-file / set "
+            f"{SERVER_TOKEN_FILE_ENV} to a file containing the token."
+        )
+
+
+def _load_token_file(path: str) -> None:
+    """Read the bearer token from ``path`` into the environment the auth reads.
+
+    Only the file PATH ever appears on argv / the process table — the secret
+    itself does not. A missing/unreadable or empty file fails closed with a clear
+    message.
+    """
+    try:
+        token = Path(path).read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise SystemExit(f"Could not read the token file {path!r}: {exc}") from exc
+    if not token:
+        raise SystemExit(f"The token file {path!r} is empty.")
+    os.environ[SERVER_TOKEN_ENV] = token
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -106,10 +142,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--token",
-        default=os.environ.get(SERVER_TOKEN_ENV),
+        default=None,
+        # DEPRECATED and insecure: a token on argv is visible to other local users
+        # via ``ps``. Passing it is refused at startup (see ``main``). Kept only to
+        # emit a clear migration error instead of an "unknown flag" one.
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--token-file",
+        default=os.environ.get(SERVER_TOKEN_FILE_ENV),
         help=(
-            "Bearer token every request must present (default: "
-            f"${SERVER_TOKEN_ENV}). Required — the server refuses to start without it."
+            "Path to a file whose contents are the bearer token (default: "
+            f"${SERVER_TOKEN_FILE_ENV}). Preferred over the environment for "
+            "keeping the secret off the process table. The token must otherwise be "
+            f"supplied via ${SERVER_TOKEN_ENV}."
         ),
     )
     parser.add_argument(
@@ -149,10 +195,12 @@ def main(argv: list[str] | None = None) -> None:
         "change without notice. Pin a version for automation."
     )
 
-    # A --token (or its NOTEBOOKLM_SERVER_TOKEN default) seeds the env the auth
-    # dependency reads, so an explicit flag works even when the env was unset.
-    if args.token:
-        os.environ[SERVER_TOKEN_ENV] = args.token
+    # The deprecated --token flag is refused outright (it leaks via `ps`). A
+    # --token-file (or its env default) seeds the env the auth dependency reads,
+    # keeping the secret off the process table.
+    _reject_argv_token(args.token)
+    if args.token_file:
+        _load_token_file(args.token_file)
 
     _check_token_configured()
     allow_external = os.environ.get(ALLOW_EXTERNAL_BIND_ENV) == "1"
@@ -162,7 +210,19 @@ def main(argv: list[str] | None = None) -> None:
 
     app = create_app()
     uvicorn.run(
-        app, host=args.host, port=_resolve_port(args.port), log_level=args.log_level.lower()
+        app,
+        host=args.host,
+        port=_resolve_port(args.port),
+        log_level=args.log_level.lower(),
+        # In the default (loopback) mode the auth guard trusts ``request.client.host``
+        # as the real socket peer, so uvicorn must NOT rewrite it from a spoofable
+        # ``X-Forwarded-For`` header. Uvicorn enables ``--proxy-headers`` by default
+        # (with ``forwarded_allow_ips="127.0.0.1"``), which would let a request from
+        # a loopback-adjacent proxy override the peer address — pin it OFF so the
+        # loopback check is peer-by-construction. Only when a deployment opts into an
+        # external bind (behind a trusted reverse proxy, where the loopback guard is
+        # already disabled) do we honor forwarded headers.
+        proxy_headers=allow_external,
     )
 
 

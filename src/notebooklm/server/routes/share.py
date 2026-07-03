@@ -33,7 +33,10 @@ class ShareUserAdd(BaseModel):
 
     email: str
     permission: Literal["viewer", "editor"] = "viewer"
-    notify: bool = True
+    # Default OFF: a localhost automation server must not silently email a third
+    # party. The caller opts in explicitly with ``notify=true``. (The widening
+    # confirm gate is deferred to land jointly with the MCP #1742 shared idiom.)
+    notify: bool = False
     welcome_message: str = ""
 
 
