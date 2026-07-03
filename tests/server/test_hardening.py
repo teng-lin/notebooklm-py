@@ -150,6 +150,26 @@ class TestPeerLoopbackGuard:
         assert resp.status_code == 403
         assert resp.json()["error"]["category"] == "auth"
 
+    @pytest.mark.parametrize(
+        ("addr", "expected"),
+        [
+            ("127.0.0.1", True),
+            ("::1", True),
+            # IPv4-mapped IPv6 loopback: ``ipaddress.is_loopback`` only resolves the
+            # mapped IPv4 in newer CPython patch levels, so this must be pinned
+            # version-independently (it regressed on some macOS 3.10/3.11 runners).
+            ("::ffff:127.0.0.1", True),
+            ("8.8.8.8", False),
+            ("::ffff:8.8.8.8", False),  # mapped *external* — must NOT read as loopback
+            ("0.0.0.0", False),
+            ("not-an-ip", False),
+        ],
+    )
+    def test_addr_is_loopback_version_independent(self, addr: str, expected: bool) -> None:
+        from notebooklm.server._auth import _addr_is_loopback
+
+        assert _addr_is_loopback(addr) is expected
+
     @pytest.mark.parametrize("peer_host", ["::1", "::ffff:127.0.0.1"])
     def test_ipv6_loopback_peer_allowed(self, app: Any, peer_host: str) -> None:
         from fastapi.testclient import TestClient

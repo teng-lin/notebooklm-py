@@ -65,6 +65,26 @@ def get_configured_token() -> str | None:
     return token or None
 
 
+def _addr_is_loopback(text: str) -> bool:
+    """Whether an IP literal is a loopback address, independent of Python version.
+
+    ``ipaddress`` only resolves an IPv4-mapped IPv6 address (e.g.
+    ``::ffff:127.0.0.1``) to its embedded IPv4 loopback in newer CPython patch
+    releases, so ``IPv6Address.is_loopback`` is unreliable across the interpreter
+    versions/patch levels we run on (it returned ``False`` for the mapped form on
+    some macOS 3.10/3.11 runners). Unwrap ``ipv4_mapped`` ourselves first, then
+    fall back to the native check. Returns ``False`` for anything unparseable.
+    """
+    try:
+        addr = ipaddress.ip_address(text)
+    except ValueError:
+        return False
+    mapped = getattr(addr, "ipv4_mapped", None)
+    if mapped is not None:
+        return mapped.is_loopback
+    return addr.is_loopback
+
+
 def _host_is_loopback(host_header: str) -> bool:
     """Return whether the ``Host`` header addresses a loopback literal.
 
@@ -96,10 +116,7 @@ def _host_is_loopback(host_header: str) -> bool:
     # Host hostnames are case-insensitive (RFC 3986/7230).
     if candidate.lower() in _LOOPBACK_HOSTNAMES:
         return True
-    try:
-        return ipaddress.ip_address(candidate).is_loopback
-    except ValueError:
-        return False
+    return _addr_is_loopback(candidate)
 
 
 def _peer_is_loopback(request: Request) -> bool:
@@ -113,10 +130,7 @@ def _peer_is_loopback(request: Request) -> bool:
     client = request.client
     if client is None:
         return False
-    try:
-        return ipaddress.ip_address(client.host).is_loopback
-    except ValueError:
-        return False
+    return _addr_is_loopback(client.host)
 
 
 def _allow_external_bind() -> bool:
