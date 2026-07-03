@@ -12,7 +12,7 @@ COMPOSE ?= docker compose
 # TUNNEL: a CLI/env override wins; else the choice `make setup` saved in .env;
 # else cloudflare. Only TUNNEL is read from .env into make — it's make-only (not a
 # compose var), so it can't collide with compose's own reading of .env.
-_TUNNEL_DOTENV := $(shell [ -f .env ] && sed -n 's/^TUNNEL=//p' .env | head -1)
+_TUNNEL_DOTENV := $(shell [ -f .env ] && sed -n 's/^TUNNEL=//p' .env | tr -d '\r' | head -1)
 TUNNEL ?= $(if $(_TUNNEL_DOTENV),$(_TUNNEL_DOTENV),cloudflare)
 
 # Pin a published image tag with `make prod VERSION=x.y.z`. Export it to compose
