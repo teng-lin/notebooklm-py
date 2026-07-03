@@ -160,7 +160,7 @@ automatically.
 | `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` | Optional loopback Chrome DevTools endpoint for layer-3 headless re-auth, e.g. `http://127.0.0.1:9222`. Non-loopback endpoints are ignored for credential safety. | - |
 | `NOTEBOOKLM_MCP_TRANSPORT` | MCP server transport for `notebooklm-mcp`: `stdio` or `http` | `stdio` |
 | `NOTEBOOKLM_MCP_HOST` | MCP HTTP transport bind host; non-loopback refused unless `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1` | `127.0.0.1` |
-| `NOTEBOOKLM_MCP_PORT` | MCP HTTP transport bind port | `8000` |
+| `NOTEBOOKLM_MCP_PORT` | MCP HTTP transport bind port | `9420` |
 | `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND` | Allow MCP HTTP transport to bind a non-loopback host. Use only behind a trusted proxy. | `0` |
 | `NOTEBOOKLM_MCP_TRUST_PROXY` | Trust the proxy-set `CF-Connecting-IP` header as the self-hosted-OAuth login-throttle key. Only enable behind a trusted proxy (e.g. the Cloudflare tunnel); default off keys on the socket peer. | `0` |
 | `NOTEBOOKLM_SERVER_TOKEN` | Bearer token required by every REST `/v1` request. The REST server refuses to start without it. | - |
@@ -217,7 +217,7 @@ be audited from one location.
 | `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` | Optional Chrome DevTools Protocol endpoint for layer-3 headless re-auth. Must be loopback (`127.0.0.1`, `::1`, or `localhost`); remote endpoints are ignored because CDP is account-equivalent. | Explicit function argument → env var → no CDP arm. | `_auth.headless_reauth.resolve_cdp_url` |
 | `NOTEBOOKLM_MCP_TRANSPORT` | Default transport for `notebooklm-mcp`: `stdio` or `http`. CLI `--transport` wins. | `--transport` flag → env var → `stdio` | `mcp.__main__._build_parser` |
 | `NOTEBOOKLM_MCP_HOST` | HTTP bind host for `notebooklm-mcp --transport http`. Non-loopback refused unless `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1`. | `--host` flag → env var → `127.0.0.1` | `mcp.__main__._build_parser` / `_serving.check_bind_allowed` |
-| `NOTEBOOKLM_MCP_PORT` | HTTP bind port for `notebooklm-mcp --transport http`. | `--port` flag → env var → `8000` | `mcp.__main__._build_parser` / `_resolve_port` |
+| `NOTEBOOKLM_MCP_PORT` | HTTP bind port for `notebooklm-mcp --transport http`. | `--port` flag → env var → `9420` | `mcp.__main__._build_parser` / `_resolve_port` |
 | `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND` | Allow MCP HTTP transport to bind a non-loopback host. Use only behind a trusted proxy. | Literal `1` enables; all other values disabled. | `mcp.__main__._check_http_bind_allowed` → `_serving.check_bind_allowed` |
 | `NOTEBOOKLM_MCP_TRUST_PROXY` | Trust the proxy-set `CF-Connecting-IP` header as the self-hosted-OAuth login-throttle key. Enable only behind a trusted proxy (e.g. the Cloudflare tunnel); default off keys the throttle on the socket peer. | Literal `1` enables; all other values disabled. | `mcp._oauth.get_oauth_config` / `_client_ip` |
 | `NOTEBOOKLM_SERVER_TOKEN` | Bearer token required by every REST `/v1` request. The server refuses to start when unset/empty. | `--token` flag → env var → startup failure | `server.__main__._check_token_configured` / `server._auth.require_auth` |
