@@ -330,8 +330,9 @@ def test_client_ip_empty_cf_header_falls_back_to_peer() -> None:
     assert _client_ip(_FakeRequest(cf="   ", peer="10.0.0.1"), trust_proxy=True) == "10.0.0.1"
 
 
-def test_client_ip_no_peer_returns_unknown() -> None:
-    """No socket peer and no trusted header → the 'unknown' fallback (bounded key)."""
+def test_client_ip_no_peer_untrusted_cf_returns_unknown() -> None:
+    """No socket peer, and the CF header present but UNTRUSTED (flag off, so ignored) →
+    the bounded 'unknown' fallback rather than the attacker-controlled header value."""
     assert _client_ip(_FakeRequest(cf="9.9.9.9", peer=None), trust_proxy=False) == "unknown"
 
 

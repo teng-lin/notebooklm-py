@@ -32,7 +32,11 @@ def _clear_oauth_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """``main()`` reads the self-hosted-OAuth env on every HTTP run; clear it by
     default so an ambient dev/CI environment can't perturb the bearer-focused tests
     (the OAuth tests set the vars explicitly after this autouse cleanup)."""
-    for var in ("NOTEBOOKLM_MCP_OAUTH_PASSWORD", "NOTEBOOKLM_MCP_OAUTH_BASE_URL"):
+    for var in (
+        "NOTEBOOKLM_MCP_OAUTH_PASSWORD",
+        "NOTEBOOKLM_MCP_OAUTH_BASE_URL",
+        "NOTEBOOKLM_MCP_TRUST_PROXY",
+    ):
         monkeypatch.delenv(var, raising=False)
 
 
