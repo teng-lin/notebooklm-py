@@ -304,6 +304,11 @@ async def execute_configure(
     The result still reports only what THIS call changed (the delta), so a merge
     does not widen the JSON contract.
 
+    The partial merge costs one extra ``GET_NOTEBOOK`` round-trip and is
+    read-modify-write, so it is **not atomic**: a concurrent writer between the
+    read and the write is last-writer-wins (there is no server-side compare-and-set).
+    That matches the notebook's existing single-tenant, low-concurrency usage.
+
     A ``chat_mode`` preset replaces the whole chat-settings block (it
     short-circuits to ``set_mode``), so it cannot be combined with a custom
     ``persona`` / ``response_length`` — that combination is rejected here rather
@@ -342,7 +347,7 @@ async def execute_configure(
     length_supplied = response_length is not None
 
     mapped_length: ChatResponseLength | None = None
-    if response_length:
+    if response_length is not None:  # same predicate as length_supplied
         try:
             mapped_length = _RESPONSE_LENGTH_MAP[response_length]
         except KeyError as exc:

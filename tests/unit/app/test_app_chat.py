@@ -450,6 +450,24 @@ async def test_execute_configure_empty_persona_no_length_is_bare_reset() -> None
 
 
 @pytest.mark.asyncio
+async def test_execute_configure_partial_propagates_get_settings_drift() -> None:
+    """A get_settings decode-drift on a partial update fails loud — never falls back to clobbering."""
+    from notebooklm.exceptions import UnknownRPCMethodError
+
+    client = _client()
+    client.chat.configure = AsyncMock(return_value=None)
+    client.chat.get_settings = AsyncMock(side_effect=UnknownRPCMethodError("drift"))
+
+    with pytest.raises(UnknownRPCMethodError):
+        await execute_configure(
+            client, "nb_123", chat_mode=None, persona="tutor", response_length=None
+        )
+
+    # The write must NOT happen when the read fails (no silent clobber).
+    client.chat.configure.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_execute_configure_whitespace_persona_no_length_is_bare_reset() -> None:
     """A whitespace-only persona is a no-op (repo convention), so alone it's a bare reset."""
     client = _client()
