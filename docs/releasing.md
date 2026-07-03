@@ -37,7 +37,7 @@ Release Plan for vX.Y.Z:
 11. Merge PR to main
 12. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
 13. Wait for PyPI publish
-14. Create GitHub release
+14. Create GitHub release (add `--prerelease` for a pre-release — see [Pre-releases](#pre-releases-alpha--beta--rc))
 15. Clean up worktree
 
 Proceed with release preparation?
@@ -215,9 +215,11 @@ no break against the baseline) is a CI failure, not silent cruft.
   ```bash
   git diff
   ```
-- [ ] Commit:
+- [ ] Commit (stage `uv.lock` too — the version bump changes its workspace-package
+  entry, and for a pre-release the `uv sync` re-lock in the Pre-releases section
+  requires it; staging it is a no-op on releases where it did not change):
   ```bash
-  git add pyproject.toml CHANGELOG.md docs/
+  git add pyproject.toml CHANGELOG.md uv.lock docs/
   git commit -m "chore: release vX.Y.Z"
   ```
 - [ ] Show commit to user:
