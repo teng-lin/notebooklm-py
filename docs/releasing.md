@@ -103,6 +103,9 @@ Proceed with release preparation?
   When in doubt, it's PATCH.
   ```
 
+  For a **pre-release**, target the final version plus a pre-release serial
+  (e.g. `0.8.0a1`) — see [Pre-releases](#pre-releases-alpha--beta--rc).
+
   See [Version Numbering](#version-numbering) for full details.
 
 - [ ] Update version in `pyproject.toml`:
@@ -117,8 +120,9 @@ Proceed with release preparation?
   uv run python scripts/audit_public_api_compat.py
   ```
 - [ ] Read every reported break. The audit compares this checkout with the
-  latest reachable release tag (override with `--baseline-ref vX.Y.Z` only when
-  auditing against a specific previous release).
+  latest reachable **stable** release tag (pre-releases are skipped; override
+  with `--baseline-ref vX.Y.Z` only when auditing against a specific previous
+  release).
 - [ ] If the audit reports an unapproved break, prefer a compatibility shim or
   restored alias. Do **not** proceed to packaging while unapproved breaks remain.
 - [ ] If a break is intentional and allowed by the stability policy, update all
@@ -148,8 +152,9 @@ documented client namespace methods under `NotebookLMClient.notebooks`,
 default values; changing a default is a public behavior change.
 
 The allowlist is **release-scoped**: each entry records a break pending the
-*next* tag, not a permanent exemption. Once `vX.Y.Z` ships, its entries are in
-the baseline and must be pruned — see
+*next* stable release, not a permanent exemption. A pre-release tag does not
+advance the baseline (see the Pre-releases section). Once a stable `vX.Y.Z`
+ships, its entries are in the baseline and must be pruned — see
 [Prune the API-Compat Allowlist](#prune-the-api-compat-allowlist). The Code
 Quality job runs the audit with `--check-stale`, so a stale entry (one matching
 no break against the baseline) is a CI failure, not silent cruft.
@@ -159,6 +164,13 @@ no break against the baseline) is a CI failure, not silent cruft.
 - [ ] Get commits since last release:
   ```bash
   git log $(git describe --tags --abbrev=0)..HEAD --oneline
+  ```
+  During a **pre-release cycle**, base the range on the last *stable* tag so the
+  aggregate changelog captures the whole cycle (a plain `git describe` would
+  start at the alpha):
+  ```bash
+  git log $(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' \
+    --exclude '*a[0-9]*' --exclude '*b[0-9]*' --exclude '*rc[0-9]*')..HEAD --oneline
   ```
 - [ ] Generate changelog entries in Keep a Changelog format:
   - **Added** - New features
@@ -297,7 +309,7 @@ python scripts/mcp_live_smoke.py \
 - [ ] Wait for upload to complete
 - [ ] Verify package appears: https://test.pypi.org/project/notebooklm-py/
 
-> **Note:** TestPyPI does not allow re-uploading the same version. If you need to fix issues after publishing, bump the patch version and start over.
+> **Note:** TestPyPI does not allow re-uploading the same version. If you need to fix issues after publishing, bump the patch version and start over. For a pre-release, bump the **pre-release serial** (`a1 → a2`), not the patch.
 
 ### Verify TestPyPI Package
 
@@ -306,7 +318,8 @@ python scripts/mcp_live_smoke.py \
 - [ ] Wait for all tests to pass (unit, integration, E2E)
 - [ ] If verification fails:
   1. Fix issues in the release worktree
-  2. Bump patch version in `pyproject.toml`
+  2. Bump patch version in `pyproject.toml` (for a pre-release, bump the
+     pre-release serial, e.g. `0.8.0a1 → 0.8.0a2`)
   3. Update `CHANGELOG.md` with fix
   4. Commit, push, and re-run **Publish to TestPyPI**
 
@@ -375,15 +388,19 @@ The `Publish to PyPI` step in `publish.yml` also opts into **PEP 740 attestation
 
 ### Prune the API-Compat Allowlist
 
-Pushing the tag advances the audit baseline — `audit_public_api_compat.py`
-resolves it from `git describe --tags --abbrev=0`, so the breaks you just
-shipped are now part of the `vX.Y.Z` baseline and are **no longer breaks against
-it**. The baseline advances automatically; the allowlist is the manual half that
-must reset, or it accumulates dead entries that describe nothing.
+Pushing a **stable** tag advances the audit baseline — `audit_public_api_compat.py`
+resolves the latest reachable stable release tag (pre-releases are skipped), so
+the breaks you just shipped are now part of the `vX.Y.Z` baseline and are **no
+longer breaks against it**. (A pre-release tag such as `v0.8.0a1` does **not**
+advance the baseline, so the allowlist survives the whole pre-release cycle and
+prunes once, here, at the final `vX.Y.Z`.) The baseline advances automatically;
+the allowlist is the manual half that must reset, or it accumulates dead entries
+that describe nothing.
 
 The lifecycle to keep in mind:
 
-- **baseline** = the last *released* version (automatic — it's the latest tag).
+- **baseline** = the last *stable released* version (automatic — the latest
+  stable release tag; pre-releases are skipped).
 - **allowlist** = the intentional breaks pending the *next* release. It should
   reset to (near) empty at each release boundary.
 
@@ -473,7 +490,56 @@ git push origin :refs/tags/vX.Y.Z
 
 - Check if version already exists on TestPyPI
 - TestPyPI doesn't allow re-uploading same version
-- Bump to next patch version if needed
+- Bump to next patch version if needed (for a pre-release, bump the pre-release serial, e.g. `0.8.0a1 → 0.8.0a2`)
+
+---
+
+## Pre-releases (alpha / beta / rc)
+
+Pre-releases let you stage a release for early adopters without affecting normal
+users. PEP 440 pre-release versions flow through the existing build, tag, publish,
+and verify machinery unchanged, and `pip install notebooklm-py` will not serve
+them to normal users. Follow the normal checklist above, with these differences:
+
+1. **Version format is canonical PEP 440, byte-identical everywhere.** Use
+   `X.Y.ZaN` / `X.Y.ZbN` / `X.Y.ZrcN` (e.g. `0.8.0a1`), tag `vX.Y.ZaN`. Do **not**
+   use non-canonical forms like `0.8.0-alpha.1`, `0.8.0.rc1`, or `0.8.0RC1`:
+   `publish.yml` tag-validation and `verify-package.yml` do raw string compares,
+   and Verify Package compares against the *normalized* `importlib.metadata.version()`
+   — a non-canonical spelling passes tag-match but fails Verify Package with a
+   spurious "version mismatch".
+2. **Serial progression** within one cycle: advance the serial
+   `a1 → a2 → … → b1 → … → rc1 → … → X.Y.0` (final). Do **not** bump the patch
+   between pre-releases.
+3. **A pre-release *is* the final version's real surface.** A `X.Y.ZaN` tag must
+   already contain every breaking flip for that version with deprecation shims
+   removed. The `tests/_guardrails/test_v080_release_gate.py` version parser
+   truncates the pre-release suffix, so the v0.8.0 breaking-flip release-gate
+   fires at `0.8.0a1`. A "soft" alpha that still carries shims is not supported.
+4. **Re-lock after the bump.** After editing `pyproject.toml`'s version, run
+   `uv sync` so `uv.lock`'s workspace-package version matches, else CI `--frozen`
+   installs fail as out-of-date.
+5. **Normal users are unaffected.** `pip install notebooklm-py` skips pre-releases;
+   only `pip install --pre` or an exact `==0.8.0a1` pin selects one.
+6. **Changelog.** Keep pre-release changes accumulating under `## [Unreleased]`
+   (or a single in-progress `## [0.8.0]` heading). Do **not** cut a dated
+   `[X.Y.ZaN]` section per pre-release.
+7. **Baseline / allowlist: no special handling.** `audit_public_api_compat.py`
+   keeps the baseline on the last *stable* tag through the whole pre-release cycle
+   (pre-release tags are skipped), so the allowlist behaves exactly as for a normal
+   release — one prune after the final `X.Y.0` tag.
+8. **Gates still apply; none are optional.** The public-API audit,
+   pre-commit/mypy/pytest, CI on PR, TestPyPI, and Verify Package all run
+   unchanged. Verify Package reads the version from the checked-out ref, so
+   dispatch it on the pre-release branch. Because Verify Package runs E2E, there is
+   no "skip E2E for a pre-release" shortcut.
+9. **GitHub release must be flagged as a pre-release, and the notes must extract
+   the aggregate heading** (not a per-pre-release one, which would yield empty
+   notes):
+   ```bash
+   gh release create v0.8.0a1 --prerelease --title "v0.8.0a1" \
+     --notes "$(sed -n '/## \[0.8.0\]/,/## \[/p' CHANGELOG.md | sed '$d')"
+   ```
 
 ---
 

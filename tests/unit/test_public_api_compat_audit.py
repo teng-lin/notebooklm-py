@@ -739,3 +739,49 @@ def test_check_stale_does_not_print_ok_when_stale_blocks(script, tmp_path, monke
     assert "OK:" not in captured.err
     assert "stale" in captured.err.lower()
     assert "notebooklm.AlreadyBaked" in captured.err
+
+
+def test_latest_release_tag_skips_prereleases_and_nonrelease(script, tmp_path):
+    """The default baseline stays on the last STABLE release tag.
+
+    Pre-release (aN/bN/rcN) and non-release tags must not become the baseline,
+    else pushing an alpha would silently rebaseline the compat gate.
+    """
+    import subprocess
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args],
+            cwd=tmp_path,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    git("init")
+    git("config", "user.email", "t@t.t")
+    git("config", "user.name", "t")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (tmp_path / "f").write_text("1")
+    git("add", "f")
+    git("commit", "-m", "c1")
+    git("tag", "v0.7.3")
+
+    (tmp_path / "f").write_text("2")
+    git("commit", "-am", "c2")
+    git("tag", "docs-2026")  # stray non-release tag
+
+    (tmp_path / "f").write_text("3")
+    git("commit", "-am", "c3")
+    git("tag", "v0.8.0a1")  # pre-release
+
+    # Mid-cycle: baseline must skip BOTH the alpha and the stray tag.
+    assert script.latest_release_tag(tmp_path) == "v0.7.3"
+
+    (tmp_path / "f").write_text("4")
+    git("commit", "-am", "c4")
+    git("tag", "v0.8.0")  # final stable
+
+    assert script.latest_release_tag(tmp_path) == "v0.8.0"

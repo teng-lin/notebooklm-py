@@ -2,8 +2,8 @@
 
 This is a release gate, not a replacement for unit tests. It compares the
 runtime public surface in this checkout against a baseline git ref (by default
-the latest reachable tag) and reports unapproved removals, call-signature
-changes, or return-annotation changes.
+the latest reachable stable release tag; pre-releases are skipped) and reports
+unapproved removals, call-signature changes, or return-annotation changes.
 
 Usage:
     uv run python scripts/audit_public_api_compat.py
@@ -98,12 +98,34 @@ def _run_git(args: list[str], cwd: Path, *, capture: bool = True) -> subprocess.
 
 
 def latest_release_tag(repo_root: Path) -> str:
-    """Return the latest reachable version tag."""
-    result = _run_git(["describe", "--tags", "--abbrev=0"], repo_root)
+    """Return the latest reachable stable release tag.
+
+    Restricts ``git describe`` to release-shaped tags (``--match``) and drops
+    pre-release suffixes (``--exclude`` of aN/bN/rcN), so a pushed ``v0.8.0a1``
+    does not become the compat baseline. Keeping the baseline on the last stable
+    release means the audit checks the real ``vPREV -> vNEXT`` upgrade path for
+    the whole pre-release cycle, and the allowlist prunes once at the final tag.
+    """
+    result = _run_git(
+        [
+            "describe",
+            "--tags",
+            "--abbrev=0",
+            "--match",
+            "v[0-9]*.[0-9]*.[0-9]*",  # release-shaped tags only (skips recovery/*, docs-*, …)
+            "--exclude",
+            "*a[0-9]*",  # drop aN pre-releases
+            "--exclude",
+            "*b[0-9]*",  # drop bN pre-releases
+            "--exclude",
+            "*rc[0-9]*",  # drop rcN pre-releases
+        ],
+        repo_root,
+    )
     if result.returncode != 0:
         stderr = result.stderr.decode("utf-8", errors="replace")
         raise RuntimeError(
-            "could not resolve latest tag: "
+            "could not resolve latest stable release tag: "
             f"{stderr.strip()}. Fetch tags/history or pass --baseline-ref explicitly."
         )
     return result.stdout.decode("utf-8").strip()
@@ -853,7 +875,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--baseline-ref",
         default=None,
-        help="Git ref to compare against. Defaults to `git describe --tags --abbrev=0`.",
+        help=(
+            "Git ref to compare against. Defaults to the latest reachable stable "
+            "release tag (pre-release aN/bN/rcN and non-release tags are skipped)."
+        ),
     )
     parser.add_argument(
         "--allowlist",
