@@ -53,7 +53,6 @@ from ._studio_download import (
     _resolve_artifact_id,
 )
 from ._studio_items import (
-    STUDIO_KINDS,
     resolve_studio_item,
     studio_items,
     summarize_studio_item,
@@ -186,7 +185,25 @@ def register(mcp: Any) -> None:
         ctx: Context,
         notebook: str,
         item: str | None = None,
-        kind: str | None = None,
+        # ``kind`` is a ``Literal`` so FastMCP/Pydantic emits a JSON-schema ``enum``
+        # (agents discover the valid filter values from the schema, not by trial) and
+        # rejects an out-of-enum value at the boundary. The members DUPLICATE
+        # ``_studio_items.STUDIO_KINDS`` (a runtime frozenset, so it can't be spelled
+        # as a ``Literal`` directly); ``test_studio_list_kind_enum_matches_studio_kinds``
+        # pins the schema enum equal to ``STUDIO_KINDS`` so the two can't drift.
+        kind: Literal[
+            "audio",
+            "data-table",
+            "flashcards",
+            "infographic",
+            "mind-map",
+            "note",
+            "quiz",
+            "report",
+            "slide-deck",
+            "video",
+        ]
+        | None = None,
         detail: Literal["summary", "full"] = "summary",
         limit: int = DEFAULT_LIMIT,
         offset: int = 0,
@@ -218,10 +235,9 @@ def register(mcp: Any) -> None:
                 raise ValidationError("limit must be >= 1.")
             if offset < 0:
                 raise ValidationError("offset must be >= 0.")
-            if kind is not None and kind not in STUDIO_KINDS:
-                raise ValidationError(
-                    f"unknown kind {kind!r}; valid: {', '.join(sorted(STUDIO_KINDS))}."
-                )
+            # ``kind`` is a ``Literal`` — FastMCP/Pydantic rejects an unknown value at
+            # the schema boundary, so no runtime membership check is needed (same as
+            # ``studio_generate``'s ``artifact_type``).
             nb_id = await resolve_notebook(client, notebook)
             if item is not None:
                 # Single fetch by ref over the merged list; the resolved item's full
@@ -352,7 +368,8 @@ def register(mcp: Any) -> None:
         comma-separated string (the comma form cannot carry a source title that
         itself contains a comma — use a JSON array or a real list for those).
         ``instructions`` is free-text guidance for kinds that accept it
-        (including ``mind-map``).
+        (including ``mind-map``). ``language`` (optional) is a language code,
+        e.g. ``en``/``ja``/``zh_Hans``.
         """
         client = get_client(ctx)
         with mcp_errors():

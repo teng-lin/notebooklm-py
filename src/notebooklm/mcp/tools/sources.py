@@ -517,6 +517,15 @@ def register(mcp: Any) -> None:
             # resolve_notebook, so these malformed calls never pay a notebook
             # round-trip. (Content *presence* + the YouTube-host guard still run
             # later, during dispatch — that ordering is unchanged by #1696.)
+            #
+            # ``mime_type`` deliberately stays a free-text ``str`` (NOT a ``Literal``):
+            # it is DUAL-USE — for ``source_type="file"`` it carries an arbitrary,
+            # open-ended MIME type (in the signed upload URL), and only for
+            # ``source_type="drive"`` is it restricted to ``_DRIVE_MIME_CHOICES``.
+            # A ``Literal`` would wrongly reject valid ``file`` MIME types; splitting a
+            # dedicated ``drive_mime_type`` param would grow the ``source_add`` surface
+            # for a niche 4-value option. So the drive choice set is enforced here at
+            # runtime (and listed in the docstring) instead (issue #1759).
             if (
                 mime_type is not None
                 and source_type == "drive"

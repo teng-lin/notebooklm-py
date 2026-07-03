@@ -1223,6 +1223,21 @@ async def test_source_add_drive_bad_mime_is_validation_error(mcp_call, mock_clie
     mock_client.sources.add_drive.assert_not_called()
 
 
+async def test_source_add_mime_type_has_no_schema_enum(mcp_list_tools) -> None:
+    """``mime_type`` deliberately stays a free-text ``str`` — NOT a ``Literal`` — so its
+    schema carries NO ``enum`` (issue #1759, decision b). It is dual-use: ``source_type=
+    "file"`` accepts arbitrary MIME, only ``drive`` is restricted (enforced at runtime).
+    A future well-meaning narrowing to ``Literal`` (which would reject valid ``file`` MIME)
+    fails here."""
+    tools = {t.name: t for t in await mcp_list_tools()}
+    mime_schema = tools["source_add"].inputSchema["properties"]["mime_type"]
+    # No flat ``enum`` and no ``enum`` inside any ``anyOf``/``oneOf`` branch (the shape a
+    # ``Literal | None`` would take).
+    assert "enum" not in mime_schema
+    branches = (mime_schema.get("anyOf") or []) + (mime_schema.get("oneOf") or [])
+    assert all("enum" not in branch for branch in branches)
+
+
 @pytest.mark.parametrize(
     ("source_type", "good", "foreign"),
     [

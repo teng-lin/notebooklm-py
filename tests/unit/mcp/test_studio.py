@@ -226,14 +226,34 @@ async def test_studio_list_kind_filter(mcp_call, mock_client) -> None:
 
 @pytest.mark.parametrize("bad", ["mind_map", "slide_deck", "note-backed", "bogus", "unknown"])
 async def test_studio_list_rejects_unknown_kind(mcp_call, mock_client, bad) -> None:
-    """An unknown/underscored ``kind`` is a clean VALIDATION error, not a silently
-    empty page (or a false NOT_FOUND on the by-ref path). ``unknown`` is a display-only
-    pass-through value, not a filterable kind, so it's rejected too."""
-    mock_client.notes.list = AsyncMock(return_value=[])
-    mock_client.artifacts.list = AsyncMock(return_value=[])
+    """An unknown/underscored ``kind`` rejects at the ``Literal`` schema boundary
+    (pydantic ``literal_error``), NOT via the old runtime ``"unknown kind"`` VALIDATION
+    path — mirroring ``studio_generate``'s out-of-enum option rejection. ``unknown`` is a
+    display-only pass-through value, not a filterable kind, so it's rejected too; the
+    underscored forms (``mind_map`` / ``slide_deck``) are not the hyphenated members."""
     with pytest.raises(ToolError) as exc:
         await mcp_call("studio_list", {"notebook": NB_ID, "kind": bad})
-    assert "unknown kind" in str(exc.value)
+    msg = str(exc.value)
+    assert "literal_error" in msg
+    assert "VALIDATION" not in msg
+
+
+async def test_studio_list_kind_enum_matches_studio_kinds(mcp_list_tools) -> None:
+    """The ``kind`` param's schema ``enum`` is pinned equal to ``STUDIO_KINDS`` so the
+    hand-spelled signature ``Literal`` can't drift from the runtime source of truth
+    (``STUDIO_KINDS`` is a frozenset, so it can't BE the ``Literal`` directly).
+
+    Also asserts ``"cinematic-video"`` is absent: it is a ``studio_generate.artifact_type``
+    member but NOT an ``ArtifactType`` / studio kind, so a future ``ArtifactType`` addition
+    can't silently widen this filter via a stale Literal."""
+    from notebooklm.mcp.tools._studio_items import STUDIO_KINDS
+
+    tools = await mcp_list_tools()
+    schema = next(t for t in tools if t.name == "studio_list").inputSchema
+    enum = _schema_enum(schema["properties"]["kind"])
+    assert enum == STUDIO_KINDS
+    assert enum is not None and len(enum) == 10
+    assert "cinematic-video" not in enum
 
 
 async def test_studio_list_summary_truncates_long_note(mcp_call, mock_client) -> None:
