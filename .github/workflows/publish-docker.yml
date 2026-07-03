@@ -43,6 +43,12 @@ jobs:
           # release). `.dockerignore` excludes `.git`, so this never bloats the image.
           fetch-depth: 0
 
+      # Pin Python so `tomllib` (3.11+) in the next step never depends on the
+      # runner's default python3 — mirrors publish.yml.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Derive image tags (and validate tag == pyproject version)
         id: meta
         run: |
