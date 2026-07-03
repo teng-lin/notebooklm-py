@@ -17,6 +17,18 @@ RPC_OVERRIDES_ENV_VAR = "NOTEBOOKLM_RPC_OVERRIDES"
 _logged_override_hashes: set[int] = set()
 
 
+# Enterprise RPC overrides mapping when host is notebooklm.cloud.google.com
+ENTERPRISE_RPC_OVERRIDES: dict[str, str] = {
+    "GET_USER_SETTINGS": "y2DRud",  # (Consumer: ZwVcOc)
+    "LIST_NOTEBOOKS": "rG2vCb",     # (Consumer: wXbhsf)
+    "GET_NOTEBOOK": "tHcQ6c",       # (Consumer: rLM1Ne)
+    "DELETE_NOTEBOOK": "a0XDpc",    # (Consumer: WWINqb)
+    "CREATE_NOTEBOOK": "AzXHBd",    # (Consumer: CCqFvf)
+    "ADD_SOURCE": "ca0cne",         # (Consumer: izAoDd)
+    "RENAME_NOTEBOOK": "aja7m",     # (Consumer: s0tc2d)
+}
+
+
 def _valid_rpc_method_names() -> set[str]:
     """Return valid RPCMethod member names without importing RPCMethod at module load."""
     from .types import RPCMethod
@@ -103,6 +115,9 @@ def resolve_rpc_id(method_name: str, canonical_id: str) -> str:
     enforces, but we re-check here as defense in depth - overrides are
     ignored to avoid leaking custom RPC IDs to untrusted endpoints.
 
+    For Enterprise hosts, a built-in set of enterprise-specific RPC IDs is
+    applied automatically as baseline overrides.
+
     The first time a distinct override set is consulted in a process, the
     full mapping is logged at INFO level so operators can confirm the
     config they intended is live. Subsequent calls with the same set are
@@ -122,7 +137,7 @@ def resolve_rpc_id(method_name: str, canonical_id: str) -> str:
     # ``_env`` is dependency-free, but the public package ``notebooklm``
     # imports ``rpc.types`` during init, and ``_env`` ships from the same
     # package.
-    from .._env import _ALLOWED_BASE_HOSTS, get_base_host
+    from .._env import _ALLOWED_BASE_HOSTS, get_base_host, ENTERPRISE_BASE_HOST
 
     try:
         host = get_base_host()
@@ -137,7 +152,12 @@ def resolve_rpc_id(method_name: str, canonical_id: str) -> str:
     if host not in _ALLOWED_BASE_HOSTS:
         return canonical_id
 
-    overrides = _load_rpc_overrides()
+    # Combine built-in enterprise overrides (if applicable) with environment-based overrides
+    overrides: dict[str, str] = {}
+    if host == ENTERPRISE_BASE_HOST:
+        overrides.update(ENTERPRISE_RPC_OVERRIDES)
+
+    overrides.update(_load_rpc_overrides())
     if not overrides:
         return canonical_id
 

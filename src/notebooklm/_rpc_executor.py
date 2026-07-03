@@ -244,6 +244,66 @@ class RpcExecutor:
 
         # Resolve once per logical call so URL, body, and decode use the same
         # override-aware RPC id.
+        from ._env import ENTERPRISE_BASE_HOST, get_base_host
+        import os
+
+        host = get_base_host()
+        if host == ENTERPRISE_BASE_HOST:
+            project_id = os.environ.get("NOTEBOOKLM_PROJECT", "")
+            region = os.environ.get("NOTEBOOKLM_REGION", "global")
+            if not project_id:
+                raise ValueError(
+                    "NOTEBOOKLM_PROJECT environment variable must be set when using NotebookLM Enterprise"
+                )
+
+            parent = f"projects/{project_id}/locations/{region}"
+
+            def to_notebook_path(nb_id: str) -> str:
+                if nb_id.startswith("projects/"):
+                    return nb_id
+                return f"projects/{project_id}/locations/{region}/notebooks/{nb_id}"
+
+            adapted_params = list(params)
+
+            if method == RPCMethod.GET_USER_SETTINGS:
+                adapted_params = [parent]
+            elif method == RPCMethod.LIST_NOTEBOOKS:
+                adapted_params = [parent, None, None, 1]
+            elif method == RPCMethod.GET_NOTEBOOK:
+                if adapted_params:
+                    notebook_id = adapted_params[0]
+                    adapted_params = [to_notebook_path(notebook_id)]
+            elif method == RPCMethod.CREATE_NOTEBOOK:
+                if adapted_params:
+                    title = adapted_params[0]
+                    adapted_params = [parent, [title, None, None, None, None, [None, None, None, None, None, None, 1]]]
+            elif method == RPCMethod.DELETE_NOTEBOOK:
+                if adapted_params and isinstance(adapted_params[0], list) and adapted_params[0]:
+                    notebook_id = adapted_params[0][0]
+                    adapted_params = [to_notebook_path(notebook_id)]
+            elif method == RPCMethod.RENAME_NOTEBOOK:
+                if len(adapted_params) > 1:
+                    notebook_id = adapted_params[0]
+                    title = ""
+                    try:
+                        title = adapted_params[1][0][3][1]
+                    except (IndexError, TypeError):
+                        title = str(adapted_params[1])
+                    adapted_params = [
+                        [title, {"70000": to_notebook_path(notebook_id)}],
+                        [["title", "emoji"]]
+                    ]
+            elif method == RPCMethod.ADD_SOURCE:
+                if len(adapted_params) > 1:
+                    notebook_id = adapted_params[1]
+                    adapted_params = [
+                        adapted_params[0],
+                        notebook_id,
+                        {"70000": to_notebook_path(notebook_id)}
+                    ]
+
+            params = adapted_params
+
         resolved_id = resolve_rpc_id(method.name, method.value)
         rpc_request = encode_rpc_request(method, params, rpc_id_override=resolved_id)
 
@@ -309,6 +369,10 @@ class RpcExecutor:
 
         try:
             result = self._decode_response(response.text, resolved_id, allow_null=allow_null)
+            if host == ENTERPRISE_BASE_HOST and method == RPCMethod.GET_NOTEBOOK:
+                # Wrap in a list to mimic the consumer-style list-of-notebooks envelope
+                if isinstance(result, list) and result and not isinstance(result[0], list):
+                    result = [result]
             elapsed = time.perf_counter() - start
             logger.debug("RPC %s completed in %.3fs", method.name, elapsed)
             return result
