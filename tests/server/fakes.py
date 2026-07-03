@@ -20,7 +20,13 @@ from notebooklm._types.artifacts import Artifact, GenerationState, GenerationSta
 from notebooklm._types.chat import AskResult
 from notebooklm._types.notebooks import Notebook
 from notebooklm._types.notes import Note
-from notebooklm._types.research import SourceGuide
+from notebooklm._types.research import (
+    ResearchSource,
+    ResearchStart,
+    ResearchStatus,
+    ResearchTask,
+    SourceGuide,
+)
 from notebooklm._types.sharing import SharedUser, ShareStatus
 from notebooklm._types.sources import Source, SourceFulltext
 from notebooklm.exceptions import NotebookNotFoundError, NoteNotFoundError
@@ -192,6 +198,24 @@ class FakeChat:
             is_follow_up=conversation_id is not None,
         )
 
+    async def set_mode(self, notebook_id: str, mode: Any) -> None:
+        self._s.last_configure = {"notebook_id": notebook_id, "mode": mode}
+
+    async def configure(
+        self,
+        notebook_id: str,
+        *,
+        goal: Any = None,
+        response_length: Any = None,
+        custom_prompt: str | None = None,
+    ) -> None:
+        self._s.last_configure = {
+            "notebook_id": notebook_id,
+            "goal": goal,
+            "response_length": response_length,
+            "custom_prompt": custom_prompt,
+        }
+
 
 class FakeArtifacts:
     def __init__(self, state: FakeClient) -> None:
@@ -285,6 +309,72 @@ class FakeSharing:
         return self._s.share_status(notebook_id)
 
 
+class FakeResearch:
+    """Scriptable in-memory research surface (start / poll / cancel / import).
+
+    ``start`` records an ``in_progress`` task keyed by the route's ``poll_id``
+    (``report_id`` for deep, ``task_id`` for fast); a test drives it to
+    ``completed`` via :meth:`FakeClient.set_research_completed`. ``poll`` returns
+    the stored task or a typed ``not_found`` sentinel for an unknown id.
+    """
+
+    def __init__(self, state: FakeClient) -> None:
+        self._s = state
+
+    async def start(
+        self, notebook_id: str, query: str, source: str = "web", mode: str = "fast"
+    ) -> ResearchStart:
+        n = self._s.next_research
+        self._s.next_research += 1
+        task_id = f"rtask-{n}"
+        # ``deep_missing_report_id`` simulates the backend returning a deep start
+        # WITHOUT a report_id — the route must fail loud rather than emit the
+        # sessionId task_id as a pollable id.
+        report_id = (
+            f"rreport-{n}" if mode == "deep" and not self._s.deep_missing_report_id else None
+        )
+        poll_id = report_id or task_id
+        self._s.last_research_start = {
+            "notebook_id": notebook_id,
+            "query": query,
+            "source": source,
+            "mode": mode,
+        }
+        # Record the started run as in-progress under its poll id.
+        self._s.research_tasks[(notebook_id, poll_id)] = ResearchTask(
+            task_id=poll_id, status=ResearchStatus.IN_PROGRESS, query=query
+        )
+        return ResearchStart(
+            task_id=task_id,
+            report_id=report_id,
+            notebook_id=notebook_id,
+            query=query,
+            mode=mode,
+        )
+
+    async def poll(self, notebook_id: str, task_id: str | None = None) -> ResearchTask:
+        if task_id is None:
+            return ResearchTask.empty()
+        task = self._s.research_tasks.get((notebook_id, task_id))
+        if task is None:
+            return ResearchTask.not_found(task_id)
+        return task
+
+    async def cancel(self, notebook_id: str, run_id: str) -> None:
+        # Fire-and-forget: record the call, never raise on an unknown id.
+        self._s.cancelled_research.append((notebook_id, run_id))
+
+    async def import_sources(
+        self, notebook_id: str, task_id: str, sources: Any
+    ) -> list[dict[str, str]]:
+        rows = list(sources)
+        self._s.imported_research.append((notebook_id, task_id, rows))
+        return [
+            {"id": f"src-imported-{i}", "title": str(row.get("title", ""))}
+            for i, row in enumerate(rows)
+        ]
+
+
 class FakeClient:
     """Scriptable in-memory client mirroring the namespaces the routes use."""
 
@@ -299,6 +389,9 @@ class FakeClient:
         self.shared_users: dict[str, dict[str, SharedUser]] = {}
         self.fulltext_store: dict[tuple[str, str], str] = {}
         self.guide_store: dict[tuple[str, str], SourceGuide] = {}
+        self.research_tasks: dict[tuple[str, str], ResearchTask] = {}
+        self.cancelled_research: list[tuple[str, str]] = []
+        self.imported_research: list[tuple[str, str, list[Any]]] = []
 
         self.new_source_status: SourceStatus = SourceStatus.PROCESSING
         self.hide_new_sources: bool = False
@@ -306,10 +399,14 @@ class FakeClient:
         self.download_return_path: str | None = None
         self.chat_error: Exception | None = None
         self.last_share_notify: bool | None = None
+        self.last_configure: dict[str, Any] | None = None
+        self.last_research_start: dict[str, Any] | None = None
+        self.deep_missing_report_id: bool = False
 
         self.next_task = 1
         self.next_source = 1
         self.next_note = 1
+        self.next_research = 1
         self.uploaded_paths: list[str] = []
         self.last_ask: dict[str, Any] | None = None
 
@@ -319,6 +416,36 @@ class FakeClient:
         self.chat = FakeChat(self)
         self.artifacts = FakeArtifacts(self)
         self.sharing = FakeSharing(self)
+        self.research = FakeResearch(self)
+
+    def set_research_completed(
+        self,
+        notebook_id: str,
+        poll_id: str,
+        *,
+        query: str = "q",
+        sources: list[dict[str, str]] | None = None,
+        report: str = "report body",
+    ) -> None:
+        """Drive a started research run to ``completed`` with the given sources."""
+        src_models = tuple(
+            ResearchSource(url=s.get("url", ""), title=s.get("title", "")) for s in (sources or [])
+        )
+        self.research_tasks[(notebook_id, poll_id)] = ResearchTask(
+            task_id=poll_id,
+            status=ResearchStatus.COMPLETED,
+            query=query,
+            sources=src_models,
+            report=report,
+        )
+
+    def set_research_failed(self, notebook_id: str, poll_id: str, *, query: str = "q") -> None:
+        """Drive a started research run to the terminal ``failed`` state."""
+        self.research_tasks[(notebook_id, poll_id)] = ResearchTask(
+            task_id=poll_id,
+            status=ResearchStatus.FAILED,
+            query=query,
+        )
 
     def share_status(self, notebook_id: str) -> ShareStatus:
         is_public = self.public_shares.get(notebook_id, False)

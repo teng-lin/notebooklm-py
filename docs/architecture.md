@@ -1293,8 +1293,9 @@ src/notebooklm/
         ├── notebooks.py         # /v1/notebooks list/get/create/delete
         ├── sources.py           # /v1/notebooks/{id}/sources list/get/add(url·text·file)/delete + poll-the-resource status
         ├── notes.py             # /v1/notebooks/{id}/notes list/get/create/update(PUT)/delete — thin adapter over client.notes
-        ├── chat.py              # POST /v1/notebooks/{id}/chat — blocking ask (no SSE)
+        ├── chat.py              # POST /v1/notebooks/{id}/chat — blocking ask (no SSE) + POST /chat/configure over _app.chat.execute_configure
         ├── artifacts.py         # /v1/notebooks/{id}/artifacts list/generate/poll/download (registry-projected poll; server-generated temp download path)
+        ├── research.py          # /v1/notebooks/{id}/research start(202)/status/cancel/import — split-tool shape over client.research + _app.research.poll_and_classify (poll_id = report_id or task_id)
         └── share.py             # /v1/notebooks/{id}/share status/public/users/view-level over _app.sharing
 ```
 

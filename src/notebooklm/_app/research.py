@@ -111,6 +111,63 @@ async def poll_and_classify(
     )
 
 
+async def poll_sources_for_import(
+    client: Any, notebook_id: str, run_id: str
+) -> list[dict[str, Any]]:
+    """Poll a research run and return its importable sources, or raise.
+
+    The single shared importable-state guard for the "import a completed run's
+    found sources" flow — driven by BOTH the MCP ``research_import`` tool and the
+    REST ``POST .../research/{run_id}/import`` route so the ladder cannot drift
+    between the two adapters.
+
+    Polls FOR THE REQUESTED ``run_id`` (via :func:`poll_and_classify`, which
+    forwards it to ``client.research.poll`` as the task discriminator) so the
+    returned sources belong to that run — never the notebook's current (possibly
+    different) research run's sources. Every non-importable state raises the
+    public :class:`~notebooklm.exceptions.ValidationError` (each adapter maps it
+    to its own surface + status), so an unfinished / failed / empty run is never
+    imported as a partial success:
+
+    * ``not_found`` — the pinned run is not among the polled runs (nothing to
+      import; the typed ``NOT_FOUND`` sentinel, not a fallback to the current run);
+    * ``failed`` — the run will not complete;
+    * any non-``completed`` status (e.g. ``in_progress`` / ``no_research``) —
+      only a completed run has a final source set;
+    * ``completed`` with no sources — refuse the silent empty import.
+
+    Returns the completed run's importable sources (the legacy ``list[dict]``
+    shape) on success. The caller then drives ``client.research.import_sources``
+    and shapes its own response.
+
+    The ``run`` noun is surface-neutral (the MCP tool documents it as the
+    ``task_id``); the message names no adapter-specific route or tool so the one
+    string reads cleanly on both surfaces.
+    """
+    status = await poll_and_classify(client, notebook_id, run_id)
+    if status.status == "not_found":
+        raise ValidationError(
+            f"Research run {run_id!r} is not among notebook {notebook_id}'s research "
+            "runs; nothing to import. Check its status first."
+        )
+    # Only a COMPLETED run has a final source set. Importing an
+    # in_progress/no_research/failed snapshot would import a partial/empty set as
+    # a "success" — refuse with an action-appropriate message.
+    if status.status == "failed":
+        raise ValidationError(
+            f"Research run {run_id!r} failed; it will not complete — start a new "
+            "research session rather than polling."
+        )
+    if status.status != "completed":
+        raise ValidationError(
+            f"Research run {run_id!r} is not complete (status {status.status!r}); poll "
+            "its status until 'completed' before importing."
+        )
+    if not status.sources:
+        raise ValidationError(f"Research run {run_id!r} completed with no sources to import.")
+    return status.sources
+
+
 # ===========================================================================
 # research cancel
 # ===========================================================================
@@ -355,5 +412,6 @@ __all__ = [
     "cancel_research",
     "execute_research_wait",
     "poll_and_classify",
+    "poll_sources_for_import",
     "validate_research_wait_flags",
 ]

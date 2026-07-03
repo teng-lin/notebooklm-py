@@ -40,3 +40,55 @@ def test_unauthorized_is_401(raw_client: TestClient) -> None:
         "/v1/notebooks/nb-1/chat", json={"question": "hi"}, headers={"Host": "127.0.0.1"}
     )
     assert resp.status_code == 401
+
+
+# --- POST /v1/notebooks/{id}/chat/configure ---------------------------------
+
+
+def test_configure_preset_writes_mode(authed_client: TestClient, fake_client: FakeClient) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/chat/configure", json={"chat_mode": "learning-guide"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "configured"
+    assert body["mode"] == "learning-guide"
+    # A preset short-circuits to set_mode (not the custom configure path).
+    assert fake_client.last_configure is not None
+    assert fake_client.last_configure["notebook_id"] == "nb-1"
+    assert "mode" in fake_client.last_configure
+
+
+def test_configure_custom_writes_goal_and_length(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/chat/configure",
+        json={"goal": "Explain like I'm five", "response_length": "shorter"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "configured"
+    assert body["mode"] is None
+    # A non-empty goal selects the CUSTOM chat goal.
+    assert body["goal_name"] == "custom"
+    assert body["persona"] == "Explain like I'm five"
+    assert body["response_length"] == "shorter"
+    assert fake_client.last_configure is not None
+    assert fake_client.last_configure["custom_prompt"] == "Explain like I'm five"
+
+
+def test_configure_preset_and_custom_conflict_is_400(authed_client: TestClient) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/chat/configure",
+        json={"chat_mode": "concise", "response_length": "longer"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["category"] == "validation"
+
+
+def test_configure_unknown_mode_is_422(authed_client: TestClient) -> None:
+    # ``chat_mode`` is a Literal, so an out-of-enum value is rejected at the
+    # request-schema boundary (422), not reaching the core.
+    resp = authed_client.post("/v1/notebooks/nb-1/chat/configure", json={"chat_mode": "bogus"})
+    assert resp.status_code == 422

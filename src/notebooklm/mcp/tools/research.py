@@ -271,47 +271,26 @@ def register(mcp: Any) -> None:
                 raise ValidationError("task_id is required to import a research task")
             task_id = task_id.strip()
             nb_id = await resolve_notebook(client, notebook)
-            # Poll FOR THE REQUESTED task so the polled sources belong to it.
-            # ``poll`` returns the typed ``NOT_FOUND`` sentinel (status
-            # ``not_found``) when the pinned task is not among the polled
-            # results — guard against that here so we never fall back to
-            # importing whatever the notebook's current task happens to be.
-            status = await research_core.poll_and_classify(client, nb_id, task_id)
-            if status.status == "not_found":
-                raise ValidationError(
-                    f"Research task {task_id!r} is not among notebook {nb_id}'s "
-                    "research tasks; nothing to import. Check research_status."
-                )
-            # Only a COMPLETED task has a final source set. Importing an
-            # in_progress/no_research/failed snapshot would import a partial/empty
-            # set as a "success" — refuse with an action-appropriate message.
-            if status.status == "failed":
-                raise ValidationError(
-                    f"Research task {task_id!r} failed; it will not complete — "
-                    "start a new research session rather than polling."
-                )
-            if status.status != "completed":
-                raise ValidationError(
-                    f"Research task {task_id!r} is not complete (status "
-                    f"{status.status!r}); poll research_status until 'completed' "
-                    "before importing."
-                )
-            if not status.sources:
-                raise ValidationError(
-                    f"Research task {task_id!r} completed with no sources to import."
-                )
-            # TOCTOU note: ``import_sources`` imports the sources from THIS
-            # ``poll_and_classify`` snapshot rather than re-fetching atomically, so
-            # a concurrent/external change to the task between the poll above and
-            # the import below could theoretically race. Acceptable here: research
-            # tasks are user-driven (no high-frequency concurrent mutation), and
-            # the per-source ``task_id`` guard above prevents cross-task wiring —
-            # we never import a *different* task's sources.
-            imported = await client.research.import_sources(nb_id, task_id, status.sources)
+            # Poll FOR THE REQUESTED task (via the shared importable-state guard,
+            # which forwards ``task_id`` to ``poll`` as the discriminator) so the
+            # polled sources belong to it and every non-importable state
+            # (not_found / failed / non-completed / empty) is refused before we
+            # touch ``import_sources`` — we never fall back to importing whatever
+            # the notebook's current task happens to be. The same helper backs
+            # the REST import route so the ladder cannot drift.
+            sources = await research_core.poll_sources_for_import(client, nb_id, task_id)
+            # TOCTOU note: ``import_sources`` imports the sources from the poll
+            # snapshot above rather than re-fetching atomically, so a
+            # concurrent/external change to the task between the poll and the
+            # import could theoretically race. Acceptable here: research tasks are
+            # user-driven (no high-frequency concurrent mutation), and the pinned
+            # ``task_id`` prevents cross-task wiring — we never import a
+            # *different* task's sources.
+            imported = await client.research.import_sources(nb_id, task_id, sources)
             return {
                 "status": "imported",
                 "notebook_id": nb_id,
                 "task_id": task_id,
                 "imported": to_jsonable(imported),
-                "sources_found": len(status.sources),
+                "sources_found": len(sources),
             }

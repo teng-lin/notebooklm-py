@@ -19,6 +19,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from ..._app import chat as chat_core
+from ..._app.chat import ChatModeChoice, ResponseLengthChoice
 from ..._app.serialize import to_jsonable
 from ...client import NotebookLMClient
 from .._context import get_client
@@ -37,6 +39,24 @@ class ChatAsk(BaseModel):
     conversation_id: str | None = None
 
 
+class ChatConfigure(BaseModel):
+    """Request body for configuring a notebook's chat behavior.
+
+    Two mutually-exclusive styles (mirrors the MCP ``chat_configure`` tool):
+
+    * ``chat_mode`` applies a predefined preset (``default`` / ``learning-guide``
+      / ``concise`` / ``detailed``) and replaces the whole chat-settings block,
+      so it cannot be combined with ``goal`` / ``response_length``.
+    * ``goal`` (free-text custom persona, selects the CUSTOM chat goal) and/or
+      ``response_length`` (``default`` / ``longer`` / ``shorter``) set a custom
+      configuration.
+    """
+
+    chat_mode: ChatModeChoice | None = None
+    goal: str | None = None
+    response_length: ResponseLengthChoice | None = None
+
+
 @router.post("")
 async def ask(notebook_id: str, body: ChatAsk, client: ClientDep) -> dict[str, Any]:
     """Ask the notebook's sources a question and return the full answer.
@@ -46,3 +66,28 @@ async def ask(notebook_id: str, body: ChatAsk, client: ClientDep) -> dict[str, A
     """
     result = await client.chat.ask(notebook_id, body.question, conversation_id=body.conversation_id)
     return to_jsonable(result)
+
+
+@router.post("/configure")
+async def configure(notebook_id: str, body: ChatConfigure, client: ClientDep) -> dict[str, Any]:
+    """Configure a notebook's chat behavior (preset OR custom).
+
+    Pass ``chat_mode`` for a predefined preset, or ``goal`` / ``response_length``
+    for a custom configuration; the two styles cannot be combined (rejected with
+    400, not silently dropped).
+
+    NOTE: in the custom (``goal`` / ``response_length``) branch this writes the
+    full chat-settings block, so an omitted field resets to its default (e.g.
+    setting only ``response_length`` clears a previously-set custom ``goal``).
+    Pass every field you want to keep. (A ``chat_mode`` preset has no sub-fields.)
+    """
+    # The preset-vs-custom mutual-exclusion + enum validation live in the shared
+    # ``execute_configure`` core, so the CLI, MCP, and this route enforce one rule.
+    result = await chat_core.execute_configure(
+        client,
+        notebook_id,
+        chat_mode=body.chat_mode,
+        persona=body.goal,
+        response_length=body.response_length,
+    )
+    return {"status": "configured", **to_jsonable(result)}
