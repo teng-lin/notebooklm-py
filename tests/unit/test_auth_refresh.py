@@ -255,6 +255,7 @@ class TestFetchTokens:
         jar = httpx.Cookies()
         empty_snapshot = snapshot_cookie_jar(jar)
         jar.set("SID", "sid", domain=".google.com")
+        jar.set("__Secure-1PSIDTS", "test_1psidts", domain=".google.com")
         jar.set("ACCOUNT_REFRESH", "fresh", domain=".accounts.google.com")
 
         save_cookies_to_storage(jar, storage_file, original_snapshot=empty_snapshot)
@@ -297,6 +298,7 @@ class TestFetchTokens:
 
         jar = httpx.Cookies()
         jar.set("SID", "old", domain=".google.com")
+        jar.set("__Secure-1PSIDTS", "test_1psidts", domain=".google.com")
         snapshot = snapshot_cookie_jar(jar)
         jar.set("SID", "new", domain=".google.com")
 

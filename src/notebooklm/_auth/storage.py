@@ -417,6 +417,29 @@ def save_cookies_to_storage(
             )
             return _cookie_save_return(CookieSaveResult(False), return_result=return_result)
 
+        # Safeguard: prevent writing back cookies lacking core auth tokens (SID, __Secure-1PSIDTS)
+        # if those tokens existed previously (on-disk or in the original snapshot), to avoid session degradation.
+        prior_cookie_names = _cookie_policy.cookie_names_from_storage(storage_data)
+        snapshot_cookie_names = (
+            {key.name for key in original_snapshot.keys()}
+            if original_snapshot is not None
+            else set()
+        )
+        all_prior_cookie_names = prior_cookie_names | snapshot_cookie_names
+        core_cookies_previously_present = (
+            _cookie_policy.MINIMUM_REQUIRED_COOKIES & all_prior_cookie_names
+        )
+        incoming_cookie_names = {cookie.name for cookie in cookie_jar.jar if cookie.name}
+        missing_core_cookies = core_cookies_previously_present - incoming_cookie_names
+        if missing_core_cookies:
+            logger.warning(
+                "Skipping cookie save: new cookie set is missing core auth tokens "
+                "present in previous state (%s).",
+                ", ".join(sorted(missing_core_cookies)),
+            )
+            return _cookie_save_return(CookieSaveResult(False), return_result=return_result)
+
+
         if original_snapshot is None:
             updated_count = _merge_cookies_legacy(cookie_jar, storage_data)
             cas_rejected_keys: frozenset[CookieSnapshotKey] = frozenset()
