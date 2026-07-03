@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 import time
 from collections.abc import Awaitable, Iterator
@@ -535,7 +536,15 @@ def run_browser_capture(
                     # would block until timeout. "commit" resolves once response
                     # headers are processed -- enough to land on the host and
                     # classify page.url. See #1697 (and the #214 precedent below).
-                    page.goto(f"{get_base_url()}/", wait_until="commit", timeout=30000)
+                    if get_base_url() == "https://notebooklm.cloud.google.com":
+                        region = os.environ.get("NOTEBOOKLM_REGION", "global")
+                        project = os.environ.get("NOTEBOOKLM_PROJECT", "")
+                        goto_url = f"{get_base_url()}/{region}/"
+                        if project:
+                            goto_url += f"?project={project}"
+                    else:
+                        goto_url = f"{get_base_url()}/"
+                    page.goto(goto_url, wait_until="commit", timeout=30000)
                     break
                 except PlaywrightError as exc:
                     error_str = str(exc)
@@ -845,7 +854,15 @@ def run_cdp_capture(
             # arm -- the default "load" never fires on notebooklm.google.com, so
             # this CDP re-auth goto would otherwise waste 30s then TimeoutError
             # before landing classification. See #1697.
-            page.goto(f"{get_base_url()}/", wait_until="commit", timeout=30000)
+            if get_base_url() == "https://notebooklm.cloud.google.com":
+                region = os.environ.get("NOTEBOOKLM_REGION", "global")
+                project = os.environ.get("NOTEBOOKLM_PROJECT", "")
+                goto_url = f"{get_base_url()}/{region}/"
+                if project:
+                    goto_url += f"?project={project}"
+            else:
+                goto_url = f"{get_base_url()}/"
+            page.goto(goto_url, wait_until="commit", timeout=30000)
 
             # SAME landing classification as the headless launch arm: if we did
             # not land on the NotebookLM host, the attached browser's Google

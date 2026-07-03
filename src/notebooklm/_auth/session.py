@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from .._env import get_base_url
@@ -68,9 +69,21 @@ async def refresh_auth_session(
     ``allow_headless`` straight through.
     """
     http_client = kernel.get_http_client()
-    url = f"{get_base_url()}/"
-    if auth.account_email or auth.authuser:
-        url = f"{url}?{authuser_query(auth.authuser, auth.account_email)}"
+    if get_base_url() == "https://notebooklm.cloud.google.com":
+        region = os.environ.get("NOTEBOOKLM_REGION", "global")
+        project = os.environ.get("NOTEBOOKLM_PROJECT", "")
+        url = f"{get_base_url()}/{region}/"
+        query_params = []
+        if project:
+            query_params.append(f"project={project}")
+        if auth.account_email or auth.authuser:
+            query_params.append(authuser_query(auth.authuser, auth.account_email))
+        if query_params:
+            url = f"{url}?{'&'.join(query_params)}"
+    else:
+        url = f"{get_base_url()}/"
+        if auth.account_email or auth.authuser:
+            url = f"{url}?{authuser_query(auth.authuser, auth.account_email)}"
 
     async def _get_and_extract() -> tuple[str, str] | None:
         """GET the homepage + extract tokens; ``None`` signals a dead-cookie 302."""

@@ -421,6 +421,9 @@ class RpcExecutor:
                 snapshot.authuser,
                 snapshot.account_email,
             )
+        import os
+        if os.environ.get("NOTEBOOKLM_PROJECT"):
+            params["project"] = os.environ["NOTEBOOKLM_PROJECT"]
         return f"{get_batchexecute_url()}?{urlencode(params)}"
 
     def raise_rpc_error_from_http_status(

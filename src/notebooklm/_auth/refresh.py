@@ -733,9 +733,21 @@ async def _fetch_tokens_with_jar(
         if poke:
             await _poke_session(client, storage_path)
 
-        url = f"{get_base_url()}/"
-        if account_email or authuser or force_authuser_query:
-            url = f"{url}?{authuser_query(authuser, account_email)}"
+        if get_base_url() == "https://notebooklm.cloud.google.com":
+            region = os.environ.get("NOTEBOOKLM_REGION", "global")
+            project = os.environ.get("NOTEBOOKLM_PROJECT", "")
+            url = f"{get_base_url()}/{region}/"
+            query_params = []
+            if project:
+                query_params.append(f"project={project}")
+            if account_email or authuser or force_authuser_query:
+                query_params.append(authuser_query(authuser, account_email))
+            if query_params:
+                url = f"{url}?{'&'.join(query_params)}"
+        else:
+            url = f"{get_base_url()}/"
+            if account_email or authuser or force_authuser_query:
+                url = f"{url}?{authuser_query(authuser, account_email)}"
         response = await client.get(
             url,
             follow_redirects=True,
