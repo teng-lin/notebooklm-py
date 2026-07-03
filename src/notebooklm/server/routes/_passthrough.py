@@ -20,6 +20,7 @@ __all__ = [
     "passthrough_artifact_id",
     "passthrough_download_notebook",
     "passthrough_notebook_id",
+    "passthrough_source_id",
     "passthrough_source_ids",
 ]
 
@@ -29,6 +30,19 @@ async def passthrough_notebook_id(
 ) -> str:
     """Return ``notebook_id`` unchanged (the REST adapter works in full ids)."""
     return notebook_id
+
+
+async def passthrough_source_id(
+    _client: NotebookLMClient, _notebook_id: str, source_id: str, *, json_output: bool = False
+) -> str:
+    """Return a single ``source_id`` unchanged (REST works in full ids).
+
+    Shaped for the ``_app.source_mutations`` executors' injected
+    ``resolve_source_id`` callable (which the CLI fills with its
+    ``rich``-coupled partial-id resolver); the REST adapter already holds a full
+    id, so resolution is a pass-through.
+    """
+    return source_id
 
 
 async def passthrough_source_ids(

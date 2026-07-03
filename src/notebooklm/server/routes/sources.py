@@ -23,6 +23,8 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 
 from __future__ import annotations
 
+import asyncio
+import math
 import os
 import shutil
 import tempfile
@@ -33,13 +35,18 @@ from pydantic import BaseModel
 
 from ..._app import source_add as add_core
 from ..._app import source_content as content_core
+from ..._app import source_mutations as mut_core
+from ..._app import source_wait as wait_core
 from ..._app.views import source_view
 from ...client import NotebookLMClient
+from ...exceptions import ValidationError
 from .._context import get_client, get_pending
+from .._errors import error_item
 from .._pagination import MAX_LIMIT, paginate_envelope
 from .._pending import PendingRegistry
+from ._passthrough import passthrough_source_id
 
-__all__ = ["MAX_UPLOAD_BYTES", "router"]
+__all__ = ["MAX_UPLOAD_BYTES", "MAX_WAIT_TIMEOUT", "router"]
 
 router = APIRouter(prefix="/notebooks/{notebook_id}/sources", tags=["sources"])
 
@@ -54,6 +61,12 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 #: Chunk size when streaming an upload to the temp file.
 _UPLOAD_CHUNK = 1024 * 1024
+
+#: Upper bound on a ``source_wait`` timeout (seconds). Bounds how long a single
+#: request can hold a worker; a caller wanting to wait longer re-polls. Also the
+#: backstop that turns a ``timeout=inf`` (valid JSON) into a clean 400 rather
+#: than a request that never returns.
+MAX_WAIT_TIMEOUT = 3600.0
 
 
 #: Safe-basename sanitizer for a spooled upload. Aliased to the shared neutral
@@ -76,6 +89,39 @@ class SourceAddText(BaseModel):
 
     text: str
     title: str | None = None
+
+
+class SourceAddDrive(BaseModel):
+    """Request body for adding a Google Drive document source."""
+
+    document_id: str
+    title: str | None = None
+    mime_type: mut_core.DriveMimeChoice = "google-doc"
+
+
+class SourceAddBatch(BaseModel):
+    """Request body for adding many http(s) URL sources in one call."""
+
+    urls: list[str]
+    allow_internal: bool = False
+
+
+class SourceRename(BaseModel):
+    """Request body for renaming a source (title only)."""
+
+    title: str
+
+
+class SourceWaitBody(BaseModel):
+    """Request body for waiting on source readiness.
+
+    Omitting ``source_ids`` waits for EVERY source in the notebook (mirroring the
+    MCP ``source_wait`` all-sources mode).
+    """
+
+    source_ids: list[str] | None = None
+    timeout: float = 120.0
+    interval: float = 1.0
 
 
 async def _add_source(
@@ -317,6 +363,168 @@ async def get_source_content(
     }
 
 
+@router.post("/drive", status_code=201)
+async def add_drive(
+    notebook_id: str, body: SourceAddDrive, client: ClientDep, pending: PendingDep
+) -> dict[str, Any]:
+    """Add a Google Drive document as a source.
+
+    ``mime_type`` is one of ``google-doc`` (default) / ``google-slides`` /
+    ``google-sheets`` / ``pdf`` (validated by the neutral core, which 400s on an
+    unknown value). Flows through ``_app.source_mutations.execute_source_add_drive``
+    (the neutral ``source_add`` core has no Drive path).
+    """
+    result = await mut_core.execute_source_add_drive(
+        client,
+        mut_core.SourceAddDrivePlan(
+            notebook_id=notebook_id,
+            file_id=body.document_id,
+            title=body.title or "",
+            mime_type=body.mime_type,
+        ),
+    )
+    pending.record(notebook_id, result.source.id)
+    return source_view(result.source)
+
+
+@router.post("/batch", status_code=201)
+async def add_batch(
+    notebook_id: str,
+    body: SourceAddBatch,
+    client: ClientDep,
+    pending: PendingDep,
+    response: Response,
+) -> dict[str, Any]:
+    """Add many http(s) URL sources in one call (mirrors MCP ``source_add`` batch).
+
+    The shared notebook / auth context is validated ONCE up front (a bad
+    ``notebook_id`` or stale auth surfaces as the normal top-level 404 / 401),
+    so a whole-batch failure is never masked as ``201`` with every item errored.
+    Only per-entry URL / add failures inside the loop are isolated — recorded as
+    an ``error`` item and skipped, never aborting the batch — so partial failure
+    stays visible. Each entry is added SEQUENTIALLY (concurrent bulk writes
+    invite backend rate-limiting) with ``source_type="url"`` so the http/https
+    SSRF guard runs per item. Results are positional (``results[i]`` ↔
+    ``urls[i]``).
+
+    The top-level ``status`` is ``"added"`` once at least one source was added,
+    else ``"error"`` (every item failed) — so the envelope can't claim success
+    while every ``results[].status`` says error (MCP ``_add_url_batch`` parity).
+    An all-failed batch returns ``200`` (nothing was created) rather than ``201``.
+    """
+    if not body.urls:
+        raise ValidationError("urls must contain at least one URL")
+    # Validate the SHARED context once, before the per-item loop: a missing
+    # notebook or stale auth would otherwise fail every entry identically and be
+    # swallowed into a 201-all-errored body. Letting it raise here routes it
+    # through the normal classify → 404 / 401 contract.
+    await client.notebooks.get(notebook_id)
+    results: list[dict[str, Any]] = []
+    for entry in body.urls:
+        try:
+            plan = add_core.build_source_add_plan(
+                content=entry,
+                source_type="url",
+                title=None,
+                mime_type=None,
+                follow_symlinks=False,
+                validate_path=add_core.validate_upload_path,
+                looks_path_shaped=add_core.looks_like_path,
+                allow_internal=body.allow_internal,
+            )
+            result = await add_core.execute_source_add(
+                client, add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan)
+            )
+        except Exception as exc:  # noqa: BLE001 - per-item isolation; CancelledError still propagates
+            results.append({"input": entry, "status": "error", "error": error_item(exc)})
+        else:
+            pending.record(notebook_id, result.source.id)
+            view = source_view(result.source)
+            results.append(
+                {
+                    "input": entry,
+                    "status": "added",
+                    "source_id": result.source.id,
+                    "title": result.source.title,
+                    "status_label": view["status_label"],
+                }
+            )
+    added = sum(1 for item in results if item["status"] == "added")
+    # Nothing created → 200 (not 201). ``status`` mirrors the MCP batch envelope:
+    # "added" when ≥1 succeeded, "error" when every item failed.
+    if not added:
+        response.status_code = 200
+    return {
+        "status": "added" if added else "error",
+        "notebook_id": notebook_id,
+        "added": added,
+        "failed": len(results) - added,
+        "results": results,
+    }
+
+
+@router.post("/wait")
+async def wait_sources(notebook_id: str, body: SourceWaitBody, client: ClientDep) -> dict[str, Any]:
+    """Wait for source(s) to finish processing (mirrors MCP ``source_wait``).
+
+    Waits for the given ``source_ids``, or — when omitted — for EVERY source in
+    the notebook. Both modes return the SAME aggregate::
+
+        {"notebook_id", "ok", "ready", "timed_out", "failed", "not_found"}
+
+    ``ready`` holds the sources that reached READY (each with ``kind`` /
+    ``status_label`` labels); the error buckets hold ``{"source_id", "error"}``
+    entries. ``ok`` is true iff all three error buckets are empty — the
+    all-sources mode reports partial progress rather than discarding the sources
+    that did become ready.
+    """
+    # Reject non-finite bounds first: JSON allows ``inf`` / ``NaN`` (Python's
+    # json module parses ``Infinity`` / ``NaN``), and ``timeout=inf`` would wait
+    # forever while ``NaN`` breaks every comparison. ``math.isfinite`` is False
+    # for both.
+    if not math.isfinite(body.timeout):
+        raise ValidationError(f"timeout must be a finite number; got {body.timeout}")
+    if not math.isfinite(body.interval):
+        raise ValidationError(f"interval must be a finite number; got {body.interval}")
+    if body.timeout < 0:
+        raise ValidationError(f"timeout must be >= 0; got {body.timeout}")
+    if body.timeout > MAX_WAIT_TIMEOUT:
+        raise ValidationError(f"timeout must be <= {MAX_WAIT_TIMEOUT}; got {body.timeout}")
+    if body.interval <= 0:
+        raise ValidationError(f"interval must be > 0; got {body.interval}")
+    if body.source_ids is not None:
+        # An EXPLICIT empty list is rejected: it would otherwise return an
+        # immediate ``ok:true`` with nothing waited on — a false "ready" for a
+        # caller that serialized "all sources" as ``[]``. Omit ``source_ids``
+        # (None) to wait for every source.
+        if not body.source_ids:
+            raise ValidationError(
+                "source_ids must not be empty; omit it entirely to wait for all sources"
+            )
+        ids = list(body.source_ids)
+    else:
+        ids = [s.id for s in await client.sources.list(notebook_id)]
+    outcomes = await _wait_all_sources(
+        client, notebook_id, ids, timeout=body.timeout, interval=body.interval
+    )
+    return _aggregate_wait_outcomes(notebook_id, outcomes)
+
+
+@router.patch("/{source_id}")
+async def rename_source(
+    notebook_id: str, source_id: str, body: SourceRename, client: ClientDep
+) -> dict[str, Any]:
+    """Rename a source (title only). Returns the enriched source view."""
+    result = await mut_core.execute_source_rename(
+        client,
+        mut_core.SourceRenamePlan(
+            notebook_id=notebook_id, source_id=source_id, new_title=body.title, json_output=True
+        ),
+        resolve_source_id=passthrough_source_id,
+    )
+    return source_view(result.source)
+
+
 @router.delete("/{source_id}", status_code=204)
 async def delete_source(
     notebook_id: str, source_id: str, client: ClientDep, pending: PendingDep
@@ -325,3 +533,82 @@ async def delete_source(
     await client.sources.delete(notebook_id, source_id)
     pending.drop(notebook_id, source_id)
     return Response(status_code=204)
+
+
+async def _wait_all_sources(
+    client: NotebookLMClient,
+    notebook_id: str,
+    source_ids: list[str],
+    *,
+    timeout: float,
+    interval: float,
+) -> list[wait_core.SourceWaitOutcome]:
+    """Wait for every source concurrently, one typed outcome per source.
+
+    Each per-source wait runs through ``execute_source_wait`` (which maps the
+    three handled ``SourceWait*`` failures to a typed outcome instead of raising),
+    so a slow or failed source never discards its siblings' progress. An
+    UNEXPECTED escape (auth/transport ``RPCError``, a bug) cancels + drains the
+    still-running sibling pollers before re-raising (it then flows through the
+    server's classify-once handler) rather than leaking coroutines.
+    """
+    tasks = [
+        asyncio.create_task(
+            wait_core.execute_source_wait(
+                client,
+                wait_core.SourceWaitPlan(
+                    notebook_id=notebook_id, source_id=sid, timeout=timeout, interval=interval
+                ),
+            )
+        )
+        for sid in source_ids
+    ]
+    try:
+        return list(await asyncio.gather(*tasks))
+    except BaseException:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+
+def _aggregate_wait_outcomes(
+    notebook_id: str, outcomes: list[wait_core.SourceWaitOutcome]
+) -> dict[str, Any]:
+    """Project per-source wait outcomes onto the unified aggregate wire shape.
+
+    Ready sources (enriched via :func:`source_view`) are returned alongside the
+    ones that timed out / failed / went missing. ``ok`` is true iff nothing landed
+    in an error bucket. (The MCP surface additionally annotates thin web-page
+    content here; REST deliberately omits that costly extra fetch — Phase 1's
+    scope decision — so this is warning-free.)
+    """
+    ready: list[dict[str, Any]] = []
+    timed_out: list[dict[str, str]] = []
+    failed: list[dict[str, str]] = []
+    not_found: list[dict[str, str]] = []
+    for outcome in outcomes:
+        if isinstance(outcome, wait_core.SourceWaitReady):
+            ready.append(source_view(outcome.source))
+        elif isinstance(outcome, wait_core.SourceWaitTimeout):
+            timed_out.append(_wait_bucket_entry(outcome.error))
+        elif isinstance(outcome, wait_core.SourceWaitProcessingError):
+            failed.append(_wait_bucket_entry(outcome.error))
+        elif isinstance(outcome, wait_core.SourceWaitNotFound):
+            not_found.append(_wait_bucket_entry(outcome.error))
+        else:  # exhaustive over the closed SourceWaitOutcome union
+            raise AssertionError(f"unhandled SourceWaitOutcome: {outcome!r}")
+    return {
+        "notebook_id": notebook_id,
+        "ok": not (timed_out or failed or not_found),
+        "ready": ready,
+        "timed_out": timed_out,
+        "failed": failed,
+        "not_found": not_found,
+    }
+
+
+def _wait_bucket_entry(error: Any) -> dict[str, str]:
+    """Project a handled wait failure onto its ``{source_id, error}`` bucket entry."""
+    return {"source_id": error.source_id, "error": str(error)}

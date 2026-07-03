@@ -79,3 +79,62 @@ def test_unauthorized_on_each_verb(raw_client: TestClient) -> None:
     assert raw_client.get("/v1/notebooks", headers=h).status_code == 401
     assert raw_client.post("/v1/notebooks", json={"title": "x"}, headers=h).status_code == 401
     assert raw_client.delete("/v1/notebooks/nb-1", headers=h).status_code == 401
+
+
+# --- Phase 4: notebook rename (PATCH) ----------------------------------------
+
+
+def test_rename_notebook(authed_client: TestClient, fake_client: FakeClient) -> None:
+    fake_client.notebooks_store["nb-1"] = Notebook(id="nb-1", title="Old")
+    resp = authed_client.patch("/v1/notebooks/nb-1", json={"title": "New"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "renamed"
+    assert body["new_title"] == "New"
+    assert fake_client.notebooks_store["nb-1"].title == "New"
+
+
+def test_rename_notebook_missing_title_is_422(authed_client: TestClient) -> None:
+    assert authed_client.patch("/v1/notebooks/nb-1", json={}).status_code == 422
+
+
+# --- Phase 4: suggested-prompts ----------------------------------------------
+
+
+def test_suggested_prompts_default_surface(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    resp = authed_client.get("/v1/notebooks/nb-1/suggested-prompts")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["notebook_id"] == "nb-1"
+    assert [s["title"] for s in body["suggestions"]] == ["Q1", "Q2"]
+    # Default surface ``ask`` → mode 4.
+    assert fake_client.last_suggest["mode"] == 4
+    assert fake_client.last_suggest["source_ids"] is None
+
+
+def test_suggested_prompts_surface_and_source_ids(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    resp = authed_client.get(
+        "/v1/notebooks/nb-1/suggested-prompts",
+        params={"surface": "quiz", "source_ids": ["s1", "s2"], "query": "steer"},
+    )
+    assert resp.status_code == 200
+    assert fake_client.last_suggest["mode"] == 8  # quiz
+    assert fake_client.last_suggest["source_ids"] == ["s1", "s2"]
+    assert fake_client.last_suggest["query"] == "steer"
+
+
+def test_suggested_prompts_bad_surface_is_422(authed_client: TestClient) -> None:
+    resp = authed_client.get("/v1/notebooks/nb-1/suggested-prompts", params={"surface": "bogus"})
+    assert resp.status_code == 422
+
+
+def test_suggest_surface_map_matches_mcp() -> None:
+    """The REST surface→mode map is pinned equal to the MCP tool's copy."""
+    from notebooklm.mcp.tools.chat import _SUGGEST_SURFACE as mcp_map
+    from notebooklm.server.routes.notebooks import _SUGGEST_SURFACE as rest_map
+
+    assert rest_map == dict(mcp_map)

@@ -36,7 +36,7 @@ import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
@@ -45,6 +45,7 @@ from ..._app import artifacts as artifact_core
 from ..._app import download as download_core
 from ..._app import generate as generate_core
 from ..._app.language import is_supported_language
+from ..._app.resolve import FULL_ID_PATTERN
 from ..._app.serialize import to_jsonable
 from ...client import NotebookLMClient
 from ...exceptions import ValidationError
@@ -63,6 +64,22 @@ from ._passthrough import (
 __all__ = ["DOWNLOAD_SPECS", "GENERATE_TYPES", "router"]
 
 router = APIRouter(prefix="/notebooks/{notebook_id}/artifacts", tags=["artifacts"])
+
+
+def _canonical_artifact_id(artifact_id: str) -> str:
+    """Lowercase a full-UUID artifact id before the kind-aware core call.
+
+    The rename/delete cores detect a note-backed mind map with a CASE-SENSITIVE
+    scan of ``mind_maps.list`` / ``mind_maps.list_note_backed`` (whose ids are
+    canonically lowercase), so an UPPERCASE full UUID would miss the mind-map
+    route and be mislabeled — a note-backed map would report ``renamed`` /
+    ``deleted`` without actually being cleared. Backend ids are canonically
+    lowercase, so lowering a full UUID is safe for the plain artifact path too;
+    a non-UUID (partial) ref is left untouched (its own resolver owns casing).
+    Mirrors the MCP ``studio_rename`` / ``studio_delete`` full-UUID carve-out.
+    """
+    return artifact_id.lower() if FULL_ID_PATTERN.fullmatch(artifact_id) else artifact_id
+
 
 ClientDep = Annotated[NotebookLMClient, Depends(get_client)]
 PendingDep = Annotated[PendingRegistry, Depends(get_pending)]
@@ -99,15 +116,78 @@ _KIND_DEFAULTS: dict[str, dict[str, Any]] = {
     "report": {"report_format": "briefing-doc"},
 }
 
-#: Accepted values for the caller-facing per-kind options, validated up front so
-#: a bad choice is a clean 400 rather than a raw ``KeyError`` from a generate-core
-#: display-name lookup that runs before its own choice validation.
-_OPTION_CHOICES: dict[str, tuple[str, ...]] = {
-    "report_format": ("briefing-doc", "study-guide", "blog-post", "custom"),
-    "audio_format": ("deep-dive", "brief", "critique", "debate"),
-    "audio_length": ("short", "default", "long"),
-    "quantity": ("fewer", "standard", "more"),
-    "difficulty": ("easy", "medium", "hard"),
+#: Per-kind agent-settable options → their accepted choices (``None`` = free text,
+#: only ``style_prompt``). Mirrors the MCP ``studio_generate`` ``_KIND_OPTIONS``
+#: table so the REST generate route enforces the SAME three things:
+#:
+#: * **Choice validation** up front — a bad value is a clean 400, not a raw
+#:   ``KeyError`` from a generate-core display-name lookup that runs before its own
+#:   choice validation.
+#: * **The ``style`` collision** — ``video`` and ``infographic`` both take a
+#:   ``style`` kwarg with DIFFERENT value sets; keying by ``type`` keeps them apart.
+#: * **Wrong-kind rejection** — an option irrelevant to the chosen type (e.g.
+#:   ``orientation`` on ``quiz``) is rejected rather than silently ignored by the
+#:   neutral core (``build_generation_plan`` "picks the relevant subset").
+#:
+#: The literal tuples are DUPLICATED from the neutral core's private ``_*_MAP``
+#: maps (the server layer must not import the core privates — same rule the MCP
+#: table follows); ``tests/server/test_artifacts.py`` pins them equal to the core
+#: maps so they cannot silently drift. ``map_kind`` has no core map (the core reads
+#: it raw), so it is validated here ONLY.
+_KIND_OPTIONS: dict[str, dict[str, tuple[str, ...] | None]] = {
+    "audio": {
+        "audio_format": ("deep-dive", "brief", "critique", "debate"),
+        "audio_length": ("short", "default", "long"),
+    },
+    "video": {
+        "video_format": ("explainer", "brief", "cinematic"),
+        "style": (
+            "auto",
+            "custom",
+            "classic",
+            "whiteboard",
+            "kawaii",
+            "anime",
+            "watercolor",
+            "retro-print",
+            "heritage",
+            "paper-craft",
+        ),
+        "style_prompt": None,
+    },
+    "cinematic-video": {},
+    "slide-deck": {
+        "deck_format": ("detailed", "presenter"),
+        "deck_length": ("default", "short"),
+    },
+    "quiz": {
+        "quantity": ("fewer", "standard", "more"),
+        "difficulty": ("easy", "medium", "hard"),
+    },
+    "flashcards": {
+        "quantity": ("fewer", "standard", "more"),
+        "difficulty": ("easy", "medium", "hard"),
+    },
+    "infographic": {
+        "orientation": ("landscape", "portrait", "square"),
+        "detail": ("concise", "standard", "detailed"),
+        "style": (
+            "auto",
+            "sketch-note",
+            "professional",
+            "bento-grid",
+            "editorial",
+            "instructional",
+            "bricks",
+            "clay",
+            "anime",
+            "kawaii",
+            "scientific",
+        ),
+    },
+    "data-table": {},
+    "mind-map": {"map_kind": ("interactive", "note-backed")},
+    "report": {"report_format": ("briefing-doc", "study-guide", "blog-post", "custom")},
 }
 
 
@@ -223,7 +303,14 @@ DOWNLOAD_SPECS: dict[str, download_core.DownloadTypeSpec] = _download_specs()
 
 
 class ArtifactGenerate(BaseModel):
-    """Request body for starting a studio-artifact generation."""
+    """Request body for starting a studio-artifact generation.
+
+    Carries the full per-kind option surface (mirroring the MCP
+    ``studio_generate`` tool). Each option is valid ONLY for the kind(s) that
+    accept it — passing one to a different ``type`` (e.g. ``orientation`` to
+    ``quiz``) is a 400, not a silent no-op. ``style`` is shared by ``video`` and
+    ``infographic`` with each kind's own value set.
+    """
 
     type: str
     source_ids: list[str] | None = None
@@ -234,6 +321,20 @@ class ArtifactGenerate(BaseModel):
     audio_length: str | None = None
     quantity: str | None = None
     difficulty: str | None = None
+    video_format: str | None = None
+    style: str | None = None
+    style_prompt: str | None = None
+    deck_format: str | None = None
+    deck_length: str | None = None
+    orientation: str | None = None
+    detail: str | None = None
+    map_kind: str | None = None
+
+
+class ArtifactRename(BaseModel):
+    """Request body for renaming a studio artifact (title only)."""
+
+    title: str
 
 
 class ArtifactDownload(BaseModel):
@@ -273,29 +374,58 @@ async def generate(
     if body.language is not None and not is_supported_language(body.language):
         raise ValidationError(f"Unsupported language {body.language!r}")
 
-    raw_args: dict[str, Any] = dict(_KIND_DEFAULTS[body.type])
-    raw_args.update(
-        {
-            "notebook_id": notebook_id,
-            "description": body.instructions or "",
-            "source_ids": tuple(body.source_ids or ()),
-            "language": body.language,
-            "wait": False,
-            "json_output": True,
-        }
-    )
+    # Validate caller-supplied per-kind overrides against the choice set for THIS
+    # ``type`` (mirroring the MCP ``studio_generate`` loop): an option not accepted
+    # by this kind is rejected — the neutral core would otherwise silently ignore
+    # it — and a bad value is a clean 400. ``style_prompt`` (choices ``None``) is
+    # free text; the core enforces the ``style=custom`` ⇔ ``style_prompt`` rule.
+    allowed = _KIND_OPTIONS[body.type]
+    overrides: dict[str, Any] = {}
     for key, value in (
         ("report_format", body.report_format),
         ("audio_format", body.audio_format),
         ("audio_length", body.audio_length),
         ("quantity", body.quantity),
         ("difficulty", body.difficulty),
+        ("video_format", body.video_format),
+        ("style", body.style),
+        ("style_prompt", body.style_prompt),
+        ("deck_format", body.deck_format),
+        ("deck_length", body.deck_length),
+        ("orientation", body.orientation),
+        ("detail", body.detail),
+        ("map_kind", body.map_kind),
     ):
-        if value is not None:
-            choices = _OPTION_CHOICES[key]
-            if value not in choices:
-                raise ValidationError(f"Invalid {key} {value!r}; expected one of {list(choices)}")
-            raw_args[key] = value
+        if value is None:
+            continue
+        if key not in allowed:
+            accepts = (
+                f"this kind accepts {sorted(allowed)}"
+                if allowed
+                else "this kind accepts no per-kind options"
+            )
+            raise ValidationError(f"option {key!r} is not valid for type {body.type!r}; {accepts}")
+        choices = allowed[key]
+        if choices is not None and value not in choices:
+            raise ValidationError(f"Invalid {key} {value!r}; expected one of {list(choices)}")
+        overrides[key] = value
+
+    raw_args: dict[str, Any] = dict(_KIND_DEFAULTS[body.type])
+    raw_args.update(
+        {
+            "notebook_id": notebook_id,
+            "description": body.instructions or "",
+            # ``mind-map`` reads ``raw_args["instructions"]`` (every other kind reads
+            # ``description``); forward BOTH so mind-map instructions actually reach
+            # the client — the extra key is ignored by the other builders.
+            "instructions": body.instructions or None,
+            "source_ids": tuple(body.source_ids or ()),
+            "language": body.language,
+            "wait": False,
+            "json_output": True,
+        }
+    )
+    raw_args.update(overrides)
 
     plan = generate_core.build_generation_plan(body.type, raw_args)
     result = await generate_core.execute_generation(
@@ -341,6 +471,68 @@ async def poll(
     # COMPLETED — and, defensively, any unmodeled state — surfaces the projected
     # view rather than a 500.
     return projected
+
+
+@router.get("/{artifact_id}/prompt")
+async def get_prompt(notebook_id: str, artifact_id: str, client: ClientDep) -> dict[str, Any]:
+    """Fetch the free-text prompt an artifact was generated from.
+
+    Returns ``{notebook_id, artifact_id, prompt}``. A ``null`` ``prompt`` (the
+    artifact records none — e.g. a note-backed mind map) is a valid 200 result,
+    NOT a 404; an unknown artifact id raises ``ArtifactNotFoundError`` → 404.
+    """
+    prompt = await artifact_core.get_artifact_prompt(client, notebook_id, artifact_id)
+    return {"notebook_id": notebook_id, "artifact_id": artifact_id, "prompt": prompt}
+
+
+@router.patch("/{artifact_id}")
+async def rename(
+    notebook_id: str, artifact_id: str, body: ArtifactRename, client: ClientDep
+) -> dict[str, Any]:
+    """Rename an artifact (title only), dispatching mind maps kind-aware."""
+    result = await artifact_core.rename_artifact(
+        client, notebook_id, _canonical_artifact_id(artifact_id), body.title
+    )
+    return {
+        "status": "renamed",
+        "notebook_id": notebook_id,
+        "artifact_id": result.artifact_id,
+        "new_title": result.new_title,
+        "is_mind_map": result.is_mind_map,
+    }
+
+
+@router.post("/{artifact_id}/retry")
+async def retry(notebook_id: str, artifact_id: str, client: ClientDep) -> dict[str, Any]:
+    """Retry a failed artifact in place (the UI "Retry" action).
+
+    Non-blocking: on acceptance returns the kicked-off ``task_id`` (equal to the
+    artifact id) and the new ``status``; poll ``GET .../artifacts/{task_id}``
+    until complete. A synchronous refusal (rate limit / quota / not-retryable)
+    surfaces as the classified error.
+    """
+    status = await artifact_core.retry_artifact(client, notebook_id, artifact_id)
+    return {
+        "notebook_id": notebook_id,
+        "artifact_id": artifact_id,
+        "task_id": status.task_id,
+        # ``GenerationStatus.status`` is raw-string-permissive (documented in
+        # ``_types/artifacts.py``: an instance built with a plain ``str`` keeps
+        # working), so ``.value`` is NOT guaranteed — emit it enum-or-str-safely.
+        "status": to_jsonable(status.status),
+    }
+
+
+@router.delete("/{artifact_id}", status_code=204)
+async def delete(notebook_id: str, artifact_id: str, client: ClientDep) -> Response:
+    """Delete an artifact (irreversible).
+
+    The bare DELETE verb is the destructive gate (consistent with the notebook /
+    source / note DELETE routes — no confirm param). A note-backed mind map is
+    cleared via the note system inside the shared core. Returns 204.
+    """
+    await artifact_core.delete_artifact(client, notebook_id, _canonical_artifact_id(artifact_id))
+    return Response(status_code=204)
 
 
 class _CleanupFileResponse(FileResponse):

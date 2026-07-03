@@ -36,12 +36,19 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .._app.errors import CATEGORY_HINTS, ErrorCategory, classify, is_retriable
+from .._app.errors import (
+    CATEGORY_HINTS,
+    ClassifiedError,
+    ErrorCategory,
+    classify,
+    is_retriable,
+)
 from .._redact import redact as _shared_redact
 from ..exceptions import NotebookLMError
 
 __all__ = [
     "CATEGORY_STATUS",
+    "error_item",
     "error_response",
     "http_error_response",
     "install_exception_handlers",
@@ -196,22 +203,12 @@ def http_error_response(status: int, detail: object) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": body})
 
 
-def error_response(exc: BaseException) -> JSONResponse:
-    """Build the typed JSON error response for ``exc``.
-
-    Calls :func:`classify` exactly once and looks up the status from
-    :data:`CATEGORY_STATUS`; the category is never re-derived. The message is the
-    scrubbed ``str(exc)`` for library errors, and a fixed generic string for an
-    unexpected (non-library) bug — whose ``str(exc)`` is never echoed.
-
-    The body also carries the neutral ``retriable`` flag (from :func:`classify`,
-    so an agent client can branch a back-off) and, where the category has one, a
-    ``hint`` — both drawn from the SAME shared tables the MCP surface uses
-    (:func:`classify` + :data:`CATEGORY_HINTS`), never re-derived here.
+def _project_classified(exc: BaseException, classified: ClassifiedError) -> dict[str, object]:
+    """Build the inner ``{category, message, retriable, hint?}`` body from an
+    ALREADY-computed classification — so a caller that also needs the status can
+    classify once and reuse the result rather than re-running :func:`classify`.
     """
-    classified = classify(exc)
     category = classified.category
-    status = CATEGORY_STATUS[category]
     message = _UNEXPECTED_MESSAGE if category is ErrorCategory.UNEXPECTED else _redact(str(exc))
     body: dict[str, object] = {
         "category": category.value,
@@ -221,6 +218,40 @@ def error_response(exc: BaseException) -> JSONResponse:
     hint = CATEGORY_HINTS.get(category)
     if hint is not None:
         body["hint"] = hint
+    return body
+
+
+def error_item(exc: BaseException) -> dict[str, object]:
+    """Project ``exc`` onto the inner ``{category, message, retriable, hint?}`` body.
+
+    The single classify-once projection shared by :func:`error_response` (which
+    wraps it in the ``{"error": ...}`` envelope + HTTP status) and any route that
+    needs a per-item error shape WITHOUT aborting the request — e.g. the batch
+    ``POST .../sources/batch`` route, which reports one such item per failed URL
+    (mirroring the MCP ``source_add`` batch contract) while the batch as a whole
+    still returns 201. The message is the scrubbed ``str(exc)`` for library
+    errors and a fixed generic string for an unexpected (non-library) bug.
+    """
+    return _project_classified(exc, classify(exc))
+
+
+def error_response(exc: BaseException) -> JSONResponse:
+    """Build the typed JSON error response for ``exc``.
+
+    Calls :func:`classify` exactly once — reusing that single result for BOTH the
+    body projection and the :data:`CATEGORY_STATUS` status lookup; the category
+    is never re-derived. The message is the scrubbed ``str(exc)`` for library
+    errors, and a fixed generic string for an unexpected (non-library) bug —
+    whose ``str(exc)`` is never echoed.
+
+    The body also carries the neutral ``retriable`` flag (from :func:`classify`,
+    so an agent client can branch a back-off) and, where the category has one, a
+    ``hint`` — both drawn from the SAME shared tables the MCP surface uses
+    (:func:`classify` + :data:`CATEGORY_HINTS`), never re-derived here.
+    """
+    classified = classify(exc)
+    body = _project_classified(exc, classified)
+    status = CATEGORY_STATUS[classified.category]
     return JSONResponse(status_code=status, content={"error": body})
 
 

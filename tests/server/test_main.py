@@ -217,3 +217,13 @@ def test_main_allows_external_bind_with_optin(monkeypatch: pytest.MonkeyPatch) -
     assert captured["host"] == "0.0.0.0"
     # External-bind opt-in (behind a trusted proxy): forwarded headers are honored.
     assert captured["proxy_headers"] is True
+
+
+def test_meta_server_name_matches_app_server_name() -> None:
+    # meta.SERVER_NAME is named locally (not imported) to avoid a circular import
+    # with server.app; pin the two equal so they can never drift (the comment in
+    # meta.py points here — enforce, don't document).
+    from notebooklm.server.app import SERVER_NAME as app_name
+    from notebooklm.server.routes.meta import SERVER_NAME as meta_name
+
+    assert meta_name == app_name

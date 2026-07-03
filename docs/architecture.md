@@ -1294,13 +1294,14 @@ src/notebooklm/
     └── routes/                  # Per-resource FastAPI routers; handlers call _app.serialize.to_jsonable directly
         ├── __init__.py          # Aggregates the resource routers for the app factory
         ├── _passthrough.py      # Pass-through resolvers handed to the _app cores (REST works in full ids)
-        ├── notebooks.py         # /v1/notebooks list/get/create/delete
-        ├── sources.py           # /v1/notebooks/{id}/sources list/get/add(url·text·file)/delete + poll-the-resource status
+        ├── notebooks.py         # /v1/notebooks list/get/create/rename(PATCH)/delete + GET /{id}/suggested-prompts (client.notebooks.suggest_prompts; surface→mode map pinned to MCP)
+        ├── sources.py           # /v1/notebooks/{id}/sources list/get/add(url·text·file·drive·batch)/rename(PATCH)/wait/delete + poll-the-resource status
         ├── notes.py             # /v1/notebooks/{id}/notes list/get/create/update(PUT)/delete — thin adapter over client.notes
         ├── chat.py              # POST /v1/notebooks/{id}/chat — blocking ask (no SSE) + POST /chat/configure over _app.chat.execute_configure
-        ├── artifacts.py         # /v1/notebooks/{id}/artifacts list/generate/poll/download (registry-projected poll; server-generated temp download path)
+        ├── artifacts.py         # /v1/notebooks/{id}/artifacts list/generate/poll/download/rename(PATCH)/retry/delete + GET /{id}/prompt (per-kind generate-option validation pinned to core maps; registry-projected poll; server-generated temp download path)
         ├── research.py          # /v1/notebooks/{id}/research start(202)/status/cancel/import — split-tool shape over client.research + _app.research.poll_and_classify (poll_id = report_id or task_id)
-        └── share.py             # /v1/notebooks/{id}/share status/public/users/view-level over _app.sharing
+        ├── share.py             # /v1/notebooks/{id}/share status/public/users/view-level over _app.sharing
+        └── meta.py              # GET /v1/server/info — version + local auth-health probe (run_auth_check) + opt-in account block; scrubs the on-disk storage path (mirrors MCP server_info)
 ```
 
 ## ADR cross-references

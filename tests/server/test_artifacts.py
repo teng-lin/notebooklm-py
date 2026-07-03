@@ -296,6 +296,316 @@ async def test_cleanup_file_response_cleans_on_disconnect(tmp_path: object) -> N
     assert not os.path.exists(temp_dir)
 
 
+# --- Phase 4: studio lifecycle (delete / retry) ------------------------------
+
+
+def test_delete_artifact_is_204(authed_client: TestClient, fake_client: FakeClient) -> None:
+    fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "audio")}
+    resp = authed_client.delete("/v1/notebooks/nb-1/artifacts/a1")
+    assert resp.status_code == 204
+    assert ("nb-1", "a1") in fake_client.deleted_artifacts
+    assert "a1" not in fake_client.artifacts_store["nb-1"]
+
+
+def test_delete_absent_artifact_is_204_idempotent(authed_client: TestClient) -> None:
+    # Idempotent-on-missing, like the notebook/source/note DELETE routes.
+    assert authed_client.delete("/v1/notebooks/nb-1/artifacts/ghost").status_code == 204
+
+
+def test_retry_artifact_returns_task_id_and_status(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "audio")}
+    resp = authed_client.post("/v1/notebooks/nb-1/artifacts/a1/retry")
+    assert resp.status_code == 200
+    body = resp.json()
+    # Retry kicks off a task whose id equals the artifact id (mirrors MCP).
+    assert body["artifact_id"] == "a1"
+    assert body["task_id"] == "a1"
+    assert body["status"] == "pending"
+    # The kicked-off task is now pollable.
+    assert authed_client.get("/v1/notebooks/nb-1/artifacts/a1").json()["status"] == "pending"
+
+
+def test_retry_refusal_propagates_as_error(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    from notebooklm.exceptions import RateLimitError
+
+    fake_client.retry_error = RateLimitError("slow down")
+    resp = authed_client.post("/v1/notebooks/nb-1/artifacts/a1/retry")
+    assert resp.status_code == 429
+    assert resp.json()["error"]["retriable"] is True
+
+
+def test_retry_plain_str_status_does_not_crash(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # GenerationStatus.status is raw-string-permissive: a plain-str status must
+    # NOT crash the route (``.value`` would raise AttributeError). The route
+    # projects it enum-or-str-safely.
+    fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "audio")}
+    fake_client.retry_status = "pending"  # a plain str, not a GenerationState enum
+    resp = authed_client.post("/v1/notebooks/nb-1/artifacts/a1/retry")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
+
+
+# --- Phase 4: artifact rename (PATCH) ----------------------------------------
+
+
+def test_rename_artifact(authed_client: TestClient, fake_client: FakeClient) -> None:
+    fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "audio", title="Old")}
+    resp = authed_client.patch("/v1/notebooks/nb-1/artifacts/a1", json={"title": "New"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "renamed"
+    assert body["new_title"] == "New"
+    assert body["is_mind_map"] is False
+    assert fake_client.artifacts_store["nb-1"]["a1"].title == "New"
+
+
+def test_rename_artifact_missing_title_is_422(authed_client: TestClient) -> None:
+    assert authed_client.patch("/v1/notebooks/nb-1/artifacts/a1", json={}).status_code == 422
+
+
+# --- Phase 4: kind-aware mind-map rename/delete + full-UUID case ---------------
+
+# A canonical (lowercase) full UUID and its uppercase spelling. The backend id is
+# canonically lowercase; a caller may send the uppercase form.
+_MM_ID = "abcd1234-5678-4abc-def0-1234567890ab"
+_MM_ID_UPPER = _MM_ID.upper()
+
+
+def _seed_note_backed_mind_map(fake_client: FakeClient, mm_id: str) -> None:
+    """Seed a note-backed mind map (the ``delete_artifact`` probe list) plus a
+    backing note with the same id, so a note-path delete is observable."""
+    from types import SimpleNamespace
+
+    from notebooklm._types.notes import Note
+
+    fake_client.note_backed_mind_maps["nb-1"] = [SimpleNamespace(id=mm_id)]
+    fake_client.notes_store["nb-1"] = {
+        mm_id: Note(id=mm_id, notebook_id="nb-1", title="Map", content="")
+    }
+
+
+def _seed_interactive_mind_map(fake_client: FakeClient, mm_id: str) -> None:
+    """Seed an interactive mind map into the ``rename_artifact`` probe list."""
+    from notebooklm._types.mind_maps import MindMap, MindMapKind
+
+    fake_client.mind_maps_store["nb-1"] = [
+        MindMap(id=mm_id, notebook_id="nb-1", title="Map", kind=MindMapKind.INTERACTIVE)
+    ]
+
+
+def test_rename_mind_map_is_mind_map_branch(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # A resolved mind map routes through the kind-aware mind_maps.rename, not the
+    # plain artifacts.rename, and is flagged is_mind_map=True.
+    from notebooklm._types.mind_maps import MindMapKind
+
+    _seed_interactive_mind_map(fake_client, "mm-1")
+    resp = authed_client.patch("/v1/notebooks/nb-1/artifacts/mm-1", json={"title": "New"})
+    assert resp.status_code == 200
+    assert resp.json()["is_mind_map"] is True
+    nb, mm_id, title, kind = fake_client.renamed_mind_maps[0]
+    assert (nb, mm_id, title) == ("nb-1", "mm-1", "New")
+    assert kind == MindMapKind.INTERACTIVE
+    # The plain artifact rename path was NOT taken.
+    assert fake_client.renamed_artifacts == []
+
+
+def test_rename_uppercase_full_uuid_mind_map_routes_mind_map_path(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # An UPPERCASE full UUID for a note-backed/interactive mind map must be
+    # normalized to canonical lowercase before the case-sensitive core probe, so
+    # it still routes to the mind-map path (not a false plain-artifact success).
+    _seed_interactive_mind_map(fake_client, _MM_ID)
+    # URL built in a local, then passed to the HTTP PATCH helper — keeping an
+    # f-string out of the client call so the ADR-0007 monkeypatch guardrail does
+    # not false-positive an ``authed_client`` HTTP PATCH as a computed mock target.
+    url = f"/v1/notebooks/nb-1/artifacts/{_MM_ID_UPPER}"
+    resp = authed_client.patch(url, json={"title": "New"})
+    assert resp.status_code == 200
+    assert resp.json()["is_mind_map"] is True
+    # Renamed via the mind-map path with the canonical lowercase id.
+    assert fake_client.renamed_mind_maps
+    assert fake_client.renamed_mind_maps[0][1] == _MM_ID
+    assert fake_client.renamed_artifacts == []
+
+
+def test_delete_note_backed_mind_map_routes_notes_delete(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # A note-backed mind map is CLEARED via notes.delete, never artifacts.delete.
+    _seed_note_backed_mind_map(fake_client, "mm-note")
+    resp = authed_client.delete("/v1/notebooks/nb-1/artifacts/mm-note")
+    assert resp.status_code == 204
+    # notes.delete removed the backing note; the artifact delete path was skipped.
+    assert "mm-note" not in fake_client.notes_store["nb-1"]
+    assert fake_client.deleted_artifacts == []
+
+
+def test_delete_uppercase_full_uuid_note_backed_mind_map_routes_notes_delete(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # The full-UUID case-normalization fix: an uppercase UUID for a note-backed
+    # mind map still routes to the note path instead of a false artifact-delete
+    # "success" that leaves the map intact.
+    _seed_note_backed_mind_map(fake_client, _MM_ID)
+    resp = authed_client.delete(f"/v1/notebooks/nb-1/artifacts/{_MM_ID_UPPER}")
+    assert resp.status_code == 204
+    assert _MM_ID not in fake_client.notes_store["nb-1"]
+    assert fake_client.deleted_artifacts == []
+
+
+# --- Phase 4: artifact prompt read -------------------------------------------
+
+
+def test_get_prompt_returns_stored_prompt(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "report")}
+    fake_client.prompts_store[("nb-1", "a1")] = "Summarize the sources"
+    resp = authed_client.get("/v1/notebooks/nb-1/artifacts/a1/prompt")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "notebook_id": "nb-1",
+        "artifact_id": "a1",
+        "prompt": "Summarize the sources",
+    }
+
+
+def test_get_prompt_null_is_200_not_404(authed_client: TestClient, fake_client: FakeClient) -> None:
+    # A known artifact that records no prompt → prompt=null at 200, not a 404.
+    fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "mind-map")}
+    resp = authed_client.get("/v1/notebooks/nb-1/artifacts/a1/prompt")
+    assert resp.status_code == 200
+    assert resp.json()["prompt"] is None
+
+
+def test_get_prompt_unknown_artifact_is_404(authed_client: TestClient) -> None:
+    assert authed_client.get("/v1/notebooks/nb-1/artifacts/ghost/prompt").status_code == 404
+
+
+# --- Phase 4: generate option hygiene ----------------------------------------
+
+
+def test_generate_wrong_kind_option_is_400(authed_client: TestClient) -> None:
+    # ``orientation`` belongs to infographic, not audio → rejected (not silent no-op).
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts", json={"type": "audio", "orientation": "landscape"}
+    )
+    assert resp.status_code == 400
+
+
+def test_generate_optionless_kind_rejects_any_option(authed_client: TestClient) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts", json={"type": "data-table", "difficulty": "easy"}
+    )
+    assert resp.status_code == 400
+
+
+def test_generate_bad_new_option_value_is_400(authed_client: TestClient) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts", json={"type": "video", "style": "not-a-style"}
+    )
+    assert resp.status_code == 400
+
+
+def test_generate_forwards_instructions(authed_client: TestClient, fake_client: FakeClient) -> None:
+    # Both ``description`` and ``instructions`` are set in raw_args; for audio the
+    # generate core forwards the instruction text to the client generator.
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts",
+        json={"type": "audio", "instructions": "focus on chapter 3"},
+    )
+    assert resp.status_code == 202
+    assert fake_client.last_generate_kwargs is not None
+    assert fake_client.last_generate_kwargs.get("instructions") == "focus on chapter 3"
+
+
+def test_generate_mind_map_forwards_instructions(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # mind-map reads raw_args["instructions"] (not ``description``): the default
+    # interactive kind routes through client.mind_maps.generate, and the
+    # instruction text must reach it.
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts",
+        json={"type": "mind-map", "instructions": "group by theme"},
+    )
+    assert resp.status_code == 202
+    assert fake_client.last_mind_map_generate is not None
+    assert fake_client.last_mind_map_generate["instructions"] == "group by theme"
+
+
+def test_kind_options_match_core_maps() -> None:
+    """The REST per-kind option table is pinned to the neutral core's choice maps.
+
+    Duplicated (the server layer must not import the core privates) but pinned so
+    a core-map change surfaces here — the same guardrail the MCP ``_KIND_OPTIONS``
+    table carries.
+    """
+    import notebooklm._app.generate_plans as gp
+    from notebooklm.server.routes.artifacts import _KIND_OPTIONS
+
+    assert _KIND_OPTIONS["audio"]["audio_format"] == tuple(gp._AUDIO_FORMAT_MAP)
+    assert _KIND_OPTIONS["audio"]["audio_length"] == tuple(gp._AUDIO_LENGTH_MAP)
+    assert _KIND_OPTIONS["video"]["video_format"] == tuple(gp._VIDEO_FORMAT_MAP)
+    assert _KIND_OPTIONS["video"]["style"] == tuple(gp._VIDEO_STYLE_MAP)
+    assert _KIND_OPTIONS["slide-deck"]["deck_format"] == tuple(gp._SLIDE_FORMAT_MAP)
+    assert _KIND_OPTIONS["slide-deck"]["deck_length"] == tuple(gp._SLIDE_LENGTH_MAP)
+    assert _KIND_OPTIONS["quiz"]["quantity"] == tuple(gp._QUIZ_QUANTITY_MAP)
+    assert _KIND_OPTIONS["quiz"]["difficulty"] == tuple(gp._QUIZ_DIFFICULTY_MAP)
+    assert _KIND_OPTIONS["flashcards"]["quantity"] == tuple(gp._QUIZ_QUANTITY_MAP)
+    assert _KIND_OPTIONS["flashcards"]["difficulty"] == tuple(gp._QUIZ_DIFFICULTY_MAP)
+    assert _KIND_OPTIONS["infographic"]["orientation"] == tuple(gp._INFOGRAPHIC_ORIENTATION_MAP)
+    assert _KIND_OPTIONS["infographic"]["detail"] == tuple(gp._INFOGRAPHIC_DETAIL_MAP)
+    assert _KIND_OPTIONS["infographic"]["style"] == tuple(gp._INFOGRAPHIC_STYLE_MAP)
+    assert _KIND_OPTIONS["report"]["report_format"] == tuple(gp._REPORT_FORMAT_MAP)
+
+
+def test_kind_options_exact_mcp_parity() -> None:
+    """The REST and MCP ``_KIND_OPTIONS`` tables must be byte-for-byte identical.
+
+    Both are duplicated from the neutral core (the CLI/MCP/server boundary forbids
+    importing the core privates); pinning them EQUAL to each other guarantees the
+    two agent surfaces validate the SAME per-kind options with the SAME choices.
+    """
+    import pytest
+
+    pytest.importorskip("fastmcp")  # MCP tools need the ``mcp`` extra
+    from notebooklm.mcp.tools.studio import _KIND_OPTIONS as mcp_options
+    from notebooklm.server.routes.artifacts import _KIND_OPTIONS as rest_options
+
+    assert rest_options == mcp_options
+
+
+def test_kind_options_cover_every_generate_type() -> None:
+    """Every ``GENERATE_TYPES`` kind has a ``_KIND_OPTIONS`` entry, and the
+    per-kind-only keys (``map_kind``, ``style_prompt``) + optionless kinds are
+    exactly as expected — so a new generate kind can't silently ship without its
+    option contract."""
+    from notebooklm.server.routes.artifacts import _KIND_OPTIONS
+
+    # Exhaustive over the generate surface (no missing / extra kinds).
+    assert set(_KIND_OPTIONS) == set(GENERATE_TYPES)
+    # ``map_kind`` is validated at the boundary ONLY (no core map) — it must exist
+    # on mind-map and nowhere else.
+    assert "map_kind" in _KIND_OPTIONS["mind-map"]
+    assert all("map_kind" not in opts for k, opts in _KIND_OPTIONS.items() if k != "mind-map")
+    # ``style_prompt`` (free text, choices None) belongs to video only.
+    assert _KIND_OPTIONS["video"]["style_prompt"] is None
+    assert all("style_prompt" not in opts for k, opts in _KIND_OPTIONS.items() if k != "video")
+    # Optionless kinds carry an explicit empty map (so a stray option is rejected).
+    assert _KIND_OPTIONS["cinematic-video"] == {}
+    assert _KIND_OPTIONS["data-table"] == {}
+
+
 def test_download_spec_exhaustiveness() -> None:
     """Every studio download kind the client supports has a server spec.
 

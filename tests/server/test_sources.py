@@ -6,11 +6,17 @@ import io
 
 from fastapi.testclient import TestClient
 
+from notebooklm._types.notebooks import Notebook
 from notebooklm._types.sources import Source
 from notebooklm.rpc.types import SourceStatus
 from notebooklm.server._pagination import MAX_LIMIT
 
 from .fakes import FakeClient
+
+
+def _seed_notebook(fake_client: FakeClient, nid: str = "nb-1") -> None:
+    """Seed the notebook so the batch route's shared-context preflight passes."""
+    fake_client.notebooks_store[nid] = Notebook(id=nid, title="NB")
 
 
 def test_add_url_returns_non_ready_source(authed_client: TestClient) -> None:
@@ -346,3 +352,261 @@ def test_add_url_returns_enriched_view(authed_client: TestClient) -> None:
     assert "kind" in body
     assert "status_label" in body
     assert body["status_label"] == "processing"
+
+
+# --- Phase 4: source rename (PATCH) ------------------------------------------
+
+
+def _seed_source(
+    fake_client: FakeClient, nid: str, sid: str, *, status: SourceStatus = SourceStatus.PROCESSING
+) -> None:
+    fake_client.sources_store.setdefault(nid, {})[sid] = Source(
+        id=sid, title="Old", url=None, status=status
+    )
+
+
+def test_rename_source(authed_client: TestClient, fake_client: FakeClient) -> None:
+    _seed_source(fake_client, "nb-1", "src-1")
+    resp = authed_client.patch("/v1/notebooks/nb-1/sources/src-1", json={"title": "Renamed"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["title"] == "Renamed"
+    # Enriched view shape (matches GET).
+    assert "kind" in body and "status_label" in body
+    assert fake_client.sources_store["nb-1"]["src-1"].title == "Renamed"
+
+
+def test_rename_missing_source_is_404(authed_client: TestClient) -> None:
+    resp = authed_client.patch("/v1/notebooks/nb-1/sources/ghost", json={"title": "X"})
+    assert resp.status_code == 404
+
+
+# --- Phase 4: Drive source add -----------------------------------------------
+
+
+def test_add_drive_source(authed_client: TestClient, fake_client: FakeClient) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/drive",
+        json={"document_id": "doc-abc", "title": "Spec", "mime_type": "google-doc"},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["title"] == "Spec"
+    assert "status_label" in body
+    # The core maps the ``google-doc`` choice to the real Drive MIME before add.
+    nid, doc, title, mime = fake_client.added_drive[0]
+    assert (nid, doc, title) == ("nb-1", "doc-abc", "Spec")
+    assert mime == "application/vnd.google-apps.document"
+
+
+def test_add_drive_default_mime(authed_client: TestClient, fake_client: FakeClient) -> None:
+    resp = authed_client.post("/v1/notebooks/nb-1/sources/drive", json={"document_id": "doc-1"})
+    assert resp.status_code == 201
+    # Default choice ``google-doc`` → Google Docs MIME.
+    assert fake_client.added_drive[0][3] == "application/vnd.google-apps.document"
+
+
+def test_add_drive_bad_mime_is_422(authed_client: TestClient) -> None:
+    # mime_type is a Literal → rejected at the schema boundary.
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/drive",
+        json={"document_id": "doc-1", "mime_type": "bogus"},
+    )
+    assert resp.status_code == 422
+
+
+# --- Phase 4: batch URL add --------------------------------------------------
+
+
+def test_add_batch_all_valid(authed_client: TestClient, fake_client: FakeClient) -> None:
+    _seed_notebook(fake_client)
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={"urls": ["https://a.example.com", "https://b.example.com"]},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    # Top-level status mirrors the MCP batch envelope (parity).
+    assert body["status"] == "added"
+    assert body["added"] == 2
+    assert body["failed"] == 0
+    # Results are positional and carry status_label.
+    assert body["results"][0]["input"] == "https://a.example.com"
+    assert body["results"][0]["status"] == "added"
+    assert "status_label" in body["results"][0]
+
+
+def test_add_batch_partial_failure_isolated(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # A private/SSRF URL fails its own item without aborting the batch.
+    _seed_notebook(fake_client)
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={"urls": ["https://ok.example.com", "http://127.0.0.1:9/secret"]},
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["status"] == "added"  # ≥1 added
+    assert body["added"] == 1
+    assert body["failed"] == 1
+    assert body["results"][1]["status"] == "error"
+    err = body["results"][1]["error"]
+    assert err["category"] == "validation"
+    assert "retriable" in err
+
+
+def test_add_batch_all_failed_is_200_status_error(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # Every item fails a per-item VALIDATION check → nothing created: 200 (not
+    # 201) with a top-level status="error" (MCP _add_url_batch parity), so the
+    # envelope never claims success while every result says error.
+    _seed_notebook(fake_client)
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={"urls": ["http://127.0.0.1:9/a", "http://169.254.169.254/b"]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "error"
+    assert body["added"] == 0
+    assert body["failed"] == 2
+
+
+def test_add_batch_bad_notebook_is_top_level_404(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # A shared-context failure (unknown notebook) is validated ONCE up front and
+    # surfaces as a top-level 404 — NOT a 201 with every item silently errored.
+    # (nb-1 is intentionally NOT seeded.)
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={"urls": ["https://a.example.com", "https://b.example.com"]},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["category"] == "not_found"
+    # No item was attempted (the batch aborted before the loop).
+    assert not fake_client.sources_store.get("nb-1")
+
+
+def test_add_batch_stale_auth_is_top_level_401(
+    authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
+) -> None:
+    # Stale auth on the shared preflight surfaces as a top-level 401, not a
+    # 201-all-errored body.
+    import pytest
+
+    from notebooklm.exceptions import AuthError
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+
+    async def _boom(notebook_id: str) -> object:
+        raise AuthError("session expired")
+
+    monkeypatch.setattr(fake_client.notebooks, "get", _boom)
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch", json={"urls": ["https://a.example.com"]}
+    )
+    assert resp.status_code == 401
+    assert resp.json()["error"]["category"] == "auth"
+
+
+def test_add_batch_empty_is_400(authed_client: TestClient) -> None:
+    resp = authed_client.post("/v1/notebooks/nb-1/sources/batch", json={"urls": []})
+    assert resp.status_code == 400
+
+
+# --- Phase 4: source_wait ----------------------------------------------------
+
+
+def test_wait_specific_source_ready(authed_client: TestClient, fake_client: FakeClient) -> None:
+    _seed_source(fake_client, "nb-1", "src-1")
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/wait", json={"source_ids": ["src-1"], "timeout": 1.0}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert len(body["ready"]) == 1
+    assert body["ready"][0]["status_label"] == "ready"
+    assert body["timed_out"] == [] and body["failed"] == [] and body["not_found"] == []
+
+
+def test_wait_all_sources_partial(authed_client: TestClient, fake_client: FakeClient) -> None:
+    _seed_source(fake_client, "nb-1", "src-ok")
+    _seed_source(fake_client, "nb-1", "src-slow")
+    _seed_source(fake_client, "nb-1", "src-bad")
+    fake_client.wait_outcomes["src-slow"] = "timeout"
+    fake_client.wait_outcomes["src-bad"] = "processing"
+    # No source_ids → wait for every source in the notebook.
+    resp = authed_client.post("/v1/notebooks/nb-1/sources/wait", json={"timeout": 0.5})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    ready_ids = {r["id"] for r in body["ready"]}
+    assert ready_ids == {"src-ok"}
+    assert body["timed_out"][0]["source_id"] == "src-slow"
+    assert body["failed"][0]["source_id"] == "src-bad"
+
+
+def test_wait_not_found_bucket(authed_client: TestClient, fake_client: FakeClient) -> None:
+    fake_client.wait_outcomes["src-x"] = "not_found"
+    resp = authed_client.post("/v1/notebooks/nb-1/sources/wait", json={"source_ids": ["src-x"]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["not_found"][0]["source_id"] == "src-x"
+
+
+def test_wait_bad_timeout_is_400(authed_client: TestClient) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/wait", json={"source_ids": ["s"], "timeout": -1}
+    )
+    assert resp.status_code == 400
+
+
+def test_wait_bad_interval_is_400(authed_client: TestClient) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/wait", json={"source_ids": ["s"], "interval": 0}
+    )
+    assert resp.status_code == 400
+
+
+def test_wait_non_finite_timeout_is_rejected(authed_client: TestClient) -> None:
+    # JSON allows Infinity / NaN; timeout=inf would wait forever, NaN breaks
+    # comparisons. Both must be rejected before any waiting starts.
+    for bad in ("Infinity", "NaN"):
+        resp = authed_client.post(
+            "/v1/notebooks/nb-1/sources/wait",
+            content=f'{{"source_ids": ["s"], "timeout": {bad}}}',
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code in (400, 422), (bad, resp.status_code)
+
+
+def test_wait_non_finite_interval_is_rejected(authed_client: TestClient) -> None:
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/wait",
+        content='{"source_ids": ["s"], "interval": Infinity}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert resp.status_code in (400, 422)
+
+
+def test_wait_timeout_over_max_is_400(authed_client: TestClient) -> None:
+    from notebooklm.server.routes.sources import MAX_WAIT_TIMEOUT
+
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/wait",
+        json={"source_ids": ["s"], "timeout": MAX_WAIT_TIMEOUT + 1},
+    )
+    assert resp.status_code == 400
+
+
+def test_wait_explicit_empty_source_ids_is_400(authed_client: TestClient) -> None:
+    # An explicit empty list would return immediate ok:true (false-ready if a
+    # caller serialized "all" as []). Reject it; omitting source_ids waits all.
+    resp = authed_client.post("/v1/notebooks/nb-1/sources/wait", json={"source_ids": []})
+    assert resp.status_code == 400
+    assert resp.json()["error"]["category"] == "validation"
