@@ -42,3 +42,6 @@ downloads/
 
 # Local working notes (process scratch — not shipped)
 docs/scratch/
+
+# Baked into the wheel by hatch_build.py; never committed.
+src/notebooklm/_commit.py

@@ -17,7 +17,7 @@ import pytest
 # Skip cleanly when the `mcp` extra (fastmcp) is absent; see conftest.py.
 pytest.importorskip("fastmcp")
 
-from notebooklm import __version__  # noqa: E402 - after importorskip guard
+from notebooklm._version_info import version_string  # noqa: E402 - after importorskip guard
 from notebooklm.exceptions import RPCError  # noqa: E402 - after importorskip guard
 from notebooklm.types import (  # noqa: E402 - after importorskip guard
     AccountLimits,
@@ -54,7 +54,7 @@ def _write_authed_storage() -> None:
 async def test_server_info_reports_version(mcp_call, mock_client, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     result = await mcp_call("server_info")
-    assert result.structured_content["version"] == __version__
+    assert result.structured_content["version"] == version_string()
     assert result.structured_content["server"] == "notebooklm"
 
 
@@ -193,7 +193,7 @@ async def test_server_info_include_account_degrades_on_rpc_error(
     assert account["email"] == "alice@example.com"
     assert account["authuser"] == 1
     # The diagnostic stays useful: version + auth block survive the degradation.
-    assert result.structured_content["version"] == __version__
+    assert result.structured_content["version"] == version_string()
     assert result.structured_content["auth"]["authenticated"] is True
 
 

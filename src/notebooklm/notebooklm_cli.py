@@ -91,7 +91,7 @@ _configure_windows_runtime()
 
 import click
 
-from . import __version__
+from ._version_info import version_string
 
 # Import command groups from cli package
 from .cli import (
@@ -131,7 +131,7 @@ __all__ = ["cli", "main"]
 
 
 @click.group(cls=SectionedGroup)
-@click.version_option(version=__version__, prog_name="NotebookLM CLI")
+@click.version_option(version=version_string(), prog_name="NotebookLM CLI")
 @click.option(
     "--storage",
     type=click.Path(exists=False),

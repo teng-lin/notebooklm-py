@@ -24,8 +24,8 @@ from typing import Any
 
 from fastmcp import Context
 
-from ... import __version__
 from ..._app.auth_check import AuthCheckPlan, run_auth_check
+from ..._version_info import version_string
 from ...exceptions import NotebookLMError
 from ...paths import get_active_profile, get_storage_path
 from .._confirm import READ_ONLY
@@ -140,7 +140,7 @@ def register(mcp: Any) -> None:
             result = await run_auth_check(plan, read_env_auth_json=_no_env_auth_json)
             info: dict[str, Any] = {
                 "server": SERVER_NAME,
-                "version": __version__,
+                "version": version_string(),
                 "auth": {
                     "authenticated": result.all_passed,
                     "storage_exists": bool(result.checks.get("storage_exists")),

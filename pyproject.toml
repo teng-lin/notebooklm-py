@@ -130,9 +130,20 @@ replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/A
 pattern = '\]\(CONTRIBUTING\.md\)'
 replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/CONTRIBUTING.md)'
 
+# Bakes the build commit into _commit.py (see hatch_build.py). Registered on both
+# targets so the commit survives `python -m build` (wheel is built from the sdist).
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/notebooklm"]
 force-include = {"SKILL.md" = "notebooklm/data/SKILL.md", "AGENTS.md" = "notebooklm/data/CODEX.md"}
+# Re-include the gitignored _commit.py when the wheel is built from a
+# carried-forward sdist (the hook only runs from a checkout with .git).
+artifacts = ["src/notebooklm/_commit.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
