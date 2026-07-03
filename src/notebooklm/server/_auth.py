@@ -23,10 +23,12 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import hmac
-import ipaddress
 import os
 
 from fastapi import HTTPException, Request
+
+from .._serving import LOOPBACK_HOSTNAMES as _LOOPBACK_HOSTNAMES
+from .._serving import addr_is_loopback as _addr_is_loopback
 
 __all__ = [
     "ALLOW_EXTERNAL_BIND_ENV",
@@ -45,10 +47,6 @@ SERVER_TOKEN_ENV = "NOTEBOOKLM_SERVER_TOKEN"
 #: Shared with the launcher's bind guard (:mod:`.__main__`).
 ALLOW_EXTERNAL_BIND_ENV = "NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND"
 
-#: Hostnames always treated as loopback even though they are not numeric IP
-#: literals. An empty host is intentionally absent — it must be rejected.
-_LOOPBACK_HOSTNAMES = frozenset({"localhost"})
-
 _BEARER_PREFIX = "bearer "
 
 
@@ -63,26 +61,6 @@ def get_configured_token() -> str | None:
         return None
     token = token.strip()
     return token or None
-
-
-def _addr_is_loopback(text: str) -> bool:
-    """Whether an IP literal is a loopback address, independent of Python version.
-
-    ``ipaddress`` only resolves an IPv4-mapped IPv6 address (e.g.
-    ``::ffff:127.0.0.1``) to its embedded IPv4 loopback in newer CPython patch
-    releases, so ``IPv6Address.is_loopback`` is unreliable across the interpreter
-    versions/patch levels we run on (it returned ``False`` for the mapped form on
-    some macOS 3.10/3.11 runners). Unwrap ``ipv4_mapped`` ourselves first, then
-    fall back to the native check. Returns ``False`` for anything unparseable.
-    """
-    try:
-        addr = ipaddress.ip_address(text)
-    except ValueError:
-        return False
-    mapped = getattr(addr, "ipv4_mapped", None)
-    if mapped is not None:
-        return mapped.is_loopback
-    return addr.is_loopback
 
 
 def _host_is_loopback(host_header: str) -> bool:

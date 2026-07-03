@@ -21,12 +21,12 @@ The auth profile is bound once at startup via ``--profile`` /
 from __future__ import annotations
 
 import argparse
-import ipaddress
 import logging
 import os
 import secrets
 import sys
 
+from .._serving import check_bind_allowed, is_loopback
 from ._auth import MCP_TOKEN_ENV, build_auth, get_configured_token
 from ._filelink import FileLinkSigner, FileTransferConfig
 from ._oauth import (
@@ -50,11 +50,6 @@ ALLOW_EXTERNAL_BIND_ENV = "NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND"
 #: set, remote file transfer is simply unavailable (no startup crash).
 PUBLIC_URL_ENV = "NOTEBOOKLM_MCP_PUBLIC_URL"
 
-#: Hostnames that are always treated as loopback even though they are not numeric
-#: IP literals. An empty / whitespace host is intentionally NOT here — it must be
-#: refused (binding to "" listens on all interfaces).
-_LOOPBACK_HOSTNAMES = frozenset({"localhost"})
-
 #: Valid resolved transports. An env-derived default is validated against this
 #: AFTER parsing (argparse ``choices`` validates explicit CLI args, but not the
 #: env-supplied default).
@@ -70,46 +65,28 @@ def _configure_logging(level: str) -> None:
     )
 
 
-def _is_loopback(host: str) -> bool:
-    """Return whether ``host`` resolves to a loopback interface.
-
-    Hostnames are case-insensitive, so ``LOCALHOST`` is normalized before the
-    check; an IP literal (``127.0.0.1`` / ``::1``) is parsed. Anything else
-    (a public DNS name, ``0.0.0.0``, ``::``) is NOT loopback — fail closed.
-    """
-    normalized = host.strip().lower()
-    if normalized in _LOOPBACK_HOSTNAMES:
-        return True
-    try:
-        return ipaddress.ip_address(normalized).is_loopback
-    except ValueError:
-        return False
+#: Loopback classification + bind guard live in the shared ``notebooklm._serving``
+#: (one implementation across both servers; IPv4-mapped-IPv6-aware). These thin
+#: aliases/wrappers bind the MCP-specific label + override env var and preserve the
+#: module's helper API (the auth-required check below + tests use ``_is_loopback``).
+_is_loopback = is_loopback
 
 
 def _check_http_bind_allowed(host: str, *, allow_external: bool) -> None:
     """Refuse to bind the HTTP transport to a non-loopback host unless opted in.
 
-    An empty / whitespace-only ``host`` is a HARD refusal (fail closed) even with
-    ``allow_external`` — binding to "" listens on all interfaces, and there is no
-    legitimate reason to express that as a blank host rather than an explicit
-    ``0.0.0.0`` (which still needs the override).
+    Delegates to :func:`notebooklm._serving.check_bind_allowed`; see it for the
+    empty-host fail-closed rule.
 
     Raises:
         SystemExit: ``host`` is empty/whitespace, or is not loopback and
             ``allow_external`` is ``False``.
     """
-    if not host.strip():
-        raise SystemExit(
-            "Refusing to bind the MCP HTTP transport to an empty host "
-            "(this would expose the server on all interfaces). Pass an explicit "
-            "loopback host such as 127.0.0.1."
-        )
-    if _is_loopback(host) or allow_external:
-        return
-    raise SystemExit(
-        f"Refusing to bind the MCP HTTP transport to non-loopback host '{host}'. "
-        f"This would expose the server to the network. Set "
-        f"{ALLOW_EXTERNAL_BIND_ENV}=1 to override (only behind a trusted proxy)."
+    check_bind_allowed(
+        host,
+        allow_external=allow_external,
+        what="the MCP HTTP transport",
+        allow_env=ALLOW_EXTERNAL_BIND_ENV,
     )
 
 

@@ -48,29 +48,33 @@ SERVER_NAME = "notebooklm-server"
 ClientFactory = Callable[[], AbstractAsyncContextManager[NotebookLMClient]]
 
 
-def _default_factory() -> AbstractAsyncContextManager[NotebookLMClient]:
+def _default_factory(profile: str | None = None) -> AbstractAsyncContextManager[NotebookLMClient]:
     # ``from_storage`` returns a dual awaitable / async-context-manager; we use
     # only the async-context-manager protocol (the canonical, non-deprecated path).
     return cast(
         "AbstractAsyncContextManager[NotebookLMClient]",
-        NotebookLMClient.from_storage(),
+        NotebookLMClient.from_storage(profile=profile),
     )
 
 
-def create_app(*, client_factory: ClientFactory | None = None) -> FastAPI:
+def create_app(
+    *, profile: str | None = None, client_factory: ClientFactory | None = None
+) -> FastAPI:
     """Build the FastAPI application.
 
     Args:
+        profile: Auth profile bound by the default factory (``from_storage(profile=)``).
+            ``None`` resolves the active profile. Ignored when ``client_factory`` is set.
         client_factory: Test seam — a zero-arg callable returning an async
             context manager that yields a client. Defaults to
-            ``NotebookLMClient.from_storage()``.
+            ``NotebookLMClient.from_storage(profile=profile)``.
 
     Returns:
         A configured :class:`~fastapi.FastAPI` app whose lifespan binds exactly
         one client, with the ``/v1`` resource routers (auth-gated) and a public
         ``/healthz`` mounted.
     """
-    factory = client_factory or _default_factory
+    factory = client_factory or (lambda: _default_factory(profile))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

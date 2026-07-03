@@ -105,6 +105,17 @@ def test_build_parser_flags_override_env(monkeypatch: pytest.MonkeyPatch) -> Non
     assert args.port == "8123"
 
 
+def test_build_parser_profile_default_env_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Default is None (the parser reads NOTEBOOKLM_PROFILE, so clear it first).
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    assert launcher._build_parser().parse_args([]).profile is None
+    # Env supplies the default...
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "envprof")
+    assert launcher._build_parser().parse_args([]).profile == "envprof"
+    # ...and the flag overrides the env.
+    assert launcher._build_parser().parse_args(["--profile", "work"]).profile == "work"
+
+
 # --- _configure_logging: maps the level name, falls back to INFO ------------
 
 
@@ -159,6 +170,15 @@ def test_main_runs_server_with_resolved_args(monkeypatch: pytest.MonkeyPatch) ->
     # Default (loopback) mode: proxy headers OFF so request.client.host is the real
     # socket peer (the loopback guard's basis), not a spoofable X-Forwarded-For.
     assert captured["proxy_headers"] is False
+
+
+def test_main_threads_profile_into_create_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#1769: --profile must reach create_app so the server binds the right profile."""
+    _stub_uvicorn_run(monkeypatch)  # patches launcher.create_app with a MagicMock
+    monkeypatch.setenv(SERVER_TOKEN_ENV, "env-secret")
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    launcher.main(["--host", "127.0.0.1", "--profile", "work"])
+    launcher.create_app.assert_called_once_with(profile="work")  # type: ignore[attr-defined]
 
 
 def test_main_rejects_deprecated_token_flag(monkeypatch: pytest.MonkeyPatch) -> None:

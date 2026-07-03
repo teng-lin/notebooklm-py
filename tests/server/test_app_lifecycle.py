@@ -46,6 +46,28 @@ def test_lifespan_opens_exactly_one_client_and_closes_it() -> None:
     assert closed is True
 
 
+def test_create_app_default_factory_threads_profile(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """#1769: create_app(profile=X) must reach from_storage(profile=X) through the real
+    default-factory closure — not just the create_app boundary. Guards the mocked-boundary
+    blind spot: a regression to `lambda: _default_factory()` (dropping profile) would pass
+    every test that mocks create_app itself."""
+    seen: dict[str, object] = {}
+
+    @asynccontextmanager
+    async def _fake_from_storage(**kwargs: object) -> AsyncIterator[FakeClient]:
+        seen.update(kwargs)
+        yield FakeClient()
+
+    monkeypatch.setattr(
+        "notebooklm.server.app.NotebookLMClient.from_storage",
+        lambda **kw: _fake_from_storage(**kw),
+    )
+    app = create_app(profile="work")  # no client_factory → exercises the default factory
+    with TestClient(app) as client:
+        assert client.get("/healthz").status_code == 200
+    assert seen == {"profile": "work"}
+
+
 def test_docs_and_openapi_are_disabled() -> None:
     """The unauthenticated schema UI is off (no tokenless surface)."""
     app = create_app(client_factory=_factory(FakeClient()))

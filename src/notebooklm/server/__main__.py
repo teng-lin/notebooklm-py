@@ -14,12 +14,12 @@ Configuration comes from ``NOTEBOOKLM_SERVER_*`` env vars as argparse defaults
 from __future__ import annotations
 
 import argparse
-import ipaddress
 import logging
 import os
 import sys
 from pathlib import Path
 
+from .._serving import check_bind_allowed, is_loopback
 from ._auth import ALLOW_EXTERNAL_BIND_ENV, SERVER_TOKEN_ENV, get_configured_token
 from .app import create_app
 
@@ -29,11 +29,6 @@ __all__ = ["main"]
 #: the deprecated ``--token`` flag, whose value is visible to other local users
 #: via ``ps``.
 SERVER_TOKEN_FILE_ENV = "NOTEBOOKLM_SERVER_TOKEN_FILE"
-
-#: Hostnames always treated as loopback even though they are not numeric IP
-#: literals. An empty / whitespace host is intentionally NOT here — it must be
-#: refused (binding to "" listens on all interfaces).
-_LOOPBACK_HOSTNAMES = frozenset({"localhost"})
 
 
 def _configure_logging(level: str) -> None:
@@ -45,37 +40,28 @@ def _configure_logging(level: str) -> None:
     )
 
 
-def _is_loopback(host: str) -> bool:
-    """Return whether ``host`` resolves to a loopback interface."""
-    if host in _LOOPBACK_HOSTNAMES:
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+#: Loopback classification + bind guard live in the shared ``notebooklm._serving``
+#: (one implementation across both servers; IPv4-mapped-IPv6-aware). These thin
+#: aliases/wrappers bind the REST-server-specific label + override env var and
+#: preserve the module's helper API (used by tests).
+_is_loopback = is_loopback
 
 
 def _check_bind_allowed(host: str, *, allow_external: bool) -> None:
-    """Refuse to bind to a non-loopback host unless explicitly opted in.
+    """Refuse to bind the REST server to a non-loopback host unless opted in.
 
-    An empty / whitespace-only ``host`` is a HARD refusal (fail closed) even with
-    ``allow_external`` — binding to "" listens on all interfaces.
+    Delegates to :func:`notebooklm._serving.check_bind_allowed`; see it for the
+    empty-host fail-closed rule.
 
     Raises:
         SystemExit: ``host`` is empty/whitespace, or is not loopback and
             ``allow_external`` is ``False``.
     """
-    if not host.strip():
-        raise SystemExit(
-            "Refusing to bind the REST server to an empty host (this would expose "
-            "it on all interfaces). Pass an explicit loopback host such as 127.0.0.1."
-        )
-    if _is_loopback(host) or allow_external:
-        return
-    raise SystemExit(
-        f"Refusing to bind the REST server to non-loopback host '{host}'. This "
-        f"would expose the server to the network. Set {ALLOW_EXTERNAL_BIND_ENV}=1 "
-        f"to override (only behind a trusted proxy)."
+    check_bind_allowed(
+        host,
+        allow_external=allow_external,
+        what="the REST server",
+        allow_env=ALLOW_EXTERNAL_BIND_ENV,
     )
 
 
@@ -159,6 +145,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--profile",
+        default=os.environ.get("NOTEBOOKLM_PROFILE"),
+        help=(
+            "Auth profile to bind for this server process (default: "
+            "$NOTEBOOKLM_PROFILE, else the active profile)."
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         default=os.environ.get("NOTEBOOKLM_LOG_LEVEL", "INFO"),
         help="Logging level on stderr (default: INFO).",
@@ -204,14 +198,17 @@ def main(argv: list[str] | None = None) -> None:
 
     _check_token_configured()
     allow_external = os.environ.get(ALLOW_EXTERNAL_BIND_ENV) == "1"
-    _check_bind_allowed(args.host, allow_external=allow_external)
+    # Strip once so the guard and the actual bind agree on the host (a trailing
+    # space must not sneak past the guard and reach uvicorn).
+    host = args.host.strip()
+    _check_bind_allowed(host, allow_external=allow_external)
 
     import uvicorn
 
-    app = create_app()
+    app = create_app(profile=args.profile)
     uvicorn.run(
         app,
-        host=args.host,
+        host=host,
         port=_resolve_port(args.port),
         log_level=args.log_level.lower(),
         # In the default (loopback) mode the auth guard trusts ``request.client.host``
