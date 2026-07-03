@@ -57,6 +57,7 @@ from pathlib import Path
 # for the runtime companion to this static check.
 PRIVILEGED_WORKFLOWS: tuple[str, ...] = (
     "publish.yml",
+    "publish-docker.yml",
     "testpypi-publish.yml",
     "claude.yml",
     "rpc-health.yml",

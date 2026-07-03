@@ -1,0 +1,89 @@
+# Publish the remote MCP server image to Docker Hub on a release tag.
+#
+# Opt-in: only runs on the canonical repo AND when the `DOCKERHUB_IMAGE`
+# repository variable is set (e.g. `youruser/notebooklm-mcp`). Configure once:
+#   - Variables → DOCKERHUB_IMAGE = <namespace>/notebooklm-mcp
+#   - Secrets   → DOCKERHUB_USERNAME, DOCKERHUB_TOKEN (a Docker Hub access token)
+# Forks and unconfigured repos skip it entirely (no failing release job).
+#
+# Builds deploy/Dockerfile from the tagged source (context = repo root, same as
+# `docker compose`), multi-arch (amd64 + arm64). `:latest` only moves on a final
+# release — PEP 440 pre-releases (v0.8.0a1/b1/rc1) publish their version tag only.
+name: Publish MCP image to Docker Hub
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-image:
+    name: Build and push notebooklm-mcp
+    runs-on: ubuntu-latest
+    # `release` environment gates the Docker Hub secrets (maintainer-approved,
+    # same as publish.yml). The actor pin restricts publishing to the
+    # maintainer's own tag push; the repo + var checks skip forks/unconfigured
+    # repos so a release never fails on a missing Docker Hub config.
+    environment: release
+    if: ${{ github.repository == 'teng-lin/notebooklm-py' && github.actor == 'teng-lin' && vars.DOCKERHUB_IMAGE != '' }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          # Full history so ALL tags are present — we compare against every released
+          # version to decide whether :latest moves (never backward to a maintenance
+          # release). `.dockerignore` excludes `.git`, so this never bloats the image.
+          fetch-depth: 0
+
+      - name: Derive image tags (and validate tag == pyproject version)
+        id: meta
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          TOML_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "$VERSION" != "$TOML_VERSION" ]; then
+            echo "Error: tag version ($VERSION) doesn't match pyproject.toml ($TOML_VERSION)" >&2
+            exit 1
+          fi
+          IMAGE="${{ vars.DOCKERHUB_IMAGE }}"
+          TAGS="${IMAGE}:${VERSION}"
+          # :latest must point at the HIGHEST released version and never move
+          # backward. Two gates: (1) a final release only — bare X.Y.Z, no PEP 440
+          # pre-release suffix (a/b/rc); (2) it's the max stable tag — maintenance
+          # releases on an older line are tagged directly (e.g. v0.7.4 after v0.8.0),
+          # so those keep :latest where it is.
+          if echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            HIGHEST=$(git tag --list 'v[0-9]*' | sed 's/^v//' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+            if [ "$VERSION" = "$HIGHEST" ]; then
+              TAGS="${TAGS},${IMAGE}:latest"
+            else
+              echo "Not the highest stable tag (highest=$HIGHEST) — publishing version tag only, :latest unchanged."
+            fi
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+          echo "Publishing: ${TAGS}"
+
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # @ v3.7.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # @ v3.12.0
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # @ v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # @ v6.19.2
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: org.opencontainers.image.source=https://github.com/teng-lin/notebooklm-py

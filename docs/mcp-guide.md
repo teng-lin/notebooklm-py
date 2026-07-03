@@ -109,10 +109,14 @@ and no TLS certificate to manage** (the tunnel terminates TLS at its edge).
 ```bash
 # 1. bootstrap the master token once (a machine with a browser):
 notebooklm login --master-token --account you@example.com      # writes ~/.notebooklm/profiles/default
-# 2. secrets:
-cp deploy/.env.example deploy/.env                              # edit per the steps below
+# 2. secrets + tunnel choice — the wizard generates strong secrets and writes deploy/.env:
+cd deploy && make setup                                         # pick a tunnel; generates the bearer (+ OAuth password)
+#    (or copy deploy/.env.example → deploy/.env and edit by hand)
 #    NOTEBOOKLM_PROFILE_DIR defaults to ~/.notebooklm/profiles/default (override for a throwaway profile)
 ```
+
+`make up` **pulls a prebuilt image** — no source checkout, no build. (Contributors who
+want to run their own checkout use `make dev` instead, which builds from source.)
 
 **Two auth methods coexist on one `/mcp`** (FastMCP `MultiAuth`):
 - **Claude Code / Desktop** → the static `NOTEBOOKLM_MCP_TOKEN` bearer (an `Authorization` header).
@@ -128,7 +132,7 @@ cp deploy/.env.example deploy/.env                              # edit per the s
    host** (`/`), not a `/mcp`-scoped ingress (the OAuth routes live at the root). Cloudflare
    auto-creates the proxied DNS record and serves a valid cert.
 3. `.env`: `NOTEBOOKLM_MCP_OAUTH_BASE_URL=https://notebooklm.yourdomain.com` (bare origin).
-4. Run: `cd deploy && make dev` (Cloudflare is the default profile).
+4. Run: `cd deploy && make up` (`make setup` already saved the Cloudflare choice; else `make up TUNNEL=cloudflare`).
 
 > Optional: set `NOTEBOOKLM_MCP_TRUST_PROXY=1` to key the per-IP login throttle on the
 > tunnel's `CF-Connecting-IP` header. Default off keys on the socket peer (the tunnel
@@ -150,7 +154,7 @@ Then:
 4. `.env`: `NOTEBOOKLM_MCP_OAUTH_BASE_URL=https://notebooklm-mcp.<your-tailnet>.ts.net` (bare origin).
    Find `<your-tailnet>` on the admin console **DNS** page (the **"Tailnet name"**, e.g.
    `tailXXXXXX.ts.net`).
-5. Run: `cd deploy && make dev TUNNEL=tailscale`. The sidecar (`deploy/tailscale/funnel.json` via
+5. Run: `cd deploy && make up` (`make setup` saved the Tailscale choice; else `make up TUNNEL=tailscale`). The sidecar (`deploy/tailscale/funnel.json` via
    `TS_SERVE_CONFIG`, mounted as a directory) funnels public `:443 /` → `notebooklm-mcp:9420`;
    the node is `TS_HOSTNAME=notebooklm-mcp`, so the origin is `https://notebooklm-mcp.<tailnet>.ts.net`.
    Confirm the served URL with `docker compose --profile tailscale exec tailscale tailscale serve status`.

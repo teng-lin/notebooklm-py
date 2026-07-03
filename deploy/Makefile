@@ -1,17 +1,32 @@
 # Convenience wrapper for the remote notebooklm-mcp deploy.
-#   make dev                    — build this checkout + start (Cloudflare tunnel, default)
+#   make setup                  — interactive first run: pick a tunnel + generate secrets → .env
+#   make up                     — pull the published image and start (the easy path)
+#   make prod VERSION=x.y.z      — pull a specific published version and start
+#   make dev                    — build THIS checkout + start (contributors)
 #   make dev TUNNEL=tailscale   — same, but with the Tailscale Funnel sidecar (no domain)
-#   make prod VERSION=x.y.z     — build + install a published PyPI release
 #   make logs / restart / down / config
 # TUNNEL selects the tunnel sidecar (Compose profile): cloudflare (default) or tailscale.
 # Override the compose command with COMPOSE=... if needed.
 
 COMPOSE ?= docker compose
-TUNNEL ?= cloudflare
-VERSION ?= 0.8.0
+# TUNNEL: a CLI/env override wins; else the choice `make setup` saved in .env;
+# else cloudflare. Only TUNNEL is read from .env into make — it's make-only (not a
+# compose var), so it can't collide with compose's own reading of .env.
+TUNNEL ?= $(or $(shell [ -f .env ] && sed -n 's/^TUNNEL=//p' .env),cloudflare)
+
+# Pin a published image tag with `make prod VERSION=x.y.z`. Export it to compose
+# ONLY when given on the command line; otherwise leave it unset so compose reads
+# NOTEBOOKLM_MCP_VERSION from .env (default 0.8.0). Same reasoning as the
+# NOTEBOOKLM_PROFILE_DIR note below: a make-exported default would OUTRANK the .env
+# value (shell env > .env) and silently ignore a .env pin.
+ifeq ($(origin VERSION),command line)
+VERSION_ENV := NOTEBOOKLM_MCP_VERSION=$(VERSION)
+endif
 
 # Profile-aware compose invocation — selects exactly one tunnel sidecar.
 DC = $(COMPOSE) --profile $(TUNNEL)
+# Same, but layer the build override so the image is built from THIS checkout.
+DC_BUILD = $(DC) -f docker-compose.yml -f docker-compose.build.yml
 
 # Run the container as YOUR uid/gid so the mounted profile needs no chown.
 export NOTEBOOKLM_UID ?= $(shell id -u)
@@ -23,7 +38,7 @@ export NOTEBOOKLM_GID ?= $(shell id -g)
 # defaults to ~/.notebooklm/profiles/default on its own; a shell/CLI override such as
 # `NOTEBOOKLM_PROFILE_DIR=… make dev` is still auto-exported by make to the recipe.
 
-.PHONY: help dev prod up restart logs down config _require-tunnel-token
+.PHONY: help setup dev prod up restart logs down config _require-tunnel-token
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -41,17 +56,20 @@ _require-tunnel-token:
 			|| { echo "✗ TUNNEL=tailscale needs TS_AUTHKEY — set it in deploy/.env"; exit 1; }; \
 	else echo "✗ Unknown TUNNEL=$(TUNNEL) (use cloudflare or tailscale)"; exit 1; fi
 
-dev: _require-tunnel-token ## Build from source (this checkout) and start (TUNNEL=cloudflare|tailscale)
-	$(DC) up -d --build
+setup: ## Interactive first run: pick a tunnel + generate secrets → writes .env
+	@sh setup.sh
 
-prod: _require-tunnel-token ## Build from a published release and start (e.g. make prod VERSION=0.8.0)
-	$(DC) build --build-arg NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]==$(VERSION)"
-	$(DC) up -d
+up: prod ## Pull the published image and start (the easy path)
 
-up: dev ## Alias for `dev`
+prod: _require-tunnel-token ## Pull a published version and start (VERSION=x.y.z, or pin NOTEBOOKLM_MCP_VERSION in .env)
+	$(VERSION_ENV) $(DC) pull
+	$(VERSION_ENV) $(DC) up -d
 
-restart: ## Rebuild + recreate after a source/config change
-	$(DC) up -d --build
+dev: _require-tunnel-token ## Build THIS checkout and start (contributors; TUNNEL=cloudflare|tailscale)
+	$(DC_BUILD) up -d --build
+
+restart: ## Rebuild THIS checkout + recreate after a source/config change
+	$(DC_BUILD) up -d --build
 
 logs: ## Tail the server logs
 	$(COMPOSE) logs -f notebooklm-mcp

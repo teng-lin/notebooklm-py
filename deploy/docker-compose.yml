@@ -10,14 +10,12 @@
 # tunnel, which terminates TLS at its edge (no CA cert for you to manage). See README.md.
 services:
   notebooklm-mcp:
-    build:
-      # Context is the repo root so the image can install THIS checkout (dev).
-      context: ..
-      dockerfile: deploy/Dockerfile
-      # For a published release instead of this checkout, uncomment:
-      # args:
-      #   NOTEBOOKLM_SPEC: "notebooklm-py[mcp,headless]==0.8.0"
-    # image: ghcr.io/...   # or pull a prebuilt image instead of building
+    # Pull the published image by default — `make up` / `make prod` and a plain
+    # `docker compose up` need NO source checkout. Override the namespace/tag via
+    # NOTEBOOKLM_MCP_IMAGE / NOTEBOOKLM_MCP_VERSION in .env. Contributors building
+    # from THIS checkout run `make dev`, which layers docker-compose.build.yml to
+    # add a `build:` section back (see that file).
+    image: ${NOTEBOOKLM_MCP_IMAGE:-tenglin/notebooklm-mcp}:${NOTEBOOKLM_MCP_VERSION:-0.8.0}
     restart: unless-stopped
     # Run as YOUR uid:gid so the mounted profile's files (owned by you on the
     # host) are readable AND writable with NO chown — and your own `notebooklm`

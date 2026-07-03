@@ -1,16 +1,31 @@
-# Remote `notebooklm-mcp` — Docker + Cloudflare Tunnel
+# Remote `notebooklm-mcp` — Docker + a tunnel (Cloudflare or Tailscale)
 
-Run the MCP server as a **remote connector** (Claude Code / Claude.ai / Cursor)
-behind a Cloudflare Tunnel: no public IP, no open ports, no TLS certificate to
-manage. Single-tenant, self-hosted.
+Run the MCP server as a **remote connector** (Claude Code / claude.ai / Cursor)
+behind a tunnel: no public IP, no open ports, no TLS certificate to manage.
+Single-tenant, self-hosted. Pick **Cloudflare** (needs a domain) or **Tailscale
+Funnel** (no domain). `make up` pulls a **prebuilt image** — no source checkout.
 
 > ⚠️ **Use a dedicated / throwaway Google account.** The mounted
 > `master_token.json` is a durable, full-account credential. Treat the mounted profile dir
 > and `.env` as secrets (both are gitignored).
 
+## Quick start (the easy path)
+```bash
+# 1. bootstrap the master token once, on a machine with a browser (see §1):
+pip install "notebooklm-py[browser,headless]"
+notebooklm login --master-token --account you@example.com
+# 2. pick a tunnel + generate secrets (writes deploy/.env):
+cd deploy && make setup
+# 3. finish the tunnel setup (§3 — the one irreducible manual part), then:
+make up
+```
+`make up` pulls the published image and starts it. The rest of this doc is the
+detailed walk-through + the security model.
+
 ## Prerequisites
 - Docker + Docker Compose.
-- A domain on Cloudflare (free plan is fine) for the Tunnel hostname.
+- **Cloudflare tunnel:** a domain on Cloudflare (free plan is fine). **Tailscale
+  Funnel:** a Tailscale account (no domain needed).
 
 ## 1. Bootstrap the master token (once, on a machine with a browser)
 ```bash
@@ -36,6 +51,10 @@ The dir is mounted **read-write** because the server re-mints/rotates cookies in
 
 ## 2. Configure secrets
 ```bash
+cd deploy && make setup        # recommended: picks a tunnel + generates the secrets → .env
+```
+Or by hand:
+```bash
 cp deploy/.env.example deploy/.env
 # NOTEBOOKLM_MCP_TOKEN: python -c "import secrets; print(secrets.token_urlsafe(32))"
 # CF_TUNNEL_TOKEN: from the Cloudflare dashboard (next step)
@@ -45,6 +64,25 @@ cp deploy/.env.example deploy/.env
 The stack ships two tunnel sidecars as Compose **profiles** — pick one (the server
 runs under either). Both terminate TLS at their edge, so there's no cert to manage and
 no host ports are published.
+
+> **Only using Claude Code / Cursor / Desktop (not claude.ai)? You may not need a public
+> tunnel at all** — those clients send a bearer, so they need *reachability*, not a public
+> URL. If the container's host is already on your **Tailscale tailnet** (tailscaled on the
+> host, not in a sidecar), you can skip Funnel, OAuth, and the MagicDNS-cert / `funnel`
+> node-attribute steps entirely, and reach the server over the private tailnet:
+> ```bash
+> # publish 9420 on the host's TAILSCALE IP only (never 0.0.0.0 — that would expose it
+> # to your LAN/public), with no tunnel profile:
+> NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1 \
+>   docker compose run -d --service-ports -p "$(tailscale ip -4):9420:9420" notebooklm-mcp
+> claude mcp add --transport http notebooklm \
+>   http://<host>.<your-tailnet>.ts.net:9420/mcp \
+>   --header "Authorization: Bearer $NOTEBOOKLM_MCP_TOKEN"
+> ```
+> Most private option — nothing is ever public (plain http is fine; the tailnet is
+> encrypted). It's a bit more manual than `make up` because it's outside the tunnel
+> profiles. The tunnels below exist only because **claude.ai** is a cloud client that
+> needs a public HTTPS URL.
 
 ### 3A. Cloudflare Tunnel (needs a domain in your Cloudflare account)
 In the Cloudflare **Zero Trust** dashboard → **Networks → Tunnels**:
@@ -91,24 +129,26 @@ Then set the matching **OAuth base URL** in `.env` (bare origin — see step 6):
 
 ## 4. Run
 
-The `Makefile` wraps the build modes + the tunnel choice — one command each:
+The `Makefile` wraps the tunnel choice (from `make setup`, or `TUNNEL=…`) and the
+pull-vs-build modes — one command each:
 
 ```bash
 cd deploy
-make dev                       # build THIS checkout + start (Cloudflare tunnel, default)
-make dev TUNNEL=tailscale      # ...with the Tailscale Funnel sidecar instead
-make prod VERSION=0.8.0        # build + install a published PyPI release and start
+make up                        # PULL the published image + start (the easy path)
+make prod VERSION=0.8.0        # ...pin a specific published version
+make dev                       # BUILD this checkout + start (contributors)
+make dev TUNNEL=tailscale      # ...forcing the Tailscale Funnel sidecar for this run
 make logs                      # tail the server log (expect: bound 0.0.0.0:9420)
-make restart                   # rebuild + recreate after a source/config change
-make down                      # stop and remove (pass the same TUNNEL you started with)
+make restart                   # rebuild this checkout + recreate after a source change
+make down                      # stop and remove
 ```
 
-Equivalent raw compose (`--profile` selects the tunnel; build context is the repo root):
-- **Cloudflare, from source:** `docker compose --profile cloudflare up -d --build`
-- **Tailscale, from source:** `docker compose --profile tailscale up -d --build`
-- **From a published release:** add `--build-arg
-  NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]==0.8.0"` to the build (or uncomment
-  `build.args.NOTEBOOKLM_SPEC` in `docker-compose.yml`).
+Equivalent raw compose (`--profile` selects the tunnel):
+- **Pull + run (any tunnel):** `docker compose --profile cloudflare pull && \
+  docker compose --profile cloudflare up -d` (swap `tailscale` for the other tunnel).
+- **Build from source:** add the build override —
+  `docker compose -f docker-compose.yml -f docker-compose.build.yml --profile cloudflare up -d --build`.
+- **A different image / tag:** set `NOTEBOOKLM_MCP_IMAGE` / `NOTEBOOKLM_MCP_VERSION` in `.env`.
 
 ## 5. Connect from Claude Code
 ```bash

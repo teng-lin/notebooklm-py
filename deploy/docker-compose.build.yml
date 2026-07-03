@@ -1,0 +1,14 @@
+# Override: build the notebooklm-mcp image from THIS checkout instead of pulling
+# the published one. Layered on top of docker-compose.yml by `make dev`. Raw:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml \
+#     --profile cloudflare up -d --build
+#
+# The build context is the repo root so the image installs this source tree.
+services:
+  notebooklm-mcp:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      # To build from a published PyPI release instead of this checkout:
+      # args:
+      #   NOTEBOOKLM_SPEC: "notebooklm-py[mcp,headless]==0.8.0"
