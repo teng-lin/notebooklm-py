@@ -477,14 +477,17 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
             "r2a": dict(self._refresh_to_access_map),
         }
         try:
+            # Persistence is on by default now (#1765) and this dir may be created here
+            # before any `login`, so create it 0700 (like get_profile_dir) — a full-account
+            # secret must not be group/other-listable. `mode=` secures it AT creation, with
+            # no create→chmod TOCTOU window. We deliberately do NOT chmod an existing dir:
+            # on a shared/bind-mounted NOTEBOOKLM_HOME the server may not own it, and a
+            # failed chmod inside this try would abort the write and drop state on restart.
             parent = self._state_path.parent
-            parent.mkdir(parents=True, exist_ok=True)
-            # Persistence is on by default now (#1765), so this dir may be created here
-            # before any `login`. oauth_state.json is a full-account secret, so hold the
-            # profile dir to the same 0700 invariant get_profile_dir enforces — a bare
-            # umask mkdir could leave it group/other-listable.
             if os.name == "posix":
-                parent.chmod(0o700)
+                parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            else:
+                parent.mkdir(parents=True, exist_ok=True)
             atomic_write_json(self._state_path, data)  # POSIX-atomic, 0600, filelock
         except OSError as exc:  # disk error must not crash an active server
             logger.warning("Could not persist OAuth state to %s: %s", self._state_path, exc)
