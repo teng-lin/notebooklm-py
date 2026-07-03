@@ -8,6 +8,7 @@ reaching the tool, the confirm preview-then-delete flow, and error projection.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -19,7 +20,10 @@ pytest.importorskip("fastmcp")
 
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
-from notebooklm.exceptions import NotebookNotFoundError  # noqa: E402 - after importorskip guard
+from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
+    NotebookNotFoundError,
+    RPCError,
+)
 from notebooklm.types import (  # noqa: E402 - after importorskip guard
     Notebook,
     NotebookMetadata,
@@ -207,6 +211,32 @@ async def test_notebook_describe_include_metadata_adds_block(mcp_call, mock_clie
     }
     mock_client.notebooks.get_description.assert_awaited_once_with(NB_ID)
     mock_client.notebooks.get_metadata.assert_awaited_once_with(NB_ID)
+
+
+async def test_notebook_describe_cancels_sibling_on_error(mcp_call, mock_client) -> None:
+    """include_metadata=True runs description + metadata concurrently; if one read
+    raises, the still-running sibling read is cancelled + drained (no leaked
+    coroutine) and the error propagates as ToolError (#1760)."""
+    sibling_cancelled = asyncio.Event()
+
+    async def _slow_describe(_nb: str) -> Any:
+        try:
+            await asyncio.sleep(30)  # the slow sibling — should be cancelled
+        except asyncio.CancelledError:
+            sibling_cancelled.set()
+            raise
+        return FakeDescription(summary="unused")  # pragma: no cover - never reached
+
+    async def _raise_metadata(_nb: str) -> Any:
+        await asyncio.sleep(0)  # let the slow sibling start first
+        raise RPCError("unexpected boom")
+
+    mock_client.notebooks.get_description = _slow_describe
+    mock_client.notebooks.get_metadata = _raise_metadata
+
+    with pytest.raises(ToolError):
+        await mcp_call("notebook_describe", {"notebook": NB_ID, "include_metadata": True})
+    assert sibling_cancelled.is_set(), "slow sibling read was not cancelled/drained"
 
 
 async def test_notebook_rename(mcp_call, mock_client) -> None:

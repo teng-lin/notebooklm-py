@@ -87,16 +87,29 @@ def register(mcp: Any) -> None:
             nb_id = await resolve_notebook(client, notebook)
             if include_metadata:
                 # Two independent reads (description + metadata) → run concurrently
-                # (repo convention for independent RPCs). A NotebookLMError from
-                # either still propagates through ``mcp_errors``.
-                result, meta_result = await asyncio.gather(
+                # (repo convention for independent RPCs). Drive explicit tasks so that
+                # if either raises, the still-running sibling read is cancelled +
+                # drained rather than leaked (mirrors ``_sources._wait_all_sources``).
+                # A NotebookLMError from either still propagates through ``mcp_errors``.
+                describe_task = asyncio.create_task(
                     core.execute_notebook_describe(
                         client, nb_id, resolve_notebook_id=passthrough_notebook_id
-                    ),
+                    )
+                )
+                meta_task = asyncio.create_task(
                     core.execute_notebook_metadata(
                         client, nb_id, resolve_notebook_id=passthrough_notebook_id
-                    ),
+                    )
                 )
+                tasks = (describe_task, meta_task)
+                try:
+                    result, meta_result = await asyncio.gather(*tasks)
+                except BaseException:
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    raise
                 output = to_jsonable(result)
                 output["metadata"] = to_jsonable(meta_result.metadata)
                 return output

@@ -8,6 +8,7 @@ name-vs-id resolution, the configure goal/length dispatch, and error projection.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,7 +19,10 @@ pytest.importorskip("fastmcp")
 
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
-from notebooklm.exceptions import ChatError  # noqa: E402 - after importorskip guard
+from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
+    ChatError,
+    RPCError,
+)
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
@@ -337,6 +341,36 @@ async def test_chat_ask_all_three_absent_still_rejected(mcp_call, mock_client) -
     with pytest.raises(ToolError):
         await mcp_call("chat_ask", {"notebook": NB_ID, "suggest_followups": False})
     mock_client.notebooks.suggest_prompts.assert_not_called()
+
+
+async def test_chat_ask_cancels_sibling_on_error(mcp_call, mock_client) -> None:
+    """When ask + suggest run concurrently (question + suggest_followups) and one
+    raises, the still-running sibling is cancelled + drained (no leaked coroutine)
+    and the error propagates as ToolError (#1760)."""
+    sibling_cancelled = asyncio.Event()
+
+    async def _slow_ask(*_a: Any, **_k: Any) -> Any:
+        try:
+            await asyncio.sleep(30)  # the slow sibling — should be cancelled
+        except asyncio.CancelledError:
+            sibling_cancelled.set()
+            raise
+        # never reached (cancelled first); return a real fake, not Ellipsis
+        return FakeAskResult(answer="unused", conversation_id=CONV_ID)  # pragma: no cover
+
+    async def _raise_suggest(*_a: Any, **_k: Any) -> Any:
+        await asyncio.sleep(0)  # let the slow sibling start first
+        raise RPCError("unexpected boom")
+
+    mock_client.chat.ask = _slow_ask
+    mock_client.notebooks.suggest_prompts = _raise_suggest
+
+    with pytest.raises(ToolError):
+        await mcp_call(
+            "chat_ask",
+            {"notebook": NB_ID, "question": "what?", "suggest_followups": True},
+        )
+    assert sibling_cancelled.is_set(), "slow sibling read was not cancelled/drained"
 
 
 @dataclass

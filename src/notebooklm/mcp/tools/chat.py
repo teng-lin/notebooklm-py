@@ -204,7 +204,21 @@ def register(mcp: Any) -> None:
                 else None
             )
             if ask_coro is not None and suggest_coro is not None:
-                ask_result, suggestions = await asyncio.gather(ask_coro, suggest_coro)
+                # Independent RPCs → run concurrently, but drive explicit tasks so a
+                # failure in one cancels + drains the still-running sibling instead of
+                # leaking it (mirrors ``_sources._wait_all_sources``).
+                tasks = (
+                    asyncio.create_task(ask_coro),
+                    asyncio.create_task(suggest_coro),
+                )
+                try:
+                    ask_result, suggestions = await asyncio.gather(*tasks)
+                except BaseException:
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    raise
             elif ask_coro is not None:
                 ask_result, suggestions = await ask_coro, None
             elif suggest_coro is not None:
