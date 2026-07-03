@@ -512,6 +512,84 @@ def test_add_batch_stale_auth_is_top_level_401(
     assert resp.json()["error"]["category"] == "auth"
 
 
+def test_add_batch_mid_item_auth_is_top_level_401(
+    authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
+) -> None:
+    # An AUTH failure raised DURING an item's add (not the shared preflight) must
+    # propagate as a top-level 401 — NOT be folded into a per-item error and
+    # returned as a 200/201 batch envelope.
+    import pytest
+
+    from notebooklm.exceptions import AuthError
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    _seed_notebook(fake_client)
+
+    async def _boom(notebook_id: str, url: str) -> object:
+        raise AuthError("session expired mid-batch")
+
+    monkeypatch.setattr(fake_client.sources, "add_url", _boom)
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={"urls": ["https://a.example.com", "https://b.example.com"]},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["error"]["category"] == "auth"
+    # It aborted — no batch envelope with per-item results.
+    assert "results" not in resp.json()
+
+
+def test_add_batch_mid_item_rate_limit_is_top_level_429(
+    authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
+) -> None:
+    # A RATE_LIMIT failure mid-batch is fatal too (429), not a per-item error.
+    import pytest
+
+    from notebooklm.exceptions import RateLimitError
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    _seed_notebook(fake_client)
+
+    async def _boom(notebook_id: str, url: str) -> object:
+        raise RateLimitError("slow down")
+
+    monkeypatch.setattr(fake_client.sources, "add_url", _boom)
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch", json={"urls": ["https://a.example.com"]}
+    )
+    assert resp.status_code == 429
+    assert resp.json()["error"]["category"] == "rate_limited"
+    assert "results" not in resp.json()
+
+
+def test_add_batch_per_item_error_is_redacted(
+    authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
+) -> None:
+    # A per-item (isolated, 4xx-input) failure whose message carries a home path
+    # must be scrubbed in the batch envelope — no raw /home/<user>/ leak.
+    import pytest
+
+    from notebooklm.exceptions import ValidationError
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    _seed_notebook(fake_client)
+
+    async def _boom(notebook_id: str, url: str) -> object:
+        raise ValidationError("bad source spooled to /home/alice/secret.txt")
+
+    monkeypatch.setattr(fake_client.sources, "add_url", _boom)
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch", json={"urls": ["https://a.example.com"]}
+    )
+    # A VALIDATION failure stays isolated: nothing created → 200 status=error.
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "error"
+    message = body["results"][0]["error"]["message"]
+    assert "/home/alice" not in message
+    assert "/home/***" in message
+
+
 def test_add_batch_empty_is_400(authed_client: TestClient) -> None:
     resp = authed_client.post("/v1/notebooks/nb-1/sources/batch", json={"urls": []})
     assert resp.status_code == 400
@@ -610,3 +688,20 @@ def test_wait_explicit_empty_source_ids_is_400(authed_client: TestClient) -> Non
     resp = authed_client.post("/v1/notebooks/nb-1/sources/wait", json={"source_ids": []})
     assert resp.status_code == 400
     assert resp.json()["error"]["category"] == "validation"
+
+
+def test_wait_bucket_entry_redacts_error_text() -> None:
+    # A handled wait failure's error text is scrubbed via safe_detail before it
+    # reaches the {source_id, error} bucket — no raw /home/<user>/ leak (F7).
+    from notebooklm.server.routes.sources import _wait_bucket_entry
+
+    class _Err:
+        source_id = "src-1"
+
+        def __str__(self) -> str:
+            return "processing failed, spooled to /home/alice/tmp/x"
+
+    entry = _wait_bucket_entry(_Err())
+    assert entry["source_id"] == "src-1"
+    assert "/home/alice" not in entry["error"]
+    assert "/home/***" in entry["error"]

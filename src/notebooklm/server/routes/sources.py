@@ -37,11 +37,12 @@ from ..._app import source_add as add_core
 from ..._app import source_content as content_core
 from ..._app import source_mutations as mut_core
 from ..._app import source_wait as wait_core
+from ..._app.errors import classify
 from ..._app.views import source_view
 from ...client import NotebookLMClient
 from ...exceptions import ValidationError
 from .._context import get_client, get_pending
-from .._errors import error_item
+from .._errors import CATEGORY_STATUS, error_item, safe_detail
 from .._pagination import MAX_LIMIT, paginate_envelope
 from .._pending import PendingRegistry
 from ._passthrough import passthrough_source_id
@@ -387,6 +388,25 @@ async def add_drive(
     return source_view(result.source)
 
 
+def _batch_item_is_fatal(exc: BaseException) -> bool:
+    """Decide whether a per-item add failure must abort the whole batch.
+
+    Per-item isolation is correct ONLY for per-URL, user-input failures (a bad
+    URL / SSRF-blocked host / not-found → 4xx-input): those are properly reported
+    as a per-entry ``error`` while the rest of the batch proceeds. A service /
+    infrastructure failure (expired auth, rate limiting, an upstream 5xx /
+    transport error) is NOT specific to the one URL — folding it into a per-item
+    result would return a ``200``/``201`` batch envelope for what is really a
+    top-level ``401`` / ``429`` / ``5xx``. So classify the exception and treat it
+    as fatal (re-raise, letting the top-level handler map it) when its projected
+    HTTP status is ``401`` / ``429`` or a server error (``>= 500``); everything
+    else (``400`` bad URL, ``404`` not-found, ``409`` conflict, ``422``) stays
+    isolated. ``CancelledError`` is a ``BaseException`` and is never passed here.
+    """
+    status = CATEGORY_STATUS[classify(exc).category]
+    return status in (401, 429) or status >= 500
+
+
 @router.post("/batch", status_code=201)
 async def add_batch(
     notebook_id: str,
@@ -436,6 +456,15 @@ async def add_batch(
                 client, add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan)
             )
         except Exception as exc:  # noqa: BLE001 - per-item isolation; CancelledError still propagates
+            # Re-raise service/infra failures (auth / rate-limit / server /
+            # transport) so the top-level handler maps them to the correct
+            # 401 / 429 / 5xx instead of masking them as a 200/201 batch
+            # envelope; keep per-item isolation only for per-URL input failures.
+            if _batch_item_is_fatal(exc):
+                raise
+            # ``error_item`` routes ``str(exc)`` through the shared ``_redact``
+            # chokepoint (same scrubber as ``safe_detail``), so the per-item text
+            # carries no raw exception/stack detail (CodeQL information-exposure).
             results.append({"input": entry, "status": "error", "error": error_item(exc)})
         else:
             pending.record(notebook_id, result.source.id)
@@ -610,5 +639,10 @@ def _aggregate_wait_outcomes(
 
 
 def _wait_bucket_entry(error: Any) -> dict[str, str]:
-    """Project a handled wait failure onto its ``{source_id, error}`` bucket entry."""
-    return {"source_id": error.source_id, "error": str(error)}
+    """Project a handled wait failure onto its ``{source_id, error}`` bucket entry.
+
+    The message is scrubbed + length-capped via :func:`safe_detail` (the same
+    ``_redact`` chokepoint the rest of the server error projection uses) so the
+    bucket entry cannot leak a credential or a multi-kilobyte dump.
+    """
+    return {"source_id": error.source_id, "error": safe_detail(str(error))}

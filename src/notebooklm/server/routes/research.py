@@ -37,13 +37,15 @@ from ..._app import research as research_core
 from ..._app.serialize import to_jsonable
 from ...client import NotebookLMClient
 from ...exceptions import DecodingError, ValidationError
-from .._context import get_client
+from .._context import get_client, get_pending
+from .._pending import PendingRegistry
 
 __all__ = ["router"]
 
 router = APIRouter(prefix="/notebooks/{notebook_id}/research", tags=["research"])
 
 ClientDep = Annotated[NotebookLMClient, Depends(get_client)]
+PendingDep = Annotated[PendingRegistry, Depends(get_pending)]
 
 
 class ResearchStartBody(BaseModel):
@@ -90,8 +92,18 @@ async def start_research(
             )
         poll_id = result.report_id
     else:
+        # Fast mode keys off ``task_id``; guard its emptiness the same way deep
+        # guards ``report_id`` so a fast start that returns no ``task_id`` fails
+        # loud instead of emitting an empty, unpollable ``poll_id``.
+        if not result.task_id:
+            raise DecodingError(
+                "Fast research start returned no task_id; cannot form a pollable run id."
+            )
         poll_id = result.task_id
-    return {"notebook_id": notebook_id, "poll_id": poll_id, **to_jsonable(result)}
+    # The explicit discriminators (``notebook_id`` / ``poll_id``) go AFTER the
+    # spread so a ``to_jsonable(result)`` field (e.g. ``task_id`` / ``report_id``)
+    # can never clobber the computed ``poll_id``.
+    return {**to_jsonable(result), "notebook_id": notebook_id, "poll_id": poll_id}
 
 
 @router.get("/{run_id}")
@@ -131,7 +143,9 @@ async def cancel_research(notebook_id: str, run_id: str, client: ClientDep) -> d
 
 
 @router.post("/{run_id}/import", status_code=201)
-async def import_research(notebook_id: str, run_id: str, client: ClientDep) -> dict[str, Any]:
+async def import_research(
+    notebook_id: str, run_id: str, client: ClientDep, pending: PendingDep
+) -> dict[str, Any]:
     """Import a completed research run's found sources into the notebook.
 
     ``run_id`` is the ``poll_id`` from the start response. The run is polled FOR
@@ -139,12 +153,26 @@ async def import_research(notebook_id: str, run_id: str, client: ClientDep) -> d
     still in progress, or that completed with no sources, is rejected (400) — an
     unfinished or empty run is never imported as a partial success (mirrors the
     MCP ``research_import`` guard).
+
+    Each imported source id is recorded in the pending registry (same provenance
+    contract as the ``POST .../sources`` create routes), so a ``GET
+    .../sources/{id}`` poll for a just-imported id resolves to a ``200`` pending
+    rather than a spurious ``404`` during the not-yet-listable window.
     """
     # Poll FOR THE REQUESTED run and guard every non-importable state before
     # touching ``import_sources``. The same shared helper backs the MCP
     # ``research_import`` tool so the importable-state ladder cannot drift.
     sources = await research_core.poll_sources_for_import(client, notebook_id, run_id)
+    # Match the MCP ``research_import`` tool exactly — it imports via the plain
+    # ``import_sources`` (NOT ``import_sources_with_verification``), so the REST
+    # route does the same to keep the two surfaces in lock-step.
     imported = await client.research.import_sources(notebook_id, run_id, sources)
+    # Record each new source id in the pending registry so the source poll route
+    # can answer 200-pending (not 404) for the not-yet-listable window.
+    for item in imported:
+        source_id = item.get("id")
+        if source_id:
+            pending.record(notebook_id, source_id)
     return {
         "status": "imported",
         "notebook_id": notebook_id,

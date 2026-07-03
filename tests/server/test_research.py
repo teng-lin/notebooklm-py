@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
+
+from notebooklm._types.research import ResearchStart
 
 from .fakes import FakeClient
 
@@ -162,6 +165,81 @@ def test_status_unknown_run_is_not_found(authed_client: TestClient) -> None:
     resp = authed_client.get("/v1/notebooks/nb-1/research/ghost")
     assert resp.status_code == 200
     assert resp.json()["status"] == "not_found"
+
+
+def test_start_explicit_discriminators_win_over_spread(
+    authed_client: TestClient, fake_client: FakeClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ``to_jsonable(result)`` carries ``notebook_id`` (and ``task_id`` /
+    # ``report_id``), so the explicit ``notebook_id`` / ``poll_id`` must be spread
+    # LAST or a stale/embedded value could clobber the computed discriminator.
+    # Return a start whose embedded ``notebook_id`` DIFFERS from the path arg.
+    async def _start(
+        notebook_id: str, query: str, source: str = "web", mode: str = "fast"
+    ) -> ResearchStart:
+        return ResearchStart(
+            task_id="rtask-x",
+            report_id=None,
+            notebook_id="EMBEDDED-WRONG",
+            query=query,
+            mode=mode,
+        )
+
+    monkeypatch.setattr(fake_client.research, "start", _start)
+    resp = authed_client.post("/v1/notebooks/nb-1/research", json={"query": "t"})
+    assert resp.status_code == 202
+    body = resp.json()
+    # The explicit path notebook_id wins over the spread's embedded one.
+    assert body["notebook_id"] == "nb-1"
+    # poll_id is the computed fast task_id, present alongside the spread.
+    assert body["poll_id"] == "rtask-x"
+    assert body["task_id"] == "rtask-x"
+
+
+def test_fast_start_missing_task_id_raises(
+    authed_client: TestClient, fake_client: FakeClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A fast start that returns no task_id cannot form a pollable poll_id — the
+    # route must fail loud (parallel to the deep no-report_id guard) rather than
+    # emit an empty, unpollable poll_id.
+    async def _start(
+        notebook_id: str, query: str, source: str = "web", mode: str = "fast"
+    ) -> ResearchStart:
+        return ResearchStart(
+            task_id="", report_id=None, notebook_id=notebook_id, query=query, mode=mode
+        )
+
+    monkeypatch.setattr(fake_client.research, "start", _start)
+    resp = authed_client.post("/v1/notebooks/nb-1/research", json={"query": "t"})
+    assert resp.status_code >= 500
+    assert "poll_id" not in resp.json()
+
+
+def test_import_records_imported_ids_in_pending(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # After an import, each imported source id is recorded in the pending registry
+    # so a source poll for it resolves to 200 pending (not a spurious 404) during
+    # the not-yet-listable window (same provenance contract as the create routes).
+    resp = authed_client.post("/v1/notebooks/nb-1/research", json={"query": "t"})
+    poll_id = resp.json()["poll_id"]
+    fake_client.set_research_completed(
+        "nb-1", poll_id, sources=[{"url": "https://a.example", "title": "A"}]
+    )
+    resp = authed_client.post(f"/v1/notebooks/nb-1/research/{poll_id}/import")
+    assert resp.status_code == 201
+    imported = resp.json()["imported"]
+    assert len(imported) == 1
+    imported_id = imported[0]["id"]
+
+    # The imported id (not in the source store yet) is now pending-known → 200.
+    resp = authed_client.get(f"/v1/notebooks/nb-1/sources/{imported_id}")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
+
+    # An id that was never imported is still an unknown 404 (guards over-recording).
+    resp = authed_client.get("/v1/notebooks/nb-1/sources/never-imported")
+    assert resp.status_code == 404
 
 
 def test_unauthorized_is_401(raw_client: TestClient) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 
+import pytest
 from fastapi.testclient import TestClient
 
 from notebooklm._app.generate import GenerationExecutionResult
@@ -289,10 +290,11 @@ async def test_cleanup_file_response_cleans_on_disconnect(tmp_path: object) -> N
         raise _Boom  # abort mid-stream, as a disconnect would
 
     scope = {"type": "http", "method": "GET", "headers": []}
-    try:
+    # Catch the SPECIFIC simulated-abort exception so an unrelated failure in the
+    # cleanup path is not silently swallowed — the test only passes for the abort
+    # it staged.
+    with pytest.raises(_Boom):
         await resp(scope, _receive, _send)
-    except BaseException:
-        pass
     assert not os.path.exists(temp_dir)
 
 

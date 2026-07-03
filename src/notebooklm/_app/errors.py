@@ -127,14 +127,14 @@ CATEGORY_HINTS: dict[ErrorCategory, str | None] = {
     ErrorCategory.NOT_FOUND: (
         "Check the id/name with the matching *_list tool; the resource may have been deleted."
     ),
-    ErrorCategory.AUTH: "Re-authenticate (run `notebooklm login`) and retry.",
+    ErrorCategory.AUTH: "Re-authenticate and retry.",
     ErrorCategory.RATE_LIMITED: "Back off and retry after a short delay.",
     ErrorCategory.VALIDATION: "Fix the invalid argument and retry; this will not succeed unchanged.",
     ErrorCategory.CONFIG: "Check the auth profile / storage configuration.",
     ErrorCategory.NETWORK: "Transient connectivity issue; retry.",
     ErrorCategory.NOTEBOOK_LIMIT: "Notebook quota is exhausted; delete an existing notebook first.",
     ErrorCategory.ARTIFACT_TIMEOUT: (
-        "Generation is still running; poll studio_status with the task_id."
+        "Generation is still running; poll the task status with the task_id."
     ),
     ErrorCategory.TIMEOUT: "The operation did not finish in time; retry or poll for completion.",
     ErrorCategory.SERVER: "Upstream NotebookLM error; retry after a short delay.",
@@ -297,4 +297,4 @@ def classify(exc: BaseException) -> ClassifiedError:
         (``isinstance``), so it is stable and side-effect-free.
     """
     category = _category_for(exc)
-    return ClassifiedError(category=category, retriable=category in _RETRIABLE_CATEGORIES)
+    return ClassifiedError(category=category, retriable=is_retriable(category))
