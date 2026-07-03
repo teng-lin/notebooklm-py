@@ -329,6 +329,20 @@ def test_retry_artifact_returns_task_id_and_status(
     assert authed_client.get("/v1/notebooks/nb-1/artifacts/a1").json()["status"] == "pending"
 
 
+def test_retry_records_task_in_pending_registry(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # retry records its task_id (like generate), so a poll that briefly races ahead
+    # of the artifact listing resolves to 200 pending instead of a spurious 404.
+    resp = authed_client.post("/v1/notebooks/nb-1/artifacts/ghost/retry")
+    assert resp.status_code == 200
+    # Transient window: the retried task polls NOT_FOUND before it appears in listings.
+    fake_client.poll_states[("nb-1", "ghost")] = GenerationState.NOT_FOUND
+    poll = authed_client.get("/v1/notebooks/nb-1/artifacts/ghost")
+    assert poll.status_code == 200  # recorded on retry → 200 (would be 404 unrecorded)
+    assert poll.json()["status"] == "not_found"
+
+
 def test_retry_refusal_propagates_as_error(
     authed_client: TestClient, fake_client: FakeClient
 ) -> None:
@@ -528,6 +542,20 @@ def test_generate_forwards_instructions(authed_client: TestClient, fake_client: 
     assert resp.status_code == 202
     assert fake_client.last_generate_kwargs is not None
     assert fake_client.last_generate_kwargs.get("instructions") == "focus on chapter 3"
+
+
+def test_generate_blank_instructions_treated_as_absent(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    # Whitespace-only instructions must not reach the client as a blank prompt slot
+    # (keeps the default request shape byte-identical).
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts",
+        json={"type": "audio", "instructions": "   "},
+    )
+    assert resp.status_code == 202
+    assert fake_client.last_generate_kwargs is not None
+    assert fake_client.last_generate_kwargs.get("instructions") is None
 
 
 def test_generate_mind_map_forwards_instructions(

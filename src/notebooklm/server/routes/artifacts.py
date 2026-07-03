@@ -410,15 +410,18 @@ async def generate(
             raise ValidationError(f"Invalid {key} {value!r}; expected one of {list(choices)}")
         overrides[key] = value
 
+    # Treat empty / whitespace-only instructions as absent so the default request
+    # shape stays byte-identical (no blank prompt slot reaches the server).
+    instructions = body.instructions if (body.instructions and body.instructions.strip()) else None
     raw_args: dict[str, Any] = dict(_KIND_DEFAULTS[body.type])
     raw_args.update(
         {
             "notebook_id": notebook_id,
-            "description": body.instructions or "",
+            "description": instructions or "",
             # ``mind-map`` reads ``raw_args["instructions"]`` (every other kind reads
             # ``description``); forward BOTH so mind-map instructions actually reach
             # the client — the extra key is ignored by the other builders.
-            "instructions": body.instructions or None,
+            "instructions": instructions,
             "source_ids": tuple(body.source_ids or ()),
             "language": body.language,
             "wait": False,
@@ -503,15 +506,22 @@ async def rename(
 
 
 @router.post("/{artifact_id}/retry")
-async def retry(notebook_id: str, artifact_id: str, client: ClientDep) -> dict[str, Any]:
+async def retry(
+    notebook_id: str, artifact_id: str, client: ClientDep, pending: PendingDep
+) -> dict[str, Any]:
     """Retry a failed artifact in place (the UI "Retry" action).
 
     Non-blocking: on acceptance returns the kicked-off ``task_id`` (equal to the
     artifact id) and the new ``status``; poll ``GET .../artifacts/{task_id}``
     until complete. A synchronous refusal (rate limit / quota / not-retryable)
     surfaces as the classified error.
+
+    The ``task_id`` is recorded in the pending registry (as ``generate`` does) so a
+    poll that briefly races ahead of the artifact listing resolves to ``200``
+    pending instead of a spurious ``404``.
     """
     status = await artifact_core.retry_artifact(client, notebook_id, artifact_id)
+    pending.record(notebook_id, status.task_id)
     return {
         "notebook_id": notebook_id,
         "artifact_id": artifact_id,
