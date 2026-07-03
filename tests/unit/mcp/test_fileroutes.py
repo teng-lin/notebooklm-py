@@ -704,6 +704,38 @@ def test_upload_midstream_413_does_not_burn_jti(monkeypatch, mock_client, config
     assert retried.status_code == 200  # mid-stream 413 rolled the claim back
 
 
+def test_upload_mkdtemp_failure_is_clean_500_releases_slot_and_frees_jti(
+    monkeypatch, mock_client, config
+) -> None:
+    # ``mkdtemp`` raising (ENOSPC — the temp-disk exhaustion the cap guards against)
+    # sits OUTSIDE the spool ``try`` whose ``except OSError`` maps a bad filename to a
+    # 400, so without its own catch it escaped as a RAW Starlette 500. This uses the
+    # DEFAULT TestClient (``raise_server_exceptions=True``): an uncaught OSError would
+    # be re-raised here (failing the test), so a returned 500 proves it is now caught.
+    # It must also release the slot and — being a non-use of the token — roll the jti
+    # back so the same link is retryable.
+    add_file = AsyncMock(return_value=MagicMock(id="src-1"))
+    mock_client.sources.add_file = add_file
+    real_mkdtemp = _fileroutes.tempfile.mkdtemp
+
+    def boom(*_a, **_k):
+        raise OSError("No space left on device")
+
+    before = _fileroutes._inflight_uploads
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        monkeypatch.setattr(_fileroutes.tempfile, "mkdtemp", boom)
+        failed = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+        monkeypatch.setattr(_fileroutes.tempfile, "mkdtemp", real_mkdtemp)
+        retried = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+    assert failed.status_code == 500  # clean caught 500, not a raised uncaught exception
+    assert "server storage error" in failed.text  # our message, not raw "Internal Server Error"
+    assert _fileroutes._inflight_uploads == before  # slot released
+    assert retried.status_code == 200  # jti rolled back → same link retryable
+    add_file.assert_awaited_once()  # failed attempt short-circuited before the add; only retry added
+
+
 def test_download_multi_use_range_resume_preserved(monkeypatch, mock_client, config) -> None:
     # RANGE/RESUME GUARDRAIL: dl tokens stay multi-use so a resumed download (a second
     # GET, e.g. a Range reconnect) is not 403'd. Do NOT regress this — any future dl

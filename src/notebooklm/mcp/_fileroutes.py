@@ -481,7 +481,23 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 raw_mime = payload.get("mime") or request.headers.get("content-type")
                 mime = raw_mime.split(";")[0].strip() if raw_mime else None
 
-                temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-ul-")  # mkdtemp is 0o700
+                try:
+                    temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-ul-")  # mkdtemp is 0o700
+                except OSError:
+                    # Temp-dir creation failed (e.g. ENOSPC) — the exact temp-disk
+                    # exhaustion the concurrency cap guards against. mkdtemp sits OUTSIDE
+                    # the spool ``try`` below (whose ``except OSError`` maps a bad
+                    # *filename* to a 400), so without this its OSError would escape as a
+                    # raw Starlette 500. A failed dir-create is a SERVER storage problem,
+                    # not bad input, so 500 (mirrors the download route's status) — kept
+                    # distinct from the 400 os.open path. Accounting stays safe: the outer
+                    # finallys release the slot + roll back the jti; no dir was made, so
+                    # nothing to clean.
+                    return PlainTextResponse(
+                        "Upload could not be stored (server storage error).",
+                        status_code=500,
+                        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                    )
                 temp_path = os.path.join(temp_dir, filename)
                 try:
                     fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
