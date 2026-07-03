@@ -28,9 +28,9 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 
-from ... import __version__
 from ..._app.auth_check import AuthCheckPlan, run_auth_check
 from ..._redact import redact
+from ..._version_info import version_string
 from ...client import NotebookLMClient
 from ...exceptions import NotebookLMError
 from ...paths import get_active_profile, get_storage_path
@@ -117,7 +117,7 @@ async def server_info(
     result = await run_auth_check(plan, read_env_auth_json=_no_env_auth_json)
     info: dict[str, Any] = {
         "server": SERVER_NAME,
-        "version": __version__,
+        "version": version_string(),
         "auth": {
             "authenticated": result.all_passed,
             "storage_exists": bool(result.checks.get("storage_exists")),

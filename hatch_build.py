@@ -47,7 +47,7 @@ class CommitBuildHook(BuildHookInterface):
         dest = (
             "src/notebooklm/_commit.py" if self.target_name == "sdist" else "notebooklm/_commit.py"
         )
-        build_data["force_include"][str(gen)] = dest
+        build_data.setdefault("force_include", {})[str(gen)] = dest
 
 
 def _git_commit(root: str) -> str | None:

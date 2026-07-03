@@ -21,8 +21,10 @@ from pathlib import Path
 
 from . import __version__
 
-# src/notebooklm/_version_info.py -> parents[2] == repo root (holds .git)
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+# src/notebooklm/_version_info.py -> parents[2] == repo root (holds .git).
+# None if the install lives too shallow to have a parents[2] (pathological).
+_parents = Path(__file__).resolve().parents
+_REPO_ROOT = _parents[2] if len(_parents) > 2 else None
 
 
 def _embedded_commit() -> str | None:
@@ -36,7 +38,7 @@ def _embedded_commit() -> str | None:
 
 def _live_commit() -> str | None:
     """First 8 chars of HEAD from a git checkout, or ``None``."""
-    if not (_REPO_ROOT / ".git").exists():
+    if _REPO_ROOT is None or not (_REPO_ROOT / ".git").exists():
         return None
     try:
         out = subprocess.run(

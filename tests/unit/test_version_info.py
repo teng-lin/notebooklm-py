@@ -19,7 +19,7 @@ def test_embedded_commit_wins_and_skips_git(monkeypatch) -> None:
     """The baked-in commit is used; live git is never consulted."""
     _reset()
     monkeypatch.setattr(vi, "_embedded_commit", lambda: "abc12345")
-    monkeypatch.setattr(vi, "_live_commit", lambda: pytest_fail_if_called())
+    monkeypatch.setattr(vi, "_live_commit", lambda: _must_not_be_called())
     assert vi.version_string() == f"{vi.__version__} (abc12345)"
     _reset()
 
@@ -42,5 +42,5 @@ def test_bare_version_when_no_commit(monkeypatch) -> None:
     _reset()
 
 
-def pytest_fail_if_called():  # pragma: no cover - only runs if the guard fails
+def _must_not_be_called():  # pragma: no cover - only runs if the guard fails
     raise AssertionError("_live_commit must not be called when a commit is embedded")
