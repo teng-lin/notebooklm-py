@@ -329,7 +329,21 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         temp_dir: str | None = None
         success = False
         try:
-            temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-dl-")
+            try:
+                temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-dl-")
+            except OSError:
+                # Temp-dir creation failed (e.g. ENOSPC) — the exact temp-disk
+                # exhaustion this cap defends against. Scoped to mkdtemp ONLY (not the
+                # whole try) so it stays distinct from the post-fetch paths; without it
+                # the OSError escapes as a RAW Starlette 500 (the outer finally still
+                # releases the slot, but the response is bare). Return a clean 500,
+                # mirroring the upload route. No dir was created, so the outer finally's
+                # temp_dir cleanup is a no-op and success stays False → slot released.
+                return PlainTextResponse(
+                    "Download could not be prepared (server storage error).",
+                    status_code=500,
+                    headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                )
             temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
             try:
                 args: dict[str, object] = {

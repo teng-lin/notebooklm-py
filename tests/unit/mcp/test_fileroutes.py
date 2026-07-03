@@ -150,9 +150,13 @@ def test_download_error_releases_slot(monkeypatch, mock_client, config) -> None:
     assert _fileroutes._inflight_downloads == before
 
 
-def test_download_mkdtemp_failure_releases_slot(monkeypatch, mock_client, config) -> None:
-    # ``mkdtemp`` raising (ENOSPC — the very temp-disk exhaustion this cap guards
-    # against) must NOT leak the slot: it runs inside the counter's ``try``/``finally``.
+def test_download_mkdtemp_failure_is_clean_500_releases_slot(
+    monkeypatch, mock_client, config
+) -> None:
+    # ``mkdtemp`` raising (ENOSPC — the temp-disk exhaustion this cap guards against)
+    # must be a CLEAN caught 500 (not a raw Starlette 500) AND must not leak the slot.
+    # Uses the DEFAULT TestClient (``raise_server_exceptions=True``): an uncaught OSError
+    # would be re-raised here, so a returned 500 proves the exception is now caught.
     def boom(*_a, **_k):
         raise OSError("No space left on device")
 
@@ -160,10 +164,11 @@ def test_download_mkdtemp_failure_releases_slot(monkeypatch, mock_client, config
     before = _fileroutes._inflight_downloads
     app = _build(mock_client, config)
     url = config.download_url({"op": "dl", "nb": NB, "atype": "audio"})
-    with starlette_testclient.TestClient(app, raise_server_exceptions=False) as client:
+    with starlette_testclient.TestClient(app) as client:
         resp = client.get(_path(url))
     assert resp.status_code == 500
-    assert _fileroutes._inflight_downloads == before
+    assert "server storage error" in resp.text  # clean body, not raw "Internal Server Error"
+    assert _fileroutes._inflight_downloads == before  # slot released
 
 
 def test_download_post_fetch_exception_cleans_temp_and_releases_slot(
