@@ -178,4 +178,19 @@ def _display_results(report: DoctorReport):
                 "[yellow]Run 'notebooklm doctor --fix' to create the profile directory.[/yellow]"
             )
     elif not has_failures:
-        console.print("\n[green]All checks passed.[/green]")
+        if checks.get("auth", {}).get("status") == "warn":
+            # A warn on the auth row means the session looks present (SID) but is
+            # missing __Secure-1PSIDTS, so real RPCs may still fail (#1753).
+            # Printing the green "All checks passed." here would greenlight the
+            # exact unusable state this check is meant to surface — render an
+            # auth-specific advisory instead (the Auth row carries the full
+            # Firefox / master-token remediation). The exit code stays 0: a warn
+            # is not a hard failure, and the cookie can still be re-minted at
+            # runtime. Other benign warns (optional headless re-auth, profile-dir
+            # permissions) keep the green footer, unchanged.
+            console.print(
+                "\n[yellow]Auth check raised a warning: the session may not be "
+                "usable. See the Auth row above for how to fix it.[/yellow]"
+            )
+        else:
+            console.print("\n[green]All checks passed.[/green]")

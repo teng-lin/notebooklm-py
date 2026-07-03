@@ -171,6 +171,25 @@ def test_doctor_warns_when_psidts_missing(runner, isolated_notebooklm_home):
     assert "__Secure-1PSIDTS missing" in data["checks"]["auth"]["detail"]
 
 
+def test_doctor_text_mode_does_not_greenlight_auth_warn(runner, isolated_notebooklm_home):
+    """Text mode must not print 'All checks passed.' when auth only warns (#1753).
+
+    A warn keeps the exit code at 0, but the green all-passed footer would
+    greenlight the exact unusable (SID-without-__Secure-1PSIDTS) state doctor is
+    meant to surface — so an auth-specific advisory is rendered instead.
+    """
+    home = isolated_notebooklm_home
+    profile_dir = _make_profile(home)
+    _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+    _write_json(home / "config.json", {"default_profile": "default"})
+
+    result = runner.invoke(cli, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert "All checks passed" not in result.output
+    assert "raised a warning" in result.output
+
+
 def test_doctor_warns_when_config_default_profile_is_missing(runner, isolated_notebooklm_home):
     home = isolated_notebooklm_home
     _make_profile(home)

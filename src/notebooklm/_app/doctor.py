@@ -113,7 +113,19 @@ def _check_auth(storage_path: Path) -> dict[str, str]:
         cookies = data.get("cookies", [])
         if not isinstance(cookies, list):
             raise ValueError("cookies is not a list")
-        cookie_names = {c.get("name") for c in cookies if isinstance(c, dict)}
+        # Reuse the shared, name-robust extractor (drops non-dict rows and
+        # nameless / empty-name / non-str-name entries) rather than a bare
+        # ``{c.get("name") ...}`` set — that would fold a nameless row in as a
+        # ``None`` member. Import is function-local so importing this neutral
+        # core never pulls the auth facade on the common path (mirrors the
+        # ``_auth`` import deferral in ``cli/doctor_cmd._headless_reauth_check``).
+        from ..auth import cookie_names_from_storage
+
+        # Count actual cookie *entries*, not unique names: the same name can
+        # legitimately appear on multiple domains, so ``len(cookie_names)`` would
+        # under-report the file's cookie count in the "N cookies" detail.
+        cookie_count = sum(isinstance(c, dict) for c in cookies)
+        cookie_names = cookie_names_from_storage(data)
         if "SID" not in cookie_names:
             return {"status": "fail", "detail": "SID cookie missing"}
         # SID alone does not make a session usable. Google's homepage check also
@@ -132,7 +144,7 @@ def _check_auth(storage_path: Path) -> dict[str, str]:
             return {
                 "status": "warn",
                 "detail": (
-                    f"SID present but __Secure-1PSIDTS missing ({len(cookie_names)} cookies); "
+                    f"SID present but __Secure-1PSIDTS missing ({cookie_count} cookies); "
                     "the session may be unusable until the cookie is refreshed. "
                     "Re-run 'notebooklm login'; on Windows (Chrome 127+ App-Bound "
                     "Encryption) use '--browser-cookies firefox' or set up "
@@ -141,7 +153,7 @@ def _check_auth(storage_path: Path) -> dict[str, str]:
             }
         return {
             "status": "pass",
-            "detail": f"local auth cookies present ({len(cookie_names)} cookies)",
+            "detail": f"local auth cookies present ({cookie_count} cookies)",
         }
     except (json.JSONDecodeError, OSError, ValueError) as e:
         return {"status": "fail", "detail": f"invalid storage file: {e}"}
