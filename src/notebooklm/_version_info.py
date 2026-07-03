@@ -22,9 +22,9 @@ from pathlib import Path
 from . import __version__
 
 # src/notebooklm/_version_info.py -> parents[2] == repo root (holds .git).
-# None if the install lives too shallow to have a parents[2] (pathological).
-_parents = Path(__file__).resolve().parents
-_REPO_ROOT = _parents[2] if len(_parents) > 2 else None
+# Slice (not [2]) yields () when the install lives too shallow to have a
+# parents[2] — avoids an IndexError at import time on a pathological layout.
+_REPO_ROOT = next(iter(Path(__file__).resolve().parents[2:3]), None)
 
 
 def _embedded_commit() -> str | None:
