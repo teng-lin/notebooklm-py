@@ -33,9 +33,10 @@ from pydantic import BaseModel
 
 from ..._app import source_add as add_core
 from ..._app import source_content as content_core
-from ..._app.serialize import to_jsonable
+from ..._app.views import source_view
 from ...client import NotebookLMClient
 from .._context import get_client, get_pending
+from .._pagination import MAX_LIMIT, paginate_envelope
 from .._pending import PendingRegistry
 
 __all__ = ["MAX_UPLOAD_BYTES", "router"]
@@ -109,14 +110,31 @@ async def _add_source(
         client, add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan)
     )
     pending.record(notebook_id, result.source.id)
-    return to_jsonable(result.source)
+    # Project with the shared enriched view (string ``kind`` / ``status_label``
+    # alongside the raw codes) so the create path matches ``GET`` — a raw
+    # ``to_jsonable`` here would leak bare ``status`` / ``_type_code`` integers.
+    return source_view(result.source)
 
 
 @router.get("")
-async def list_sources(notebook_id: str, client: ClientDep) -> dict[str, Any]:
-    """List a notebook's sources."""
+async def list_sources(
+    notebook_id: str,
+    client: ClientDep,
+    limit: Annotated[int | None, Query(ge=1, le=MAX_LIMIT)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List a notebook's sources.
+
+    Each source carries string ``kind`` / ``status_label`` labels alongside the
+    raw type/status codes (shared with the MCP ``source_list`` surface). Defaults
+    to the full collection under ``sources`` (unchanged); supply ``?limit=`` to
+    slice and add a ``meta`` block, ``?offset=`` to page forward.
+    """
     sources = await client.sources.list(notebook_id)
-    return {"notebook_id": notebook_id, "sources": to_jsonable(sources)}
+    data = [source_view(s) for s in sources]
+    return paginate_envelope(
+        data, key="sources", limit=limit, offset=offset, notebook_id=notebook_id
+    )
 
 
 @router.get("/{source_id}")
@@ -136,7 +154,9 @@ async def get_source(
         raise HTTPException(status_code=404, detail="Source not found")
     if source.is_ready:
         pending.drop(notebook_id, source_id)
-    return to_jsonable(source)
+    # Enriched view: string ``kind`` / ``status_label`` alongside the raw codes
+    # (shared with the MCP source surface).
+    return source_view(source)
 
 
 @router.post("/url", status_code=201)

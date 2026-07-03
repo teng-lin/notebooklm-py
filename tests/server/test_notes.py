@@ -22,6 +22,25 @@ def test_list_returns_notes(authed_client: TestClient, fake_client: FakeClient) 
     assert [n["title"] for n in body["notes"]] == ["First"]
 
 
+def test_list_pagination_slices_and_adds_meta(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    for i in range(5):
+        _seed(fake_client, Note(id=f"n-{i}", notebook_id="nb-1", title=f"N{i}", content="x"))
+    default = authed_client.get("/v1/notebooks/nb-1/notes").json()
+    assert len(default["notes"]) == 5
+    assert "meta" not in default
+
+    body = authed_client.get("/v1/notebooks/nb-1/notes", params={"limit": 2, "offset": 1}).json()
+    assert body["notebook_id"] == "nb-1"
+    assert len(body["notes"]) == 2
+    assert body["meta"] == {"total": 5, "has_more": True, "limit": 2, "offset": 1}
+
+
+def test_list_bad_bounds_is_422(authed_client: TestClient) -> None:
+    assert authed_client.get("/v1/notebooks/nb-1/notes", params={"limit": 0}).status_code == 422
+
+
 def test_create_returns_201_with_new_note(authed_client: TestClient) -> None:
     resp = authed_client.post("/v1/notebooks/nb-1/notes", json={"title": "T", "content": "C"})
     assert resp.status_code == 201

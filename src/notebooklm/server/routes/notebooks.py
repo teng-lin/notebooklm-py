@@ -17,13 +17,14 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 
 from ..._app import notebooks as core
 from ..._app.serialize import to_jsonable
 from ...client import NotebookLMClient
 from .._context import get_client
+from .._pagination import MAX_LIMIT, paginate_envelope
 
 __all__ = ["router"]
 
@@ -39,10 +40,18 @@ class NotebookCreate(BaseModel):
 
 
 @router.get("")
-async def list_notebooks(client: ClientDep) -> dict[str, Any]:
-    """List all notebooks."""
+async def list_notebooks(
+    client: ClientDep,
+    limit: Annotated[int | None, Query(ge=1, le=MAX_LIMIT)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List all notebooks.
+
+    Defaults to the full collection under ``notebooks`` (unchanged). Supply
+    ``?limit=`` to slice and add a ``meta`` block; ``?offset=`` pages forward.
+    """
     notebooks = await client.notebooks.list()
-    return {"notebooks": to_jsonable(notebooks)}
+    return paginate_envelope(to_jsonable(notebooks), key="notebooks", limit=limit, offset=offset)
 
 
 @router.get("/{notebook_id}")

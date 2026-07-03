@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from notebooklm._types.sources import Source
 from notebooklm.rpc.types import SourceStatus
+from notebooklm.server._pagination import MAX_LIMIT
 
 from .fakes import FakeClient
 
@@ -254,9 +255,94 @@ def test_list_and_delete(authed_client: TestClient, fake_client: FakeClient) -> 
     }
     listed = authed_client.get("/v1/notebooks/nb-1/sources")
     assert listed.status_code == 200
-    assert listed.json()["sources"][0]["id"] == "src-7"
+    row = listed.json()["sources"][0]
+    assert row["id"] == "src-7"
+    # Shared view: string kind + status_label alongside the raw status int.
+    assert row["status_label"] == "ready"
+    assert "kind" in row
+    # Default (no limit) stays unbounded, no meta block.
+    assert "meta" not in listed.json()
 
     deleted = authed_client.delete("/v1/notebooks/nb-1/sources/src-7")
     assert deleted.status_code == 204
     # Idempotent re-delete.
     assert authed_client.delete("/v1/notebooks/nb-1/sources/src-7").status_code == 204
+
+
+def test_get_source_carries_kind_and_status_label(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    fake_client.sources_store["nb-1"] = {
+        "src-9": Source(id="src-9", title="Doc", status=SourceStatus.READY)
+    }
+    resp = authed_client.get("/v1/notebooks/nb-1/sources/src-9")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == "src-9"
+    assert body["status_label"] == "ready"
+    assert "kind" in body
+
+
+def test_source_list_pagination_slices_and_adds_meta(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    fake_client.sources_store["nb-1"] = {
+        f"src-{i}": Source(id=f"src-{i}", title=f"S{i}", status=SourceStatus.READY)
+        for i in range(5)
+    }
+    resp = authed_client.get("/v1/notebooks/nb-1/sources", params={"limit": 2, "offset": 1})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["notebook_id"] == "nb-1"
+    assert len(body["sources"]) == 2
+    assert body["meta"] == {"total": 5, "has_more": True, "limit": 2, "offset": 1}
+
+
+def test_source_list_bad_limit_is_422(authed_client: TestClient, fake_client: FakeClient) -> None:
+    fake_client.sources_store["nb-1"] = {
+        "src-1": Source(id="src-1", title="S", status=SourceStatus.READY)
+    }
+    assert authed_client.get("/v1/notebooks/nb-1/sources", params={"limit": 0}).status_code == 422
+    assert authed_client.get("/v1/notebooks/nb-1/sources", params={"offset": -1}).status_code == 422
+
+
+def test_source_list_limit_over_max_is_422(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    fake_client.sources_store["nb-1"] = {
+        "src-1": Source(id="src-1", title="S", status=SourceStatus.READY)
+    }
+    over = authed_client.get("/v1/notebooks/nb-1/sources", params={"limit": MAX_LIMIT + 1})
+    assert over.status_code == 422
+    at_cap = authed_client.get("/v1/notebooks/nb-1/sources", params={"limit": MAX_LIMIT})
+    assert at_cap.status_code == 200
+
+
+def test_source_list_offset_without_limit_is_rejected(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    fake_client.sources_store["nb-1"] = {
+        f"src-{i}": Source(id=f"src-{i}", title=f"S{i}", status=SourceStatus.READY)
+        for i in range(3)
+    }
+    # offset>0 with no limit is an ambiguous window → 400, not silently ignored.
+    rejected = authed_client.get("/v1/notebooks/nb-1/sources", params={"offset": 2})
+    assert rejected.status_code == 400
+    assert rejected.json()["error"]["category"] == "validation"
+    # offset=0 with no limit is the unchanged full-list default (no meta).
+    full = authed_client.get("/v1/notebooks/nb-1/sources", params={"offset": 0})
+    assert full.status_code == 200
+    body = full.json()
+    assert len(body["sources"]) == 3
+    assert "meta" not in body
+
+
+def test_add_url_returns_enriched_view(authed_client: TestClient) -> None:
+    # The create path projects the shared enriched view (string kind /
+    # status_label), matching GET rather than leaking bare integer codes.
+    resp = authed_client.post("/v1/notebooks/nb-1/sources/url", json={"url": "https://example.com"})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert "kind" in body
+    assert "status_label" in body
+    assert body["status_label"] == "processing"

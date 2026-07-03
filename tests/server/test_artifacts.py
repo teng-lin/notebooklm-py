@@ -105,6 +105,26 @@ def test_list_artifacts(authed_client: TestClient, fake_client: FakeClient) -> N
     resp = authed_client.get("/v1/notebooks/nb-1/artifacts")
     assert resp.status_code == 200
     assert resp.json()["artifacts"][0]["title"] == "Pod"
+    # Default (no limit) stays unbounded, no meta block.
+    assert "meta" not in resp.json()
+
+
+def test_list_artifacts_pagination_slices_and_adds_meta(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    fake_client.artifacts_store["nb-1"] = {
+        f"a{i}": make_artifact(f"a{i}", "audio", title=f"Pod{i}") for i in range(5)
+    }
+    body = authed_client.get(
+        "/v1/notebooks/nb-1/artifacts", params={"limit": 2, "offset": 1}
+    ).json()
+    assert body["notebook_id"] == "nb-1"
+    assert len(body["artifacts"]) == 2
+    assert body["meta"] == {"total": 5, "has_more": True, "limit": 2, "offset": 1}
+
+
+def test_list_artifacts_bad_limit_is_422(authed_client: TestClient) -> None:
+    assert authed_client.get("/v1/notebooks/nb-1/artifacts", params={"limit": 0}).status_code == 422
 
 
 # --- generate: input validation (400s) --------------------------------------

@@ -1038,6 +1038,7 @@ src/notebooklm/
 ├── _sharing_manager.py          # Sharing management logic
 ├── _version_check.py            # Deprecation version guard
 ├── _research_task_parser.py     # Research task result-type parser
+├── _redact.py                   # Transport-neutral secret/home-path/file-link scrubber (redact(msg, max_length)); shared chokepoint under both mcp/_errors.py and server/_errors.py
 ├── _app/                        # Transport-neutral business-logic layer (CLI/MCP/HTTP adapters share it)
 │   ├── __init__.py              # Re-exports the neutral primitives
 │   ├── artifacts.py             # Click-free artifact core: get/rename/delete/export + poll/wait/retry; kind-aware mind-map dispatch (mind_maps.list for rename, notes.list_mind_maps for delete), get_artifact raises ArtifactNotFoundError, typed Rename/Export results + ArtifactStatusView/status_view neutral status DTO (CLI builds every --json envelope from the typed fields)
@@ -1055,6 +1056,7 @@ src/notebooklm/
 │   ├── mcp_install.py           # Click-free `mcp install <client>` core: supported-client catalog (claude-desktop/claude-code/cursor/windsurf) + per-OS resolve_config_path + uvx build_server_block + merge_server_config read-modify-merge into mcpServers (created/updated/unchanged; never clobbers unrelated keys); UnsupportedClientError. CLI owns the atomic write (cli/mcp_cmd.py)
 │   ├── notebooks.py             # Click-free notebook core: create/delete/rename/describe(summary)/metadata fetch+compute (injected resolve_notebook_id; summary/metadata serializers stay in cli/notebook_cmd.py)
 │   ├── notes.py                 # Click-free note core: create/get/save/rename/delete (typed-facade only — notes.create returns a Note) + content-preserving rename (resolve_note_content); found-flag results map to the CLI NOT_FOUND/exit-1 path (injected notebook/note resolvers)
+│   ├── pagination.py            # Transport-neutral bounded-slice paginate(items, limit, offset) -> (page, {total,offset,has_more}) with bound validation; the shared slice under both the MCP *_list tools and the REST list-route envelope (Option B-lite)
 │   ├── profile.py               # Click-free profile core: gather_profile_list -> ProfileEntry rows (injected list_profiles/resolve_profile/get_storage_path/read_account_metadata), is_protected_profile delete-guard decision, set_default/retarget_default config.json mutators (CLI keeps the locked _atomic_write_config + click.confirm + Rich render)
 │   ├── research.py              # Click-free `research` status/wait core: poll_and_classify -> ResearchStatusResult, ResearchWaitPlan/Result + execute_research_wait (resolver/importer/wait-context injected), validate_research_wait_flags (-> ValidationError); returns typed results only (CLI owns the --json envelope)
 │   ├── resolve.py               # Click-free validate_id + resolve_ref (AmbiguousIdError/Resolution)
@@ -1068,7 +1070,8 @@ src/notebooklm/
 │   ├── source_listing.py        # Click-free `source list` fetch core: fetch_sources (label_filter resolution; label_resolver injected)
 │   ├── source_mutations.py      # Click-free source delete/delete-by-title/rename/refresh/add-drive core: resolvers + SourceMutationError + typed results (validate_id/resolve_source_id injected; confirmer injected)
 │   ├── source_research.py       # Click-free `source add-research` start/wait/import workflow + validate_add_research_flags (importer injected; SourceAddResearchPlan/Result)
-│   └── source_wait.py           # Click-free `source wait` readiness-poll core: execute_source_wait + typed SourceWaitOutcome (wait_context injected)
+│   ├── source_wait.py           # Click-free `source wait` readiness-poll core: execute_source_wait + typed SourceWaitOutcome (wait_context injected)
+│   └── views.py                 # Transport-neutral output-projection views: share_status_view (access/permission/view_level enum→label), source_view (kind/status_label added), ask_result_view (raw_response debug blob stripped); shared by the MCP tools + REST routes so both emit the identical enriched shape (Option B)
 ├── _runtime/                    # Client-runtime subpackage (promoted from flat _runtime_*.py, #1328)
 │   ├── __init__.py              # Re-exports the cluster's public names
 │   ├── auth.py                  # AuthRefreshCoordinator (refresh task + auth-snapshot lock)
@@ -1286,6 +1289,7 @@ src/notebooklm/
     ├── _context.py              # AppState (lifespan-bound client + pending registry) + get_client / get_pending FastAPI dependencies
     ├── _auth.py                 # Bearer-token (constant-time, 401) + loopback-Host (DNS-rebinding guard, 403) dependency for /v1
     ├── _errors.py               # ErrorCategory -> HTTP status table + _redact + the classify-once exception handler emitting {error:{category,message}}
+    ├── _pagination.py           # Opt-in, non-breaking list-route envelope: paginate_envelope(items, key=…, limit, offset, **extra) — default (no limit) returns the full list under its existing key unchanged; ?limit= slices via _app.pagination.paginate + adds a meta:{total,has_more,limit,offset} block (Option B-lite)
     ├── _pending.py              # In-process pending-id registry (per-notebook provenance for poll -> 200-pending vs 404)
     └── routes/                  # Per-resource FastAPI routers; handlers call _app.serialize.to_jsonable directly
         ├── __init__.py          # Aggregates the resource routers for the app factory

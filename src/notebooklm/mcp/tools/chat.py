@@ -30,6 +30,7 @@ from fastmcp import Context
 from ..._app import chat as core
 from ..._app.chat import ChatModeChoice, ResponseLengthChoice
 from ..._app.serialize import to_jsonable
+from ..._app.views import ask_result_view
 from ...exceptions import ValidationError
 from .._coerce import coerce_list
 from .._confirm import READ_ONLY
@@ -227,9 +228,9 @@ def register(mcp: Any) -> None:
                 ask_result, suggestions = None, None
 
             if ask_result is not None:
-                ask_payload = to_jsonable(ask_result)
-                # Drop the debug-only raw wire-protocol blob (it just burns agent context).
-                ask_payload.pop("raw_response", None)
+                # Shared view: serialize + drop the debug-only ``raw_response`` blob
+                # (it just burns agent context) — identical on the REST chat route.
+                ask_payload = ask_result_view(ask_result)
                 if references == "lite":
                     # ``or []`` (not a get-default) so a null ``references`` value is
                     # tolerated, not iterated.

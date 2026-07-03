@@ -33,6 +33,7 @@ from ..._app import source_listing as listing_core
 from ..._app import source_mutations as mut_core
 from ..._app import source_wait as wait_core
 from ..._app.serialize import to_jsonable
+from ..._app.views import source_view as _source_view
 from ...exceptions import (
     SourceNotFoundError,
     SourceProcessingError,
@@ -67,25 +68,10 @@ _DRIVE_MIME_CHOICES = ("google-doc", "google-slides", "google-sheets", "pdf")
 _DEFAULT_DRIVE_MIME = "google-doc"
 
 
-def _source_view(source: Any) -> dict[str, Any]:
-    """Serialize a Source with agent-readable string labels added.
-
-    ``to_jsonable`` emits only dataclass fields, so the integer ``status`` and
-    ``_type_code`` arrive as bare numbers and the ``kind`` *property* is dropped —
-    forcing an agent to guess what ``3``/``5``/``2`` mean. Add ``kind`` (e.g.
-    ``"pdf"``/``"web_page"``) and ``status_label`` (e.g. ``"ready"``/``"error"``)
-    string labels alongside the raw codes.
-
-    ``status_label`` comes from :func:`~notebooklm.rpc.types.source_status_to_str`
-    — the repo's single source of truth for status→string — so the MCP label stays
-    in lock-step with the CLI surface. It is one of ``ready``/``processing``/
-    ``error``/``preparing`` (``unknown`` for an unrecognized code), the same
-    vocabulary the ``source_list`` ``status`` filter accepts.
-    """
-    view = to_jsonable(source)
-    view["kind"] = source.kind.value
-    view["status_label"] = source_status_to_str(source.status)
-    return view
+# ``_source_view`` (Source → dict with string ``kind`` / ``status_label`` labels)
+# now lives in the shared, transport-neutral ``_app.views`` so the REST source
+# list/get routes emit the identical enriched shape (Option B). Imported above
+# under its historical private name so the tool bodies below are unchanged.
 
 
 def _add_result_payload(source: Any, base: dict[str, Any]) -> dict[str, Any]:

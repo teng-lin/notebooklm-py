@@ -196,6 +196,7 @@ class FakeChat:
             conversation_id=conversation_id or "conv-1",
             turn_number=1,
             is_follow_up=conversation_id is not None,
+            raw_response='[["wrb.fr", ... internal wire blob ...]]',
         )
 
     async def set_mode(self, notebook_id: str, mode: Any) -> None:

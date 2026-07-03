@@ -30,6 +30,9 @@ from typing import Any, Literal
 
 from fastmcp import Context
 
+from ..._app.views import VIEW_LEVEL_LABELS as _VIEW_LEVEL_LABELS
+from ..._app.views import label as _label
+from ..._app.views import share_status_view as _status_payload
 from ..._types.sharing import ShareStatus
 from ...exceptions import ValidationError
 from ...rpc.types import SharePermission, ShareViewLevel
@@ -38,47 +41,16 @@ from .._context import get_client
 from .._errors import mcp_errors
 from .._resolve import resolve_notebook
 
-#: ``int, Enum`` value → wire label. Unknown values (e.g. ``SharePermission._REMOVE``
-#: or protocol drift) degrade to ``str(value)`` so the projection never KeyErrors.
-_ACCESS_LABELS = {0: "restricted", 1: "anyone_with_link"}
-_VIEW_LEVEL_LABELS = {0: "full", 1: "chat"}
-_PERMISSION_LABELS = {1: "owner", 2: "editor", 3: "viewer"}
+# The enum→label projection (``_label`` / ``_status_payload``) + its label maps
+# now live in the shared, transport-neutral ``_app.views`` so the REST adapter
+# emits the identical labeled shape (Option B). Re-imported here under the
+# historical private names to keep the tool bodies (and the ``_label`` unit test)
+# unchanged. ``_VIEW_LEVEL_LABELS`` is still referenced inline for the
+# ``set_view_level``-authoritative echo below.
 
 #: Wire input → enum. OWNER is intentionally absent (cannot be assigned via share).
 _PERMISSION_INPUT = {"editor": SharePermission.EDITOR, "viewer": SharePermission.VIEWER}
 _VIEW_LEVEL_INPUT = {"full": ShareViewLevel.FULL_NOTEBOOK, "chat": ShareViewLevel.CHAT_ONLY}
-
-
-def _label(mapping: dict[int, str], value: int) -> str:
-    """Map an ``int, Enum`` member (or raw int) to its label; unknown → ``str``."""
-    key = int(value)
-    return mapping.get(key, str(key))
-
-
-def _status_payload(status: ShareStatus, *, include_view_level: bool = False) -> dict[str, Any]:
-    """Project ``ShareStatus`` to a wire dict with string-labeled enums.
-
-    ``view_level`` is included only when ``include_view_level`` is set (i.e. the
-    status came from ``set_view_level``, the only source with a trustworthy value).
-    """
-    payload: dict[str, Any] = {
-        "notebook_id": status.notebook_id,
-        "is_public": status.is_public,
-        "access": _label(_ACCESS_LABELS, status.access),
-        "share_url": status.share_url,
-        "shared_users": [
-            {
-                "email": user.email,
-                "permission": _label(_PERMISSION_LABELS, user.permission),
-                "display_name": user.display_name,
-                "avatar_url": user.avatar_url,
-            }
-            for user in status.shared_users
-        ],
-    }
-    if include_view_level:
-        payload["view_level"] = _label(_VIEW_LEVEL_LABELS, status.view_level)
-    return payload
 
 
 def register(mcp: Any) -> None:

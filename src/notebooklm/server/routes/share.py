@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
 from ..._app import sharing as core
-from ..._app.serialize import to_jsonable
+from ..._app.views import share_status_view
 from ...client import NotebookLMClient
 from ...types import SharePermission
 from ...types import ShareViewLevel as ShareViewLevelEnum
@@ -71,7 +71,10 @@ async def get_share_status(notebook_id: str, client: ClientDep) -> dict[str, Any
         notebook_id,
         resolve_notebook_id=passthrough_notebook_id,
     )
-    return to_jsonable(status)
+    # Shared view: label the access/permission enums (identical to the MCP surface).
+    # ``view_level`` is omitted — the read RPC does not report it (would always
+    # read "full"); set it via POST /view-level, which echoes the value it set.
+    return share_status_view(status)
 
 
 @router.post("/public")
@@ -83,7 +86,7 @@ async def set_public(notebook_id: str, body: SharePublic, client: ClientDep) -> 
         body.enable,
         resolve_notebook_id=passthrough_notebook_id,
     )
-    return to_jsonable(status)
+    return share_status_view(status)
 
 
 @router.post("/users", status_code=201)
@@ -143,4 +146,6 @@ async def set_view_level(
         _VIEW_LEVELS[body.level],
         resolve_notebook_id=passthrough_notebook_id,
     )
-    return to_jsonable(status)
+    # ``set_view_level``'s return is the only authoritative source for view_level
+    # (the read RPC hardcodes FULL), so it is surfaced here (labeled) but nowhere else.
+    return share_status_view(status, include_view_level=True)

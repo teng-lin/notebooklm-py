@@ -18,6 +18,13 @@ def test_ask_returns_full_answer(authed_client: TestClient) -> None:
     assert "references" in body
 
 
+def test_ask_strips_raw_response_debug_blob(authed_client: TestClient) -> None:
+    """The internal ``raw_response`` debug blob is never serialized (shared view)."""
+    resp = authed_client.post("/v1/notebooks/nb-1/chat", json={"question": "What is X?"})
+    assert resp.status_code == 200
+    assert "raw_response" not in resp.json()
+
+
 def test_conversation_id_is_forwarded(authed_client: TestClient, fake_client: FakeClient) -> None:
     resp = authed_client.post(
         "/v1/notebooks/nb-1/chat",

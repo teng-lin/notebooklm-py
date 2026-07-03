@@ -27,8 +27,13 @@ def test_share_status_returns_current_state(
     body = resp.json()
     assert body["notebook_id"] == "nb-1"
     assert body["is_public"] is True
+    # Shared view: access/permission are string labels; view_level is omitted on
+    # the read path (the read RPC does not report it).
+    assert body["access"] == "anyone_with_link"
     assert body["share_url"].endswith("/nb-1")
     assert body["shared_users"][0]["email"] == "reader@example.com"
+    assert body["shared_users"][0]["permission"] == "viewer"
+    assert "view_level" not in body
 
 
 def test_set_public_toggles_link(authed_client: TestClient) -> None:
@@ -36,12 +41,14 @@ def test_set_public_toggles_link(authed_client: TestClient) -> None:
 
     assert resp.status_code == 200
     assert resp.json()["is_public"] is True
-    assert resp.json()["access"] == 1
+    # Shared view labels the access enum (not a bare int).
+    assert resp.json()["access"] == "anyone_with_link"
 
     resp = authed_client.post("/v1/notebooks/nb-1/share/public", json={"enable": False})
 
     assert resp.status_code == 200
     assert resp.json()["is_public"] is False
+    assert resp.json()["access"] == "restricted"
     assert resp.json()["share_url"] is None
 
 
@@ -105,7 +112,8 @@ def test_set_view_level(authed_client: TestClient) -> None:
     resp = authed_client.post("/v1/notebooks/nb-1/share/view-level", json={"level": "chat"})
 
     assert resp.status_code == 200
-    assert resp.json()["view_level"] == 1
+    # set_view_level's return is authoritative, so view_level is surfaced (labeled).
+    assert resp.json()["view_level"] == "chat"
 
 
 def test_share_rejects_bad_permission(authed_client: TestClient) -> None:

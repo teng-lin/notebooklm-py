@@ -17,6 +17,32 @@ def test_list_returns_notebooks(authed_client: TestClient, fake_client: FakeClie
     assert titles == ["First"]
 
 
+def test_list_default_is_unbounded_no_meta(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    """The default call (no ``limit``) returns the full list, shape unchanged."""
+    for i in range(3):
+        fake_client.notebooks_store[f"nb-{i}"] = Notebook(id=f"nb-{i}", title=f"N{i}")
+    body = authed_client.get("/v1/notebooks").json()
+    assert len(body["notebooks"]) == 3
+    assert "meta" not in body
+
+
+def test_list_pagination_slices_and_adds_meta(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    for i in range(5):
+        fake_client.notebooks_store[f"nb-{i}"] = Notebook(id=f"nb-{i}", title=f"N{i}")
+    body = authed_client.get("/v1/notebooks", params={"limit": 2, "offset": 1}).json()
+    assert len(body["notebooks"]) == 2
+    assert body["meta"] == {"total": 5, "has_more": True, "limit": 2, "offset": 1}
+
+
+def test_list_bad_bounds_is_422(authed_client: TestClient) -> None:
+    assert authed_client.get("/v1/notebooks", params={"limit": 0}).status_code == 422
+    assert authed_client.get("/v1/notebooks", params={"offset": -1}).status_code == 422
+
+
 def test_create_returns_201_with_new_notebook(authed_client: TestClient) -> None:
     resp = authed_client.post("/v1/notebooks", json={"title": "Fresh"})
     assert resp.status_code == 201

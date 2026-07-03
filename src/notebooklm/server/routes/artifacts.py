@@ -36,7 +36,7 @@ import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
@@ -51,6 +51,7 @@ from ...exceptions import ValidationError
 from ...types import ArtifactType, GenerationState
 from .._context import get_client, get_pending
 from .._errors import safe_detail
+from .._pagination import MAX_LIMIT, paginate_envelope
 from .._pending import PendingRegistry
 from ._passthrough import (
     passthrough_artifact_id,
@@ -243,10 +244,21 @@ class ArtifactDownload(BaseModel):
 
 
 @router.get("")
-async def list_artifacts(notebook_id: str, client: ClientDep) -> dict[str, Any]:
-    """List a notebook's studio artifacts."""
+async def list_artifacts(
+    notebook_id: str,
+    client: ClientDep,
+    limit: Annotated[int | None, Query(ge=1, le=MAX_LIMIT)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List a notebook's studio artifacts.
+
+    Defaults to the full collection under ``artifacts`` (unchanged). Supply
+    ``?limit=`` to slice and add a ``meta`` block; ``?offset=`` pages forward.
+    """
     artifacts = await client.artifacts.list(notebook_id)
-    return {"notebook_id": notebook_id, "artifacts": to_jsonable(artifacts)}
+    return paginate_envelope(
+        to_jsonable(artifacts), key="artifacts", limit=limit, offset=offset, notebook_id=notebook_id
+    )
 
 
 @router.post("", status_code=202)
@@ -299,7 +311,14 @@ async def generate(
 async def poll(
     notebook_id: str, task_id: str, client: ClientDep, pending: PendingDep
 ) -> dict[str, Any]:
-    """Poll a generation task, projecting state through the pending registry."""
+    """Poll a generation task, projecting state through the pending registry.
+
+    An id the in-process registry has never seen (e.g. a task from a prior server
+    process, or one whose post-generate NOT_FOUND lag has elapsed and been dropped)
+    is a deliberate 404: this is a personal-automation surface with no persistent
+    job store (reviewer consensus — see ``_pending.py``), so an unknown id is
+    "not found" rather than silently 200. Re-poll a live task with its ``task_id``.
+    """
     status = await artifact_core.poll_artifact(client, notebook_id, task_id)
     view = artifact_core.status_view(status)
     state = status.status
