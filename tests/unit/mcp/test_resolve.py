@@ -492,6 +492,7 @@ async def test_note_ambiguous_title_prefix_raises() -> None:
     with pytest.raises(AmbiguousIdError) as caught:
         await resolve_note(client, "nb-1", "Report")
     assert set(caught.value.candidate_ids) == {"ab0001cdef", "cd0002abef"}
+    assert "prefix" in str(caught.value)
 
 
 async def test_note_no_match_raises_note_not_found() -> None:

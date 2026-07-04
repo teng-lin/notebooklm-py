@@ -123,10 +123,12 @@ def _resolve_by_title(
     cannot match every item.
     """
     # casefold (not lower) for correct non-ASCII case-insensitive matching, e.g.
-    # German ß folds to "ss" so "STRASSE" matches a title "Straße".
+    # German ß folds to "ss" so "STRASSE" matches a title "Straße". Fold each
+    # title once up front so the two passes below don't re-casefold every item.
     token_folded = token.casefold()
+    folded = [((item.title or "").casefold(), item) for item in items]
 
-    exact = [item for item in items if (item.title or "").casefold() == token_folded]
+    exact = [item for title_folded, item in folded if title_folded == token_folded]
     if len(exact) == 1:
         (match,) = exact  # unpack (not exact[0]) — these are typed items, not an RPC row
         return str(match.id)
@@ -134,8 +136,9 @@ def _resolve_by_title(
         raise _ambiguous_title_error(token, exact, kind="title")
 
     # No exact title -> fall back to a unique title prefix so a name is as
-    # prefix-resolvable as an id (issue #1786).
-    prefix = [item for item in items if (item.title or "").casefold().startswith(token_folded)]
+    # prefix-resolvable as an id (issue #1786). Kept as a second pass (rather than
+    # a single fused loop) so exact-wins-over-prefix reads directly off the code.
+    prefix = [item for title_folded, item in folded if title_folded.startswith(token_folded)]
     if len(prefix) == 1:
         (match,) = prefix
         return str(match.id)
@@ -284,8 +287,9 @@ async def resolve_sources(
 
     Matching rules are identical to :func:`resolve_source` (full-UUID fast-path,
     hex id/prefix, exact case-insensitive title, then unique title prefix) and
-    reuse the same single-ref helpers, so behavior per ref is unchanged. An all-UUID batch still makes no
-    list call (each ref takes the fast-path, as before). Two differences from the
+    reuse the same single-ref helpers, so behavior per ref is unchanged. An
+    all-UUID batch still makes no list call (each ref takes the fast-path, as
+    before). Two differences from the
     old ``gather`` path:
 
     * Non-UUID refs share a **single** ``sources.list`` snapshot instead of one
