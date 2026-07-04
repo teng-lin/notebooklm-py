@@ -262,15 +262,20 @@ def near_miss_candidates(
             _add(item_id, title)
 
     # Pass 2 — fuzzy matches over the normalized titles for whatever slots remain.
+    # ``norm_titles`` is de-duplicated (order-preserving) so a repeated title does
+    # not waste a ``get_close_matches`` slot; every item sharing a matched
+    # normalized title is then a candidate (no inner ``break``), so two items whose
+    # titles differ only in punctuation both surface while slots remain.
     if len(results) < limit and entries:
-        norm_titles = [norm_title for norm_title, _, _ in entries]
+        norm_titles = list(dict.fromkeys(norm_title for norm_title, _, _ in entries))
         for match in difflib.get_close_matches(
             norm_token, norm_titles, n=limit, cutoff=_FUZZY_CUTOFF
         ):
             for norm_title, item_id, title in entries:
                 if norm_title == match:
                     _add(item_id, title)
-                    break
+                    if len(results) >= limit:
+                        break
             if len(results) >= limit:
                 break
 

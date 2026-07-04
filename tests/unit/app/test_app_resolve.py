@@ -214,3 +214,21 @@ def test_near_miss_caps_at_limit_and_dedupes() -> None:
     got = near_miss_candidates("Report", items, id_of=_id_of, title_of=_title_of, limit=3)
     assert len(got) == 3
     assert len({c["id"] for c in got}) == 3
+
+
+def test_near_miss_fuzzy_surfaces_all_items_sharing_a_normalized_title() -> None:
+    """Distinct items whose titles normalize identically must each surface (#1794 review).
+
+    A shared normalized title must not let the first item shadow the rest while
+    limit slots remain — and the result must not depend on input order.
+    """
+    # "Report — Q3" and "Report - Q3" both normalize to "report - q3"; the token
+    # has a typo so this resolves via the fuzzy pass, not the prefix pass.
+    items = [Item(id="em", title="Reportt — Q3"), Item(id="hy", title="Reportt - Q3")]
+    got = near_miss_candidates("Report Q3", items, id_of=_id_of, title_of=_title_of)
+    assert {c["id"] for c in got} == {"em", "hy"}
+
+    reversed_got = near_miss_candidates(
+        "Report Q3", list(reversed(items)), id_of=_id_of, title_of=_title_of
+    )
+    assert {c["id"] for c in reversed_got} == {"em", "hy"}
