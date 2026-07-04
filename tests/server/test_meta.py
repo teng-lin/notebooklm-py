@@ -55,6 +55,24 @@ def test_server_info_does_not_leak_storage_path(
     assert "/" not in str(body["auth"].get("profile", ""))
 
 
+def test_server_info_profile_is_resolved_not_null(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``auth.profile`` reports the resolved profile, never ``None`` (#1790).
+
+    The server never sets a module-level active profile, so the field used to come
+    back ``null`` even on a healthy session. It must name the profile the auth probe
+    ran against (``"default"`` when no named profile is configured).
+    """
+    from notebooklm import paths
+
+    _patch_auth(monkeypatch, all_passed=True)
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    monkeypatch.setattr(paths, "_active_profile", None)
+    body = authed_client.get("/v1/server/info").json()
+    assert body["auth"]["profile"] == "default"
+
+
 def test_server_info_include_account(
     authed_client: TestClient, fake_client: FakeClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

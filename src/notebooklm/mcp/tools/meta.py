@@ -27,7 +27,7 @@ from fastmcp import Context
 from ..._app.auth_check import AuthCheckPlan, run_auth_check
 from ..._version_info import version_string
 from ...exceptions import NotebookLMError
-from ...paths import get_active_profile, get_storage_path
+from ...paths import get_storage_path, resolve_profile
 from .._confirm import READ_ONLY
 from .._context import get_client
 from .._errors import mcp_errors, redact
@@ -120,13 +120,21 @@ def register(mcp: Any) -> None:
         fields degrade to ``{available: False, reason: ...}`` (identity still
         included) rather than failing the whole call.
 
+        ``profile`` names the resolved storage profile the probe ran against
+        (e.g. ``"default"``); the booleans are the actual health signals.
+
         The absolute on-disk storage path is deliberately **not** returned: it
         leaks the server-host OS username / filesystem layout to any (possibly
-        remote) caller, while telling the agent nothing it can act on. The
-        ``profile`` name + booleans are sufficient to diagnose auth health.
+        remote) caller, while telling the agent nothing it can act on.
         """
         with mcp_errors():
-            profile = get_active_profile()
+            # Report the *resolved* profile (never ``None``) rather than the raw
+            # module-level active profile: the MCP server never sets an active
+            # profile, so ``get_active_profile()`` was always ``None`` here even
+            # though ``get_storage_path`` resolves and checks a concrete profile
+            # (#1790). ``resolve_profile()`` names the profile the auth probe
+            # actually ran against — the same value the CLI ``status`` reports.
+            profile = resolve_profile()
             storage_path = get_storage_path(profile)
             plan = AuthCheckPlan(
                 storage_path=storage_path,

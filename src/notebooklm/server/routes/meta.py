@@ -33,7 +33,7 @@ from ..._redact import redact
 from ..._version_info import version_string
 from ...client import NotebookLMClient
 from ...exceptions import NotebookLMError
-from ...paths import get_active_profile, get_storage_path
+from ...paths import get_storage_path, resolve_profile
 from .._context import get_client
 
 __all__ = ["router"]
@@ -103,7 +103,12 @@ async def server_info(
     The absolute on-disk storage path is deliberately not returned (it leaks the
     host filesystem layout while telling the agent nothing actionable).
     """
-    profile = get_active_profile()
+    # Report the *resolved* profile (never ``None``) rather than the raw
+    # module-level active profile: the server never sets an active profile, so
+    # ``get_active_profile()`` was always ``None`` here even though
+    # ``get_storage_path`` resolves and checks a concrete profile (#1790).
+    # ``resolve_profile()`` names the profile the auth probe actually ran against.
+    profile = resolve_profile()
     storage_path = get_storage_path(profile)
     plan = AuthCheckPlan(
         storage_path=storage_path,

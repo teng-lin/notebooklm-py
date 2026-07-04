@@ -116,6 +116,38 @@ async def test_server_info_does_not_leak_absolute_storage_path(
     assert "authenticated" in auth
 
 
+async def test_server_info_profile_is_resolved_not_null(
+    mcp_call, mock_client, tmp_path, monkeypatch
+) -> None:
+    """``auth.profile`` reports the resolved profile, never ``None`` (#1790).
+
+    The MCP server never sets a module-level active profile, so the field used to
+    come back ``null`` even on a healthy session — undercutting the docstring that
+    points diagnostics at it. It must instead name the profile the auth probe ran
+    against (``"default"`` when no named profile is configured).
+    """
+    from notebooklm import paths
+
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    monkeypatch.setattr(paths, "_active_profile", None)
+    result = await mcp_call("server_info")
+    assert result.structured_content["auth"]["profile"] == "default"
+
+
+async def test_server_info_profile_reflects_named_profile(
+    mcp_call, mock_client, tmp_path, monkeypatch
+) -> None:
+    """A named profile (via ``NOTEBOOKLM_PROFILE``) is surfaced in ``auth.profile``."""
+    from notebooklm import paths
+
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "work")
+    monkeypatch.setattr(paths, "_active_profile", None)
+    result = await mcp_call("server_info")
+    assert result.structured_content["auth"]["profile"] == "work"
+
+
 async def test_server_info_default_omits_account(
     mcp_call, mock_client, tmp_path, monkeypatch
 ) -> None:
