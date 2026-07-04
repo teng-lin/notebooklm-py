@@ -65,12 +65,15 @@ def _resolve_poll_task_id(
     """Fold a deprecated id alias into the canonical ``poll_task_id`` (issue #1789).
 
     Returns ``(resolved, deprecation_note)``. ``resolved`` is ``poll_task_id``
-    when supplied, else the ``alias`` value. When only the alias was used it emits
-    a gated ``DeprecationWarning`` (via :func:`warn_deprecated`) and returns a
-    caller-visible ``deprecation_note`` (else ``None``) so the MCP client — which
-    never sees the Python warning — is nudged toward the new name. Passing both
-    with different (stripped) values is rejected as ``ValidationError``; passing
-    both with the same value is allowed (the canonical wins, no warning).
+    when supplied, else the ``alias`` value. When only the alias was used with a
+    substantive value it emits a gated ``DeprecationWarning`` (via
+    :func:`warn_deprecated`) and returns a caller-visible ``deprecation_note``
+    (else ``None``) so the MCP client — which never sees the Python warning — is
+    nudged toward the new name. Passing both with different (stripped) values is
+    rejected as ``ValidationError``; passing both with the same value is allowed
+    (the canonical wins, no warning). A blank/whitespace-only alias is handed back
+    unwarned so the caller's own empty-id guard rejects it — no deprecation signal
+    is spent on a value that is about to be refused.
     """
     if poll_task_id is not None and alias is not None:
         if poll_task_id.strip() != alias.strip():
@@ -79,17 +82,23 @@ def _resolve_poll_task_id(
                 f"{tool}, not both with different values"
             )
         return poll_task_id, None
-    if alias is not None:
+    if alias is not None and alias.strip():
+        # ``stacklevel=4``: warn_deprecated (1) → _resolve_poll_task_id (2) → the
+        # tool coroutine (3) → the caller (4), so the warning points past this
+        # helper at the tool boundary rather than at the helper's own line.
         warn_deprecated(
             f"{tool}({old_name}=...) is deprecated; pass poll_task_id instead (the same value).",
             removal=_POLL_ID_ALIAS_REMOVAL,
+            stacklevel=4,
         )
         note = (
             f"'{old_name}' is deprecated; pass 'poll_task_id' instead (the same "
             f"value). '{old_name}' will be removed in v{_POLL_ID_ALIAS_REMOVAL}."
         )
         return alias, note
-    return poll_task_id, None
+    # No canonical value, and the alias (if any) is blank → return whatever was
+    # given (``poll_task_id`` is ``None`` here) so the tool's empty-id guard runs.
+    return (poll_task_id if poll_task_id is not None else alias), None
 
 
 def register(mcp: Any) -> None:

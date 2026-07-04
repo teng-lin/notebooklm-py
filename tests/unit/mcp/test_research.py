@@ -647,6 +647,32 @@ def test_resolve_poll_task_id_same_value_prefers_canonical_no_warning() -> None:
     assert note is None
 
 
+def test_resolve_poll_task_id_blank_alias_no_warning() -> None:
+    """A whitespace-only alias is handed back unwarned (the tool's empty-id guard
+    rejects it) — no deprecation signal spent on a value about to be refused."""
+    from notebooklm.mcp.tools.research import _resolve_poll_task_id
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        resolved, note = _resolve_poll_task_id("research_import", "task_id", None, "   ")
+    assert resolved == "   "
+    assert note is None
+
+
+async def test_research_import_blank_alias_rejected_without_warning(mcp_call, mock_client) -> None:
+    """A whitespace-only ``task_id`` alias is rejected as VALIDATION and emits no
+    DeprecationWarning through the tool (the empty-id guard fires, not the alias)."""
+    mock_client.research.poll = AsyncMock(return_value=FakeResearchTask())
+    mock_client.research.import_sources = AsyncMock(return_value=[])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        with pytest.raises(ToolError) as excinfo:
+            await mcp_call("research_import", {"notebook": NB_ID, "task_id": "   "})
+    assert "VALIDATION" in str(excinfo.value)
+    mock_client.research.poll.assert_not_called()
+    mock_client.research.import_sources.assert_not_called()
+
+
 def test_resolve_poll_task_id_conflict_raises() -> None:
     """Both names, different values → ValidationError."""
     from notebooklm.exceptions import ValidationError
