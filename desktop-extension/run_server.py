@@ -23,8 +23,10 @@ functions so the bundle can be unit-tested without execing anything.
 
 from __future__ import annotations
 
+import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -34,6 +36,40 @@ import sys
 #: extra) into an ephemeral environment and runs the script.
 PACKAGE = "notebooklm-py[mcp]"
 CONSOLE_SCRIPT = "notebooklm-mcp"
+
+
+def _bundle_version() -> str | None:
+    """Read this bundle's version from the sibling ``manifest.json``.
+
+    Returns the version string, or ``None`` when the manifest is missing or
+    unreadable (a defensive fallback — a bundle always ships ``manifest.json``
+    beside this launcher).
+    """
+    manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "manifest.json")
+    try:
+        with open(manifest, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    version = data.get("version") if isinstance(data, dict) else None
+    return version if isinstance(version, str) and version else None
+
+
+def _is_prerelease(version: str) -> bool:
+    """True for a PEP 440 pre-release or development version.
+
+    Covers ``…aN`` / ``…bN`` / ``…rcN`` and the alternate spellings
+    (``alpha`` / ``beta`` / ``c`` / ``pre`` / ``preview``), a trailing ``.devN``
+    (including on top of a pre-release, e.g. ``0.8.0a1.dev0``), and implicit-zero
+    forms (``0.8.0a``). A clean or ``.postN`` release is not a pre-release.
+    """
+    return (
+        re.search(
+            r"[-._]?(?:a|b|rc|alpha|beta|c|pre|preview|dev)[-._]?\d*(?:[-._]?dev[-._]?\d*)?$",
+            version,
+        )
+        is not None
+    )
 
 
 def _candidate_uvx_paths() -> list[str]:
@@ -81,9 +117,19 @@ def find_uvx() -> str | None:
     return None
 
 
-def build_command(uvx: str, argv: list[str]) -> list[str]:
-    """Build the ``uvx`` exec argv, forwarding ``argv`` to the console script."""
-    return [uvx, "--from", PACKAGE, CONSOLE_SCRIPT, *argv]
+def build_command(uvx: str, argv: list[str], version: str | None = None) -> list[str]:
+    """Build the ``uvx`` exec argv, forwarding ``argv`` to the console script.
+
+    A **stable** bundle stays unpinned so it tracks the latest stable server. A
+    **pre-release** bundle pins its exact ``version`` (e.g.
+    ``notebooklm-py[mcp]==0.8.0a1``) so ``uvx`` launches that pre-release rather
+    than the latest stable. The explicit ``==`` pre-release pin is enough — uv's
+    default resolver accepts a pre-release requested by an explicit marker — so
+    no ``--prerelease`` flag is used; ``--prerelease=allow`` would needlessly let
+    *transitive* dependencies resolve to pre-releases too, hurting reproducibility.
+    """
+    spec = f"{PACKAGE}=={version}" if version is not None and _is_prerelease(version) else PACKAGE
+    return [uvx, "--from", spec, CONSOLE_SCRIPT, *argv]
 
 
 def main() -> None:
@@ -105,7 +151,7 @@ def main() -> None:
     # Explicit stdin/stdout/stderr passthrough is critical: the MCP host
     # communicates with the server via stdin/stdout JSON-RPC. We do NOT capture
     # them — they flow straight through to the child process.
-    cmd = build_command(uvx, sys.argv[1:])
+    cmd = build_command(uvx, sys.argv[1:], _bundle_version())
     try:
         result = subprocess.run(  # noqa: S603 - argv is constructed, not shell-interpolated
             cmd,

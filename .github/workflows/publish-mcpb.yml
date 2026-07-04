@@ -8,11 +8,12 @@
 #   `release: published` fires exactly when that manual step completes, so
 #   `gh release upload` always has a target.
 #
-# Stable releases only. Pre-releases are skipped: the bundled launcher runs
-# `uvx --from "notebooklm-py[mcp]"`, which resolves the latest *stable* server
-# from PyPI (not a `vX.Y.ZaN` pre-release), so a pre-release bundle wouldn't run
-# the pre-release anyway — and pre-release testers use the CLI installer / uvx
-# directly. The one-click bundle is an end-user convenience for stable installs.
+# Stable AND pre-releases both ship a bundle. The launcher (`run_server.py`)
+# pins its exact version from the bundled `manifest.json` for a `vX.Y.ZaN`
+# bundle (an explicit `==` pre-release pin resolves under uv's default resolver
+# — no `--prerelease` flag, which would loosen transitive deps too), so a
+# pre-release bundle launches that pinned pre-release instead of silently
+# resolving the latest *stable* server. A stable bundle stays unpinned.
 #
 # Two jobs by design (token isolation, mirrors publish.yml): the `build` job
 # runs the third-party npm packer with NO release-write token, uploads the
@@ -45,8 +46,8 @@ jobs:
     name: Pack notebooklm-mcp.mcpb
     runs-on: ubuntu-latest
     # Only the canonical repo ships the bundle (forks' manifest URLs point
-    # here anyway), and only stable releases (see the pre-release note above).
-    if: ${{ github.repository == 'teng-lin/notebooklm-py' && !github.event.release.prerelease }}
+    # here anyway); both stable and pre-releases (see the version note above).
+    if: ${{ github.repository == 'teng-lin/notebooklm-py' }}
     # No contents:write here: this job runs the third-party mcpb packer, so it
     # stays read-only. Even a compromised packer only sees a read-only token.
     steps:
