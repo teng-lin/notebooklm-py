@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any
 from .._app.resolve import (
     FULL_ID_PATTERN,
     AmbiguousIdError,
+    near_miss_candidates,
     resolve_ref,
     validate_id,
 )
@@ -90,7 +91,17 @@ def _resolve_by_title(
         return str(match.id)
 
     if not matches:
-        raise not_found(token)
+        # Enrich the miss with near-miss "did you mean" candidates (issue #1787):
+        # a title mistyped with a hyphen for an em-dash, a non-breaking space for
+        # a normal one, or a bare prefix would otherwise force a blind retry loop.
+        error = not_found(token)
+        error.candidates = near_miss_candidates(
+            token,
+            items,
+            id_of=lambda item: str(item.id),
+            title_of=lambda item: item.title,
+        )
+        raise error
 
     candidate_ids = [str(item.id) for item in matches]
     lines = [f"Ambiguous title '{token}' matches {len(matches)} items:"]

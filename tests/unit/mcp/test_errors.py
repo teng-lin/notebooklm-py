@@ -146,6 +146,31 @@ def test_to_tool_error_returns_tool_error_with_payload() -> None:
     assert "RATE_LIMITED" in str(err)
 
 
+def test_not_found_candidates_surface_in_payload_and_did_you_mean_hint() -> None:
+    """Near-miss candidates (issue #1787) appear structurally and swap the hint."""
+    err = exc.NotebookNotFoundError("Scientific")
+    err.candidates = [{"id": "37fe5c1d", "title": "Scientific PDF Parsing — Landscape"}]
+    payload = tool_error_payload(err)
+
+    assert payload["code"] == "NOT_FOUND"
+    assert payload["candidates"] == [
+        {"id": "37fe5c1d", "title": "Scientific PDF Parsing — Landscape"}
+    ]
+    # The generic NOT_FOUND hint is replaced by a "Did you mean …" hint that
+    # names the title inline (so a flat-string MCP client still sees it).
+    assert payload["hint"].startswith("Did you mean:")
+    assert "Scientific PDF Parsing — Landscape" in payload["hint"]
+    # And that hint reaches the flattened ToolError wire string.
+    assert "Did you mean:" in str(to_tool_error(err))
+
+
+def test_not_found_without_candidates_keeps_generic_hint() -> None:
+    """A miss with no near match carries no candidates and the generic hint."""
+    payload = tool_error_payload(exc.NotebookNotFoundError("Nonexistent"))
+    assert "candidates" not in payload
+    assert payload["hint"] == CATEGORY_TABLE[ErrorCategory.NOT_FOUND][1]
+
+
 def test_mcp_errors_translates_notebooklm_error() -> None:
     with pytest.raises(ToolError) as caught, mcp_errors():  # noqa: PT012
         raise exc.NotFoundError("missing")

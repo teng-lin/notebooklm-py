@@ -210,6 +210,10 @@ These conventions hold across every tool:
 - **Name *or* ID.** Every `notebook`/`source`/`note`/`artifact` argument accepts a human title **or**
   an ID (full, or a unique prefix). Use the matching `*_list` tool to discover them. An ambiguous name
   or prefix returns a `VALIDATION` error listing the candidates so you can retry with an exact ID.
+  When a name lookup *fails* but is close to a real title — a bare prefix, or a punctuation-only
+  slip such as a hyphen typed for an em-dash (`—`) or a normal space for a non-breaking one — the
+  `NOT_FOUND` error carries up to three near-miss `candidates` (`{id, title}`) plus a
+  `Did you mean: …` hint, so you can retry with the full title or id instead of guessing.
 - **Destructive tools need confirmation.** `notebook_delete`, `source_delete`,
   `studio_delete`, and `share_remove_user` take `confirm` (default `false`). Called without it, they return a `needs_confirmation` preview
   (with the resolved title) and delete **nothing**; call again with `confirm=true` to execute.
@@ -238,7 +242,9 @@ These conventions hold across every tool:
   `AUTH`, `RATE_LIMITED`, `NOT_FOUND`, `VALIDATION`, `TIMEOUT`, `NETWORK`, `SERVER`, `RPC`,
   `CONFIG`, `NOTEBOOK_LIMIT`, `ARTIFACT_TIMEOUT`, `SOURCE_MUTATION`, `ERROR`, or `UNEXPECTED`. The
   `retriable` flag tells an agent whether a retry could succeed (e.g. `RATE_LIMITED`, `TIMEOUT`,
-  `NETWORK`). Many errors also carry an actionable `hint` (e.g. `AUTH → run notebooklm login`).
+  `NETWORK`). Many errors also carry an actionable `hint` (e.g. `AUTH → run notebooklm login`); a
+  `NOT_FOUND` from a near-miss name lookup additionally carries a `candidates` list (see
+  **Name *or* ID** above).
 
 ## Workflows
 

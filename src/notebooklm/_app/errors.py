@@ -49,6 +49,7 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 
@@ -145,6 +146,20 @@ CATEGORY_HINTS: dict[ErrorCategory, str | None] = {
     ErrorCategory.LIBRARY: None,
     ErrorCategory.UNEXPECTED: None,
 }
+
+
+def did_you_mean_hint(candidates: Sequence[Mapping[str, str]]) -> str:
+    """Build the NOT_FOUND "did you mean" hint from near-miss candidates.
+
+    Shared by every surface (MCP ``tool_error_payload``, the REST error body,
+    the CLI ``NOT_FOUND`` envelope) so the phrasing cannot drift. Lists each
+    candidate's title inline — the MCP wire flattens the structured error to a
+    string, so an agent that only reads the flat ``hint:`` still sees the
+    suggestions. Replaces the generic :data:`CATEGORY_HINTS` NOT_FOUND hint only
+    when a lookup actually produced near matches.
+    """
+    titles = ", ".join(repr(candidate["title"]) for candidate in candidates)
+    return f"Did you mean: {titles}? Pass the full title or id."
 
 
 @dataclass(frozen=True)

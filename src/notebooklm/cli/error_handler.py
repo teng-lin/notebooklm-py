@@ -12,6 +12,7 @@ from typing import Any, NoReturn
 
 import click
 
+from .._app.errors import did_you_mean_hint
 from ..exceptions import (
     ArtifactTimeoutError,
     AuthError,
@@ -93,6 +94,10 @@ def _not_found_extra(error: NotFoundError) -> dict[str, Any]:
             extra[attr] = value
             extra["id"] = value
             break
+    # Near-miss "did you mean" candidates from a failed name lookup (issue #1787).
+    candidates = list(getattr(error, "candidates", ()) or ())
+    if candidates:
+        extra["candidates"] = candidates
     return extra
 
 
@@ -309,12 +314,16 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
         nf_extra = _not_found_extra(e)
         if verbose and isinstance(e, RPCError) and e.method_id:
             nf_extra["method_id"] = e.method_id
+        # Surface near-miss "did you mean" candidates (issue #1787) as a text-mode
+        # hint; the JSON envelope already carries them via ``nf_extra``.
+        nf_candidates = list(getattr(e, "candidates", ()) or ())
         _output_error(
             f"Error: {e}",
             "NOT_FOUND",
             json_output,
             1,
             extra=nf_extra or None,
+            hint=did_you_mean_hint(nf_candidates) if nf_candidates else None,
         )
     except NotebookLMError as e:
         extra_info: dict[str, Any] | None = None

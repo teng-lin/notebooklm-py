@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ..exceptions import ValidationError
 from ..types import Label
-from .resolve import validate_id
+from .resolve import near_miss_candidates, validate_id
 
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
@@ -173,10 +173,22 @@ async def resolve_label_id(
             {"name": token, "candidates": _candidate_payload(name_matches)},
         )
 
+    # Near-miss "did you mean" candidates (issue #1787): a name mistyped with a
+    # hyphen for an em-dash or a bare prefix surfaces the real label(s) so the
+    # command layer can render them instead of a bare NOT_FOUND.
+    extra: dict[str, Any] = {"id": token, "notebook_id": notebook_id}
+    candidates = near_miss_candidates(
+        token,
+        labels,
+        id_of=lambda label: label.id,
+        title_of=lambda label: label.name,
+    )
+    if candidates:
+        extra["candidates"] = candidates
     raise LabelResolutionError(
         f"No label found matching '{token}'. Run 'notebooklm label list' to see available labels.",
         "NOT_FOUND",
-        {"id": token, "notebook_id": notebook_id},
+        extra,
     )
 
 

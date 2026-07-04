@@ -41,6 +41,7 @@ from .._app.errors import (
     ClassifiedError,
     ErrorCategory,
     classify,
+    did_you_mean_hint,
     is_retriable,
 )
 from .._redact import redact as _shared_redact
@@ -216,6 +217,12 @@ def _project_classified(exc: BaseException, classified: ClassifiedError) -> dict
         "retriable": classified.retriable,
     }
     hint = CATEGORY_HINTS.get(category)
+    # A failed *name* lookup may carry near-miss candidates (issue #1787); surface
+    # them and swap the generic NOT_FOUND hint for a "Did you mean …" one.
+    candidates = list(getattr(exc, "candidates", ()) or ())
+    if candidates:
+        body["candidates"] = candidates
+        hint = did_you_mean_hint(candidates)
     if hint is not None:
         body["hint"] = hint
     return body

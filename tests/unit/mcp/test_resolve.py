@@ -124,6 +124,40 @@ async def test_no_match_prefix_raises_not_found() -> None:
         await resolve_notebook(client, "ffff")
 
 
+# --------------------------------------------------------------------------- #
+# near-miss candidates on a failed name lookup (issue #1787)
+# --------------------------------------------------------------------------- #
+async def test_prefix_near_miss_attaches_candidate() -> None:
+    """A bare prefix of a real title surfaces that title as a candidate."""
+    real = "Scientific PDF Parsing — Landscape, Benchmarks & Multimodal Extraction"
+    client = _client(notebooks=[_NB("37fe5c1d", real), _NB("cafef00d", "Unrelated")])
+    with pytest.raises(NotebookNotFoundError) as caught:
+        await resolve_notebook(client, "Scientific")
+    assert list(caught.value.candidates) == [{"id": "37fe5c1d", "title": real}]
+
+
+async def test_em_dash_hyphen_near_miss_attaches_candidate() -> None:
+    """A hyphen typed for an em-dash still surfaces the real title."""
+    client = _client(notebooks=[_NB("deadbeef", "Acme — Competitive Intel")])
+    with pytest.raises(NotebookNotFoundError) as caught:
+        await resolve_notebook(client, "Acme - Competitive Intel")
+    assert [c["id"] for c in caught.value.candidates] == ["deadbeef"]
+
+
+async def test_exact_miss_with_no_near_match_has_empty_candidates() -> None:
+    client = _client(notebooks=[_NB("deadbeef", "Alpha"), _NB("cafef00d", "Beta")])
+    with pytest.raises(NotebookNotFoundError) as caught:
+        await resolve_notebook(client, "Zzzzqwx")
+    assert list(caught.value.candidates) == []
+
+
+async def test_source_near_miss_attaches_candidate() -> None:
+    client = _client(sources=[_Src("src0001", "Quarterly — Revenue Deck")])
+    with pytest.raises(SourceNotFoundError) as caught:
+        await resolve_source(client, "nb", "Quarterly - Revenue Deck")
+    assert [c["id"] for c in caught.value.candidates] == ["src0001"]
+
+
 @pytest.mark.parametrize("title", ["beef", "ABBA", "1234", "DEADBEEF"])
 async def test_hex_only_title_falls_back_to_title(title: str) -> None:
     """A notebook whose TITLE is all-hex resolves by name (id/prefix path misses)."""
