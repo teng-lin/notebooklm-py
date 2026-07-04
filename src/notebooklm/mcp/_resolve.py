@@ -138,6 +138,10 @@ def _resolve_by_title(
     # No exact title -> fall back to a unique title prefix so a name is as
     # prefix-resolvable as an id (issue #1786). Kept as a second pass (rather than
     # a single fused loop) so exact-wins-over-prefix reads directly off the code.
+    # This pass casefolds but deliberately does NOT dash/space-normalize (unlike
+    # near_miss_candidates below): a punctuation-slip token like "Acme - X" for a
+    # title "Acme — X" must stay a true miss here so it reaches the near-miss
+    # "did you mean" path (#1787) rather than silently resolving to a near match.
     prefix = [item for title_folded, item in folded if title_folded.startswith(token_folded)]
     if len(prefix) == 1:
         (match,) = prefix
