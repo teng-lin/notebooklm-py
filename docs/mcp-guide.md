@@ -354,6 +354,6 @@ gate the destructive ones.
 ## See also
 
 - [installation.md](installation.md#running-the-mcp-server-mcp-extra) — the `mcp` extra + run/connect summary
-- [`desktop-extension/README.md`](../desktop-extension/README.md) — one-click Claude Desktop `.mcpb` bundle (prebuilt, attached to new releases)
+- [`desktop-extension/README.md`](../desktop-extension/README.md) — one-click Claude Desktop `.mcpb` bundle (prebuilt, attached to each stable release)
 - [configuration.md](configuration.md) — profiles, multi-account, storage
 - [cli-reference.md](cli-reference.md) — the equivalent CLI commands

@@ -6,14 +6,21 @@
 #   attach an asset to at tag-push time, and a workflow that created one would
 #   collide with the maintainer's manual `gh release create`. Reacting to
 #   `release: published` fires exactly when that manual step completes, so
-#   `gh release upload` always has a target. Pre-releases (`--prerelease`) also
-#   emit `published`, so their bundle attaches too.
+#   `gh release upload` always has a target.
 #
-# The bundle is a zip of `desktop-extension/{manifest.json,run_server.py}` built
-# by the official `@anthropic-ai/mcpb` CLI. `mcpb pack` validates the manifest
-# against the DXT schema; a version mismatch is caught before upload by the
-# guard step below (the commit-time half lives in
-# tests/unit/test_mcp_desktop_extension.py).
+# Stable releases only. Pre-releases are skipped: the bundled launcher runs
+# `uvx --from "notebooklm-py[mcp]"`, which resolves the latest *stable* server
+# from PyPI (not a `vX.Y.ZaN` pre-release), so a pre-release bundle wouldn't run
+# the pre-release anyway — and pre-release testers use the CLI installer / uvx
+# directly. The one-click bundle is an end-user convenience for stable installs.
+#
+# Two jobs by design (token isolation, mirrors publish.yml): the `build` job
+# runs the third-party npm packer with NO release-write token, uploads the
+# `.mcpb` as a workflow artifact; the minimal `attach` job carries
+# `contents: write` and runs only first-party download + `gh release upload`.
+# Splitting across jobs means nothing the packer does (e.g. persisting a fake
+# `gh` onto `$GITHUB_PATH`, or `$GITHUB_ENV`) can reach the write token — a
+# same-job `env: GITHUB_TOKEN: ""` on the pack step would not stop that.
 name: Attach .mcpb to GitHub Release
 
 on:
@@ -28,21 +35,20 @@ concurrency:
   cancel-in-progress: false
 
 # Top-level scope is read-only (the default-permissive GITHUB_TOKEN blast
-# radius is the thing check_workflow_permissions.py guards against). The
-# single job elevates to `contents: write` for the asset upload only.
+# radius is the thing check_workflow_permissions.py guards against). Only the
+# `attach` job below elevates to `contents: write`.
 permissions:
   contents: read
 
 jobs:
-  attach-mcpb:
-    name: Build and attach notebooklm-mcp.mcpb
+  build:
+    name: Pack notebooklm-mcp.mcpb
     runs-on: ubuntu-latest
-    # Only the canonical repo ships the bundle; forks that cut their own
-    # releases skip it (their manifest URLs point at this repo anyway).
-    if: ${{ github.repository == 'teng-lin/notebooklm-py' }}
-    permissions:
-      contents: write  # upload the built .mcpb as a release asset
-
+    # Only the canonical repo ships the bundle (forks' manifest URLs point
+    # here anyway), and only stable releases (see the pre-release note above).
+    if: ${{ github.repository == 'teng-lin/notebooklm-py' && !github.event.release.prerelease }}
+    # No contents:write here: this job runs the third-party mcpb packer, so it
+    # stays read-only. Even a compromised packer only sees a read-only token.
     steps:
       - uses: actions/checkout@v7
         with:
@@ -62,7 +68,7 @@ jobs:
       - name: Guard — manifest version matches the release tag and pyproject
         # Defence in depth: the .mcpb we attach must carry the released
         # version. The tag (vX.Y.Z), pyproject.toml, and the bundle manifest
-        # must all agree, or we abort before uploading a mislabelled bundle.
+        # must all agree, or we abort before packing a mislabelled bundle.
         # Derive the version from the release's tag_name (not GITHUB_REF): on a
         # `release` event GITHUB_REF can reflect the release target branch
         # rather than the tag, whereas tag_name is unambiguous — and it matches
@@ -80,27 +86,43 @@ jobs:
           fi
 
       - name: Build the .mcpb bundle
-        env:
-          # Explicitly clear the built-in token so it can't reach the npm
-          # packer even though the job holds contents:write. mcpb only zips
-          # local files + validates a schema — it needs no token — so this
-          # makes the "packer runs without a release-writable token" isolation
-          # enforced in code, not merely a property of the runner's defaults.
-          GITHUB_TOKEN: ""
         # `pack <source-dir> <output>` zips manifest.json + run_server.py and
         # validates the manifest against the DXT schema. `--yes` skips the npx
         # install prompt on a cold runner. The CLI is version-pinned (not
         # `@latest`) so the released bundle is reproducible from the tag and a
-        # compromised/breaking upstream publish can't run in this
-        # contents:write job — bump deliberately, like the SHA-pinned actions.
+        # compromised/breaking upstream publish can't drift silently — bump
+        # deliberately, like the SHA-pinned actions.
         run: npx --yes @anthropic-ai/mcpb@2.1.2 pack desktop-extension notebooklm-mcp.mcpb
+
+      - name: Upload the bundle as a workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # @ v7
+        with:
+          name: notebooklm-mcp-mcpb
+          path: notebooklm-mcp.mcpb
+          if-no-files-found: error
+          retention-days: 1
+
+  attach:
+    name: Attach notebooklm-mcp.mcpb to the release
+    needs: build
+    runs-on: ubuntu-latest
+    # Minimal write-scoped job: only first-party download + `gh release upload`
+    # run here — no checkout, no node, no third-party code — so the
+    # release-write token has no attacker-controllable co-tenant (mirrors the
+    # split in publish.yml). Skipped automatically when `build` is skipped.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # @ v8.0.1
+        with:
+          name: notebooklm-mcp-mcpb
 
       - name: Attach the bundle to the release
         env:
           GH_TOKEN: ${{ github.token }}
           # Route tag_name through env (not inline `${{ }}` in run:) so a crafted
-          # tag can't inject shell into this contents:write step — same pattern
-          # as the guard step above.
+          # tag can't inject shell into this contents:write step.
           TAG_NAME: ${{ github.event.release.tag_name }}
         # `--clobber` makes re-runs idempotent (replaces an existing asset of
         # the same name instead of erroring).

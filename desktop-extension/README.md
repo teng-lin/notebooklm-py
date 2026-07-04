@@ -44,8 +44,10 @@ vendored Python environment in the bundle — only the two files above.
   tools (e.g. `notebook_list`, `chat_ask`, `studio_generate`) appear in the tool
   picker.
 
-  New releases attach a prebuilt, version-matched bundle (built and uploaded by
-  `.github/workflows/publish-mcpb.yml`), so there is nothing to build yourself.
+  Each stable release attaches a prebuilt, version-matched bundle (built and
+  uploaded by `.github/workflows/publish-mcpb.yml`), so there is nothing to
+  build yourself. (Pre-releases don't ship a bundle — the launcher resolves the
+  latest stable server from PyPI regardless.)
 
 For other MCP clients (Claude Code, Cursor, Windsurf) that read a JSON config
 instead of a `.mcpb`, use the CLI installer instead:
