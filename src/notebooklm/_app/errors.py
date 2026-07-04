@@ -153,13 +153,15 @@ def did_you_mean_hint(candidates: Sequence[Mapping[str, str]]) -> str:
 
     Shared by every surface (MCP ``tool_error_payload``, the REST error body,
     the CLI ``NOT_FOUND`` envelope) so the phrasing cannot drift. Lists each
-    candidate's title inline — the MCP wire flattens the structured error to a
-    string, so an agent that only reads the flat ``hint:`` still sees the
-    suggestions. Replaces the generic :data:`CATEGORY_HINTS` NOT_FOUND hint only
-    when a lookup actually produced near matches.
+    candidate's title **and id** inline — the MCP wire flattens the structured
+    error to a string via ``to_tool_error`` (which serializes only
+    code/message/retriable/hint and drops the structured ``candidates`` list), so
+    the id must live in the hint text for a flat-string client to retry by id
+    without another list call. Replaces the generic :data:`CATEGORY_HINTS`
+    NOT_FOUND hint only when a lookup actually produced near matches.
     """
-    titles = ", ".join(repr(candidate["title"]) for candidate in candidates)
-    return f"Did you mean: {titles}? Pass the full title or id."
+    parts = ", ".join(f"{c['title']!r} (id: {c['id']})" for c in candidates)
+    return f"Did you mean: {parts}? Pass the full title or id."
 
 
 @dataclass(frozen=True)

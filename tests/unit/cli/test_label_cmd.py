@@ -120,6 +120,47 @@ def test_label_sources_resolves_by_name(runner, mock_auth, mock_fetch_tokens) ->
     client.labels.sources.assert_awaited_once_with("nb_123", "lblaaa111")
 
 
+def test_label_sources_near_miss_text_mode_shows_did_you_mean(
+    runner, mock_auth, mock_fetch_tokens
+) -> None:
+    """A label name mistyped with a hyphen for an em-dash gets a text-mode hint (#1787)."""
+    labels = [Label(id="lblaaa111", name="Q3 — Papers", source_ids=["s1"])]
+    client = _client_with_labels(labels=labels)
+
+    result = _run(
+        runner,
+        mock_auth,
+        mock_fetch_tokens,
+        ["label", "sources", "Q3 - Papers", "-n", "nb_123"],
+        client,
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "Did you mean:" in result.output
+    assert "Q3 — Papers" in result.output
+    assert "lblaaa111" in result.output
+
+
+def test_label_sources_near_miss_json_mode_carries_candidates(
+    runner, mock_auth, mock_fetch_tokens
+) -> None:
+    labels = [Label(id="lblaaa111", name="Q3 — Papers", source_ids=["s1"])]
+    client = _client_with_labels(labels=labels)
+
+    result = _run(
+        runner,
+        mock_auth,
+        mock_fetch_tokens,
+        ["label", "sources", "Q3 - Papers", "-n", "nb_123", "--json"],
+        client,
+    )
+
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["code"] == "NOT_FOUND"
+    assert payload["candidates"] == [{"id": "lblaaa111", "title": "Q3 — Papers"}]
+
+
 # ---------------------------------------------------------------------------
 # label create
 # ---------------------------------------------------------------------------

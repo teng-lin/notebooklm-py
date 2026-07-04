@@ -25,6 +25,7 @@ from typing import Any, NoReturn
 
 import click
 
+from .._app.errors import did_you_mean_hint
 from .._app.labels import (
     execute_label_add_sources,
     execute_label_create,
@@ -52,12 +53,17 @@ from .services.label_listing import (
 
 def _handle_label_resolution_error(exc: LabelResolutionError, *, json_output: bool) -> NoReturn:
     """Render a typed label-resolution error through the CLI error contract."""
+    # Near-miss candidates (issue #1787) reach the JSON envelope via ``.extra``;
+    # in text mode render them as a "Did you mean" hint so the CLI label path
+    # matches the *NotFoundError handler.
+    candidates = list(exc.candidates)
     output_error(
         exc.message,
         code=exc.code,
         json_output=json_output,
         exit_code=1,
         extra=dict(exc.extra) if exc.extra else None,
+        hint=did_you_mean_hint(candidates) if candidates else None,
     )
     raise AssertionError("unreachable")  # pragma: no cover
 

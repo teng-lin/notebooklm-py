@@ -13,6 +13,7 @@ from notebooklm._app.errors import (
     ClassifiedError,
     ErrorCategory,
     classify,
+    did_you_mean_hint,
     is_retriable,
 )
 from notebooklm._app.source_add import SourceAddValidationError
@@ -298,3 +299,21 @@ def test_category_hints_are_surface_neutral() -> None:
             )
     assert CATEGORY_HINTS[ErrorCategory.AUTH] == "Re-authenticate and retry."
     assert "task status" in CATEGORY_HINTS[ErrorCategory.ARTIFACT_TIMEOUT]
+
+
+# --- did_you_mean_hint (issue #1787) ---------------------------------------
+
+
+def test_did_you_mean_hint_includes_id_and_title() -> None:
+    """The hint carries id AND title so a flat-string MCP client can retry by id."""
+    hint = did_you_mean_hint([{"id": "abc123", "title": "Scientific PDF Parsing"}])
+    assert hint.startswith("Did you mean:")
+    assert "abc123" in hint
+    assert "Scientific PDF Parsing" in hint
+    assert hint.endswith("Pass the full title or id.")
+
+
+def test_did_you_mean_hint_lists_multiple_candidates() -> None:
+    hint = did_you_mean_hint([{"id": "id1", "title": "Alpha"}, {"id": "id2", "title": "Beta"}])
+    assert "id1" in hint and "id2" in hint
+    assert "Alpha" in hint and "Beta" in hint
