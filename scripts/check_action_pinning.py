@@ -58,6 +58,7 @@ from pathlib import Path
 PRIVILEGED_WORKFLOWS: tuple[str, ...] = (
     "publish.yml",
     "publish-docker.yml",
+    "publish-mcpb.yml",
     "testpypi-publish.yml",
     "claude.yml",
     "rpc-health.yml",

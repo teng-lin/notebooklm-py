@@ -80,6 +80,13 @@ jobs:
           fi
 
       - name: Build the .mcpb bundle
+        env:
+          # Explicitly clear the built-in token so it can't reach the npm
+          # packer even though the job holds contents:write. mcpb only zips
+          # local files + validates a schema — it needs no token — so this
+          # makes the "packer runs without a release-writable token" isolation
+          # enforced in code, not merely a property of the runner's defaults.
+          GITHUB_TOKEN: ""
         # `pack <source-dir> <output>` zips manifest.json + run_server.py and
         # validates the manifest against the DXT schema. `--yes` skips the npx
         # install prompt on a cold runner. The CLI is version-pinned (not
@@ -91,6 +98,10 @@ jobs:
       - name: Attach the bundle to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          # Route tag_name through env (not inline `${{ }}` in run:) so a crafted
+          # tag can't inject shell into this contents:write step — same pattern
+          # as the guard step above.
+          TAG_NAME: ${{ github.event.release.tag_name }}
         # `--clobber` makes re-runs idempotent (replaces an existing asset of
         # the same name instead of erroring).
-        run: gh release upload "${{ github.event.release.tag_name }}" notebooklm-mcp.mcpb --clobber
+        run: gh release upload "$TAG_NAME" notebooklm-mcp.mcpb --clobber

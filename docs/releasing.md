@@ -113,6 +113,10 @@ Proceed with release preparation?
   version = "X.Y.Z"
   ```
 
+- [ ] Update the matching version in `desktop-extension/manifest.json` (`"version": "X.Y.Z"`).
+  It must equal `pyproject.toml` — `tests/unit/test_mcp_desktop_extension.py` enforces this,
+  and `publish-mcpb.yml` aborts the release-asset build on a mismatch.
+
 ### Public API Compatibility Gate
 
 - [ ] Run the cross-release public API audit before committing release changes:
@@ -219,7 +223,7 @@ no break against the baseline) is a CI failure, not silent cruft.
   entry, and for a pre-release the `uv sync` re-lock in the Pre-releases section
   requires it; staging it is a no-op on releases where it did not change):
   ```bash
-  git add pyproject.toml CHANGELOG.md uv.lock docs/
+  git add pyproject.toml desktop-extension/manifest.json CHANGELOG.md uv.lock docs/
   git commit -m "chore: release vX.Y.Z"
   ```
 - [ ] Show commit to user:
