@@ -35,29 +35,17 @@ vendored Python environment in the bundle — only the two files above.
    This stores credentials under `~/.notebooklm/` for the active profile, which
    the server binds at startup.
 
-## Build the bundle
-
-The bundle is built with the official [`@anthropic-ai/mcpb`](https://github.com/anthropics/mcpb)
-CLI (formerly `dxt`):
-
-```bash
-# From the repository root:
-npx @anthropic-ai/mcpb pack desktop-extension notebooklm-mcp.mcpb
-```
-
-This produces `notebooklm-mcp.mcpb`, a zip of `manifest.json` + `run_server.py`.
-
-> The CLI validates `manifest.json` against the DXT schema during `pack`. The
-> repo's own `tests/unit/test_mcp_desktop_extension.py` asserts the manifest is
-> valid JSON with the required keys and that `run_server.py` builds the correct
-> `uvx` command, so the bundle stays shippable.
-
 ## Install
 
-- **Claude Desktop:** double-click `notebooklm-mcp.mcpb`, or
-  *Settings → Extensions → Install Extension…* and pick the file. Restart
-  Claude Desktop; the NotebookLM tools (e.g. `notebook_list`, `chat_ask`,
-  `studio_generate`) appear in the tool picker.
+- **Claude Desktop:** download `notebooklm-mcp.mcpb` from the
+  [latest release](https://github.com/teng-lin/notebooklm-py/releases/latest)
+  (under **Assets**), then double-click it — or *Settings → Extensions →
+  Install Extension…* and pick the file. Restart Claude Desktop; the NotebookLM
+  tools (e.g. `notebook_list`, `chat_ask`, `studio_generate`) appear in the tool
+  picker.
+
+  New releases attach a prebuilt, version-matched bundle (built and uploaded by
+  `.github/workflows/publish-mcpb.yml`), so there is nothing to build yourself.
 
 For other MCP clients (Claude Code, Cursor, Windsurf) that read a JSON config
 instead of a `.mcpb`, use the CLI installer instead:
@@ -65,6 +53,26 @@ instead of a `.mcpb`, use the CLI installer instead:
 ```bash
 notebooklm mcp install claude-code   # or: cursor / windsurf / claude-desktop
 ```
+
+## Build from source (contributors)
+
+End users should download the prebuilt bundle from the release above. If you are
+developing the extension itself, build it locally with the official
+[`@anthropic-ai/mcpb`](https://github.com/anthropics/mcpb) CLI (formerly `dxt`):
+
+```bash
+# From the repository root:
+npx @anthropic-ai/mcpb pack desktop-extension notebooklm-mcp.mcpb
+```
+
+This produces `notebooklm-mcp.mcpb`, a zip of `manifest.json` + `run_server.py` —
+the same artifact the release workflow attaches.
+
+> The CLI validates `manifest.json` against the DXT schema during `pack`. The
+> repo's own `tests/unit/test_mcp_desktop_extension.py` asserts the manifest is
+> valid JSON with the required keys, that its version tracks the package version,
+> and that `run_server.py` builds the correct `uvx` command, so the bundle stays
+> shippable.
 
 ## How the launcher passes through stdio
 

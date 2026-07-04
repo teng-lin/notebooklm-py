@@ -65,8 +65,11 @@ It writes a block that launches the server via `uvx` (so only `uv` needs to be o
 }
 ```
 
-Restart the client after installing. For a one-click Claude Desktop bundle, see
-[`desktop-extension/README.md`](../desktop-extension/README.md).
+Restart the client after installing. For a one-click Claude Desktop bundle,
+download `notebooklm-mcp.mcpb` from the
+[latest release](https://github.com/teng-lin/notebooklm-py/releases/latest)
+(**Assets**) and use "Install Extension"; see
+[`desktop-extension/README.md`](../desktop-extension/README.md) for details.
 
 ## Run it directly
 
@@ -351,6 +354,6 @@ gate the destructive ones.
 ## See also
 
 - [installation.md](installation.md#running-the-mcp-server-mcp-extra) — the `mcp` extra + run/connect summary
-- [`desktop-extension/README.md`](../desktop-extension/README.md) — one-click Claude Desktop `.mcpb` bundle
+- [`desktop-extension/README.md`](../desktop-extension/README.md) — one-click Claude Desktop `.mcpb` bundle (prebuilt, attached to new releases)
 - [configuration.md](configuration.md) — profiles, multi-account, storage
 - [cli-reference.md](cli-reference.md) — the equivalent CLI commands

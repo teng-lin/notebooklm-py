@@ -1,0 +1,96 @@
+# Build the Claude Desktop `.mcpb` bundle and attach it to the GitHub Release.
+#
+# Why `release: published` (not `push: tags`)?
+#   The release process (docs/releasing.md) creates the GitHub Release by hand
+#   AFTER the tag is pushed and PyPI has published — there is no release to
+#   attach an asset to at tag-push time, and a workflow that created one would
+#   collide with the maintainer's manual `gh release create`. Reacting to
+#   `release: published` fires exactly when that manual step completes, so
+#   `gh release upload` always has a target. Pre-releases (`--prerelease`) also
+#   emit `published`, so their bundle attaches too.
+#
+# The bundle is a zip of `desktop-extension/{manifest.json,run_server.py}` built
+# by the official `@anthropic-ai/mcpb` CLI. `mcpb pack` validates the manifest
+# against the DXT schema; a version mismatch is caught before upload by the
+# guard step below (the commit-time half lives in
+# tests/unit/test_mcp_desktop_extension.py).
+name: Attach .mcpb to GitHub Release
+
+on:
+  release:
+    types: [published]
+
+# Serialize per-tag so a rare double-publish can't race two uploads onto the
+# same asset (mirrors publish.yml / publish-docker.yml). Never cancel a run
+# mid-upload.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# Top-level scope is read-only (the default-permissive GITHUB_TOKEN blast
+# radius is the thing check_workflow_permissions.py guards against). The
+# single job elevates to `contents: write` for the asset upload only.
+permissions:
+  contents: read
+
+jobs:
+  attach-mcpb:
+    name: Build and attach notebooklm-mcp.mcpb
+    runs-on: ubuntu-latest
+    # Only the canonical repo ships the bundle; forks that cut their own
+    # releases skip it (their manifest URLs point at this repo anyway).
+    if: ${{ github.repository == 'teng-lin/notebooklm-py' }}
+    permissions:
+      contents: write  # upload the built .mcpb as a release asset
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          # Pack the extension from the tagged source, not the default branch,
+          # so the bundle matches exactly what was released.
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Guard — manifest version matches the release tag and pyproject
+        # Defence in depth: the .mcpb we attach must carry the released
+        # version. The tag (vX.Y.Z), pyproject.toml, and the bundle manifest
+        # must all agree, or we abort before uploading a mislabelled bundle.
+        # Derive the version from the release's tag_name (not GITHUB_REF): on a
+        # `release` event GITHUB_REF can reflect the release target branch
+        # rather than the tag, whereas tag_name is unambiguous — and it matches
+        # the checkout/upload steps.
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          TAG_VERSION="${TAG_NAME#v}"
+          TOML_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          MANIFEST_VERSION=$(python3 -c "import json; print(json.load(open('desktop-extension/manifest.json'))['version'])")
+          echo "tag=$TAG_VERSION pyproject=$TOML_VERSION manifest=$MANIFEST_VERSION"
+          if [ "$TAG_VERSION" != "$TOML_VERSION" ] || [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::version mismatch — tag=$TAG_VERSION pyproject=$TOML_VERSION manifest=$MANIFEST_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Build the .mcpb bundle
+        # `pack <source-dir> <output>` zips manifest.json + run_server.py and
+        # validates the manifest against the DXT schema. `--yes` skips the npx
+        # install prompt on a cold runner. The CLI is version-pinned (not
+        # `@latest`) so the released bundle is reproducible from the tag and a
+        # compromised/breaking upstream publish can't run in this
+        # contents:write job — bump deliberately, like the SHA-pinned actions.
+        run: npx --yes @anthropic-ai/mcpb@2.1.2 pack desktop-extension notebooklm-mcp.mcpb
+
+      - name: Attach the bundle to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # `--clobber` makes re-runs idempotent (replaces an existing asset of
+        # the same name instead of erroring).
+        run: gh release upload "${{ github.event.release.tag_name }}" notebooklm-mcp.mcpb --clobber

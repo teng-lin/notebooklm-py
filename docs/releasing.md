@@ -388,6 +388,12 @@ The `Publish to PyPI` step in `publish.yml` also opts into **PEP 740 attestation
   - Copy release notes from `CHANGELOG.md`
   - Publish release
 
+- [ ] Publishing the release fires `publish-mcpb.yml`, which builds
+  `notebooklm-mcp.mcpb` and attaches it to the release as an asset (it re-checks
+  that the manifest, tag, and `pyproject.toml` versions all agree). Confirm the
+  asset appears under the release once the workflow finishes — that is the
+  one-click Claude Desktop bundle users download.
+
 ### Prune the API-Compat Allowlist
 
 Pushing a **stable** tag advances the audit baseline — `audit_public_api_compat.py`

@@ -1,0 +1,6 @@
+# Keep the packed .mcpb hermetic: never ship compiled-bytecode cruft even if a
+# build ran run_server.py first (e.g. the unit tests import it by path, which
+# writes __pycache__/). CI packs from a fresh checkout, but this makes the
+# artifact deterministic regardless of build-env state.
+__pycache__/
+*.pyc

@@ -86,6 +86,38 @@ def test_manifest_has_win32_command_override() -> None:
     )
 
 
+def test_manifest_version_matches_package_version() -> None:
+    """The bundled manifest version must track the package version.
+
+    ``.github/workflows/publish-mcpb.yml`` builds the ``.mcpb`` from this
+    manifest and attaches it to the GitHub Release, asserting there that the
+    manifest, the ``vX.Y.Z`` tag, and ``pyproject.toml`` all agree. This is the
+    commit-time half of that guard: it fails the moment a version bump advances
+    ``pyproject.toml`` without also bumping ``desktop-extension/manifest.json``,
+    so the shipped bundle can never carry a stale version.
+
+    Compared against ``pyproject.toml`` (the source of truth the release bumps),
+    not ``notebooklm.__version__``: the latter is *installed* dist metadata
+    (``importlib.metadata.version``), which lags an editable checkout until
+    reinstall — so it could false-pass locally on a forgotten manifest bump.
+    ``tomllib``/``tomli`` mirrors ``test_version_pyproject_sync.py`` and keeps
+    the check working on the 3.10 matrix leg.
+    """
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # pragma: no cover - exercised on Python <3.11
+        import tomli as tomllib
+
+    pyproject = _REPO_ROOT / "pyproject.toml"
+    pyproject_version = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+    manifest_version = json.loads(_MANIFEST.read_text(encoding="utf-8"))["version"]
+    assert manifest_version == pyproject_version, (
+        f"desktop-extension/manifest.json version ({manifest_version!r}) is out of "
+        f"sync with pyproject.toml ({pyproject_version!r}); bump the manifest in the "
+        f"same commit as the package version."
+    )
+
+
 def test_manifest_describes_this_package_not_the_competitor() -> None:
     data = json.loads(_MANIFEST.read_text(encoding="utf-8"))
     # Name is OUR server, not the competitor's distribution.
