@@ -4,7 +4,10 @@ MCP tools accept a human-friendly ``notebook`` / ``source`` reference and turn i
 into a canonical backend id. The matching rules build on the neutral
 :func:`notebooklm._app.resolve.resolve_ref` (full/partial-UUID fast-path, exact
 id, unique prefix, ambiguous-prefix -> :class:`AmbiguousIdError`) and ADD
-case-insensitive **exact-title** matching for human references.
+case-insensitive **title** matching for human references: an exact title, or —
+when nothing matches exactly — a unique title *prefix* (#1786), so a name is as
+prefix-resolvable as an id and the surface stays consistent across notebook /
+source / note / artifact refs.
 
 Routing is by token shape:
 
@@ -15,9 +18,13 @@ Routing is by token shape:
   if the id/prefix path finds nothing — so an item whose title is all-hex
   (``"beef"``, ``"1234"``) is still reachable by name. An *ambiguous* hex prefix
   raises :class:`AmbiguousIdError` and never falls through to title.
-* Anything else takes the title path: a case-insensitive exact match over the
-  items' titles — 0 matches raises the public ``*NotFoundError``, >1 raises
-  :class:`AmbiguousIdError` carrying the colliding ids.
+* Anything else takes the title path: a case-insensitive **exact** title match
+  wins first; failing that, a case-insensitive unique title **prefix** match.
+  0 matches raises the public ``*NotFoundError``; an ambiguous exact title or an
+  ambiguous prefix (>1) raises :class:`AmbiguousIdError` carrying the colliding
+  ids. Exact wins over prefix, so a title that is also a prefix of a longer one
+  (``"Report"`` vs ``"Report Q1"``) resolves to itself rather than reporting
+  ambiguity — mirroring the id resolver's exact-over-prefix rule.
 
 Sources are resolved within their notebook's source list. The prefix path's
 no-match (``ValidationError`` from ``resolve_ref``) is re-raised as the
@@ -69,6 +76,23 @@ _HEX_ISH = re.compile(r"^[0-9a-fA-F-]+$")
 _MAX_AMBIGUOUS_CANDIDATES = 5
 
 
+def _ambiguous_title_error(token: str, matches: Sequence[Any], *, kind: str) -> AmbiguousIdError:
+    """Build an :class:`AmbiguousIdError` listing each colliding candidate.
+
+    ``kind`` is the human word for how ``token`` matched — ``"title"`` for an
+    exact-title collision, ``"prefix"`` for a title-prefix collision — so the
+    message tells the caller which axis was ambiguous.
+    """
+    candidate_ids = [str(item.id) for item in matches]
+    lines = [f"Ambiguous {kind} '{token}' matches {len(matches)} items:"]
+    for item in matches[:_MAX_AMBIGUOUS_CANDIDATES]:
+        lines.append(f"  {str(item.id)[:12]}... {item.title or '(untitled)'}")
+    if len(matches) > _MAX_AMBIGUOUS_CANDIDATES:
+        lines.append(f"  ... and {len(matches) - _MAX_AMBIGUOUS_CANDIDATES} more")
+    lines.append("\nUse a more specific title or the id.")
+    return AmbiguousIdError(token, candidate_ids, "\n".join(lines))
+
+
 def _resolve_by_title(
     token: str,
     items: Sequence[Any],
@@ -77,40 +101,59 @@ def _resolve_by_title(
         NotebookNotFoundError | SourceNotFoundError | NoteNotFoundError | ArtifactNotFoundError
     ],
 ) -> str:
-    """Resolve ``token`` by case-insensitive exact title over ``items``.
+    """Resolve ``token`` by title over ``items``: exact match wins, else unique prefix.
 
-    Raises ``not_found(token)`` on 0 matches and :class:`AmbiguousIdError` on >1.
+    Matching order (mirrors the id resolver's "exact wins over prefix"):
+
+    1. Case-insensitive **exact** title: exactly one -> that id; more than one ->
+       :class:`AmbiguousIdError`.
+    2. No exact match -> case-insensitive title **prefix** (#1786): exactly one ->
+       that id; more than one -> :class:`AmbiguousIdError` listing the candidates;
+       none -> ``not_found(token)``.
+
+    Exact precedence means a title that is also a prefix of a longer one
+    (``"Report"`` vs ``"Report Q1"``) resolves to itself rather than being
+    reported ambiguous.
+
+    Items with no title (``item.title`` is ``None`` — e.g. an untitled source)
+    fold to ``""`` and so never match a non-empty ``token`` on either axis.
+
+    ``token`` is assumed already stripped and non-empty (callers run
+    :func:`~notebooklm._app.resolve.validate_id` first), so an empty prefix
+    cannot match every item.
     """
     # casefold (not lower) for correct non-ASCII case-insensitive matching, e.g.
     # German ß folds to "ss" so "STRASSE" matches a title "Straße".
     token_folded = token.casefold()
-    matches = [item for item in items if (item.title or "").casefold() == token_folded]
 
-    if len(matches) == 1:
-        (match,) = matches  # unpack (not matches[0]) — these are typed items, not an RPC row
+    exact = [item for item in items if (item.title or "").casefold() == token_folded]
+    if len(exact) == 1:
+        (match,) = exact  # unpack (not exact[0]) — these are typed items, not an RPC row
         return str(match.id)
+    if len(exact) > 1:
+        raise _ambiguous_title_error(token, exact, kind="title")
 
-    if not matches:
-        # Enrich the miss with near-miss "did you mean" candidates (issue #1787):
-        # a title mistyped with a hyphen for an em-dash, a non-breaking space for
-        # a normal one, or a bare prefix would otherwise force a blind retry loop.
-        error = not_found(token)
-        error.candidates = near_miss_candidates(
-            token,
-            items,
-            id_of=lambda item: str(item.id),
-            title_of=lambda item: item.title,
-        )
-        raise error
+    # No exact title -> fall back to a unique title prefix so a name is as
+    # prefix-resolvable as an id (issue #1786).
+    prefix = [item for item in items if (item.title or "").casefold().startswith(token_folded)]
+    if len(prefix) == 1:
+        (match,) = prefix
+        return str(match.id)
+    if len(prefix) > 1:
+        raise _ambiguous_title_error(token, prefix, kind="prefix")
 
-    candidate_ids = [str(item.id) for item in matches]
-    lines = [f"Ambiguous title '{token}' matches {len(matches)} items:"]
-    for item in matches[:_MAX_AMBIGUOUS_CANDIDATES]:
-        lines.append(f"  {str(item.id)[:12]}... {item.title or '(untitled)'}")
-    if len(matches) > _MAX_AMBIGUOUS_CANDIDATES:
-        lines.append(f"  ... and {len(matches) - _MAX_AMBIGUOUS_CANDIDATES} more")
-    lines.append("\nUse a more specific title or the id.")
-    raise AmbiguousIdError(token, candidate_ids, "\n".join(lines))
+    # Neither an exact title nor a unique/ambiguous prefix matched -> a true miss.
+    # Enrich it with near-miss "did you mean" candidates (issue #1787): a title
+    # mistyped with a hyphen for an em-dash, a non-breaking space for a normal
+    # one, or a not-quite prefix would otherwise force a blind retry loop.
+    error = not_found(token)
+    error.candidates = near_miss_candidates(
+        token,
+        items,
+        id_of=lambda item: str(item.id),
+        title_of=lambda item: item.title,
+    )
+    raise error
 
 
 def _resolve_by_id_or_prefix(
@@ -168,18 +211,20 @@ def _resolve_hex(
         # the title path; surface the candidates.
         raise
     except not_found:
-        # The id/prefix path found nothing. Try an exact-title match before failing
-        # so all-hex titles ("beef", "1234", "DEADBEEF") remain reachable by name.
+        # The id/prefix path found nothing. Try a title match (exact, then unique
+        # prefix) before failing so all-hex titles ("beef", "1234", "DEADBEEF")
+        # remain reachable by name.
         return _resolve_by_title(token, items, not_found=not_found)
 
 
 async def resolve_notebook(client: NotebookLMClient, ref: str) -> str:
-    """Resolve a notebook reference (full/partial id or exact title) to its id.
+    """Resolve a notebook reference (full/partial id, exact title, or unique title prefix) to its id.
 
     Args:
         client: The lifespan-bound client.
-        ref: A full canonical UUID, a hex id prefix, or an exact (case-insensitive)
-            notebook title.
+        ref: A full canonical UUID, a hex id prefix, an exact (case-insensitive)
+            title, or a unique (case-insensitive) title prefix over the
+            notebook list.
 
     Returns:
         The notebook's canonical id.
@@ -205,8 +250,9 @@ async def resolve_source(client: NotebookLMClient, notebook_id: str, ref: str) -
     Args:
         client: The lifespan-bound client.
         notebook_id: The (already-resolved) notebook id the source lives in.
-        ref: A full canonical UUID, a hex id prefix, or an exact (case-insensitive)
-            source title.
+        ref: A full canonical UUID, a hex id prefix, an exact (case-insensitive)
+            title, or a unique (case-insensitive) title prefix over the
+            notebook's source list.
 
     Returns:
         The source's canonical id.
@@ -237,8 +283,8 @@ async def resolve_sources(
     list RPCs. This resolves the whole batch against a single source-list snapshot.
 
     Matching rules are identical to :func:`resolve_source` (full-UUID fast-path,
-    hex id/prefix, exact case-insensitive title) and reuse the same single-ref
-    helpers, so behavior per ref is unchanged. An all-UUID batch still makes no
+    hex id/prefix, exact case-insensitive title, then unique title prefix) and
+    reuse the same single-ref helpers, so behavior per ref is unchanged. An all-UUID batch still makes no
     list call (each ref takes the fast-path, as before). Two differences from the
     old ``gather`` path:
 
@@ -252,7 +298,7 @@ async def resolve_sources(
     Args:
         client: The lifespan-bound client.
         notebook_id: The (already-resolved) notebook id the sources live in.
-        refs: Source references (full/partial id or exact title).
+        refs: Source references (full/partial id, exact title, or unique title prefix).
 
     Returns:
         The resolved canonical ids, in the same order as ``refs``. An empty
@@ -291,8 +337,9 @@ async def resolve_note(client: NotebookLMClient, notebook_id: str, ref: str) -> 
     Args:
         client: The lifespan-bound client.
         notebook_id: The (already-resolved) notebook id the note lives in.
-        ref: A full canonical UUID, a hex id prefix, or an exact (case-insensitive)
-            note title.
+        ref: A full canonical UUID, a hex id prefix, an exact (case-insensitive)
+            title, or a unique (case-insensitive) title prefix over the
+            notebook's note list.
 
     Returns:
         The note's canonical id.
@@ -327,8 +374,9 @@ async def resolve_artifact(client: NotebookLMClient, notebook_id: str, ref: str)
     Args:
         client: The lifespan-bound client.
         notebook_id: The (already-resolved) notebook id the artifact lives in.
-        ref: A full canonical UUID, a hex id prefix, or an exact (case-insensitive)
-            artifact title.
+        ref: A full canonical UUID, a hex id prefix, an exact (case-insensitive)
+            title, or a unique (case-insensitive) title prefix over the
+            notebook's artifact list.
 
     Returns:
         The artifact's canonical id.
