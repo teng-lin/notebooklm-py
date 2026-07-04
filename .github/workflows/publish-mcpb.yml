@@ -121,6 +121,9 @@ jobs:
       - name: Attach the bundle to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job has no checkout, so `gh` has no local git remote to infer
+          # the repo from — give it the repo explicitly or the upload fails.
+          GH_REPO: ${{ github.repository }}
           # Route tag_name through env (not inline `${{ }}` in run:) so a crafted
           # tag can't inject shell into this contents:write step.
           TAG_NAME: ${{ github.event.release.tag_name }}
