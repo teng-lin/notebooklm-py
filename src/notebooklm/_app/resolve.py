@@ -265,7 +265,10 @@ def near_miss_candidates(
     # ``norm_titles`` is de-duplicated (order-preserving) so a repeated title does
     # not waste a ``get_close_matches`` slot; every item sharing a matched
     # normalized title is then a candidate (no inner ``break``), so two items whose
-    # titles differ only in punctuation both surface while slots remain.
+    # titles differ only in punctuation both surface while slots remain. ``n=limit``
+    # (not ``limit - len(results)``) is fine: ``limit`` is a cap, not a target, and
+    # ``_add`` drops any fuzzy hit already surfaced by the prefix pass — so the
+    # final count can be below ``limit`` even with more distinct matches available.
     if len(results) < limit and entries:
         norm_titles = list(dict.fromkeys(norm_title for norm_title, _, _ in entries))
         for match in difflib.get_close_matches(

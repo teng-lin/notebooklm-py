@@ -171,6 +171,21 @@ def test_not_found_without_candidates_keeps_generic_hint() -> None:
     assert payload["hint"] == CATEGORY_TABLE[ErrorCategory.NOT_FOUND][1]
 
 
+def test_validation_error_with_candidates_is_enriched() -> None:
+    """A label near-miss (VALIDATION-coded, candidates on the attr) still enriches.
+
+    ``source_list(label=…)`` resolves labels by name and raises the VALIDATION-
+    coded ``LabelResolutionError``; its ``.candidates`` must reach the wire with a
+    "Did you mean" hint even though the code is not NOT_FOUND.
+    """
+    err = exc.ValidationError("No label found matching 'Q3 - Papers'")
+    err.candidates = [{"id": "lbl1", "title": "Q3 — Papers"}]  # type: ignore[attr-defined]
+    payload = tool_error_payload(err)
+    assert payload["code"] == "VALIDATION"
+    assert payload["candidates"] == [{"id": "lbl1", "title": "Q3 — Papers"}]
+    assert payload["hint"].startswith("Did you mean:")
+
+
 def test_mcp_errors_translates_notebooklm_error() -> None:
     with pytest.raises(ToolError) as caught, mcp_errors():  # noqa: PT012
         raise exc.NotFoundError("missing")

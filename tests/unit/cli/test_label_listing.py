@@ -142,7 +142,12 @@ async def test_resolve_near_miss_attaches_candidates() -> None:
         await resolve_label_id(client, "nb_1", "Q3 - Papers")
     assert exc.value.code == "NOT_FOUND"
     assert exc.value.extra is not None
-    assert exc.value.extra["candidates"] == [{"id": "lblaaa111", "title": "Q3 — Papers"}]
+    expected = [{"id": "lblaaa111", "title": "Q3 — Papers"}]
+    assert exc.value.extra["candidates"] == expected
+    # Also exposed on ``.candidates`` so the MCP / REST surfaces (which read the
+    # attribute, not ``.extra``) enrich a label near-miss reached via
+    # ``source_list(label=…)`` even though the error classifies as VALIDATION.
+    assert list(exc.value.candidates) == expected
 
 
 @pytest.mark.asyncio
