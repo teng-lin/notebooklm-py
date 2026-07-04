@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **MCP research tools now accept the poll id under one name, `poll_task_id`.**
+  `research_status`, `research_import`, and `research_cancel` previously took the
+  value that `research_start` / `research_status` surface as `poll_task_id` under
+  mismatched parameter names (`task_id` on status/import, `run_id` on cancel),
+  forcing docstring warnings about which id goes where and inviting copy-paste
+  mistakes. All three now accept it as `poll_task_id`, so the value pastes
+  verbatim from one tool's output into the next. The old `task_id` / `run_id`
+  names still work as **deprecated aliases** (removed in v0.9.0): passing one
+  emits a `DeprecationWarning` and adds a `deprecation` note to the result;
+  passing both names with different values is a validation error.
+  ([#1789](https://github.com/teng-lin/notebooklm-py/issues/1789))
+
 ### Fixed
 
 - **The `.mcpb` desktop bundle now ships for pre-releases and launches the
