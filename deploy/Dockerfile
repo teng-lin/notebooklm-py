@@ -8,7 +8,7 @@
 #   * DEV / from-source (DEFAULT): installs THIS checkout, so `docker compose up`
 #     deploys exactly the code in this repo. Leave NOTEBOOKLM_SPEC empty.
 #   * PRODUCTION / from PyPI: build with a release spec, e.g.
-#       docker compose build --build-arg NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]==0.8.0"
+#       docker compose build --build-arg NOTEBOOKLM_SPEC="notebooklm-py[mcp,headless]==<version>"
 #     (or set it under build.args in docker-compose.yml).
 FROM python:3.12-slim
 

@@ -1,6 +1,6 @@
 # Remote notebooklm-mcp behind a tunnel. Pick ONE tunnel via a Compose profile:
 #
-#   cp .env.example .env   # set NOTEBOOKLM_MCP_TOKEN and/or the OAuth vars
+#   cp .env.example .env   # set NOTEBOOKLM_MCP_TOKEN, NOTEBOOKLM_MCP_VERSION, and/or OAuth
 #   docker compose --profile cloudflare up -d   # Cloudflare Tunnel (needs a domain)
 #   docker compose --profile tailscale  up -d   # Tailscale Funnel (no domain; *.ts.net)
 #   # (the Makefile wraps this: `make dev` / `make dev TUNNEL=tailscale`)
@@ -10,12 +10,13 @@
 # tunnel, which terminates TLS at its edge (no CA cert for you to manage). See README.md.
 services:
   notebooklm-mcp:
-    # Pull the published image by default — `make up` / `make prod` and a plain
-    # `docker compose up` need NO source checkout. Override the namespace/tag via
-    # NOTEBOOKLM_MCP_IMAGE / NOTEBOOKLM_MCP_VERSION in .env. Contributors building
-    # from THIS checkout run `make dev`, which layers docker-compose.build.yml to
-    # add a `build:` section back (see that file).
-    image: ${NOTEBOOKLM_MCP_IMAGE:-tenglin/notebooklm-mcp}:${NOTEBOOKLM_MCP_VERSION:-0.8.0}
+    # Pull the published image by default. `make up` / `make prod` require or
+    # inject a version; raw docker compose pull must set NOTEBOOKLM_MCP_VERSION.
+    # Override the namespace/tag via
+    # NOTEBOOKLM_MCP_IMAGE / NOTEBOOKLM_MCP_VERSION in .env. Contributors
+    # building from THIS checkout run `make dev`, which layers
+    # docker-compose.build.yml to add a `build:` section back (see that file).
+    image: ${NOTEBOOKLM_MCP_IMAGE:-tenglin/notebooklm-mcp}:${NOTEBOOKLM_MCP_VERSION:-set-version}
     restart: unless-stopped
     # Run as YOUR uid:gid so the mounted profile's files (owned by you on the
     # host) are readable AND writable with NO chown — and your own `notebooklm`

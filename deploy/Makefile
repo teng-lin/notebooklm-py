@@ -15,17 +15,26 @@ COMPOSE ?= docker compose
 _TUNNEL_DOTENV := $(shell [ -f .env ] && sed -n 's/^TUNNEL=//p' .env | tr -d '\r' | head -1)
 TUNNEL ?= $(if $(_TUNNEL_DOTENV),$(_TUNNEL_DOTENV),cloudflare)
 
-# Pin a published image tag with `make prod VERSION=x.y.z`. Export it to compose
-# ONLY when given on the command line; otherwise leave it unset so compose reads
-# NOTEBOOKLM_MCP_VERSION from .env (default 0.8.0). Same reasoning as the
-# NOTEBOOKLM_PROFILE_DIR note below: a make-exported default would OUTRANK the .env
-# value (shell env > .env) and silently ignore a .env pin.
+# Pin a published image tag with `make prod VERSION=x.y.z`. Otherwise, keep the
+# override order: shell/CLI env, deploy/.env, this checkout's pyproject version,
+# then Make's missing-version guard.
+_PROJECT_VERSION := $(shell [ -f ../pyproject.toml ] && \
+	sed -n '/^\[project\]/,/^\[/ s/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' ../pyproject.toml | tr -d '\r' | head -1)
+_VERSION_DOTENV := $(shell [ -f .env ] && sed -n 's/^NOTEBOOKLM_MCP_VERSION=//p' .env | tr -d '\r' | head -1)
 ifeq ($(origin VERSION),command line)
-VERSION_ENV := NOTEBOOKLM_MCP_VERSION=$(VERSION)
+ifneq ($(strip $(VERSION)),)
+COMPOSE_ENV := NOTEBOOKLM_MCP_VERSION=$(VERSION)
+endif
+else ifneq ($(origin NOTEBOOKLM_MCP_VERSION),undefined)
+COMPOSE_ENV :=
+else ifneq ($(_VERSION_DOTENV),)
+COMPOSE_ENV :=
+else ifneq ($(_PROJECT_VERSION),)
+COMPOSE_ENV := NOTEBOOKLM_MCP_VERSION=$(_PROJECT_VERSION)
 endif
 
 # Profile-aware compose invocation — selects exactly one tunnel sidecar.
-DC = $(COMPOSE) --profile $(TUNNEL)
+DC = $(COMPOSE_ENV) $(COMPOSE) --profile $(TUNNEL)
 # Same, but layer the build override so the image is built from THIS checkout.
 DC_BUILD = $(DC) -f docker-compose.yml -f docker-compose.build.yml
 
@@ -39,11 +48,20 @@ export NOTEBOOKLM_GID ?= $(shell id -g)
 # defaults to ~/.notebooklm/profiles/default on its own; a shell/CLI override such as
 # `NOTEBOOKLM_PROFILE_DIR=… make dev` is still auto-exported by make to the recipe.
 
-.PHONY: help setup dev prod up restart logs down config _require-tunnel-token
+.PHONY: help setup dev prod up restart logs down config _require-image-version _require-tunnel-token
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-9s\033[0m %s\n", $$1, $$2}'
+
+# Friendly pre-check for source-less deploys: without pyproject.toml, the user
+# must say which published image tag to pull.
+_require-image-version:
+	@if [ -z "$(COMPOSE_ENV)" ] && [ -z "$$NOTEBOOKLM_MCP_VERSION" ] \
+		&& ! grep -qsE '^NOTEBOOKLM_MCP_VERSION=.+' .env; then \
+		echo "✗ NOTEBOOKLM_MCP_VERSION is unknown — run from a source checkout, pass VERSION=x.y.z, or set it in deploy/.env"; \
+		exit 1; \
+	fi
 
 # Friendly pre-check for the chosen tunnel's token (shell env OR deploy/.env). Compose
 # can't do a profile-scoped required-var (it interpolates the whole file before profile
@@ -62,14 +80,14 @@ setup: ## Interactive first run: pick a tunnel + generate secrets → writes .en
 
 up: prod ## Pull the published image and start (the easy path)
 
-prod: _require-tunnel-token ## Pull a published version and start (VERSION=x.y.z, or pin NOTEBOOKLM_MCP_VERSION in .env)
-	$(VERSION_ENV) $(DC) pull
-	$(VERSION_ENV) $(DC) up -d
+prod: _require-image-version _require-tunnel-token ## Pull a published version and start (VERSION=x.y.z, or pin NOTEBOOKLM_MCP_VERSION in .env)
+	$(DC) pull
+	$(DC) up -d
 
-dev: _require-tunnel-token ## Build THIS checkout and start (contributors; TUNNEL=cloudflare|tailscale)
+dev: _require-image-version _require-tunnel-token ## Build THIS checkout and start (contributors; TUNNEL=cloudflare|tailscale)
 	$(DC_BUILD) up -d --build
 
-restart: ## Rebuild THIS checkout + recreate after a source/config change
+restart: _require-image-version _require-tunnel-token ## Rebuild THIS checkout + recreate after a source/config change
 	$(DC_BUILD) up -d --build
 
 logs: ## Tail the server logs

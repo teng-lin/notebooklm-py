@@ -11,4 +11,4 @@ services:
       dockerfile: deploy/Dockerfile
       # To build from a published PyPI release instead of this checkout:
       # args:
-      #   NOTEBOOKLM_SPEC: "notebooklm-py[mcp,headless]==0.8.0"
+      #   NOTEBOOKLM_SPEC: "notebooklm-py[mcp,headless]==<version>"

@@ -135,7 +135,7 @@ pull-vs-build modes — one command each:
 ```bash
 cd deploy
 make up                        # PULL the published image + start (the easy path)
-make prod VERSION=0.8.0        # ...pin a specific published version
+make prod VERSION=<version>    # ...pin a specific published version
 make dev                       # BUILD this checkout + start (contributors)
 make dev TUNNEL=tailscale      # ...forcing the Tailscale Funnel sidecar for this run
 make logs                      # tail the server log (expect: bound 0.0.0.0:9420)
@@ -143,9 +143,16 @@ make restart                   # rebuild this checkout + recreate after a source
 make down                      # stop and remove
 ```
 
-Equivalent raw compose (`--profile` selects the tunnel):
-- **Pull + run (any tunnel):** `docker compose --profile cloudflare pull && \
-  docker compose --profile cloudflare up -d` (swap `tailscale` for the other tunnel).
+`make up` uses this checkout's `pyproject.toml` version. If you copied only
+`deploy/`, pass `VERSION=<version>` or set `NOTEBOOKLM_MCP_VERSION` in `.env`.
+If that version has not been published to Docker Hub yet, pass a published
+`VERSION=<version>` or use `make dev` to build this checkout.
+
+Equivalent raw compose (`--profile` selects the tunnel; set `NOTEBOOKLM_MCP_VERSION`
+first, or put it in `.env`):
+- **Pull + run (any tunnel):** `export NOTEBOOKLM_MCP_VERSION=<version>` then
+  `docker compose --profile cloudflare pull && docker compose --profile cloudflare up -d`
+  (swap `tailscale` for the other tunnel).
 - **Build from source:** add the build override —
   `docker compose -f docker-compose.yml -f docker-compose.build.yml --profile cloudflare up -d --build`.
 - **A different image / tag:** set `NOTEBOOKLM_MCP_IMAGE` / `NOTEBOOKLM_MCP_VERSION` in `.env`.
