@@ -30,6 +30,9 @@ from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     SourceTimeoutError,
 )
 from notebooklm.mcp._errors import tool_error_payload  # noqa: E402 - after importorskip guard
+from notebooklm.mcp.tools._content_sanity import (  # noqa: E402 - after importorskip guard
+    _THIN_SOURCE_CHAR_THRESHOLD,
+)
 from notebooklm.rpc.types import SourceStatus  # noqa: E402 - after importorskip guard
 from notebooklm.types import Label  # noqa: E402 - after importorskip guard
 
@@ -884,6 +887,40 @@ async def test_source_wait_ample_web_page_no_warning(mcp_call, mock_client) -> N
     result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
     sc = result.structured_content
     assert sc["ready"][0].get("warning") is None
+
+
+@pytest.mark.parametrize(
+    ("char_count", "expect_warning"),
+    [
+        (_THIN_SOURCE_CHAR_THRESHOLD - 1, True),  # just under → char-thin warning
+        (_THIN_SOURCE_CHAR_THRESHOLD, False),  # exactly at → not flagged (gate is ``<``)
+    ],
+)
+async def test_source_wait_thin_threshold_boundary(
+    mcp_call, mock_client, char_count: int, expect_warning: bool
+) -> None:
+    """Pin the char-thin boundary to the documented threshold constant, so the number
+    in ``docs/mcp-guide.md`` (and the copyable trigger downstream users build against)
+    can't silently drift from :data:`_THIN_SOURCE_CHAR_THRESHOLD`. The gate is ``<``:
+    ``threshold - 1`` warns, exactly ``threshold`` does not."""
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="Boundary")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * char_count, char_count=char_count)
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    warning = result.structured_content["ready"][0].get("warning")
+    if expect_warning:
+        assert warning is not None
+        # Pin the char-thin branch specifically (not merely "some warning"): the
+        # message reports the count and points at source_read — the exact shape the
+        # doc tells downstream integrators to assert against.
+        assert f"{char_count} chars" in warning
+        assert "little/no text extracted" in warning
+        assert 'source_read (detail="full")' in warning
+    else:
+        assert warning is None
 
 
 async def test_source_wait_zero_char_web_page_warns(mcp_call, mock_client) -> None:

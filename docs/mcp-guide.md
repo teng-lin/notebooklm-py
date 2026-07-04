@@ -279,6 +279,49 @@ error, never added as text); `source_type`/`url`/`text`/`title`/`path`/
 `document_id`/`mime_type` are not valid with `urls`, but `allow_internal`
 applies to every entry.
 
+### Content-sanity warnings on ready web pages
+
+A dead link, [soft-404](https://en.wikipedia.org/wiki/HTTP_404#Soft_404), or
+paywalled page frequently ingests as a **READY** source with little-to-no
+extractable text — a "ghost source" that add-time status can't catch because a
+soft-404 serves HTTP 200. `source_wait` — and batch `source_add(urls=[...])` for
+an item that is *already* READY the moment it returns (single-mode `source_add`
+adds asynchronously, so it never runs this check) — attaches a non-blocking,
+advisory `warning` to such a source. The check is **best-effort and never
+rejects**: the source stays READY, `ok` stays `true`, and any fetch failure
+(including a >5s slow `source_read`) degrades to no warning rather than breaking
+the wait.
+
+It fires on a **web-page source only** (`kind == "web_page"`) via two body-only
+signals — the title is never scanned:
+
+| Signal | Threshold | Warning contains |
+|--------|-----------|------------------|
+| **char-thin** | indexed text shorter than **100 characters** | `"little/no text extracted (N chars) …"` |
+| **dead-link boilerplate** | a body shorter than **2000 characters** that (casefolded) contains any of the phrases below | `"ingested as ready (N chars) but the body matches a dead-link / error-page pattern …"` |
+
+The full dead-link phrase set (the complete list, so you can build a fixture that
+trips it): `broken link`, `page not found`, `page isn't available`, `page does
+not exist`, `page no longer available`, `no longer available`, `error 404`, `404
+not found`, `whoops!`.
+
+Both signals are deliberately conservative. The 2000-char body gate is what keeps
+the weaker phrases safe: a healthy page at or above 2000 chars is never
+phrase-scanned (so `broken link` in a real article about broken links, or a shop's
+`no longer available`, does not false-positive), and the phrases are all
+multi-word / anchored — no bare `404` or `not found`. The warning always ends with
+`verify with source_read (detail="full")`.
+
+**To exercise the warning branch** (the reason this is documented): note that a
+`text` source — even an empty one — is *never* flagged; only a `web_page` under
+the thresholds above is. So the reliable trigger is a URL that resolves to a
+near-empty or soft-404 page. To unit-test your own handling of the branch
+without a live URL, mock the source's fetched body under the threshold and assert
+the warning shape — copy the pattern from
+[`tests/unit/mcp/test_sources.py`](../tests/unit/mcp/test_sources.py) (see
+`test_source_wait_thin_web_page_warns`, `test_source_wait_soft_404_body_phrase_warns`,
+and the `_THIN_SOURCE_CHAR_THRESHOLD` boundary test).
+
 ### Generate and download a studio artifact
 
 ```text
