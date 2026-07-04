@@ -298,19 +298,21 @@ signals — the title is never scanned:
 | Signal | Threshold | Warning contains |
 |--------|-----------|------------------|
 | **char-thin** | indexed text shorter than **100 characters** | `"little/no text extracted (N chars) …"` |
-| **dead-link boilerplate** | a body shorter than **2000 characters** that (casefolded) contains any of the phrases below | `"ingested as ready (N chars) but the body matches a dead-link / error-page pattern …"` |
+| **dead-link boilerplate** | **indexed text** shorter than **2000 characters** that (casefolded) contains any of the phrases below | `"ingested as ready (N chars) but the body matches a dead-link / error-page pattern …"` |
 
 The full dead-link phrase set (the complete list, so you can build a fixture that
 trips it): `broken link`, `page not found`, `page isn't available`, `page does
 not exist`, `page no longer available`, `no longer available`, `error 404`, `404
 not found`, `whoops!`.
 
-Both signals are deliberately conservative. The 2000-char body gate is what keeps
-the weaker phrases safe: a healthy page at or above 2000 chars is never
-phrase-scanned (so `broken link` in a real article about broken links, or a shop's
-`no longer available`, does not false-positive), and the phrases are all
-multi-word / anchored — no bare `404` or `not found`. The warning always ends with
-`verify with source_read (detail="full")`.
+Both gates measure the source's **indexed text** length (`char_count` from a
+`source_read` with `detail="full"`), not the raw HTTP response — a large HTML
+page that indexes to little text is still caught. The 2000-char gate is what
+keeps the weaker phrases safe: a page whose indexed text is 2000 chars or longer
+is never phrase-scanned (so `broken link` in a real article about broken links,
+or a shop's `no longer available`, does not false-positive), and the phrases are
+all multi-word / anchored — no bare `404` or `not found`. Every warning ends with
+`verify with source_read (detail="full").` (trailing period included).
 
 **To exercise the warning branch** (the reason this is documented): note that a
 `text` source — even an empty one — is *never* flagged; only a `web_page` under
