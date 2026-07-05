@@ -16,8 +16,10 @@ from notebooklm.exceptions import (
     ArtifactPendingTimeoutError,
     ArtifactTimeoutError,
     UnknownRPCMethodError,
+    ValidationError,
 )
 from notebooklm.rpc.decoder import RPCError
+from notebooklm.rpc.types import VideoFormat, VideoStyle
 from notebooklm.types import ArtifactDownloadError, GenerationStatus
 
 
@@ -194,6 +196,36 @@ class TestCallGenerateRateLimit:
         )
         with pytest.raises(RPCError, match="Server error"):
             await api.generate_video("nb_123")
+
+
+class TestShortVideoStyleValidation:
+    """#1805: short video has a fixed style; an explicit style is rejected."""
+
+    @pytest.mark.asyncio
+    async def test_short_rejects_explicit_style(self, mock_artifacts_api):
+        api, mock_core = mock_artifacts_api
+        with pytest.raises(ValidationError, match="not supported for short videos"):
+            await api.generate_video(
+                "nb_123", video_format=VideoFormat.SHORT, video_style=VideoStyle.ANIME
+            )
+        mock_core.rpc_executor.rpc_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_short_rejects_style_prompt(self, mock_artifacts_api):
+        api, mock_core = mock_artifacts_api
+        with pytest.raises(ValidationError, match="not supported for short videos"):
+            await api.generate_video(
+                "nb_123", video_format=VideoFormat.SHORT, style_prompt="painterly"
+            )
+
+    @pytest.mark.asyncio
+    async def test_short_allows_auto_style(self, mock_artifacts_api):
+        # AUTO_SELECT (or unset) is fine — short just uses its fixed style.
+        api, _ = mock_artifacts_api
+        status = await api.generate_video(
+            "nb_123", video_format=VideoFormat.SHORT, video_style=VideoStyle.AUTO_SELECT
+        )
+        assert isinstance(status, GenerationStatus)
 
 
 # =============================================================================

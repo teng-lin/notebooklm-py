@@ -405,7 +405,10 @@ def generate_audio(
         ]
     ),
     default="auto",
-    help="Visual style (default: auto). Use 'custom' with --style-prompt.",
+    help=(
+        "Visual style (default: auto). Use 'custom' with --style-prompt. "
+        "Not supported for --format cinematic or short (fixed style)."
+    ),
 )
 @click.option("--style-prompt", default=None, help="Custom visual style prompt")
 @language_option

@@ -137,18 +137,18 @@ class TestPerKindEnumMapping:
         assert plan.params["style_prompt"] is None
 
     def test_video_short_format_mapping(self):
-        # "short" is a standard (style-capable) video format, not cinematic (#1805).
+        # "short" rides the standard video path (not cinematic), but has a fixed
+        # style, so it is generated without an explicit style (#1805).
         plan = build_generation_plan(
             "video",
             {
                 "notebook_id": "nb_1",
                 "video_format": "short",
-                "style": "classic",
             },
         )
         assert plan.kind == "video"
         assert plan.params["video_format"] == VideoFormat.SHORT
-        assert plan.params["video_style"] == VideoStyle.CLASSIC
+        assert plan.params["video_style"] == VideoStyle.AUTO_SELECT
 
     def test_slide_deck_enum_mapping(self):
         plan = build_generation_plan(
@@ -255,6 +255,48 @@ class TestVideoFlagValidation:
         )
         assert plan.params["video_style"] == VideoStyle.CUSTOM
         assert plan.params["style_prompt"] == "painterly"  # stripped
+
+    def test_short_rejects_explicit_style(self):
+        # #1805: short has a fixed style; an explicit style is rejected, not ignored.
+        with pytest.raises(
+            GenerationPlanValidationError,
+            match="cannot be used with --format short",
+        ):
+            build_generation_plan(
+                "video",
+                {"notebook_id": "nb_1", "video_format": "short", "style": "anime"},
+            )
+
+    def test_short_rejects_style_prompt(self):
+        with pytest.raises(
+            GenerationPlanValidationError,
+            match="cannot be used with --format short",
+        ):
+            build_generation_plan(
+                "video",
+                {"notebook_id": "nb_1", "video_format": "short", "style_prompt": "foo"},
+            )
+
+    def test_short_style_custom_yields_short_message_not_custom_rule(self):
+        # Ordering precedence: the short reject runs before the generic
+        # "custom requires --style-prompt" rule, so short's message wins.
+        with pytest.raises(
+            GenerationPlanValidationError,
+            match="cannot be used with --format short",
+        ):
+            build_generation_plan(
+                "video",
+                {"notebook_id": "nb_1", "video_format": "short", "style": "custom"},
+            )
+
+    def test_short_with_default_auto_style_succeeds(self):
+        # No explicit style (auto default) is fine — short just uses its fixed style.
+        plan = build_generation_plan(
+            "video",
+            {"notebook_id": "nb_1", "video_format": "short"},
+        )
+        assert plan.params["video_format"] == VideoFormat.SHORT
+        assert plan.params["video_style"] == VideoStyle.AUTO_SELECT
 
     def test_cinematic_alias_rejects_non_cinematic_format(self):
         # parameter_explicit reports the format flag was passed on the CLI.

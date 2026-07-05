@@ -336,7 +336,8 @@ studio_generate(notebook="Quantum Computing", artifact_type="video",
 `artifact_type` is one of `audio`, `video`, `cinematic-video`, `slide-deck`, `quiz`, `flashcards`,
 `infographic`, `data-table`, `mind-map`, `report`. Each kind's styling options are agent-settable
 (matching the CLI flags): `audio_format` / `audio_length` (audio); `video_format` / `style` /
-`style_prompt` (video); `deck_format` / `deck_length` (slide-deck); `quantity` / `difficulty`
+`style_prompt` (video — `style` / `style_prompt` are rejected for `video_format` `cinematic` and
+`short`, which use a fixed visual style); `deck_format` / `deck_length` (slide-deck); `quantity` / `difficulty`
 (quiz, flashcards); `orientation` / `detail` / `style` (infographic); `map_kind` (mind-map);
 and `report_format` (report). `cinematic-video` and `data-table` take no per-kind options. An
 option is valid only for its own kind — passing one to a different `artifact_type` is a

@@ -2335,7 +2335,7 @@ class VideoFormat(Enum):
     EXPLAINER = 1
     BRIEF = 2
     CINEMATIC = 3
-    SHORT = 4  # vertical short-form video
+    SHORT = 4  # vertical short-form video (fixed style; video_style rejected)
 
 class VideoStyle(Enum):
     AUTO_SELECT = 1

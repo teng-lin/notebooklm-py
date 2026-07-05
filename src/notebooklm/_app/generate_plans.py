@@ -140,9 +140,11 @@ _VIDEO_FORMAT_MAP: Mapping[str, VideoFormat] = {
     "explainer": VideoFormat.EXPLAINER,
     "brief": VideoFormat.BRIEF,
     "cinematic": VideoFormat.CINEMATIC,
-    # ponytail: "short" rides the standard video path (build_video_artifact_params,
-    # style-capable) — NOT the cinematic special-case builder. Append last: the
-    # MCP/server _KIND_OPTIONS tuples are pinned to this dict's key order.
+    # ponytail: "short" rides the standard build_video_artifact_params (not the
+    # cinematic special-case builder), but has a FIXED visual style — the server
+    # ignores style codes, so _build_video_plan_for_kind rejects an explicit style
+    # for short (#1805). Append last: the MCP/server _KIND_OPTIONS tuples are pinned
+    # to this dict's key order.
     "short": VideoFormat.SHORT,
 }
 
@@ -447,6 +449,14 @@ def _build_video_plan_for_kind(
     )
     if is_cinematic and normalized_style_prompt:
         raise GenerationPlanValidationError("--style-prompt cannot be used with cinematic video")
+    # Short video has a FIXED visual style (server ignores any style code, #1805);
+    # reject an explicit style rather than silently drop it. Checked before the
+    # generic style rules so the short-specific message wins.
+    if video_format == "short" and (style != "auto" or normalized_style_prompt):
+        raise GenerationPlanValidationError(
+            "--style/--style-prompt cannot be used with --format short "
+            "(short video has a fixed visual style)"
+        )
     if not is_cinematic and style == "custom" and not normalized_style_prompt:
         raise GenerationPlanValidationError("--style custom requires --style-prompt")
     if not is_cinematic and normalized_style_prompt and style != "custom":

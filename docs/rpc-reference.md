@@ -1192,8 +1192,8 @@ params = [
 **Source:** `_artifacts.py::generate_video()`
 
 ```python
-# Build the inner video config. Explainer, Brief, and Short expose visual
-# styles; Cinematic hides the visual-style selector.
+# Build the inner video config. Explainer and Brief expose visual styles;
+# Cinematic and Short use a fixed style (Short ignores any style code server-side).
 video_config = [
     source_ids_double,
     language,             # "en"
