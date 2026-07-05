@@ -72,7 +72,8 @@ _active_profile: str | None = None
 def set_active_profile(profile: str | None) -> None:
     """Set the active profile for this process.
 
-    Called once at CLI startup. Library users should pass ``profile``
+    CLI startup and single-tenant server lifespans use this as the
+    process-wide profile binding. Library users should pass ``profile``
     explicitly to path functions instead of relying on this global.
     """
     global _active_profile
