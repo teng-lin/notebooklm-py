@@ -164,11 +164,14 @@ def test_main_json_includes_unmapped_family(
 # ---------------------------------------------------------------------------
 
 # Minimal int-enum fixtures mirroring rpc/types.py's VideoFormat / AudioFormat.
+# SHORT (4) is implemented (#1805); only Whiteboard Animation (5) / Lecture (5)
+# remain as bundle codes we lack.
 _ENUM_TYPES = """
 class VideoFormat(int, Enum):
     EXPLAINER = 1
     BRIEF = 2
     CINEMATIC = 3
+    SHORT = 4
 
 class AudioFormat(int, Enum):
     DEEP_DIVE = 1
@@ -177,9 +180,10 @@ class AudioFormat(int, Enum):
     DEBATE = 4
 """
 
-# A bundle with the two anchored switch blocks (each carries a NEW trailing label
-# our enums lack — Short / Whiteboard Animation / Lecture), the Yp quota map, and
-# a proto required-field assertion. Whitespace/quote style mirrors the live shapes.
+# A bundle with the two anchored switch blocks. Short (code 4) is now implemented
+# (#1805) so it MATCHES our enum; Whiteboard Animation / Lecture (code 5) remain
+# trailing labels our enums lack. Also carries the Yp quota map and a proto
+# required-field assertion. Whitespace/quote style mirrors the live shapes.
 _ENUM_BUNDLE = (
     'f=function(a){switch(a){case 1:return"Explainer";case 2:return"Brief";'
     'case 3:return"Cinematic";case 4:return"Short";case 5:return"Whiteboard Animation"}};'
@@ -227,6 +231,7 @@ def test_parse_enum_members_from_text() -> None:
         "EXPLAINER": 1,
         "BRIEF": 2,
         "CINEMATIC": 3,
+        "SHORT": 4,
     }
     # Unknown class -> empty (scoped to the named class body).
     assert parse_enum_members_from_text(_ENUM_TYPES, "Nonexistent") == {}
@@ -253,10 +258,10 @@ def test_diff_enums_new_is_report_only() -> None:
     assert buckets["changed"] == []
     assert buckets["stale"] == []
     assert buckets["unparsed"] == []
-    # Short (4) / Whiteboard Animation (5) / Lecture (5) are bundle codes we lack.
+    # Whiteboard Animation (5) / Lecture (5) are bundle codes we lack; Short (4) is
+    # now implemented (#1805) so it matches instead of showing as NEW.
     new_pairs = {(r["enum"], r["code"], r["label"]) for r in buckets["new"]}
     assert new_pairs == {
-        ("VideoFormat", 4, "Short"),
         ("VideoFormat", 5, "Whiteboard Animation"),
         ("AudioFormat", 5, "Lecture"),
     }
@@ -338,7 +343,10 @@ class VideoFormat(int, Enum):
 def test_diff_enums_unparsed_when_no_block() -> None:
     """A known enum (we hold an anchor) with no switch block parsed -> UNPARSED."""
     # Only VideoFormat is present; AudioFormat has no block to attribute.
-    bundle = 'switch(a){case 1:return"Explainer";case 2:return"Brief";case 3:return"Cinematic"}'
+    bundle = (
+        'switch(a){case 1:return"Explainer";case 2:return"Brief";'
+        'case 3:return"Cinematic";case 4:return"Short"}'
+    )
     live = extract_switch_enums(bundle)
     buckets = diff_enums(_ENUM_TYPES, live)
 
@@ -359,7 +367,7 @@ def test_check_enums_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[st
     out = capsys.readouterr().out
     assert rc == 0  # NEW labels never fail the enum gate
     assert "STUDIO ENUM DRIFT" in out
-    assert "NEW: 3" in out
+    assert "NEW: 2" in out
 
     # CHANGED -> exit 1.
     types.write_text(

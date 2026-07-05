@@ -1059,7 +1059,7 @@ Live Studio tiles on 2026-06-15:
 |------------|--------------------|--------------|
 | Audio Overview | `.create-artifact-button-container[aria-label='Audio Overview'] .option-icon` | Format: Deep Dive, Brief, Critique, Debate; language; Length: Short, Default, Long; prompt textarea `aria-label='What should the AI hosts focus on in this episode?'` |
 | Slide Deck | `.create-artifact-button-container[aria-label='Slide Deck'] .option-icon` | Format: Detailed Deck, Presenter Slides; language; Length: Short, Default; prompt textarea `aria-label='Describe the slide deck you want to create'` |
-| Video Overview | `.create-artifact-button-container[aria-label='Video Overview'] .option-icon` | Format: Cinematic, Explainer, Brief; prompt textarea `aria-label='How would you like the video to be customized?'` |
+| Video Overview | `.create-artifact-button-container[aria-label='Video Overview'] .option-icon` | Format: Cinematic, Explainer, Brief, Short; prompt textarea `aria-label='How would you like the video to be customized?'` |
 | Mind Map | `.create-artifact-button-container[aria-label='Mind Map'] .option-icon` | Prompt textarea `aria-label='Text area for custom topic'` |
 | Reports | `.create-artifact-button-container[aria-label='Reports'] .option-icon` | Root format picker: Create Your Own, Briefing Doc, Study Guide, Blog Post, plus dynamic suggested formats; each format can open a report prompt form |
 | Flashcards | `.create-artifact-button-container[aria-label='Flashcards'] .option-icon` | Number of Cards: Fewer, Standard (Default), More; Difficulty: Easy, Medium (Default), Hard; prompt textarea `aria-label='Text area for custom topic'` |
@@ -1192,14 +1192,14 @@ params = [
 **Source:** `_artifacts.py::generate_video()`
 
 ```python
-# Build the inner video config. Explainer and Brief expose visual styles;
-# Cinematic hides the visual-style selector.
+# Build the inner video config. Explainer, Brief, and Short expose visual
+# styles; Cinematic hides the visual-style selector.
 video_config = [
     source_ids_double,
     language,             # "en"
     instructions,          # Focus/customization prompt
     None,
-    format_code,          # 1=EXPLAINER, 2=BRIEF, 3=CINEMATIC
+    format_code,          # 1=EXPLAINER, 2=BRIEF, 3=CINEMATIC, 4=SHORT
     style_code,           # None=CUSTOM, 1=AUTO_SELECT, 2=CLASSIC, 3=WHITEBOARD, ...
 ]
 if video_style == VideoStyle.CUSTOM and style_prompt:

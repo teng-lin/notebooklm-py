@@ -370,6 +370,14 @@ _OPTION_CASES = [
         ["--style", "custom", "--style-prompt", "hand-drawn"],
     ),
     (
+        "video-short",
+        "video",
+        "video",
+        "generate_video",
+        {"video_format": "short"},
+        ["--format", "short"],
+    ),
+    (
         "slide-deck",
         "slide-deck",
         "slide-deck",

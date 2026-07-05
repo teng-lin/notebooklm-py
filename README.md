@@ -98,7 +98,7 @@ These combine ordinary library primitives — see the [CLI Reference](docs/cli-r
 | Type | Options | Download Format |
 |------|---------|-----------------|
 | **Audio Overview** | 4 formats (deep-dive, brief, critique, debate), 3 lengths, 50+ languages | MP3 |
-| **Video Overview** | 3 formats (explainer, brief, cinematic), 8 visual styles (+ auto/custom), plus a dedicated `cinematic-video` CLI alias | MP4 |
+| **Video Overview** | 4 formats (explainer, brief, cinematic, short), 8 visual styles (+ auto/custom), plus a dedicated `cinematic-video` CLI alias | MP4 |
 | **Slide Deck** | Detailed or presenter format, adjustable length; individual slide revision | PDF, PPTX |
 | **Infographic** | 3 orientations, 3 detail levels | PNG |
 | **Quiz** | Configurable quantity and difficulty | JSON, Markdown, HTML |

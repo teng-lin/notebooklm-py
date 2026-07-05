@@ -403,6 +403,36 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
             ],
         ),
         (
+            # #1805: SHORT (code 4) rides the STANDARD builder — format_code at
+            # slot [4] == 4 with the style_code (AUTO_SELECT=1) still present,
+            # NOT the cinematic special shape (which drops the style slot).
+            "video_short_format",
+            build_video_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                language="en",
+                instructions=None,
+                video_format=VideoFormat.SHORT,
+                video_style=None,
+                style_prompt=None,
+            ),
+            [
+                _ARTIFACT_CLIENT_OPTIONS,
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    3,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    [None, None, [[["src_alpha"]], "en", None, None, 4, 1]],
+                ],
+            ],
+        ),
+        (
             "video_non_contiguous_preset_style",
             build_video_artifact_params(
                 "nb_payload",

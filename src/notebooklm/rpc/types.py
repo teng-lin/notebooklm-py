@@ -257,6 +257,7 @@ class VideoFormat(int, Enum):
     EXPLAINER = 1
     BRIEF = 2
     CINEMATIC = 3
+    SHORT = 4  # vertical short-form video (Google bundle label "Short")
 
 
 class VideoStyle(int, Enum):

@@ -48,6 +48,8 @@ async def main():
         # video_format:
         #   - EXPLAINER: Full explanatory video (default)
         #   - BRIEF: Shorter summary video
+        #   - CINEMATIC: AI-generated documentary footage (Veo 3)
+        #   - SHORT: Vertical short-form video
         #
         # video_style:
         #   - AUTO_SELECT: Let AI choose the best style (default)

@@ -4230,7 +4230,7 @@
           "default": "explainer",
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Video format; 'cinematic' uses Veo 3 footage (default: explainer)",
+          "help": "Video format; 'cinematic' uses Veo 3 footage, 'short' is a vertical short-form video (default: explainer)",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
@@ -4245,7 +4245,8 @@
             "choices": [
               "explainer",
               "brief",
-              "cinematic"
+              "cinematic",
+              "short"
             ],
             "name": "choice"
           }
@@ -6149,7 +6150,7 @@
           "default": "explainer",
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Video format; 'cinematic' uses Veo 3 footage (default: explainer)",
+          "help": "Video format; 'cinematic' uses Veo 3 footage, 'short' is a vertical short-form video (default: explainer)",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
@@ -6164,7 +6165,8 @@
             "choices": [
               "explainer",
               "brief",
-              "cinematic"
+              "cinematic",
+              "short"
             ],
             "name": "choice"
           }

@@ -1330,7 +1330,7 @@ status = await client.artifacts.generate_video(
     notebook_id,
     source_ids=None,
     instructions="...",
-    video_format=VideoFormat.EXPLAINER,  # EXPLAINER, BRIEF, CINEMATIC
+    video_format=VideoFormat.EXPLAINER,  # EXPLAINER, BRIEF, CINEMATIC, SHORT
     video_style=VideoStyle.AUTO_SELECT,  # AUTO_SELECT, CLASSIC, WHITEBOARD, KAWAII, ANIME, etc.
     language="en"
 )
@@ -2335,6 +2335,7 @@ class VideoFormat(Enum):
     EXPLAINER = 1
     BRIEF = 2
     CINEMATIC = 3
+    SHORT = 4  # vertical short-form video
 
 class VideoStyle(Enum):
     AUTO_SELECT = 1

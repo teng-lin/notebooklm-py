@@ -105,7 +105,7 @@ _KIND_OPTIONS: dict[str, dict[str, tuple[str, ...] | None]] = {
         "audio_length": ("short", "default", "long"),
     },
     "video": {
-        "video_format": ("explainer", "brief", "cinematic"),
+        "video_format": ("explainer", "brief", "cinematic", "short"),
         "style": (
             "auto",
             "custom",
@@ -293,7 +293,7 @@ def register(mcp: Any) -> None:
         audio_length: Literal["short", "default", "long"] | None = None,
         quantity: Literal["fewer", "standard", "more"] | None = None,
         difficulty: Literal["easy", "medium", "hard"] | None = None,
-        video_format: Literal["explainer", "brief", "cinematic"] | None = None,
+        video_format: Literal["explainer", "brief", "cinematic", "short"] | None = None,
         # ``style`` is shared by ``video`` and ``infographic`` with DIFFERENT value
         # sets (overlap only auto/anime/kawaii). One param carries one Literal, so this
         # is the UNION of both kinds' values; the runtime ``_KIND_OPTIONS`` loop narrows
@@ -340,10 +340,10 @@ def register(mcp: Any) -> None:
         * ``audio``        — podcast-style overview (``audio_format``:
           deep-dive|brief|critique|debate, ``audio_length``: short|default|long).
         * ``video``        — video overview (``video_format``:
-          explainer|brief|cinematic, ``style``: auto|custom|classic|whiteboard|
+          explainer|brief|cinematic|short, ``style``: auto|custom|classic|whiteboard|
           kawaii|anime|watercolor|retro-print|heritage|paper-craft, ``style_prompt``:
           free-text custom-style prompt — requires ``style=custom``).
-        * ``cinematic-video`` — AI-generated documentary video (no per-kind options).
+        * ``cinematic-video`` — AI-generated documentary video.
         * ``slide-deck``   — slide deck (``deck_format``: detailed|presenter,
           ``deck_length``: default|short).
         * ``quiz`` / ``flashcards`` — study aids (``quantity``:
@@ -352,7 +352,7 @@ def register(mcp: Any) -> None:
           landscape|portrait|square, ``detail``: concise|standard|detailed,
           ``style``: auto|sketch-note|professional|bento-grid|editorial|
           instructional|bricks|clay|anime|kawaii|scientific).
-        * ``data-table``   — extracted data table (no per-kind options).
+        * ``data-table``   — extracted data table.
         * ``mind-map``     — mind map (``map_kind``: interactive|note-backed).
         * ``report``       — text report (``report_format``:
           briefing-doc|study-guide|blog-post|custom).

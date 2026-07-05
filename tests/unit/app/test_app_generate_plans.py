@@ -136,6 +136,20 @@ class TestPerKindEnumMapping:
         assert plan.params["video_style"] == VideoStyle.WHITEBOARD
         assert plan.params["style_prompt"] is None
 
+    def test_video_short_format_mapping(self):
+        # "short" is a standard (style-capable) video format, not cinematic (#1805).
+        plan = build_generation_plan(
+            "video",
+            {
+                "notebook_id": "nb_1",
+                "video_format": "short",
+                "style": "classic",
+            },
+        )
+        assert plan.kind == "video"
+        assert plan.params["video_format"] == VideoFormat.SHORT
+        assert plan.params["video_style"] == VideoStyle.CLASSIC
+
     def test_slide_deck_enum_mapping(self):
         plan = build_generation_plan(
             "slide-deck",

@@ -230,7 +230,7 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 | Command | Arguments | Type-specific options | Example |
 |---------|-----------|-----------------------|---------|
 | `audio [description]` | Instructions | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | `generate audio "Focus on history"` |
-| `video [description]` | Instructions | `--format [explainer\|brief\|cinematic]`, `--style [auto\|custom\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]`, `--style-prompt TEXT` (required with `--style custom`; rejected with `--format cinematic`) | `generate video "Explainer for kids"` |
+| `video [description]` | Instructions | `--format [explainer\|brief\|cinematic\|short]`, `--style [auto\|custom\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]`, `--style-prompt TEXT` (required with `--style custom`; rejected with `--format cinematic`) | `generate video "Explainer for kids"` |
 | `cinematic-video [description]` | Instructions | Alias for `video --format cinematic` | `generate cinematic-video "Documentary about quantum physics"` |
 | `slide-deck [description]` | Instructions | `--format [detailed\|presenter]`, `--length [default\|short]` | `generate slide-deck` |
 | `revise-slide <description>` | Revision instructions | `-a/--artifact <id>` (required), `--slide N` (required) | `generate revise-slide "Move title up" --artifact <id> --slide 0` |
@@ -1105,7 +1105,7 @@ notebooklm generate video [description] [OPTIONS]
 
 **Options:**
 - `-n, --notebook ID` - Notebook ID (uses current if not set)
-- `--format [explainer|brief|cinematic]` - Video format
+- `--format [explainer|brief|cinematic|short]` - Video format (`short` is a vertical short-form video)
 - `--style [auto|custom|classic|whiteboard|kawaii|anime|watercolor|retro-print|heritage|paper-craft]` - Visual style
 - `--style-prompt TEXT` - Custom visual style prompt (required when `--style custom`; rejected with `--format cinematic`)
 - `--language LANG` - Output language (precedence: `--language` > `NOTEBOOKLM_HL` env > config > `'en'`)

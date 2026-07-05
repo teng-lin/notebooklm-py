@@ -140,7 +140,7 @@ _KIND_OPTIONS: dict[str, dict[str, tuple[str, ...] | None]] = {
         "audio_length": ("short", "default", "long"),
     },
     "video": {
-        "video_format": ("explainer", "brief", "cinematic"),
+        "video_format": ("explainer", "brief", "cinematic", "short"),
         "style": (
             "auto",
             "custom",
