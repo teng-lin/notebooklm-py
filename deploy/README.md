@@ -85,16 +85,19 @@ no host ports are published.
 > needs a public HTTPS URL.
 
 ### 3A. Cloudflare Tunnel (needs a domain in your Cloudflare account)
-In the Cloudflare dashboard → **Networking → Tunnels** (moved there Feb 2026; the classic
-spot is **Zero Trust → Networks → Connectors**):
-1. **Create a tunnel** — a **Cloudflared** tunnel (hostname ingress), not a *WARP Connector*
-   (that's L3 site-to-site). Name it, then copy the **token** it shows into `CF_TUNNEL_TOKEN`
+In the Cloudflare dashboard → **Networking → Tunnels → Create Tunnel** (moved there
+Feb 2026; the old Zero Trust dashboard now redirects here):
+1. **Create Tunnel** → name it. This is a **Cloudflared** tunnel — hostname ingress; the
+   tunnel's **Type** shows `cloudflared`. Copy the **token** it shows into `CF_TUNNEL_TOKEN`
    in `.env`. Ignore the `cloudflared` install/run commands on that page — the compose
    `cloudflared` sidecar runs it for you using the token.
-2. Add a **Public Hostname** (e.g. `notebooklm.yourdomain.com`) → **Service**
-   `http://notebooklm-mcp:9420`. Cloudflare auto-creates the DNS record + serves TLS.
-   Route the **whole host** (path `/`) — not a `/mcp`-scoped ingress — so the root
-   OAuth routes are reachable. (Profile: `cloudflare`, the default.)
+2. On the tunnel's **Routes** tab → **Add route** → **Published application**. Under
+   **Hostname**, set a **Subdomain** (e.g. `notebooklm`) + your **Domain** zone → giving
+   `notebooklm.yourdomain.com`; set **Service URL** to `http://notebooklm-mcp:9420` — plain
+   `http` (the compose service listens on HTTP; Cloudflare's edge terminates TLS), not the
+   `https://` in the field's placeholder. Cloudflare auto-creates the DNS record + serves TLS.
+   Leave **Path** empty so the **whole host** (`/`) is routed — not a `/mcp`-scoped path — so
+   the root OAuth routes are reachable. (Profile: `cloudflare`, the default.)
 > Optional: set `NOTEBOOKLM_MCP_TRUST_PROXY=1` in `.env` to key the per-IP login
 > throttle on the tunnel's `CF-Connecting-IP` header. Default off keys on the socket
 > peer (the tunnel egress) — one global throttle bucket. Only enable it behind a trusted
