@@ -42,7 +42,7 @@ NotebookLM is a **grounded** engine: Gemini does the heavy reading and answers f
 **Spend fewer tokens** — let NotebookLM do the expensive thinking:
 
 - **🪙 Zero-token research offload** — Throw 30 documents into a notebook, let Gemini do the heavy analysis, and have your agent spend tokens only on the final polish. The agent just orchestrates (`create` → `source add` → `ask`); the reasoning happens server-side. *In the wild: [a four-workflow guide to stop Claude Code burning tokens on NotebookLM](https://x.com/hooeem/status/2042293751805329445).*
-- **🧠 Knowledge distillation → a permanent skill** — Run [Deep Research](docs/cli-reference.md#source-add-research) (`source add-research`) or load a doc corpus, let NotebookLM's Gemini condense it, and bake the result into a `SKILL.md` your agent loads at startup — **build once, reuse with zero runtime tokens or network calls**, git-versioned and immune to UI drift. A packaged domain expert without hand-curating sources. (Dumping raw docs into a skill flattens the hierarchy; NotebookLM condensing first is what makes it work.)
+- **🧠 Knowledge distillation → a permanent skill** — Run [Deep Research](docs/cli-reference.md#source-add-research) (`source add-research --mode deep`) or load a doc corpus, let NotebookLM's Gemini condense it, and bake the result into a `SKILL.md` your agent loads at startup — **build once, reuse with zero runtime tokens or network calls**, git-versioned and immune to UI drift. A packaged domain expert without hand-curating sources. (Dumping raw docs into a skill flattens the hierarchy; NotebookLM condensing first is what makes it work.)
 - **✅ Self-validating skills** — Have NotebookLM generate the *eval set* — a quiz straight from your sources — to grade an agent skill against ground truth instead of test questions you'd bias yourself. Build the skill, run it against the NotebookLM-authored evals, iterate to a pass. *In the wild: [a skill that scored 4/10 on the first pass and 10/10 after one iteration, graded by a NotebookLM-generated quiz](https://x.com/nurijanian/status/2037136490157986277).*
 
 **Give your agent memory** — persistent, grounded recall:
@@ -51,16 +51,16 @@ NotebookLM is a **grounded** engine: Gemini does the heavy reading and answers f
 - **🧩 Grounded memory for coding agents** — Expose a notebook of your internal docs/RFCs/architecture over the [MCP server](docs/mcp-guide.md) (or plain `ask`) so an agent answers from *your* code with citations rather than plausible-sounding guesses — a zero-infra alternative to standing up your own vector DB and embedding pipeline. *In the wild: [turning a notebook into the source-grounded "project brain" a coding agent consults before it writes code](https://medium.com/@pradeep00271/every-software-project-needs-a-project-brain-5cbc33917160).*
 - **🪞 Query your own notes / journal** — Load years of daily notes, meeting logs, or a journal and `ask` for **cited** answers *across your own history* — surfacing long-term patterns a keyword search can't (e.g. a weekly summary synthesized from 282 daily notes, every claim linked back to the entry it came from). *In the wild: [chatting with a year of daily notes as a cited knowledge base](https://artemxtech.substack.com/p/notebooklm-has-a-knowledge-graph).*
 
-**Turn your sources into answers & artifacts:**
+**Turn your sources into answers & artifacts** — cited responses, generated media, and exports:
 
 - **📞 Grounded knowledge base / troubleshooting oracle (RAG)** — Load product docs, FAQs, RFCs, and past tickets, then `ask --json` for **source-grounded, cited** answers for support, on-call, or internal Q&A. Or have an agent point it at an entire fast-moving tool's docs — more than the agent can hold in context — as a **troubleshooting oracle** it queries the moment it hits an error. *In the wild: [OpenClaw drove the library to scrape all 524 pages of `docs.openclaw.ai`, dedupe the duplicate translations, and audit it down to 269 clean sources (missing/extra/duplicate = 0)](https://x.com/onenewbite/status/2024819940327379286).*
 - **🔁 Multi-format content repurposing** — One source set, every format: `generate audio` (podcast), `generate video`, `generate slide-deck`, plus a `generate report` blog draft, `generate quiz`, and `generate flashcards` — fan a single notebook out across channels.
-- **📤 Export what the web UI locks in** — NotebookLM's browser app won't let you export a mind map as more than a PNG or flashcards as more than a share link. This library pulls mind maps as JSON, flashcards/quizzes as structured text, and reports with their structure intact (`download` / `artifact`) — straight into Anki, your mind-mapping tool, or a repo. The "get data *out*" half of the library, not just "put sources in."
+- **📤 Bulk, scriptable exports** — Pull mind maps as JSON, flashcards/quizzes as JSON/Markdown/HTML, data tables as CSV, and reports as Markdown — **in bulk, to local files, straight into Anki, your mind-mapping tool, or a repo** (`download` / `artifact`). The programmatic "get data *out*" half of the library, not just "put sources in."
 - **🕸️ Obsidian / knowledge-graph sync** — Run the CLI from your vault root so downloaded artifacts (reports, mind-map JSON, transcripts) land as files in your knowledge graph; community skills built on this library even resolve NotebookLM's citation markers into Obsidian `[[wikilinks]]`. Pair with a podcast overview for an audio digest of your notes. *In the wild: ["Claude Code + NotebookLM + Obsidian = GOD MODE"](https://www.youtube.com/watch?v=kU3qYQ7ACMA).*
 
-**Run it unattended, at scale, or on the go:**
+**Run it unattended, at scale, or on the go** — scheduled, headless, and remote:
 
-- **🚨 Incident runbook generator** — On an alert, spin up a notebook of the relevant docs, ask targeted diagnostic questions, and emit a briefing-doc report (`generate report --format briefing-doc`) as an automated runbook.
+- **🚨 Incident runbook generator** — On an alert, spin up a notebook of the relevant docs, ask targeted diagnostic questions, and generate a briefing-doc report (`generate report --format briefing-doc --wait`, then `download report`) as an automated runbook.
 - **📚 Curriculum / study-set builder** — Scrape a syllabus or developer roadmap, create one notebook per topic (with deliberate pacing to dodge rate limits), and bulk-generate podcasts, quizzes, and flashcards for each.
 - **📰 Scheduled audio briefings** — Pair `auth refresh --quiet` (cron/launchd/systemd) with `generate audio` to publish a fresh personalized briefing to a podcast feed on a schedule.
 - **📱 NotebookLM from your phone, agent-driven** — Self-host the [remote MCP connector](docs/mcp-guide.md#remote-deployment-docker--a-tunnel) behind a Cloudflare/Tailscale tunnel and add it to the **claude.ai or ChatGPT mobile app**. Now you drive the full toolset — deep research, source ingestion, studio generation, cited Q&A — by talking to your agent on the go, chained with your other MCP tools, instead of app-hopping.
@@ -97,8 +97,8 @@ These combine ordinary library primitives — see the [CLI Reference](docs/cli-r
 
 | Type | Options | Download Format |
 |------|---------|-----------------|
-| **Audio Overview** | 4 formats (deep-dive, brief, critique, debate), 3 lengths, 50+ languages | MP3/MP4 |
-| **Video Overview** | 3 formats (explainer, brief, cinematic), 9 visual styles, plus a dedicated `cinematic-video` CLI alias | MP4 |
+| **Audio Overview** | 4 formats (deep-dive, brief, critique, debate), 3 lengths, 50+ languages | MP3 |
+| **Video Overview** | 3 formats (explainer, brief, cinematic), 8 visual styles (+ auto/custom), plus a dedicated `cinematic-video` CLI alias | MP4 |
 | **Slide Deck** | Detailed or presenter format, adjustable length; individual slide revision | PDF, PPTX |
 | **Infographic** | 3 orientations, 3 detail levels | PNG |
 | **Quiz** | Configurable quantity and difficulty | JSON, Markdown, HTML |
@@ -109,13 +109,13 @@ These combine ordinary library primitives — see the [CLI Reference](docs/cli-r
 
 ### Beyond the Web UI
 
-These features are available via API/CLI but not exposed in NotebookLM's web interface:
+Programmatic, batch, and local-file capabilities the API/CLI make easy — several in richer formats, or at a scale, than clicking through the web app:
 
 - **Batch downloads** - Download all artifacts of a type at once
-- **Quiz/Flashcard export** - Get structured JSON, Markdown, or HTML (web UI only shows interactive view)
+- **Quiz/Flashcard export** - Get structured JSON, Markdown, or HTML files
 - **Mind map data extraction** - Export hierarchical JSON for visualization tools
 - **Data table CSV export** - Download structured tables as spreadsheets
-- **Slide deck as PPTX** - Download editable PowerPoint files (web UI only offers PDF)
+- **Slide deck as PPTX or PDF** - Download editable PowerPoint or PDF files
 - **Slide revision** - Modify individual slides with natural-language prompts
 - **Report template customization** - Append extra instructions to built-in format templates
 - **Save chat to notes** - Save Q&A answers or conversation history as notebook notes
@@ -127,7 +127,7 @@ These features are available via API/CLI but not exposed in NotebookLM's web int
 Flexible auth for local dev, headless servers, and multi-tenant setups:
 
 - **Three ways to get cookies** - Interactive Playwright login (default), import from an already-signed-in browser (`login --browser-cookies chrome`, no Playwright), or a durable **master token**.
-- **Master-token auth** - Mints fresh web cookies **on demand** with no per-session browser (`login --master-token`), so it self-heals expired sessions unattended — the auth model for servers, CI, and the remote MCP connector (claude.ai / ChatGPT).
+- **Master-token auth** - Mints fresh web cookies **on demand** with no per-session browser (`login --master-token --account you@example.com`), so it self-heals expired sessions unattended — the auth model for servers, CI, and the remote MCP connector (claude.ai / ChatGPT).
 - **Multi-account profiles** - Switch between Google accounts without re-authenticating.
 
 ## Installation
@@ -263,8 +263,8 @@ async def main():
         # Generate a mind map via the unified client.mind_maps API (issue #1256) —
         # two kinds: the newer MindMapKind.INTERACTIVE studio map (shown; polled to
         # completion by default) or MindMapKind.NOTE_BACKED JSON. Both export via:
-        await client.mind_maps.generate(nb.id, kind=MindMapKind.INTERACTIVE)
-        await client.artifacts.download_mind_map(nb.id, "mindmap.json")
+        mm = await client.mind_maps.generate(nb.id, kind=MindMapKind.INTERACTIVE)
+        await client.artifacts.download_mind_map(nb.id, "mindmap.json", mm.id)
 
 asyncio.run(main())
 ```
