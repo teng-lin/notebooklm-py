@@ -227,18 +227,24 @@ unaffected); when set, the bearer and OAuth work side by side on the same `/mcp`
 ## 7. (Optional) Connect from ChatGPT — same OAuth, Developer Mode required
 ChatGPT's custom MCP connectors speak the **same self-hosted OAuth** as claude.ai — there's
 no bearer/API-key field, so step 6 (`NOTEBOOKLM_MCP_OAUTH_PASSWORD` + `NOTEBOOKLM_MCP_OAUTH_BASE_URL`)
-is a prerequisite. Then, on the **web** (Pro / Plus / Business / Enterprise / Edu):
+is a prerequisite. It's also **web only** — ChatGPT has no MCP-connector UI on mobile. Which
+plans get *full* write-capable Developer Mode vs. read/fetch-only MCP changes over time (it has
+skewed toward Business/Enterprise/Edu for the write tools), so check
+[OpenAI's Developer Mode doc](https://help.openai.com/en/articles/12584461) for current plan
+support before relying on the write tools. Then:
 
 1. **Enable Developer Mode:** ChatGPT → **Settings → Apps & Connectors → Advanced settings →
    Developer mode** (web only). This unlocks *full* MCP connectors with write tools; without it
    the connector UI is deep-research (search/fetch) only.
-2. **Settings → Apps & Connectors → Create** a connector → **MCP Server URL** = the URL **WITH** `/mcp`
+2. **Settings → Apps & Connectors** → click **Create** → **MCP Server URL** = the URL **WITH** `/mcp`
    (`https://notebooklm.example.com/mcp`), **Authentication = OAuth**. ChatGPT registers itself
    via **DCR** — same as claude.ai, so there's no redirect URI to allowlist on your side — then
    opens the server's **password page**; enter the password → connected.
-3. **Write actions ask first.** ChatGPT confirms every write tool by default (it honors each
-   tool's `readOnlyHint`), and our destructive/sharing-widening tools also self-gate on
-   `confirm=true`. Only "always allow" tools on a server you trust — Developer Mode is powerful,
+3. **Don't rely on write prompts.** ChatGPT *may* ask before a write tool runs — it reads each
+   tool's `readOnlyHint`/`destructiveHint` — but whether it prompts depends on the action and your
+   per-connector permission settings, so it isn't a guarantee. The real backstop is server-side:
+   our destructive/sharing-widening tools self-gate on `confirm=true`. Only "always allow" tools on
+   a server you trust — Developer Mode is powerful,
    and a malicious server or prompt injection can destroy data.
 
 > Bearer-only deploys (no OAuth) can't be added to ChatGPT **or** claude.ai — both connector UIs
