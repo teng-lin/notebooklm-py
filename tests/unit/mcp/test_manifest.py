@@ -33,13 +33,14 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "notebook_describe",
         "notebook_rename",
         "notebook_delete",
-        # Sources (6)
+        # Sources (7)
         "source_list",
         "source_read",
         "source_rename",
         "source_delete",
         "source_wait",
         "source_add",
+        "source_upload_bytes",
         # Chat (3)
         "chat_ask",
         "chat_configure",

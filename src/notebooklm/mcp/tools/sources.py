@@ -19,7 +19,11 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import os
+import shutil
+import tempfile
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -66,6 +70,15 @@ _DRIVE_MIME_CHOICES = ("google-doc", "google-slides", "google-sheets", "pdf")
 
 #: The default Drive MIME choice when the caller does not specify one.
 _DEFAULT_DRIVE_MIME = "google-doc"
+
+#: Cap on ``source_upload_bytes``' base64 payload — measured on the base64 STRING
+#: (what rides in the MCP message), NOT the decoded size. 10,000 chars ≈ 7.3 KiB of
+#: real file (base64 inflates ~4/3). Chosen so the whole ``tools/call`` request
+#: (~1.36× the file, envelope included) stays well under the ~13–16 KiB argument
+#: ceiling MCP clients enforce before transit (claude-code#55923); a bigger file
+#: must take the signed-URL flow (``source_add(source_type="file")`` →
+#: ``upload_required``), which caps at 200 MiB.
+_MAX_UPLOAD_B64_CHARS = 10_000
 
 
 # ``_source_view`` (Source → dict with string ``kind`` / ``status_label`` labels)
@@ -543,6 +556,63 @@ def register(mcp: Any) -> None:
             )
             return _add_result_payload(src, to_jsonable(add_core.SourceAddResult(source=src)))
 
+    @mcp.tool
+    async def source_upload_bytes(
+        ctx: Context,
+        notebook: str,
+        bytes_base64: str,
+        filename: str | None = None,
+        mime_type: str | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        """Add a SMALL file to a notebook from raw bytes, in-channel. Accepts a notebook name or ID.
+
+        For when an agent HOLDS the file bytes but cannot complete the signed-URL
+        upload — e.g. over the remote (http) connector with egress blocked, the
+        ``upload_required`` ``agent_upload`` POST fails and no human device has the
+        file. Pass the bytes as base64; the connector decodes and adds them
+        server-side, returning the created source directly — no signed URL, no
+        browser hop. Works on any transport and needs no file-transfer config.
+
+        SMALL FILES ONLY: ``bytes_base64`` must be ≤ 10,000 characters (≈ 7 KB of
+        file; base64 inflates ~33%). A larger payload exceeds the MCP message limit
+        and is rejected — use ``source_add(source_type="file")`` instead, whose
+        ``upload_required`` signed URL carries large files (≤ 200 MiB) via the
+        browser or a raw-body agent POST.
+
+        ``filename`` seeds the default title and extension (sanitized to a basename);
+        ``mime_type`` / ``title`` are optional. The added source is echoed under
+        ``source`` with ``kind`` / ``status_label`` labels, exactly like
+        ``source_add`` (imports are async — confirm with ``source_wait`` /
+        ``source_list(status="error")``).
+        """
+        client = get_client(ctx)
+        with mcp_errors():
+            # Cheapest-first, all BEFORE any notebook I/O: an over-cap or malformed
+            # payload never pays a round-trip. The cap is on the base64 STRING (what
+            # rides in the MCP message), not the decoded byte count — see
+            # _MAX_UPLOAD_B64_CHARS.
+            if len(bytes_base64) > _MAX_UPLOAD_B64_CHARS:
+                raise ValidationError(
+                    f"bytes_base64 is {len(bytes_base64)} chars; the in-channel cap is "
+                    f"{_MAX_UPLOAD_B64_CHARS} (~7 KB of file). For a larger file call "
+                    "source_add(source_type='file') to get an upload_required signed URL."
+                )
+            # Tolerate wrapped/whitespaced base64 (some encoders emit 76-char lines)
+            # but reject genuine garbage: strip ASCII whitespace, then decode strictly.
+            try:
+                raw = base64.b64decode("".join(bytes_base64.split()), validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ValidationError("bytes_base64 is not valid base64") from exc
+            if not raw:
+                raise ValidationError("bytes_base64 decoded to no bytes (empty file)")
+
+            nb_id = await resolve_notebook(client, notebook)
+            src = await _add_bytes(
+                client, nb_id, raw, filename=filename, title=title, mime_type=mime_type
+            )
+            return _add_result_payload(src, to_jsonable(add_core.SourceAddResult(source=src)))
+
 
 def _is_http_transport() -> bool:
     """Whether the current tool call arrived over the http transport.
@@ -654,6 +724,47 @@ def _broker_upload(
             "the user and ask them to open it in a browser and upload the file."
         ),
     }
+
+
+async def _add_bytes(
+    client: NotebookLMClient,
+    notebook_id: str,
+    raw: bytes,
+    *,
+    filename: str | None,
+    title: str | None,
+    mime_type: str | None,
+) -> Source:
+    """Spool decoded in-channel bytes to a private temp file, then add it as a file source.
+
+    The neutral add path (:func:`_add_one` → ``build_source_add_plan`` +
+    ``execute_source_add``) only accepts a filesystem path, so the bytes are written
+    to a ``0600`` file under a ``0700`` ``mkdtemp`` dir — the same spool-then-add
+    shape the ``/files/ul`` upload route uses, minus the signed-token / single-use /
+    concurrency machinery that guards that PUBLIC internet-facing route (this path is
+    already authenticated by the MCP session, so none of it applies). ``filename`` is
+    sanitized to a safe basename (traversal / control-char / empty defenses shared
+    with the upload route via ``safe_upload_name``). The temp tree is always removed —
+    on success, a rejected add, or an error.
+    """
+    safe = add_core.safe_upload_name(filename)
+    temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-ulb-")
+    try:
+        temp_path = os.path.join(temp_dir, safe)
+        fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as out:
+            out.write(raw)
+        return await _add_one(
+            client,
+            notebook_id,
+            os.path.realpath(temp_path),
+            source_type="file",
+            title=title,
+            mime_type=mime_type,
+            allow_internal=False,
+        )
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 async def _add_one(

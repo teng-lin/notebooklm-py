@@ -26,7 +26,12 @@ MCP itself offers no help here:
 
 - **No upload affordance.** claude.ai does not stream a user-selected local file
   into a tool call. Tool arguments are JSON; base64-in-a-string has no client UI,
-  is not wired to chat-attached files, and dies on request-size limits.
+  is not wired to chat-attached files, and dies on request-size limits. (#1803 later
+  added `source_upload_bytes` for the narrow case where an agent already *holds* the
+  bytes and neither the browser nor the `agent_upload` POST can move them: it passes
+  ≤10,000 chars of base64 in-channel — ≈7 KB — and the connector adds it server-side.
+  The request-size limit is exactly why that cap is so small; anything larger still
+  takes the signed-URL flow this ADR defines.)
 - **No usable download affordance.** A tool *result* can carry base64
   image/audio/`EmbeddedResource`, but a podcast/video is tens of MB; base64'd
   through JSON-RPC it blows the channel and claude.ai will not materialize it as a

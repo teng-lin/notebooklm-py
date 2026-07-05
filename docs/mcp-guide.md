@@ -127,12 +127,13 @@ full-account credential. Multi-tenant hosting is out of scope for this single-te
 
 ### File upload & download (remote)
 
-The MCP/JSON-RPC channel can't carry binaries, so over a remote connector
+The MCP/JSON-RPC channel can't carry large binaries, so over a remote connector
 `source_add type=file` and `studio_download` broker a **short-lived signed URL**
 served by the same container; your browser does the byte transfer (see
 [ADR-0024](adr/0024-mcp-remote-file-transfer.md)). This is the standard pattern for
 remote MCP file transfer — MCP has no native file-upload primitive, and its native
-download (binary Resources) is capped far below a podcast/video.
+download (binary Resources) is capped far below a podcast/video. (A **small** file
+can skip the signed URL entirely — see `source_upload_bytes` below.)
 
 **Enable it:** set `NOTEBOOKLM_MCP_PUBLIC_URL` to your bare public origin (the same
 host as the tunnel, no `/mcp`). It falls back to `NOTEBOOKLM_MCP_OAUTH_BASE_URL`, so
@@ -145,6 +146,13 @@ bearer-only deploy → the two file tools return a clear "not configured" error
   also `PUT` a file it already holds to that link from its **code-execution sandbox** —
   but that requires Code Execution enabled **and your server domain whitelisted** in
   claude.ai Settings → Capabilities → additional allowed domains, or the `PUT` fails.)
+- **Hand a small file's bytes in-channel (no signed URL):** when an agent holds the
+  bytes but can complete *neither* upload path — e.g. its egress is blocked, so the
+  `agent_upload` POST fails, and no human device has the file — `source_upload_bytes`
+  takes the file as base64 (≤ 10,000 chars, ≈ 7 KB) and the connector adds it
+  server-side, returning the source directly. It works on any transport and needs no
+  `NOTEBOOKLM_MCP_PUBLIC_URL`; a larger file must use the `source_add type=file`
+  signed-URL flow above.
 - **Download an artifact:** `studio_download` returns a `download_ready` link (a
   clickable `resource_link`); open it to stream the podcast/video/PDF to your device.
 - Links are HMAC-signed and short-lived (upload 15 min, download 30 min) and expire on

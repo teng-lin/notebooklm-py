@@ -9,7 +9,10 @@ the http-without-config branch is exercised by patching it to a fake request.
 
 from __future__ import annotations
 
+import base64
 import contextlib
+import os
+import textwrap
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -31,11 +34,13 @@ from notebooklm._types.artifacts import (  # noqa: E402 - after importorskip gua
     ArtifactStatus,
     ArtifactTypeCode,
 )
+from notebooklm._types.sources import SourceType  # noqa: E402 - after importorskip guard
 from notebooklm.mcp._filelink import (  # noqa: E402 - after importorskip guard
     FileLinkSigner,
     FileTransferConfig,
 )
 from notebooklm.mcp.server import create_server  # noqa: E402 - after importorskip guard
+from notebooklm.rpc.types import SourceStatus  # noqa: E402 - after importorskip guard
 from notebooklm.types import Artifact, ArtifactType  # noqa: E402 - after importorskip guard
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
@@ -61,6 +66,32 @@ def _audio_artifact(art_id: str, title: str = "Podcast", *, completed: bool = Tr
 class FakeSource:
     id: str
     title: str | None = None
+
+
+@dataclass
+class FakeReadyPdf:
+    """A READY pdf ``Source`` for the ``source_upload_bytes`` happy path — carries the
+    ``kind`` / ``status`` / ``is_error`` properties ``_source_view`` reads (the plain
+    ``FakeSource`` above lacks them, so it can't flow through ``_add_result_payload``)."""
+
+    id: str
+    title: str | None = None
+
+    @property
+    def is_ready(self) -> bool:
+        return True
+
+    @property
+    def is_error(self) -> bool:
+        return False
+
+    @property
+    def kind(self) -> SourceType:
+        return SourceType.PDF
+
+    @property
+    def status(self) -> SourceStatus:
+        return SourceStatus.READY
 
 
 @pytest.fixture
@@ -195,6 +226,237 @@ async def test_source_add_file_stdio_keeps_path_behavior(mock_client) -> None:
     with pytest.raises(ToolError) as excinfo:
         await _call(mock_client, None, "source_add", {"notebook": NB_ID, "source_type": "file"})
     assert "requires 'path'" in str(excinfo.value)
+
+
+# --------------------------------------------------------------------------- #
+# source_upload_bytes (in-channel small-file byte upload — #1803)
+# --------------------------------------------------------------------------- #
+async def test_source_upload_bytes_adds_and_echoes_source(mock_client) -> None:
+    # The decoded bytes are spooled to a private 0600 temp file and handed to the
+    # SAME add_file path source_add uses; the added source is echoed with labels.
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        seen["nb"] = nb_id
+        seen["path"] = path
+        seen["mime"] = mime
+        seen["title"] = title
+        with open(path, "rb") as fh:
+            seen["bytes"] = fh.read()
+        seen["mode"] = oct(os.stat(path).st_mode & 0o777)
+        return FakeReadyPdf(id="src-1", title="report.pdf")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    result = await _call(
+        mock_client,
+        None,  # transport-agnostic: needs no file-transfer config
+        "source_upload_bytes",
+        {
+            "notebook": NB_ID,
+            "bytes_base64": base64.b64encode(b"%PDF-1.4 hello").decode(),
+            "filename": "report.pdf",
+            "mime_type": "application/pdf",
+        },
+    )
+    sc = result.structured_content
+    assert sc["status"] == "added"
+    assert sc["source"]["id"] == "src-1"
+    # Same enriched echo as source_add (kind + status_label), not a bare id.
+    assert sc["source"]["kind"] == "pdf"
+    assert sc["source"]["status_label"] == "ready"
+    # The exact decoded bytes reached disk, 0600, under the spooled basename.
+    assert seen["bytes"] == b"%PDF-1.4 hello"
+    assert seen["mode"] == "0o600"
+    assert seen["nb"] == NB_ID
+    assert os.path.isabs(seen["path"])
+    assert os.path.basename(seen["path"]) == "report.pdf"
+    assert seen["mime"] == "application/pdf"
+    assert seen["title"] is None
+    # The temp tree is cleaned up after the add returns (nothing left on disk).
+    assert not os.path.exists(seen["path"])
+
+
+async def test_source_upload_bytes_default_filename_and_no_mime(mock_client) -> None:
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        seen["path"] = path
+        seen["mime"] = mime
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    await _call(
+        mock_client,
+        None,
+        "source_upload_bytes",
+        {"notebook": NB_ID, "bytes_base64": base64.b64encode(b"data").decode()},
+    )
+    # No filename → the shared safe-name default; no mime → None passed through.
+    assert os.path.basename(seen["path"]) == "upload.bin"
+    assert seen["mime"] is None
+
+
+async def test_source_upload_bytes_sanitizes_traversal_filename(mock_client) -> None:
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        seen["path"] = path
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    await _call(
+        mock_client,
+        None,
+        "source_upload_bytes",
+        {
+            "notebook": NB_ID,
+            "bytes_base64": base64.b64encode(b"x").decode(),
+            "filename": "../../etc/passwd",
+        },
+    )
+    # safe_upload_name basenames the path — no escape from the temp dir.
+    assert os.path.basename(seen["path"]) == "passwd"
+    assert "/etc/passwd" not in seen["path"]
+
+
+async def test_source_upload_bytes_tolerates_wrapped_base64(mock_client) -> None:
+    # 76-col-wrapped (MIME-style) base64 with newlines still decodes to the exact bytes.
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        with open(path, "rb") as fh:
+            seen["bytes"] = fh.read()
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    raw = bytes(range(120)) * 3
+    wrapped = "\n".join(textwrap.wrap(base64.b64encode(raw).decode(), 76))
+    await _call(
+        mock_client,
+        None,
+        "source_upload_bytes",
+        {"notebook": NB_ID, "bytes_base64": wrapped, "filename": "blob.bin"},
+    )
+    assert seen["bytes"] == raw
+
+
+async def test_source_upload_bytes_rejects_oversized_before_add(mock_client) -> None:
+    # A payload over the base64-char cap is rejected up front — no add_file call.
+    mock_client.sources.add_file = AsyncMock()
+    big = base64.b64encode(os.urandom(9000)).decode()  # ~12000 chars > 10000 cap
+    assert len(big) > src_mod._MAX_UPLOAD_B64_CHARS
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client, None, "source_upload_bytes", {"notebook": NB_ID, "bytes_base64": big}
+        )
+    msg = str(excinfo.value)
+    assert "cap" in msg
+    # The error names the signed-URL fallback the agent should take instead.
+    assert "source_add" in msg
+    mock_client.sources.add_file.assert_not_awaited()
+
+
+async def test_source_upload_bytes_rejects_malformed_base64(mock_client) -> None:
+    mock_client.sources.add_file = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            None,
+            "source_upload_bytes",
+            {"notebook": NB_ID, "bytes_base64": "!!! not base64 !!!"},
+        )
+    assert "not valid base64" in str(excinfo.value)
+    mock_client.sources.add_file.assert_not_awaited()
+
+
+@pytest.mark.parametrize("payload", ["", "   \n\t  "])
+async def test_source_upload_bytes_rejects_empty_or_whitespace_payload(
+    mock_client, payload
+) -> None:
+    # Both an empty AND an all-whitespace payload decode to zero bytes (whitespace is
+    # stripped before decode) — rejected before any add.
+    mock_client.sources.add_file = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            None,
+            "source_upload_bytes",
+            {"notebook": NB_ID, "bytes_base64": payload},
+        )
+    assert "no bytes" in str(excinfo.value)
+    mock_client.sources.add_file.assert_not_awaited()
+
+
+async def test_source_upload_bytes_accepts_exact_cap_boundary(mock_client) -> None:
+    # The cap is `> _MAX_UPLOAD_B64_CHARS` — a payload of EXACTLY that length is
+    # accepted (7500 bytes → 10000 base64 chars, no padding). Guards the >/>= boundary.
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        seen["ok"] = True
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    payload = base64.b64encode(os.urandom(7500)).decode()
+    assert len(payload) == src_mod._MAX_UPLOAD_B64_CHARS
+    await _call(
+        mock_client,
+        None,
+        "source_upload_bytes",
+        {"notebook": NB_ID, "bytes_base64": payload, "filename": "b.bin"},
+    )
+    assert seen.get("ok")
+
+
+async def test_source_upload_bytes_passes_title_through(mock_client) -> None:
+    # An explicit title reaches the add path (vs the filename-derived default).
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        seen["title"] = title
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    await _call(
+        mock_client,
+        None,
+        "source_upload_bytes",
+        {
+            "notebook": NB_ID,
+            "bytes_base64": base64.b64encode(b"x").decode(),
+            "filename": "x.bin",
+            "title": "My Title",
+        },
+    )
+    assert seen["title"] == "My Title"
+
+
+async def test_source_upload_bytes_cleans_up_temp_on_add_error(mock_client) -> None:
+    # The finally rmtree is this tool's core safety guarantee — the docstring promises
+    # removal "on success, a rejected add, or an error". Capture the spool path, then
+    # make the add itself raise, and assert both the file and its mkdtemp parent are gone.
+    captured: dict[str, Any] = {}
+
+    async def _boom(nb_id, path, mime, *, title=None):
+        captured["path"] = path
+        assert os.path.exists(path)  # the spooled file is present DURING the add
+        raise RuntimeError("upstream add blew up")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_boom)
+    with pytest.raises(ToolError):
+        await _call(
+            mock_client,
+            None,
+            "source_upload_bytes",
+            {
+                "notebook": NB_ID,
+                "bytes_base64": base64.b64encode(b"data").decode(),
+                "filename": "x.bin",
+            },
+        )
+    assert "path" in captured  # the add was actually reached
+    assert not os.path.exists(captured["path"])
+    assert not os.path.exists(os.path.dirname(captured["path"]))
 
 
 # --------------------------------------------------------------------------- #
