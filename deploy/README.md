@@ -86,11 +86,18 @@ no host ports are published.
 
 ### 3A. Cloudflare Tunnel (needs a domain in your Cloudflare account)
 In the Cloudflare **Zero Trust** dashboard → **Networks → Tunnels**:
-1. Create a tunnel; copy its **token** into `CF_TUNNEL_TOKEN` in `.env`.
+1. **Create a tunnel** → choose **Cloudflared** (not *WARP Connector*); name it, then copy
+   the **token** it shows into `CF_TUNNEL_TOKEN` in `.env`. Ignore the `cloudflared`
+   install/run commands on that page — the compose `cloudflared` sidecar runs it for you
+   using the token.
 2. Add a **Public Hostname** (e.g. `notebooklm.yourdomain.com`) → **Service**
    `http://notebooklm-mcp:9420`. Cloudflare auto-creates the DNS record + serves TLS.
    Route the **whole host** (path `/`) — not a `/mcp`-scoped ingress — so the root
    OAuth routes are reachable. (Profile: `cloudflare`, the default.)
+> Optional: set `NOTEBOOKLM_MCP_TRUST_PROXY=1` in `.env` to key the per-IP login
+> throttle on the tunnel's `CF-Connecting-IP` header. Default off keys on the socket
+> peer (the tunnel egress) — one global throttle bucket. Only enable it behind a trusted
+> proxy that sets the header; an exposed-directly origin could forge it to dodge the throttle.
 
 ### 3B. Tailscale Funnel (NO domain — free, stable `*.ts.net` HTTPS)
 Best when you don't own a domain: Tailscale Funnel gives a stable public HTTPS
@@ -163,8 +170,8 @@ claude mcp add --transport http notebooklm \
   https://notebooklm-mcp.yourdomain.com/mcp \
   --header "Authorization: Bearer $NOTEBOOKLM_MCP_TOKEN"
 ```
-Claude **Desktop** also accepts the bearer. Claude **.ai** (web/mobile) does not —
-its connector UI is OAuth-only — so use step 6 for it.
+Claude **Desktop** also accepts the bearer. Claude **.ai** (web/mobile) and **ChatGPT**
+do not — their connector UIs are OAuth-only — so use step 6 (+ step 7 for ChatGPT).
 
 ## 6. (Optional) Connect from claude.ai — self-hosted OAuth (one password)
 claude.ai's connector UI has no bearer field; it speaks OAuth. Instead of an external
@@ -193,10 +200,13 @@ unaffected); when set, the bearer and OAuth work side by side on the same `/mcp`
    `issuer` should be your bare origin and `authorization_endpoint` should be
    `…/authorize` (at the root). If they show `…/mcp/authorize`, your BASE_URL has the
    `/mcp` path — drop it.
-4. **claude.ai → Settings → Connectors → Add custom connector** → the URL **WITH** `/mcp`:
-   `https://notebooklm.example.com/mcp`. claude.ai registers itself (DCR), then opens the
-   server's **password page** in your browser; enter the password → you're connected.
-   Claude Code keeps using the bearer.
+4. **claude.ai → Customize → Connectors** (individual Pro/Max) or **Organization settings →
+   Connectors** (Team/Enterprise owners) → **`+` → Add custom connector** → enter the URL
+   **WITH** `/mcp`: `https://notebooklm.example.com/mcp`. Leave **Advanced settings** (OAuth
+   Client ID/Secret) **blank** — the server supports DCR, so claude.ai registers itself, then
+   opens the server's **password page** in your browser; enter the password → you're connected.
+   Claude Code keeps using the bearer. (Custom connectors work on Free/Pro/Max/Team/Enterprise;
+   Free is capped at one.)
 
    > **base URL vs connector URL:** `NOTEBOOKLM_MCP_OAUTH_BASE_URL` is the bare origin
    > (`https://host`); the claude.ai connector URL is that **+ `/mcp`**.
@@ -211,6 +221,26 @@ unaffected); when set, the bearer and OAuth work side by side on the same `/mcp`
 > account. Note: rotating the password does **not** revoke already-issued OAuth tokens
 > (they're long-lived + persisted); **real revocation = delete `oauth_state.json` and
 > restart**. (To remove Cloudflare from the path, self-host TLS instead.)
+
+## 7. (Optional) Connect from ChatGPT — same OAuth, Developer Mode required
+ChatGPT's custom MCP connectors speak the **same self-hosted OAuth** as claude.ai — there's
+no bearer/API-key field, so step 6 (`NOTEBOOKLM_MCP_OAUTH_PASSWORD` + `NOTEBOOKLM_MCP_OAUTH_BASE_URL`)
+is a prerequisite. Then, on the **web** (Pro / Plus / Business / Enterprise / Edu):
+
+1. **Enable Developer Mode:** ChatGPT → **Settings → Apps → Advanced settings → Developer mode**
+   (web only). This unlocks *full* MCP connectors with write tools; without it the connector UI
+   is deep-research (search/fetch) only.
+2. **Settings → Apps → Create** a connector → **MCP Server URL** = the URL **WITH** `/mcp`
+   (`https://notebooklm.example.com/mcp`), **Authentication = OAuth**. ChatGPT registers itself
+   via **DCR** — same as claude.ai, so there's no redirect URI to allowlist on your side — then
+   opens the server's **password page**; enter the password → connected.
+3. **Write actions ask first.** ChatGPT confirms every write tool by default (it honors each
+   tool's `readOnlyHint`), and our destructive/sharing-widening tools also self-gate on
+   `confirm=true`. Only "always allow" tools on a server you trust — Developer Mode is powerful,
+   and a malicious server or prompt injection can destroy data.
+
+> Bearer-only deploys (no OAuth) can't be added to ChatGPT **or** claude.ai — both connector UIs
+> are OAuth-only. Enable step 6 for either.
 
 ## Notes & security
 - **Two auth layers.** The `NOTEBOOKLM_MCP_TOKEN` bearer gates *who can use the

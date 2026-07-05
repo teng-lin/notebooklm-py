@@ -118,7 +118,7 @@ Programmatic, batch, and local-file capabilities the API/CLI make easy — sever
 - **Slide deck as PPTX or PDF** - Download editable PowerPoint or PDF files
 - **Slide revision** - Modify individual slides with natural-language prompts
 - **Report template customization** - Append extra instructions to built-in format templates
-- **Save chat to notes** - Save Q&A answers or conversation history as notebook notes
+- **Save chat history to notes** - Persist a whole Q&A conversation (not just a single answer) as a notebook note
 - **Source fulltext access** - Retrieve the indexed text content of any source
 - **Programmatic sharing** - Manage permissions without the UI
 

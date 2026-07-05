@@ -103,78 +103,27 @@ token, since it fronts a full Google account.
 ## Remote deployment (Docker + a tunnel)
 
 Because master-token auth keeps the session alive unattended (no browser), the HTTP transport can
-run as a **remote connector** reachable from Claude Code, Claude Desktop, claude.ai, and mobile.
+run as a **remote connector** reachable from Claude Code, Claude Desktop, claude.ai, mobile, and ChatGPT.
 The [`deploy/`](../deploy/) directory ships a turn-key Docker + Compose stack with a **tunnel
 sidecar** — pick one via a Compose profile — so you get HTTPS with **no public IP, no open ports,
 and no TLS certificate to manage** (the tunnel terminates TLS at its edge).
 
-**Common setup (both tunnels):**
-```bash
-# 1. bootstrap the master token once (a machine with a browser):
-notebooklm login --master-token --account you@example.com      # writes ~/.notebooklm/profiles/default
-# 2. secrets + tunnel choice — the wizard generates strong secrets and writes deploy/.env:
-cd deploy && make setup                                         # pick a tunnel; generates the bearer (+ OAuth password)
-#    (or copy deploy/.env.example → deploy/.env and edit by hand)
-#    NOTEBOOKLM_PROFILE_DIR defaults to ~/.notebooklm/profiles/default (override for a throwaway profile)
-```
-
-`make up` **pulls a prebuilt image** — no source checkout, no build. (Contributors who
-want to run their own checkout use `make dev` instead, which builds from source.)
+**→ The full step-by-step lives in [`deploy/README.md`](../deploy/README.md)** — run it from
+inside `deploy/` (`make setup` → finish the one manual tunnel step → `make up`), where the Compose
+stack, `Makefile`, and `.env.example` it references sit. It walks both tunnels end to end:
+**Cloudflare** (needs a domain in your Cloudflare account) and **Tailscale Funnel** (no domain — a
+free, stable `*.ts.net` HTTPS hostname). The rest of this section is the two things worth knowing
+before you start: the auth model and remote file transfer.
 
 **Two auth methods coexist on one `/mcp`** (FastMCP `MultiAuth`):
 - **Claude Code / Desktop** → the static `NOTEBOOKLM_MCP_TOKEN` bearer (an `Authorization` header).
-- **claude.ai (web/mobile)** → optional **self-hosted OAuth** (one password, no external IdP):
-  set `NOTEBOOKLM_MCP_OAUTH_PASSWORD` (≥16 random chars) + `NOTEBOOKLM_MCP_OAUTH_BASE_URL`
-  (the **bare public origin**, no `/mcp`). Unset → bearer-only.
+- **claude.ai (web/mobile) and ChatGPT** (Developer Mode) → optional **self-hosted OAuth** (one
+  password, no external IdP): set `NOTEBOOKLM_MCP_OAUTH_PASSWORD` (≥16 random chars) +
+  `NOTEBOOKLM_MCP_OAUTH_BASE_URL` (the **bare public origin**, no `/mcp`). Both connector UIs are
+  OAuth-only (no bearer field). Unset → bearer-only (Claude Code/Desktop still work).
 
-### Tunnel A — Cloudflare (needs a domain in your Cloudflare account)
-1. Cloudflare **Zero Trust → Networks → Tunnels**: create a tunnel; copy its token to
-   `CF_TUNNEL_TOKEN` in `.env`.
-2. Add a **Public Hostname** (e.g. `notebooklm.yourdomain.com`) → **Service**
-   `http://notebooklm-mcp:9420` — the **docker service name**, not `localhost`; route the **whole
-   host** (`/`), not a `/mcp`-scoped ingress (the OAuth routes live at the root). Cloudflare
-   auto-creates the proxied DNS record and serves a valid cert.
-3. `.env`: `NOTEBOOKLM_MCP_OAUTH_BASE_URL=https://notebooklm.yourdomain.com` (bare origin).
-4. Run: `cd deploy && make up` (`make setup` already saved the Cloudflare choice; else `make up TUNNEL=cloudflare`).
-
-> Optional: set `NOTEBOOKLM_MCP_TRUST_PROXY=1` to key the per-IP login throttle on the
-> tunnel's `CF-Connecting-IP` header. Default off keys on the socket peer (the tunnel
-> egress) — one global throttle bucket. Only enable it behind a trusted proxy that sets the
-> header; an exposed-directly origin could forge it to dodge the throttle.
-
-### Tunnel B — Tailscale Funnel (no domain — free, stable `*.ts.net` HTTPS)
-Best when you don't own a domain: Tailscale Funnel gives a stable public HTTPS hostname on
-Tailscale's domain, free on the personal plan, no DNS to manage. **One-time tailnet setup in
-the admin console** (these are policy/feature prerequisites, not per-machine toggles):
-1. Enable **MagicDNS** and **HTTPS certificates** (admin console → DNS; → HTTPS Certificates).
-2. Grant the **`funnel` node attribute**: admin console → **Settings → General → Funnel →
-   Manage → Node attributes → Add node attribute** → `funnel` (JSON preview:
-   `{"target": ["*"], "attr": ["funnel"]}`).
-3. Create a **normal auth key** (Settings → Keys) → `.env` `TS_AUTHKEY` (there's no
-   "Funnel-capable" key type; Funnel comes from the policy in step 2).
-
-Then:
-4. `.env`: `NOTEBOOKLM_MCP_OAUTH_BASE_URL=https://notebooklm-mcp.<your-tailnet>.ts.net` (bare origin).
-   Find `<your-tailnet>` on the admin console **DNS** page (the **"Tailnet name"**, e.g.
-   `tailXXXXXX.ts.net`).
-5. Run: `cd deploy && make up` (`make setup` saved the Tailscale choice; else `make up TUNNEL=tailscale`). The sidecar (`deploy/tailscale/funnel.json` via
-   `TS_SERVE_CONFIG`, mounted as a directory) funnels public `:443 /` → `notebooklm-mcp:9420`;
-   the node is `TS_HOSTNAME=notebooklm-mcp`, so the origin is `https://notebooklm-mcp.<tailnet>.ts.net`.
-   Confirm the served URL with `docker compose --profile tailscale exec tailscale tailscale serve status`.
-
-**Verify** either tunnel (the OAuth metadata must serve at the root over a valid cert):
-```bash
-curl https://<host>/.well-known/oauth-authorization-server     # 200 JSON; issuer == your base URL
-```
-
-**Connect:**
-- **Claude Code:** `claude mcp add --transport http notebooklm https://<host>/mcp --header "Authorization: Bearer $NOTEBOOKLM_MCP_TOKEN"`
-- **claude.ai:** Settings → Connectors → **Add custom connector** → `https://<host>/mcp` (the URL
-  **with** `/mcp`) → it registers (DCR) and opens the server's password page.
-
-Full step-by-step + security model: [`deploy/README.md`](../deploy/README.md). Use a
-**dedicated/throwaway Google account** — the mounted `master_token.json` is a durable full-account
-credential. Multi-tenant hosting is out of scope for this single-tenant setup.
+Use a **dedicated/throwaway Google account** — the mounted `master_token.json` is a durable
+full-account credential. Multi-tenant hosting is out of scope for this single-tenant setup.
 
 ### File upload & download (remote)
 
