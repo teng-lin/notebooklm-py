@@ -96,6 +96,7 @@ RPC Layer (rpc/)
 | `_runtime/config.py` | `DEFAULT_*` knobs and module-level constants. `CORE_LOGGER_NAME = "notebooklm._core"` is intentionally preserved as a compatibility logging contract even though the `_core` module was deleted; renaming it silently breaks downstream `caplog`/logger filters. |
 | `_env.py`, `config.py` | Runtime environment defaults and the public config re-export surface |
 | `_logging.py`, `log.py` | Redaction/correlation logging internals and the public logging helper surface |
+| `_secrets.py` | Canonical runtime secret-redaction registry shared by logging and exception scrubbing |
 | `_callbacks.py` | Sync-or-async callback invocation helper used by telemetry/retry hooks |
 | `_lookup.py` | `unwrap_or_raise(obj, exc)` — the shared single-row-lookup helper backing the public `get`/`get_or_none` pair across all five namespaces (ADR-0019 Enforcement tier-2; the `get()`-raises wiring lands with the v0.8.0 flip, issue #1247). |
 | `_loop_bound.py` | `LoopBoundPrimitive` — template-method base for the loop-affinity `set_bound_loop` protocol. Owns the `_bound_loop` field + a `set_bound_loop` that always stores the binding and fires the `_on_loop_rebind(old, new)` hook only on a real loop change (hook before store). Trivial owners (`TransportDrainTracker`/`ReqidCounter`/`AuthRefreshCoordinator`) use the default no-op hook; clear-on-rebind owners (`ClientComposed`/`SourceUploadPipeline`/`ChatAPI`) override it to discard their cached loop-bound primitive/locks. Owns only the binding + rebind hook — the cross-loop *assert* stays in `_loop_affinity`, and each owner keeps its own `reset_after_open`. |
@@ -144,6 +145,7 @@ RPC Layer (rpc/)
 | `_mind_map.py` | Specific adapter service representing mind-maps, backed by standard notes |
 | `_mind_maps_api.py` | `client.mind_maps` API — unified surface over both mind-map backends (note-backed JSON + interactive studio-artifact), dispatching each op to the correct RPC family (#1256) |
 | `_artifact/downloads.py` | Asynchronous download coordinator for finished artifacts |
+| `_artifact/_redirect_guard.py` | Per-redirect-hop host/scheme revalidation for artifact media downloads |
 | `_artifact/formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
 | `_artifact/payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
 | `_artifact/listing.py` | Listing and filtering operations for notebook artifacts |
@@ -202,6 +204,7 @@ src/notebooklm/
 ├── _idempotency.py              # Mutating-RPC idempotency registry + wrappers
 ├── _kernel.py                   # Concrete Kernel transport core
 ├── _logging.py                  # Redaction + correlation logging internals
+├── _secrets.py                  # Canonical runtime secret-redaction registry
 ├── _lookup.py                   # unwrap_or_raise — shared single-row-lookup helper for get/get_or_none
 ├── _loop_affinity.py            # Event-loop affinity guard helper (assert_bound_loop free function)
 ├── _loop_bound.py               # LoopBoundPrimitive mixin — template-method set_bound_loop + _on_loop_rebind hook for the loop-bound collaborators
@@ -256,6 +259,7 @@ src/notebooklm/
 │   └── upload_payloads.py       # Source upload request payload builders
 ├── _artifact/                   # Artifact-feature subpackage (promoted from flat _artifact_*.py, #1328)
 │   ├── __init__.py              # Re-exports the cluster's public service classes/builders
+│   ├── _redirect_guard.py       # Per-redirect-hop host/scheme revalidation for downloads
 │   ├── downloads.py             # Artifact download coordinator
 │   ├── formatters.py            # Artifact formatting helpers
 │   ├── payloads.py              # Stable artifact request payload builders

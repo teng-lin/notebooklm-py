@@ -37,20 +37,23 @@ motivated issue #1517 and the three findings from its codex security review:
 from __future__ import annotations
 
 import re
-
-from tests.cassette_patterns import (
-    _AUTH_TOKEN_PATTERNS,
-    _GOOGLE_API_KEY_PATTERN,
-    HOST_COOKIES,
-    SECURE_COOKIES,
-    SESSION_COOKIES,
-)
+import runpy
+from pathlib import Path
 
 from notebooklm._secrets import (
     AUTH_TOKEN_SHAPE_PATTERNS,
     RUNTIME_SESSION_COOKIES,
     SECURE_HOST_UMBRELLA_PATTERNS,
 )
+
+_CASSETTE_PATTERNS = runpy.run_path(
+    str(Path(__file__).resolve().parents[1] / "cassette_patterns.py")
+)
+_AUTH_TOKEN_PATTERNS = _CASSETTE_PATTERNS["_AUTH_TOKEN_PATTERNS"]
+_GOOGLE_API_KEY_PATTERN = _CASSETTE_PATTERNS["_GOOGLE_API_KEY_PATTERN"]
+HOST_COOKIES = _CASSETTE_PATTERNS["HOST_COOKIES"]
+SECURE_COOKIES = _CASSETTE_PATTERNS["SECURE_COOKIES"]
+SESSION_COOKIES = _CASSETTE_PATTERNS["SESSION_COOKIES"]
 
 
 def test_runtime_redaction_superset_of_cassette_bare_session_cookies() -> None:
