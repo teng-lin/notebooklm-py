@@ -265,9 +265,12 @@ async def test_source_upload_bytes_adds_and_echoes_source(mock_client) -> None:
     # Same enriched echo as source_add (kind + status_label), not a bare id.
     assert sc["source"]["kind"] == "pdf"
     assert sc["source"]["status_label"] == "ready"
-    # The exact decoded bytes reached disk, 0600, under the spooled basename.
+    # The exact decoded bytes reached disk, under the spooled basename.
     assert seen["bytes"] == b"%PDF-1.4 hello"
-    assert seen["mode"] == "0o600"
+    # 0600 is a POSIX guarantee; Windows doesn't honor Unix mode bits (os.open there
+    # yields 0o666), so only assert the spool file's perms off-Windows.
+    if os.name != "nt":
+        assert seen["mode"] == "0o600"
     assert seen["nb"] == NB_ID
     assert os.path.isabs(seen["path"])
     assert os.path.basename(seen["path"]) == "report.pdf"
