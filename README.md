@@ -37,7 +37,7 @@
 
 ## Use Cases & Recipes
 
-NotebookLM is a **grounded** engine: Gemini does the heavy reading and answers from *your* sources with citations. The winning pattern is to let it do the expensive analysis while your agent (Claude Code, Codex, …) orchestrates and handles the final mile — using NotebookLM as a **zero-token synthesis + memory layer an agent drives in a loop**, and pulling structured artifacts **out** that the web UI keeps locked in. Recipes people build on top of this library, grouped by what they use NotebookLM *as*:
+NotebookLM is a **grounded** engine: Gemini does the heavy reading and answers from *your* sources with citations. The winning pattern is to let it do the expensive analysis while your agent (Claude Code, Codex, …) orchestrates and handles the final mile — using NotebookLM as a **zero-token synthesis + memory layer an agent drives in a loop**, and pulling structured artifacts **out** in bulk and in richer, scriptable formats. Recipes people build on top of this library, grouped by what they use NotebookLM *as*:
 
 **Spend fewer tokens** — let NotebookLM do the expensive thinking:
 
@@ -55,7 +55,7 @@ NotebookLM is a **grounded** engine: Gemini does the heavy reading and answers f
 
 - **📞 Grounded knowledge base / troubleshooting oracle (RAG)** — Load product docs, FAQs, RFCs, and past tickets, then `ask --json` for **source-grounded, cited** answers for support, on-call, or internal Q&A. Or have an agent point it at an entire fast-moving tool's docs — more than the agent can hold in context — as a **troubleshooting oracle** it queries the moment it hits an error. *In the wild: [OpenClaw drove the library to scrape all 524 pages of `docs.openclaw.ai`, dedupe the duplicate translations, and audit it down to 269 clean sources (missing/extra/duplicate = 0)](https://x.com/onenewbite/status/2024819940327379286).*
 - **🔁 Multi-format content repurposing** — One source set, every format: `generate audio` (podcast), `generate video`, `generate slide-deck`, plus a `generate report` blog draft, `generate quiz`, and `generate flashcards` — fan a single notebook out across channels.
-- **📤 Bulk, scriptable exports** — Pull mind maps as JSON, flashcards/quizzes as JSON/Markdown/HTML, data tables as CSV, and reports as Markdown — **in bulk, to local files, straight into Anki, your mind-mapping tool, or a repo** (`download` / `artifact`). The programmatic "get data *out*" half of the library, not just "put sources in."
+- **📤 Bulk, scriptable exports** — Pull mind maps as JSON, flashcards/quizzes as JSON/Markdown/HTML, data tables as CSV, and reports as Markdown — **in bulk, to local files, straight into Anki, your mind-mapping tool, or a repo** (`download --all` / `artifact export`). The programmatic "get data *out*" half of the library, not just "put sources in."
 - **🕸️ Obsidian / knowledge-graph sync** — Run the CLI from your vault root so downloaded artifacts (reports, mind-map JSON, transcripts) land as files in your knowledge graph; community skills built on this library even resolve NotebookLM's citation markers into Obsidian `[[wikilinks]]`. Pair with a podcast overview for an audio digest of your notes. *In the wild: ["Claude Code + NotebookLM + Obsidian = GOD MODE"](https://www.youtube.com/watch?v=kU3qYQ7ACMA).*
 
 **Run it unattended, at scale, or on the go** — scheduled, headless, and remote:
