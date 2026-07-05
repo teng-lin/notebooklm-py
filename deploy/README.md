@@ -85,11 +85,12 @@ no host ports are published.
 > needs a public HTTPS URL.
 
 ### 3A. Cloudflare Tunnel (needs a domain in your Cloudflare account)
-In the Cloudflare **Zero Trust** dashboard → **Networks → Tunnels**:
-1. **Create a tunnel** → choose **Cloudflared** (not *WARP Connector*); name it, then copy
-   the **token** it shows into `CF_TUNNEL_TOKEN` in `.env`. Ignore the `cloudflared`
-   install/run commands on that page — the compose `cloudflared` sidecar runs it for you
-   using the token.
+In the Cloudflare dashboard → **Networking → Tunnels** (moved there Feb 2026; the classic
+spot is **Zero Trust → Networks → Connectors**):
+1. **Create a tunnel** — a **Cloudflared** tunnel (hostname ingress), not a *WARP Connector*
+   (that's L3 site-to-site). Name it, then copy the **token** it shows into `CF_TUNNEL_TOKEN`
+   in `.env`. Ignore the `cloudflared` install/run commands on that page — the compose
+   `cloudflared` sidecar runs it for you using the token.
 2. Add a **Public Hostname** (e.g. `notebooklm.yourdomain.com`) → **Service**
    `http://notebooklm-mcp:9420`. Cloudflare auto-creates the DNS record + serves TLS.
    Route the **whole host** (path `/`) — not a `/mcp`-scoped ingress — so the root
@@ -106,11 +107,12 @@ hostname on Tailscale's domain, free on the personal plan, no DNS to manage.
 per-machine toggles):
 1. Enable **MagicDNS** and **HTTPS certificates** for the tailnet
    (admin console → DNS; → HTTPS Certificates).
-2. Grant the **`funnel` node attribute**: admin console → **Settings → General**, scroll
-   to **Funnel** → **Manage** → **Node attributes** (tab, bottom-left) → **Add node
-   attribute** → add `funnel`. The JSON preview shows:
+2. Grant the **`funnel` node attribute** in the tailnet policy: admin console → **Access
+   controls** (the ACL policy editor) → expand the **Funnel** section → **Add Funnel to
+   policy**. That writes a `nodeAttrs` block into the policy — for a single self-hosted node
+   you can scope it to all members:
    ```json
-   { "target": ["*"], "attr": ["funnel"] }
+   { "nodeAttrs": [{ "target": ["*"], "attr": ["funnel"] }] }
    ```
 3. Create a **normal auth key** (Settings → Keys) and put it in `.env` as `TS_AUTHKEY`.
    (There is no "Funnel-capable" key type — Funnel comes from the policy in step 2.)
@@ -227,10 +229,10 @@ ChatGPT's custom MCP connectors speak the **same self-hosted OAuth** as claude.a
 no bearer/API-key field, so step 6 (`NOTEBOOKLM_MCP_OAUTH_PASSWORD` + `NOTEBOOKLM_MCP_OAUTH_BASE_URL`)
 is a prerequisite. Then, on the **web** (Pro / Plus / Business / Enterprise / Edu):
 
-1. **Enable Developer Mode:** ChatGPT → **Settings → Apps → Advanced settings → Developer mode**
-   (web only). This unlocks *full* MCP connectors with write tools; without it the connector UI
-   is deep-research (search/fetch) only.
-2. **Settings → Apps → Create** a connector → **MCP Server URL** = the URL **WITH** `/mcp`
+1. **Enable Developer Mode:** ChatGPT → **Settings → Apps & Connectors → Advanced settings →
+   Developer mode** (web only). This unlocks *full* MCP connectors with write tools; without it
+   the connector UI is deep-research (search/fetch) only.
+2. **Settings → Apps & Connectors → Create** a connector → **MCP Server URL** = the URL **WITH** `/mcp`
    (`https://notebooklm.example.com/mcp`), **Authentication = OAuth**. ChatGPT registers itself
    via **DCR** — same as claude.ai, so there's no redirect URI to allowlist on your side — then
    opens the server's **password page**; enter the password → connected.

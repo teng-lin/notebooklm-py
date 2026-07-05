@@ -42,7 +42,7 @@ NotebookLM is a **grounded** engine: Gemini does the heavy reading and answers f
 **Spend fewer tokens** — let NotebookLM do the expensive thinking:
 
 - **🪙 Zero-token research offload** — Throw 30 documents into a notebook, let Gemini do the heavy analysis, and have your agent spend tokens only on the final polish. The agent just orchestrates (`create` → `source add` → `ask`); the reasoning happens server-side. *In the wild: [a four-workflow guide to stop Claude Code burning tokens on NotebookLM](https://x.com/hooeem/status/2042293751805329445).*
-- **🧠 Knowledge distillation → a permanent skill** — Run [Deep Research](docs/cli-reference.md#source-add-research) (`source add-research --mode deep`) or load a doc corpus, let NotebookLM's Gemini condense it, and bake the result into a `SKILL.md` your agent loads at startup — **build once, reuse with zero runtime tokens or network calls**, git-versioned and immune to UI drift. A packaged domain expert without hand-curating sources. (Dumping raw docs into a skill flattens the hierarchy; NotebookLM condensing first is what makes it work.)
+- **🧠 Knowledge distillation → a permanent skill** — Run [Deep Research](docs/cli-reference.md#source-add-research) (`source add-research "your topic" --mode deep`) or load a doc corpus, let NotebookLM's Gemini condense it, and bake the result into a `SKILL.md` your agent loads at startup — **build once, reuse with zero runtime tokens or network calls**, git-versioned and immune to UI drift. A packaged domain expert without hand-curating sources. (Dumping raw docs into a skill flattens the hierarchy; NotebookLM condensing first is what makes it work.)
 - **✅ Self-validating skills** — Have NotebookLM generate the *eval set* — a quiz straight from your sources — to grade an agent skill against ground truth instead of test questions you'd bias yourself. Build the skill, run it against the NotebookLM-authored evals, iterate to a pass. *In the wild: [a skill that scored 4/10 on the first pass and 10/10 after one iteration, graded by a NotebookLM-generated quiz](https://x.com/nurijanian/status/2037136490157986277).*
 
 **Give your agent memory** — persistent, grounded recall:
@@ -63,9 +63,9 @@ NotebookLM is a **grounded** engine: Gemini does the heavy reading and answers f
 - **🚨 Incident runbook generator** — On an alert, spin up a notebook of the relevant docs, ask targeted diagnostic questions, and generate a briefing-doc report (`generate report --format briefing-doc --wait`, then `download report`) as an automated runbook.
 - **📚 Curriculum / study-set builder** — Scrape a syllabus or developer roadmap, create one notebook per topic (with deliberate pacing to dodge rate limits), and bulk-generate podcasts, quizzes, and flashcards for each.
 - **📰 Scheduled audio briefings** — Pair `auth refresh --quiet` (cron/launchd/systemd) with `generate audio` to publish a fresh personalized briefing to a podcast feed on a schedule.
-- **📱 NotebookLM from your phone, agent-driven** — Self-host the [remote MCP connector](docs/mcp-guide.md#remote-deployment-docker--a-tunnel) behind a Cloudflare/Tailscale tunnel and add it to the **claude.ai or ChatGPT mobile app**. Now you drive the full toolset — deep research, source ingestion, studio generation, cited Q&A — by talking to your agent on the go, chained with your other MCP tools, instead of app-hopping.
+- **📱 NotebookLM from your phone, agent-driven** — Self-host the [remote MCP connector](docs/mcp-guide.md#remote-deployment-docker--a-tunnel) behind a Cloudflare/Tailscale tunnel and add it as a custom connector **on the web** (claude.ai Connectors, or ChatGPT with Developer Mode). Then drive the full toolset — deep research, source ingestion, studio generation, cited Q&A — from the **claude.ai or ChatGPT mobile app**, chained with your other MCP tools, instead of app-hopping.
 
-These combine ordinary library primitives — see the [CLI Reference](docs/cli-reference.md) and [Python API](docs/python-api.md). The agent-side glue (skills, scheduling, vault layout) lives in your own setup, not this package.
+These combine ordinary library primitives — see the [CLI Reference](docs/cli-reference.md) and [Python API](docs/python-api.md). The agent-side glue (skills, scheduling, vault layout) lives in your own setup, not this package. Per-notebook source counts depend on your Google account tier — split across notebooks if you hit a cap.
 
 **New here?** Start with a walkthrough: [Claude Code + NotebookLM = CHEAT CODE (video)](https://www.youtube.com/watch?v=usTeU4Uh0iM) · [5 demos + 50 use cases, with prompts](https://aiblewmymind.substack.com/p/notebooklm-claude-code-use-cases).
 
@@ -226,7 +226,7 @@ notebooklm agent show claude         # Print bundled Claude Code skill template
 notebooklm language list             # List supported output languages
 notebooklm metadata --json           # Export notebook metadata and sources
 notebooklm share status              # Inspect sharing state
-notebooklm source add-research "AI"  # Start web research and import sources
+notebooklm source add-research "AI" --import-all  # web research + import found sources
 notebooklm skill status              # Check local agent skill installation
 notebooklm profile list              # List all Google account profiles
 notebooklm profile switch work       # Switch active account profile
