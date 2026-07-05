@@ -169,8 +169,9 @@ _SECURE_HOST_UMBRELLAS: tuple[re.Pattern[str], ...] = tuple(
 # ``ya29.`` tokens + the ``AIza…`` API key), compiled from the same registry.
 # Defense in depth: even when a secret rides under an UNKNOWN carrier name (a
 # cookie or field not on the alternation above), the raw credential shape is
-# redacted wherever it appears, so disclosure fails closed. The distinctive
-# prefix is preserved as a shape hint; the secret tail is dropped.
+# redacted wherever it appears, so disclosure fails closed. These whole tokens
+# are replaced with ``***``; unlike name-anchored cookies, there is no carrier
+# name worth preserving as a shape hint.
 _AUTH_TOKEN_SHAPES: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p) for p in AUTH_TOKEN_SHAPE_PATTERNS
 )

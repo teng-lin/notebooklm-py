@@ -47,7 +47,7 @@ def _assert_trusted_download_request(
     if request.url.scheme != "https":
         raise ArtifactDownloadError(
             "media",
-            details=f"Untrusted redirect to non-HTTPS hop: {host or '<unknown>'}",
+            details=f"Untrusted non-HTTPS download hop: {host or '<unknown>'}",
         )
     if not is_trusted_host(host):
         raise ArtifactDownloadError(
