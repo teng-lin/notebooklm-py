@@ -107,9 +107,9 @@ hostname on Tailscale's domain, free on the personal plan, no DNS to manage.
 per-machine toggles):
 1. Enable **MagicDNS** and **HTTPS certificates** for the tailnet
    (admin console → DNS; → HTTPS Certificates).
-2. Grant the **`funnel` node attribute** in the tailnet policy: admin console → **Access
-   controls** (the ACL policy editor) → expand the **Funnel** section → **Add Funnel to
-   policy**. That writes a `nodeAttrs` block into the policy — for a single self-hosted node
+2. Grant the **`funnel` node attribute** in the tailnet policy: admin console →
+   **Settings → Funnel → Manage** (this deep-links to the ACL policy editor) and add a
+   `nodeAttrs` block to the policy file, then **Save** — for a single self-hosted node
    you can scope it to all members:
    ```json
    { "nodeAttrs": [{ "target": ["*"], "attr": ["funnel"] }] }
