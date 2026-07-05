@@ -192,6 +192,45 @@ async def test_server_info_uses_bound_profile_for_probe(mock_client, tmp_path, m
     assert paths.get_active_profile() is None
 
 
+async def test_server_info_locks_resolved_profile_for_lifespan(
+    mock_client, tmp_path, monkeypatch
+) -> None:
+    """``profile=None`` resolves once at startup, matching the lifespan-bound client."""
+    from notebooklm import paths
+
+    seen: dict[str, Any] = {}
+
+    async def _fake_run(plan: Any, *, read_env_auth_json: Any) -> Any:
+        seen["profile"] = plan.profile
+        seen["storage_path"] = plan.storage_path
+        return SimpleNamespace(
+            all_passed=True,
+            checks={
+                "storage_exists": True,
+                "json_valid": True,
+                "cookies_present": True,
+                "sid_cookie": True,
+            },
+        )
+
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator[MagicMock]:
+        yield mock_client
+
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "work")
+    monkeypatch.setattr(paths, "_active_profile", None)
+    monkeypatch.setattr(meta_tool, "run_auth_check", _fake_run)
+
+    async with Client(create_server(client_factory=factory)) as client:
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "other")
+        result = await client.call_tool("server_info")
+
+    assert result.structured_content["auth"]["profile"] == "work"
+    assert seen == {"profile": "work", "storage_path": paths.get_storage_path("work")}
+    assert paths.get_active_profile() is None
+
+
 async def test_server_info_default_omits_account(
     mcp_call, mock_client, tmp_path, monkeypatch
 ) -> None:

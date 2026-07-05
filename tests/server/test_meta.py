@@ -109,6 +109,39 @@ def test_server_info_uses_bound_profile_for_probe(
     assert paths.get_active_profile() is None
 
 
+def test_server_info_locks_resolved_profile_for_lifespan(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``profile=None`` resolves once at startup, matching the lifespan-bound client."""
+    from notebooklm import paths
+
+    seen: dict[str, Any] = {}
+
+    async def _fake_run(plan: Any, *, read_env_auth_json: Any) -> _FakeAuthResult:
+        seen["profile"] = plan.profile
+        seen["storage_path"] = plan.storage_path
+        return _FakeAuthResult(all_passed=True)
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[FakeClient]:
+        yield FakeClient()
+
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "work")
+    monkeypatch.setattr(paths, "_active_profile", None)
+    monkeypatch.setattr(meta_route, "run_auth_check", _fake_run)
+
+    app = create_app(client_factory=factory)
+    headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
+    with TestClient(app, headers=headers, client=("127.0.0.1", 5555)) as client:
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "other")
+        body = client.get("/v1/server/info").json()
+
+    assert body["auth"]["profile"] == "work"
+    assert seen == {"profile": "work", "storage_path": paths.get_storage_path("work")}
+    assert paths.get_active_profile() is None
+
+
 def test_server_info_include_account(
     authed_client: TestClient, fake_client: FakeClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

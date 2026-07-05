@@ -31,7 +31,7 @@ from typing import cast
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 
 from ..client import NotebookLMClient
-from ..paths import get_active_profile, set_active_profile
+from ..paths import get_active_profile, resolve_profile, set_active_profile
 from ._auth import require_auth
 from ._context import AppState
 from ._errors import http_error_response, install_exception_handlers
@@ -81,8 +81,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         previous_profile = get_active_profile()
-        if profile is not None:
-            set_active_profile(profile)
+        set_active_profile(resolve_profile(profile))
         try:
             async with factory() as client:
                 app.state.notebooklm = AppState(client=client, pending=PendingRegistry())
@@ -91,8 +90,7 @@ def create_app(
                 finally:
                     app.state.notebooklm = None
         finally:
-            if profile is not None:
-                set_active_profile(previous_profile)
+            set_active_profile(previous_profile)
 
     app = FastAPI(
         title=SERVER_NAME,
