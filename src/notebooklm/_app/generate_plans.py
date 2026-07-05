@@ -140,10 +140,10 @@ _VIDEO_FORMAT_MAP: Mapping[str, VideoFormat] = {
     "explainer": VideoFormat.EXPLAINER,
     "brief": VideoFormat.BRIEF,
     "cinematic": VideoFormat.CINEMATIC,
-    # ponytail: "short" rides the standard build_video_artifact_params (not the
-    # cinematic special-case builder), but has a FIXED visual style — the server
-    # ignores style codes, so _build_video_plan_for_kind rejects an explicit style
-    # for short (#1805). Append last: the MCP/server _KIND_OPTIONS tuples are pinned
+    # "short" rides the standard build_video_artifact_params (not the cinematic
+    # special-case builder), but has a FIXED visual style — the server ignores
+    # style codes, so _build_video_plan_for_kind rejects an explicit style for
+    # short (#1805). Append last: the MCP/server _KIND_OPTIONS tuples are pinned
     # to this dict's key order.
     "short": VideoFormat.SHORT,
 }
