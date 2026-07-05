@@ -28,6 +28,7 @@ from datetime import datetime, timezone  # noqa: E402 - after importorskip guard
 from fastmcp import Client  # noqa: E402 - after importorskip guard
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
+import notebooklm.mcp.tools._fileupload as fileupload_mod  # noqa: E402 - after importorskip guard
 import notebooklm.mcp.tools._studio_download as art_mod  # noqa: E402 - after importorskip guard
 import notebooklm.mcp.tools.sources as src_mod  # noqa: E402 - after importorskip guard
 from notebooklm._types.artifacts import (  # noqa: E402 - after importorskip guard
@@ -340,11 +341,38 @@ async def test_source_upload_bytes_tolerates_wrapped_base64(mock_client) -> None
     assert seen["bytes"] == raw
 
 
+async def test_source_upload_bytes_accepts_wrapped_base64_near_cap(mock_client) -> None:
+    # Regression: the cap is applied to the WHITESPACE-STRIPPED base64, not the raw
+    # string. A valid wrapped payload whose raw length (incl. newlines) exceeds the
+    # cap but whose cleaned length is within it must be ACCEPTED — an earlier draft
+    # checked the raw length and wrongly rejected near-cap wrapped payloads.
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        with open(path, "rb") as fh:
+            seen["bytes"] = fh.read()
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    raw = os.urandom(7425)  # -> 9900 base64 chars (divisible by 3, no padding)
+    wrapped = "\n".join(textwrap.wrap(base64.b64encode(raw).decode(), 76))
+    cap = fileupload_mod._MAX_UPLOAD_B64_CHARS
+    assert len(wrapped) > cap  # raw (with newlines) exceeds the cap ...
+    assert len("".join(wrapped.split())) <= cap  # ... but the cleaned base64 is within it
+    await _call(
+        mock_client,
+        None,
+        "source_upload_bytes",
+        {"notebook": NB_ID, "bytes_base64": wrapped, "filename": "b.bin"},
+    )
+    assert seen["bytes"] == raw
+
+
 async def test_source_upload_bytes_rejects_oversized_before_add(mock_client) -> None:
     # A payload over the base64-char cap is rejected up front — no add_file call.
     mock_client.sources.add_file = AsyncMock()
     big = base64.b64encode(os.urandom(9000)).decode()  # ~12000 chars > 10000 cap
-    assert len(big) > src_mod._MAX_UPLOAD_B64_CHARS
+    assert len(big) > fileupload_mod._MAX_UPLOAD_B64_CHARS
     with pytest.raises(ToolError) as excinfo:
         await _call(
             mock_client, None, "source_upload_bytes", {"notebook": NB_ID, "bytes_base64": big}
@@ -398,7 +426,7 @@ async def test_source_upload_bytes_accepts_exact_cap_boundary(mock_client) -> No
 
     mock_client.sources.add_file = AsyncMock(side_effect=_capture)
     payload = base64.b64encode(os.urandom(7500)).decode()
-    assert len(payload) == src_mod._MAX_UPLOAD_B64_CHARS
+    assert len(payload) == fileupload_mod._MAX_UPLOAD_B64_CHARS
     await _call(
         mock_client,
         None,
