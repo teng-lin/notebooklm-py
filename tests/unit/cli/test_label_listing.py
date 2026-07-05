@@ -134,6 +134,34 @@ async def test_resolve_no_match_raises() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolve_near_miss_attaches_candidates() -> None:
+    """A name mistyped with a hyphen for an em-dash surfaces the real label (#1787)."""
+    labels = [Label(id="lblaaa111", name="Q3 — Papers"), Label(id="lblbbb222", name="Other")]
+    client = _make_client(labels=labels)
+    with pytest.raises(LabelResolutionError) as exc:
+        await resolve_label_id(client, "nb_1", "Q3 - Papers")
+    assert exc.value.code == "NOT_FOUND"
+    assert exc.value.extra is not None
+    expected = [{"id": "lblaaa111", "title": "Q3 — Papers"}]
+    assert exc.value.extra["candidates"] == expected
+    # Also exposed on ``.candidates`` so the MCP / REST surfaces (which read the
+    # attribute, not ``.extra``) enrich a label near-miss reached via
+    # ``source_list(label=…)`` even though the error classifies as VALIDATION.
+    assert list(exc.value.candidates) == expected
+
+
+@pytest.mark.asyncio
+async def test_resolve_no_near_match_omits_candidates() -> None:
+    labels = [Label(id="lblaaa111", name="Papers")]
+    client = _make_client(labels=labels)
+    with pytest.raises(LabelResolutionError) as exc:
+        await resolve_label_id(client, "nb_1", "Zzzzqwx")
+    assert exc.value.code == "NOT_FOUND"
+    assert exc.value.extra is not None
+    assert "candidates" not in exc.value.extra
+
+
+@pytest.mark.asyncio
 async def test_resolve_uuid_shaped_name_after_id_pass_misses() -> None:
     """A UUID-shaped *name* is found by the name pass once the id pass misses.
 

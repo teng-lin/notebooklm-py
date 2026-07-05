@@ -143,7 +143,7 @@ async def test_mcp_research_status_in_progress_over_vcr() -> None:
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
             "research_status",
-            {"notebook": RESEARCH_NOTEBOOK_ID, "task_id": PINNED_TASK_ID},
+            {"notebook": RESEARCH_NOTEBOOK_ID, "poll_task_id": PINNED_TASK_ID},
         )
 
     structured = result.structured_content
@@ -204,7 +204,7 @@ async def test_mcp_research_import_incomplete_task_refused_over_vcr() -> None:
         with pytest.raises(ToolError) as excinfo:
             await mcp_client.call_tool(
                 "research_import",
-                {"notebook": RESEARCH_NOTEBOOK_ID, "task_id": PINNED_TASK_ID},
+                {"notebook": RESEARCH_NOTEBOOK_ID, "poll_task_id": PINNED_TASK_ID},
             )
     assert "VALIDATION" in str(excinfo.value)
 
@@ -223,13 +223,14 @@ async def test_mcp_research_import_populated_sources_over_vcr() -> None:
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
             "research_import",
-            {"notebook": POPULATED_RESEARCH_NOTEBOOK_ID, "task_id": POPULATED_TASK_ID},
+            {"notebook": POPULATED_RESEARCH_NOTEBOOK_ID, "poll_task_id": POPULATED_TASK_ID},
         )
 
     structured = result.structured_content
     assert isinstance(structured, dict)
     assert structured["notebook_id"] == POPULATED_RESEARCH_NOTEBOOK_ID
     assert structured["task_id"] == POPULATED_TASK_ID
+    assert structured["poll_task_id"] == POPULATED_TASK_ID
     assert structured["sources_found"] == 10
     imported = structured["imported"]
     # The LBwxtb import returned real, decoded sources (the leg the empty cassette

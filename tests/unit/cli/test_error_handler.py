@@ -298,6 +298,30 @@ class TestHandleErrorsNotFound:
         output = capsys.readouterr().err
         assert "Source not found: src_456" in output
 
+    def test_not_found_candidates_in_json_and_text_hint(self, capsys):
+        """Near-miss candidates (issue #1787) surface in JSON and as a text hint."""
+        err = NotebookNotFoundError("Scientific")
+        err.candidates = [{"id": "37fe5c1d", "title": "Scientific PDF Parsing"}]
+        with pytest.raises(SystemExit), handle_errors(json_output=True):
+            raise err
+        data = json.loads(capsys.readouterr().out)
+        assert data["code"] == "NOT_FOUND"
+        assert data["candidates"] == [{"id": "37fe5c1d", "title": "Scientific PDF Parsing"}]
+
+        err2 = NotebookNotFoundError("Scientific")
+        err2.candidates = [{"id": "37fe5c1d", "title": "Scientific PDF Parsing"}]
+        with pytest.raises(SystemExit), handle_errors(json_output=False):
+            raise err2
+        text = capsys.readouterr().err
+        assert "Did you mean:" in text
+        assert "Scientific PDF Parsing" in text
+
+    def test_not_found_without_candidates_omits_candidates_key(self, capsys):
+        with pytest.raises(SystemExit), handle_errors(json_output=True):
+            raise NotebookNotFoundError("Scientific")
+        data = json.loads(capsys.readouterr().out)
+        assert "candidates" not in data
+
     def test_not_found_verbose_includes_method_id(self, capsys):
         """With ``verbose``, the RPC ``method_id`` is surfaced in the envelope."""
         with pytest.raises(SystemExit), handle_errors(json_output=True, verbose=True):

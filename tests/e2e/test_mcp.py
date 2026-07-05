@@ -528,7 +528,7 @@ class TestMcpResearch:
         # coverage matrix report a false positive).
         run_id = started.get("poll_task_id") or status.get("poll_task_id")
         assert run_id, f"research_start/status yielded no run id to cancel: {started} / {status}"
-        cancelled = await _call(client, "research_cancel", {"notebook": nb, "run_id": run_id})
+        cancelled = await _call(client, "research_cancel", {"notebook": nb, "poll_task_id": run_id})
         # A freshly-started fast run is normally still in_progress at this
         # immediate poll, so the preflight fires the cancel (cancel_requested
         # True). Tolerate the race where it already reached a terminal state

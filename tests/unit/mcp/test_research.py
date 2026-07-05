@@ -8,6 +8,7 @@ the start→status poll shape, the import workflow, and error projection.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -199,13 +200,15 @@ async def test_research_status_surfaces_task_id(mcp_call, mock_client) -> None:
     assert result.structured_content["task_id"] == TASK_ID
 
 
-async def test_research_status_pins_task_id_when_given(mcp_call, mock_client) -> None:
-    """A supplied ``task_id`` is threaded through ``poll`` as the discriminator."""
+async def test_research_status_pins_poll_task_id_when_given(mcp_call, mock_client) -> None:
+    """A supplied ``poll_task_id`` is threaded through ``poll`` as the discriminator."""
     mock_client.research.poll = AsyncMock(
         return_value=FakeResearchTask(status=FakeResearchStatus.COMPLETED, task_id=TASK_ID)
     )
-    result = await mcp_call("research_status", {"notebook": NB_ID, "task_id": TASK_ID})
+    result = await mcp_call("research_status", {"notebook": NB_ID, "poll_task_id": TASK_ID})
     assert result.structured_content["task_id"] == TASK_ID
+    # No deprecated alias was used → no deprecation note.
+    assert "deprecation" not in result.structured_content
     mock_client.research.poll.assert_awaited_once_with(NB_ID, TASK_ID)
 
 
@@ -341,8 +344,8 @@ async def test_research_status_source_limit_zero(mcp_call, mock_client) -> None:
         {"report_max_chars": 0},
         {"source_limit": -1},
         {"source_offset": -1},
-        {"task_id": "  "},
-        {"task_id": ""},
+        {"poll_task_id": "  "},
+        {"poll_task_id": ""},
     ],
 )
 async def test_research_status_rejects_bad_bounds(bad_args, mcp_call, mock_client) -> None:
@@ -370,12 +373,15 @@ async def test_research_import(mcp_call, mock_client) -> None:
         )
     )
     mock_client.research.import_sources = AsyncMock(return_value=[{"id": "src-1", "title": "A"}])
-    result = await mcp_call("research_import", {"notebook": NB_ID, "task_id": TASK_ID})
+    result = await mcp_call("research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID})
     assert result.structured_content["notebook_id"] == NB_ID
     assert result.structured_content["imported"] == [{"id": "src-1", "title": "A"}]
-    # The requested task_id is threaded through ``poll`` as the discriminator so
-    # the freshly-polled sources belong to that task (not the notebook's current
-    # task).
+    # The response echoes the id under both the canonical and legacy keys.
+    assert result.structured_content["poll_task_id"] == TASK_ID
+    assert result.structured_content["task_id"] == TASK_ID
+    assert "deprecation" not in result.structured_content
+    # The requested id is threaded through ``poll`` as the discriminator so the
+    # freshly-polled sources belong to that task (not the notebook's current task).
     mock_client.research.poll.assert_awaited_once_with(NB_ID, TASK_ID)
     mock_client.research.import_sources.assert_awaited_once()
     called = mock_client.research.import_sources.await_args.args
@@ -383,15 +389,19 @@ async def test_research_import(mcp_call, mock_client) -> None:
     assert called[1] == TASK_ID
 
 
-async def test_research_import_empty_task_id_rejected(mcp_call, mock_client) -> None:
-    """An empty/whitespace task_id is rejected before any poll or import (the
+async def test_research_import_empty_poll_task_id_rejected(mcp_call, mock_client) -> None:
+    """An empty/whitespace poll_task_id is rejected before any poll or import (the
     falsy-id unfiltered-poll cross-wire trap)."""
     mock_client.research.poll = AsyncMock(return_value=FakeResearchTask())
     mock_client.research.import_sources = AsyncMock(return_value=[])
     for bad in ("", "   "):
         with pytest.raises(ToolError) as excinfo:
-            await mcp_call("research_import", {"notebook": NB_ID, "task_id": bad})
+            await mcp_call("research_import", {"notebook": NB_ID, "poll_task_id": bad})
         assert "VALIDATION" in str(excinfo.value)
+    # Omitting the id entirely is likewise rejected (neither canonical nor alias).
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("research_import", {"notebook": NB_ID})
+    assert "VALIDATION" in str(excinfo.value)
     mock_client.research.poll.assert_not_called()
     mock_client.research.import_sources.assert_not_called()
 
@@ -411,7 +421,7 @@ async def test_research_import_non_current_task_fails_cleanly(mcp_call, mock_cli
     )
     mock_client.research.import_sources = AsyncMock(return_value=[])
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("research_import", {"notebook": NB_ID, "task_id": other_task})
+        await mcp_call("research_import", {"notebook": NB_ID, "poll_task_id": other_task})
     # A clean validation/not-found projection — never a silent cross-wire import.
     msg = str(excinfo.value)
     assert "VALIDATION" in msg or "NOT_FOUND" in msg
@@ -429,10 +439,11 @@ async def test_research_cancel(mcp_call, mock_client) -> None:
         return_value=FakeResearchTask(status=FakeResearchStatus.IN_PROGRESS, task_id=TASK_ID)
     )
     mock_client.research.cancel = AsyncMock(return_value=None)
-    result = await mcp_call("research_cancel", {"notebook": NB_ID, "run_id": TASK_ID})
+    result = await mcp_call("research_cancel", {"notebook": NB_ID, "poll_task_id": TASK_ID})
     assert result.structured_content == {
         "status": "cancel_requested",
         "notebook_id": NB_ID,
+        "poll_task_id": TASK_ID,
         "run_id": TASK_ID,
         "cancel_requested": True,
         "run_status_before": "in_progress",
@@ -449,7 +460,7 @@ async def test_research_cancel_resolves_notebook_by_name(mcp_call, mock_client) 
         return_value=FakeResearchTask(status=FakeResearchStatus.IN_PROGRESS, task_id=TASK_ID)
     )
     mock_client.research.cancel = AsyncMock(return_value=None)
-    result = await mcp_call("research_cancel", {"notebook": "My Notebook", "run_id": TASK_ID})
+    result = await mcp_call("research_cancel", {"notebook": "My Notebook", "poll_task_id": TASK_ID})
     assert result.structured_content["cancel_requested"] is True
     mock_client.research.cancel.assert_awaited_once_with(NB_ID, TASK_ID)
 
@@ -463,7 +474,7 @@ async def test_research_cancel_absent_run_still_cancelled(status, mcp_call, mock
         return_value=FakeResearchTask(status=status, task_id="just-started")
     )
     mock_client.research.cancel = AsyncMock(return_value=None)
-    result = await mcp_call("research_cancel", {"notebook": NB_ID, "run_id": "just-started"})
+    result = await mcp_call("research_cancel", {"notebook": NB_ID, "poll_task_id": "just-started"})
     sc = result.structured_content
     assert sc["cancel_requested"] is True
     assert sc["status"] == "cancel_requested"
@@ -480,21 +491,25 @@ async def test_research_cancel_terminal_run_not_cancelled(status, mcp_call, mock
         return_value=FakeResearchTask(status=status, task_id=TASK_ID)
     )
     mock_client.research.cancel = AsyncMock(return_value=None)
-    result = await mcp_call("research_cancel", {"notebook": NB_ID, "run_id": TASK_ID})
+    result = await mcp_call("research_cancel", {"notebook": NB_ID, "poll_task_id": TASK_ID})
     sc = result.structured_content
     assert sc["cancel_requested"] is False
     assert sc["status"] == status.value
     mock_client.research.cancel.assert_not_called()
 
 
-async def test_research_cancel_empty_run_id_rejected(mcp_call, mock_client) -> None:
-    """An empty/whitespace run_id is rejected before any poll or cancel."""
+async def test_research_cancel_empty_poll_task_id_rejected(mcp_call, mock_client) -> None:
+    """An empty/whitespace/absent poll_task_id is rejected before any poll or cancel."""
     mock_client.research.poll = AsyncMock(return_value=FakeResearchTask())
     mock_client.research.cancel = AsyncMock(return_value=None)
     for bad in ("", "   "):
         with pytest.raises(ToolError) as excinfo:
-            await mcp_call("research_cancel", {"notebook": NB_ID, "run_id": bad})
+            await mcp_call("research_cancel", {"notebook": NB_ID, "poll_task_id": bad})
         assert "VALIDATION" in str(excinfo.value)
+    # Omitting the id entirely (neither canonical nor alias) is likewise rejected.
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("research_cancel", {"notebook": NB_ID})
+    assert "VALIDATION" in str(excinfo.value)
     mock_client.research.poll.assert_not_called()
     mock_client.research.cancel.assert_not_called()
 
@@ -550,7 +565,7 @@ async def test_research_import_in_progress_refused(mcp_call, mock_client) -> Non
     )
     mock_client.research.import_sources = AsyncMock(return_value=[])
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("research_import", {"notebook": NB_ID, "task_id": TASK_ID})
+        await mcp_call("research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID})
     assert "VALIDATION" in str(excinfo.value)
     mock_client.research.import_sources.assert_not_called()
 
@@ -564,7 +579,7 @@ async def test_research_import_completed_but_empty_refused(mcp_call, mock_client
     )
     mock_client.research.import_sources = AsyncMock(return_value=[])
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("research_import", {"notebook": NB_ID, "task_id": TASK_ID})
+        await mcp_call("research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID})
     assert "VALIDATION" in str(excinfo.value)
     mock_client.research.import_sources.assert_not_called()
 
@@ -581,6 +596,163 @@ async def test_research_import_non_completed_status_refused(status, mcp_call, mo
     )
     mock_client.research.import_sources = AsyncMock(return_value=[])
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("research_import", {"notebook": NB_ID, "task_id": TASK_ID})
+        await mcp_call("research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID})
     assert "VALIDATION" in str(excinfo.value)
     mock_client.research.import_sources.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# deprecated id-param aliases (issue #1789): task_id / run_id → poll_task_id
+#
+# Each downstream tool renamed its id param to ``poll_task_id`` and keeps the old
+# name as an accepted alias for one release. The alias must (a) resolve to the
+# same behavior as ``poll_task_id``, (b) emit a ``DeprecationWarning``, and (c)
+# surface a caller-visible ``deprecation`` note in the result. The Python-level
+# ``DeprecationWarning`` is asserted directly on the resolution helper (FastMCP's
+# tool-execution boundary swallows warnings, so ``pytest.warns`` around a tool
+# call is unreliable); the agent-visible ``deprecation`` note is asserted through
+# the full tool call.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_poll_task_id_alias_warns_and_notes() -> None:
+    """The helper emits a ``DeprecationWarning`` and a note when only the alias is used."""
+    from notebooklm.mcp.tools.research import _resolve_poll_task_id
+
+    with pytest.warns(DeprecationWarning, match="research_import.*task_id.*poll_task_id"):
+        resolved, note = _resolve_poll_task_id("research_import", "task_id", None, "abc")
+    assert resolved == "abc"
+    assert note is not None and "task_id" in note and "poll_task_id" in note
+
+
+def test_resolve_poll_task_id_canonical_no_warning() -> None:
+    """The canonical name (with no alias) warns not, notes not."""
+    from notebooklm.mcp.tools.research import _resolve_poll_task_id
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        resolved, note = _resolve_poll_task_id("research_status", "task_id", "abc", None)
+    assert resolved == "abc"
+    assert note is None
+
+
+def test_resolve_poll_task_id_same_value_prefers_canonical_no_warning() -> None:
+    """Both names, same value → canonical wins silently (no warning, no note)."""
+    from notebooklm.mcp.tools.research import _resolve_poll_task_id
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        resolved, note = _resolve_poll_task_id("research_cancel", "run_id", "abc", " abc ")
+    assert resolved == "abc"
+    assert note is None
+
+
+def test_resolve_poll_task_id_blank_alias_no_warning() -> None:
+    """A whitespace-only alias is handed back unwarned (the tool's empty-id guard
+    rejects it) — no deprecation signal spent on a value about to be refused."""
+    from notebooklm.mcp.tools.research import _resolve_poll_task_id
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        resolved, note = _resolve_poll_task_id("research_import", "task_id", None, "   ")
+    assert resolved == "   "
+    assert note is None
+
+
+async def test_research_import_blank_alias_rejected_without_warning(mcp_call, mock_client) -> None:
+    """A whitespace-only ``task_id`` alias is rejected as VALIDATION and emits no
+    DeprecationWarning through the tool (the empty-id guard fires, not the alias)."""
+    mock_client.research.poll = AsyncMock(return_value=FakeResearchTask())
+    mock_client.research.import_sources = AsyncMock(return_value=[])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        with pytest.raises(ToolError) as excinfo:
+            await mcp_call("research_import", {"notebook": NB_ID, "task_id": "   "})
+    assert "VALIDATION" in str(excinfo.value)
+    mock_client.research.poll.assert_not_called()
+    mock_client.research.import_sources.assert_not_called()
+
+
+def test_resolve_poll_task_id_conflict_raises() -> None:
+    """Both names, different values → ValidationError."""
+    from notebooklm.exceptions import ValidationError
+    from notebooklm.mcp.tools.research import _resolve_poll_task_id
+
+    with pytest.raises(ValidationError):
+        _resolve_poll_task_id("research_status", "task_id", "a", "b")
+
+
+async def test_research_status_task_id_alias_matches_poll_task_id(mcp_call, mock_client) -> None:
+    """The deprecated ``task_id`` pin resolves exactly like ``poll_task_id``."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(status=FakeResearchStatus.COMPLETED, task_id=TASK_ID)
+    )
+    result = await mcp_call("research_status", {"notebook": NB_ID, "task_id": TASK_ID})
+    sc = result.structured_content
+    assert sc["poll_task_id"] == TASK_ID
+    # The alias is threaded through ``poll`` identically to the canonical name.
+    mock_client.research.poll.assert_awaited_once_with(NB_ID, TASK_ID)
+    # A caller-visible note names the old param and its replacement.
+    assert "task_id" in sc["deprecation"] and "poll_task_id" in sc["deprecation"]
+
+
+async def test_research_import_task_id_alias_matches_poll_task_id(mcp_call, mock_client) -> None:
+    """The deprecated ``task_id`` import arg resolves exactly like ``poll_task_id``."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(
+            status=FakeResearchStatus.COMPLETED,
+            sources=[FakeSource(url="http://a", title="A")],
+            task_id=TASK_ID,
+        )
+    )
+    mock_client.research.import_sources = AsyncMock(return_value=[{"id": "src-1", "title": "A"}])
+    result = await mcp_call("research_import", {"notebook": NB_ID, "task_id": TASK_ID})
+    sc = result.structured_content
+    assert sc["imported"] == [{"id": "src-1", "title": "A"}]
+    assert sc["poll_task_id"] == TASK_ID
+    mock_client.research.poll.assert_awaited_once_with(NB_ID, TASK_ID)
+    assert mock_client.research.import_sources.await_args.args[1] == TASK_ID
+    assert "task_id" in sc["deprecation"]
+
+
+async def test_research_cancel_run_id_alias_matches_poll_task_id(mcp_call, mock_client) -> None:
+    """The deprecated ``run_id`` cancel arg resolves exactly like ``poll_task_id``."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(status=FakeResearchStatus.IN_PROGRESS, task_id=TASK_ID)
+    )
+    mock_client.research.cancel = AsyncMock(return_value=None)
+    result = await mcp_call("research_cancel", {"notebook": NB_ID, "run_id": TASK_ID})
+    sc = result.structured_content
+    assert sc["cancel_requested"] is True
+    assert sc["poll_task_id"] == TASK_ID
+    # The legacy ``run_id`` response key is retained for one release.
+    assert sc["run_id"] == TASK_ID
+    mock_client.research.cancel.assert_awaited_once_with(NB_ID, TASK_ID)
+    assert "run_id" in sc["deprecation"]
+
+
+async def test_research_alias_and_canonical_same_value_no_note(mcp_call, mock_client) -> None:
+    """Passing both names with the SAME value is accepted (canonical wins, no note)."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(status=FakeResearchStatus.COMPLETED, task_id=TASK_ID)
+    )
+    result = await mcp_call(
+        "research_status",
+        {"notebook": NB_ID, "poll_task_id": TASK_ID, "task_id": TASK_ID},
+    )
+    assert "deprecation" not in result.structured_content
+    mock_client.research.poll.assert_awaited_once_with(NB_ID, TASK_ID)
+
+
+async def test_research_alias_and_canonical_conflict_rejected(mcp_call, mock_client) -> None:
+    """Passing both names with DIFFERENT values is rejected up front (no poll)."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(status=FakeResearchStatus.COMPLETED)
+    )
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call(
+            "research_status",
+            {"notebook": NB_ID, "poll_task_id": "a", "task_id": "b"},
+        )
+    assert "VALIDATION" in str(excinfo.value)
+    mock_client.research.poll.assert_not_called()

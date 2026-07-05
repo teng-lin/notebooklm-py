@@ -30,13 +30,15 @@ pytest.importorskip("fastmcp")
 #: Ratchet ceilings — calibrated to the current surface (Tier-1 read-merge took it
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
-SCHEMA_CHAR_BUDGET = 37_020  # total serialized inputSchema + description chars (current 36_979)
+SCHEMA_CHAR_BUDGET = 37_020  # total serialized inputSchema + description chars (current 36_934)
 # ^ Raised from 36_250 for #1741: research_status gained include_report /
 # report_max_chars / source_limit / source_offset windowing params, and the four
 # research tools' docstrings speak one `poll_task_id` id (tightened to stay lean).
-# Measured full-surface cost is 36_780 on this rebase (incl. #1747/#1749/#1755/#1748
-# sharing confirm gates + the review-driven report_truncated/traceability wording);
-# the ceiling is a deliberately minimal buffer (ADR-0025) — trim before adding more.
+# #1789 renamed research_status/import's `task_id` and research_cancel's `run_id`
+# params to `poll_task_id` (keeping the old names as deprecated aliases → one extra
+# param each), absorbed by trimming the now-redundant id-routing prose from those
+# docstrings; measured full-surface cost is 36_934. The ceiling is a deliberately
+# minimal buffer (ADR-0025) — trim before adding more.
 MAX_PARAMS_PER_TOOL = 22  # studio_generate is the current high-water mark
 
 

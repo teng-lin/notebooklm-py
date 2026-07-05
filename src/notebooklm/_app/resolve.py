@@ -14,8 +14,10 @@ imports (enforced by ``tests/_guardrails/test_app_boundary.py``).
 
 from __future__ import annotations
 
+import difflib
 import re
-from collections.abc import Callable, Sequence
+import unicodedata
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -174,3 +176,110 @@ def resolve_ref(
         lines.append(f"  ... and {len(matches) - _MAX_AMBIGUOUS_CANDIDATES} more")
     lines.append("\nSpecify more characters to narrow down.")
     raise AmbiguousIdError(token, candidate_ids, "\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# Near-miss suggestions for a failed *name* lookup (issue #1787)
+# ---------------------------------------------------------------------------
+
+#: Dash variants agents commonly type in place of one another (or of a plain
+#: hyphen) when referencing an em-dash-heavy title: hyphen/non-breaking-hyphen,
+#: figure/en/em dash, horizontal bar, and the minus sign. All fold to a plain
+#: ``-`` before comparison so ``"… - Intel"`` still matches ``"… — Intel"``.
+_DASH_TRANSLATION = str.maketrans(dict.fromkeys("‐‑‒–—―−", "-"))
+
+#: Minimum :func:`difflib.get_close_matches` similarity ratio for a fuzzy
+#: near-miss suggestion. The library default; low enough to catch a couple of
+#: transposed/changed characters, high enough to avoid noise.
+_FUZZY_CUTOFF = 0.6
+
+#: Default maximum near-miss candidates surfaced on a failed name lookup.
+_MAX_NEAR_MISS_CANDIDATES = 3
+
+
+def _normalize_for_match(text: str) -> str:
+    """Fold a title/token for punctuation- and case-insensitive comparison.
+
+    NFKC folds compatibility forms (e.g. a non-breaking space to a plain space),
+    every dash variant collapses to a plain hyphen, runs of whitespace collapse
+    to a single space, and the result is casefolded. This is what lets a hyphen
+    typed for an em-dash — or a normal space typed for a non-breaking one — still
+    match the real title.
+    """
+    folded = unicodedata.normalize("NFKC", text).translate(_DASH_TRANSLATION)
+    return " ".join(folded.split()).casefold()
+
+
+def near_miss_candidates(
+    token: str,
+    items: Iterable[Any],
+    *,
+    id_of: Callable[[Any], str],
+    title_of: Callable[[Any], str | None],
+    limit: int = _MAX_NEAR_MISS_CANDIDATES,
+) -> list[dict[str, str]]:
+    """Return up to ``limit`` near-miss ``{"id", "title"}`` suggestions for ``token``.
+
+    Enriches a failed *name* lookup (``NOT_FOUND``) with "did you mean" hints.
+    Two cheap, stdlib-only passes over the already-fetched ``items`` (no extra
+    RPC): a **prefix** pass (titles whose normalized form starts with the
+    normalized token — catches ``"Scientific"`` -> ``"Scientific PDF Parsing —
+    …"``), then a **fuzzy** pass via :func:`difflib.get_close_matches` over the
+    normalized titles (catches punctuation-only differences such as em-dash vs
+    hyphen, whose normalized forms are near-identical).
+
+    Both passes compare *normalized* text (see :func:`_normalize_for_match`), so
+    an em-dash/hyphen or non-breaking-space mismatch still surfaces the real
+    title. Results de-duplicate by id, cap at ``limit``, and carry each item's
+    ORIGINAL id and title. An empty/whitespace ``token``, or no near match,
+    returns ``[]``.
+    """
+    norm_token = _normalize_for_match(token)
+    if not norm_token:
+        return []
+
+    # (normalized_title, original_id, original_title) for every titled item.
+    entries: list[tuple[str, str, str]] = []
+    for item in items:
+        title = title_of(item)
+        if not title:
+            continue
+        entries.append((_normalize_for_match(title), str(id_of(item)), str(title)))
+
+    results: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def _add(item_id: str, title: str) -> None:
+        if item_id not in seen:
+            seen.add(item_id)
+            results.append({"id": item_id, "title": title})
+
+    # Pass 1 — prefix matches, in list order.
+    for norm_title, item_id, title in entries:
+        if len(results) >= limit:
+            return results
+        if norm_title.startswith(norm_token):
+            _add(item_id, title)
+
+    # Pass 2 — fuzzy matches over the normalized titles for whatever slots remain.
+    # ``norm_titles`` is de-duplicated (order-preserving) so a repeated title does
+    # not waste a ``get_close_matches`` slot; every item sharing a matched
+    # normalized title is then a candidate (no inner ``break``), so two items whose
+    # titles differ only in punctuation both surface while slots remain. ``n=limit``
+    # (not ``limit - len(results)``) is fine: ``limit`` is a cap, not a target, and
+    # ``_add`` drops any fuzzy hit already surfaced by the prefix pass — so the
+    # final count can be below ``limit`` even with more distinct matches available.
+    if len(results) < limit and entries:
+        norm_titles = list(dict.fromkeys(norm_title for norm_title, _, _ in entries))
+        for match in difflib.get_close_matches(
+            norm_token, norm_titles, n=limit, cutoff=_FUZZY_CUTOFF
+        ):
+            for norm_title, item_id, title in entries:
+                if norm_title == match:
+                    _add(item_id, title)
+                    if len(results) >= limit:
+                        break
+            if len(results) >= limit:
+                break
+
+    return results

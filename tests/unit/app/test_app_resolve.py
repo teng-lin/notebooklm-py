@@ -9,6 +9,7 @@ import pytest
 from notebooklm._app.resolve import (
     AmbiguousIdError,
     Resolution,
+    near_miss_candidates,
     resolve_ref,
     validate_id,
 )
@@ -158,3 +159,76 @@ def test_resolve_ref_strips_token_before_matching() -> None:
     result = resolve_ref("  abc  ", items, id_of=_id_of, title_of=_title_of)
 
     assert result.id == "abc123"
+
+
+# --- near_miss_candidates (issue #1787) ------------------------------------
+
+
+def test_near_miss_prefix_surfaces_full_title() -> None:
+    real = "Scientific PDF Parsing — Landscape, Benchmarks & Multimodal Extraction"
+    items = [Item(id="37fe5c1d", title=real), Item(id="cafef00d", title="Unrelated")]
+    assert near_miss_candidates("Scientific", items, id_of=_id_of, title_of=_title_of) == [
+        {"id": "37fe5c1d", "title": real}
+    ]
+
+
+def test_near_miss_em_dash_matches_hyphen() -> None:
+    items = [Item(id="deadbeef", title="Acme — Competitive Intel")]
+    # A plain hyphen typed for the em-dash still surfaces the real title.
+    assert near_miss_candidates(
+        "Acme - Competitive Intel", items, id_of=_id_of, title_of=_title_of
+    ) == [{"id": "deadbeef", "title": "Acme — Competitive Intel"}]
+
+
+def test_near_miss_non_breaking_space_matches_normal_space() -> None:
+    items = [Item(id="deadbeef", title="Acme Corp Notes")]
+    assert near_miss_candidates("Acme Corp Notes", items, id_of=_id_of, title_of=_title_of) == [
+        {"id": "deadbeef", "title": "Acme Corp Notes"}
+    ]
+
+
+def test_near_miss_fuzzy_matches_typo() -> None:
+    items = [Item(id="deadbeef", title="Competitive Landscape")]
+    got = near_miss_candidates("Competitve Landscape", items, id_of=_id_of, title_of=_title_of)
+    assert [c["id"] for c in got] == ["deadbeef"]
+
+
+def test_near_miss_no_close_match_returns_empty() -> None:
+    items = [Item(id="deadbeef", title="Alpha"), Item(id="cafef00d", title="Beta")]
+    assert near_miss_candidates("Zzzzqwx", items, id_of=_id_of, title_of=_title_of) == []
+
+
+def test_near_miss_empty_token_returns_empty() -> None:
+    items = [Item(id="deadbeef", title="Alpha")]
+    assert near_miss_candidates("   ", items, id_of=_id_of, title_of=_title_of) == []
+
+
+def test_near_miss_skips_untitled_items() -> None:
+    items = [Item(id="deadbeef", title=None), Item(id="cafef00d", title="Alpha Notes")]
+    got = near_miss_candidates("Alpha", items, id_of=_id_of, title_of=_title_of)
+    assert [c["id"] for c in got] == ["cafef00d"]
+
+
+def test_near_miss_caps_at_limit_and_dedupes() -> None:
+    items = [Item(id=f"id{n}", title=f"Report {n}") for n in range(10)]
+    got = near_miss_candidates("Report", items, id_of=_id_of, title_of=_title_of, limit=3)
+    assert len(got) == 3
+    assert len({c["id"] for c in got}) == 3
+
+
+def test_near_miss_fuzzy_surfaces_all_items_sharing_a_normalized_title() -> None:
+    """Distinct items whose titles normalize identically must each surface (#1794 review).
+
+    A shared normalized title must not let the first item shadow the rest while
+    limit slots remain — and the result must not depend on input order.
+    """
+    # "Report — Q3" and "Report - Q3" both normalize to "report - q3"; the token
+    # has a typo so this resolves via the fuzzy pass, not the prefix pass.
+    items = [Item(id="em", title="Reportt — Q3"), Item(id="hy", title="Reportt - Q3")]
+    got = near_miss_candidates("Report Q3", items, id_of=_id_of, title_of=_title_of)
+    assert {c["id"] for c in got} == {"em", "hy"}
+
+    reversed_got = near_miss_candidates(
+        "Report Q3", list(reversed(items)), id_of=_id_of, title_of=_title_of
+    )
+    assert {c["id"] for c in reversed_got} == {"em", "hy"}

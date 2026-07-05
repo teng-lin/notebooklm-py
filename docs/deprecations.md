@@ -21,6 +21,7 @@ the broader stability policy (semver promise, supported Python versions, the
 | Deprecated | Replacement | Since | Removal | Notes |
 |------------|-------------|-------|---------|-------|
 | Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | v0.5.0 | v1.0 | The `__await__` form still works. Warning emitted via `src/notebooklm/_deprecation.py::warn_deprecated`; suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1` ([#1369](https://github.com/teng-lin/notebooklm-py/issues/1369)) |
+| MCP `research_status(task_id=…)` / `research_import(task_id=…)` / `research_cancel(run_id=…)` | The same value under `poll_task_id=…` on all three | v0.8.0 | v0.9.0 | The three tools each accept the id that `research_start` / `research_status` surface as `poll_task_id` — renamed so the value copies verbatim between tools. The old `task_id` / `run_id` param names still work as aliases but emit a `DeprecationWarning` (via `warn_deprecated`) and add a `deprecation` note to the tool result; passing both names with different values is a validation error. ([#1789](https://github.com/teng-lin/notebooklm-py/issues/1789)) |
 
 > The v0.8.0 error-contract runways (`get()`-returns-`None`, the
 > `wait_for_completion(interval=...)` alias, the dict-subscript bridge,

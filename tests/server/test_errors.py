@@ -109,6 +109,20 @@ def test_error_body_carries_hint_where_present() -> None:
     assert "hint" not in _error_body(exc.RPCError("decode failed"))
 
 
+def test_not_found_body_carries_near_miss_candidates() -> None:
+    """A failed name lookup surfaces near-miss candidates + a 'Did you mean' hint (#1787)."""
+    err = exc.NotebookNotFoundError("Scientific")
+    err.candidates = [{"id": "37fe5c1d", "title": "Scientific PDF Parsing"}]
+    body = _error_body(err)
+    assert body["candidates"] == [{"id": "37fe5c1d", "title": "Scientific PDF Parsing"}]
+    assert body["hint"].startswith("Did you mean:")
+
+
+def test_not_found_body_without_candidates_omits_the_field() -> None:
+    body = _error_body(exc.NotebookNotFoundError("Scientific"))
+    assert "candidates" not in body
+
+
 def test_http_error_response_enriches_mapped_status() -> None:
     """A status that maps to a neutral ErrorCategory (411 → validation) carries
     retriable + hint, drawn from the shared _app tables."""

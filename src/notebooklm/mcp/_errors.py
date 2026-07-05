@@ -35,7 +35,7 @@ from typing import Any
 
 from fastmcp.exceptions import ToolError
 
-from .._app.errors import CATEGORY_HINTS, ErrorCategory, classify
+from .._app.errors import CATEGORY_HINTS, ErrorCategory, classify, did_you_mean_hint
 from .._redact import redact
 from ..exceptions import NotebookLMError
 
@@ -110,6 +110,14 @@ def tool_error_payload(exc: BaseException) -> dict[str, Any]:
         "message": message,
         "retriable": classified.retriable,
     }
+    # A failed *name* lookup may carry near-miss candidates (issue #1787). Surface
+    # them structurally AND replace the generic NOT_FOUND hint with a "Did you
+    # mean …" one that names the titles inline — the FastMCP wire flattens this
+    # payload to a string, so the inline titles are what a flat-string client sees.
+    candidates = list(getattr(exc, "candidates", ()) or ())
+    if candidates:
+        payload["candidates"] = candidates
+        hint = did_you_mean_hint(candidates)
     if hint is not None:
         payload["hint"] = hint
     return payload

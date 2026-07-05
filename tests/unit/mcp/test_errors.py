@@ -146,6 +146,59 @@ def test_to_tool_error_returns_tool_error_with_payload() -> None:
     assert "RATE_LIMITED" in str(err)
 
 
+def test_not_found_candidates_surface_in_payload_and_did_you_mean_hint() -> None:
+    """Near-miss candidates (issue #1787) appear structurally and swap the hint."""
+    err = exc.NotebookNotFoundError("Scientific")
+    err.candidates = [{"id": "37fe5c1d", "title": "Scientific PDF Parsing — Landscape"}]
+    payload = tool_error_payload(err)
+
+    assert payload["code"] == "NOT_FOUND"
+    assert payload["candidates"] == [
+        {"id": "37fe5c1d", "title": "Scientific PDF Parsing — Landscape"}
+    ]
+    # The generic NOT_FOUND hint is replaced by a "Did you mean …" hint that
+    # names the title AND id inline (so a flat-string MCP client still sees both).
+    assert payload["hint"].startswith("Did you mean:")
+    assert "Scientific PDF Parsing — Landscape" in payload["hint"]
+    assert "37fe5c1d" in payload["hint"]
+
+
+def test_candidate_id_reaches_the_flattened_toolerror_wire() -> None:
+    """to_tool_error drops the structured list, so the id must ride the hint string.
+
+    Regression for the codex P2: an MCP client only sees the flat ToolError
+    message, and must be able to retry by id without another list call.
+    """
+    err = exc.SourceNotFoundError("Quarterly - Revenue")
+    err.candidates = [{"id": "src-abc123-def456", "title": "Quarterly — Revenue Deck"}]
+    wire = str(to_tool_error(err))
+    assert "Did you mean:" in wire
+    assert "src-abc123-def456" in wire
+    assert "Quarterly — Revenue Deck" in wire
+
+
+def test_not_found_without_candidates_keeps_generic_hint() -> None:
+    """A miss with no near match carries no candidates and the generic hint."""
+    payload = tool_error_payload(exc.NotebookNotFoundError("Nonexistent"))
+    assert "candidates" not in payload
+    assert payload["hint"] == CATEGORY_TABLE[ErrorCategory.NOT_FOUND][1]
+
+
+def test_validation_error_with_candidates_is_enriched() -> None:
+    """A label near-miss (VALIDATION-coded, candidates on the attr) still enriches.
+
+    ``source_list(label=…)`` resolves labels by name and raises the VALIDATION-
+    coded ``LabelResolutionError``; its ``.candidates`` must reach the wire with a
+    "Did you mean" hint even though the code is not NOT_FOUND.
+    """
+    err = exc.ValidationError("No label found matching 'Q3 - Papers'")
+    err.candidates = [{"id": "lbl1", "title": "Q3 — Papers"}]  # type: ignore[attr-defined]
+    payload = tool_error_payload(err)
+    assert payload["code"] == "VALIDATION"
+    assert payload["candidates"] == [{"id": "lbl1", "title": "Q3 — Papers"}]
+    assert payload["hint"].startswith("Did you mean:")
+
+
 def test_mcp_errors_translates_notebooklm_error() -> None:
     with pytest.raises(ToolError) as caught, mcp_errors():  # noqa: PT012
         raise exc.NotFoundError("missing")

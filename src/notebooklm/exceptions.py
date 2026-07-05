@@ -184,17 +184,17 @@ class NotFoundError(NotebookLMError):
     :class:`SourceNotFoundError` is still a :class:`SourceError`, and
     :class:`NotebookNotFoundError` is still an :class:`RPCError` and a
     :class:`NotebookError`. This umbrella is additive and does not
-    change existing catch semantics.
-
-    .. note::
-
-        As of v0.6.0, every concrete ``*NotFoundError`` subclass also mixes in
-        :class:`RPCError`, so ``except RPCError`` catches each of them
-        uniformly. See the v0.6.0 BREAKING-CHANGE entry in CHANGELOG.md
-        for migration guidance (the broad ``except RPCError`` clause now
-        intercepts a missing source / artifact that previously fell
-        through to the specific ``*NotFoundError`` handler).
+    change existing catch semantics. Since v0.6.0 every concrete
+    ``*NotFoundError`` also mixes in :class:`RPCError`, so ``except RPCError``
+    now intercepts a missing source / artifact that previously fell through to
+    the specific ``*NotFoundError`` handler (see the v0.6.0 CHANGELOG entry).
     """
+
+    #: Near-miss ``{"id", "title"}`` candidates for a failed *name* lookup
+    #: (issue #1787); empty unless a name resolver sets it. The immutable empty
+    #: default is never mutated in place — resolvers assign a fresh list. See
+    #: :func:`notebooklm._app.errors.did_you_mean_hint`.
+    candidates: Sequence[dict[str, str]] = ()
 
 
 class WaitTimeoutError(NotebookLMError, TimeoutError):

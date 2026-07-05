@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from ..exceptions import ValidationError
 from ..types import Label
-from .resolve import validate_id
+from .resolve import near_miss_candidates, validate_id
 
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
@@ -65,6 +65,15 @@ class LabelResolutionError(ValidationError):
     ``output_error`` so the typed ``--json`` envelope + its ADR-0015 code are
     preserved.
     """
+
+    #: Near-miss ``{"id", "title"}`` candidates for a failed name lookup
+    #: (issue #1787). Mirrors :attr:`NotFoundError.candidates` so the MCP / REST
+    #: surfaces — which read ``getattr(exc, "candidates", ())`` and never reach
+    #: into ``.extra`` — enrich a label near-miss too, even though this error
+    #: classifies as ``VALIDATION`` rather than ``NOT_FOUND``. Empty unless the
+    #: resolver sets it; the ``.extra["candidates"]`` copy still feeds the CLI
+    #: ``--json`` envelope (which surfaces ``.extra``).
+    candidates: Sequence[dict[str, str]] = ()
 
     def __init__(
         self,
@@ -173,11 +182,28 @@ async def resolve_label_id(
             {"name": token, "candidates": _candidate_payload(name_matches)},
         )
 
-    raise LabelResolutionError(
+    # Near-miss "did you mean" candidates (issue #1787): a name mistyped with a
+    # hyphen for an em-dash or a bare prefix surfaces the real label(s). Stored on
+    # ``.extra`` (for the CLI ``--json`` envelope) AND on ``.candidates`` (for the
+    # MCP / REST surfaces, reached by ``source_list(label=…)``, which read the
+    # attribute — not ``.extra`` — and never see a VALIDATION error's near-misses
+    # otherwise).
+    extra: dict[str, Any] = {"id": token, "notebook_id": notebook_id}
+    candidates = near_miss_candidates(
+        token,
+        labels,
+        id_of=lambda label: label.id,
+        title_of=lambda label: label.name,
+    )
+    if candidates:
+        extra["candidates"] = candidates
+    error = LabelResolutionError(
         f"No label found matching '{token}'. Run 'notebooklm label list' to see available labels.",
         "NOT_FOUND",
-        {"id": token, "notebook_id": notebook_id},
+        extra,
     )
+    error.candidates = candidates
+    raise error
 
 
 # ---------------------------------------------------------------------------
