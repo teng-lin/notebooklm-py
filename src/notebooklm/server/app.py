@@ -31,6 +31,7 @@ from typing import cast
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 
 from ..client import NotebookLMClient
+from ..paths import get_active_profile, set_active_profile
 from ._auth import require_auth
 from ._context import AppState
 from ._errors import http_error_response, install_exception_handlers
@@ -64,7 +65,8 @@ def create_app(
 
     Args:
         profile: Auth profile bound by the default factory (``from_storage(profile=)``).
-            ``None`` resolves the active profile. Ignored when ``client_factory`` is set.
+            ``None`` resolves the active profile. Also drives process-wide profile
+            resolution for diagnostics such as ``/v1/server/info``.
         client_factory: Test seam — a zero-arg callable returning an async
             context manager that yields a client. Defaults to
             ``NotebookLMClient.from_storage(profile=profile)``.
@@ -78,12 +80,19 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        async with factory() as client:
-            app.state.notebooklm = AppState(client=client, pending=PendingRegistry())
-            try:
-                yield
-            finally:
-                app.state.notebooklm = None
+        previous_profile = get_active_profile()
+        if profile is not None:
+            set_active_profile(profile)
+        try:
+            async with factory() as client:
+                app.state.notebooklm = AppState(client=client, pending=PendingRegistry())
+                try:
+                    yield
+                finally:
+                    app.state.notebooklm = None
+        finally:
+            if profile is not None:
+                set_active_profile(previous_profile)
 
     app = FastAPI(
         title=SERVER_NAME,

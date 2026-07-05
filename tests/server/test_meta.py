@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from notebooklm.server.app import create_app
 from notebooklm.server.routes import meta as meta_route
 
+from .conftest import TEST_TOKEN
 from .fakes import FakeClient
 
 
@@ -71,6 +75,38 @@ def test_server_info_profile_is_resolved_not_null(
     monkeypatch.setattr(paths, "_active_profile", None)
     body = authed_client.get("/v1/server/info").json()
     assert body["auth"]["profile"] == "default"
+
+
+def test_server_info_uses_bound_profile_for_probe(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``create_app(profile=X)`` makes server_info probe that same profile (#1791)."""
+    from notebooklm import paths
+
+    seen: dict[str, Any] = {}
+
+    async def _fake_run(plan: Any, *, read_env_auth_json: Any) -> _FakeAuthResult:
+        seen["profile"] = plan.profile
+        seen["storage_path"] = plan.storage_path
+        return _FakeAuthResult(all_passed=True)
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[FakeClient]:
+        yield FakeClient()
+
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    monkeypatch.setattr(paths, "_active_profile", None)
+    monkeypatch.setattr(meta_route, "run_auth_check", _fake_run)
+
+    app = create_app(profile="work", client_factory=factory)
+    headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
+    with TestClient(app, headers=headers, client=("127.0.0.1", 5555)) as client:
+        body = client.get("/v1/server/info").json()
+
+    assert body["auth"]["profile"] == "work"
+    assert seen == {"profile": "work", "storage_path": paths.get_storage_path("work")}
+    assert paths.get_active_profile() is None
 
 
 def test_server_info_include_account(

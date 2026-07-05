@@ -25,6 +25,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import AuthProvider
 
 from ..client import NotebookLMClient
+from ..paths import get_active_profile, set_active_profile
 from ._context import AppState
 from ._filelink import FileTransferConfig
 
@@ -76,7 +77,8 @@ def create_server(
 
     Args:
         profile: Auth profile bound for the whole process. Defaults to the active
-            profile when ``None``.
+            profile when ``None``. Also drives process-wide profile resolution
+            for diagnostics such as the ``server_info`` tool.
         client_factory: Test seam — a zero-arg callable returning an async context
             manager that yields a client. Defaults to
             ``NotebookLMClient.from_storage(profile=...)``.
@@ -109,8 +111,15 @@ def create_server(
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[AppState]:
-        async with factory() as client:
-            yield AppState(client=client, file_transfer=file_transfer)
+        previous_profile = get_active_profile()
+        if profile is not None:
+            set_active_profile(profile)
+        try:
+            async with factory() as client:
+                yield AppState(client=client, file_transfer=file_transfer)
+        finally:
+            if profile is not None:
+                set_active_profile(previous_profile)
 
     mcp = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS, lifespan=lifespan, auth=auth)
     register_all(mcp)

@@ -128,12 +128,8 @@ def register(mcp: Any) -> None:
         remote) caller, while telling the agent nothing it can act on.
         """
         with mcp_errors():
-            # Report the *resolved* profile (never ``None``) rather than the raw
-            # module-level active profile: the MCP server never sets an active
-            # profile, so ``get_active_profile()`` was always ``None`` here even
-            # though ``get_storage_path`` resolves and checks a concrete profile
-            # (#1790). ``resolve_profile()`` names the profile the auth probe
-            # actually ran against — the same value the CLI ``status`` reports.
+            # Report the *resolved* profile (never ``None``): this names the
+            # profile the auth probe actually ran against (#1790, #1791).
             profile = resolve_profile()
             storage_path = get_storage_path(profile)
             plan = AuthCheckPlan(

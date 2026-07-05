@@ -9,7 +9,11 @@ honors.
 
 from __future__ import annotations
 
+import contextlib
 import json
+from collections.abc import AsyncIterator
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,8 +21,12 @@ import pytest
 # Skip cleanly when the `mcp` extra (fastmcp) is absent; see conftest.py.
 pytest.importorskip("fastmcp")
 
+from fastmcp import Client  # noqa: E402 - after importorskip guard
+
 from notebooklm._version_info import version_string  # noqa: E402 - after importorskip guard
 from notebooklm.exceptions import RPCError  # noqa: E402 - after importorskip guard
+from notebooklm.mcp.server import create_server  # noqa: E402 - after importorskip guard
+from notebooklm.mcp.tools import meta as meta_tool  # noqa: E402 - after importorskip guard
 from notebooklm.types import (  # noqa: E402 - after importorskip guard
     AccountLimits,
     UserSettings,
@@ -146,6 +154,42 @@ async def test_server_info_profile_reflects_named_profile(
     monkeypatch.setattr(paths, "_active_profile", None)
     result = await mcp_call("server_info")
     assert result.structured_content["auth"]["profile"] == "work"
+
+
+async def test_server_info_uses_bound_profile_for_probe(mock_client, tmp_path, monkeypatch) -> None:
+    """``create_server(profile=X)`` makes server_info probe that same profile (#1791)."""
+    from notebooklm import paths
+
+    seen: dict[str, Any] = {}
+
+    async def _fake_run(plan: Any, *, read_env_auth_json: Any) -> Any:
+        seen["profile"] = plan.profile
+        seen["storage_path"] = plan.storage_path
+        return SimpleNamespace(
+            all_passed=True,
+            checks={
+                "storage_exists": True,
+                "json_valid": True,
+                "cookies_present": True,
+                "sid_cookie": True,
+            },
+        )
+
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator[MagicMock]:
+        yield mock_client
+
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    monkeypatch.setattr(paths, "_active_profile", None)
+    monkeypatch.setattr(meta_tool, "run_auth_check", _fake_run)
+
+    async with Client(create_server(profile="work", client_factory=factory)) as client:
+        result = await client.call_tool("server_info")
+
+    assert result.structured_content["auth"]["profile"] == "work"
+    assert seen == {"profile": "work", "storage_path": paths.get_storage_path("work")}
+    assert paths.get_active_profile() is None
 
 
 async def test_server_info_default_omits_account(
