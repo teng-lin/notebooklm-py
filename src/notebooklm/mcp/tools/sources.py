@@ -560,10 +560,10 @@ def register(mcp: Any) -> None:
         browser hop. Works on any transport and needs no file-transfer config.
 
         SMALL FILES ONLY: ``bytes_base64`` must be ≤ 10,000 characters (≈ 7 KB of
-        file; base64 inflates ~33%). A larger payload exceeds the MCP message limit
-        and is rejected — use ``source_add(source_type="file")`` instead, whose
-        ``upload_required`` signed URL carries large files (≤ 200 MiB) via the
-        browser or a raw-body agent POST.
+        file). A larger payload exceeds the MCP message limit and is rejected — use
+        ``source_add(source_type="file")`` instead, whose ``upload_required`` signed
+        URL carries large files (≤ 200 MiB) via the browser or a raw-body agent POST.
+        Standard base64 only, not URL-safe (``-``/``_``).
 
         ``filename`` seeds the default title and extension (sanitized to a basename);
         ``mime_type`` / ``title`` are optional. The added source is echoed under
