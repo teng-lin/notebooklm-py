@@ -421,16 +421,24 @@ def save_cookies_to_storage(
         # if those tokens existed previously (on-disk or in the original snapshot), to avoid session degradation.
         prior_cookie_names = _cookie_policy.cookie_names_from_storage(storage_data)
         snapshot_cookie_names = (
-            {key.name for key in original_snapshot.keys()}
-            if original_snapshot is not None
-            else set()
+            {key.name for key in original_snapshot} if original_snapshot is not None else set()
         )
         all_prior_cookie_names = prior_cookie_names | snapshot_cookie_names
         core_cookies_previously_present = (
             _cookie_policy.MINIMUM_REQUIRED_COOKIES & all_prior_cookie_names
         )
         incoming_cookie_names = {cookie.name for cookie in cookie_jar.jar if cookie.name}
-        missing_core_cookies = core_cookies_previously_present - incoming_cookie_names
+
+        explicit_deletions: set[str] = set()
+        if original_snapshot is not None:
+            current_snapshot = snapshot_cookie_jar(cookie_jar)
+            explicit_deletions = {
+                key.name for key in original_snapshot if key not in current_snapshot
+            }
+
+        missing_core_cookies = (
+            core_cookies_previously_present - incoming_cookie_names
+        ) - explicit_deletions
         if missing_core_cookies:
             logger.warning(
                 "Skipping cookie save: new cookie set is missing core auth tokens "
@@ -438,7 +446,6 @@ def save_cookies_to_storage(
                 ", ".join(sorted(missing_core_cookies)),
             )
             return _cookie_save_return(CookieSaveResult(False), return_result=return_result)
-
 
         if original_snapshot is None:
             updated_count = _merge_cookies_legacy(cookie_jar, storage_data)

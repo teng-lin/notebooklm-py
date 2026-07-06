@@ -27,7 +27,7 @@ from typing import Any
 
 import httpx
 
-from .._env import get_base_url
+from .._env import build_cloud_scoped_url, get_base_url
 from .._url_utils import is_google_auth_redirect
 from ..paths import get_storage_path, resolve_profile
 from . import cookies as _auth_cookies
@@ -36,7 +36,6 @@ from . import headers as _auth_headers
 from . import keepalive as _keepalive
 from . import paths as _auth_paths
 from . import storage as _auth_storage
-from .account import authuser_query
 
 logger = logging.getLogger("notebooklm.auth")
 
@@ -733,21 +732,12 @@ async def _fetch_tokens_with_jar(
         if poke:
             await _poke_session(client, storage_path)
 
-        if get_base_url() == "https://notebooklm.cloud.google.com":
-            region = os.environ.get("NOTEBOOKLM_REGION", "global")
-            project = os.environ.get("NOTEBOOKLM_PROJECT", "")
-            url = f"{get_base_url()}/{region}/"
-            query_params = []
-            if project:
-                query_params.append(f"project={project}")
-            if account_email or authuser or force_authuser_query:
-                query_params.append(authuser_query(authuser, account_email))
-            if query_params:
-                url = f"{url}?{'&'.join(query_params)}"
-        else:
-            url = f"{get_base_url()}/"
-            if account_email or authuser or force_authuser_query:
-                url = f"{url}?{authuser_query(authuser, account_email)}"
+        url = build_cloud_scoped_url(
+            path="",
+            authuser=authuser,
+            account_email=account_email,
+            include_authuser=bool(account_email or authuser or force_authuser_query),
+        )
         response = await client.get(
             url,
             follow_redirects=True,
@@ -757,6 +747,14 @@ async def _fetch_tokens_with_jar(
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
+                base_url = get_base_url()
+                if base_url == "https://notebooklm.cloud.google.com":
+                    raise ValueError(
+                        f"Authentication expired or invalid, or cloud configuration misconfigured (HTTP 404). "
+                        f"Verify your NOTEBOOKLM_REGION ({os.environ.get('NOTEBOOKLM_REGION', 'global')}) "
+                        f"and NOTEBOOKLM_PROJECT ({os.environ.get('NOTEBOOKLM_PROJECT', '')}) environments, "
+                        f"or run 'notebooklm login' to re-authenticate."
+                    ) from exc
                 raise ValueError(
                     "Authentication expired or invalid (HTTP 404). "
                     "Run 'notebooklm login' to re-authenticate."

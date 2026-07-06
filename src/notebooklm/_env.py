@@ -12,7 +12,7 @@ of endpoint/language helpers from here.
 from __future__ import annotations
 
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 DEFAULT_BASE_URL = "https://notebooklm.google.com"
 PERSONAL_BASE_HOST = "notebooklm.google.com"
@@ -97,3 +97,49 @@ def get_default_language() -> str:
     """
     raw = os.environ.get("NOTEBOOKLM_HL", "") or ""
     return raw.strip() or "en"
+
+
+def get_notebooklm_region() -> str:
+    """Return the NotebookLM region name configured in the environment."""
+    region_env = os.environ.get("NOTEBOOKLM_REGION")
+    region = region_env.strip() if region_env else ""
+    return region or "global"
+
+
+def build_cloud_scoped_url(
+    path: str = "",
+    *,
+    authuser: int = 0,
+    account_email: str | None = None,
+    include_authuser: bool = False,
+    extra_params: dict[str, str] | None = None,
+) -> str:
+    """Build a NotebookLM URL, automatically handling Cloud scoping and project/auth parameters."""
+    base = get_base_url()
+    params = {}
+    if extra_params:
+        params.update(extra_params)
+
+    if include_authuser:
+        from ._auth.account import format_authuser_value
+
+        params["authuser"] = format_authuser_value(authuser, account_email)
+
+    if base == "https://notebooklm.cloud.google.com":
+        region = get_notebooklm_region()
+
+        # Ensure path has a trailing slash if it is empty, to match legacy:
+        # e.g., base_url/region/ instead of base_url/region
+        url_path = f"{region}/" if not path else f"{region}/{path}"
+        url = f"{base}/{url_path}"
+        project_env = os.environ.get("NOTEBOOKLM_PROJECT")
+        project = project_env.strip() if project_env else ""
+        if project:
+            params["project"] = project
+    else:
+        url = f"{base}/" if not path else f"{base}/{path}"
+
+    if params:
+        # urlencode sorted keys to remain deterministic
+        return f"{url}?{urlencode(sorted(params.items()))}"
+    return url

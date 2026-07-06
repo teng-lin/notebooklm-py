@@ -107,3 +107,56 @@ def build_request_body(
     body = "&".join(body_parts) + "&"
     logger.debug("Built request body: size=%d bytes", len(body))
     return body
+
+
+def adapt_enterprise_params(
+    method: RPCMethod,
+    params: list[Any],
+    project_id: str,
+    region: str,
+) -> list[Any]:
+    """Adapt standard RPC parameters to the NotebookLM Enterprise schema."""
+    parent = f"projects/{project_id}/locations/{region}"
+
+    def to_notebook_path(nb_id: str) -> str:
+        if nb_id.startswith("projects/"):
+            return nb_id
+        return f"projects/{project_id}/locations/{region}/notebooks/{nb_id}"
+
+    adapted_params = list(params)
+
+    if method == RPCMethod.GET_USER_SETTINGS:
+        return [parent]
+    elif method == RPCMethod.LIST_NOTEBOOKS:
+        return [parent, None, None, 1]
+    elif method == RPCMethod.GET_NOTEBOOK:
+        if adapted_params:
+            notebook_id = adapted_params[0]
+            return [to_notebook_path(notebook_id)]
+    elif method == RPCMethod.CREATE_NOTEBOOK:
+        if adapted_params:
+            title = adapted_params[0]
+            return [
+                parent,
+                [title, None, None, None, None, [None, None, None, None, None, None, 1]],
+            ]
+    elif method == RPCMethod.DELETE_NOTEBOOK:
+        if adapted_params and isinstance(adapted_params[0], list) and adapted_params[0]:
+            notebook_id = adapted_params[0][0]
+            return [to_notebook_path(notebook_id)]
+    elif method == RPCMethod.RENAME_NOTEBOOK:
+        if len(adapted_params) > 1:
+            notebook_id = adapted_params[0]
+            title = ""
+            try:
+                title = adapted_params[1][0][3][1]
+            except (IndexError, TypeError):
+                title = str(adapted_params[1])
+            return [[title, {"70000": to_notebook_path(notebook_id)}], [["title", "emoji"]]]
+    elif method == RPCMethod.ADD_SOURCE:
+        if len(adapted_params) > 1:
+            notebook_id = adapted_params[1]
+            return [adapted_params[0], notebook_id, {"70000": to_notebook_path(notebook_id)}]
+
+    return adapted_params
+

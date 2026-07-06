@@ -1,9 +1,7 @@
-"""RPC types and constants for NotebookLM API."""
-
 from enum import Enum
 from typing import Final
 
-from .._env import DEFAULT_BASE_URL, get_base_url
+from .._env import DEFAULT_BASE_URL, get_base_url, get_notebooklm_region
 from .overrides import (
     _load_rpc_overrides as _load_rpc_overrides,
 )
@@ -34,30 +32,27 @@ UPLOAD_URL = f"{DEFAULT_BASE_URL}/upload/_/"
 
 def get_batchexecute_url() -> str:
     """Return the NotebookLM batchexecute endpoint for the configured host."""
-    import os
     base_url = get_base_url()
-    if "notebooklm.cloud.google.com" in base_url:
-        region = os.environ.get("NOTEBOOKLM_REGION", "global")
+    if base_url == "https://notebooklm.cloud.google.com":
+        region = get_notebooklm_region()
         return f"{base_url}/{region}/_/CloudNotebookLmUi/data/batchexecute"
     return f"{base_url}/_/LabsTailwindUi/data/batchexecute"
 
 
 def get_query_url() -> str:
     """Return the NotebookLM streamed chat endpoint for the configured host."""
-    import os
     base_url = get_base_url()
-    if "notebooklm.cloud.google.com" in base_url:
-        region = os.environ.get("NOTEBOOKLM_REGION", "global")
+    if base_url == "https://notebooklm.cloud.google.com":
+        region = get_notebooklm_region()
         return f"{base_url}/{region}/_/CloudNotebookLmUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed"
     return f"{base_url}{_QUERY_ENDPOINT_PATH}"
 
 
 def get_upload_url() -> str:
     """Return the NotebookLM upload endpoint for the configured host."""
-    import os
     base_url = get_base_url()
-    if "notebooklm.cloud.google.com" in base_url:
-        region = os.environ.get("NOTEBOOKLM_REGION", "global")
+    if base_url == "https://notebooklm.cloud.google.com":
+        region = get_notebooklm_region()
         return f"{base_url}/{region}/upload/_/"
     return f"{base_url}/upload/_/"
 

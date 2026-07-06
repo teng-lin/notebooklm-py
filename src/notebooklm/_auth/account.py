@@ -11,12 +11,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-import os
 import httpx
 from filelock import FileLock
 
 from .._atomic_io import atomic_write_json
-from .._env import get_base_url
+from .._env import build_cloud_scoped_url
 from .._url_utils import is_google_auth_redirect
 from .paths import _storage_state_lock_path
 
@@ -125,14 +124,7 @@ async def _probe_authuser(client: httpx.AsyncClient, n: int) -> str | None:
     ``accounts.google.com`` links (account chooser, manage-account menu)
     that would fool ``contains_google_auth_redirect``.
     """
-    if get_base_url() == "https://notebooklm.cloud.google.com":
-        region = os.environ.get("NOTEBOOKLM_REGION", "global")
-        project = os.environ.get("NOTEBOOKLM_PROJECT", "")
-        url = f"{get_base_url()}/{region}/?{authuser_query(n)}"
-        if project:
-            url += f"&project={project}"
-    else:
-        url = f"{get_base_url()}/?{authuser_query(n)}"
+    url = build_cloud_scoped_url(path="", authuser=n, include_authuser=True)
     response = await client.get(
         url,
         headers={"User-Agent": _BROWSER_UA, "Accept": "text/html,*/*"},

@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sys
 import time
 from collections.abc import Awaitable, Iterator
@@ -51,6 +50,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 from urllib.parse import urlparse
 
 from .._atomic_io import atomic_write_json
+from .._env import build_cloud_scoped_url
 from ..config import get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError
 from .cookie_policy import build_cookie_domain_allowlist
@@ -536,14 +536,7 @@ def run_browser_capture(
                     # would block until timeout. "commit" resolves once response
                     # headers are processed -- enough to land on the host and
                     # classify page.url. See #1697 (and the #214 precedent below).
-                    if get_base_url() == "https://notebooklm.cloud.google.com":
-                        region = os.environ.get("NOTEBOOKLM_REGION", "global")
-                        project = os.environ.get("NOTEBOOKLM_PROJECT", "")
-                        goto_url = f"{get_base_url()}/{region}/"
-                        if project:
-                            goto_url += f"?project={project}"
-                    else:
-                        goto_url = f"{get_base_url()}/"
+                    goto_url = build_cloud_scoped_url(path="")
                     page.goto(goto_url, wait_until="commit", timeout=30000)
                     break
                 except PlaywrightError as exc:
@@ -854,14 +847,7 @@ def run_cdp_capture(
             # arm -- the default "load" never fires on notebooklm.google.com, so
             # this CDP re-auth goto would otherwise waste 30s then TimeoutError
             # before landing classification. See #1697.
-            if get_base_url() == "https://notebooklm.cloud.google.com":
-                region = os.environ.get("NOTEBOOKLM_REGION", "global")
-                project = os.environ.get("NOTEBOOKLM_PROJECT", "")
-                goto_url = f"{get_base_url()}/{region}/"
-                if project:
-                    goto_url += f"?project={project}"
-            else:
-                goto_url = f"{get_base_url()}/"
+            goto_url = build_cloud_scoped_url(path="")
             page.goto(goto_url, wait_until="commit", timeout=30000)
 
             # SAME landing classification as the headless launch arm: if we did

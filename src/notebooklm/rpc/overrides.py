@@ -20,12 +20,12 @@ _logged_override_hashes: set[int] = set()
 # Enterprise RPC overrides mapping when host is notebooklm.cloud.google.com
 ENTERPRISE_RPC_OVERRIDES: dict[str, str] = {
     "GET_USER_SETTINGS": "y2DRud",  # (Consumer: ZwVcOc)
-    "LIST_NOTEBOOKS": "rG2vCb",     # (Consumer: wXbhsf)
-    "GET_NOTEBOOK": "tHcQ6c",       # (Consumer: rLM1Ne)
-    "DELETE_NOTEBOOK": "a0XDpc",    # (Consumer: WWINqb)
-    "CREATE_NOTEBOOK": "AzXHBd",    # (Consumer: CCqFvf)
-    "ADD_SOURCE": "ca0cne",         # (Consumer: izAoDd)
-    "RENAME_NOTEBOOK": "aja7m",     # (Consumer: s0tc2d)
+    "LIST_NOTEBOOKS": "rG2vCb",  # (Consumer: wXbhsf)
+    "GET_NOTEBOOK": "tHcQ6c",  # (Consumer: rLM1Ne)
+    "DELETE_NOTEBOOK": "a0XDpc",  # (Consumer: WWINqb)
+    "CREATE_NOTEBOOK": "AzXHBd",  # (Consumer: CCqFvf)
+    "ADD_SOURCE": "ca0cne",  # (Consumer: izAoDd)
+    "RENAME_NOTEBOOK": "aja7m",  # (Consumer: s0tc2d)
 }
 
 
@@ -137,7 +137,7 @@ def resolve_rpc_id(method_name: str, canonical_id: str) -> str:
     # ``_env`` is dependency-free, but the public package ``notebooklm``
     # imports ``rpc.types`` during init, and ``_env`` ships from the same
     # package.
-    from .._env import _ALLOWED_BASE_HOSTS, get_base_host, ENTERPRISE_BASE_HOST
+    from .._env import _ALLOWED_BASE_HOSTS, ENTERPRISE_BASE_HOST, get_base_host
 
     try:
         host = get_base_host()

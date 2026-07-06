@@ -59,17 +59,25 @@ def test_base_url_validation_rejects_unsafe_values(monkeypatch, value):
 
 def test_rpc_endpoint_helpers_are_lazy(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+    monkeypatch.delenv("NOTEBOOKLM_REGION", raising=False)
 
     assert (
         get_batchexecute_url()
-        == "https://notebooklm.cloud.google.com/_/LabsTailwindUi/data/batchexecute"
+        == "https://notebooklm.cloud.google.com/global/_/CloudNotebookLmUi/data/batchexecute"
     )
-    assert get_query_url().startswith("https://notebooklm.cloud.google.com/_/")
-    assert get_upload_url() == "https://notebooklm.cloud.google.com/upload/_/"
+    assert get_query_url().startswith("https://notebooklm.cloud.google.com/global/_/CloudNotebookLmUi/")
+    assert get_upload_url() == "https://notebooklm.cloud.google.com/global/upload/_/"
+
+    monkeypatch.setenv("NOTEBOOKLM_REGION", "us-central1")
+    assert (
+        get_batchexecute_url()
+        == "https://notebooklm.cloud.google.com/us-central1/_/CloudNotebookLmUi/data/batchexecute"
+    )
 
 
 def test_core_build_url_uses_enterprise_base_url(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+    monkeypatch.delenv("NOTEBOOKLM_REGION", raising=False)
     core = build_client_shell_for_tests(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
 
     # ``RpcExecutor.build_url`` consumes an ``AuthSnapshot`` so direct callers
@@ -84,17 +92,18 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
     )
     url = core._rpc_executor.build_url(RPCMethod.LIST_NOTEBOOKS, snapshot)
 
-    assert url.startswith("https://notebooklm.cloud.google.com/_/LabsTailwindUi/data/")
+    assert url.startswith("https://notebooklm.cloud.google.com/global/_/CloudNotebookLmUi/data/")
 
 
 @pytest.mark.asyncio
 async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_mock):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+    monkeypatch.delenv("NOTEBOOKLM_REGION", raising=False)
     auth = AuthTokens(cookies={"SID": "test"}, csrf_token="csrf", session_id="sid")
-    upload_url = "https://notebooklm.cloud.google.com/upload/_/?upload_id=test"
+    upload_url = "https://notebooklm.cloud.google.com/global/upload/_/?upload_id=test"
     httpx_mock.add_response(
         method="POST",
-        url="https://notebooklm.cloud.google.com/upload/_/?authuser=0",
+        url="https://notebooklm.cloud.google.com/global/upload/_/?authuser=0",
         headers={"x-goog-upload-url": upload_url},
     )
 
@@ -125,7 +134,7 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
     request = httpx_mock.get_request()
     assert result == upload_url
     assert request is not None
-    assert str(request.url) == "https://notebooklm.cloud.google.com/upload/_/?authuser=0"
+    assert str(request.url) == "https://notebooklm.cloud.google.com/global/upload/_/?authuser=0"
     assert request.headers["origin"] == "https://notebooklm.cloud.google.com"
     assert request.headers["referer"] == "https://notebooklm.cloud.google.com/"
 
@@ -133,8 +142,9 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
 @pytest.mark.asyncio
 async def test_client_refresh_auth_uses_enterprise_base_url(monkeypatch, httpx_mock, tmp_path):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+    monkeypatch.delenv("NOTEBOOKLM_REGION", raising=False)
     httpx_mock.add_response(
-        url="https://notebooklm.cloud.google.com/",
+        url="https://notebooklm.cloud.google.com/global/",
         text='{"SNlM0e":"fresh_csrf","FdrFJe":"fresh_sid"}',
     )
     auth = AuthTokens(cookies={"SID": "test"}, csrf_token="old", session_id="old_sid")
@@ -144,7 +154,7 @@ async def test_client_refresh_auth_uses_enterprise_base_url(monkeypatch, httpx_m
 
     request = httpx_mock.get_request()
     assert request is not None
-    assert str(request.url) == "https://notebooklm.cloud.google.com/"
+    assert str(request.url) == "https://notebooklm.cloud.google.com/global/"
     assert refreshed.csrf_token == "fresh_csrf"
     assert refreshed.session_id == "fresh_sid"
 

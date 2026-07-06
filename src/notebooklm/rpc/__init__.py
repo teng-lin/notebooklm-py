@@ -29,7 +29,12 @@ from .decoder import (  # noqa: F401
     safe_index,
     strip_anti_xssi,
 )
-from .encoder import build_request_body, encode_rpc_request, nest_source_ids  # noqa: F401
+from .encoder import (  # noqa: F401
+    adapt_enterprise_params,
+    build_request_body,
+    encode_rpc_request,
+    nest_source_ids,
+)
 from .overrides import resolve_rpc_id
 from .types import (  # noqa: F401
     BATCHEXECUTE_URL,
