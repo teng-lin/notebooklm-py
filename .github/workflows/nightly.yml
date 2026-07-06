@@ -76,6 +76,7 @@ jobs:
         if: steps.resolve.outputs.is_standard == 'true'
         shell: bash
         run: |
+          set -euo pipefail
           SHA=$(git rev-parse HEAD)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
