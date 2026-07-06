@@ -20,6 +20,7 @@ import pytest
 from notebooklm.exceptions import RateLimitError
 
 CONFTEST_PATH = Path(__file__).resolve().parents[1] / "e2e" / "conftest.py"
+pytest_plugins = ["pytester"]
 
 
 def _load_e2e_conftest() -> ModuleType:
@@ -147,18 +148,64 @@ class TestRateLimitSkipSummary:
     """pytest_terminal_summary surfaces chat rate-limit skips so green CI doesn't hide drift."""
 
     @staticmethod
-    def _make_reporter(reports):
+    def _make_reporter(
+        reports,
+        *,
+        passed=None,
+    ):
         write_calls: list[tuple] = []
         return SimpleNamespace(
-            stats={"skipped": reports},
+            stats={"skipped": reports, "passed": passed or []},
             write_sep=lambda *a, **kw: write_calls.append(("sep", a, kw)),
             write_line=lambda *a, **kw: write_calls.append(("line", a, kw)),
             _writes=write_calls,
         )
 
     @staticmethod
-    def _skipped(nodeid: str, reason: str) -> SimpleNamespace:
-        return SimpleNamespace(nodeid=nodeid, longrepr=("file.py", 1, f"Skipped: {reason}"))
+    def _make_session(reporter, *, exitstatus=pytest.ExitCode.OK):
+        pluginmanager = SimpleNamespace(
+            get_plugin=lambda name: reporter if name == "terminalreporter" else None
+        )
+        return SimpleNamespace(
+            config=SimpleNamespace(pluginmanager=pluginmanager),
+            exitstatus=exitstatus,
+        )
+
+    @classmethod
+    def _finish(
+        cls,
+        conftest,
+        reporter,
+        *,
+        exitstatus=pytest.ExitCode.OK,
+    ) -> SimpleNamespace:
+        session = cls._make_session(reporter, exitstatus=exitstatus)
+        conftest.pytest_sessionfinish(session, exitstatus)
+        return session
+
+    @staticmethod
+    def _report(nodeid: str, *, live_chat_ask: bool = False, when: str = "call"):
+        keywords = {"live_chat_ask": 1} if live_chat_ask else {}
+        return SimpleNamespace(nodeid=nodeid, keywords=keywords, when=when)
+
+    @classmethod
+    def _skipped(
+        cls,
+        nodeid: str,
+        reason: str,
+        *,
+        live_chat_ask: bool = False,
+        when: str = "call",
+    ) -> SimpleNamespace:
+        report = cls._report(nodeid, live_chat_ask=live_chat_ask, when=when)
+        report.longrepr = ("file.py", 1, f"Skipped: {reason}")
+        return report
+
+    @classmethod
+    def _passed(
+        cls, nodeid: str, *, live_chat_ask: bool = False, when: str = "call"
+    ) -> SimpleNamespace:
+        return cls._report(nodeid, live_chat_ask=live_chat_ask, when=when)
 
     def test_counts_only_rate_limit_skips(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
@@ -172,15 +219,16 @@ class TestRateLimitSkipSummary:
                 self._skipped("t::c", "rejected by the API"),
                 self._skipped("t::d", "Chat request failed with HTTP 429: ..."),
                 self._skipped("t::e", "Too Many Requests"),
+                self._skipped("t::f", "chat rate-limited by upstream"),
             ]
         )
         conftest.pytest_terminal_summary(tr, 0, None)
 
         summary = (tmp_path / "summary.md").read_text()
-        assert "Rate-limit skips: 4" in summary
-        assert all(nid in summary for nid in ("t::a", "t::c", "t::d", "t::e"))
+        assert "Rate-limit skips: 5" in summary
+        assert all(nid in summary for nid in ("t::a", "t::c", "t::d", "t::e", "t::f"))
         assert "t::b" not in summary
-        assert "::warning::4 test(s) skipped" in capsys.readouterr().out
+        assert "::warning::5 test(s) skipped" in capsys.readouterr().out
 
     def test_no_skips_emits_nothing(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
@@ -205,6 +253,148 @@ class TestRateLimitSkipSummary:
         # Still emits the pytest section locally — just no GH-specific bits.
         assert any(call[0] == "sep" for call in tr._writes)
         assert capsys.readouterr().out == ""
+
+    def test_live_chat_floor_fails_when_marked_asks_all_rate_limited(self, monkeypatch, capsys):
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [
+                self._skipped(
+                    "test_server_live.py::TestRestServerLiveChat::test_chat_ask_returns_answer",
+                    "chat rate-limited (surfaced through the REST route)",
+                    live_chat_ask=True,
+                )
+            ]
+        )
+        conftest.pytest_terminal_summary(tr, pytest.ExitCode.OK, None)
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.TESTS_FAILED
+        assert any(
+            call[0] == "sep" and call[1][1] == "live chat coverage floor failed"
+            for call in tr._writes
+        )
+        assert capsys.readouterr().out == ""
+
+    def test_live_chat_floor_allows_one_marked_pass(self, monkeypatch):
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_chat.py::test_rate_limited", "rate limited", live_chat_ask=True)],
+            passed=[self._passed("test_chat.py::test_ok", live_chat_ask=True)],
+        )
+        conftest.pytest_terminal_summary(tr, pytest.ExitCode.OK, None)
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.OK
+        assert not any(
+            call[0] == "sep" and call[1][1] == "live chat coverage floor failed"
+            for call in tr._writes
+        )
+
+    def test_live_chat_floor_ignores_unmarked_passes(self, monkeypatch):
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_chat.py::test_rate_limited", "rate limited", live_chat_ask=True)],
+            passed=[self._passed("test_unrelated.py::test_ok")],
+        )
+        conftest.pytest_terminal_summary(tr, pytest.ExitCode.OK, None)
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.TESTS_FAILED
+
+    def test_live_chat_floor_ignores_unmarked_rate_limit_skips(self, monkeypatch):
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter([self._skipped("test_generation.py::test_audio", "rate limited")])
+        conftest.pytest_terminal_summary(tr, pytest.ExitCode.OK, None)
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.OK
+
+    def test_live_chat_floor_counts_setup_rate_limit_skips(self, monkeypatch):
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [
+                self._skipped(
+                    "test_chat.py::test_auth_skip",
+                    "rate limited",
+                    live_chat_ask=True,
+                    when="setup",
+                )
+            ]
+        )
+        conftest.pytest_terminal_summary(tr, pytest.ExitCode.OK, None)
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.TESTS_FAILED
+
+    def test_live_chat_floor_does_not_rewrite_non_green_exitstatus(self, monkeypatch):
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_chat.py::test_rate_limited", "rate limited", live_chat_ask=True)],
+        )
+        conftest.pytest_terminal_summary(tr, pytest.ExitCode.USAGE_ERROR, None)
+        session = self._finish(conftest, tr, exitstatus=pytest.ExitCode.USAGE_ERROR)
+
+        assert session.exitstatus == pytest.ExitCode.USAGE_ERROR
+        assert not any(
+            call[0] == "sep" and call[1][1] == "live chat coverage floor failed"
+            for call in tr._writes
+        )
+
+    def test_live_chat_floor_changes_real_pytest_exit_code(self, pytester: pytest.Pytester):
+        pytester.makepyprojecttoml(
+            """
+            [tool.pytest.ini_options]
+            markers = [
+                "live_chat_ask: chat ask floor marker",
+            ]
+            """
+        )
+        pytester.makeconftest(
+            """
+            import pytest
+
+            def pytest_sessionfinish(session, exitstatus):
+                terminalreporter = session.config.pluginmanager.get_plugin("terminalreporter")
+                if exitstatus == pytest.ExitCode.OK and terminalreporter.stats.get("skipped"):
+                    session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+            def pytest_terminal_summary(terminalreporter, exitstatus, config):
+                if exitstatus == pytest.ExitCode.OK and terminalreporter.stats.get("skipped"):
+                    terminalreporter.write_sep("=", "live chat coverage floor failed")
+            """
+        )
+        pytester.makepyfile(
+            test_floor="""
+            import pytest
+
+            @pytest.mark.live_chat_ask
+            def test_all_chat_asks_rate_limited():
+                pytest.skip("chat rate-limited by upstream")
+            """
+        )
+
+        result = pytester.runpytest_subprocess("-q")
+
+        assert result.ret == pytest.ExitCode.TESTS_FAILED
+        result.stdout.fnmatch_lines(["*live chat coverage floor failed*"])
 
 
 class TestGenerationRateLimitSkip:

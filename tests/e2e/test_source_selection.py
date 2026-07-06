@@ -23,6 +23,7 @@ from .conftest import assert_generation_started, requires_auth
 
 
 @requires_auth
+@pytest.mark.live_chat_ask
 class TestChatWithSourceSelection:
     """Tests for chat.ask() with explicit source selection."""
 
@@ -237,6 +238,7 @@ class TestSourceListingAndSelection:
 
 
 @requires_auth
+@pytest.mark.live_chat_ask
 class TestEdgeCases:
     """Edge case tests for source selection."""
 

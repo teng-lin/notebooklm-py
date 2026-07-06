@@ -44,10 +44,12 @@ from notebooklm.paths import get_profile_dir
 _RATE_LIMIT_PHRASES = (
     "rate limit",
     "rate limited",
+    "rate-limited",
     "rejected by the api",
     "429",
     "too many requests",
 )
+_LIVE_CHAT_ASK_MARKER = "live_chat_ask"
 
 
 def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
@@ -308,6 +310,56 @@ def _skip_reason(report) -> str:
     return str(longrepr) if longrepr else ""
 
 
+def _is_call_report(report) -> bool:
+    # Unit fakes may omit ``when``; real pytest reports always include it.
+    return getattr(report, "when", "call") == "call"
+
+
+def _has_marker(report, marker: str) -> bool:
+    return marker in (getattr(report, "keywords", {}) or {})
+
+
+def _is_rate_limit_skip(report) -> bool:
+    return any(phrase in _skip_reason(report).lower() for phrase in _RATE_LIMIT_PHRASES)
+
+
+def _rate_limit_skip_reports(terminalreporter) -> list[Any]:
+    return [
+        report
+        for report in terminalreporter.stats.get("skipped", [])
+        if _is_rate_limit_skip(report)
+    ]
+
+
+def _live_chat_floor_failures(terminalreporter, exitstatus) -> list[Any]:
+    if exitstatus != pytest.ExitCode.OK:
+        return []
+
+    live_chat_rate_limit_skips = [
+        report
+        for report in _rate_limit_skip_reports(terminalreporter)
+        if _has_marker(report, _LIVE_CHAT_ASK_MARKER)
+    ]
+    if not live_chat_rate_limit_skips:
+        return []
+
+    live_chat_passes = [
+        report
+        for report in terminalreporter.stats.get("passed", [])
+        if _is_call_report(report) and _has_marker(report, _LIVE_CHAT_ASK_MARKER)
+    ]
+    return [] if live_chat_passes else live_chat_rate_limit_skips
+
+
+def pytest_sessionfinish(session, exitstatus):
+    terminalreporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if terminalreporter is None:
+        return
+
+    if _live_chat_floor_failures(terminalreporter, exitstatus):
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     """Surface chat rate-limit skips so they're visible despite green CI.
 
@@ -316,11 +368,8 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     silently degrades. Emit a pytest summary section plus, on GitHub Actions,
     a warning annotation and step-summary entry.
     """
-    nodeids = [
-        report.nodeid
-        for report in terminalreporter.stats.get("skipped", [])
-        if any(phrase in _skip_reason(report).lower() for phrase in _RATE_LIMIT_PHRASES)
-    ]
+    rate_limit_skips = _rate_limit_skip_reports(terminalreporter)
+    nodeids = [report.nodeid for report in rate_limit_skips]
     if not nodeids:
         return
 
@@ -341,6 +390,13 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     if os.environ.get("GITHUB_ACTIONS"):
         joined = ", ".join(nodeids)
         print(f"::warning::{len(nodeids)} test(s) skipped due to rate-limit: {joined}")
+
+    live_chat_rate_limit_skips = _live_chat_floor_failures(terminalreporter, exitstatus)
+    if live_chat_rate_limit_skips:
+        terminalreporter.write_sep("=", "live chat coverage floor failed", red=True)
+        terminalreporter.write_line("No marked live chat ask test completed successfully.")
+        for report in live_chat_rate_limit_skips:
+            terminalreporter.write_line(f"  {report.nodeid}")
 
 
 def pytest_collection_modifyitems(config, items):

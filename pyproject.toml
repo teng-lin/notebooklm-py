@@ -162,6 +162,7 @@ addopts = "--ignore=tests/e2e"
 timeout = 60
 markers = [
     "e2e: end-to-end tests requiring authentication (run with pytest tests/e2e -m e2e)",
+    "live_chat_ask: E2E live chat ask tests monitored for CI coverage floors",
     "variants: parameter variant tests (skip to save quota)",
     "readonly: read-only tests against user's test notebook",
     "impersonate_smoke: minimal live smoke run under NOTEBOOKLM_TRANSPORT=curl_cffi in the nightly (read/ask/upload/download — one per transport-critical op)",

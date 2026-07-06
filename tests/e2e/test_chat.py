@@ -12,6 +12,7 @@ from .conftest import requires_auth
 
 
 @pytest.mark.e2e
+@pytest.mark.live_chat_ask
 @requires_auth
 class TestChatE2E:
     """E2E tests for chat API."""
@@ -287,6 +288,7 @@ class TestChatHistoryE2E:
 
 
 @pytest.mark.e2e
+@pytest.mark.live_chat_ask
 @requires_auth
 class TestChatReferencesE2E:
     """E2E tests specifically for chat references and citations."""

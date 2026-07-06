@@ -32,7 +32,7 @@ def _is_rate_limited(proc) -> bool:
     """True only on the real limiter signal (HTTP 429 / "rate limit") — NOT any
     message that merely contains "rate", which could mask an unrelated failure."""
     blob = f"{proc.stdout}\n{proc.stderr}".lower()
-    return "rate limit" in blob or "429" in blob
+    return any(phrase in blob for phrase in ("rate limit", "rate-limited", "429"))
 
 
 @requires_auth
@@ -62,6 +62,7 @@ class TestCliLive:
         assert isinstance(json.loads(proc.stdout), dict)
 
     @pytest.mark.readonly
+    @pytest.mark.live_chat_ask
     def test_ask_json(self, read_only_notebook_id):
         """``ask -n <read_only> --json`` returns a structured answer on stdout."""
         proc = run_cli(

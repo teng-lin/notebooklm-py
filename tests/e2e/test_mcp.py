@@ -365,6 +365,7 @@ class TestMcpSources:
 
 
 @requires_auth
+@pytest.mark.live_chat_ask
 class TestMcpChat:
     """Chat domain: configure then ask against the read-only notebook."""
 

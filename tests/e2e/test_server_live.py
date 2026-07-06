@@ -50,6 +50,7 @@ _HEADERS = {"Authorization": f"Bearer {_TOKEN}", "Host": "127.0.0.1"}
 _RATE_LIMIT_PHRASES = (
     "rate limit",
     "rate limited",
+    "rate-limited",
     "rejected by the api",
     "429",
     "too many requests",
@@ -174,6 +175,7 @@ class TestRestServerLiveReads:
 
 
 @requires_auth
+@pytest.mark.live_chat_ask
 class TestRestServerLiveChat:
     """A live chat answer over the REST POST route."""
 

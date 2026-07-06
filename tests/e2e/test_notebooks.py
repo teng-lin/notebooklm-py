@@ -46,6 +46,7 @@ class TestNotebookOperations:
 
 
 @requires_auth
+@pytest.mark.live_chat_ask
 class TestNotebookAsk:
     @pytest.mark.asyncio
     @pytest.mark.impersonate_smoke
