@@ -261,7 +261,7 @@ class RpcExecutor:
                     "NOTEBOOKLM_PROJECT environment variable must be set when using NotebookLM Enterprise"
                 )
 
-            adapted_params = adapt_enterprise_params(method, params, project_id, region)
+            adapted_params = adapt_enterprise_params(method, params, project_id, region, source_path=source_path)
         else:
             adapted_params = params
 

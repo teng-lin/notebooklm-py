@@ -26,6 +26,8 @@ ENTERPRISE_RPC_OVERRIDES: dict[str, str] = {
     "CREATE_NOTEBOOK": "AzXHBd",  # (Consumer: CCqFvf)
     "ADD_SOURCE": "ca0cne",  # (Consumer: izAoDd)
     "RENAME_NOTEBOOK": "aja7m",  # (Consumer: s0tc2d)
+    "GET_SOURCE": "whLr6b",  # (Consumer: hizoJc)
+    "ADD_SOURCE_FILE": "GcP14b",  # (Consumer: o4cbdc)
 }
 
 

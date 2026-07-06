@@ -529,6 +529,22 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         concurrent uploader added one) raises ``SourceAddError`` rather
         than guessing.
         """
+        from .._env import ENTERPRISE_BASE_HOST, get_base_host
+        if get_base_host() == ENTERPRISE_BASE_HOST:
+            import uuid
+            source_id = str(uuid.uuid4())
+            params = build_register_file_source_params(filename, notebook_id)
+            if rpc_call is None:
+                rpc_call = self._rpc.rpc_call
+            await rpc_call(
+                RPCMethod.ADD_SOURCE_FILE,
+                params,
+                source_path=f"/notebook/{notebook_id}/sources/{source_id}",
+                allow_null=False,
+                disable_internal_retries=True,
+            )
+            return source_id
+
         params = build_register_file_source_params(filename, notebook_id)
         if rpc_call is None:
             rpc_call = self._rpc.rpc_call

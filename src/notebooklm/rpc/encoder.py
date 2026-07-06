@@ -114,6 +114,7 @@ def adapt_enterprise_params(
     params: list[Any],
     project_id: str,
     region: str,
+    source_path: str | None = None,
 ) -> list[Any]:
     """Adapt standard RPC parameters to the NotebookLM Enterprise schema."""
     parent = f"projects/{project_id}/locations/{region}"
@@ -157,6 +158,33 @@ def adapt_enterprise_params(
         if len(adapted_params) > 1:
             notebook_id = adapted_params[1]
             return [adapted_params[0], notebook_id, {"70000": to_notebook_path(notebook_id)}]
+    elif method == RPCMethod.GET_SOURCE:
+        import re
+        notebook_id = None
+        if source_path:
+            m = re.search(r"/notebook/([^/]+)", source_path)
+            if m:
+                notebook_id = m.group(1)
+        if len(adapted_params) > 1 and notebook_id:
+            try:
+                source_id = adapted_params[0][0]
+                format_code = adapted_params[1][0]
+                ent_source_path = f"projects/{project_id}/locations/{region}/notebooks/{notebook_id}/sources/{source_id}"
+                return [ent_source_path, [format_code]]
+            except (IndexError, TypeError):
+                pass
+    elif method == RPCMethod.ADD_SOURCE_FILE:
+        import re
+        notebook_id = None
+        source_id = None
+        if source_path:
+            m = re.match(r"/notebook/([^/]+)/sources/([^/]+)", source_path)
+            if m:
+                notebook_id = m.group(1)
+                source_id = m.group(2)
+        if notebook_id and source_id:
+            ent_source_path = f"projects/{project_id}/locations/{region}/notebooks/{notebook_id}/sources/{source_id}"
+            return [ent_source_path, [[source_id]]]
 
     return adapted_params
 
