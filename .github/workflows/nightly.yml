@@ -26,6 +26,8 @@ jobs:
     outputs:
       branch: ${{ steps.resolve.outputs.branch }}
       is_standard: ${{ steps.resolve.outputs.is_standard }}
+      sha: ${{ steps.target.outputs.sha }}
+      short_sha: ${{ steps.target.outputs.short_sha }}
     steps:
       - name: Resolve target branch
         id: resolve
@@ -62,9 +64,26 @@ jobs:
           esac
           echo "Resolved branch: $TARGET"
 
+      - uses: actions/checkout@v7
+        if: steps.resolve.outputs.is_standard == 'true'
+        with:
+          ref: ${{ steps.resolve.outputs.branch }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve target commit
+        id: target
+        if: steps.resolve.outputs.is_standard == 'true'
+        shell: bash
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Resolved commit: $SHA"
+
   # Run E2E tests on the resolved branch
   e2e:
-    name: E2E Tests (${{ needs.resolve-branch.outputs.branch }}/${{ matrix.os }})
+    name: E2E Tests (${{ needs.resolve-branch.outputs.branch }}@${{ needs.resolve-branch.outputs.short_sha }}/${{ matrix.os }})
     needs: resolve-branch
     if: needs.resolve-branch.outputs.is_standard == 'true'
     runs-on: ${{ matrix.os }}
@@ -106,8 +125,28 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: ${{ needs.resolve-branch.outputs.branch }}
+        ref: ${{ needs.resolve-branch.outputs.sha }}
+        fetch-depth: 1
         persist-credentials: false
+
+    - name: Stamp E2E target
+      env:
+        EXPECTED_SHA: ${{ needs.resolve-branch.outputs.sha }}
+        TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
+        MATRIX_OS: ${{ matrix.os }}
+      shell: bash
+      run: |
+        ACTUAL_SHA=$(git rev-parse HEAD)
+        if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+          echo "::error::Checked out $ACTUAL_SHA, expected $EXPECTED_SHA"
+          exit 1
+        fi
+        {
+          echo "### E2E target"
+          echo "- Branch: \`$TARGET_BRANCH\`"
+          echo "- Commit: \`$ACTUAL_SHA\`"
+          echo "- OS: \`$MATRIX_OS\`"
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Set up Python
       uses: actions/setup-python@v6
