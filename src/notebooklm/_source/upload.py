@@ -297,9 +297,17 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         return resolve_transport_factory()
 
     def _authuser_query(self) -> str:
+        from .._env import ENTERPRISE_BASE_HOST, get_base_host
+
+        if get_base_host() == ENTERPRISE_BASE_HOST:
+            return authuser_query(self._auth.authuser, None)
         return authuser_query(self._auth.authuser, self._auth.account_email)
 
     def _authuser_header(self) -> str:
+        from .._env import ENTERPRISE_BASE_HOST, get_base_host
+
+        if get_base_host() == ENTERPRISE_BASE_HOST:
+            return format_authuser_value(self._auth.authuser, None)
         return format_authuser_value(self._auth.authuser, self._auth.account_email)
 
     def _live_cookies(self) -> httpx.Cookies:
