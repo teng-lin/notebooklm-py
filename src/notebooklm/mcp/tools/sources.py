@@ -18,10 +18,13 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp import Context
 from fastmcp.server.dependencies import get_http_request
+from fastmcp.tools.tool import ToolResult
+from mcp.types import TextContent
 
 from ..._app import labels as labels_core
 from ..._app import source_add as add_core
@@ -68,6 +71,20 @@ _DEFAULT_DRIVE_MIME = "google-doc"
 # now lives in the shared, transport-neutral ``_app.views`` so the REST source
 # list/get routes emit the identical enriched shape (Option B). Imported above
 # under its historical private name so the tool bodies below are unchanged.
+
+
+def _json_tool_result(payload: dict[str, Any]) -> ToolResult:
+    """Return JSON as the first-class client-visible content block."""
+    jsonable_payload = to_jsonable(payload)
+    return ToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=json.dumps(jsonable_payload, ensure_ascii=False, sort_keys=True),
+            )
+        ],
+        structured_content=jsonable_payload,
+    )
 
 
 #: Fields kept in a ``source_list(detail="compact")`` roster row — a strict subset of
@@ -165,7 +182,7 @@ def register(mcp: Any) -> None:
         output_format: Literal["text", "markdown"] = "text",
         max_chars: int | None = None,
         offset: int = 0,
-    ) -> dict[str, Any]:
+    ) -> ToolResult:
         """Read a source at one of two detail levels. Accepts a notebook/source name or ID.
 
         ``detail`` selects what you get back (two distinct shapes):
@@ -214,12 +231,14 @@ def register(mcp: Any) -> None:
                 guide = await content_core.execute_source_guide(
                     client, content_core.SourceGuidePlan(notebook_id=nb_id, source_id=src_id)
                 )
-                return {
-                    "notebook_id": nb_id,
-                    "source_id": guide.source_id,
-                    "summary": guide.summary,
-                    "keywords": list(guide.keywords),
-                }
+                return _json_tool_result(
+                    {
+                        "notebook_id": nb_id,
+                        "source_id": guide.source_id,
+                        "summary": guide.summary,
+                        "keywords": list(guide.keywords),
+                    }
+                )
 
             # detail == "full": the existence/ready gate + ready-only fulltext fetch
             # + max_chars/offset windowing live in the shared ``execute_source_read``
@@ -237,15 +256,17 @@ def register(mcp: Any) -> None:
                     offset=offset,
                 ),
             )
-            return {
-                "notebook_id": nb_id,
-                "source_id": src_id,
-                "source": _source_view(read.source),
-                "content": read.content,
-                "char_count": read.char_count,
-                "truncated": read.truncated,
-                "output_format": output_format,
-            }
+            return _json_tool_result(
+                {
+                    "notebook_id": nb_id,
+                    "source_id": src_id,
+                    "source": _source_view(read.source),
+                    "content": read.content,
+                    "char_count": read.char_count,
+                    "truncated": read.truncated,
+                    "output_format": output_format,
+                }
+            )
 
     @mcp.tool
     async def source_rename(
@@ -300,7 +321,7 @@ def register(mcp: Any) -> None:
         sources: list[str] | str | None = None,
         timeout: float = 120.0,
         interval: float = 1.0,
-    ) -> dict[str, Any]:
+    ) -> ToolResult:
         """Wait for sources to finish processing. Accepts a notebook name or ID.
 
         Waits for a subset when ``sources`` (list or comma/JSON string) is given, a
@@ -354,7 +375,7 @@ def register(mcp: Any) -> None:
                 outcomes = await _wait_all_sources(
                     client, nb_id, src_ids, timeout=timeout, interval=interval
                 )
-                return await _aggregate_wait_outcomes(client, nb_id, outcomes)
+                return _json_tool_result(await _aggregate_wait_outcomes(client, nb_id, outcomes))
             elif source is not None:
                 src_id = await resolve_source(client, nb_id, source)
                 outcome = await wait_core.execute_source_wait(
@@ -366,7 +387,7 @@ def register(mcp: Any) -> None:
                         interval=interval,
                     ),
                 )
-                return await _aggregate_wait_outcomes(client, nb_id, [outcome])
+                return _json_tool_result(await _aggregate_wait_outcomes(client, nb_id, [outcome]))
             else:
                 sources_list = await client.sources.list(nb_id)
                 outcomes = await _wait_all_sources(
@@ -376,7 +397,7 @@ def register(mcp: Any) -> None:
                     timeout=timeout,
                     interval=interval,
                 )
-                return await _aggregate_wait_outcomes(client, nb_id, outcomes)
+                return _json_tool_result(await _aggregate_wait_outcomes(client, nb_id, outcomes))
 
     @mcp.tool
     async def source_add(
@@ -579,7 +600,7 @@ def register(mcp: Any) -> None:
         allow_internal: bool = False,
         timeout: float = 120.0,
         interval: float = 1.0,
-    ) -> dict[str, Any]:
+    ) -> ToolResult:
         """Add ONE source and block until it finishes processing, in a single call.
 
         Composes single-mode ``source_add`` + ``source_wait`` so an agent skips the
@@ -644,7 +665,7 @@ def register(mcp: Any) -> None:
             # The created source persists regardless of the wait outcome — surface its id
             # at the top level so a timed-out / failed caller can retry or delete it.
             result["source_id"] = src.id
-            return result
+            return _json_tool_result(result)
 
     @mcp.tool
     async def source_upload_bytes(

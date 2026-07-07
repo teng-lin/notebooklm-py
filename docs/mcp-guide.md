@@ -164,6 +164,10 @@ bearer-only deploy → the two file tools return a clear "not configured" error
 
 These conventions hold across every tool:
 
+- **JSON by default.** Read/wait tools, including `source_read`, `source_wait`, and
+  `source_add_and_wait`, return a JSON text content block plus the same
+  `structured_content`. A `resource_link` appears only when a tool explicitly brokers
+  file transfer, such as `studio_download`.
 - **Name *or* ID.** Every `notebook`/`source`/`note`/`artifact` argument accepts a human title **or**
   an ID. Both resolve by prefix: an exact title wins, otherwise a **unique title prefix** matches
   (so `"Scientific"` finds `"Scientific PDF Parsing — …"`), and likewise a full ID or a unique ID
