@@ -258,10 +258,13 @@ class RpcExecutor:
                 region = "global"
             if not project_id:
                 raise ValueError(
-                    "NOTEBOOKLM_PROJECT environment variable must be set when using NotebookLM Enterprise"
+                    "NOTEBOOKLM_PROJECT environment variable must be set "
+                    "when using NotebookLM Enterprise"
                 )
 
-            adapted_params = adapt_enterprise_params(method, params, project_id, region, source_path=source_path)
+            adapted_params = adapt_enterprise_params(
+                method, params, project_id, region, source_path=source_path
+            )
         else:
             adapted_params = params
 
@@ -446,10 +449,12 @@ class RpcExecutor:
                 snapshot.authuser,
                 snapshot.account_email,
             )
-        project_env = os.environ.get("NOTEBOOKLM_PROJECT")
-        project = project_env.strip() if project_env else ""
-        if project:
-            params["project"] = project
+        from ._env import ENTERPRISE_BASE_HOST, get_base_host
+        if get_base_host() == ENTERPRISE_BASE_HOST:
+            project_env = os.environ.get("NOTEBOOKLM_PROJECT")
+            project = project_env.strip() if project_env else ""
+            if project:
+                params["project"] = project
         return f"{get_batchexecute_url()}?{urlencode(params)}"
 
     def raise_rpc_error_from_http_status(

@@ -747,13 +747,16 @@ async def _fetch_tokens_with_jar(
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
-                base_url = get_base_url()
-                if base_url == "https://notebooklm.cloud.google.com":
+                from .._env import ENTERPRISE_BASE_HOST, get_base_host
+                if get_base_host() == ENTERPRISE_BASE_HOST:
+                    region = os.environ.get('NOTEBOOKLM_REGION', 'global')
+                    project = os.environ.get('NOTEBOOKLM_PROJECT', '')
                     raise ValueError(
-                        f"Authentication expired or invalid, or cloud configuration misconfigured (HTTP 404). "
-                        f"Verify your NOTEBOOKLM_REGION ({os.environ.get('NOTEBOOKLM_REGION', 'global')}) "
-                        f"and NOTEBOOKLM_PROJECT ({os.environ.get('NOTEBOOKLM_PROJECT', '')}) environments, "
-                        f"or run 'notebooklm login' to re-authenticate."
+                        "Authentication expired or invalid, or cloud "
+                        f"configuration misconfigured (HTTP 404). "
+                        f"Verify your NOTEBOOKLM_REGION ({region}) and "
+                        f"NOTEBOOKLM_PROJECT ({project}) environments, "
+                        "or run 'notebooklm login' to re-authenticate."
                     ) from exc
                 raise ValueError(
                     "Authentication expired or invalid (HTTP 404). "

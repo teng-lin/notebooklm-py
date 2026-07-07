@@ -160,31 +160,47 @@ def adapt_enterprise_params(
             return [adapted_params[0], notebook_id, {"70000": to_notebook_path(notebook_id)}]
     elif method == RPCMethod.GET_SOURCE:
         import re
-        notebook_id = None
-        if source_path:
-            m = re.search(r"/notebook/([^/]+)", source_path)
-            if m:
-                notebook_id = m.group(1)
-        if len(adapted_params) > 1 and notebook_id:
-            try:
-                source_id = adapted_params[0][0]
-                format_code = adapted_params[1][0]
-                ent_source_path = f"projects/{project_id}/locations/{region}/notebooks/{notebook_id}/sources/{source_id}"
-                return [ent_source_path, [format_code]]
-            except (IndexError, TypeError):
-                pass
+
+        if not source_path:
+            raise ValueError("source_path is required for GET_SOURCE adaptation")
+        m = re.search(r"/notebook/([^/]+)", source_path)
+        if not m:
+            raise ValueError(f"Could not extract notebook_id from source_path: {source_path}")
+        notebook_id = m.group(1)
+        if len(adapted_params) <= 1:
+            raise ValueError(
+                f"Invalid adapted_params for GET_SOURCE (expected length > 1, "
+                f"got {len(adapted_params)})"
+            )
+        try:
+            source_id = adapted_params[0][0]
+            format_code = adapted_params[1][0]
+        except (IndexError, TypeError) as exc:
+            raise ValueError(
+                f"Could not extract source_id or format_code from adapted_params "
+                f"for GET_SOURCE: {adapted_params}"
+            ) from exc
+        ent_source_path = (
+            f"projects/{project_id}/locations/{region}/"
+            f"notebooks/{notebook_id}/sources/{source_id}"
+        )
+        return [ent_source_path, [format_code]]
     elif method == RPCMethod.ADD_SOURCE_FILE:
         import re
-        notebook_id = None
-        source_id = None
-        if source_path:
-            m = re.match(r"/notebook/([^/]+)/sources/([^/]+)", source_path)
-            if m:
-                notebook_id = m.group(1)
-                source_id = m.group(2)
-        if notebook_id and source_id:
-            ent_source_path = f"projects/{project_id}/locations/{region}/notebooks/{notebook_id}/sources/{source_id}"
-            return [ent_source_path, [[source_id]]]
+
+        if not source_path:
+            raise ValueError("source_path is required for ADD_SOURCE_FILE adaptation")
+        m = re.match(r"/notebook/([^/]+)/sources/([^/]+)", source_path)
+        if not m:
+            raise ValueError(
+                f"Could not extract notebook_id and source_id from source_path: {source_path}"
+            )
+        notebook_id = m.group(1)
+        source_id = m.group(2)
+        ent_source_path = (
+            f"projects/{project_id}/locations/{region}/"
+            f"notebooks/{notebook_id}/sources/{source_id}"
+        )
+        return [ent_source_path, [[source_id]]]
 
     return adapted_params
-

@@ -31,9 +31,15 @@ def is_youtube_url(url: str) -> bool:
     """
     try:
         hostname = (urlparse(url).hostname or "").lower()
-        return (
-            hostname == "youtube.com" or hostname.endswith(".youtube.com") or hostname == "youtu.be"
-        )
+        if not hostname:
+            return False
+        # Match youtube.com or any subdomain of youtube.com
+        if re.match(r"^(?:[a-z0-9-]+\.)*youtube\.com$", hostname):
+            return True
+        # Match youtu.be or any subdomain of youtu.be
+        if re.match(r"^(?:[a-z0-9-]+\.)*youtu\.be$", hostname):
+            return True
+        return False
     except (AttributeError, TypeError, ValueError):
         return False
 
@@ -52,7 +58,10 @@ def is_google_auth_redirect(url: str) -> bool:
     """
     try:
         hostname = (urlparse(url).hostname or "").lower()
-        return hostname == "accounts.google.com" or hostname.endswith(".accounts.google.com")
+        if not hostname:
+            return False
+        # Match accounts.google.com or any subdomain of accounts.google.com
+        return bool(re.match(r"^(?:[a-z0-9-]+\.)*accounts\.google\.com$", hostname))
     except (AttributeError, TypeError, ValueError):
         return False
 
@@ -94,9 +103,10 @@ def is_notebooklm_unavailable_redirect(url: str) -> bool:
     """
     try:
         hostname = (urlparse(url).hostname or "").lower()
-        return hostname == _NOTEBOOKLM_MARKETING_HOST or hostname.endswith(
-            "." + _NOTEBOOKLM_MARKETING_HOST
-        )
+        if not hostname:
+            return False
+        # Match notebooklm.google or any subdomain of notebooklm.google
+        return bool(re.match(r"^(?:[a-z0-9-]+\.)*notebooklm\.google$", hostname))
     except (AttributeError, TypeError, ValueError):
         return False
 

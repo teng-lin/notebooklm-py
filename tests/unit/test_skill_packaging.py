@@ -16,7 +16,7 @@ def test_wheel_includes_root_skill_content(tmp_path):
     repo_root = Path(__file__).resolve().parents[2]
     build_dir = tmp_path / "dist"
     result = subprocess.run(
-        ["uv", "build", "--wheel", "--out-dir", str(build_dir)],
+        ["uv", "build", "--wheel", "--no-build-isolation", "--out-dir", str(build_dir)],
         cwd=repo_root,
         capture_output=True,
         text=True,

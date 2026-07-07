@@ -643,3 +643,24 @@ def _update_cookie_input(target: CookieInput, fresh: DomainCookieMap) -> None:
         target.update(fresh)  # type: ignore[arg-type]
     else:
         target.update(flatten_cookie_map(fresh))  # type: ignore[arg-type]
+
+
+def generate_sapisid_hash(sapisid: str, origin: str) -> str:
+    """Generate the SAPISIDHASH signature for Google Scotty uploads.
+
+    Args:
+        sapisid: The value of the SAPISID cookie.
+        origin: The request Origin (e.g. "https://notebooklm.cloud.google.com").
+
+    Returns:
+        The signature string formatted as "{timestamp}_{sha1_hex_signature}".
+    """
+    import hashlib
+    import time
+
+    timestamp = str(int(time.time()))
+    # Formula: timestamp + " " + sapisid + " " + origin
+    input_str = f"{timestamp} {sapisid} {origin}"
+    signature = hashlib.sha1(input_str.encode("utf-8")).hexdigest()
+    return f"{timestamp}_{signature}"
+

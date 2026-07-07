@@ -125,7 +125,7 @@ def build_cloud_scoped_url(
 
         params["authuser"] = format_authuser_value(authuser, account_email)
 
-    if base == "https://notebooklm.cloud.google.com":
+    if get_base_host() == ENTERPRISE_BASE_HOST:
         region = get_notebooklm_region()
 
         # Ensure path has a trailing slash if it is empty, to match legacy:

@@ -530,20 +530,44 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         than guessing.
         """
         from .._env import ENTERPRISE_BASE_HOST, get_base_host
+
         if get_base_host() == ENTERPRISE_BASE_HOST:
             import uuid
+
             source_id = str(uuid.uuid4())
             params = build_register_file_source_params(filename, notebook_id)
             if rpc_call is None:
                 rpc_call = self._rpc.rpc_call
-            await rpc_call(
-                RPCMethod.ADD_SOURCE_FILE,
-                params,
-                source_path=f"/notebook/{notebook_id}/sources/{source_id}",
-                allow_null=False,
-                disable_internal_retries=True,
+            if list_sources is None:
+                list_sources = self.list_sources
+
+            async def _ent_create() -> str:
+                await rpc_call(
+                    RPCMethod.ADD_SOURCE_FILE,
+                    params,
+                    source_path=(
+                        f"/notebook/{notebook_id}/sources/{source_id}"
+                    ),
+                    allow_null=True,
+                    disable_internal_retries=True,
+                )
+                return source_id
+
+            async def _ent_probe() -> str | None:
+                try:
+                    sources = await list_sources(notebook_id)
+                except Exception:
+                    raise
+                for src in sources:
+                    if src.id == source_id:
+                        return source_id
+                return None
+
+            return await idempotent_create(
+                _ent_create,
+                _ent_probe,
+                label=f"sources.register_file_source_enterprise[{filename}]",
             )
-            return source_id
 
         params = build_register_file_source_params(filename, notebook_id)
         if rpc_call is None:
@@ -817,13 +841,28 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             authuser_header=self._authuser_header(),
         )
 
+        headers = dict(request.headers)
+        from .._env import ENTERPRISE_BASE_HOST, get_base_host
+        if get_base_host() == ENTERPRISE_BASE_HOST:
+            sapisid_val = None
+            for cookie in self._live_cookies().jar:
+                if cookie.name == "SAPISID":
+                    sapisid_val = cookie.value
+                    break
+            if sapisid_val:
+                from .._auth.cookies import generate_sapisid_hash
+                sapisid_hash = generate_sapisid_hash(
+                    sapisid_val, get_base_url()
+                )
+                headers["authorization"] = f"SAPISIDHASH {sapisid_hash}"
+
         async with self._client_factory()(
             timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
             cookies=self._live_cookies(),
         ) as client:
             response = await client.post(
                 request.url,
-                headers=request.headers,
+                headers=headers,
                 content=request.body,
             )
             response.raise_for_status()
@@ -871,6 +910,18 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 "x-goog-upload-command": "upload, finalize",
                 "x-goog-upload-offset": "0",
             }
+
+            from .._env import ENTERPRISE_BASE_HOST, get_base_host
+            if get_base_host() == ENTERPRISE_BASE_HOST:
+                sapisid_val = None
+                for cookie in self._live_cookies().jar:
+                    if cookie.name == "SAPISID":
+                        sapisid_val = cookie.value
+                        break
+                if sapisid_val:
+                    from .._auth.cookies import generate_sapisid_hash
+                    sapisid_hash = generate_sapisid_hash(sapisid_val, base_url)
+                    headers["authorization"] = f"SAPISIDHASH {sapisid_hash}"
             diag_name = filename or (path_fallback.name if path_fallback is not None else "<file>")
             logger.debug("Streaming upload to %s for %s", _redact_upload_url(upload_url), diag_name)
             if total_bytes is None and path_fallback is not None:
@@ -990,6 +1041,18 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             "Referer": f"{base_url}/",
             "x-goog-upload-command": "cancel",
         }
+
+        from .._env import ENTERPRISE_BASE_HOST, get_base_host
+        if get_base_host() == ENTERPRISE_BASE_HOST:
+            sapisid_val = None
+            for cookie in self._live_cookies().jar:
+                if cookie.name == "SAPISID":
+                    sapisid_val = cookie.value
+                    break
+            if sapisid_val:
+                from .._auth.cookies import generate_sapisid_hash
+                sapisid_hash = generate_sapisid_hash(sapisid_val, base_url)
+                headers["authorization"] = f"SAPISIDHASH {sapisid_hash}"
         try:
             upload_url = _validate_resumable_upload_url(upload_url)
             async with self._client_factory()(

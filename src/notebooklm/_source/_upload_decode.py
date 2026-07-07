@@ -106,10 +106,21 @@ def _validate_resumable_upload_url(upload_url: str) -> str:
         raise ValidationError("Upload URL must not contain credentials")
     if parsed.hostname is None:
         raise ValidationError("Upload URL must include a host")
-    if parsed.hostname != expected.hostname or actual_port != expected_port:
-        raise ValidationError("Upload URL host is not trusted")
-    if _normalize_upload_path(parsed.path) != _normalize_upload_path(expected.path):
-        raise ValidationError("Upload URL path is not trusted")
+
+    # Under Enterprise mode, we permit discoveryengine.clients6.google.com
+    is_enterprise_discovery_engine = (
+        parsed.hostname == "discoveryengine.clients6.google.com"
+        and actual_port == 443
+        and parsed.path.startswith("/upload/v1alpha/projects/")
+        and parsed.path.endswith("/sources:uploadFile")
+    )
+
+    if not is_enterprise_discovery_engine:
+        if parsed.hostname != expected.hostname or actual_port != expected_port:
+            raise ValidationError("Upload URL host is not trusted")
+        if _normalize_upload_path(parsed.path) != _normalize_upload_path(expected.path):
+            raise ValidationError("Upload URL path is not trusted")
+
     upload_ids = [
         value
         for key, value in parse_qsl(parsed.query, keep_blank_values=True)

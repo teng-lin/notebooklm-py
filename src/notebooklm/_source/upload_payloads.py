@@ -63,8 +63,47 @@ def build_resumable_upload_start_request(
     authuser_header: str,
 ) -> ResumableUploadStartRequest:
     """Build the HTTP request that starts a resumable upload session."""
+    import os
+    import base64
+    from urllib.parse import urlparse
+    from .._env import get_notebooklm_region
+
+    parsed_host = urlparse(base_url).hostname
+    if parsed_host == "notebooklm.cloud.google.com":
+        parts = notebook_id.split("/")
+        if len(parts) >= 6 and parts[0] == "projects" and parts[2] == "locations" and parts[4] == "notebooks":
+            project = parts[1]
+            region = parts[3]
+            notebook = parts[5]
+        else:
+            project = os.environ.get("NOTEBOOKLM_PROJECT", "").strip()
+            region = get_notebooklm_region()
+            notebook = notebook_id
+
+        url = f"https://discoveryengine.clients6.google.com/upload/v1alpha/projects/{project}/locations/{region}/notebooks/{notebook}/sources:uploadFile"
+        b64_filename = base64.b64encode(filename.encode("utf-8")).decode("utf-8")
+
+        return ResumableUploadStartRequest(
+            url=url,
+            headers={
+                "Accept": "*/*",
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                "Origin": base_url,
+                "Referer": f"{base_url}/",
+                "x-goog-authuser": authuser_header,
+                "x-goog-upload-command": "start",
+                "x-goog-upload-header-content-length": str(file_size),
+                "x-goog-upload-header-content-type": content_type,
+                "x-goog-upload-protocol": "resumable",
+                "x-goog-upload-file-name": b64_filename,
+            },
+            body="",
+        )
+
+    url = f"{upload_url}?{authuser_query}"
+    project_id_payload = notebook_id
     return ResumableUploadStartRequest(
-        url=f"{upload_url}?{authuser_query}",
+        url=url,
         headers={
             "Accept": "*/*",
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -78,9 +117,10 @@ def build_resumable_upload_start_request(
         },
         body=json.dumps(
             {
-                "PROJECT_ID": notebook_id,
+                "PROJECT_ID": project_id_payload,
                 "SOURCE_NAME": filename,
                 "SOURCE_ID": source_id,
             }
         ),
     )
+

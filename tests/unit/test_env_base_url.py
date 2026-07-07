@@ -98,12 +98,13 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
 @pytest.mark.asyncio
 async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_mock):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+    monkeypatch.setenv("NOTEBOOKLM_PROJECT", "test-proj")
     monkeypatch.delenv("NOTEBOOKLM_REGION", raising=False)
     auth = AuthTokens(cookies={"SID": "test"}, csrf_token="csrf", session_id="sid")
-    upload_url = "https://notebooklm.cloud.google.com/global/upload/_/?upload_id=test"
+    upload_url = "https://discoveryengine.clients6.google.com/upload/v1alpha/projects/test-proj/locations/global/notebooks/nb_123/sources:uploadFile?upload_id=test"
     httpx_mock.add_response(
         method="POST",
-        url="https://notebooklm.cloud.google.com/global/upload/_/?authuser=0",
+        url="https://discoveryengine.clients6.google.com/upload/v1alpha/projects/test-proj/locations/global/notebooks/nb_123/sources:uploadFile",
         headers={"x-goog-upload-url": upload_url},
     )
 
@@ -134,9 +135,14 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
     request = httpx_mock.get_request()
     assert result == upload_url
     assert request is not None
-    assert str(request.url) == "https://notebooklm.cloud.google.com/global/upload/_/?authuser=0"
+    assert str(request.url) == "https://discoveryengine.clients6.google.com/upload/v1alpha/projects/test-proj/locations/global/notebooks/nb_123/sources:uploadFile"
     assert request.headers["origin"] == "https://notebooklm.cloud.google.com"
     assert request.headers["referer"] == "https://notebooklm.cloud.google.com/"
+    assert request.headers["x-goog-upload-command"] == "start"
+    assert request.headers["x-goog-upload-header-content-length"] == "12"
+    assert request.headers["x-goog-upload-file-name"] == "ZmlsZS50eHQ="
+    assert request.read().decode("utf-8") == ""
+
 
 
 @pytest.mark.asyncio
