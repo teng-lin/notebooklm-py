@@ -66,12 +66,17 @@ def build_resumable_upload_start_request(
     import os
     import base64
     from urllib.parse import urlparse
-    from .._env import get_notebooklm_region
+    from .._env import ENTERPRISE_BASE_HOST, get_notebooklm_region
 
     parsed_host = urlparse(base_url).hostname
-    if parsed_host == "notebooklm.cloud.google.com":
+    if parsed_host == ENTERPRISE_BASE_HOST:
         parts = notebook_id.split("/")
-        if len(parts) >= 6 and parts[0] == "projects" and parts[2] == "locations" and parts[4] == "notebooks":
+        if (
+            len(parts) >= 6
+            and parts[0] == "projects"
+            and parts[2] == "locations"
+            and parts[4] == "notebooks"
+        ):
             project = parts[1]
             region = parts[3]
             notebook = parts[5]
@@ -80,7 +85,17 @@ def build_resumable_upload_start_request(
             region = get_notebooklm_region()
             notebook = notebook_id
 
-        url = f"https://discoveryengine.clients6.google.com/upload/v1alpha/projects/{project}/locations/{region}/notebooks/{notebook}/sources:uploadFile"
+        if not project:
+            from ..exceptions import ValidationError
+            raise ValidationError(
+                "NOTEBOOKLM_PROJECT environment variable must be set when notebook_id "
+                "is not fully-qualified (projects/.../locations/.../notebooks/...)"
+            )
+
+        url = (
+            "https://discoveryengine.clients6.google.com/upload/v1alpha/"
+            f"projects/{project}/locations/{region}/notebooks/{notebook}/sources:uploadFile"
+        )
         b64_filename = base64.b64encode(filename.encode("utf-8")).decode("utf-8")
 
         return ResumableUploadStartRequest(

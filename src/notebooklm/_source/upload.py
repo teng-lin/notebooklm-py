@@ -313,6 +313,26 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             return httpx.Cookies()
         return cast(httpx.Cookies, cookies)
 
+    def _maybe_enterprise_authorization(self, origin: str) -> dict[str, str]:
+        """Return enterprise authorization header dict if enterprise host is active and SAPISID is found."""
+        from .._env import ENTERPRISE_BASE_HOST, get_base_host
+
+        if get_base_host() != ENTERPRISE_BASE_HOST:
+            return {}
+
+        sapisid_val = None
+        for cookie in self._live_cookies().jar:
+            if cookie.name == "SAPISID":
+                sapisid_val = cookie.value
+                break
+        if not sapisid_val:
+            return {}
+
+        from .._auth.cookies import generate_sapisid_hash
+
+        sapisid_hash = generate_sapisid_hash(sapisid_val, origin)
+        return {"authorization": f"SAPISIDHASH {sapisid_hash}"}
+
     def _on_loop_rebind(
         self,
         old: asyncio.AbstractEventLoop | None,
@@ -842,19 +862,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         )
 
         headers = dict(request.headers)
-        from .._env import ENTERPRISE_BASE_HOST, get_base_host
-        if get_base_host() == ENTERPRISE_BASE_HOST:
-            sapisid_val = None
-            for cookie in self._live_cookies().jar:
-                if cookie.name == "SAPISID":
-                    sapisid_val = cookie.value
-                    break
-            if sapisid_val:
-                from .._auth.cookies import generate_sapisid_hash
-                sapisid_hash = generate_sapisid_hash(
-                    sapisid_val, get_base_url()
-                )
-                headers["authorization"] = f"SAPISIDHASH {sapisid_hash}"
+        headers.update(self._maybe_enterprise_authorization(get_base_url()))
 
         async with self._client_factory()(
             timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
@@ -911,17 +919,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 "x-goog-upload-offset": "0",
             }
 
-            from .._env import ENTERPRISE_BASE_HOST, get_base_host
-            if get_base_host() == ENTERPRISE_BASE_HOST:
-                sapisid_val = None
-                for cookie in self._live_cookies().jar:
-                    if cookie.name == "SAPISID":
-                        sapisid_val = cookie.value
-                        break
-                if sapisid_val:
-                    from .._auth.cookies import generate_sapisid_hash
-                    sapisid_hash = generate_sapisid_hash(sapisid_val, base_url)
-                    headers["authorization"] = f"SAPISIDHASH {sapisid_hash}"
+            headers.update(self._maybe_enterprise_authorization(base_url))
             diag_name = filename or (path_fallback.name if path_fallback is not None else "<file>")
             logger.debug("Streaming upload to %s for %s", _redact_upload_url(upload_url), diag_name)
             if total_bytes is None and path_fallback is not None:
@@ -1042,17 +1040,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             "x-goog-upload-command": "cancel",
         }
 
-        from .._env import ENTERPRISE_BASE_HOST, get_base_host
-        if get_base_host() == ENTERPRISE_BASE_HOST:
-            sapisid_val = None
-            for cookie in self._live_cookies().jar:
-                if cookie.name == "SAPISID":
-                    sapisid_val = cookie.value
-                    break
-            if sapisid_val:
-                from .._auth.cookies import generate_sapisid_hash
-                sapisid_hash = generate_sapisid_hash(sapisid_val, base_url)
-                headers["authorization"] = f"SAPISIDHASH {sapisid_hash}"
+        headers.update(self._maybe_enterprise_authorization(base_url))
         try:
             upload_url = _validate_resumable_upload_url(upload_url)
             async with self._client_factory()(
