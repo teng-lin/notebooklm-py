@@ -569,6 +569,13 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             if list_sources is None:
                 list_sources = self.list_sources
 
+            # Capture baseline of source IDs before creating to identify the newly added source
+            try:
+                baseline_sources = await list_sources(notebook_id)
+                baseline_ids = {src.id for src in baseline_sources}
+            except Exception:
+                baseline_ids = set()
+
             async def _ent_create() -> str:
                 await rpc_call(
                     RPCMethod.ADD_SOURCE_FILE,
@@ -579,16 +586,40 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     allow_null=True,
                     disable_internal_retries=True,
                 )
-                return source_id
+                
+                # Resolve the actual server-side assigned source ID
+                try:
+                    sources = await list_sources(notebook_id)
+                except Exception as exc:
+                    raise SourceAddError(
+                        filename,
+                        cause=exc,
+                        message=f"Failed to list sources to resolve registered source ID for {filename}: {exc}"
+                    ) from exc
+                
+                matches = [src for src in sources if src.title == filename and src.id not in baseline_ids]
+                if not matches:
+                    matches = [src for src in sources if src.title == filename]
+                
+                if len(matches) >= 1:
+                    # Return the most recent matching source (often the last one in list order)
+                    return matches[-1].id
+                
+                raise SourceAddError(
+                    filename,
+                    message=f"Could not resolve server-side registered source ID for {filename}"
+                )
 
             async def _ent_probe() -> str | None:
                 try:
                     sources = await list_sources(notebook_id)
                 except Exception:
-                    raise
-                for src in sources:
-                    if src.id == source_id:
-                        return source_id
+                    return None
+                matches = [src for src in sources if src.title == filename and src.id not in baseline_ids]
+                if not matches:
+                    matches = [src for src in sources if src.title == filename]
+                if len(matches) >= 1:
+                    return matches[-1].id
                 return None
 
             return await idempotent_create(
