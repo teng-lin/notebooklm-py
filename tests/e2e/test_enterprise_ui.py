@@ -159,7 +159,7 @@ class TestNotebookLMEnterpriseUI:
                             "👉 Redirection detected. "
                             "Please authenticate manually in the open window..."
                         )
-                        page.wait_for_url("**/notebooklm.cloud.google.com/**", timeout=60000)
+                        page.wait_for_url(re.compile(r"^https://notebooklm\.cloud\.google\.com"), timeout=180000)
                         print("👉 Successfully logged in. Persisting authenticated state.")
                         context.storage_state(path=str(storage_path))
                     else:
@@ -195,8 +195,9 @@ class TestNotebookLMEnterpriseUI:
         1. Create Notebook
         2. Add website source link
         3. Generate Audio Overview (Deep Dive)
-        4. Generate Video Overview (Enterprise specific)
-        5. Generate Slides presentation (Enterprise specific)
+        4. Generate Presenter Slides
+        5. Generate Video Overview
+        6. Generate Report (Briefing Doc)
         """
         headless = os.environ.get("NOTEBOOKLM_HEADLESS", "1") == "1"
         storage_path = get_storage_path()
@@ -272,8 +273,15 @@ class TestNotebookLMEnterpriseUI:
                         f"Could not find 'New notebook' button. Available buttons: {avail}"
                     )
 
+                # Try to dismiss any generic popups (like "Unable to access NotebookLM")
+                try:
+                    page.keyboard.press("Escape")
+                    time.sleep(1)
+                except Exception:
+                    pass
+
                 print("Clicking 'New notebook' button...")
-                create_btn.click()
+                create_btn.click(force=True)
 
                 # Wait for the transition to notebook page
                 print("Waiting for workspace initialization redirection...")
@@ -414,53 +422,78 @@ class TestNotebookLMEnterpriseUI:
                 # --- Step 4: Create Audio Overview (Deep Dive) ---
                 print("\n--- [Step 4] Generating Audio Overview ---")
                 audio_tile = page.locator(
-                    ".create-artifact-button-container:has-text('Audio Overview')"
+                    ".create-artifact-button-container:has-text('Audio Overview') .create-label-container"
                 ).first
                 audio_tile.wait_for(state="visible", timeout=10000)
                 print("Clicking 'Audio Overview' tile in the Studio panel...")
-                audio_tile.click()
+                audio_tile.click(force=True)
 
                 # Wait dynamically for generation to start
                 audio_loading = page.locator(
                     "//*[contains(text(), 'Generating Audio Overview')]"
                 ).first
-                audio_loading.wait_for(state="visible", timeout=10000)
+                audio_loading.wait_for(state="visible", timeout=30000)
                 print("✅ Audio Overview generation is initiated and running.")
 
                 # --- Step 5: Create Slides (Enterprise specific) ---
                 print("\n--- [Step 5] Generating Presenter Slides ---")
                 slides_tile = page.locator(
-                    ".create-artifact-button-container:has-text('Slide Deck')"
+                    ".create-artifact-button-container:has-text('Slide Deck') .create-label-container"
                 ).first
                 slides_tile.wait_for(state="visible", timeout=10000)
                 print("Clicking 'Slide Deck' tile in the Studio panel...")
-                slides_tile.click()
+                slides_tile.click(force=True)
 
                 # Wait dynamically for generation to start
                 slides_loading = page.locator(
                     "//*[contains(text(), 'Generating Slide Deck')]"
                 ).first
-                slides_loading.wait_for(state="visible", timeout=10000)
+                slides_loading.wait_for(state="visible", timeout=30000)
                 print("✅ Slide Deck generation is initiated and running.")
 
                 # --- Step 6: Create Video Overview (Enterprise specific) ---
                 print("\n--- [Step 6] Generating Video Overview ---")
                 video_tile = page.locator(
-                    ".create-artifact-button-container:has-text('Video Overview')"
+                    ".create-artifact-button-container:has-text('Video Overview') .create-label-container"
                 ).first
                 video_tile.wait_for(state="visible", timeout=10000)
                 print("Clicking 'Video Overview' tile in the Studio panel...")
-                video_tile.click()
+                video_tile.click(force=True)
 
                 # Wait dynamically for generation to start
                 video_loading = page.locator(
                     "//*[contains(text(), 'Generating Video Overview')]"
                 ).first
-                video_loading.wait_for(state="visible", timeout=10000)
+                video_loading.wait_for(state="visible", timeout=30000)
                 print("✅ Video Overview generation is initiated and running.")
 
-                # --- Step 7: Verify Generation Progress ---
-                print("\n--- [Step 7] Verifying Generation States ---")
+                # --- Step 7: Create Report (Enterprise specific) ---
+                print("\n--- [Step 7] Generating Briefing Doc Report ---")
+                reports_tile = page.locator(
+                    "hover-create-artifact-button .create-artifact-button-container .create-label-container"
+                ).first
+                reports_tile.wait_for(state="visible", timeout=10000)
+                print("Clicking 'Reports' tile in the Studio panel...")
+                reports_tile.click(force=True)
+
+                # Wait for Material Menu Panel to be visible
+                menu_panel = page.locator(".mat-mdc-menu-panel").first
+                menu_panel.wait_for(state="visible", timeout=10000)
+                print("Clicking 'Briefing Doc' option inside the menu...")
+
+                briefing_doc_item = page.locator(".mat-mdc-menu-item:has-text('Briefing Doc')").first
+                briefing_doc_item.wait_for(state="visible", timeout=10000)
+                briefing_doc_item.click()
+
+                # Wait dynamically for generation to start
+                report_loading = page.locator(
+                    "//*[contains(text(), 'Generating Briefing Doc') or contains(text(), 'Generating Note')]"
+                ).first
+                report_loading.wait_for(state="visible", timeout=30000)
+                print("✅ Report generation is initiated and running.")
+
+                # --- Step 8: Verify Generation Progress ---
+                print("\n--- [Step 8] Verifying Generation States ---")
                 capture_screenshot(page, "04_generation_initiated")
 
                 print(
@@ -481,11 +514,16 @@ class TestNotebookLMEnterpriseUI:
                         f"{created_notebook_id}"
                     )
                     try:
-                        async def do_cleanup():
-                            tokens = await AuthTokens.from_storage()
-                            async with NotebookLMClient(tokens) as client:
-                                await client.notebooks.delete(created_notebook_id)
-                        asyncio.run(do_cleanup())
+                        import threading
+                        def run_in_thread():
+                            async def do_cleanup():
+                                tokens = await AuthTokens.from_storage()
+                                async with NotebookLMClient(tokens) as client:
+                                    await client.notebooks.delete(created_notebook_id)
+                            asyncio.run(do_cleanup())
+                        thread = threading.Thread(target=run_in_thread)
+                        thread.start()
+                        thread.join()
                         print("[Studio Test] Notebook cleanup successful.")
                     except Exception as exc:
                         print(

@@ -71,15 +71,16 @@ def build_resumable_upload_start_request(
     parsed_host = urlparse(base_url).hostname
     if parsed_host == ENTERPRISE_BASE_HOST:
         parts = notebook_id.split("/")
-        if (
-            len(parts) >= 6
-            and parts[0] == "projects"
-            and parts[2] == "locations"
-            and parts[4] == "notebooks"
-        ):
-            project = parts[1]
-            region = parts[3]
-            notebook = parts[5]
+        if len(parts) >= 6:
+            p_0, p_1, p_2, p_3, p_4, p_5 = parts[:6]
+            if (
+                p_0 == "projects"
+                and p_2 == "locations"
+                and p_4 == "notebooks"
+            ):
+                project = p_1
+                region = p_3
+                notebook = p_5
         else:
             project = os.environ.get("NOTEBOOKLM_PROJECT", "").strip()
             region = get_notebooklm_region()

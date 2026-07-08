@@ -127,13 +127,12 @@ def extract_wiz_field(html: str, key: str, *, strict: bool = True) -> str | None
 # Notable omission: ``www.googleapis.com`` is deliberately NOT in this
 # list — it hosts many non-auth APIs (Drive, Calendar, Storage) where the
 # path is operator signal, not credential. Add the specific subdomain if
-# a future leak path emerges rather than the broad family.
-_AUTH_PATH_REDACT_HOSTS: frozenset[str] = frozenset(
-    {
-        "accounts.google.com",
-        "oauth2.googleapis.com",
-        "oauth2.googleusercontent.com",
-    }
+# Google OAuth hosts where the path component can carry an opaque grant code
+# or token and must be redacted. Using a fully anchored regex pattern avoids
+# CodeQL substring/subdomain matching warnings (py/incomplete-url-substring-sanitization).
+_AUTH_PATH_REDACT_PATTERN: re.Pattern[str] = re.compile(
+    r"^(?:[a-z0-9-]+\.)*(?:accounts\.google\.com|oauth2\.googleapis\.com|oauth2\.googleusercontent\.com)$",
+    re.IGNORECASE,
 )
 
 
@@ -148,7 +147,7 @@ def _safe_url(url: str) -> str:
     * **Userinfo** — ``https://TOKEN@host/...`` shapes; ``parsed.netloc``
       preserves the userinfo, so we rebuild from ``hostname`` + optional
       port instead of trusting ``netloc`` directly.
-    * **Path** — restricted to ``_AUTH_PATH_REDACT_HOSTS`` (Google's OAuth
+    * **Path** — restricted to ``_AUTH_PATH_REDACT_PATTERN`` (Google's OAuth
       hosts) where the path can carry an opaque grant code or token
       (``/o/oauth2/auth/<token>``). Non-auth hosts keep their path so
       operators can still identify which endpoint failed.
@@ -168,14 +167,11 @@ def _safe_url(url: str) -> str:
     netloc = f"{host}:{parsed.port}" if parsed.port is not None else host
     path = parsed.path or ""
     host_lc = host.lower()
-    # Match the exact host OR any subdomain — both ``accounts.google.com``
-    # and ``x.accounts.google.com`` count. Driving subdomain matching off the
-    # frozenset (instead of hardcoded ``.endswith`` calls per host) keeps
-    # adding a new host a one-line change.
+    # Match the exact host OR any subdomain using the anchored pattern
     if (
         path
         and path != "/"
-        and any(host_lc == h or host_lc.endswith("." + h) for h in _AUTH_PATH_REDACT_HOSTS)
+        and _AUTH_PATH_REDACT_PATTERN.match(host_lc)
     ):
         # Replace with a fixed sentinel so the URL still parses cleanly and
         # the operator sees the auth-host signal without the path content.

@@ -74,7 +74,7 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     # the public-surface manifest pin every class to ``notebooklm.exceptions``, so
     # the classes cannot move to sibling files without forking that home.
     "exceptions.py": 1546,
-    "_source/upload.py": 1104,
+    "_source/upload.py": 1089,
 }
 
 

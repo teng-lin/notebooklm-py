@@ -15,6 +15,10 @@ def test_wheel_includes_root_skill_content(tmp_path):
 
     repo_root = Path(__file__).resolve().parents[2]
     build_dir = tmp_path / "dist"
+    # We must use --no-build-isolation because resolving build-system dependencies
+    # (e.g., hatchling, hatch-fancy-pypi-readme) from the internal staging registry
+    # requires authentication credentials. Without it, uv build encounters a 401
+    # Unauthorized registry error in local and CI environments.
     result = subprocess.run(
         ["uv", "build", "--wheel", "--no-build-isolation", "--out-dir", str(build_dir)],
         cwd=repo_root,

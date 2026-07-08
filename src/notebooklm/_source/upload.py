@@ -440,12 +440,23 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         content_type = _resolve_upload_content_type(file_path, mime_type)
         _validate_upload_file_supported(file_path, content_type)
         transient_error_types = _transient_error_types_for_upload(content_type)
+
+        from .._env import ENTERPRISE_BASE_HOST, get_base_host
+        is_enterprise = get_base_host() == ENTERPRISE_BASE_HOST
+
         async with self._drain.operation_scope(f"upload:{upload_index}"):
             upload_sem = self.get_upload_semaphore()
             upload_wait_start = monotonic()
             async with upload_sem:
                 if self._record_upload_queue_wait is not None:
                     self._record_upload_queue_wait(monotonic() - upload_wait_start)
+
+                baseline_ids = set()
+                if is_enterprise:
+                    try:
+                        baseline_ids = {src.id for src in await self.list_sources(notebook_id)}
+                    except Exception:
+                        pass
 
                 # ``open()`` and ``fstat()`` are synchronous syscalls. For
                 # network filesystems or deep directories they can block
@@ -483,6 +494,18 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                         on_progress=on_progress,
                         total_bytes=file_size,
                     )
+
+                    if is_enterprise:
+                        try:
+                            sources = await self.list_sources(notebook_id)
+                        except Exception as exc:
+                            raise SourceAddError(filename, cause=exc, message=f"Failed to list sources: {exc}") from exc
+                        matches = [s for s in sources if s.title == filename and s.id not in baseline_ids] or [
+                            s for s in sources if s.title == filename
+                        ]
+                        if not matches:
+                            raise SourceAddError(filename, message="Could not resolve server-side registered source ID.")
+                        source_id = matches.pop().id
                 finally:
                     if not handed_off:
                         file_obj.close()
@@ -566,15 +589,6 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             params = build_register_file_source_params(filename, notebook_id)
             if rpc_call is None:
                 rpc_call = self._rpc.rpc_call
-            if list_sources is None:
-                list_sources = self.list_sources
-
-            # Capture baseline of source IDs before creating to identify the newly added source
-            try:
-                baseline_sources = await list_sources(notebook_id)
-                baseline_ids = {src.id for src in baseline_sources}
-            except Exception:
-                baseline_ids = set()
 
             async def _ent_create() -> str:
                 await rpc_call(
@@ -586,40 +600,11 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     allow_null=True,
                     disable_internal_retries=True,
                 )
-                
-                # Resolve the actual server-side assigned source ID
-                try:
-                    sources = await list_sources(notebook_id)
-                except Exception as exc:
-                    raise SourceAddError(
-                        filename,
-                        cause=exc,
-                        message=f"Failed to list sources to resolve registered source ID for {filename}: {exc}"
-                    ) from exc
-                
-                matches = [src for src in sources if src.title == filename and src.id not in baseline_ids]
-                if not matches:
-                    matches = [src for src in sources if src.title == filename]
-                
-                if len(matches) >= 1:
-                    # Return the most recent matching source (often the last one in list order)
-                    return matches[-1].id
-                
-                raise SourceAddError(
-                    filename,
-                    message=f"Could not resolve server-side registered source ID for {filename}"
-                )
+                return source_id
 
             async def _ent_probe() -> str | None:
-                try:
-                    sources = await list_sources(notebook_id)
-                except Exception:
-                    return None
-                matches = [src for src in sources if src.title == filename and src.id not in baseline_ids]
-                if not matches:
-                    matches = [src for src in sources if src.title == filename]
-                if len(matches) >= 1:
-                    return matches[-1].id
+                # Under Enterprise Mode, the source row is only listable after streaming upload is complete.
+                # So we return None on probe to force a safe, idempotent retry of _ent_create if needed.
                 return None
 
             return await idempotent_create(
