@@ -207,6 +207,50 @@ async def test_malformed_type_code_warns_and_degrades_to_none(
 
 
 @pytest.mark.asyncio
+async def test_drive_pdf_type_code_14_fulltext_decodes_to_pdf() -> None:
+    """A Drive-hosted PDF read via GET_SOURCE decodes as PDF, not spreadsheet (#1832).
+
+    Real GET_SOURCE metadata (live capture): ``type_code == 14`` collides with a
+    native Google Sheet, but the row's MIME (``metadata[19]`` / ``metadata[9][2]``)
+    is ``application/pdf`` — so the fulltext path must disambiguate to PDF exactly
+    like ``Source.from_row`` does for the list path.
+    """
+    from notebooklm.types import SourceType
+
+    meta = [None] * 20
+    meta[4] = 14
+    meta[9] = ["drive-id", 5, "application/pdf", ""]
+    meta[19] = "application/pdf"
+    renderer = SourceContentRenderer(
+        RecordingRpc([["src_pdf", "Report.pdf", meta], None, None, [[["Body."]]]])
+    )
+
+    fulltext = await renderer.get_fulltext("nb_1", "src_pdf")
+
+    assert fulltext._type_code == 3
+    assert fulltext.kind == SourceType.PDF
+
+
+@pytest.mark.asyncio
+async def test_native_sheet_type_code_14_fulltext_stays_spreadsheet() -> None:
+    """A native Sheet read via GET_SOURCE stays GOOGLE_SPREADSHEET (no regression, #1832)."""
+    from notebooklm.types import SourceType
+
+    meta = [None] * 20
+    meta[4] = 14
+    meta[9] = ["sheet-id", 8, "application/vnd.google-apps.spreadsheet", ""]
+    meta[19] = "application/vnd.google-apps.spreadsheet"
+    renderer = SourceContentRenderer(
+        RecordingRpc([["src_sheet", "Budget", meta], None, None, [[["Body."]]]])
+    )
+
+    fulltext = await renderer.get_fulltext("nb_1", "src_sheet")
+
+    assert fulltext._type_code == 14
+    assert fulltext.kind == SourceType.GOOGLE_SPREADSHEET
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "metadata",
     [

@@ -335,3 +335,95 @@ def test_source_fulltext_row_raw_metadata_type_slot() -> None:
     # Metadata too short to carry the slot.
     short = SourceFulltextRow([[["id"], "T", [0, 1, 2, 3]]])
     assert short.raw_metadata_type_slot is None
+
+
+# --- #1832: disambiguate the type_code==14 overload (native Sheet vs Drive PDF) ---
+
+
+def _meta_with(*, type_code, mime=None, descriptor_mime=None):
+    """Build a length-20 metadata array with the positions #1832 relies on.
+
+    ``type_code`` at [4]; top-level MIME at [19]; the Drive-file descriptor
+    ``[id, kind_int, mime, ""]`` at [9] when ``descriptor_mime`` is given.
+    """
+    meta = [None] * 20
+    meta[4] = type_code
+    if descriptor_mime is not None:
+        meta[9] = ["drive-id", 8, descriptor_mime, ""]
+    if mime is not None:
+        meta[19] = mime
+    return meta
+
+
+def _row(meta):
+    return SourceRow.from_entry([["src-id"], "Title", meta, [None, 2]])
+
+
+def test_source_row_mime_reads_metadata_19() -> None:
+    assert _row(_meta_with(type_code=14, mime="application/pdf")).mime == "application/pdf"
+
+
+def test_source_row_mime_falls_back_to_drive_descriptor() -> None:
+    # Top-level [19] absent but the drive descriptor [9][2] carries the mime.
+    assert (
+        _row(_meta_with(type_code=14, descriptor_mime="application/pdf")).mime == "application/pdf"
+    )
+
+
+def test_source_row_mime_none_when_absent() -> None:
+    assert _row(_meta_with(type_code=14)).mime is None
+
+
+def test_drive_pdf_type_code_14_decodes_to_pdf() -> None:
+    """Real Drive-PDF row (captured #1832): type_code 14 + application/pdf → PDF."""
+    from notebooklm._types.sources import Source, SourceType
+
+    src = Source.from_row(
+        _row(_meta_with(type_code=14, mime="application/pdf", descriptor_mime="application/pdf"))
+    )
+    assert src.kind == SourceType.PDF
+
+
+def test_native_sheet_type_code_14_stays_spreadsheet() -> None:
+    """Real native-Sheet row (captured #1832): type_code 14 + google-apps mime → GOOGLE_SPREADSHEET (no regression)."""
+    from notebooklm._types.sources import Source, SourceType
+
+    src = Source.from_row(
+        _row(
+            _meta_with(
+                type_code=14,
+                mime="application/vnd.google-apps.spreadsheet",
+                descriptor_mime="application/vnd.google-apps.spreadsheet",
+            )
+        )
+    )
+    assert src.kind == SourceType.GOOGLE_SPREADSHEET
+
+
+def test_type_code_14_no_mime_stays_spreadsheet() -> None:
+    """type_code 14 with no MIME signal stays GOOGLE_SPREADSHEET (conservative)."""
+    from notebooklm._types.sources import Source, SourceType
+
+    src = Source.from_row(_row(_meta_with(type_code=14)))
+    assert src.kind == SourceType.GOOGLE_SPREADSHEET
+
+
+def test_type_code_14_unknown_binary_mime_stays_spreadsheet() -> None:
+    """An unrecognized MIME under 14 is left as GOOGLE_SPREADSHEET, not relabeled/UNKNOWN."""
+    from notebooklm._types.sources import Source, SourceType
+
+    src = Source.from_row(_row(_meta_with(type_code=14, mime="application/x-mystery")))
+    assert src.kind == SourceType.GOOGLE_SPREADSHEET
+
+
+def test_non_14_type_code_with_pdf_mime_is_untouched() -> None:
+    """The MIME override only fires for type_code==14; other codes pass through.
+
+    A native web page (code 5) carrying a stray ``application/pdf`` MIME must NOT
+    be remapped — the disambiguation is gated on the ambiguous code 14 alone.
+    """
+    from notebooklm._types.sources import Source, SourceType
+
+    src = Source.from_row(_row(_meta_with(type_code=5, mime="application/pdf")))
+    assert src._type_code == 5
+    assert src.kind == SourceType.WEB_PAGE

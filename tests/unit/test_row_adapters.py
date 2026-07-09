@@ -1239,6 +1239,11 @@ class TestSourceRowPositionContract:
         assert SourceRow._META_TYPE_POS == 4
         assert SourceRow._META_YOUTUBE_POS == 5
         assert SourceRow._META_URL_POS == 7
+        # Drive-hosted MIME positions used to disambiguate the type_code==14
+        # overload (native Sheet vs Drive PDF) — live-captured #1832.
+        assert SourceRow._META_DRIVE_DESCRIPTOR_POS == 9
+        assert SourceRow._META_MIME_POS == 19
+        assert SourceRow._DRIVE_DESCRIPTOR_MIME_POS == 2
 
     def test_id_envelope_positions(self) -> None:
         """Id-envelope positions: plain id at [0]; drive-backed at [2][0]."""
@@ -1267,11 +1272,14 @@ class TestSourceRowPositionContract:
             SourceRow._META_TYPE_POS,
             SourceRow._META_YOUTUBE_POS,
             SourceRow._META_URL_POS,
+            SourceRow._META_DRIVE_DESCRIPTOR_POS,
+            SourceRow._META_MIME_POS,
+            SourceRow._DRIVE_DESCRIPTOR_MIME_POS,
             SourceRow._ID_ENVELOPE_PLAIN_POS,
             SourceRow._ID_ENVELOPE_DRIVE_PAYLOAD_POS,
             SourceRow._ID_ENVELOPE_DRIVE_INNER_POS,
             SourceRow._LIST_FIRST_POS,
-        ) == (0, 1, 2, 3, 1, 0, 2, 4, 5, 7, 0, 2, 0, 0)
+        ) == (0, 1, 2, 3, 1, 0, 2, 4, 5, 7, 9, 19, 2, 0, 2, 0, 0)
 
 
 # ---------------------------------------------------------------------------

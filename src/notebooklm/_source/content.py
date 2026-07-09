@@ -10,6 +10,7 @@ from typing import Any, Literal
 from .._row_adapters.sources import SourceFulltextRow, SourceGuideRow
 from .._runtime.contracts import RpcCaller
 from .._types.research import SourceGuide
+from .._types.sources import _disambiguate_type_code
 from ..rpc import RPCMethod
 from ..types import SourceFulltext, SourceNotFoundError, _extract_source_url
 
@@ -93,7 +94,16 @@ class SourceContentRenderer:
             # value into ``SourceFulltext._type_code`` (#1485
             # absence-vs-malformed policy).
             source_row = fulltext_row.source_row
-            source_type = source_row.type_code if source_row is not None else None
+            # Disambiguate the type_code==14 native-Sheet/Drive-PDF overload by
+            # the row MIME, mirroring ``Source.from_row`` so ``source fulltext``
+            # / ``source_read`` decode a Drive-hosted PDF as PDF, not
+            # GOOGLE_SPREADSHEET (#1832). GET_SOURCE carries the same MIME at
+            # metadata[19] / metadata[9][2] as GET_NOTEBOOK (live-captured).
+            source_type = (
+                _disambiguate_type_code(source_row.type_code, source_row.mime)
+                if source_row is not None
+                else None
+            )
             type_slot = fulltext_row.raw_metadata_type_slot
             if source_type is None and type_slot is not None:
                 self._logger.warning(

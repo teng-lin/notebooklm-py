@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Drive-hosted PDFs no longer list as `google_spreadsheet`.** The backend
+  returns type code `14` for both native Google Sheets and Drive-hosted PDFs,
+  and Drive sources carry no URL, so the read paths (`source_list` /
+  `GET_NOTEBOOK` **and** `source fulltext` / `source_read` / `GET_SOURCE`)
+  mislabeled Drive PDFs as `kind="google_spreadsheet"`. `kind` now disambiguates
+  code `14` by the source MIME (`metadata[19]` / `metadata[9][2]` from a live
+  capture): `application/pdf` → `pdf`, while real Google Sheets
+  (`application/vnd.google-apps.spreadsheet`) are unchanged. This completes the
+  read-path half of the fix started in #1831 (the add path).
+  ([#1832](https://github.com/teng-lin/notebooklm-py/issues/1832))
+
 ## [0.8.0]
 
 The headline of 0.8.0 is **integrations**: NotebookLM is now reachable from AI

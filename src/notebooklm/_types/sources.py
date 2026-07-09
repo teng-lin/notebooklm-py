@@ -81,6 +81,33 @@ _SOURCE_TYPE_COMPAT_MAP: dict[SourceType, str] = {
 }
 
 
+# The type_code==14 overload (#1828/#1832): the backend returns 14 for BOTH a
+# native Google Sheet AND a Drive-hosted binary file (e.g. a PDF). Live capture
+# showed Drive sources carry no URL (metadata[0]/[5]/[7] are null), so the only
+# disambiguation signal is the MIME at metadata[19] / metadata[9][2]. A native
+# Sheet carries "application/vnd.google-apps.spreadsheet" (→ stay 14); a Drive
+# PDF carries "application/pdf" (→ 3). Only MIMEs proven by live capture are
+# mapped; anything else under 14 is left as GOOGLE_SPREADSHEET (conservative —
+# never relabel a real Sheet, never introduce UNKNOWN). Extend as more
+# Drive-hosted-binary-under-14 collisions are captured.
+_TYPE_CODE_14_MIME_OVERRIDE: dict[str, int] = {
+    "application/pdf": 3,  # Drive-hosted PDF → PDF
+}
+
+
+def _disambiguate_type_code(type_code: int | None, mime: str | None) -> int | None:
+    """Correct the ambiguous ``type_code == 14`` using the row MIME (#1832).
+
+    Returns the effective type code: a Drive-hosted binary whose MIME maps in
+    :data:`_TYPE_CODE_14_MIME_OVERRIDE` is remapped (PDF → 3); every other case
+    (native Sheet MIME, no MIME, or an unrecognized MIME) is returned unchanged
+    so real Google Sheets keep decoding as ``GOOGLE_SPREADSHEET``.
+    """
+    if type_code == 14 and mime is not None:
+        return _TYPE_CODE_14_MIME_OVERRIDE.get(mime, type_code)
+    return type_code
+
+
 def _safe_source_type(type_code: int | None) -> SourceType:
     """Convert internal type code to user-facing SourceType enum."""
     if type_code is None:
@@ -193,7 +220,10 @@ class Source:
             id=row.id,
             title=row.title,
             url=row.url,
-            _type_code=row.type_code,
+            # Correct the type_code==14 native-Sheet/Drive-PDF overload by the
+            # row MIME before it reaches ``kind`` (#1832). No-op for every other
+            # type code and for real Sheets.
+            _type_code=_disambiguate_type_code(row.type_code, row.mime),
             created_at=row.created_at,
             status=row.status,
         )
