@@ -251,7 +251,7 @@ def test_representative_public_dataclasses_pickle_round_trip():
     chat_reference = ChatReference(source_id="src_1", citation_number=1, cited_text="quoted")
     shared_user = SharedUser(email="reader@example.com", permission=SharePermission.VIEWER)
     instances = [
-        AccountLimits(notebook_limit=10, source_limit=50, raw_limits=("raw",)),
+        AccountLimits(notebook_limit=10, source_limit=50, raw_limits=("raw",), tier=2),
         Artifact(
             id="artifact_1",
             title="Audio",

@@ -60,7 +60,7 @@ migrate.
 | Synchronous generation refusal returns `GenerationStatus(status="failed")` | ❌ silent | `try/except RateLimitError` (or `with_rate_limit_retry`) | v0.8.0 |
 | `notes.update` / `rename(return_object=False)` silently no-op on a missing target | ❌ silent | `try/except *NotFoundError` | v0.8.0 |
 | `sources.refresh` / `chat.delete_conversation` return `bool` (always `True`) | ❌ silent | Stop relying on the return value | v0.8.0 |
-| `client.settings.get_account_tier()` and the `AccountTier` type removed | ❌ silent | `client.settings.get_account_limits()` (`AccountLimits.notebook_limit` / `source_limit`) — the old tier could not tell free from paid | v0.8.0 |
+| `client.settings.get_account_tier()` and the `AccountTier` type removed | ❌ silent | `client.settings.get_account_limits()` (`AccountLimits.notebook_limit` / `source_limit`) — the old tier could not tell free from paid. **In v0.9.0 a correct `AccountLimits.tier` returns**, read from the authoritative limits block (not the promotions RPC) | v0.8.0 |
 | Derived-read / lister drift (`sources.check_freshness()`, note & artifact listers) returned an empty value on an unrecognized payload | ❌ silent | Handle `DecodingError` (only fires on server-side schema drift; legitimate empty/stale shapes are unchanged) | v0.8.0 |
 
 Legend: ✅ emitted a `DeprecationWarning` (or a stderr notice) in 0.7.0; ❌ was a

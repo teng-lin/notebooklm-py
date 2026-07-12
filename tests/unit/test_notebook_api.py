@@ -530,6 +530,7 @@ class TestCreateNotebookQuotaDetection:
             notebook_limit=500,
             source_limit=300,
             raw_limits=(6, 500, 300, 500000, 2),
+            tier=2,
         )
         api._rpc.rpc_call.assert_awaited_once_with(
             RPCMethod.GET_USER_SETTINGS,

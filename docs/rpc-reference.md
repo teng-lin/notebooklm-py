@@ -2316,15 +2316,24 @@ await rpc_call(
 # Response structure:
 # [[
 #     null,
-#     [6, 500, 300, 500000],        # [0][1]: Limits/quotas
+#     [6, 500, 300, 500000, 2],     # [0][1]: Limits/quotas (captured 2026-07-11)
 #     [true, null, null, true, ["ja"]],  # [0][2]: Settings (language at [4][0])
 #     [[1]],                         # [0][3]: Unknown
 #     [true, 1, 3, 2]               # [0][4]: Feature flags
 # ]]
 #
+# Historical: the limits block was captured 4-element as [6, 500, 300, 500000] on
+# 2026-06-15 (pre-tier). Google appended index 4 (tier) after that; confirmed live
+# 2026-07-11 across a Free profile (…, 1) and two Pro profiles (…, 2).
+#
 # Language code at: result[0][2][4][0]
 # Notebook limit at: result[0][1][1]
 # Source limit at: result[0][1][2]
+# Max characters per source at: result[0][1][3]  (e.g. 500000)
+# Tier enum at: result[0][1][4]  — OPAQUE key, not an ordinal rank.
+#   1=Standard/Free, 2=Pro, 4=Plus, 3=Ultra(20TB), 6=Ultra(30TB); 5=Expanded (legacy/
+#   unconfirmed); Enterprise separate. Live-confirmed 1 & 2 (source limits match Google's
+#   published 50 / 300). Ref: https://support.google.com/notebooklm/answer/16213268
 ```
 
 ### RPC: SET_USER_SETTINGS (hT54vc)

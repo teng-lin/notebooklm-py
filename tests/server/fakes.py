@@ -617,7 +617,7 @@ class FakeClient:
         # server_info(include_account=True) surface.
         self.account_email: str | None = "user@example.com"
         self.account_authuser: int = 0
-        self.account_limits = AccountLimits(notebook_limit=100, source_limit=50)
+        self.account_limits = AccountLimits(notebook_limit=100, source_limit=50, tier=1)
         self.output_language: str | None = "en"
 
         self.new_source_status: SourceStatus = SourceStatus.PROCESSING

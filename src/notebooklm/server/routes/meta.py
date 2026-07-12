@@ -82,6 +82,8 @@ async def _account_block(client: NotebookLMClient, *, authenticated: bool) -> di
         "available": True,
         "notebook_limit": limits.notebook_limit,
         "source_limit": limits.source_limit,
+        # Subscription tier enum (GET_USER_SETTINGS limits[4]); mirrors the MCP block.
+        "tier": limits.tier,
         "output_language": output_language,
     }
 

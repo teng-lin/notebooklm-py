@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`AccountLimits.tier` — a correct account-tier signal, sourced from the
+  authoritative quota block.** The v0.8.0 removal ([#1738]) dropped a tier that came
+  from `GET_USER_TIER` (`FetchRecommendations`, a **promotions** endpoint) which could
+  not tell free from paid. This adds `tier` read from `GET_USER_SETTINGS` limits[4] —
+  the *same* block as `notebook_limit` / `source_limit`, so no extra RPC. It is an
+  opaque enum key (not an ordinal): `1`=Free, `2`=Pro, `4`=Plus, `3`/`6`=Ultra
+  (20 TB / 30 TB), `5`=Expanded (legacy); only `1` and `2` are live-confirmed. The
+  MCP **and** REST `server_info(include_account=True)` account blocks now include a
+  `tier` key. The removed `plan_name` label and the promotions RPC/`AccountTier` type
+  stay gone. ([#1738](https://github.com/teng-lin/notebooklm-py/issues/1738))
+
 ### Fixed
 
 - **Direct-PDF-URL sources no longer show the raw URL as their title.** Adding a

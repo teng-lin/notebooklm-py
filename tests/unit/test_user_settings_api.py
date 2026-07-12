@@ -31,6 +31,7 @@ def test_extract_account_limits_from_user_settings_response():
         notebook_limit=500,
         source_limit=300,
         raw_limits=(6, 500, 300, 500000, 2),
+        tier=2,
     )
 
 
@@ -40,6 +41,24 @@ def test_extract_account_limits_preserves_raw_limit_positions():
     assert limits.notebook_limit == 100
     assert limits.source_limit is None
     assert limits.raw_limits == (True, 100, "source-limit", None)
+
+
+@pytest.mark.parametrize(
+    "block, expected_tier",
+    [
+        ([6, 500, 300, 500000, 2], 2),  # Pro (live-confirmed)
+        ([1, 100, 50, 500000, 1], 1),  # Standard/Free (live-confirmed)
+        ([6, 500, 300, 500000], None),  # legacy 4-element block → no tier
+        ([6, 500, 300, 500000, 99], 99),  # unmapped enum surfaces verbatim
+        ([6, 500, 300, 500000, 0], None),  # non-positive → None
+    ],
+)
+def test_extract_account_limits_reads_tier_from_index_4(block, expected_tier):
+    limits = extract_account_limits([[None, block]])
+
+    assert limits.tier == expected_tier
+    # raw_limits always preserves the untouched block regardless of tier parsing.
+    assert limits.raw_limits == tuple(block)
 
 
 @pytest.mark.parametrize(
@@ -73,6 +92,7 @@ async def test_get_account_limits_calls_user_settings_rpc():
         notebook_limit=200,
         source_limit=100,
         raw_limits=(6, 200, 100, 500000, 1),
+        tier=1,
     )
     core.rpc_executor.rpc_call.assert_awaited_once_with(
         RPCMethod.GET_USER_SETTINGS,
@@ -94,7 +114,7 @@ async def test_get_user_settings_fetches_once_returns_both():
 
     assert settings == UserSettings(
         limits=AccountLimits(
-            notebook_limit=200, source_limit=100, raw_limits=(6, 200, 100, 500000, 1)
+            notebook_limit=200, source_limit=100, raw_limits=(6, 200, 100, 500000, 1), tier=1
         ),
         output_language="fr",
     )

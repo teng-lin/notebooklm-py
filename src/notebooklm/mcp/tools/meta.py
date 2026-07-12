@@ -89,6 +89,9 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
         "available": True,
         "notebook_limit": limits.notebook_limit,
         "source_limit": limits.source_limit,
+        # Subscription tier enum from the same GET_USER_SETTINGS limits block (idx 4);
+        # ``None`` on legacy blocks. Opaque key, not an ordinal — see AccountLimits.tier.
+        "tier": limits.tier,
         # Global account output language (e.g. "en" / "ja" / "zh_Hans"); ``None``
         # when unset or unparseable. Read-only here — a setter is tracked in #1723.
         "output_language": output_language,
@@ -112,7 +115,7 @@ def register(mcp: Any) -> None:
         signed-in identity ``{email, authuser}`` (in-memory/persisted first, then a
         single live ``WIZ_global_data`` probe when authenticated — ``email`` is
         ``None`` only when it can't be discovered at all) plus quota-pacing fields
-        ``{available, notebook_limit, source_limit, output_language}``
+        ``{available, notebook_limit, source_limit, tier, output_language}``
         (``output_language`` is the global account setting, e.g. ``"en"``/``"ja"``,
         or ``None`` when unset or unparseable). The quota fields need a *live*
         session (a few reads), so the block is off by default — the default call is

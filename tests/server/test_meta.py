@@ -199,6 +199,7 @@ def test_server_info_include_account(
     assert account["available"] is True
     assert account["notebook_limit"] == 100
     assert account["source_limit"] == 50
+    assert account["tier"] == 1
     assert account["output_language"] == "en"
 
 

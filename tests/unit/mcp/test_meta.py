@@ -253,7 +253,7 @@ async def test_server_info_include_account_authenticated(
     mock_client.get_account_authuser = MagicMock(return_value=1)
     mock_client.settings.get_user_settings = AsyncMock(
         return_value=UserSettings(
-            limits=AccountLimits(notebook_limit=100, source_limit=50),
+            limits=AccountLimits(notebook_limit=100, source_limit=50, tier=1),
             output_language="ja",
         )
     )
@@ -264,6 +264,7 @@ async def test_server_info_include_account_authenticated(
         "available": True,
         "notebook_limit": 100,
         "source_limit": 50,
+        "tier": 1,
         "output_language": "ja",
     }
     # The live probe is enabled only when the local auth check passed.
@@ -329,6 +330,7 @@ async def test_server_info_include_account_success_with_null_fields(
         "available": True,
         "notebook_limit": None,
         "source_limit": None,
+        "tier": None,
         "output_language": None,
     }
 

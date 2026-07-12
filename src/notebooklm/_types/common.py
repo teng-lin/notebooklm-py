@@ -124,6 +124,18 @@ class AccountLimits:
     notebook_limit: int | None = None
     source_limit: int | None = None
     raw_limits: tuple[Any, ...] = field(default_factory=tuple)
+    tier: int | None = None
+    """Subscription tier from ``GET_USER_SETTINGS`` limits[4] — same authoritative block
+    as the quota limits. An OPAQUE enum key, NOT an ordinal rank (Plus=4 is numerically
+    higher than Pro=2 but a lower plan) — look it up, never compare with ``<``/``>``. Mapping
+    (per support.google.com/notebooklm/answer/16213268): 1=Standard/Free, 2=Pro, 4=Plus,
+    3=Ultra(20TB), 6=Ultra(30TB); 5="Expanded" is legacy/internal (not on Google's current
+    page). Enterprise is separate. Live-confirmed: 1 and 2. ``None`` when the block is short
+    (e.g. legacy 4-element blocks) or the value is absent/non-positive.
+
+    Appended AFTER ``raw_limits`` deliberately: inserting mid-list would shift ``raw_limits``'s
+    positional slot and break the public-signature api-compat gate (see ``ClientMetricsSnapshot``
+    above for the same constraint)."""
 
 
 @dataclass(frozen=True)
