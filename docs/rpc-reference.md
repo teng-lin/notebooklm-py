@@ -2336,6 +2336,9 @@ await rpc_call(
 #   published 50 / 300). Full per-tier limits: docs/quota-limits.md
 ```
 
+The full per-tier notebook/source/studio limits these enum values map to are documented in
+[quota-limits.md](quota-limits.md).
+
 ### RPC: SET_USER_SETTINGS (hT54vc)
 
 **Source:** `_settings.py::set_output_language()`

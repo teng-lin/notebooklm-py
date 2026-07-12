@@ -129,8 +129,9 @@ class AccountLimits:
     as the quota limits. An OPAQUE enum key, NOT an ordinal rank (Plus=4 is numerically
     higher than Pro=2 but a lower plan) — look it up, never compare with ``<``/``>``. Mapping
     (per support.google.com/notebooklm/answer/16213268): 1=Standard/Free, 2=Pro, 4=Plus,
-    3=Ultra(20TB), 6=Ultra(30TB); 5="Expanded" is legacy/internal (not on Google's current
-    page). Enterprise is separate. Live-confirmed: 1 and 2. ``None`` when the block is short
+    3=Ultra(20TB), 6=Ultra(30TB); 5="Expanded" aligns with the Workspace "Expanded" access
+    level (inferred — not a consumer plan, hence absent from Google's consumer page).
+    Enterprise is separate. Live-confirmed: 1 and 2. ``None`` when the block is short
     (e.g. legacy 4-element blocks) or the value is absent/non-positive. The full per-tier
     notebook/source/studio limits keyed to these ints are in ``docs/quota-limits.md``.
 

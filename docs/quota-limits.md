@@ -18,7 +18,7 @@ the research trail. This document is therefore **prose reference, not shipped co
 
 ## Relationship to `AccountLimits.tier`
 
-`client.settings.get_account_limits().tier` (and the `tier` field in MCP/REST
+`(await client.settings.get_account_limits()).tier` (and the `tier` field in MCP/REST
 `server_info(include_account=True)`) returns the subscription tier as an **opaque integer** read
 from `GET_USER_SETTINGS` `limits[4]`. This table is what those integers *mean* in quota terms.
 

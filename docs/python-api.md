@@ -2264,8 +2264,9 @@ class AccountLimits:
 limits block (index 4). It is an **opaque enum key, not an ordinal rank** — look it up,
 never compare with `<`/`>`. Mapping (per
 [Google's plan table](https://support.google.com/notebooklm/answer/16213268)):
-`1`=Standard/Free, `2`=Pro, `4`=Plus, `3`=Ultra (20 TB), `6`=Ultra (30 TB); `5` is a
-legacy/internal "Expanded" value not on Google's current page; Enterprise is separate.
+`1`=Standard/Free, `2`=Pro, `4`=Plus, `3`=Ultra (20 TB), `6`=Ultra (30 TB); `5` aligns
+with the Workspace "Expanded" access level (inferred — not a consumer plan, so it is
+absent from Google's consumer page); Enterprise is separate.
 Only `1` and `2` are live-confirmed. `tier` is `None` on legacy 4-element blocks or when
 the value is absent/non-positive. (The pre-v0.8.0 promotions-based tier / `plan_name`
 label is **not** back — it could not distinguish free from paid; this reads the real
