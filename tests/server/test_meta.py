@@ -215,7 +215,7 @@ def test_server_info_include_account_degrades_on_settings_error(
     async def _raise() -> Any:
         raise RPCError("session expired")
 
-    fake_client.settings.get_user_settings = _raise  # type: ignore[method-assign]
+    monkeypatch.setattr(fake_client.settings, "get_user_settings", _raise)
 
     body = authed_client.get("/v1/server/info", params={"include_account": True}).json()
     account = body["account"]
