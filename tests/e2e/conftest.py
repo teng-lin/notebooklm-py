@@ -73,11 +73,11 @@ _GENERATION_SKIP_TARGETS = {
     # as generate_*/revise_* — cover it too so a future e2e test doesn't hard-fail.
     "artifacts": lambda n: n.startswith(("generate_", "revise_")) or n == "retry_failed",
     "mind_maps": lambda n: n == "generate",
-    # client.labels.generate is the AI "Auto-label" action (CREATE_LABEL) — a
-    # generative call the decoder raises RateLimitError from on throttle, and its
-    # e2e test asserts the result directly (no assert_generation_started fallback),
-    # so it must skip like the artifact paths.
-    "labels": lambda n: n == "generate",
+    # Deliberately NOT here: client.labels.generate (CREATE_LABEL, the AI Auto-label
+    # action) and client.research.start (Deep Research). These are separate limit
+    # classes, not the daily CREATE_ARTIFACT quota — labels has no documented quota,
+    # and research already tolerates throttling via @pytest.mark.xfail. Don't lump
+    # them in on theory; add here (with evidence) only if one actually hard-fails CI.
 }
 
 
