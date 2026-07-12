@@ -2269,7 +2269,8 @@ legacy/internal "Expanded" value not on Google's current page; Enterprise is sep
 Only `1` and `2` are live-confirmed. `tier` is `None` on legacy 4-element blocks or when
 the value is absent/non-positive. (The pre-v0.8.0 promotions-based tier / `plan_name`
 label is **not** back — it could not distinguish free from paid; this reads the real
-quota block instead.)
+quota block instead.) The full per-tier notebook/source/studio limits keyed to these
+ints are in [quota-limits.md](quota-limits.md).
 
 ### UserSettings
 

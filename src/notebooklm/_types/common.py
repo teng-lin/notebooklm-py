@@ -131,7 +131,8 @@ class AccountLimits:
     (per support.google.com/notebooklm/answer/16213268): 1=Standard/Free, 2=Pro, 4=Plus,
     3=Ultra(20TB), 6=Ultra(30TB); 5="Expanded" is legacy/internal (not on Google's current
     page). Enterprise is separate. Live-confirmed: 1 and 2. ``None`` when the block is short
-    (e.g. legacy 4-element blocks) or the value is absent/non-positive.
+    (e.g. legacy 4-element blocks) or the value is absent/non-positive. The full per-tier
+    notebook/source/studio limits keyed to these ints are in ``docs/quota-limits.md``.
 
     Appended AFTER ``raw_limits`` deliberately: inserting mid-list would shift ``raw_limits``'s
     positional slot and break the public-signature api-compat gate (see ``ClientMetricsSnapshot``

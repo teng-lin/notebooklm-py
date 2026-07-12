@@ -295,6 +295,7 @@ asyncio.run(main())
 - **[MCP Guide](docs/mcp-guide.md)** - MCP server setup, transports, and tool reference
 - **[REST API Server](docs/installation.md#rest-api-server)** - Experimental localhost FastAPI server
 - **[Configuration](docs/configuration.md)** - Storage and settings
+- **[Quota & Tier Limits](docs/quota-limits.md)** - Per-tier notebook/source/studio limits and how they map to `AccountLimits.tier`
 - **[Release Guide](docs/releasing.md)** - Release checklist and packaging verification
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 - **[API Stability](docs/stability.md)** - Versioning policy and stability guarantees

@@ -63,6 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Per-tier quota & limit reference (`docs/quota-limits.md`).** A new reference
+  documenting NotebookLM's published static plan limits — notebooks, sources,
+  chats, and studio artifacts across consumer (5 tiers), Workspace (5 levels), and
+  Enterprise — keyed to the `AccountLimits.tier` int, with evidence classes for the
+  features Google leaves unquantified and a note that live per-account
+  remaining/reset counters are not API-exposed. Distilled from the research in
+  [#1825](https://github.com/teng-lin/notebooklm-py/issues/1825); cross-linked from
+  the `tier` field, `rpc-reference.md`, `mcp-guide.md`, and `python-api.md`.
 - **Sandboxed agents (Claude Cowork / headless).** Documented running
   `notebooklm-py` from Claude Cowork and similar no-display sandboxes in
   `SKILL.md` and `docs/installation.md`: per-session `pip install` bootstrap (no
