@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from notebooklm.exceptions import RPCError
 from notebooklm.server.app import create_app
 from notebooklm.server.routes import meta as meta_route
 
@@ -201,6 +202,28 @@ def test_server_info_include_account(
     assert account["source_limit"] == 50
     assert account["tier"] == 1
     assert account["output_language"] == "en"
+
+
+def test_server_info_include_account_degrades_on_settings_error(
+    authed_client: TestClient, fake_client: FakeClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live session whose GET_USER_SETTINGS fetch fails degrades the account block
+    to available:False (scrubbed reason) while auth/version stay intact — covers the
+    single-fetch error branch in _account_block."""
+    _patch_auth(monkeypatch, all_passed=True)
+
+    async def _raise() -> Any:
+        raise RPCError("session expired")
+
+    fake_client.settings.get_user_settings = _raise  # type: ignore[method-assign]
+
+    body = authed_client.get("/v1/server/info", params={"include_account": True}).json()
+    account = body["account"]
+    assert account["available"] is False
+    assert "session expired" in account["reason"]
+    # Identity + the auth diagnostic survive the quota-read failure.
+    assert account["email"] == "user@example.com"
+    assert body["auth"]["authenticated"] is True
 
 
 def test_server_info_include_account_unauthenticated_degrades(

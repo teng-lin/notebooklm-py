@@ -19,7 +19,7 @@ from typing import Any
 
 from notebooklm._types.artifacts import Artifact, GenerationState, GenerationStatus
 from notebooklm._types.chat import AskResult, ChatSettings
-from notebooklm._types.common import AccountLimits
+from notebooklm._types.common import AccountLimits, UserSettings
 from notebooklm._types.notebooks import Notebook, PromptSuggestion
 from notebooklm._types.notes import Note
 from notebooklm._types.research import (
@@ -573,6 +573,12 @@ class FakeSettings:
 
     async def get_output_language(self) -> str | None:
         return self._s.output_language
+
+    async def get_user_settings(self) -> UserSettings:
+        return UserSettings(
+            limits=self._s.account_limits,
+            output_language=self._s.output_language,
+        )
 
 
 class FakeClient:
