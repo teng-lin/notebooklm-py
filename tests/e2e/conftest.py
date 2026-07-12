@@ -430,14 +430,36 @@ def _coverage_floor_failures(terminalreporter, exitstatus, marker: str) -> list[
     # ``--last-failed`` retries a test that failed in any phase, so a setup-phase
     # failure of a marked test is just as deferrable as a call-phase one (gemini/codex).
     marked_failures = [
-        report
-        for report in terminalreporter.stats.get("failed", [])
-        if _has_marker(report, marker)
+        report for report in terminalreporter.stats.get("failed", []) if _has_marker(report, marker)
     ]
     if marked_failures:
         return []
 
     return marked_skips
+
+
+def _coverage_events(terminalreporter, exitstatus) -> list[str]:
+    """Per-marker ``PASS``/``SKIP`` events for cross-run coverage-floor accumulation.
+
+    One tab-separated line per monitored surface that produced a signal this run:
+    ``PASS\t<label>`` when a marked test passed (real coverage), else
+    ``SKIP\t<label>`` when a marked test was rate-limit-skipped (candidate breach).
+    A surface that neither passed nor skipped emits nothing.
+    """
+    if exitstatus not in (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED):
+        return []
+    skip_reports = _rate_limit_skip_reports(terminalreporter)
+    events: list[str] = []
+    for marker, label in _COVERAGE_FLOOR_MARKERS.items():
+        passed = any(
+            _is_call_report(r) and _has_marker(r, marker)
+            for r in terminalreporter.stats.get("passed", [])
+        )
+        if passed:
+            events.append(f"PASS\t{label}")
+        elif any(_has_marker(r, marker) for r in skip_reports):
+            events.append(f"SKIP\t{label}")
+    return events
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -450,53 +472,53 @@ def pytest_sessionfinish(session, exitstatus):
     if not _coverage_floor_enforced():
         return
 
-    breached = [
-        label
-        for marker, label in _COVERAGE_FLOOR_MARKERS.items()
-        if _coverage_floor_failures(terminalreporter, exitstatus, marker)
-    ]
-    if not breached:
-        return
-
-    # Two delivery modes. The nightly's main e2e step is ``continue-on-error`` and
-    # its retry only re-runs ``--last-failed`` (throttled tests are *skips*, never
-    # failures, so they never enter the retry) — a ``session.exitstatus`` override
-    # would be silently masked there. So when a sentinel path is provided we record
-    # the breach to a file that a dedicated workflow step gates on, and leave the
-    # exit status alone (a pure-skip run stays exit 0, avoiding a spurious retry).
-    # Without a sentinel path (local runs, simple jobs, unit tests) we gate inline.
     sentinel = os.environ.get("E2E_COVERAGE_FLOOR_SENTINEL")
-    # Sentinel delivery (nightly): record the breach for the gating step and leave
-    # exit status alone (a pure-skip run stays exit 0, avoiding a spurious retry).
-    # If the write fails, fall back to the inline exit-code path — best-effort, since
-    # continue-on-error may mask it, but paired with the loud ::error:: it's better
-    # than a silent hollow-green (codex). Without a sentinel path we gate inline.
-    if sentinel and _write_coverage_floor_sentinel(sentinel, breached):
+    if sentinel:
+        # Sentinel delivery (nightly). The main e2e step is ``continue-on-error`` and
+        # its ``--last-failed`` retry re-runs only failures, so a ``session.exitstatus``
+        # override would be masked. Instead every enforcing run (main AND retry)
+        # appends PASS/SKIP events; the "Enforce coverage floors" step breaches a
+        # surface seen SKIP but never PASS across all runs. This closes the retry gap
+        # (a marked test that fails on main then skips on retry) WITHOUT false-breaching
+        # when coverage was achieved in another run (codex/coderabbit). Exit status is
+        # left alone so a pure-skip run stays exit 0 and doesn't trip a spurious retry;
+        # a write failure falls back to the inline exit code (best-effort).
+        events = _coverage_events(terminalreporter, exitstatus)
+        if not events or _append_sentinel(sentinel, events):
+            return
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
         return
-    session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+    # Inline delivery (local runs, simple jobs, unit tests): no retry, so decide from
+    # this single run.
+    breached = any(
+        _coverage_floor_failures(terminalreporter, exitstatus, marker)
+        for marker in _COVERAGE_FLOOR_MARKERS
+    )
+    if breached:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
-def _write_coverage_floor_sentinel(path: str, labels: list[str]) -> bool:
-    """Append breached-floor labels to the sentinel a nightly gating step reads.
+def _append_sentinel(path: str, lines: list[str]) -> bool:
+    """Append lines to the coverage-floor sentinel. Returns True on success.
 
-    Returns True on success. Creates the parent directory first so a missing
-    directory can't turn the enforcement signal into a silent no-op (gemini).
+    Creates the parent directory first so a missing directory can't turn the
+    enforcement signal into a silent no-op (gemini).
     """
     try:
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:
-            for label in labels:
-                f.write(f"{label} coverage floor failed\n")
+            for line in lines:
+                f.write(line + "\n")
         return True
     except OSError as exc:
         # The sentinel IS the enforcement signal — a silent write failure would let a
         # hollow-green nightly pass. Fail loud AND signal the caller to fall back to
         # the inline exit-code path.
         print(
-            f"::error::could not write coverage-floor sentinel {path!r} "
-            f"({exc}); breached floors: {', '.join(labels)}",
+            f"::error::could not write coverage-floor sentinel {path!r} ({exc})",
             file=sys.stderr,
         )
         return False

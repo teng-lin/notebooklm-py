@@ -307,6 +307,11 @@ jobs:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+        # Enforce here too: a marked test that failed on the main run and turns into
+        # a rate-limit skip after the cool-down would otherwise leave no PASS event
+        # for its surface. Appends PASS/SKIP events to the same job-level sentinel
+        # (the main step's rm -f already cleared any stale one). (codex/coderabbit)
+        E2E_ENFORCE_COVERAGE_FLOOR: "1"
       shell: bash
       run: |
         # Missing lastfailed after a failed e2e step means pytest crashed
@@ -357,9 +362,19 @@ jobs:
       shell: bash
       run: |
         sentinel="$E2E_COVERAGE_FLOOR_SENTINEL"
-        if [ -f "$sentinel" ]; then
-          echo "::error::E2E coverage floor breached — a live surface produced zero coverage (all rate-limited):"
-          sort -u "$sentinel"
+        if [ ! -f "$sentinel" ]; then
+          echo "Coverage floors satisfied (no monitored surface emitted a skip)."
+          exit 0
+        fi
+        # Reconcile PASS/SKIP events accumulated across the main run + retry: a
+        # surface breaches only if it was SKIP-ped somewhere and PASSed nowhere.
+        passed="$(awk -F'\t' '$1=="PASS"{print $2}' "$sentinel" | sort -u)"
+        skipped="$(awk -F'\t' '$1=="SKIP"{print $2}' "$sentinel" | sort -u)"
+        breach="$(comm -23 <(printf '%s\n' "$skipped" | sed '/^$/d') \
+                            <(printf '%s\n' "$passed" | sed '/^$/d'))"
+        if [ -n "$breach" ]; then
+          echo "::error::E2E coverage floor breached — surface(s) rate-limited with zero real coverage:"
+          printf '  %s\n' "$breach"
           exit 1
         fi
-        echo "Coverage floors satisfied (no monitored surface was fully rate-limited)."
+        echo "Coverage floors satisfied (every skipped surface also had a passing test)."

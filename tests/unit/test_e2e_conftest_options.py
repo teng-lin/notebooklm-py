@@ -420,10 +420,10 @@ class TestRateLimitSkipSummary:
         session = self._finish(conftest, tr)
         assert session.exitstatus == pytest.ExitCode.OK
 
-    def test_floor_sentinel_records_breach_without_failing_exit(self, monkeypatch, tmp_path):
-        # Nightly delivery: with a sentinel path set, the breach is recorded to the
-        # file (a workflow step gates on it) and the exit status is left untouched so
-        # a pure-skip run stays exit 0 and doesn't trip the continue-on-error retry.
+    def test_sentinel_records_skip_event_without_failing_exit(self, monkeypatch, tmp_path):
+        # Nightly delivery: a hollow surface (marked skip, no marked pass) appends a
+        # SKIP event and leaves exit status alone, so a pure-skip run stays exit 0 and
+        # doesn't trip the continue-on-error retry. The enforce step reconciles later.
         sentinel = tmp_path / "floor"
         monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
         conftest = _load_e2e_conftest()
@@ -434,13 +434,12 @@ class TestRateLimitSkipSummary:
         session = self._finish(conftest, tr)
 
         assert session.exitstatus == pytest.ExitCode.OK
-        assert "live generation coverage floor failed" in sentinel.read_text()
+        assert "SKIP\tlive generation" in sentinel.read_text()
 
-    def test_generation_floor_records_breach_despite_unrelated_failure(self, monkeypatch, tmp_path):
-        # Masking guard (#1819): a hollow generation surface (all rate-limited, none
-        # passed) must still be recorded even when an UNRELATED test failed on the
-        # main run — otherwise a transient failure that recovers on the --last-failed
-        # retry would mask the breach and green the nightly.
+    def test_sentinel_records_skip_despite_unrelated_failure(self, monkeypatch, tmp_path):
+        # Masking guard (#1819): the SKIP event is still recorded when an UNRELATED
+        # test failed on the main run, so a transient failure that recovers on retry
+        # can't mask a hollow surface.
         sentinel = tmp_path / "floor"
         monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
         conftest = _load_e2e_conftest()
@@ -451,26 +450,31 @@ class TestRateLimitSkipSummary:
         )
         self._finish(conftest, tr, exitstatus=pytest.ExitCode.TESTS_FAILED)
 
-        assert "live generation coverage floor failed" in sentinel.read_text()
+        assert "SKIP\tlive generation" in sentinel.read_text()
 
-    def test_generation_floor_defers_when_marked_test_failed(self, monkeypatch, tmp_path):
-        # A FAILURE of a marked test is deferred to the retry (it may pass there →
-        # coverage), so it must NOT be recorded as a floor breach.
+    def test_sentinel_records_pass_event_when_marked_test_passed(self, monkeypatch, tmp_path):
+        # A marked pass records PASS (real coverage) even when another marked test
+        # rate-limit-skipped in the same run — the enforce step reconciles SKIP vs PASS
+        # so this surface does NOT breach.
         sentinel = tmp_path / "floor"
         monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
         conftest = _load_e2e_conftest()
 
         tr = self._make_reporter(
             [self._skipped("test_generation.py::a", "Rate limit: q", live_generation=True)],
-            failed=[self._report("test_generation.py::b", live_generation=True, when="call")],
+            passed=[self._passed("test_generation.py::b", live_generation=True)],
         )
-        self._finish(conftest, tr, exitstatus=pytest.ExitCode.TESTS_FAILED)
+        self._finish(conftest, tr)
 
-        assert not sentinel.exists()
+        text = sentinel.read_text()
+        assert "PASS\tlive generation" in text
+        assert "SKIP\tlive generation" not in text
 
-    def test_generation_floor_defers_when_marked_test_failed_in_setup(self, monkeypatch, tmp_path):
-        # A marked failure in the SETUP phase is retried by --last-failed just like a
-        # call-phase failure, so it defers the floor too (gemini/codex).
+    def test_sentinel_records_skip_when_marked_test_failed(self, monkeypatch, tmp_path):
+        # A marked FAILURE is not a pass, so the surface still records SKIP (a breach
+        # candidate). The retry step appends its own PASS/SKIP, and the enforce step
+        # reconciles — so a marked test that fails on main then passes on retry clears
+        # the surface, while one that fails then skips keeps it breached (codex/coderabbit).
         sentinel = tmp_path / "floor"
         monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
         conftest = _load_e2e_conftest()
@@ -481,7 +485,7 @@ class TestRateLimitSkipSummary:
         )
         self._finish(conftest, tr, exitstatus=pytest.ExitCode.TESTS_FAILED)
 
-        assert not sentinel.exists()
+        assert "SKIP\tlive generation" in sentinel.read_text()
 
     def test_floor_falls_back_to_exitstatus_when_sentinel_unwritable(self, monkeypatch, tmp_path):
         # If the sentinel write fails, don't silently hollow-green: fall back to the
@@ -512,7 +516,7 @@ class TestRateLimitSkipSummary:
         session = self._finish(conftest, tr)
 
         assert session.exitstatus == pytest.ExitCode.OK
-        assert "live generation coverage floor failed" in sentinel.read_text()
+        assert "SKIP\tlive generation" in sentinel.read_text()
 
     def test_floor_ignores_broken_run_exit_codes(self, monkeypatch):
         # A usage/internal error is its own signal — the floor must not evaluate or
