@@ -65,9 +65,15 @@ _COVERAGE_FLOOR_MARKERS = {
 # skip never runs). Keyed by client-namespace attr → predicate over method name.
 # Quizzes/flashcards/audio/video/etc. ride client.artifacts.generate_*/revise_*; the
 # interactive mind map goes through the separate client.mind_maps.generate path (the
-# #1819 gap that hard-failed the suite). Add new generation namespaces here — the
-# guard test test_generation_skip_registry_covers_generate_methods fails if an
-# unregistered generate_/revise_ method appears on a covered namespace's class.
+# #1819 gap that hard-failed the suite). Add new generation namespaces here — the guard
+# test TestGenerationSkipRegistryCoverage.test_registry_covers_all_generate_and_revise_methods
+# fails if an unregistered generate_/revise_/retry_ method appears on a covered class.
+#
+# Note: wrapping a whole method means a RateLimitError from a *post-create* RPC (e.g.
+# mind_maps.generate(wait=True) polling after the artifact id exists) also skips. The
+# #1819 create-time case raises before any artifact exists (no leak); the rarer
+# post-create-throttle path may leave one artifact in the test notebook uncleaned —
+# an accepted trade-off for keeping the create-time skip simple (codex).
 _GENERATION_SKIP_TARGETS = {
     # ``retry_failed`` re-runs generation and raises RateLimitError on quota, same
     # as generate_*/revise_* — cover it too so a future e2e test doesn't hard-fail.
@@ -420,11 +426,13 @@ def _coverage_floor_failures(terminalreporter, exitstatus, marker: str) -> list[
     # No marked test passed and some were rate-limited. A marked *failure* has its
     # real outcome deferred to the retry (may pass there → coverage), so hold off;
     # otherwise this is a final zero-coverage breach — record it even when other,
-    # unmarked tests failed.
+    # unmarked tests failed. Count a failure in ANY phase (setup/call/teardown):
+    # ``--last-failed`` retries a test that failed in any phase, so a setup-phase
+    # failure of a marked test is just as deferrable as a call-phase one (gemini/codex).
     marked_failures = [
         report
         for report in terminalreporter.stats.get("failed", [])
-        if _is_call_report(report) and _has_marker(report, marker)
+        if _has_marker(report, marker)
     ]
     if marked_failures:
         return []
@@ -458,27 +466,40 @@ def pytest_sessionfinish(session, exitstatus):
     # exit status alone (a pure-skip run stays exit 0, avoiding a spurious retry).
     # Without a sentinel path (local runs, simple jobs, unit tests) we gate inline.
     sentinel = os.environ.get("E2E_COVERAGE_FLOOR_SENTINEL")
-    if sentinel:
-        _write_coverage_floor_sentinel(sentinel, breached)
-    else:
-        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    # Sentinel delivery (nightly): record the breach for the gating step and leave
+    # exit status alone (a pure-skip run stays exit 0, avoiding a spurious retry).
+    # If the write fails, fall back to the inline exit-code path — best-effort, since
+    # continue-on-error may mask it, but paired with the loud ::error:: it's better
+    # than a silent hollow-green (codex). Without a sentinel path we gate inline.
+    if sentinel and _write_coverage_floor_sentinel(sentinel, breached):
+        return
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
-def _write_coverage_floor_sentinel(path: str, labels: list[str]) -> None:
-    """Append breached-floor labels to the sentinel a nightly gating step reads."""
+def _write_coverage_floor_sentinel(path: str, labels: list[str]) -> bool:
+    """Append breached-floor labels to the sentinel a nightly gating step reads.
+
+    Returns True on success. Creates the parent directory first so a missing
+    directory can't turn the enforcement signal into a silent no-op (gemini).
+    """
     try:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         with open(path, "a", encoding="utf-8") as f:
             for label in labels:
                 f.write(f"{label} coverage floor failed\n")
+        return True
     except OSError as exc:
-        # The sentinel IS the enforcement signal — a silent write failure would
-        # let a hollow-green nightly pass. We can't fall back to session.exitstatus
-        # (masked by continue-on-error), so at least fail loud in the log.
+        # The sentinel IS the enforcement signal — a silent write failure would let a
+        # hollow-green nightly pass. Fail loud AND signal the caller to fall back to
+        # the inline exit-code path.
         print(
             f"::error::could not write coverage-floor sentinel {path!r} "
             f"({exc}); breached floors: {', '.join(labels)}",
             file=sys.stderr,
         )
+        return False
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):

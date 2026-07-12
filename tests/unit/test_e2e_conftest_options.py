@@ -468,6 +468,52 @@ class TestRateLimitSkipSummary:
 
         assert not sentinel.exists()
 
+    def test_generation_floor_defers_when_marked_test_failed_in_setup(self, monkeypatch, tmp_path):
+        # A marked failure in the SETUP phase is retried by --last-failed just like a
+        # call-phase failure, so it defers the floor too (gemini/codex).
+        sentinel = tmp_path / "floor"
+        monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::a", "Rate limit: q", live_generation=True)],
+            failed=[self._report("test_generation.py::b", live_generation=True, when="setup")],
+        )
+        self._finish(conftest, tr, exitstatus=pytest.ExitCode.TESTS_FAILED)
+
+        assert not sentinel.exists()
+
+    def test_floor_falls_back_to_exitstatus_when_sentinel_unwritable(self, monkeypatch, tmp_path):
+        # If the sentinel write fails, don't silently hollow-green: fall back to the
+        # inline exit-code path (best-effort) (codex). Point the sentinel at a path
+        # whose parent is a file, so makedirs + open both fail.
+        blocker = tmp_path / "blocker"
+        blocker.write_text("not a dir")
+        monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(blocker / "floor"))
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::a", "Rate limit: q", live_generation=True)]
+        )
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.TESTS_FAILED
+
+    def test_floor_sentinel_creates_missing_parent_dir(self, monkeypatch, tmp_path):
+        # A missing parent directory must not turn the enforcement signal into a
+        # silent no-op — the writer creates it (gemini).
+        sentinel = tmp_path / "nested" / "sub" / "floor"
+        monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::a", "Rate limit: q", live_generation=True)]
+        )
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.OK
+        assert "live generation coverage floor failed" in sentinel.read_text()
+
     def test_floor_ignores_broken_run_exit_codes(self, monkeypatch):
         # A usage/internal error is its own signal — the floor must not evaluate or
         # rewrite that exit code (claude review).

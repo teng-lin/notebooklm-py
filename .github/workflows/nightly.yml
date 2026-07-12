@@ -118,6 +118,10 @@ jobs:
       # path on every OS — see test.yml for the rationale (sidesteps the
       # actions/cache@v6 Windows dual-path restore flake).
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      # Single source of truth for the coverage-floor sentinel path, referenced by
+      # both the E2E step (writes it) and the "Enforce coverage floors" step (gates
+      # on it). Harmless when unset-enforcement steps run — they never write it.
+      E2E_COVERAGE_FLOOR_SENTINEL: ${{ github.workspace }}/.e2e-coverage-floor-failed
 
     concurrency:
       group: nightly-${{ needs.resolve-branch.outputs.branch }}-${{ matrix.os }}
@@ -253,9 +257,9 @@ jobs:
         # because every marked test was rate-limited, record it to the sentinel that
         # the "Enforce coverage floors" step below gates on. Written (not raised) so
         # a pure-skip run stays exit 0 and doesn't trip the continue-on-error retry.
-        # The release job (verify-package) leaves these unset → skip-only (#1819).
+        # The release job (verify-package) leaves this unset → skip-only (#1819).
+        # (E2E_COVERAGE_FLOOR_SENTINEL is defined once at job level.)
         E2E_ENFORCE_COVERAGE_FLOOR: "1"
-        E2E_COVERAGE_FLOOR_SENTINEL: ${{ github.workspace }}/.e2e-coverage-floor-failed
         # Route every workflow_dispatch input + upstream needs.* value through
         # the env block so crafted values (e.g. ``"; echo PWN``) reach pytest
         # as literal strings, not as inlined shell. ``TARGET_BRANCH`` is
@@ -277,6 +281,10 @@ jobs:
           # ``--`` separator forces $TEST_FILTER to be parsed as positional
           # file/path args, never as pytest options (e.g. a crafted ``--co``
           # or ``-k "expr"`` value cannot inject pytest flags).
+          # The coverage floor is a whole-surface guarantee — meaningless for a
+          # single filtered test, and a marked-but-throttled pick would false-red
+          # the run — so disable enforcement for filtered dispatches (codex).
+          unset E2E_ENFORCE_COVERAGE_FLOOR
           uv run pytest -s -v --tb=short --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
         elif [ "$MATRIX_OS" = "ubuntu-latest" ]; then
           # Linux: run all E2E tests except variants
@@ -348,7 +356,7 @@ jobs:
       if: ${{ always() && needs.resolve-branch.outputs.is_standard == 'true' }}
       shell: bash
       run: |
-        sentinel="${{ github.workspace }}/.e2e-coverage-floor-failed"
+        sentinel="$E2E_COVERAGE_FLOOR_SENTINEL"
         if [ -f "$sentinel" ]; then
           echo "::error::E2E coverage floor breached — a live surface produced zero coverage (all rate-limited):"
           sort -u "$sentinel"
