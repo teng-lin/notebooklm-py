@@ -16,6 +16,11 @@ import pytest
 
 from notebooklm.types import MindMapKind
 
+# Live CREATE_ARTIFACT coverage — monitored by the nightly generation coverage
+# floor so a fully-throttled run (every generation skipped) reds the nightly
+# instead of passing hollow-green. See tests/e2e/conftest.py (#1819).
+pytestmark = pytest.mark.live_generation
+
 
 @pytest.mark.e2e
 @pytest.mark.asyncio

@@ -50,6 +50,30 @@ _RATE_LIMIT_PHRASES = (
     "too many requests",
 )
 _LIVE_CHAT_ASK_MARKER = "live_chat_ask"
+_LIVE_GENERATION_MARKER = "live_generation"
+# Coverage-floor markers → human label. A floor "fails" when at least one marked
+# test was rate-limit-skipped and none passed (hollow-green coverage). Enforced
+# only when E2E_ENFORCE_COVERAGE_FLOOR=1 (the nightly), so a shared daily-quota
+# exhaustion never reds a release job — see #1819 / _coverage_floor_enforced.
+_COVERAGE_FLOOR_MARKERS = {
+    _LIVE_CHAT_ASK_MARKER: "live chat",
+    _LIVE_GENERATION_MARKER: "live generation",
+}
+
+# Every live entrypoint that issues CREATE_ARTIFACT and can raise a quota
+# RateLimitError *before* any GenerationStatus exists (so assert_generation_started's
+# skip never runs). Keyed by client-namespace attr → predicate over method name.
+# Quizzes/flashcards/audio/video/etc. ride client.artifacts.generate_*/revise_*; the
+# interactive mind map goes through the separate client.mind_maps.generate path (the
+# #1819 gap that hard-failed the suite). Add new generation namespaces here — the
+# guard test test_generation_skip_registry_covers_generate_methods fails if an
+# unregistered generate_/revise_ method appears on a covered namespace's class.
+_GENERATION_SKIP_TARGETS = {
+    # ``retry_failed`` re-runs generation and raises RateLimitError on quota, same
+    # as generate_*/revise_* — cover it too so a future e2e test doesn't hard-fail.
+    "artifacts": lambda n: n.startswith(("generate_", "revise_")) or n == "retry_failed",
+    "mind_maps": lambda n: n == "generate",
+}
 
 
 def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
@@ -72,7 +96,7 @@ def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
 
 
 def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
-    """Wrap ``client.artifacts.generate_*``/``revise_*`` so ``RateLimitError`` becomes a skip.
+    """Wrap every live CREATE_ARTIFACT entrypoint so ``RateLimitError`` becomes a skip.
 
     The RPC layer raises a typed ``RateLimitError`` when Google rejects
     CREATE_ARTIFACT with a quota error (e.g. upstream status 8, Resource
@@ -81,6 +105,10 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
     That is server-side throttling, not a client defect. Only the precise
     typed ``RateLimitError`` skips; every other exception still raises so
     real defects stay visible.
+
+    Covers every namespace in ``_GENERATION_SKIP_TARGETS`` — not just
+    ``client.artifacts`` — so paths like ``client.mind_maps.generate`` (the
+    interactive mind map, #1819) skip on quota exhaustion instead of hard-failing.
     """
 
     def _wrap(original):
@@ -95,13 +123,17 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
 
         return _with_skip
 
-    for name in dir(client.artifacts):
-        if not (name.startswith("generate_") or name.startswith("revise_")):
+    for ns_name, matches in _GENERATION_SKIP_TARGETS.items():
+        namespace = getattr(client, ns_name, None)
+        if namespace is None:
             continue
-        original = getattr(client.artifacts, name)
-        if not callable(original):
-            continue
-        setattr(client.artifacts, name, _wrap(original))
+        for name in dir(namespace):
+            if not matches(name):
+                continue
+            original = getattr(namespace, name)
+            if not callable(original):
+                continue
+            setattr(namespace, name, _wrap(original))
 
 
 def _emit_auth_route_diagnostic(auth_tokens: AuthTokens) -> None:
@@ -331,24 +363,68 @@ def _rate_limit_skip_reports(terminalreporter) -> list[Any]:
     ]
 
 
-def _live_chat_floor_failures(terminalreporter, exitstatus) -> list[Any]:
-    if exitstatus != pytest.ExitCode.OK:
+def _coverage_floor_enforced() -> bool:
+    """Whether coverage floors escalate to a suite failure.
+
+    Off by default so a shared daily-quota exhaustion can never red a release job
+    (e.g. Verify Package, #1819) — the release path skips rate-limited
+    generation/chat freely. The nightly sets ``E2E_ENFORCE_COVERAGE_FLOOR=1`` to
+    turn hollow-green (every marked test skipped, none passed) into a red where
+    the quota is fresh and the signal is real.
+    """
+    return os.environ.get("E2E_ENFORCE_COVERAGE_FLOOR") == "1"
+
+
+def _coverage_floor_failures(terminalreporter, exitstatus, marker: str) -> list[Any]:
+    """Rate-limit skips that breach the coverage floor for ``marker``.
+
+    Non-empty only when at least one ``marker`` test was rate-limit-skipped and no
+    ``marker`` test passed — i.e. that live surface produced zero real coverage.
+    """
+    # Only meaningful for a *completed* run: everything passed (OK) or some tests
+    # failed (TESTS_FAILED). A broken run (usage/internal/interrupt/no-tests) is its
+    # own signal — don't evaluate the floor or rewrite that exit code.
+    #
+    # We deliberately do NOT bail on TESTS_FAILED. Under the nightly's
+    # ``continue-on-error`` main step + ``--last-failed`` retry, an *unrelated* test
+    # that fails on the main run and then passes on retry lands the job green — so a
+    # blanket ``exitstatus != OK`` bail would let that transient failure MASK a
+    # genuinely hollow generation/chat surface (all rate-limited, none passed). We
+    # still record the breach; only a failure of a test *with this marker* defers,
+    # since the retry may re-run it into a pass (real coverage). Caught by
+    # test_generation_floor_records_breach_despite_unrelated_failure (#1819).
+    if exitstatus not in (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED):
         return []
 
-    live_chat_rate_limit_skips = [
+    marked_skips = [
         report
         for report in _rate_limit_skip_reports(terminalreporter)
-        if _has_marker(report, _LIVE_CHAT_ASK_MARKER)
+        if _has_marker(report, marker)
     ]
-    if not live_chat_rate_limit_skips:
+    if not marked_skips:
         return []
 
-    live_chat_passes = [
+    marked_passes = [
         report
         for report in terminalreporter.stats.get("passed", [])
-        if _is_call_report(report) and _has_marker(report, _LIVE_CHAT_ASK_MARKER)
+        if _is_call_report(report) and _has_marker(report, marker)
     ]
-    return [] if live_chat_passes else live_chat_rate_limit_skips
+    if marked_passes:
+        return []
+
+    # No marked test passed and some were rate-limited. A marked *failure* has its
+    # real outcome deferred to the retry (may pass there → coverage), so hold off;
+    # otherwise this is a final zero-coverage breach — record it even when other,
+    # unmarked tests failed.
+    marked_failures = [
+        report
+        for report in terminalreporter.stats.get("failed", [])
+        if _is_call_report(report) and _has_marker(report, marker)
+    ]
+    if marked_failures:
+        return []
+
+    return marked_skips
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -356,8 +432,48 @@ def pytest_sessionfinish(session, exitstatus):
     if terminalreporter is None:
         return
 
-    if _live_chat_floor_failures(terminalreporter, exitstatus):
+    # Coverage floors are advisory unless the nightly opts in (see
+    # _coverage_floor_enforced), so a rate-limited release job stays green (#1819).
+    if not _coverage_floor_enforced():
+        return
+
+    breached = [
+        label
+        for marker, label in _COVERAGE_FLOOR_MARKERS.items()
+        if _coverage_floor_failures(terminalreporter, exitstatus, marker)
+    ]
+    if not breached:
+        return
+
+    # Two delivery modes. The nightly's main e2e step is ``continue-on-error`` and
+    # its retry only re-runs ``--last-failed`` (throttled tests are *skips*, never
+    # failures, so they never enter the retry) — a ``session.exitstatus`` override
+    # would be silently masked there. So when a sentinel path is provided we record
+    # the breach to a file that a dedicated workflow step gates on, and leave the
+    # exit status alone (a pure-skip run stays exit 0, avoiding a spurious retry).
+    # Without a sentinel path (local runs, simple jobs, unit tests) we gate inline.
+    sentinel = os.environ.get("E2E_COVERAGE_FLOOR_SENTINEL")
+    if sentinel:
+        _write_coverage_floor_sentinel(sentinel, breached)
+    else:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def _write_coverage_floor_sentinel(path: str, labels: list[str]) -> None:
+    """Append breached-floor labels to the sentinel a nightly gating step reads."""
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            for label in labels:
+                f.write(f"{label} coverage floor failed\n")
+    except OSError as exc:
+        # The sentinel IS the enforcement signal — a silent write failure would
+        # let a hollow-green nightly pass. We can't fall back to session.exitstatus
+        # (masked by continue-on-error), so at least fail loud in the log.
+        print(
+            f"::error::could not write coverage-floor sentinel {path!r} "
+            f"({exc}); breached floors: {', '.join(labels)}",
+            file=sys.stderr,
+        )
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
@@ -391,11 +507,24 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         joined = ", ".join(nodeids)
         print(f"::warning::{len(nodeids)} test(s) skipped due to rate-limit: {joined}")
 
-    live_chat_rate_limit_skips = _live_chat_floor_failures(terminalreporter, exitstatus)
-    if live_chat_rate_limit_skips:
-        terminalreporter.write_sep("=", "live chat coverage floor failed", red=True)
-        terminalreporter.write_line("No marked live chat ask test completed successfully.")
-        for report in live_chat_rate_limit_skips:
+    enforced = _coverage_floor_enforced()
+    for marker, label in _COVERAGE_FLOOR_MARKERS.items():
+        breaches = _coverage_floor_failures(terminalreporter, exitstatus, marker)
+        if not breaches:
+            continue
+        if enforced:
+            terminalreporter.write_sep("=", f"{label} coverage floor failed", red=True)
+            terminalreporter.write_line(
+                f"No marked {label} test completed successfully (all rate-limited)."
+            )
+        else:
+            terminalreporter.write_sep(
+                "=", f"{label} coverage floor breached (not enforced)", yellow=True
+            )
+            terminalreporter.write_line(
+                f"No marked {label} test passed; not failing (E2E_ENFORCE_COVERAGE_FLOOR unset)."
+            )
+        for report in breaches:
             terminalreporter.write_line(f"  {report.nodeid}")
 
 
