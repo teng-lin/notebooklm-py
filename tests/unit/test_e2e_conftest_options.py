@@ -554,7 +554,16 @@ class TestGenerationRateLimitSkip:
             async def list(self, notebook_id):
                 raise RateLimitError("read path — should never be wrapped")
 
-        return SimpleNamespace(artifacts=FakeArtifacts(), mind_maps=FakeMindMaps())
+        class FakeLabels:
+            async def generate(self, notebook_id, scope="unlabeled"):
+                raise RateLimitError("Resource exhausted (status 8): quota")
+
+            async def create(self, notebook_id, name, emoji):
+                raise RateLimitError("plain CRUD create — should never be wrapped")
+
+        return SimpleNamespace(
+            artifacts=FakeArtifacts(), mind_maps=FakeMindMaps(), labels=FakeLabels()
+        )
 
     async def test_rate_limit_error_becomes_skip(self):
         conftest = _load_e2e_conftest()
@@ -622,6 +631,25 @@ class TestGenerationRateLimitSkip:
         with pytest.raises(pytest.skip.Exception):
             await client.artifacts.retry_failed("nb-1", "art-1")
 
+    async def test_labels_generate_becomes_skip(self):
+        # client.labels.generate (AI Auto-label, CREATE_LABEL) asserts its result
+        # directly with no assert_generation_started fallback, so a throttle must
+        # skip via this fixture rather than hard-fail the suite.
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(pytest.skip.Exception):
+            await client.labels.generate("nb-1", scope="unlabeled")
+
+    async def test_labels_crud_create_is_not_wrapped(self):
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(RateLimitError):
+            await client.labels.create("nb-1", "Papers", "\U0001f4c4")
+
 
 class TestGenerationSkipRegistryCoverage:
     """The skip registry must cover every live generate/revise entrypoint.
@@ -634,10 +662,15 @@ class TestGenerationSkipRegistryCoverage:
 
     def test_registry_covers_all_generate_and_revise_methods(self):
         from notebooklm._artifacts import ArtifactsAPI
+        from notebooklm._labels import LabelsAPI
         from notebooklm._mind_maps_api import MindMapsAPI
 
         conftest = _load_e2e_conftest()
-        classes = {"artifacts": ArtifactsAPI, "mind_maps": MindMapsAPI}
+        classes = {
+            "artifacts": ArtifactsAPI,
+            "mind_maps": MindMapsAPI,
+            "labels": LabelsAPI,
+        }
 
         # Registry namespaces and the known generation-capable classes must stay in
         # lockstep — adding one without the other trips this guard.

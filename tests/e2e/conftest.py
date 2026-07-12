@@ -73,6 +73,11 @@ _GENERATION_SKIP_TARGETS = {
     # as generate_*/revise_* — cover it too so a future e2e test doesn't hard-fail.
     "artifacts": lambda n: n.startswith(("generate_", "revise_")) or n == "retry_failed",
     "mind_maps": lambda n: n == "generate",
+    # client.labels.generate is the AI "Auto-label" action (CREATE_LABEL) — a
+    # generative call the decoder raises RateLimitError from on throttle, and its
+    # e2e test asserts the result directly (no assert_generation_started fallback),
+    # so it must skip like the artifact paths.
+    "labels": lambda n: n == "generate",
 }
 
 
