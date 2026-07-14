@@ -501,6 +501,24 @@ def test_short_link_unknown_id_404(mock_client, config) -> None:
     assert resp.status_code == 404
 
 
+def test_upload_cors_preflight_and_allow_origin(mock_client, config) -> None:
+    # The in-app widget (Phase 3) POSTs cross-origin from its sandboxed iframe, so /files/ul
+    # must answer the CORS preflight and allow-origin the success response.
+    add_file = AsyncMock(return_value=MagicMock(id="src-cors"))
+    mock_client.sources.add_file = add_file
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        pre = client.options(_path(url))
+        assert pre.status_code == 204
+        assert pre.headers["access-control-allow-origin"] == "*"
+        assert "POST" in pre.headers["access-control-allow-methods"]
+        resp = client.post(_path(url) + "?filename=x.pdf", content=b"DATA",
+                           headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] == "*"
+
+
 def test_upload_post_records_completion_result_for_await_upload(mock_client, config) -> None:
     # Phase 1: a successful POST records {source_id, name, size, mime} in the in-process
     # completion map keyed by jti, so a same-process await_upload poll surfaces the source.

@@ -106,6 +106,17 @@ _HTML_SECURITY_HEADERS = {
     ),
 }
 
+#: CORS for the ``/files/ul`` POST — the in-app MCP-App widget (Phase 3) uploads cross-origin
+#: from its sandboxed iframe, so the browser sends a preflight and needs an allow-origin on the
+#: response. ``*`` is safe here: the signed single-use token is the sole auth (no cookies /
+#: ambient credentials, ADR-0024), so a hostile page that can't mint a token gains nothing.
+_UPLOAD_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, PUT, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Accept",
+    "Access-Control-Max-Age": "600",
+}
+
 
 #: HTTP status each neutral :class:`ErrorCategory` projects onto for the
 #: ``/files/*`` routes. Covers EVERY category (pinned by ``test_fileroutes.py``).
@@ -402,6 +413,12 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 if temp_dir is not None:
                     _cleanup(temp_dir)
 
+    @mcp.custom_route("/files/ul/{token}", methods=["OPTIONS"])
+    async def upload_preflight(request: Request) -> Response:
+        # CORS preflight for the in-app widget's cross-origin upload (Phase 3). A preflight
+        # carries no body/credentials and grants nothing — the POST itself stays token-gated.
+        return PlainTextResponse("", status_code=204, headers=_UPLOAD_CORS_HEADERS)
+
     @mcp.custom_route("/files/ul/{token}", methods=["GET"])
     async def upload_page_route(request: Request) -> Response:
         token = request.path_params["token"]
@@ -579,6 +596,9 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                             headers={
                                 "Cache-Control": "no-store",
                                 "Referrer-Policy": "no-referrer",
+                                # Let the cross-origin widget read the result (ADR-0024: token-auth,
+                                # not cookies, so allow-origin * is safe).
+                                "Access-Control-Allow-Origin": "*",
                             },
                         )
                     return HTMLResponse(
