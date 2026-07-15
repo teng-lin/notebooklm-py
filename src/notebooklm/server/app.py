@@ -447,4 +447,10 @@ def create_app(
     except Exception as exc:
         logger.warning("Failed to register auth routes: %s", exc)
 
+    try:
+        from .routes import external_kb as external_kb_routes
+        app.include_router(external_kb_routes.router)
+    except Exception as exc:
+        logger.warning("Failed to register external KB routes: %s", exc)
+
     return app
