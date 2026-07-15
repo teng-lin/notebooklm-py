@@ -19,7 +19,8 @@ import os as _os
 # docker-compose `${FASTMCP_STATELESS_HTTP:-}` passthrough injects when the operator hasn't set it.
 # Treat an empty value as unset so a blank env var can't crash-loop the server before it even
 # reaches argv/flag handling (the widget-driven stateless default is applied later, in __main__).
-if _os.environ.get("FASTMCP_STATELESS_HTTP") == "":
+_stateless = _os.environ.get("FASTMCP_STATELESS_HTTP")
+if _stateless is not None and _stateless.strip() == "":  # "" or whitespace-only → treat as unset
     del _os.environ["FASTMCP_STATELESS_HTTP"]
 
 from .server import SERVER_INSTRUCTIONS, SERVER_NAME, create_server  # noqa: E402 — guard runs first

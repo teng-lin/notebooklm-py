@@ -19,7 +19,11 @@ pytest.importorskip("fastmcp")
 
 
 def test_empty_stateless_env_does_not_crash_mcp_import() -> None:
-    env = {**os.environ, "FASTMCP_STATELESS_HTTP": ""}
+    env = {
+        **os.environ,
+        "FASTMCP_STATELESS_HTTP": "",
+        "PYTHONPATH": os.pathsep.join(p for p in sys.path if p),  # subprocess resolves notebooklm
+    }
     result = subprocess.run(
         [sys.executable, "-c", "import notebooklm.mcp; print('imported-ok')"],
         env=env,
@@ -34,7 +38,11 @@ def test_empty_stateless_env_does_not_crash_mcp_import() -> None:
 
 def test_valid_stateless_env_is_left_untouched() -> None:
     # A real bool value must survive the guard (only the empty string is treated as unset).
-    env = {**os.environ, "FASTMCP_STATELESS_HTTP": "true"}
+    env = {
+        **os.environ,
+        "FASTMCP_STATELESS_HTTP": "true",
+        "PYTHONPATH": os.pathsep.join(p for p in sys.path if p),  # subprocess resolves notebooklm
+    }
     result = subprocess.run(
         [
             sys.executable,
