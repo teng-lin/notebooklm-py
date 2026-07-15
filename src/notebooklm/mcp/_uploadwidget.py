@@ -1,14 +1,14 @@
-"""Phase 3 (dev-gated): an in-app MCP-App upload widget.
+"""Experimental in-app MCP-App upload widget (opt-in).
 
-Renders an ``<input type=file>`` inline in Claude's sandboxed iframe so a mobile user can
-pick a file and upload it **without leaving the chat** — the widget POSTs the bytes directly
-to the existing ``/files/ul/<token>`` route (same broker, same completion map, same
-``await_upload``). This is the Phase 3 direct-in-app path; the shipped link flow stays the
-fallback.
+Renders an ``<input type=file>`` inline in an MCP-Apps host's sandboxed iframe (e.g. claude.ai)
+so a mobile user can pick a file and upload it **without leaving the chat** — the widget POSTs
+the bytes directly to the existing ``/files/ul/<token>`` route (same broker, same completion
+map, same ``await_upload``). The shipped signed-link flow stays the portable fallback.
 
-**Only registered when ``NOTEBOOKLM_MCP_DEV_UI=1``** (and a public URL is configured), so it
-never enters the prod manifest / tool-count. It is an experiment — revert if the picker or
-render fails in Claude.
+**Opt-in: only registered when ``NOTEBOOKLM_MCP_UPLOAD_WIDGET=1``** (and the http transport has a
+public URL), so it stays out of the default tool surface / tool-count. Experimental because
+MCP-Apps rendering is new (Jan 2026), host-specific, and depends on the gates below which a host
+can change.
 
 Rendering in claude.ai needs undocumented gates that FastMCP does not emit on its own but which
 its ``meta=`` + ``app=`` plumbing lets us add (verified against
@@ -40,7 +40,10 @@ if TYPE_CHECKING:
     from ._filelink import FileTransferConfig
 
 _WIDGET_URI = "ui://notebooklm/upload-v1"
-_DEV_FLAG = "NOTEBOOKLM_MCP_DEV_UI"
+#: Opt-in flag. Off by default — the MCP-Apps widget is experimental (renders only in
+#: MCP-Apps hosts like claude.ai, needs the http transport + a public URL, and depends on
+#: host-specific render gates that can shift), so it stays out of the default tool surface.
+_WIDGET_FLAG = "NOTEBOOKLM_MCP_UPLOAD_WIDGET"
 
 
 def _widget_domain(base_url: str) -> str:
@@ -112,9 +115,10 @@ _WIDGET_HTML = """<!doctype html>
 
 
 def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> None:
-    """Dev-only: mount the in-app upload widget. No-op unless ``NOTEBOOKLM_MCP_DEV_UI=1`` and a
-    file-transfer (public URL) config is present — so it never enters the prod manifest."""
-    if os.environ.get(_DEV_FLAG) != "1" or config is None:
+    """Opt-in: mount the in-app upload widget. No-op unless ``NOTEBOOKLM_MCP_UPLOAD_WIDGET=1``
+    and a file-transfer (public URL) config is present — so it stays out of the default tool
+    surface (and off the tool-count / schema-char budgets) unless a deployment enables it."""
+    if os.environ.get(_WIDGET_FLAG) != "1" or config is None:
         return
 
     domain = _widget_domain(config.base_url)
@@ -135,8 +139,11 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
         meta={"ui/resourceUri": _WIDGET_URI},  # FLAT key claude.ai actually reads
         app=AppConfig(resource_uri=_WIDGET_URI, visibility=["model"]),
     )
-    async def add_file_widget(ctx: Context, notebook: str) -> dict[str, Any]:
-        """DEV: open an in-app file picker to add a file to a notebook (mobile upload widget)."""
+    async def source_add_widget(ctx: Context, notebook: str) -> dict[str, Any]:
+        """Open an in-app file picker to add a file to a notebook (experimental mobile upload
+        widget). Renders inline in MCP-Apps hosts (e.g. claude.ai); the user picks a file and the
+        widget uploads it directly. Call ``await_upload`` with the returned ``upload_url`` to
+        confirm the add landed."""
         with mcp_errors():
             cfg = get_file_transfer(ctx)
             if cfg is None:

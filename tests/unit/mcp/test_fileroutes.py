@@ -513,8 +513,9 @@ def test_upload_cors_preflight_and_allow_origin(mock_client, config) -> None:
         assert pre.status_code == 204
         assert pre.headers["access-control-allow-origin"] == "*"
         assert "POST" in pre.headers["access-control-allow-methods"]
-        resp = client.post(_path(url) + "?filename=x.pdf", content=b"DATA",
-                           headers={"Accept": "application/json"})
+        resp = client.post(
+            _path(url) + "?filename=x.pdf", content=b"DATA", headers={"Accept": "application/json"}
+        )
     assert resp.status_code == 200
     assert resp.headers["access-control-allow-origin"] == "*"
 

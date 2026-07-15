@@ -6,10 +6,6 @@
 # The build context is the repo root so the image installs this source tree.
 services:
   notebooklm-mcp:
-    # Dev-only: enable the Phase 3 in-app upload widget (mounted only when this flag is set,
-    # so it never ships in the published image / prod manifest). Merged onto the base env.
-    environment:
-      NOTEBOOKLM_MCP_DEV_UI: "1"
     build:
       context: ..
       dockerfile: deploy/Dockerfile

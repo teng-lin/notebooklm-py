@@ -40,6 +40,10 @@ services:
       # the per-IP login-throttle key. Default off → throttle keys on the socket peer (the
       # tunnel egress), i.e. one global bucket. Tailscale Funnel does not set this header.
       NOTEBOOKLM_MCP_TRUST_PROXY: ${NOTEBOOKLM_MCP_TRUST_PROXY:-}
+      # Optional (experimental): NOTEBOOKLM_MCP_UPLOAD_WIDGET=1 exposes an in-app MCP-App
+      # upload widget (renders inline in MCP-Apps hosts like claude.ai). Off by default;
+      # requires this http transport + a public URL. See docs/mcp-guide.md.
+      NOTEBOOKLM_MCP_UPLOAD_WIDGET: ${NOTEBOOKLM_MCP_UPLOAD_WIDGET:-}
       # Point the app at the mounted profile, independent of the (arbitrary) uid's
       # home. The host dir is always mounted as the profile literally named
       # "server"; NOTEBOOKLM_HOME/profiles/server is where the app reads+writes.
