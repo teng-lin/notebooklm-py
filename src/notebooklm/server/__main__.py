@@ -157,6 +157,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("NOTEBOOKLM_LOG_LEVEL", "INFO"),
         help="Logging level on stderr (default: INFO).",
     )
+    parser.add_argument(
+        "--init-db",
+        action="store_true",
+        default=False,
+        help="Initialize the database tables and exit.",
+    )
     return parser
 
 
@@ -197,6 +203,13 @@ def main(argv: list[str] | None = None) -> None:
         _load_token_file(args.token_file)
 
     _check_token_configured()
+
+    if args.init_db:
+        from .database import init_db as _init_db
+        _init_db()
+        print("Database initialized successfully.")
+        return
+
     allow_external = os.environ.get(ALLOW_EXTERNAL_BIND_ENV) == "1"
     # Strip once so the guard and the actual bind agree on the host (a trailing
     # space must not sneak past the guard and reach uvicorn).

@@ -25,11 +25,14 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import cast
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -345,6 +348,11 @@ def create_app(
                     app.state.notebooklm = None
         finally:
             set_active_profile(previous_profile)
+            try:
+                from .routes.middleware import cleanup_old_logs
+                asyncio.ensure_future(asyncio.to_thread(cleanup_old_logs))
+            except Exception:
+                pass
 
     app = FastAPI(
         title=SERVER_NAME,
@@ -358,6 +366,15 @@ def create_app(
     )
 
     install_exception_handlers(app)
+
+    try:
+        from .database import init_db as _init_server_db
+        _init_server_db()
+    except Exception as exc:
+        logger.warning("Failed to initialize database: %s", exc)
+
+    from .routes.middleware import RequestLogMiddleware
+    app.add_middleware(RequestLogMiddleware)
 
     @app.middleware("http")
     async def _limit_request_body(
@@ -423,5 +440,11 @@ def create_app(
     v1.include_router(share.router)
     v1.include_router(meta.router)
     app.include_router(v1)
+
+    try:
+        from .routes import auth as auth_routes
+        app.include_router(auth_routes.router)
+    except Exception as exc:
+        logger.warning("Failed to register auth routes: %s", exc)
 
     return app
