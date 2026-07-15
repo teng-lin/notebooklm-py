@@ -84,18 +84,16 @@ async def test_widget_registers_with_claudeai_render_gates(monkeypatch) -> None:
     assert meta.get("ui", {}).get("resourceUri") == _WIDGET_URI
     assert meta.get("ui", {}).get("visibility") == ["model"]
 
-    # ChatGPT (Apps SDK) reads a different key + mime → emit both.
-    assert meta.get("openai/outputTemplate") == "ui://notebooklm/upload-openai-v1"
+    # ChatGPT (Apps SDK) reads openai/outputTemplate — pointed at the SAME single resource,
+    # because claude.ai follows this key too and can't render a separate skybridge mime.
+    assert meta.get("openai/outputTemplate") == _WIDGET_URI
 
     resources = {str(r.uri): r for r in await mcp._list_resources()}
+    assert "ui://notebooklm/upload-openai-v1" not in resources  # collapsed to one resource
     res = resources[_WIDGET_URI]
-    assert res.mime_type == "text/html;profile=mcp-app"
+    assert res.mime_type == "text/html;profile=mcp-app"  # the standard both hosts accept
     ui = (res.meta or {}).get("ui", {})
-    assert ui.get("domain") == _widget_domain(_BASE)  # the render gate
+    assert ui.get("domain") == _widget_domain(_BASE)  # the claude.ai render gate
     assert ui.get("csp", {}).get("connectDomains") == [_BASE]  # widget → /files/ul allowed
-
-    oai = resources["ui://notebooklm/upload-openai-v1"]
-    assert oai.mime_type == "text/html+skybridge"  # OpenAI Apps SDK mime
-    assert (oai.meta or {}).get("openai/widgetCSP", {}).get("connect_domains") == [_BASE]
-    # ALSO the claude.ai gate — a newer claude.ai fetches this resource via openai/outputTemplate.
-    assert (oai.meta or {}).get("ui", {}).get("domain") == _widget_domain(_BASE)
+    # ChatGPT reads openai/widgetCSP off the same resource.
+    assert (res.meta or {}).get("openai/widgetCSP", {}).get("connect_domains") == [_BASE]

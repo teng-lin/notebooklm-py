@@ -40,11 +40,6 @@ if TYPE_CHECKING:
     from ._filelink import FileTransferConfig
 
 _WIDGET_URI = "ui://notebooklm/upload-v1"
-#: OpenAI Apps SDK wants the SAME HTML at a ``ui://`` resource with the ``text/html+skybridge``
-#: mime, declared on the tool via ``_meta["openai/outputTemplate"]`` — different mime than
-#: claude.ai's ``text/html;profile=mcp-app``, so it's a second resource pointing at the same body.
-_OPENAI_WIDGET_URI = "ui://notebooklm/upload-openai-v1"
-_SKYBRIDGE_MIME = "text/html+skybridge"
 #: Opt-in flag. Off by default — the MCP-Apps widget is experimental (renders only in
 #: MCP-Apps hosts like claude.ai, needs the http transport + a public URL, and depends on
 #: host-specific render gates that can shift), so it stays out of the default tool surface.
@@ -139,44 +134,32 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
         return
 
     domain = _widget_domain(config.base_url)
+    base = config.base_url.rstrip("/")
 
+    # ONE resource, the MCP-Apps standard mime ``text/html;profile=mcp-app`` — which both hosts now
+    # accept (per developers.openai.com/apps-sdk; ``openai/*`` keys are backward-compat extensions).
+    # A second ``text/html+skybridge`` resource does NOT work: claude.ai FOLLOWS the tool's
+    # ``openai/outputTemplate`` too, and can't render the skybridge mime → "fail to fetch app
+    # content". So both meta pointers below target this single resource.
     @mcp.resource(
         _WIDGET_URI,  # ui:// → mime auto text/html;profile=mcp-app
+        meta={  # ChatGPT reads openai/widgetCSP; harmless to claude.ai (which reads ui.csp via app=)
+            "openai/widgetCSP": {"connect_domains": [base], "resource_domains": []}
+        },
         app=AppConfig(
             domain=domain,  # → _meta.ui.domain (the claude.ai render gate)
-            csp=ResourceCSP(connect_domains=[config.base_url.rstrip("/")]),  # widget → /files/ul
+            csp=ResourceCSP(connect_domains=[base]),  # widget → /files/ul
             prefers_border=True,
         ),
     )
     def _upload_widget_html() -> str:
         return _WIDGET_HTML
 
-    @mcp.resource(
-        _OPENAI_WIDGET_URI,
-        mime_type=_SKYBRIDGE_MIME,  # OpenAI Apps SDK mime (overrides the ui:// mcp-app auto-stamp)
-        meta={  # OpenAI reads openai/widgetCSP, not ui.csp
-            "openai/widgetCSP": {
-                "connect_domains": [config.base_url.rstrip("/")],
-                "resource_domains": [],
-            }
-        },
-        # ALSO carry claude.ai's ui.domain render gate + ui.csp: a newer claude.ai reads
-        # openai/outputTemplate and fetches THIS resource, and without ui.domain it fails with
-        # "fail to fetch app content". Belt-and-suspenders so either host renders either resource.
-        app=AppConfig(
-            domain=domain,
-            csp=ResourceCSP(connect_domains=[config.base_url.rstrip("/")]),
-            prefers_border=True,
-        ),
-    )
-    def _upload_widget_openai() -> str:
-        return _WIDGET_HTML
-
     @mcp.tool(
         annotations=READ_ONLY,
         # claude.ai reads ui/resourceUri (flat) + ui.resourceUri (nested via app=); ChatGPT reads
-        # openai/outputTemplate. Emit both → renders on both.
-        meta={"ui/resourceUri": _WIDGET_URI, "openai/outputTemplate": _OPENAI_WIDGET_URI},
+        # openai/outputTemplate. All three point at the ONE mcp-app resource → renders on both.
+        meta={"ui/resourceUri": _WIDGET_URI, "openai/outputTemplate": _WIDGET_URI},
         app=AppConfig(resource_uri=_WIDGET_URI, visibility=["model"]),
     )
     async def source_add_widget(ctx: Context, notebook: str) -> dict[str, Any]:
