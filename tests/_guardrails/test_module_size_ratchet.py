@@ -74,20 +74,12 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     # the public-surface manifest pin every class to ``notebooklm.exceptions``, so
     # the classes cannot move to sibling files without forking that home.
     "exceptions.py": 1512,
-    # ``mcp/tools/sources.py`` sat at 999 (one under budget) until #1871 added the
-    # shared source-policy wiring: the MAX_WAIT_TIMEOUT / MAX_WAIT_SOURCE_IDS /
-    # MAX_BATCH_URLS caps (irreducible fail-closed validation that must run in the
-    # tool body, before ref resolution) plus the fatal-vs-isolate re-raise in the
-    # URL-batch loop and the agent-facing docstrings documenting that new abort
-    # behavior. The batch helper (``_add_url_batch``) can't cleanly split out — it
-    # is fused to in-module primitives (``_add_one`` / ``_annotate_thin_warnings`` /
-    # ``tool_error_payload``), so extracting it would only trade a size trip for a
-    # circular import. Pinned at its measured LOC; ratchet down when the tool
-    # surface is next reorganized.
-    # Phase 1 (remote MCP file upload) added the ``await_upload`` tool entirely in the
-    # ``_fileupload`` sibling (``register_file_tools``, wired from ``server.register_all``,
-    # NOT ``sources.register``) precisely so this at-cap module stays untouched at 1020.
-    "mcp/tools/sources.py": 1020,
+    # ``mcp/tools/sources.py`` was allowlisted at 1020 (over the 1000-line budget after
+    # #1871's shared source-policy wiring + the await_upload era). #1890 folded
+    # source_add_and_wait + source_upload_bytes BACK into source_add — removing the two
+    # tool bodies (and ``_add_source_to_wait_on``) drained it to ~970 LOC, back UNDER the
+    # 1000 budget, so its exemption is dropped (one-way ratchet). The module is now gated
+    # by MODULE_SIZE_BUDGET like any other; keep it there.
 }
 
 

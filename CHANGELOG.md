@@ -71,14 +71,18 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
   dropped ([#1805](https://github.com/teng-lin/notebooklm-py/issues/1805)
   follow-up).
 
-- **MCP `source_upload_bytes`** — in-channel small-file upload
-  ([#1803](https://github.com/teng-lin/notebooklm-py/issues/1803)). Adds a source
-  by sending the file bytes directly through the tool call, for network-boxed
-  agents that cannot reach the signed browser-upload URL.
-
-- **MCP `source_add_and_wait`** — a single-call composite of `source_add` +
-  `source_wait` for single-source adds
-  ([#1807](https://github.com/teng-lin/notebooklm-py/issues/1807)).
+- **MCP `source_add` gains in-channel bytes and add-and-wait modes**
+  ([#1803](https://github.com/teng-lin/notebooklm-py/issues/1803),
+  [#1807](https://github.com/teng-lin/notebooklm-py/issues/1807),
+  [#1890](https://github.com/teng-lin/notebooklm-py/issues/1890)). Rather than
+  separate `source_upload_bytes` / `source_add_and_wait` tools, both fold into
+  `source_add`: `source_add(source_type="file", bytes_base64=…, filename=…)` adds a
+  small file by sending its bytes directly through the tool call (for network-boxed
+  agents that cannot reach the signed browser-upload URL), and
+  `source_add(..., wait=True, timeout=…, interval=…)` composes the add with
+  `source_wait` for single-source adds — returning the `source_wait` aggregate plus a
+  top-level `source_id`. This keeps the MCP surface leaner (ADR-0025): one `source_add`
+  verb with input modes, not three near-duplicate add tools.
 
 - **Compact roster mode for `source_list` and `studio_list`**
   ([#1806](https://github.com/teng-lin/notebooklm-py/issues/1806)) — a terser

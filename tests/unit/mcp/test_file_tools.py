@@ -234,9 +234,10 @@ async def test_source_add_file_stdio_keeps_path_behavior(mock_client) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# source_upload_bytes (in-channel small-file byte upload — #1803)
+# source_add(source_type="file", bytes_base64=…) — in-channel small-file byte
+# upload (#1803), folded into source_add by #1890 (was source_upload_bytes).
 # --------------------------------------------------------------------------- #
-async def test_source_upload_bytes_adds_and_echoes_source(mock_client) -> None:
+async def test_source_add_bytes_adds_and_echoes_source(mock_client) -> None:
     # The decoded bytes are spooled to a private 0600 temp file and handed to the
     # SAME add_file path source_add uses; the added source is echoed with labels.
     seen: dict[str, Any] = {}
@@ -255,9 +256,10 @@ async def test_source_upload_bytes_adds_and_echoes_source(mock_client) -> None:
     result = await _call(
         mock_client,
         None,  # transport-agnostic: needs no file-transfer config
-        "source_upload_bytes",
+        "source_add",
         {
             "notebook": NB_ID,
+            "source_type": "file",
             "bytes_base64": base64.b64encode(b"%PDF-1.4 hello").decode(),
             "filename": "report.pdf",
             "mime_type": "application/pdf",
@@ -286,7 +288,7 @@ async def test_source_upload_bytes_adds_and_echoes_source(mock_client) -> None:
     assert not os.path.exists(seen["path"])
 
 
-async def test_source_upload_bytes_default_filename_and_no_mime(mock_client) -> None:
+async def test_source_add_bytes_default_filename_and_no_mime(mock_client) -> None:
     seen: dict[str, Any] = {}
 
     async def _capture(nb_id, path, mime, *, title=None):
@@ -298,15 +300,19 @@ async def test_source_upload_bytes_default_filename_and_no_mime(mock_client) -> 
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
-        {"notebook": NB_ID, "bytes_base64": base64.b64encode(b"data").decode()},
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "source_type": "file",
+            "bytes_base64": base64.b64encode(b"data").decode(),
+        },
     )
     # No filename → the shared safe-name default; no mime → None passed through.
     assert os.path.basename(seen["path"]) == "upload.bin"
     assert seen["mime"] is None
 
 
-async def test_source_upload_bytes_sanitizes_traversal_filename(mock_client) -> None:
+async def test_source_add_bytes_sanitizes_traversal_filename(mock_client) -> None:
     seen: dict[str, Any] = {}
 
     async def _capture(nb_id, path, mime, *, title=None):
@@ -317,9 +323,10 @@ async def test_source_upload_bytes_sanitizes_traversal_filename(mock_client) -> 
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
+        "source_add",
         {
             "notebook": NB_ID,
+            "source_type": "file",
             "bytes_base64": base64.b64encode(b"x").decode(),
             "filename": "../../etc/passwd",
         },
@@ -329,7 +336,7 @@ async def test_source_upload_bytes_sanitizes_traversal_filename(mock_client) -> 
     assert "/etc/passwd" not in seen["path"]
 
 
-async def test_source_upload_bytes_tolerates_wrapped_base64(mock_client) -> None:
+async def test_source_add_bytes_tolerates_wrapped_base64(mock_client) -> None:
     # 76-col-wrapped (MIME-style) base64 with newlines still decodes to the exact bytes.
     seen: dict[str, Any] = {}
 
@@ -344,13 +351,13 @@ async def test_source_upload_bytes_tolerates_wrapped_base64(mock_client) -> None
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
-        {"notebook": NB_ID, "bytes_base64": wrapped, "filename": "blob.bin"},
+        "source_add",
+        {"notebook": NB_ID, "source_type": "file", "bytes_base64": wrapped, "filename": "blob.bin"},
     )
     assert seen["bytes"] == raw
 
 
-async def test_source_upload_bytes_accepts_wrapped_base64_near_cap(mock_client) -> None:
+async def test_source_add_bytes_accepts_wrapped_base64_near_cap(mock_client) -> None:
     # Regression: the cap is applied to the WHITESPACE-STRIPPED base64, not the raw
     # string. A valid wrapped payload whose raw length (incl. newlines) exceeds the
     # cap but whose cleaned length is within it must be ACCEPTED — an earlier draft
@@ -371,20 +378,23 @@ async def test_source_upload_bytes_accepts_wrapped_base64_near_cap(mock_client) 
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
-        {"notebook": NB_ID, "bytes_base64": wrapped, "filename": "b.bin"},
+        "source_add",
+        {"notebook": NB_ID, "source_type": "file", "bytes_base64": wrapped, "filename": "b.bin"},
     )
     assert seen["bytes"] == raw
 
 
-async def test_source_upload_bytes_rejects_oversized_before_add(mock_client) -> None:
+async def test_source_add_bytes_rejects_oversized_before_add(mock_client) -> None:
     # A payload over the base64-char cap is rejected up front — no add_file call.
     mock_client.sources.add_file = AsyncMock()
     big = base64.b64encode(os.urandom(9000)).decode()  # ~12000 chars > 10000 cap
     assert len(big) > fileupload_mod._MAX_UPLOAD_B64_CHARS
     with pytest.raises(ToolError) as excinfo:
         await _call(
-            mock_client, None, "source_upload_bytes", {"notebook": NB_ID, "bytes_base64": big}
+            mock_client,
+            None,
+            "source_add",
+            {"notebook": NB_ID, "source_type": "file", "bytes_base64": big},
         )
     msg = str(excinfo.value)
     assert "cap" in msg
@@ -393,23 +403,21 @@ async def test_source_upload_bytes_rejects_oversized_before_add(mock_client) -> 
     mock_client.sources.add_file.assert_not_awaited()
 
 
-async def test_source_upload_bytes_rejects_malformed_base64(mock_client) -> None:
+async def test_source_add_bytes_rejects_malformed_base64(mock_client) -> None:
     mock_client.sources.add_file = AsyncMock()
     with pytest.raises(ToolError) as excinfo:
         await _call(
             mock_client,
             None,
-            "source_upload_bytes",
-            {"notebook": NB_ID, "bytes_base64": "!!! not base64 !!!"},
+            "source_add",
+            {"notebook": NB_ID, "source_type": "file", "bytes_base64": "!!! not base64 !!!"},
         )
     assert "not valid base64" in str(excinfo.value)
     mock_client.sources.add_file.assert_not_awaited()
 
 
 @pytest.mark.parametrize("payload", ["", "   \n\t  "])
-async def test_source_upload_bytes_rejects_empty_or_whitespace_payload(
-    mock_client, payload
-) -> None:
+async def test_source_add_bytes_rejects_empty_or_whitespace_payload(mock_client, payload) -> None:
     # Both an empty AND an all-whitespace payload decode to zero bytes (whitespace is
     # stripped before decode) — rejected before any add.
     mock_client.sources.add_file = AsyncMock()
@@ -417,14 +425,14 @@ async def test_source_upload_bytes_rejects_empty_or_whitespace_payload(
         await _call(
             mock_client,
             None,
-            "source_upload_bytes",
-            {"notebook": NB_ID, "bytes_base64": payload},
+            "source_add",
+            {"notebook": NB_ID, "source_type": "file", "bytes_base64": payload},
         )
     assert "no bytes" in str(excinfo.value)
     mock_client.sources.add_file.assert_not_awaited()
 
 
-async def test_source_upload_bytes_accepts_exact_cap_boundary(mock_client) -> None:
+async def test_source_add_bytes_accepts_exact_cap_boundary(mock_client) -> None:
     # The cap is `> _MAX_UPLOAD_B64_CHARS` — a payload of EXACTLY that length is
     # accepted (7500 bytes → 10000 base64 chars, no padding). Guards the >/>= boundary.
     seen: dict[str, Any] = {}
@@ -439,13 +447,13 @@ async def test_source_upload_bytes_accepts_exact_cap_boundary(mock_client) -> No
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
-        {"notebook": NB_ID, "bytes_base64": payload, "filename": "b.bin"},
+        "source_add",
+        {"notebook": NB_ID, "source_type": "file", "bytes_base64": payload, "filename": "b.bin"},
     )
     assert seen.get("ok")
 
 
-async def test_source_upload_bytes_passes_title_through(mock_client) -> None:
+async def test_source_add_bytes_passes_title_through(mock_client) -> None:
     # An explicit title reaches the add path (vs the filename-derived default).
     seen: dict[str, Any] = {}
 
@@ -457,9 +465,10 @@ async def test_source_upload_bytes_passes_title_through(mock_client) -> None:
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
+        "source_add",
         {
             "notebook": NB_ID,
+            "source_type": "file",
             "bytes_base64": base64.b64encode(b"x").decode(),
             "filename": "x.bin",
             "title": "My Title",
@@ -468,7 +477,7 @@ async def test_source_upload_bytes_passes_title_through(mock_client) -> None:
     assert seen["title"] == "My Title"
 
 
-async def test_source_upload_bytes_cleans_up_temp_on_add_error(mock_client) -> None:
+async def test_source_add_bytes_cleans_up_temp_on_add_error(mock_client) -> None:
     # The finally rmtree is this tool's core safety guarantee — the docstring promises
     # removal "on success, a rejected add, or an error". Capture the spool path, then
     # make the add itself raise, and assert both the file and its mkdtemp parent are gone.
@@ -484,9 +493,10 @@ async def test_source_upload_bytes_cleans_up_temp_on_add_error(mock_client) -> N
         await _call(
             mock_client,
             None,
-            "source_upload_bytes",
+            "source_add",
             {
                 "notebook": NB_ID,
+                "source_type": "file",
                 "bytes_base64": base64.b64encode(b"data").decode(),
                 "filename": "x.bin",
             },
@@ -494,6 +504,63 @@ async def test_source_upload_bytes_cleans_up_temp_on_add_error(mock_client) -> N
     assert "path" in captured  # the add was actually reached
     assert not os.path.exists(captured["path"])
     assert not os.path.exists(os.path.dirname(captured["path"]))
+
+
+async def test_source_add_bytes_rejects_non_file_source_type(mock_client) -> None:
+    # bytes_base64 is a `file` input mode only; pairing it with another source_type
+    # is a VALIDATION error raised before any notebook I/O (#1890).
+    mock_client.sources.add_url = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            None,
+            "source_add",
+            {
+                "notebook": NB_ID,
+                "source_type": "url",
+                "bytes_base64": base64.b64encode(b"x").decode(),
+            },
+        )
+    msg = str(excinfo.value)
+    assert "VALIDATION" in msg
+    assert "bytes_base64" in msg
+    mock_client.sources.add_url.assert_not_called()
+
+
+async def test_source_add_bytes_and_path_are_mutually_exclusive(mock_client) -> None:
+    # path and bytes_base64 are two ways to supply the SAME file input — reject both.
+    mock_client.sources.add_file = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            None,
+            "source_add",
+            {
+                "notebook": NB_ID,
+                "source_type": "file",
+                "path": "/tmp/doc.pdf",
+                "bytes_base64": base64.b64encode(b"x").decode(),
+            },
+        )
+    assert "VALIDATION" in str(excinfo.value)
+    mock_client.sources.add_file.assert_not_called()
+
+
+async def test_source_add_filename_without_bytes_is_rejected(mock_client) -> None:
+    # filename only seeds the byte spool's title/extension — meaningless without
+    # bytes_base64 (a stdio path's basename comes from `path`).
+    mock_client.sources.add_file = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            None,
+            "source_add",
+            {"notebook": NB_ID, "source_type": "file", "filename": "x.bin"},
+        )
+    msg = str(excinfo.value)
+    assert "VALIDATION" in msg
+    assert "filename" in msg
+    mock_client.sources.add_file.assert_not_called()
 
 
 # --------------------------------------------------------------------------- #

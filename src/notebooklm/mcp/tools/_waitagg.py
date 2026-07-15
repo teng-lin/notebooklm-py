@@ -1,6 +1,6 @@
 """Source-wait outcome aggregation for the source MCP tools.
 
-The shared projection behind ``source_wait`` and ``source_add_and_wait``: fan a
+The shared projection behind ``source_wait`` and ``source_add(wait=True)``: fan a
 per-source wait out concurrently (:func:`_wait_all_sources`) and fold the typed
 ``SourceWaitOutcome`` values onto the unified aggregate wire shape
 (:func:`_aggregate_wait_outcomes`) — ``{notebook_id, ok, ready, timed_out,
@@ -70,7 +70,7 @@ async def _aggregate_wait_outcomes(
     """Project per-source wait outcomes onto the unified aggregate wire shape.
 
     Both ``source_wait`` modes (single source, all sources) — and
-    ``source_add_and_wait`` — share this contract: ready sources are returned
+    ``source_add(wait=True)`` — share this contract: ready sources are returned
     alongside the ones that timed out / failed / went missing, so the all-sources
     mode reports partial progress instead of discarding the sources that did become
     ready. ``ok`` is ``True`` iff nothing landed in an error bucket.

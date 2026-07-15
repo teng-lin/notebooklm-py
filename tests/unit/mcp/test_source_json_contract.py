@@ -157,15 +157,21 @@ async def test_source_wait_timeout_is_json_first(mcp_call, mock_client) -> None:
     assert_json_first_content(result)
 
 
-async def test_source_add_and_wait_is_json_first(mcp_call, mock_client) -> None:
+async def test_source_add_wait_is_json_first(mcp_call, mock_client) -> None:
     mock_client.sources.add_text = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Notes"))
     mock_client.sources.wait_until_ready = AsyncMock(
         return_value=FakeSource(id=SRC_ID, title="Notes")
     )
 
     result = await mcp_call(
-        "source_add_and_wait",
-        {"notebook": NB_ID, "source_type": "text", "text": "hello world", "title": "Notes"},
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "source_type": "text",
+            "text": "hello world",
+            "title": "Notes",
+            "wait": True,
+        },
     )
 
     assert result.structured_content == {

@@ -10,7 +10,7 @@ ready web-page views and attaches the warning in place.
 Extracted from ``sources.py`` (it stayed under the ADR-0008 module-size budget):
 the logic is a self-contained, reusable unit consumed by both the wait aggregate
 (:func:`._waitagg._aggregate_wait_outcomes`, behind ``source_wait`` /
-``source_add_and_wait``) and the ``source_add`` batch
+``source_add(wait=True)``) and the ``source_add`` batch
 (:func:`._sources._add_url_batch`). Reads only ``_app.source_content`` — imports
 NO ``click`` / ``rich`` / ``cli`` (MCP-layer boundary).
 """

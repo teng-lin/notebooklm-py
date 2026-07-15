@@ -1,7 +1,7 @@
 """File-transfer helpers for the source MCP tools.
 
 Split out of :mod:`.sources` to keep that module under the ADR-0008 size budget:
-this is the file-specific slice of ``source_add`` / ``source_upload_bytes`` — the
+this is the file-specific slice of ``source_add`` (incl. its ``bytes_base64`` mode) — the
 signed-URL broker (:func:`_broker_upload`), the in-channel base64 decode
 (:func:`_decode_upload_b64`) + byte-spool (:func:`_add_bytes`), and the shared
 plan-build/execute seam (:func:`_add_one`) they and the URL/text/batch paths reuse.
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from ...client import NotebookLMClient
     from ...types import Source
 
-#: Cap on ``source_upload_bytes``' base64 payload — measured on the base64 STRING
+#: Cap on ``source_add``'s ``bytes_base64`` payload — measured on the base64 STRING
 #: (what rides in the MCP message), NOT the decoded size. 10,000 chars ≈ 7.3 KiB of
 #: real file (base64 inflates ~4/3). Chosen so the whole ``tools/call`` request
 #: (~1.36× the file, envelope included) stays well under the ~13–16 KiB argument

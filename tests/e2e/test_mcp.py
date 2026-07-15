@@ -202,14 +202,15 @@ TOOL_COVERAGE: dict[str, str] = {
     "notebook_delete": "TestMcpLifecycle.test_create_describe_rename_delete",
     "server_info": "TestMcpReadOnly.test_server_info",
     # sources
-    "source_add": "TestMcpSources.test_source_roundtrip / test_source_add_text",
+    "source_add": (
+        "TestMcpSources.test_source_roundtrip / test_source_add_text; wait= and "
+        "bytes_base64= folds in tests/unit/mcp/test_sources.py + test_file_tools.py (#1890)"
+    ),
     "source_list": "TestMcpSources.test_source_roundtrip",
     "source_read": "TestMcpSources.test_source_roundtrip",
     "source_rename": "TestMcpSources.test_source_roundtrip",
     "source_delete": "TestMcpSources.test_source_roundtrip",
     "source_wait": "TestMcpSources.test_source_roundtrip",
-    "source_add_and_wait": "tests/unit/mcp/test_sources.py (add+wait composite; unit)",
-    "source_upload_bytes": "tests/unit/mcp/test_file_tools.py (in-channel bytes upload; unit)",
     "source_add_drive_file": "tests/unit/mcp/test_sources_drive.py (Drive-doc auto-route; unit — needs a real Drive document_id)",
     "await_upload": "tests/unit/mcp/test_await_upload.py (completion-map poll) + test_fileroutes.py (POST records result; unit — remote signed-URL side-channel, no live browser upload)",
     # chat

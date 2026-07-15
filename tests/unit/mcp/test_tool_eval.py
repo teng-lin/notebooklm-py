@@ -31,8 +31,14 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = (
-    42_450  # total serialized inputSchema + description chars (current 42_418; +32 slack)
+    39_400  # total serialized inputSchema + description chars (current 39_319; +81 slack)
 )
+# #1890 folded the two source-add composites BACK into source_add (ADR-0025 tool
+# consolidation): the add+wait verb → source_add(wait=True, timeout=, interval=), and
+# the in-channel byte upload → source_add(source_type="file", bytes_base64=, filename=).
+# source_add grew to 15 params / ~4.9k chars for the merged surface, but removing
+# source_add_and_wait + source_upload_bytes is a net −2 tools and −3_099 schema chars.
+# Ratcheted DOWN from 42_450 to the new 39_319 actual (don't leave freed slack).
 # Phase 1 (remote MCP file upload) added await_upload — the completion signal for a
 # source_add(source_type="file") link, so the model learns the browser/mobile upload
 # landed without the user narrating it. A NEW discrete tool (+773 chars, 2 params:

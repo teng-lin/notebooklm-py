@@ -443,53 +443,59 @@ def register(mcp: Any) -> None:
         text: str | None = None,
         title: str | None = None,
         path: str | None = None,
+        bytes_base64: str | None = None,
+        filename: str | None = None,
         document_id: str | None = None,
         mime_type: str | None = None,
         allow_internal: bool = False,
+        wait: bool = False,
+        timeout: float = 120.0,
+        interval: float = 1.0,
         urls: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Add a source to a notebook (single or batch). Accepts a notebook name or ID.
+    ) -> dict[str, Any] | ToolResult:
+        """Add a source to a notebook — single, batch, or in-channel bytes. Accepts a notebook name or ID.
 
         Call in exactly ONE of two modes:
 
-        **Single mode** — pass ``source_type``; it selects the input and which named
-        argument is required:
+        **Single mode** — pass ``source_type``; it selects the required input:
 
-        * ``url``     — requires ``url``.
-        * ``youtube`` — requires ``url`` (a YouTube link).
+        * ``url`` / ``youtube`` — require ``url`` (``youtube`` → a YouTube link).
         * ``text``    — requires ``text``; ``title`` optional.
         * ``file``    — over **stdio**, requires ``path`` (a local file path on the
-          server host). Over the **remote (http) connector** the server's
-          filesystem is unreachable, so instead the tool returns
-          ``upload_required`` with two first-class actor paths: ``human_upload``
-          (open the signed URL in a browser — works on mobile — and pick the file) and
-          ``agent_upload`` (an agent holding the bytes POSTs them as the raw body;
-          ``Accept: application/json`` → ``{"status": "added", …}``).
-          ``agent_instructions`` is the rule: try ``agent_upload``, fall back to
-          ``human_upload.url`` on a network error. ``mime_locked`` is true when
-          ``mime_type`` was supplied; ``expires_at_iso`` / ``expires_in_seconds`` give
-          the expiry; top-level ``url`` is **deprecated** for ``human_upload.url``.
+          server host). Over the **remote (http) connector** the host filesystem is
+          unreachable, so it returns ``upload_required`` with two actor paths:
+          ``human_upload`` (open the signed URL in a browser — works on mobile) and
+          ``agent_upload`` (an agent holding the bytes POSTs them as the raw body);
+          ``agent_instructions`` is the rule (try ``agent_upload``, fall back to
+          ``human_upload.url``). Alternatively pass ``bytes_base64`` to add a SMALL
+          file in-channel (any transport, no signed URL): standard base64 (not
+          URL-safe) ≤ 10,000 chars (≈ 7 KB); ``filename`` seeds the title/extension.
+          A bigger file must take the ``upload_required`` signed URL (≤ 200 MiB).
         * ``drive``   — requires ``document_id`` + ``mime_type`` (one of
-          google-doc|google-slides|google-sheets|pdf; required, no default — a
-          wrong default fails non-Doc imports, #1827); ``title`` optional.
+          google-doc|google-slides|google-sheets|pdf; required, no default — a wrong
+          default fails non-Doc imports, #1827); ``title`` optional.
 
-        The single-mode named inputs are mutually exclusive — supply only the one
-        your ``source_type`` requires.
+        The single-mode content inputs are mutually exclusive — supply only the one
+        your ``source_type`` requires (``bytes_base64`` is the ``file`` alternative to
+        ``path``).
 
-        The added source is echoed back under ``source`` with string ``kind`` /
-        ``status_label`` labels. Imports are processed ASYNCHRONOUSLY, so the echo
-        is usually still ``processing``/``preparing`` — a failure typically surfaces
-        only AFTER processing. Confirm the outcome with ``source_wait`` or
-        ``source_list(status="error")``. When the add response ALREADY reflects a
-        failed import, ``source_add`` flags it inline (``status_label="error"`` plus
-        a top-level ``warning``) instead of looking like a clean add. ``source_wait``
-        additionally flags a READY web page whose fetched text is suspiciously thin
-        (a likely dead link / soft-404 / paywall) with a per-source ``warning``.
+        Pass ``wait=true`` to block until the ONE added source finishes processing and
+        return the ``source_wait`` aggregate (buckets + per-bucket ``*_count`` +
+        ``total_count``) with a top-level ``source_id`` (present even on timeout/failure,
+        so you can retry/delete); ``timeout``/``interval`` tune the poll. ``wait`` is
+        single-mode only and NOT for a remote ``file`` signed-URL upload (add it, then
+        ``source_wait``). Without ``wait`` the added source is echoed under ``source``
+        with string ``kind`` / ``status_label`` labels; imports are ASYNCHRONOUS so the
+        echo is usually still ``processing``/``preparing`` — confirm with ``source_wait``
+        or ``source_list(status="error")``. A failed import is flagged inline
+        (``status_label="error"`` + a top-level ``warning``); ``source_wait`` also flags a
+        READY web page whose fetched text is suspiciously thin (dead link / soft-404 /
+        paywall).
 
         **Batch mode** — pass ``urls`` (a list of **http/https URLs**, YouTube links
-        included) to add many in one call instead of one round-trip each. Each entry
-        is validated and added independently; the response is an explicit per-item
-        list so partial failure is never hidden::
+        included) to add many in one call instead of one round-trip each. Each entry is
+        validated and added independently; the response is an explicit per-item list so
+        partial failure is never hidden::
 
             {"notebook_id": …, "added": <int>, "failed": <int>,
              "results": [{"input": "<url>", "status": "added", "source_id": …,
@@ -498,17 +504,15 @@ def register(mcp: Any) -> None:
                           "error": {"code": …, "message": …, "retriable": …, "hint"?: …}}]}
 
         ``results`` is positional (``results[i]`` is for ``urls[i]``); ``status`` is
-        ``"added"`` or ``"error"`` (the ADD outcome). An ``"added"`` item also carries
-        the source's ``status_label`` (the async-import status) and, when the add
-        response already reflects a failed import, an inline ``warning`` — same
-        failure-signaling as single mode. A per-URL **input** failure (bad URL / 404 /
-        SSRF-blocked host) isolates as an ``error`` item; a **fatal** service failure
-        (expired auth, rate limit, upstream 5xx) aborts the whole call. Batch is URL-only: a non-URL entry (plain text,
-        a local path, ``file://``/``ftp://``) is reported as a per-item ``VALIDATION``
-        error — it is never silently added as text or read off the filesystem.
-        ``allow_internal`` applies to every entry; the other single-mode named inputs
-        (``source_type``/``url``/``text``/``title``/``path``/``document_id``/
-        ``mime_type``) are not valid with ``urls``.
+        ``"added"`` or ``"error"`` (the ADD outcome). An ``"added"`` item also carries the
+        source's ``status_label`` and, when the add response already reflects a failed
+        import, an inline ``warning`` — same failure-signaling as single mode. A per-URL
+        **input** failure (bad URL / 404 / SSRF-blocked host) isolates as an ``error``
+        item; a **fatal** service failure (expired auth, rate limit, upstream 5xx) aborts
+        the whole call. Batch is URL-only: a non-URL entry (plain text, a local path,
+        ``file://``/``ftp://``) is reported as a per-item ``VALIDATION`` error. The
+        single-mode named inputs (incl. ``bytes_base64``/``filename``/``wait``) are not
+        valid with ``urls``; ``allow_internal`` applies to every entry.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -522,11 +526,18 @@ def register(mcp: Any) -> None:
                 raise ValidationError("provide 'source_type' (single add) or 'urls' (batch)")
             if urls is not None:
                 # Batch mode: reject single-mode scalars, then resolve + dispatch.
+                if wait:
+                    raise ValidationError(
+                        "'wait' is single-mode only; batch 'urls' adds are async — "
+                        "confirm with source_wait afterwards"
+                    )
                 _reject_batch_scalars(
                     url=url,
                     text=text,
                     title=title,
                     path=path,
+                    bytes_base64=bytes_base64,
+                    filename=filename,
                     document_id=document_id,
                     mime_type=mime_type,
                 )
@@ -573,15 +584,54 @@ def register(mcp: Any) -> None:
                 path=path,
                 document_id=document_id,
             )
+            # The in-channel bytes path is a `file` input mode (an alternative to
+            # `path`); reject a mismatched combo BEFORE any I/O.
+            _reject_bytes_file_mode(
+                source_type, bytes_base64=bytes_base64, filename=filename, path=path
+            )
+            if wait:
+                # Non-finite + range guards (shared with source_wait / the REST route);
+                # only meaningful when waiting, so skipped for a fire-and-forget add.
+                wait_core.validate_wait_bounds(timeout, interval)
+
+            # Decode in-channel bytes BEFORE resolve_notebook, so an over-cap / malformed
+            # payload never pays a notebook round-trip (see _decode_upload_b64).
+            raw = _decode_upload_b64(bytes_base64) if bytes_base64 is not None else None
 
             nb_id = await resolve_notebook(client, notebook)
+
+            # In-channel bytes file-add (any transport): decode + spool + add, then
+            # optionally wait. Takes precedence over the signed-URL broker below.
+            if raw is not None:
+                src = await _add_bytes(
+                    client, nb_id, raw, filename=filename, title=title, mime_type=mime_type
+                )
+                if wait:
+                    return await _wait_after_add(
+                        client,
+                        nb_id,
+                        src,
+                        source_type=source_type,
+                        timeout=timeout,
+                        interval=interval,
+                    )
+                return _add_result_payload(
+                    src, to_jsonable(add_core.SourceAddResult(source=src)), notebook_id=nb_id
+                )
 
             if source_type == "file":
                 cfg = get_file_transfer(ctx)
                 if cfg is not None:
                     # Remote connector: broker a signed upload URL (the server path
                     # is unreachable). A supplied `path` is accepted, not opened —
-                    # its basename seeds the default title.
+                    # its basename seeds the default title. There is no source yet to
+                    # wait on — a caller wanting add+wait must use bytes_base64.
+                    if wait:
+                        raise ValidationError(
+                            "source_add cannot wait on a remote file signed-URL upload (the "
+                            "upload is a separate step); add without wait, then source_wait, "
+                            "or pass bytes_base64 for a tiny file"
+                        )
                     return _broker_upload(cfg, nb_id, title=title, mime_type=mime_type, path=path)
                 if _is_http_transport():
                     raise ValidationError(
@@ -603,6 +653,15 @@ def register(mcp: Any) -> None:
                         title=title or "",
                     ),
                 )
+                if wait:
+                    return await _wait_after_add(
+                        client,
+                        nb_id,
+                        drive_result.source,
+                        source_type="drive",
+                        timeout=timeout,
+                        interval=interval,
+                    )
                 return _add_result_payload(
                     drive_result.source, to_jsonable(drive_result), notebook_id=nb_id
                 )
@@ -617,126 +676,10 @@ def register(mcp: Any) -> None:
                 mime_type=mime_type,
                 allow_internal=allow_internal,
             )
-            return _add_result_payload(
-                src, to_jsonable(add_core.SourceAddResult(source=src)), notebook_id=nb_id
-            )
-
-    @mcp.tool
-    async def source_add_and_wait(
-        ctx: Context,
-        notebook: str,
-        source_type: Literal["url", "text", "file", "drive", "youtube"],
-        url: str | None = None,
-        text: str | None = None,
-        title: str | None = None,
-        path: str | None = None,
-        document_id: str | None = None,
-        mime_type: str | None = None,
-        allow_internal: bool = False,
-        timeout: float = 120.0,
-        interval: float = 1.0,
-    ) -> ToolResult:
-        """Add ONE source and block until it finishes processing, in a single call.
-
-        Composes single-mode ``source_add`` + ``source_wait`` so an agent skips the
-        add→wait round-trip. Takes the single-mode ``source_add`` inputs — ``source_type``
-        plus the one it needs (url/youtube→``url``, text→``text``, file→``path`` (stdio
-        only), drive→``document_id``; ``title``/``mime_type``/``allow_internal`` optional)
-        — and the ``source_wait`` knobs (``timeout``, ``interval``). NOT for batch
-        (``source_add(urls=[...])``) or a REMOTE ``file`` upload: that upload is a
-        separate step (use ``source_add(source_type="file")`` then ``source_wait``, or
-        ``source_upload_bytes`` for a tiny file).
-
-        Returns the ``source_wait`` aggregate (buckets + per-bucket ``*_count`` +
-        ``total_count``) plus a top-level ``source_id`` — always on the returned
-        aggregate, since the source persists even when the wait does not reach READY, so
-        you can retry/delete it. A READY web page with thin/soft-404 text carries a
-        non-blocking ``warning``, as in ``source_wait``.
-        """
-        client = get_client(ctx)
-        with mcp_errors():
-            # Non-finite + range guards (shared with source_wait / the REST route).
-            wait_core.validate_wait_bounds(timeout, interval)
-            # The same single-add guards source_add applies, all BEFORE any notebook
-            # I/O so a malformed call never pays a round-trip. Shares the drive-mime
-            # validator + _reject_single_content_scalars with source_add so the two
-            # tools stay in lockstep.
-            _validate_drive_mime(source_type, mime_type)
-            _reject_single_content_scalars(
-                source_type, url=url, text=text, path=path, document_id=document_id
-            )
-
-            nb_id = await resolve_notebook(client, notebook)
-            src = await _add_source_to_wait_on(
-                client,
-                ctx,
-                nb_id,
-                source_type=source_type,
-                url=url,
-                text=text,
-                title=title,
-                path=path,
-                document_id=document_id,
-                mime_type=mime_type,
-                allow_internal=allow_internal,
-            )
-            outcome = await wait_core.execute_source_wait(
-                client,
-                wait_core.SourceWaitPlan(
-                    notebook_id=nb_id, source_id=src.id, timeout=timeout, interval=interval
-                ),
-            )
-            # ``wait_until_ready`` re-reads the source from GET_NOTEBOOK, where a Drive
-            # PDF again decodes to the ambiguous code 14 → GOOGLE_SPREADSHEET; carry the
-            # already-stamped code from ``src`` onto the ready outcome so add-and-wait
-            # labels it the same as source_add (#1828).
-            if source_type == "drive" and isinstance(outcome, wait_core.SourceWaitReady):
-                outcome.source._type_code = src._type_code
-            result = await _aggregate_wait_outcomes(client, nb_id, [outcome])
-            # The created source persists regardless of the wait outcome — surface its id
-            # at the top level so a timed-out / failed caller can retry or delete it.
-            result["source_id"] = src.id
-            return _json_tool_result(result)
-
-    @mcp.tool
-    async def source_upload_bytes(
-        ctx: Context,
-        notebook: str,
-        bytes_base64: str,
-        filename: str | None = None,
-        mime_type: str | None = None,
-        title: str | None = None,
-    ) -> dict[str, Any]:
-        """Add a SMALL file to a notebook from raw bytes, in-channel. Accepts a notebook name or ID.
-
-        For when an agent HOLDS the file bytes but cannot complete the signed-URL
-        upload — e.g. over the remote (http) connector with egress blocked, the
-        ``upload_required`` ``agent_upload`` POST fails and no human device has the
-        file. Pass the bytes as base64; the connector decodes and adds them
-        server-side, returning the created source directly — no signed URL, no
-        browser hop. Works on any transport and needs no file-transfer config.
-
-        SMALL FILES ONLY: ``bytes_base64`` must be ≤ 10,000 characters (≈ 7 KB of
-        file). A larger payload exceeds the MCP message limit and is rejected — use
-        ``source_add(source_type="file")`` instead, whose ``upload_required`` signed
-        URL carries large files (≤ 200 MiB) via the browser or a raw-body agent POST.
-        Standard base64 only, not URL-safe (``-``/``_``).
-
-        ``filename`` seeds the default title and extension (sanitized to a basename);
-        ``mime_type`` / ``title`` are optional. The added source is echoed under
-        ``source`` with ``kind`` / ``status_label`` labels, exactly like
-        ``source_add`` (imports are async — confirm with ``source_wait`` /
-        ``source_list(status="error")``).
-        """
-        client = get_client(ctx)
-        with mcp_errors():
-            # Decode + cap + empty guard run BEFORE any notebook I/O, so an over-cap or
-            # malformed payload never pays a round-trip (see _decode_upload_b64).
-            raw = _decode_upload_b64(bytes_base64)
-            nb_id = await resolve_notebook(client, notebook)
-            src = await _add_bytes(
-                client, nb_id, raw, filename=filename, title=title, mime_type=mime_type
-            )
+            if wait:
+                return await _wait_after_add(
+                    client, nb_id, src, source_type=source_type, timeout=timeout, interval=interval
+                )
             return _add_result_payload(
                 src, to_jsonable(add_core.SourceAddResult(source=src)), notebook_id=nb_id
             )
@@ -763,6 +706,8 @@ def _reject_batch_scalars(
     text: str | None,
     title: str | None,
     path: str | None,
+    bytes_base64: str | None,
+    filename: str | None,
     document_id: str | None,
     mime_type: str | None,
 ) -> None:
@@ -770,7 +715,8 @@ def _reject_batch_scalars(
 
     Batch mode derives each title from the server, so the single-add scalars
     belong to single mode only. ``allow_internal`` is intentionally NOT rejected
-    — it legitimately applies to every URL in the batch.
+    — it legitimately applies to every URL in the batch (``wait`` is rejected
+    separately, before this call).
     """
     offenders = [
         name
@@ -779,6 +725,8 @@ def _reject_batch_scalars(
             ("text", text),
             ("title", title),
             ("path", path),
+            ("bytes_base64", bytes_base64),
+            ("filename", filename),
             ("document_id", document_id),
             ("mime_type", mime_type),
         )
@@ -933,64 +881,66 @@ async def _add_url_batch(
     }
 
 
-async def _add_source_to_wait_on(
-    client: NotebookLMClient,
-    ctx: Context,
-    notebook_id: str,
+def _reject_bytes_file_mode(
+    source_type: str,
     *,
-    source_type: Literal["url", "text", "file", "drive", "youtube"],
-    url: str | None,
-    text: str | None,
-    title: str | None,
+    bytes_base64: str | None,
+    filename: str | None,
     path: str | None,
-    document_id: str | None,
-    mime_type: str | None,
-    allow_internal: bool,
-) -> Source:
-    """Add one source and return its ``Source`` for ``source_add_and_wait`` to poll.
+) -> None:
+    """Validate the in-channel bytes file-add combo (``bytes_base64`` / ``filename``).
 
-    A focused single-add dispatch over the SAME cores ``source_add`` drives
-    (:func:`_select_content` + :func:`_add_one` for url/youtube/text/file,
-    ``execute_source_add_drive`` for drive). It deliberately does NOT reuse
-    ``source_add``'s own dispatch, whose type-specific payloads (the Drive provenance
-    fields, the remote-file ``upload_required`` broker dict) are the wrong shape here
-    and are pinned by tests — sharing it would force a lossy refactor of that surface.
-
-    A REMOTE ``file`` add is rejected: the signed-URL upload is a separate human/agent
-    step, so no source exists yet to wait on (the caller must use ``source_add`` +
-    ``source_wait``). Only a stdio ``file`` (a real local path, read in one shot) falls
-    through to the add.
+    ``bytes_base64`` is an alternative ``file`` input mode (vs. ``path``): it is only
+    valid with ``source_type='file'`` and is mutually exclusive with ``path``.
+    ``filename`` seeds the title/extension for that byte spool and is meaningless
+    without ``bytes_base64``. Rejecting BEFORE any I/O keeps a malformed combo from
+    paying a notebook round-trip.
     """
-    if source_type == "file" and (get_file_transfer(ctx) is not None or _is_http_transport()):
+    if bytes_base64 is not None:
+        if source_type != "file":
+            raise ValidationError(
+                f"'bytes_base64' is only valid with source_type 'file'; got {source_type!r}"
+            )
+        if path is not None:
+            raise ValidationError("pass either 'path' or 'bytes_base64' for a file add, not both")
+    if filename is not None and bytes_base64 is None:
         raise ValidationError(
-            "source_add_and_wait cannot one-shot a remote file upload (the upload is a "
-            "separate step); use source_add(source_type='file') then source_wait, or "
-            "source_upload_bytes for a tiny file"
+            "'filename' is only valid with 'bytes_base64' (the in-channel bytes file-add)"
         )
-    if source_type == "drive":
-        if not document_id:
-            raise ValidationError("source_type 'drive' requires 'document_id'")
-        drive_result = await mut_core.execute_source_add_drive(
-            client,
-            mut_core.SourceAddDrivePlan(
-                notebook_id=notebook_id,
-                file_id=document_id,
-                title=title or "",
-                # Non-None + valid: _validate_drive_mime ran in the tool body (#1827).
-                mime_type=mime_type,  # type: ignore[arg-type]
-            ),
-        )
-        return drive_result.source
-    content = _select_content(source_type, url=url, text=text, path=path)
-    return await _add_one(
+
+
+async def _wait_after_add(
+    client: NotebookLMClient,
+    notebook_id: str,
+    src: Source,
+    *,
+    source_type: str,
+    timeout: float,
+    interval: float,
+) -> ToolResult:
+    """Block on a freshly-added source and return the ``source_wait`` aggregate.
+
+    The ``wait=True`` tail of ``source_add``: poll the created source to a terminal
+    state, then project the ``source_wait`` aggregate with a top-level ``source_id``
+    (always present, since the source persists even when the wait times out / fails —
+    so a caller can retry or delete it).
+
+    ``wait_until_ready`` re-reads the source from GET_NOTEBOOK, where a Drive PDF again
+    decodes to the ambiguous code 14 → GOOGLE_SPREADSHEET; carry the already-stamped
+    code from ``src`` onto the ready outcome so the waited label matches ``source_add``
+    without ``wait`` (#1828).
+    """
+    outcome = await wait_core.execute_source_wait(
         client,
-        notebook_id,
-        content,
-        source_type=source_type,
-        title=title,
-        mime_type=mime_type,
-        allow_internal=allow_internal,
+        wait_core.SourceWaitPlan(
+            notebook_id=notebook_id, source_id=src.id, timeout=timeout, interval=interval
+        ),
     )
+    if source_type == "drive" and isinstance(outcome, wait_core.SourceWaitReady):
+        outcome.source._type_code = src._type_code
+    result = await _aggregate_wait_outcomes(client, notebook_id, [outcome])
+    result["source_id"] = src.id
+    return _json_tool_result(result)
 
 
 def _select_content(

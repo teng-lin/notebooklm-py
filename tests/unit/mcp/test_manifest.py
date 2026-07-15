@@ -33,16 +33,14 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "notebook_describe",
         "notebook_rename",
         "notebook_delete",
-        # Sources (10)
+        # Sources (8)
         "source_list",
         "source_read",
         "source_rename",
         "source_delete",
         "source_wait",
         "source_add",
-        "source_add_and_wait",
         "source_add_drive_file",
-        "source_upload_bytes",
         "await_upload",
         # Chat (3)
         "chat_ask",
@@ -79,6 +77,8 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
 #: suggest_prompts to 37; the Tier-1 read-merges (source_describe+source_get_content
 #: → source_read) and the Studio consolidation (note_create+note_update → note_save,
 #: note_list+note_delete folded into studio_list/studio_delete) brought it to 32. The
+#: source-add composites (source_add_and_wait, source_upload_bytes) later re-grew it,
+#: then #1890 folded them BACK into source_add (wait= / bytes_base64=) for 34. The
 #: ceiling has headroom, but an accidental explosion still trips the gate.
 TOOL_CEILING = 40
 
