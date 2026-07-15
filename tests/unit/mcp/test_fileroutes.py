@@ -516,8 +516,13 @@ def test_upload_cors_preflight_and_allow_origin(mock_client, config) -> None:
         resp = client.post(
             _path(url) + "?filename=x.pdf", content=b"DATA", headers={"Accept": "application/json"}
         )
+        # A rejected (bad/expired token) POST must ALSO carry ACAO, so the cross-origin widget
+        # can read the real error instead of an opaque "Failed to fetch".
+        rej = client.post("/files/ul/bogus.token", content=b"DATA")
     assert resp.status_code == 200
     assert resp.headers["access-control-allow-origin"] == "*"
+    assert rej.status_code == 403
+    assert rej.headers["access-control-allow-origin"] == "*"
 
 
 def test_upload_post_records_completion_result_for_await_upload(mock_client, config) -> None:

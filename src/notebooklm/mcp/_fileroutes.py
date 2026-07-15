@@ -116,6 +116,10 @@ _UPLOAD_CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type, Accept",
     "Access-Control-Max-Age": "600",
 }
+#: Just the allow-origin, for the POST route's own responses (success AND error) — without it a
+#: cross-origin widget can't READ the response, so an expired-link 403 surfaces as an opaque
+#: "Failed to fetch" instead of a message the user can act on. Safe for the same reason (#1889).
+_CORS_ORIGIN = {"Access-Control-Allow-Origin": "*"}
 
 
 #: HTTP status each neutral :class:`ErrorCategory` projects onto for the
@@ -172,7 +176,8 @@ def _upstream_error_response(exc: NotebookLMError, *, note: str = "") -> PlainTe
     return PlainTextResponse(
         f"{prefix}Upstream NotebookLM error: {redact(str(exc))}",
         status_code=status,
-        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        # ACAO so the cross-origin widget can read the (redacted) failure, not "Failed to fetch".
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", **_CORS_ORIGIN},
     )
 
 
@@ -467,7 +472,7 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         try:
             payload = config.signer.verify(token, op="ul")
         except FileLinkError:
-            return PlainTextResponse(_UPLOAD_LINK_REJECTED, status_code=403)
+            return PlainTextResponse(_UPLOAD_LINK_REJECTED, status_code=403, headers=_CORS_ORIGIN)
         # Single-use (jti) guard — ``ul`` only (ADR-0024, #1746). A leaked upload token
         # is a content-agnostic WRITE primitive (anyone can POST arbitrary bytes as a
         # source), so unlike ``dl`` (which stays multi-use for Range/resume) an upload
@@ -475,14 +480,16 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         # ``jti``, so a missing/non-str one means a malformed/hand-built token → 403.
         jti = payload.get("jti")
         if not isinstance(jti, str) or not jti:
-            return PlainTextResponse(_UPLOAD_LINK_REJECTED, status_code=403)
+            return PlainTextResponse(_UPLOAD_LINK_REJECTED, status_code=403, headers=_CORS_ORIGIN)
         # Early 413 on a declared over-cap body (the running cap below is the real
         # defense — a chunked / under-stated Content-Length slips past this).
         declared = request.headers.get("content-length")
         if declared is not None:
             try:
                 if int(declared) > MAX_UPLOAD_BYTES:
-                    return PlainTextResponse("Upload exceeds the size limit.", status_code=413)
+                    return PlainTextResponse(
+                        "Upload exceeds the size limit.", status_code=413, headers=_CORS_ORIGIN
+                    )
             except ValueError:
                 pass
         try:
@@ -497,7 +504,7 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         # and before the slot. ``try_begin`` runs no ``await``, so the check-and-mark
         # is atomic on the one event loop.
         if not config.jti_store.try_begin(jti):
-            return PlainTextResponse(_UPLOAD_LINK_REJECTED, status_code=403)
+            return PlainTextResponse(_UPLOAD_LINK_REJECTED, status_code=403, headers=_CORS_ORIGIN)
         committed = False
         try:
             # Bound aggregate temp-disk: reject (fast, no disk touched) when too many
