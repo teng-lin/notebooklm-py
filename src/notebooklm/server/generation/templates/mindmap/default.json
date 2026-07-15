@@ -1,0 +1,12 @@
+{
+  "name": "default",
+  "label": "默认",
+  "description": "树形布局思维导图",
+  "layout": "tree",
+  "node_color": "#4A90D9",
+  "line_color": "#CCCCCC",
+  "font_family": "Microsoft YaHei",
+  "font_size": 14,
+  "export_width": 1920,
+  "export_height": 1080
+}

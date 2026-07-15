@@ -32,6 +32,7 @@ dependencies = [
     "rich>=13.0.0,<16",
     "filelock>=3.13,<4",
     "python-docx>=1.2.0",
+    "python-pptx>=1.0.2",
 ]
 
 [project.urls]
@@ -67,6 +68,7 @@ mcp = ["fastmcp==3.4.2"]
 # compatibly with the base install's httpx<0.29 / anyio<5 (resolved against
 # uv.lock at build time).
 server = [
+    "Pillow>=10.0.0,<12",
     "fastapi>=0.118,<1",
     "uvicorn[standard]>=0.34,<1",
     "python-multipart>=0.0.20,<1",

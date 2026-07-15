@@ -1,0 +1,16 @@
+{
+  "name": "default",
+  "label": "默认视频",
+  "description": "图文混合默认短视频模板",
+  "resolution": "1080p",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "background_color": "#1a202c",
+  "font_family": "Microsoft YaHei",
+  "title_color": "#FFFFFF",
+  "body_color": "#E2E8F0",
+  "scene_duration_seconds": 5,
+  "transition": "fade",
+  "tts_language": "zh-CN"
+}

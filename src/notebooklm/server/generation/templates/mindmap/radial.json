@@ -1,0 +1,12 @@
+{
+  "name": "radial",
+  "label": "辐射",
+  "description": "辐射状布局思维导图",
+  "layout": "radial",
+  "node_color": "#E8822A",
+  "line_color": "#DDDDDD",
+  "font_family": "Microsoft YaHei",
+  "font_size": 14,
+  "export_width": 1920,
+  "export_height": 1080
+}

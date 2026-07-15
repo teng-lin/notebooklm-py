@@ -1,0 +1,21 @@
+{
+  "name": "default",
+  "label": "默认信息图",
+  "description": "简洁三栏信息图模板",
+  "width": 800,
+  "height": 2000,
+  "background_color": "#FFFFFF",
+  "font_family": "Microsoft YaHei",
+  "title_color": "#1a365d",
+  "body_color": "#2d3748",
+  "accent_color": "#3182CE",
+  "blocks": [
+    {"type": "header", "height_ratio": 0.08},
+    {"type": "text", "height_ratio": 0.12},
+    {"type": "stats", "height_ratio": 0.15},
+    {"type": "text", "height_ratio": 0.25},
+    {"type": "divider", "height_ratio": 0.02},
+    {"type": "text", "height_ratio": 0.25},
+    {"type": "footer", "height_ratio": 0.08}
+  ]
+}
