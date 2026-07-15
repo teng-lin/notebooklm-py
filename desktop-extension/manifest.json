@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "notebooklm-mcp",
   "display_name": "NotebookLM (notebooklm-py)",
-  "version": "0.8.0a4",
+  "version": "0.8.0b1",
   "description": "Connect Claude to Google NotebookLM: manage notebooks and sources, chat over your notebooks, generate podcasts/videos/quizzes/mind maps, and run research.",
   "long_description": "This extension connects an MCP host (e.g. Claude Desktop) to Google NotebookLM via the Model Context Protocol, backed by the `notebooklm-py` Python client.\n\n**Prerequisites:**\n1. Install `uv` (the launcher runs `uvx`): `curl -LsSf https://astral.sh/uv/install.sh | sh`\n2. Authenticate once: `uvx --from \"notebooklm-py[mcp]\" notebooklm login` (or `notebooklm login` if installed), then select your Google profile.\n\nThe bundled `run_server.py` launcher locates `uvx` across common install paths and runs `uvx --from \"notebooklm-py[mcp]\" notebooklm-mcp`, so no global install is required.\n\n**Features:**\n- Create, list, describe, rename, and delete notebooks\n- Add sources (URL, YouTube, Google Drive, text, files) and read their content\n- Chat / ask questions over a notebook\n- Generate Audio Overviews (podcasts), videos, quizzes, flashcards, reports, and mind maps\n- Research topics via web or Drive and import the results",
   "author": {

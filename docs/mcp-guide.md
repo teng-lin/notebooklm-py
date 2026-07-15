@@ -6,7 +6,7 @@
 > server and its dependencies only arrive with the `mcp` extra.
 
 The MCP server exposes NotebookLM to any [Model Context Protocol](https://modelcontextprotocol.io)
-client (Claude Desktop, Claude Code, Cursor, Windsurf, …) as a set of **32 tools** — manage
+client (Claude Desktop, Claude Code, Cursor, Windsurf, …) as a set of **34 tools** — manage
 notebooks and sources, chat over a notebook's sources, generate and download studio artifacts,
 and run deep research. It is a thin adapter over the same business logic the CLI uses, so it
 behaves identically to `notebooklm <command>`.

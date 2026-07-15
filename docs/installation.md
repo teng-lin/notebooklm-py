@@ -507,7 +507,7 @@ Wire it into an MCP client with either:
 - `notebooklm mcp install <client>` — auto-writes the server config for `claude-desktop`, `claude-code`, `cursor`, or `windsurf`; or
 - the one-click `.mcpb` desktop bundle — download it from the [latest release](https://github.com/teng-lin/notebooklm-py/releases/latest) (**Assets**) and use Claude Desktop's "Install Extension". Each stable release attaches a prebuilt, version-matched bundle; see [`desktop-extension/README.md`](../desktop-extension/README.md).
 
-Full usage walkthrough (auth, transports, the 35 tools, workflows, troubleshooting): **[mcp-guide.md](mcp-guide.md)**.
+Full usage walkthrough (auth, transports, the 34 tools, workflows, troubleshooting): **[mcp-guide.md](mcp-guide.md)**.
 
 ---
 
