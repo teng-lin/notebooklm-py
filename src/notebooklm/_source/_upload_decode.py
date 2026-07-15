@@ -355,13 +355,20 @@ def _raise_from_upload_http_status(exc: httpx.HTTPStatusError, filename: str) ->
     turned it into an opaque 500; the CLI/REST ``add_file`` path leaked it too).
 
     The status classes mirror the RPC executor's contract (429 →
-    :class:`RateLimitError`, 401/403 → :class:`AuthError`, 5xx →
+    :class:`RateLimitError`, 401/403 and **3xx** → :class:`AuthError`, 5xx →
     :class:`ServerError`) with one deliberate deviation: a generic **4xx** is
     raised as :class:`ValidationError`, not ``ClientError``. The endpoint returns
     **400** when it rejects the file *type/content* (e.g. a ``.pub`` that slips
     past the local :func:`_validate_upload_file_supported` allowlist), which is the
     same bad-input outcome as that local check — so it surfaces as a clean,
     redacted 4xx through the MCP/REST adapters instead of a gateway 5xx/500.
+
+    ``httpx.raise_for_status`` raises for **any** non-2xx (the upload clients do
+    not follow redirects), so an unfollowed **3xx** reaches here too. A redirect
+    during upload means the request was bounced (typically an expired/invalid
+    Google session redirected to a login page) rather than accepted, so it is
+    classified as auth — NOT swept into the ``ValidationError`` "unsupported file"
+    catch-all, which would mislabel a dead session as a bad file.
     """
     status = exc.response.status_code
     reason = exc.response.reason_phrase
@@ -373,14 +380,20 @@ def _raise_from_upload_http_status(exc: httpx.HTTPStatusError, filename: str) ->
         raise RateLimitError(msg, retry_after=retry_after) from exc
     if status in (401, 403):
         raise AuthError(f"Authentication failed uploading {filename!r} (HTTP {status})") from exc
+    if 300 <= status < 400:
+        raise AuthError(
+            f"Upload of {filename!r} was redirected (HTTP {status}); the Google session "
+            "may have expired — re-run `notebooklm login`."
+        ) from exc
     if status >= 500:
         raise ServerError(
             f"NotebookLM upload endpoint returned {status} for {filename!r}: {reason}",
             status_code=status,
         ) from exc
-    # Any other 4xx (raise_for_status only fires for >=400, so this is exhaustive):
-    # the request/file was rejected. Treat it as invalid input — same category as
-    # the local unsupported-type check — so it becomes a clean 4xx, not an opaque 500.
+    # Remaining case: a 4xx client rejection (raise_for_status fired, and 3xx/5xx
+    # are handled above). The request/file was rejected — treat it as invalid
+    # input, same category as the local unsupported-type check, so it becomes a
+    # clean 4xx rather than an opaque 500.
     raise ValidationError(
         f"NotebookLM rejected the upload of {filename!r} (HTTP {status}: {reason}). "
         "The file type or content may be unsupported."

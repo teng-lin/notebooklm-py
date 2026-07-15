@@ -19,6 +19,7 @@ from notebooklm._source.upload import (
     _validate_resumable_upload_url,
 )
 from notebooklm.exceptions import (
+    AuthError,
     NetworkError,
     RateLimitError,
     ServerError,
@@ -784,6 +785,7 @@ async def test_start_resumable_upload_rejects_untrusted_upload_header_url() -> N
     [
         (400, ValidationError),  # unsupported file type (.pub) → clean 4xx
         (415, ValidationError),  # unsupported media type → clean 4xx
+        (302, AuthError),  # session bounced to login → auth, NOT "unsupported file"
         (503, ServerError),  # transient upstream failure stays a (retriable) server error
         (429, RateLimitError),  # rate limit stays a rate-limit error
     ],
