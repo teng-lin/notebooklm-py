@@ -17,7 +17,7 @@ import pytest
 pytest.importorskip("fastmcp")
 
 from notebooklm.mcp._filelink import FileLinkSigner, FileTransferConfig  # noqa: E402
-from notebooklm.mcp._uploadwidget import _widget_domain  # noqa: E402
+from notebooklm.mcp._uploadwidget import _WIDGET_HTML, _widget_domain  # noqa: E402
 from notebooklm.mcp.server import create_server  # noqa: E402
 
 _BASE = "https://notebooklm-test.example"
@@ -34,6 +34,21 @@ def _server(config: FileTransferConfig | None):
 
 def _cfg() -> FileTransferConfig:
     return FileTransferConfig(signer=FileLinkSigner(b"k" * 32), base_url=_BASE)
+
+
+def test_widget_html_is_cross_host() -> None:
+    # Renders + acquires the tool result on both claude.ai/Grok (postMessage) and ChatGPT
+    # (window.openai.toolOutput), with the unconditional initialized handshake and a universal
+    # <input type=file> + direct POST to the upload_url.
+    for marker in (
+        'method:"ui/notifications/initialized"',  # claude.ai render gate
+        "window.openai",  # ChatGPT bridge
+        "oai.toolOutput",  # ChatGPT tool-result path
+        'addEventListener("message"',  # claude.ai/Grok tool-result path
+        'type="file"',  # universal picker
+        "?filename=",  # direct-PUT to /files/ul
+    ):
+        assert marker in _WIDGET_HTML, marker
 
 
 def test_widget_domain_is_sha256_of_endpoint() -> None:

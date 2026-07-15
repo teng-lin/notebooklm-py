@@ -52,8 +52,11 @@ def _widget_domain(base_url: str) -> str:
     return hashlib.sha256(endpoint.encode()).hexdigest()[:32] + ".claudemcpcontent.com"
 
 
-#: The widget: demo-proven claude.ai handshake + a file picker that POSTs bytes to the
-#: ``upload_url`` handed in via the tool result. Self-contained (no external assets).
+#: The widget: cross-host (claude.ai / ChatGPT / Grok / other MCP-Apps hosts) — reads the tool
+#: result from either the postMessage bridge (claude.ai/Grok) or ``window.openai.toolOutput``
+#: (ChatGPT), then a universal ``<input type=file>`` + direct-PUT of the bytes to ``upload_url``.
+#: Feature-detects ``window.openai.uploadFile`` (OpenAI native upload) for the interop signal.
+#: Self-contained (no external assets). "Build to the strict (claude.ai) target → renders everywhere."
 _WIDGET_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
@@ -78,26 +81,35 @@ _WIDGET_HTML = """<!doctype html>
  const sub=document.getElementById('sub'),out=document.getElementById('out');
  const log=m=>{out.textContent+=(out.textContent?"\\n":"")+m;size();};
  const post=m=>{try{window.parent.postMessage(m,"*")}catch(e){}};
+ const oai=window.openai;               // ChatGPT/Grok inject this; claude.ai does not
+ const hasNative=!!(oai&&typeof oai.uploadFile==="function");  // OpenAI native upload (interop signal)
  let initialized=false, uploadUrl=null;
- function ready(h){if(initialized)return;initialized=true;sub.textContent=(h||"host")+" · ready";
-   post({jsonrpc:"2.0",method:"ui/notifications/initialized",params:{}});}
+ function ready(h){if(initialized)return;initialized=true;
+   sub.textContent=(h||(oai?"ChatGPT":"host"))+" · ready"+(hasNative?" · native upload available":"");
+   post({jsonrpc:"2.0",method:"ui/notifications/initialized",params:{}});}  // claude.ai render gate
  post({jsonrpc:"2.0",id:1,method:"ui/initialize",params:{capabilities:{},protocolVersion:"2026-01-26",
    clientInfo:{name:"nlm-upload",version:"1"},appCapabilities:{availableDisplayModes:["inline"]}}});
- setTimeout(()=>ready(null),500);
+ setTimeout(()=>ready(oai?"ChatGPT":null),500);
  function size(){post({jsonrpc:"2.0",method:"ui/notifications/size-changed",
    params:{height:document.documentElement.scrollHeight,width:document.documentElement.scrollWidth}});}
- function consider(p){ // tool result carries {structuredContent:{upload_url,...}} or content[].text
+ function consider(p){ // tool result: {structuredContent:{upload_url}} | content[].text | raw obj (window.openai.toolOutput)
    let d=p&&p.structuredContent;
    if(!d&&p&&p.content)for(const c of p.content)if(c&&c.type==="text"){try{d=JSON.parse(c.text)}catch(e){}}
-   if(d&&d.upload_url){uploadUrl=d.upload_url;document.getElementById('f').disabled=false;
+   if(!d&&p&&p.upload_url)d=p;
+   if(d&&d.upload_url&&!uploadUrl){uploadUrl=d.upload_url;document.getElementById('f').disabled=false;
      sub.textContent="pick a file to add"+(d.notebook?" to "+d.notebook:"");}
  }
+ // claude.ai / Grok: tool result arrives via postMessage
  window.addEventListener("message",ev=>{let d=ev.data;if(d==null)return;
    if(typeof d==="string"){try{d=JSON.parse(d)}catch(e){return}}
    if(d.result&&!d.method){ready(d.result.hostInfo&&d.result.hostInfo.name);
      if(d.result.toolResult)consider(d.result.toolResult);return;}
    if(typeof d.method==="string"){if(d.method.includes("tool"))consider(d.params||{});
      else if(d.id!=null)post({jsonrpc:"2.0",id:d.id,result:{}});}});
+ // ChatGPT: tool result arrives on window.openai.toolOutput (set at/after load)
+ function pullOai(){if(oai&&oai.toolOutput)consider(oai.toolOutput);}
+ window.addEventListener("openai:set_globals",pullOai);
+ [100,600,1500].forEach(t=>setTimeout(pullOai,t));
  const fi=document.getElementById('f'),btn=document.getElementById('up');
  fi.addEventListener('change',()=>{btn.disabled=!(fi.files&&fi.files[0]);});
  btn.addEventListener('click',async()=>{
