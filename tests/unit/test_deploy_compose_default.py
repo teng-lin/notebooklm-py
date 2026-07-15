@@ -26,8 +26,11 @@ def test_deploy_compose_app_image_default_tag_is_resolvable() -> None:
     m = re.search(r"notebooklm-mcp\}:\$\{NOTEBOOKLM_MCP_VERSION:-([^}]+)\}", compose)
     assert m, "app image line not found / not in the expected ${NOTEBOOKLM_MCP_VERSION:-…} form"
     default = m.group(1)
-    # Must be a real tag: `latest`, or a PEP 440-ish version (0.8.0 / 0.8.0b2 / 1.2.3rc1).
-    assert default == "latest" or re.fullmatch(r"\d+\.\d+\.\d+([abc]|rc)?\d*", default), (
+    # Must be a real tag: `latest`, or a PEP 440-ish version — release segment plus optional
+    # pre-release (a/b/rc/c), post-release (.postN), and/or dev-release (.devN):
+    # 0.8.0 / 0.8.0b2 / 1.2.3rc1 / 1.2.3.post1 / 1.2.3.dev0.
+    version_re = r"\d+\.\d+(\.\d+)?((a|b|c|rc)\d+)?(\.post\d+)?(\.dev\d+)?"
+    assert default == "latest" or re.fullmatch(version_re, default), (
         f"deploy compose default tag {default!r} is not a resolvable tag "
         f"(expected 'latest' or a PEP 440 version) — a bare `docker compose up` would fail to pull"
     )
