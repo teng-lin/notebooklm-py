@@ -430,8 +430,10 @@ MCP-Apps hosts (e.g. claude.ai), so a mobile user can pick and upload **one or m
 10 per call) without leaving the chat. The tool returns a small pool of independent single-use
 tokens (`upload_urls`, one per file); the widget uploads each file to its own token via the same
 signed `/files/ul` route as the link flow — so multi-file needs no change to the route or the
-single-use invariant. Confirm an add with `await_upload(upload_url)` (`upload_url` is the first of
-the pool, kept for back-compat).
+single-use invariant. To confirm, call `await_upload` on the specific `upload_urls` entry for a
+file (`upload_url` is the first of the pool, kept for back-compat), or use `source_list` to verify
+the whole batch — for a multi-file add, don't rely on `upload_url` alone (the first file may be
+skipped while later ones land).
 
 **Opt-in and experimental** (off by default): MCP-Apps rendering is new (Jan 2026) and
 host-specific; the widget resolves host render gates (`_meta.ui.domain` computed from your public

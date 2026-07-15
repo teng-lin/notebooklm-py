@@ -134,9 +134,11 @@ _WIDGET_HTML = """<!doctype html>
    const cap=uploadUrls.length;  // one single-use token per file
    if(files.length>cap)log("⚠ per-batch limit "+cap+": only the first "+cap+" of "+files.length+" files will be added");
    const n=Math.min(files.length,cap);
-   btn.disabled=true; let ok=0, failed=0;
+   // FREEZE the selection: retry maps files[i]→uploadUrls[i] by index, so the file list must not
+   // change between clicks (a fresh batch = re-invoke the tool for a new token pool).
+   btn.disabled=true; fi.disabled=true; let ok=0, failed=0, skipped=0;
    for(let i=0;i<n;i++){ const file=files[i], tok=uploadUrls[i];
-     if(!tok){continue;}                                   // already added on a prior click (token consumed)
+     if(!tok){skipped++;log("• "+file.name+": already added");continue;} // token consumed on a prior click
      if(file.size>200*1024*1024){log("❌ "+file.name+": exceeds 200 MB — skipped");failed++;continue;} // mirrors MAX_UPLOAD_BYTES
      log("uploading "+file.name+" ("+file.size+" B)…");
      try{
@@ -148,8 +150,10 @@ _WIDGET_HTML = """<!doctype html>
        else failed++;                                    // non-2xx: token uncommitted → still valid for retry
      }catch(e){log("❌ "+file.name+": upload failed (CSP/CORS/network): "+e);failed++;} // transient → retryable
    }
-   sub.textContent="✅ "+ok+" added"+(failed?(" · "+failed+" to retry"):"")+" — you can close this and continue in chat";
-   if(failed)btn.disabled=false; else fi.disabled=true;  // leave Upload enabled to retry the failed files
+   sub.textContent = failed ? ("✅ "+ok+" added · "+failed+" to retry — fix and click Upload again")
+     : ok ? ("✅ "+ok+" added — you can close this and continue in chat")
+     : "nothing to upload — already added";           // all files were skipped (tokens consumed): no misleading "0 added"
+   btn.disabled = !failed;  // Upload stays enabled only when there's something to retry; fi stays frozen
  });
 </script></body></html>"""
 
@@ -195,8 +199,10 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
     async def source_add_widget(ctx: Context, notebook: str) -> dict[str, Any]:
         """Open an in-app file picker to add one or more files to a notebook (experimental mobile
         upload widget). Renders inline in MCP-Apps hosts (e.g. claude.ai); the user picks file(s)
-        and the widget uploads each directly. Call ``await_upload`` with a returned ``upload_url``
-        to confirm an add landed."""
+        and the widget uploads each to its own token in ``upload_urls``. To confirm, call
+        ``await_upload`` on a specific ``upload_urls`` entry (``upload_url`` is just the first), or
+        ``source_list`` to verify the whole batch — the first file may be skipped while later ones
+        land, so don't rely on ``upload_url`` alone for a multi-file add."""
         with mcp_errors():
             cfg = get_file_transfer(ctx)
             if cfg is None:
