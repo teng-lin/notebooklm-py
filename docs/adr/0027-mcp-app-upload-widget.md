@@ -55,5 +55,14 @@ tool-count / schema-char budgets) unless a deployment enables it.
 - Follow-ups (not in the first cut): a progress bar, the fallback ladder
   (`window.openai.uploadFile` → direct-PUT → link), and auto-wiring `await_upload` so the model
   confirms the add without a second prompt.
+- **Requires stateless HTTP.** An MCP-Apps host reads the `ui://` widget resource on a connection
+  without the chat `Mcp-Session-Id`; a stateful FastMCP server rejects that ("Missing session ID"
+  → "fail to fetch app content"). Enabling the widget therefore auto-enables
+  `FASTMCP_STATELESS_HTTP` (overridable). Stateless is safe here — every tool is request/response,
+  with no server-push/subscription state.
+- One host resource, the MCP-Apps standard mime `text/html;profile=mcp-app`, serves both claude.ai
+  and ChatGPT (a `text/html+skybridge` variant is unnecessary; OpenAI's SDK accepts the standard
+  mime). ChatGPT caches the template per conversation, so the first call in a new chat may not
+  render (call again) — a client-side quirk, not fixable server-side.
 - If a host changes its render requirements, the widget silently stops rendering; the signed-link
   flow (ADR-0024) is the durable fallback and stays the default.

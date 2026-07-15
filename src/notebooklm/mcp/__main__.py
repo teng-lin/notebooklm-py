@@ -246,11 +246,25 @@ def main(argv: list[str] | None = None) -> None:
         from starlette.middleware import Middleware
 
         from ._host_guard import LoopbackHostGuardMiddleware
+        from ._uploadwidget import _WIDGET_FLAG
+
+        # The MCP-App upload widget needs stateless HTTP: an MCP-Apps host (claude.ai) fetches the
+        # ui:// widget resource on a connection WITHOUT the chat Mcp-Session-Id, which a stateful
+        # server rejects as "Missing session ID" ("fail to fetch app content"). So enabling the
+        # widget implies stateless unless the operator set FASTMCP_STATELESS_HTTP explicitly.
+        stateless_http: bool | None = None  # None → FastMCP reads FASTMCP_STATELESS_HTTP
+        if "FASTMCP_STATELESS_HTTP" not in os.environ and os.environ.get(_WIDGET_FLAG) == "1":
+            stateless_http = True
+            logging.getLogger(__name__).info(
+                "%s=1 → enabling stateless HTTP (required for MCP-Apps widget rendering)",
+                _WIDGET_FLAG,
+            )
 
         server.run(
             transport="http",
             host=host,
             port=_resolve_port(args.port),
+            stateless_http=stateless_http,
             uvicorn_config={"proxy_headers": False},
             middleware=[Middleware(LoopbackHostGuardMiddleware, allow_external=allow_external)],
         )

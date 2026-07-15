@@ -121,6 +121,39 @@ def test_explicit_http_transport_binds_loopback(monkeypatch: pytest.MonkeyPatch)
     _assert_http_run(fake_server, host="127.0.0.1", port=8123, allow_external=False)
     # Loopback + no token → unauthenticated (today's local-dev behavior preserved).
     assert captured["auth"] is None
+    # No widget, no explicit override → let FastMCP read its own setting (default stateful).
+    assert fake_server.run.call_args.kwargs["stateless_http"] is None
+
+
+def _run_http(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    fake_server = MagicMock()
+    monkeypatch.setattr(entry, "create_server", lambda **_: fake_server)
+    monkeypatch.delenv("NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_MCP_TOKEN", raising=False)
+    entry.main(["--transport", "http", "--host", "127.0.0.1", "--port", "8123"])
+    return fake_server
+
+
+def test_upload_widget_auto_enables_stateless_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enabling the MCP-Apps upload widget implies stateless HTTP — the widget resource is read
+    on a session-less connection that a stateful server would reject ("fail to fetch app content")."""
+    monkeypatch.setenv("NOTEBOOKLM_MCP_UPLOAD_WIDGET", "1")
+    monkeypatch.delenv("FASTMCP_STATELESS_HTTP", raising=False)
+
+    fake_server = _run_http(monkeypatch)
+
+    assert fake_server.run.call_args.kwargs["stateless_http"] is True
+
+
+def test_explicit_stateless_env_overrides_widget_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An operator who set FASTMCP_STATELESS_HTTP explicitly keeps control — main() defers to
+    FastMCP's own setting (``stateless_http=None``) rather than forcing True."""
+    monkeypatch.setenv("NOTEBOOKLM_MCP_UPLOAD_WIDGET", "1")
+    monkeypatch.setenv("FASTMCP_STATELESS_HTTP", "false")
+
+    fake_server = _run_http(monkeypatch)
+
+    assert fake_server.run.call_args.kwargs["stateless_http"] is None
 
 
 def test_http_threads_profile_into_oauth_config(monkeypatch: pytest.MonkeyPatch) -> None:

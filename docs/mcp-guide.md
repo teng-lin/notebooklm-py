@@ -437,6 +437,13 @@ silently no-ops and the portable **signed-link flow stays the fallback** — not
 It stays off the default tool surface (and the ADR-0025 tool budgets) unless enabled. See
 [ADR-0027](adr/0027-mcp-app-upload-widget.md).
 
+Enabling the widget **auto-enables stateless HTTP** (`FASTMCP_STATELESS_HTTP`): an MCP-Apps host
+fetches the `ui://` widget resource on a connection *without* the chat session id, and a stateful
+server rejects that with "fail to fetch app content". Set `FASTMCP_STATELESS_HTTP` explicitly to
+override. Stateless is harmless for ordinary tool use (each request is self-contained). Note:
+ChatGPT caches the widget template per conversation, so the *first* `source_add_widget` call in a
+new chat may not render — call it again and it will (a ChatGPT-side quirk, not a server issue).
+
 ## Tool reference
 
 | Domain | Tools |
