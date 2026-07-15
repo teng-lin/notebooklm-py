@@ -160,6 +160,14 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
                 "resource_domains": [],
             }
         },
+        # ALSO carry claude.ai's ui.domain render gate + ui.csp: a newer claude.ai reads
+        # openai/outputTemplate and fetches THIS resource, and without ui.domain it fails with
+        # "fail to fetch app content". Belt-and-suspenders so either host renders either resource.
+        app=AppConfig(
+            domain=domain,
+            csp=ResourceCSP(connect_domains=[config.base_url.rstrip("/")]),
+            prefers_border=True,
+        ),
     )
     def _upload_widget_openai() -> str:
         return _WIDGET_HTML

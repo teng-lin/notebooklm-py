@@ -97,3 +97,5 @@ async def test_widget_registers_with_claudeai_render_gates(monkeypatch) -> None:
     oai = resources["ui://notebooklm/upload-openai-v1"]
     assert oai.mime_type == "text/html+skybridge"  # OpenAI Apps SDK mime
     assert (oai.meta or {}).get("openai/widgetCSP", {}).get("connect_domains") == [_BASE]
+    # ALSO the claude.ai gate — a newer claude.ai fetches this resource via openai/outputTemplate.
+    assert (oai.meta or {}).get("ui", {}).get("domain") == _widget_domain(_BASE)
