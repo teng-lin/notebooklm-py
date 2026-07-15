@@ -350,6 +350,7 @@ def create_app(
             set_active_profile(previous_profile)
             try:
                 from .routes.middleware import cleanup_old_logs
+
                 asyncio.ensure_future(asyncio.to_thread(cleanup_old_logs))
             except Exception:
                 pass
@@ -369,11 +370,13 @@ def create_app(
 
     try:
         from .database import init_db as _init_server_db
+
         _init_server_db()
     except Exception as exc:
         logger.warning("Failed to initialize database: %s", exc)
 
     from .routes.middleware import RequestLogMiddleware
+
     app.add_middleware(RequestLogMiddleware)
 
     @app.middleware("http")
@@ -443,14 +446,23 @@ def create_app(
 
     try:
         from .routes import auth as auth_routes
+
         app.include_router(auth_routes.router)
     except Exception as exc:
         logger.warning("Failed to register auth routes: %s", exc)
 
     try:
         from .routes import external_kb as external_kb_routes
+
         app.include_router(external_kb_routes.router)
     except Exception as exc:
         logger.warning("Failed to register external KB routes: %s", exc)
+
+    try:
+        from .routes import generation as generation_routes
+
+        app.include_router(generation_routes.router)
+    except Exception as exc:
+        logger.warning("Failed to register generation routes: %s", exc)
 
     return app

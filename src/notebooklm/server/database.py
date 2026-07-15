@@ -24,17 +24,27 @@ class Base(DeclarativeBase):
     pass
 
 
+def _resolve_db_url(db_url: str | None) -> str:
+    if db_url is not None:
+        return db_url
+    return os.environ.get(
+        "NOTEBOOKLM_DATABASE_URL",
+        f"sqlite:///{DEFAULT_DB_PATH}",
+    )
+
+
 def get_db_path() -> str:
-    if NOTEBOOKLM_DB_URL.startswith("sqlite:///"):
-        return NOTEBOOKLM_DB_URL[len("sqlite:///"):]
-    return NOTEBOOKLM_DB_URL
+    url = _resolve_db_url(None)
+    if url.startswith("sqlite:///"):
+        return url[len("sqlite:///") :]
+    return url
 
 
 def init_db(db_url: str | None = None) -> None:
     global engine, SessionLocal
-    url = db_url or NOTEBOOKLM_DB_URL
+    url = _resolve_db_url(db_url)
     if url.startswith("sqlite"):
-        db_path = url[len("sqlite:///"):]
+        db_path = url[len("sqlite:///") :]
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     connect_args = {}
     if url.startswith("sqlite"):
@@ -42,6 +52,7 @@ def init_db(db_url: str | None = None) -> None:
     engine = create_engine(url, echo=False, future=True, connect_args=connect_args)
     SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
     from . import models  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
     logger.info("Database initialized at %s", url)
 

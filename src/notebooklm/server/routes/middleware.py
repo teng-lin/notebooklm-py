@@ -6,7 +6,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import Request, Response
+from fastapi import Request
+from fastapi.responses import Response
 from jose import JWTError, jwt
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
@@ -31,7 +32,7 @@ def _extract_user_id(request: Request) -> int | None:
     auth_header = request.headers.get("authorization", "")
     if not auth_header.startswith("Bearer "):
         return None
-    token = auth_header[len("Bearer "):].strip()
+    token = auth_header[len("Bearer ") :].strip()
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return int(payload.get("sub", 0)) or None
@@ -66,6 +67,12 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             async for chunk in response.body_iterator:
                 chunks.append(chunk)
             response_body_bytes = b"".join(chunks)
+            response = Response(
+                content=response_body_bytes,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.media_type,
+            )
 
         try:
             db = get_session()
@@ -92,12 +99,11 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
 
 async def cleanup_old_logs() -> int:
     from datetime import datetime, timedelta
+
     try:
         db = get_session()
         cutoff = datetime.utcnow() - timedelta(days=CLEANUP_LOG_DAYS)
-        deleted = db.query(RequestLogModel).filter(
-            RequestLogModel.created_at < cutoff
-        ).delete()
+        deleted = db.query(RequestLogModel).filter(RequestLogModel.created_at < cutoff).delete()
         db.commit()
         return deleted
     except Exception as exc:
