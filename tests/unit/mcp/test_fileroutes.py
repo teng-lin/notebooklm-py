@@ -696,6 +696,9 @@ def test_upload_post_streams_past_cap_413_midstream_and_cleans_up(
     with starlette_testclient.TestClient(app) as client:
         resp = client.post(_path(url), content=body())
     assert resp.status_code == 413
+    # The cross-origin widget must be able to READ the failure status (not a generic
+    # "Failed to fetch") to show a useful message — so error responses carry ACAO too.
+    assert resp.headers["access-control-allow-origin"] == "*"
     add_file.assert_not_awaited()
     assert cleaned, "temp dir must be removed on a mid-stream abort"
 

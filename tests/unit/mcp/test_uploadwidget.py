@@ -78,6 +78,10 @@ async def test_widget_registers_with_claudeai_render_gates(monkeypatch) -> None:
 
     tools = {t.name: t for t in await mcp._list_tools()}
     assert "source_add_widget" in tools
+    # NOT read-only: it mints an upload_url that adds a source (mutation). A readOnlyHint would let
+    # hosts auto-invoke it without the consent capability-creation warrants.
+    ann = tools["source_add_widget"].annotations
+    assert ann is None or not getattr(ann, "readOnlyHint", False)
     meta = tools["source_add_widget"].meta or {}
     # BOTH the flat key (what claude.ai reads) and the spec-nested form.
     assert meta.get("ui/resourceUri") == _WIDGET_URI

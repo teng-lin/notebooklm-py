@@ -513,7 +513,9 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
             global _inflight_uploads
             if _inflight_uploads >= _MAX_CONCURRENT_UPLOADS:
                 return PlainTextResponse(
-                    "Too many concurrent uploads in progress; retry shortly.", status_code=429
+                    "Too many concurrent uploads in progress; retry shortly.",
+                    status_code=429,
+                    headers=_CORS_ORIGIN,  # let the cross-origin widget read the status to retry
                 )
             _inflight_uploads += 1
             try:
@@ -540,7 +542,11 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     return PlainTextResponse(
                         "Upload could not be stored (server storage error).",
                         status_code=500,
-                        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                        headers={
+                            "Cache-Control": "no-store",
+                            "Referrer-Policy": "no-referrer",
+                            **_CORS_ORIGIN,
+                        },
                     )
                 temp_path = os.path.join(temp_dir, filename)
                 try:
@@ -553,7 +559,9 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                             total += len(chunk)
                             if total > MAX_UPLOAD_BYTES:
                                 return PlainTextResponse(
-                                    "Upload exceeds the size limit.", status_code=413
+                                    "Upload exceeds the size limit.",
+                                    status_code=413,
+                                    headers=_CORS_ORIGIN,  # cross-origin widget reads the status
                                 )
                             out.write(chunk)
                     plan = add_core.build_source_add_plan(
@@ -622,7 +630,11 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     return PlainTextResponse(
                         f"Upload rejected: {redact(str(exc))}",
                         status_code=400,
-                        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                        headers={
+                            "Cache-Control": "no-store",
+                            "Referrer-Policy": "no-referrer",
+                            **_CORS_ORIGIN,
+                        },
                     )
                 except NotebookLMError as exc:
                     # An upstream auth/server/rate-limit error from execute_source_add
@@ -637,7 +649,11 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 except OSError:
                     # A bad filename / fs error (e.g. a name that survives sanitization
                     # but the fs rejects) is a clean 400, not a bare 500.
-                    return PlainTextResponse("Upload could not be processed.", status_code=400)
+                    return PlainTextResponse(
+                        "Upload could not be processed.",
+                        status_code=400,
+                        headers=_CORS_ORIGIN,  # cross-origin widget reads the status
+                    )
                 finally:
                     # Always remove the temp dir — on success (bytes already uploaded), a
                     # rejection, an fs error, or a mid-stream client disconnect.

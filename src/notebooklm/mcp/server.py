@@ -156,7 +156,7 @@ def create_server(
         from ._fileroutes import register_file_routes
 
         register_file_routes(mcp, file_transfer)
-    # Dev-only in-app upload widget (Phase 3 experiment). No-op unless NOTEBOOKLM_MCP_DEV_UI=1,
+    # Dev-only in-app upload widget (Phase 3 experiment). No-op unless NOTEBOOKLM_MCP_UPLOAD_WIDGET=1,
     # so it never enters the prod manifest. Lazy import keeps the fastmcp.apps dependency off the
     # default path.
     from ._uploadwidget import register_upload_widget

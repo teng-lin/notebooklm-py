@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING, Any
 from fastmcp import Context
 from fastmcp.apps import AppConfig, ResourceCSP
 
-from ._confirm import READ_ONLY
 from ._context import get_client, get_file_transfer
 from ._errors import mcp_errors
 from ._resolve import resolve_notebook
@@ -114,6 +113,7 @@ _WIDGET_HTML = """<!doctype html>
  fi.addEventListener('change',()=>{btn.disabled=!(fi.files&&fi.files[0]);});
  btn.addEventListener('click',async()=>{
    const file=fi.files&&fi.files[0]; if(!file||!uploadUrl){log("no file or no upload url yet");return;}
+   if(file.size>200*1024*1024){log("❌ file exceeds the 200 MB limit — pick a smaller file");return;} // mirrors server MAX_UPLOAD_BYTES
    btn.disabled=true;log("uploading "+file.name+" ("+file.size+" B)…");
    try{
      const res=await fetch(uploadUrl+"?filename="+encodeURIComponent(file.name),
@@ -121,7 +121,8 @@ _WIDGET_HTML = """<!doctype html>
      const text=await res.text();
      log("["+res.status+"] "+text.slice(0,200));
      if(res.ok)sub.textContent="✅ added — you can close this and continue in chat";
-   }catch(e){log("❌ upload failed (CSP/CORS/network): "+e);}
+     else btn.disabled=false; // non-2xx: token uncommitted → link stays retryable, let them click again
+   }catch(e){log("❌ upload failed (CSP/CORS/network): "+e);btn.disabled=false;} // transient failure → retryable
  });
 </script></body></html>"""
 
@@ -156,7 +157,9 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
         return _WIDGET_HTML
 
     @mcp.tool(
-        annotations=READ_ONLY,
+        # NOT read-only: it mints an upload_url that the /files/ul route accepts to ADD a source
+        # (capability creation). A readOnlyHint would let hosts auto-invoke it without the consent
+        # a mutation warrants — leave it unannotated.
         # claude.ai reads ui/resourceUri (flat) + ui.resourceUri (nested via app=); ChatGPT reads
         # openai/outputTemplate. All three point at the ONE mcp-app resource → renders on both.
         meta={"ui/resourceUri": _WIDGET_URI, "openai/outputTemplate": _WIDGET_URI},
