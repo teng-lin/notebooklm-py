@@ -31,6 +31,7 @@ dependencies = [
     "click>=8.0.0,<9",
     "rich>=13.0.0,<16",
     "filelock>=3.13,<4",
+    "python-docx>=1.2.0",
 ]
 
 [project.urls]
@@ -69,6 +70,10 @@ server = [
     "fastapi>=0.118,<1",
     "uvicorn[standard]>=0.34,<1",
     "python-multipart>=0.0.20,<1",
+    "sqlalchemy>=2.0.0,<3",
+    "passlib[bcrypt]>=1.7.4,<2",
+    "python-jose[cryptography]>=3.3.0,<4",
+    "cryptography>=41.0.0,<44",
 ]
 dev = [
     "pytest>=8.0.0,<10",
