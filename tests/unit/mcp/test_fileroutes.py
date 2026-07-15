@@ -561,6 +561,38 @@ def test_upload_failed_add_records_no_completion_result(monkeypatch, mock_client
     assert config.jti_store.completed(jti) is None
 
 
+def test_upload_upstream_rejection_surfaces_clean_redacted_4xx(mock_client, config) -> None:
+    # Regression (#1892): an unsupported file type (.pub) is rejected upstream with an
+    # HTTP 400 inside add_file → start_resumable_upload. The client layer now classifies
+    # that as a ValidationError (not a raw httpx.HTTPStatusError), so the route returns a
+    # clean, redacted 4xx — NOT an opaque 500. The message is scrubbed and the response
+    # still carries the ACAO header so the cross-origin widget can read the real error.
+    from notebooklm.exceptions import ValidationError
+
+    mock_client.sources.add_file = AsyncMock(
+        side_effect=ValidationError(
+            "NotebookLM rejected the upload of 'x.pub' (HTTP 400: Bad Request). "
+            "The file type or content may be unsupported. f.sid=SUPERSECRETVALUE12345"
+        )
+    )
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        resp = client.post(
+            _path(url) + "?filename=x.pub",
+            content=b"PUBDATA",
+            headers={"Origin": "https://example.test"},
+        )
+    assert resp.status_code == 400  # a clean 4xx, not a 500
+    assert "SUPERSECRETVALUE12345" not in resp.text  # secret scrubbed by redact()
+    # The load-bearing assertion: without ACAO the browser blocks the cross-origin
+    # response as a CORS failure and the widget shows only "TypeError: Failed to
+    # fetch". With it, the user sees the real, readable reason in the body.
+    assert resp.headers["access-control-allow-origin"] == "*"
+    assert "unsupported" in resp.text.lower()
+    assert resp.headers["cache-control"] == "no-store"
+
+
 def test_upload_post_filename_is_sanitized_to_basename(mock_client, config) -> None:
     add_file = AsyncMock(return_value=MagicMock(id="src-1"))
     mock_client.sources.add_file = add_file

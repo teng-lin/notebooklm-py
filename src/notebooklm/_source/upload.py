@@ -53,8 +53,12 @@ from ._upload_decode import (  # noqa: F401
     _SOURCE_ID_ENVELOPE_MAX_DEPTH,
     _SOURCE_ID_FIELD_NAMES,
     _SOURCE_ID_UUID_PATTERN,
+    _SOURCE_LIMIT_HINT_FLOOR,
     _SOURCE_NAME_FIELD_NAMES,
     _STRICT_TRANSIENT_ERROR_TYPES,
+    _TIER_SOURCE_LIMITS_SUMMARY,
+    GetSourceLimit,
+    _build_invalid_argument_source_limit_hint,
     _coerce_filename_candidate,
     _coerce_source_id_candidate,
     _default_port_for_scheme,
@@ -75,6 +79,7 @@ from ._upload_decode import (  # noqa: F401
     _unwrap_singleton_envelope,
     _validate_resumable_upload_url,
     _validate_upload_file_supported,
+    raise_for_upload_status,
 )
 from .listing import SourceLister
 from .polling import SourcePoller
@@ -127,67 +132,10 @@ class RpcCallback(Protocol):
     ) -> Any: ...
 
 
-GetSourceLimit = Callable[[], Awaitable[int | None]]
-
-
 _INVALID_ARGUMENT_RPC_CODE = 3
-_SOURCE_LIMIT_HINT_FLOOR = 50
-_TIER_SOURCE_LIMITS_SUMMARY = "50/100/300/600"
 # Preserve the historical ``notebooklm._sources`` log channel after moving
 # upload choreography into this module.
 module_logger = logging.getLogger("notebooklm").getChild("_sources")
-
-
-async def _build_invalid_argument_source_limit_hint(
-    *,
-    source_count: int | None,
-    get_source_limit: GetSourceLimit | None,
-    logger: Any,
-) -> str:
-    """Build a best-effort hint for ADD_SOURCE_FILE status code 3 failures."""
-    source_limit: int | None = None
-    if get_source_limit is not None:
-        try:
-            source_limit = await get_source_limit()
-        except Exception:  # noqa: BLE001 - hint lookup must not mask the upload error.
-            logger.debug(
-                "register_file_source: source-limit lookup failed; continuing without limit hint",
-                exc_info=True,
-            )
-
-    if source_limit is not None and source_limit <= 0:
-        source_limit = None
-
-    if source_count is not None and source_limit is not None:
-        if source_count >= source_limit:
-            return (
-                f" Notebook currently has {source_count}/{source_limit} sources, "
-                "so this likely means the notebook has reached its tier-specific "
-                "per-notebook source limit. Delete sources or try a fresh notebook, "
-                "then retry."
-            )
-        return (
-            f" Notebook currently has {source_count}/{source_limit} sources, below "
-            "the advertised account limit. If the file is valid, try the same add "
-            "in a fresh notebook to distinguish file rejection from notebook state."
-        )
-
-    if source_count is not None and source_count >= _SOURCE_LIMIT_HINT_FLOOR:
-        return (
-            f" Notebook currently has {source_count} sources; status code 3 can "
-            "indicate the notebook is at or near the tier-specific per-notebook "
-            f"source limit ({_TIER_SOURCE_LIMITS_SUMMARY}). Delete sources or "
-            "try a fresh notebook, then retry."
-        )
-
-    if source_limit is not None:
-        return (
-            f" Advertised source limit for this tier is {source_limit}; compare "
-            "it with this notebook's source count. Status code 3 can indicate a "
-            "per-notebook source-limit rejection."
-        )
-
-    return ""
 
 
 class AsyncClientFactory(Protocol):
@@ -812,7 +760,9 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 headers=request.headers,
                 content=request.body,
             )
-            response.raise_for_status()
+            # Classify a rejection (e.g. an unsupported ``.pub`` → HTTP 400) instead of
+            # leaking a raw ``httpx.HTTPStatusError`` to callers (#1892).
+            raise_for_upload_status(response, filename)
 
             upload_url = response.headers.get("x-goog-upload-url")
             if not upload_url:
@@ -913,7 +863,9 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                         response = await client.post(
                             upload_url, headers=headers, content=file_stream()
                         )
-                    response.raise_for_status()
+                    # The finalize POST can also be rejected upstream (propagates via
+                    # ``asyncio.shield`` below); classify it too (#1892).
+                    raise_for_upload_status(response, diag_name)
 
             def _on_finalize_done(t: asyncio.Task[None]) -> None:
                 if path_fallback is None:
