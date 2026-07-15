@@ -76,12 +76,21 @@ bounded content reads) proceed independently of this decision.
 
 ## Update (2026-07, #1890): fold the source-add composites back into `source_add`
 
+> The **35/40** figures in the Context/Consequences above are **historical** —
+> the surface as of this ADR's original authoring. Intervening additions (the
+> sharing domain, `suggest_prompts`, `source_add_drive_file`, `source_upload_bytes`,
+> `source_add_and_wait`, `await_upload`) took it to **36**; this update brings the
+> **current** surface to **34**.
+
+
 Two source tools shipped as **discrete verbs** over the composite-vs-mega-tool
 tension: `source_add_and_wait` (single-mode add + `source_wait` in one call) and
-`source_upload_bytes` (in-channel base64 file-add). Both are just alternative *input
-modes / follow-ups* of a `source_add` that already ran — not distinct operations — and
-`source_add_drive_file` already carried a `wait: bool`, making a separate wait-*verb*
-an inconsistency. They were folded back into `source_add`:
+`source_upload_bytes` (in-channel base64 file-add). Neither is a distinct operation —
+each is just a facet of adding a source: `source_upload_bytes` is a *file input mode*
+(bytes instead of a path, decoded before the add runs), and `source_add_and_wait` is a
+*same-call composition* of an add with the follow-on `source_wait` poll. On top of that,
+`source_add_drive_file` already carried a `wait: bool`, making a separate wait-*verb* an
+inconsistency. They were folded back into `source_add`:
 
 - **add + wait** → `source_add(..., wait=True, timeout=…, interval=…)` — returns the
   `source_wait` aggregate + top-level `source_id`; single-source only, not for a remote

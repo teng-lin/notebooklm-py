@@ -71,7 +71,7 @@ class FakeSource:
 
 @dataclass
 class FakeReadyPdf:
-    """A READY pdf ``Source`` for the ``source_upload_bytes`` happy path — carries the
+    """A READY pdf ``Source`` for the ``source_add(bytes_base64=…)`` happy path — carries the
     ``kind`` / ``status`` / ``is_error`` properties ``_source_view`` reads (the plain
     ``FakeSource`` above lacks them, so it can't flow through ``_add_result_payload``)."""
 
