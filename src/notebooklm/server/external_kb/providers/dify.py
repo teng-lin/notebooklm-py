@@ -111,9 +111,7 @@ class DifyConnector(ExternalKBConnector):
             for doc in items
         ]
 
-    async def import_document(
-        self, document_id: str, target_notebook_id: str
-    ) -> ImportResult:
+    async def import_document(self, document_id: str, target_notebook_id: str) -> ImportResult:
         try:
             resp = await self._get(f"/datasets/{document_id}/documents")
             doc_name = "unknown"

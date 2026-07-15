@@ -314,5 +314,15 @@ Index("idx_ext_kb_docs_coll", ExternalKBDocument.collection_id)
 Index("idx_ext_kb_docs_conn", ExternalKBDocument.connection_id)
 Index("idx_ext_imports_user", ExternalImport.user_id)
 Index("idx_ext_imports_notebook", ExternalImport.target_notebook_id)
-Index("idx_ext_kb_coll_unique", ExternalKBCollection.connection_id, ExternalKBCollection.remote_id, unique=True)
-Index("idx_ext_kb_docs_unique", ExternalKBDocument.collection_id, ExternalKBDocument.remote_id, unique=True)
+Index(
+    "idx_ext_kb_coll_unique",
+    ExternalKBCollection.connection_id,
+    ExternalKBCollection.remote_id,
+    unique=True,
+)
+Index(
+    "idx_ext_kb_docs_unique",
+    ExternalKBDocument.collection_id,
+    ExternalKBDocument.remote_id,
+    unique=True,
+)

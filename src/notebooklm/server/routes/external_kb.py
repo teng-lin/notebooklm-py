@@ -165,6 +165,7 @@ def test_connection(
     }
     try:
         import asyncio
+
         instance = ConnectorRegistry.create(conn.provider_type, config)
         loop = asyncio.new_event_loop()
         try:
@@ -293,13 +294,16 @@ def import_document(
         "auth_credentials": _decrypt_credentials(conn.auth_credentials),
     }
     import asyncio
+
     instance = ConnectorRegistry.create(conn.provider_type, config)
     instance._current_user_id = user.id
     instance._connection_id = conn.id
 
     loop = asyncio.new_event_loop()
     try:
-        import_result = loop.run_until_complete(instance.import_document(document_id, target_notebook_id))
+        import_result = loop.run_until_complete(
+            instance.import_document(document_id, target_notebook_id)
+        )
     finally:
         loop.close()
 

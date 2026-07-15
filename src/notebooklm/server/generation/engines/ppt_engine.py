@@ -37,17 +37,21 @@ class PptGenerator(ContentGenerator):
         for t in self._templates:
             if t["name"] == name:
                 return dict(t)
-        return dict(self._templates[0]) if self._templates else {
-            "name": "default",
-            "slide_width": 13.333,
-            "slide_height": 7.5,
-            "background_color": "#FFFFFF",
-            "font_family": "Microsoft YaHei",
-            "title_color": "#333333",
-            "body_color": "#666666",
-            "accent_color": "#1E90FF",
-            "layouts": [],
-        }
+        return (
+            dict(self._templates[0])
+            if self._templates
+            else {
+                "name": "default",
+                "slide_width": 13.333,
+                "slide_height": 7.5,
+                "background_color": "#FFFFFF",
+                "font_family": "Microsoft YaHei",
+                "title_color": "#333333",
+                "body_color": "#666666",
+                "accent_color": "#1E90FF",
+                "layouts": [],
+            }
+        )
 
     def _build_slides(self, prs: Presentation, template: dict, slides_data: list[dict]) -> None:
         bg_color = template.get("background_color", "#FFFFFF")
@@ -140,9 +144,25 @@ class PptGenerator(ContentGenerator):
         if not slides_data:
             slides_data = [
                 {"title": title, "items": [prompt], "layout": "title_slide"},
-                {"title": "\u5185\u5bb9\u6982\u8ff0", "items": ["\u8981\u70b9 1", "\u8981\u70b9 2", "\u8981\u70b9 3"], "layout": "section_header"},
-                {"title": "\u8be6\u7ec6\u5185\u5bb9", "items": ["\u8be6\u7ec6\u8bf4\u660e\u7b2c\u4e00\u70b9", "\u8be6\u7ec6\u8bf4\u660e\u7b2c\u4e8c\u70b9", "\u8be6\u7ec6\u8bf4\u660e\u7b2c\u4e09\u70b9"], "layout": "content"},
-                {"title": "\u603b\u7ed3", "items": ["\u5173\u952e\u7ed3\u8bba", "\u4e0b\u4e00\u6b65\u884c\u52a8"], "layout": "content"},
+                {
+                    "title": "\u5185\u5bb9\u6982\u8ff0",
+                    "items": ["\u8981\u70b9 1", "\u8981\u70b9 2", "\u8981\u70b9 3"],
+                    "layout": "section_header",
+                },
+                {
+                    "title": "\u8be6\u7ec6\u5185\u5bb9",
+                    "items": [
+                        "\u8be6\u7ec6\u8bf4\u660e\u7b2c\u4e00\u70b9",
+                        "\u8be6\u7ec6\u8bf4\u660e\u7b2c\u4e8c\u70b9",
+                        "\u8be6\u7ec6\u8bf4\u660e\u7b2c\u4e09\u70b9",
+                    ],
+                    "layout": "content",
+                },
+                {
+                    "title": "\u603b\u7ed3",
+                    "items": ["\u5173\u952e\u7ed3\u8bba", "\u4e0b\u4e00\u6b65\u884c\u52a8"],
+                    "layout": "content",
+                },
             ]
 
         prs = Presentation()
@@ -196,8 +216,16 @@ class PptGenerator(ContentGenerator):
     async def get_supported_templates(self) -> list[TemplateInfo]:
         if not self._templates:
             return [
-                TemplateInfo(name="classic", label="\u7ecf\u5178", description="\u7ecf\u5178\u767d\u5e95\u9ed1\u5b57\u7b80\u7ea6\u6a21\u677f"),
-                TemplateInfo(name="modern", label="\u73b0\u4ee3", description="\u84dd\u767d\u914d\u8272\u73b0\u4ee3\u98ce\u683c\u6a21\u677f"),
+                TemplateInfo(
+                    name="classic",
+                    label="\u7ecf\u5178",
+                    description="\u7ecf\u5178\u767d\u5e95\u9ed1\u5b57\u7b80\u7ea6\u6a21\u677f",
+                ),
+                TemplateInfo(
+                    name="modern",
+                    label="\u73b0\u4ee3",
+                    description="\u84dd\u767d\u914d\u8272\u73b0\u4ee3\u98ce\u683c\u6a21\u677f",
+                ),
             ]
         return [
             TemplateInfo(

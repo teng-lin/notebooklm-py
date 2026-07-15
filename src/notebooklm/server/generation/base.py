@@ -37,11 +37,9 @@ class GeneratedContent:
 
 
 class ContentGenerator(ABC):
-
     @property
     @abstractmethod
-    def content_type(self) -> str:
-        ...
+    def content_type(self) -> str: ...
 
     @abstractmethod
     async def generate(
@@ -50,8 +48,7 @@ class ContentGenerator(ABC):
         prompt: str,
         template: str | None = None,
         options: dict | None = None,
-    ) -> GeneratedContent:
-        ...
+    ) -> GeneratedContent: ...
 
     @abstractmethod
     async def preview(
@@ -59,9 +56,7 @@ class ContentGenerator(ABC):
         notebook_id: str,
         prompt: str,
         template: str | None = None,
-    ) -> PreviewResult:
-        ...
+    ) -> PreviewResult: ...
 
     @abstractmethod
-    async def get_supported_templates(self) -> list[TemplateInfo]:
-        ...
+    async def get_supported_templates(self) -> list[TemplateInfo]: ...

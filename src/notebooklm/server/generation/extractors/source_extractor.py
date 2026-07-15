@@ -14,7 +14,6 @@ class ExtractedContent:
 
 
 class SourceExtractor:
-
     @staticmethod
     async def extract_from_text(text: str, title: str = "") -> ExtractedContent:
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]

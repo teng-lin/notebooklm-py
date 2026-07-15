@@ -130,9 +130,7 @@ class OpenApiConnector(ExternalKBConnector):
             for item in data
         ]
 
-    async def import_document(
-        self, document_id: str, target_notebook_id: str
-    ) -> ImportResult:
+    async def import_document(self, document_id: str, target_notebook_id: str) -> ImportResult:
         try:
             doc = await self.get_document_detail(document_id)
             download_data = await self._request("GET", f"documents/{document_id}/download")

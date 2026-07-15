@@ -119,6 +119,7 @@ def google_bind(
     db: Session = Depends(_get_session),
 ):
     from cryptography.fernet import Fernet
+
     key = _get_fernet_key()
     cipher = Fernet(key)
     encrypted = cipher.encrypt(body.google_token.encode())

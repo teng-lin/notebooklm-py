@@ -206,6 +206,7 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.init_db:
         from .database import init_db as _init_db
+
         _init_db()
         print("Database initialized successfully.")
         return

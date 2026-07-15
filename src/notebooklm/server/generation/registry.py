@@ -10,7 +10,6 @@ _GENERATORS: dict[str, type[ContentGenerator]] = {}
 
 
 class GeneratorRegistry:
-
     @staticmethod
     def register(content_type: str, generator_class: type[ContentGenerator]) -> None:
         _GENERATORS[content_type] = generator_class

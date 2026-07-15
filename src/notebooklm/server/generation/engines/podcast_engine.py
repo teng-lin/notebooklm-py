@@ -49,7 +49,9 @@ class PodcastGenerator(ContentGenerator):
         metadata_filename = f"podcast_{uuid.uuid4().hex[:8]}.json"
         metadata_path = user_dir / metadata_filename
         metadata_path.write_text(
-            json.dumps({"transcript": transcript, "duration": duration, "title": title}, ensure_ascii=False),
+            json.dumps(
+                {"transcript": transcript, "duration": duration, "title": title}, ensure_ascii=False
+            ),
             encoding="utf-8",
         )
 
@@ -65,10 +67,12 @@ class PodcastGenerator(ContentGenerator):
                 "audio_file_path": str(audio_path),
                 "duration_seconds": duration,
                 "audio_transcript": transcript,
-                "audio_speakers": json.dumps([
-                    {"name": "Host", "voice": "en-US-Standard-A"},
-                    {"name": "Guest", "voice": "en-US-Standard-B"},
-                ]),
+                "audio_speakers": json.dumps(
+                    [
+                        {"name": "Host", "voice": "en-US-Standard-A"},
+                        {"name": "Guest", "voice": "en-US-Standard-B"},
+                    ]
+                ),
             },
         )
 
@@ -80,7 +84,11 @@ class PodcastGenerator(ContentGenerator):
     ) -> PreviewResult:
         return PreviewResult(
             content_type="podcast",
-            outline=[{"title": "Host introduction"}, {"title": "Discussion"}, {"title": "Conclusion"}],
+            outline=[
+                {"title": "Host introduction"},
+                {"title": "Discussion"},
+                {"title": "Conclusion"},
+            ],
             estimated_duration_seconds=180,
         )
 
