@@ -94,8 +94,11 @@ _WIDGET_HTML = """<!doctype html>
  function consider(p){ // tool result: {structuredContent:{upload_url}} | {toolResult:…} | content[].text | raw obj
    if(!p)return; if(p.toolResult)p=p.toolResult; // unwrap the ui/notifications/tool-result envelope
    let d=p.structuredContent;
-   if(!d&&Array.isArray(p.content))for(const c of p.content)if(c&&c.type==="text"){try{d=JSON.parse(c.text)}catch(e){}}
-   if(!d&&p.upload_url)d=p;
+   // Gate fallbacks on upload_url, not truthiness: a structuredContent without upload_url must not
+   // block the content[]/raw fallbacks, and a later text fragment must not overwrite a good result.
+   if(!d?.upload_url&&Array.isArray(p.content))for(const c of p.content)if(c&&c.type==="text"){
+     try{const parsed=JSON.parse(c.text);if(parsed?.upload_url)d=parsed}catch(e){}}
+   if(!d?.upload_url&&p.upload_url)d=p;
    if(d&&d.upload_url&&!uploadUrl){uploadUrl=d.upload_url;document.getElementById('f').disabled=false;
      sub.textContent="pick a file to add"+(d.notebook?" to "+d.notebook:"");}
  }
