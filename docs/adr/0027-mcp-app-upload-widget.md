@@ -58,8 +58,25 @@ tool-count / schema-char budgets) unless a deployment enables it.
 - **Requires stateless HTTP.** An MCP-Apps host reads the `ui://` widget resource on a connection
   without the chat `Mcp-Session-Id`; a stateful FastMCP server rejects that ("Missing session ID"
   → "fail to fetch app content"). Enabling the widget therefore auto-enables
-  `FASTMCP_STATELESS_HTTP` (overridable). Stateless is safe here — every tool is request/response,
-  with no server-push/subscription state.
+  `FASTMCP_STATELESS_HTTP` (overridable). Stateless is safe for the **single-process** connector —
+  every tool is request/response — but two consequences are worth recording:
+  - **Single-process invariant (the real constraint — not stateless per se).** `await_upload`
+    reads an in-process completion map that the *session-less* `/files/ul` POST writes, and
+    `ConsumedJtiStore` (the single-use/replay guard) is likewise per-process. Because the file
+    routes carry no session id, a load balancer can't co-locate the POST and the poll even in
+    *stateful* mode — the hazard is **>1 replica**, which stateless only makes tempting. Under
+    multi-replica: (a) `await_upload` false-negatives — the upload still lands, and `source_list`
+    (an RPC to Google, works on any replica) is the source-of-truth backstop, so **no data loss**;
+    (b) the single-use guard degrades to per-replica, so a leaked token is replayable ~once per
+    replica within its TTL (low harm: a duplicate source, or re-downloading an artifact the
+    URL-holder could already fetch). To scale out, back both stores with a shared store (e.g.
+    Redis) or pin `/files/*` + `await_upload` to one replica.
+  - **Forecloses server→client MCP features.** Stateless rules out sampling, elicitation, and
+    subscriptions / out-of-band notifications (single-request progress notifications still work).
+    Each is already covered otherwise — NotebookLM answers with its own grounded model, not the
+    client's (no sampling); consent is the `confirm=` two-call pattern (no elicitation) — so the
+    only genuine ceiling is **no push-on-generation-complete**: long-running studio work stays on
+    the `studio_status` poll.
 - **Multi-file via a token pool.** `source_add_widget` mints a small fixed pool of independent
   single-use tokens (`upload_urls`, one per file, cap 10) and the widget uploads file[i] to
   token[i]. This keeps multi-file entirely on the existing single-use `/files/ul` route with no
