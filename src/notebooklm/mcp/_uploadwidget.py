@@ -94,7 +94,7 @@ _WIDGET_HTML = """<!doctype html>
  function consider(p){ // tool result: {structuredContent:{upload_url}} | {toolResult:…} | content[].text | raw obj
    if(!p)return; if(p.toolResult)p=p.toolResult; // unwrap the ui/notifications/tool-result envelope
    let d=p.structuredContent;
-   if(!d&&p.content)for(const c of p.content)if(c&&c.type==="text"){try{d=JSON.parse(c.text)}catch(e){}}
+   if(!d&&Array.isArray(p.content))for(const c of p.content)if(c&&c.type==="text"){try{d=JSON.parse(c.text)}catch(e){}}
    if(!d&&p.upload_url)d=p;
    if(d&&d.upload_url&&!uploadUrl){uploadUrl=d.upload_url;document.getElementById('f').disabled=false;
      sub.textContent="pick a file to add"+(d.notebook?" to "+d.notebook:"");}
