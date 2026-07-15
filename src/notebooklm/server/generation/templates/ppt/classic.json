@@ -1,0 +1,39 @@
+{
+  "name": "classic",
+  "label": "经典",
+  "description": "经典白底黑字简约模板",
+  "slide_width": 13.333,
+  "slide_height": 7.5,
+  "background_color": "#FFFFFF",
+  "font_family": "Microsoft YaHei",
+  "title_color": "#333333",
+  "body_color": "#666666",
+  "accent_color": "#1E90FF",
+  "layouts": [
+    {
+      "type": "title_slide",
+      "label": "封面",
+      "title_font_size": 36,
+      "subtitle_font_size": 18
+    },
+    {
+      "type": "section_header",
+      "label": "章节标题",
+      "title_font_size": 28,
+      "body_font_size": 16
+    },
+    {
+      "type": "content",
+      "label": "内容页",
+      "title_font_size": 24,
+      "body_font_size": 14,
+      "bullet_style": "filled"
+    },
+    {
+      "type": "two_column",
+      "label": "双栏",
+      "title_font_size": 24,
+      "body_font_size": 14
+    }
+  ]
+}
