@@ -98,7 +98,11 @@ _WIDGET_HTML = """<!doctype html>
    if(d&&d.upload_url&&!uploadUrl){uploadUrl=d.upload_url;document.getElementById('f').disabled=false;
      sub.textContent="pick a file to add"+(d.notebook?" to "+d.notebook:"");}
  }
- // claude.ai / Grok: tool result arrives via postMessage
+ // claude.ai / Grok: tool result arrives via postMessage. We deliberately don't allowlist
+ // ev.origin (host origin differs per platform — claude.ai / chatgpt.com / Grok): the only thing
+ // a message can influence is uploadUrl, and (a) the resource CSP connect-src pins uploads to
+ // config.base_url and (b) /files/ul requires a server-signed single-use token, so a spoofed URL
+ // can't exfiltrate or add anything. CSP + signed token are the guard, not the frame origin.
  window.addEventListener("message",ev=>{let d=ev.data;if(d==null)return;
    if(typeof d==="string"){try{d=JSON.parse(d)}catch(e){return}}
    if(d.result&&!d.method){ready(d.result.hostInfo&&d.result.hostInfo.name);
