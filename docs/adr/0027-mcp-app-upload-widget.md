@@ -60,6 +60,11 @@ tool-count / schema-char budgets) unless a deployment enables it.
   → "fail to fetch app content"). Enabling the widget therefore auto-enables
   `FASTMCP_STATELESS_HTTP` (overridable). Stateless is safe here — every tool is request/response,
   with no server-push/subscription state.
+- **Multi-file via a token pool.** `source_add_widget` mints a small fixed pool of independent
+  single-use tokens (`upload_urls`, one per file, cap 10) and the widget uploads file[i] to
+  token[i]. This keeps multi-file entirely on the existing single-use `/files/ul` route with no
+  change to the completion map, `await_upload`, or this ADR's single-use invariant — unused tokens
+  just expire, and minting is stateless (no jti store entry until a token is committed on success).
 - One host resource, the MCP-Apps standard mime `text/html;profile=mcp-app`, serves both claude.ai
   and ChatGPT (a `text/html+skybridge` variant is unnecessary; OpenAI's SDK accepts the standard
   mime). ChatGPT caches the template per conversation, so the first call in a new chat may not

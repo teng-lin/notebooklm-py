@@ -10,14 +10,20 @@ from __future__ import annotations
 import contextlib
 import hashlib
 from collections.abc import AsyncIterator
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 pytest.importorskip("fastmcp")
 
+from notebooklm.mcp import _uploadwidget  # noqa: E402
 from notebooklm.mcp._filelink import FileLinkSigner, FileTransferConfig  # noqa: E402
-from notebooklm.mcp._uploadwidget import _WIDGET_HTML, _widget_domain  # noqa: E402
+from notebooklm.mcp._uploadwidget import (  # noqa: E402
+    _MAX_WIDGET_FILES,
+    _WIDGET_HTML,
+    _widget_domain,
+)
 from notebooklm.mcp.server import create_server  # noqa: E402
 
 _BASE = "https://notebooklm-test.example"
@@ -47,7 +53,8 @@ def test_widget_html_is_cross_host() -> None:
         "setInterval",  # persistent toolOutput poll — survives ChatGPT's late first-call template fetch
         "p.toolResult",  # unwrap the ui/notifications/tool-result envelope
         'addEventListener("message"',  # claude.ai/Grok tool-result path
-        'type="file"',  # universal picker
+        'type="file" multiple',  # universal picker, multi-select
+        "upload_urls",  # reads the token pool (one single-use token per file)
         "?filename=",  # direct-PUT to /files/ul
     ):
         assert marker in _WIDGET_HTML, marker
@@ -103,3 +110,27 @@ async def test_widget_registers_with_claudeai_render_gates(monkeypatch) -> None:
     assert ui.get("csp", {}).get("connectDomains") == [_BASE]  # widget → /files/ul allowed
     # ChatGPT reads openai/widgetCSP off the same resource.
     assert (res.meta or {}).get("openai/widgetCSP", {}).get("connect_domains") == [_BASE]
+
+
+async def test_widget_tool_returns_single_use_token_pool(monkeypatch) -> None:
+    """source_add_widget mints a POOL of distinct single-use tokens (one per file) so the widget
+    can add multiple files, with upload_url kept as the first for await_upload back-compat."""
+    monkeypatch.setenv("NOTEBOOKLM_MCP_UPLOAD_WIDGET", "1")
+    cfg = _cfg()
+    mcp = _server(cfg)
+    tool = {t.name: t for t in await mcp._list_tools()}["source_add_widget"]
+    monkeypatch.setattr(_uploadwidget, "resolve_notebook", AsyncMock(return_value="nb-123"))
+    ctx = SimpleNamespace(
+        request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(client=MagicMock(), file_transfer=cfg)
+        )
+    )
+
+    result = await tool.fn(ctx, notebook="My Notebook")
+
+    urls = result["upload_urls"]
+    assert len(urls) == _MAX_WIDGET_FILES
+    assert len(set(urls)) == _MAX_WIDGET_FILES  # distinct tokens → independent single-use jtis
+    assert all("/files/ul/" in u for u in urls)
+    assert result["upload_url"] == urls[0]  # await_upload back-compat
+    assert result["notebook_id"] == "nb-123"
