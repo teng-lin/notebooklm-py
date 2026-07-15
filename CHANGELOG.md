@@ -473,6 +473,14 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
 
 ### Fixed
 
+- **A blank `FASTMCP_STATELESS_HTTP` no longer crash-loops the remote MCP server.**
+  The deploy compose passed the variable through as `${FASTMCP_STATELESS_HTTP:-}`,
+  which injects an **empty string** when unset — and FastMCP's settings bool-parse
+  it at import and raise, so a docker deploy that didn't set the var crash-looped.
+  The compose passthrough is removed (the upload widget auto-enables stateless in
+  code; a non-widget deploy stays stateful), and an import-time guard treats an
+  empty/whitespace-only value as unset so a blank value from any source can't crash
+  the server. ([#1898](https://github.com/teng-lin/notebooklm-py/issues/1898))
 - **Upstream upload errors surface as a clean, redacted 4xx — not an opaque 500.**
   An unsupported file type (or other upstream rejection) during a remote
   `/files/ul` upload used to leak a raw `httpx.HTTPStatusError` as an unclassified
