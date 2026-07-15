@@ -31,14 +31,6 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
 
 ### Added
 
-- **`source_add` gains in-channel bytes and an inline wait.**
-  `source_add(source_type="file", bytes_base64=…, filename=…)` adds a small
-  file's bytes directly (no signed-URL round-trip), and `source_add(…, wait=True,
-  timeout=…, interval=…)` returns the `source_wait` aggregate once processing
-  settles. These fold the separate `source_add_and_wait` / `source_upload_bytes`
-  tools that shipped in the 0.8.0 alphas into a single `source_add` verb (ADR-0025
-  param-over-verb; MCP tool surface 36 → 34, schema-char budget ratcheted down).
-  ([#1890](https://github.com/teng-lin/notebooklm-py/issues/1890))
 - **`await_upload` — confirm a brokered file upload landed.** A new MCP tool that
   waits for a source created via the remote signed-URL upload flow to finish,
   returning the added source (`source_id` / name / size / mime) as soon as the
@@ -107,7 +99,8 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
   `source_add(..., wait=True, timeout=…, interval=…)` composes the add with
   `source_wait` for single-source adds — returning the `source_wait` aggregate plus a
   top-level `source_id`. This keeps the MCP surface leaner (ADR-0025): one `source_add`
-  verb with input modes, not three near-duplicate add tools.
+  verb with input modes, not three near-duplicate add tools (MCP tool surface 36 → 34,
+  schema-char budget ratcheted down).
 
 - **Compact roster mode for `source_list` and `studio_list`**
   ([#1806](https://github.com/teng-lin/notebooklm-py/issues/1806)) — a terser
