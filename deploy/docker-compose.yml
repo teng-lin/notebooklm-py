@@ -10,13 +10,14 @@
 # tunnel, which terminates TLS at its edge (no CA cert for you to manage). See README.md.
 services:
   notebooklm-mcp:
-    # Pull the published image by default. `make up` / `make prod` require or
-    # inject a version; raw docker compose pull must set NOTEBOOKLM_MCP_VERSION.
-    # Override the namespace/tag via
-    # NOTEBOOKLM_MCP_IMAGE / NOTEBOOKLM_MCP_VERSION in .env. Contributors
-    # building from THIS checkout run `make dev`, which layers
-    # docker-compose.build.yml to add a `build:` section back (see that file).
-    image: ${NOTEBOOKLM_MCP_IMAGE:-tenglin/notebooklm-mcp}:${NOTEBOOKLM_MCP_VERSION:-set-version}
+    # Pull the published image. Default tag is `latest` = the latest STABLE release
+    # (pre-releases never move `:latest`), so a bare `docker compose up -d` works
+    # out of the box once a stable release exists. Pin a specific release with
+    # NOTEBOOKLM_MCP_VERSION=X.Y.Z in .env (release-download users get a compose with
+    # the exact version baked in). `make up`/`make prod` inject the checkout's version.
+    # Override the namespace via NOTEBOOKLM_MCP_IMAGE. Contributors building from THIS
+    # checkout run `make dev`, which layers docker-compose.build.yml (see that file).
+    image: ${NOTEBOOKLM_MCP_IMAGE:-tenglin/notebooklm-mcp}:${NOTEBOOKLM_MCP_VERSION:-latest}
     restart: unless-stopped
     # Run as YOUR uid:gid so the mounted profile's files (owned by you on the
     # host) are readable AND writable with NO chown — and your own `notebooklm`

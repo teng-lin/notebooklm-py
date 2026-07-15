@@ -3,13 +3,48 @@
 Run the MCP server as a **remote connector** (Claude Code / claude.ai / Cursor)
 behind a tunnel: no public IP, no open ports, no TLS certificate to manage.
 Single-tenant, self-hosted. Pick **Cloudflare** (needs a domain) or **Tailscale
-Funnel** (no domain). `make up` pulls a **prebuilt image** — no source checkout.
+Funnel** (no domain). Both paths pull a **prebuilt image** (no build): download the release
+compose and run `docker compose up -d` (no repo — Cloudflare only), or `make up` from a `deploy/`
+checkout (either tunnel).
 
 > ⚠️ **Use a dedicated / throwaway Google account.** The mounted
 > `master_token.json` is a durable, full-account credential. Treat the mounted profile dir
 > and `.env` as secrets (both are gitignored).
 
-## Quick start (the easy path)
+## Quick start — end users (no repo, Cloudflare tunnel)
+
+No `git clone`, no `make` — just the two release assets + Docker. (Available from the **0.8.0
+stable** release; during pre-release use a specific tag URL, e.g. `…/download/v0.8.0b2/…`. This path
+is **Cloudflare only** — the Tailscale profile needs the `deploy/tailscale/` files from a checkout.)
+
+```bash
+# 1. One-time, on a machine with a browser — bootstrap the Google credential:
+pip install "notebooklm-py[browser,headless]"
+notebooklm login --master-token --account you@example.com
+#    → copy the profile dir it wrote (~/.notebooklm/profiles/<name>/, contains master_token.json)
+#      to your server. This is the one irreducible manual step.
+
+# 2. On the server, create the mount dir as YOUR uid (Docker would make it root:root otherwise):
+mkdir -p ~/.notebooklm/profiles/server      # place the bootstrapped master_token.json here
+
+# 3. Grab the release assets (use the tag you want; `latest` resolves at 0.8.0 stable):
+curl -LO https://github.com/teng-lin/notebooklm-py/releases/latest/download/docker-compose.yml
+curl -LO https://github.com/teng-lin/notebooklm-py/releases/latest/download/env.example
+cp env.example .env
+#    edit .env — the irreducible config:
+#      NOTEBOOKLM_MCP_TOKEN=<random> (or the OAuth vars for claude.ai — see §4)
+#      NOTEBOOKLM_PROFILE_DIR=<ABSOLUTE path to the dir from step 2; ~ is NOT expanded in .env>
+#      NOTEBOOKLM_UID / NOTEBOOKLM_GID = your `id -u` / `id -g` (make fills these; raw compose can't)
+#      CF_TUNNEL_TOKEN=<from Cloudflare> + a public hostname routed to http://notebooklm-mcp:9420 (§3)
+
+# 4. Start (the --profile flag is required — the tunnel is a compose profile):
+docker compose --profile cloudflare up -d
+
+# upgrade to a newer release: re-download its docker-compose.yml, then
+docker compose --profile cloudflare pull && docker compose --profile cloudflare up -d
+```
+
+## Quick start — from a `deploy/` checkout (`make`, either tunnel)
 ```bash
 # 1. bootstrap the master token once, on a machine with a browser (see §1):
 pip install "notebooklm-py[browser,headless]"
@@ -19,8 +54,8 @@ cd deploy && make setup
 # 3. finish the tunnel setup (§3 — the one irreducible manual part), then:
 make up
 ```
-`make up` pulls the published image and starts it. The rest of this doc is the
-detailed walk-through + the security model.
+`make up` pulls the published image (the checkout's version) and starts it. The rest of this doc is
+the detailed walk-through + the security model.
 
 ## Prerequisites
 - Docker + Docker Compose.

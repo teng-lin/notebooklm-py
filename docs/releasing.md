@@ -381,6 +381,15 @@ The `Publish to PyPI` step in `publish.yml` also opts into **PEP 740 attestation
 
 ### GitHub Release
 
+- [ ] **⏸️ Wait for the Docker image first.** Creating the release triggers `publish-mcpb.yml`, which
+  attaches a `docker-compose.yml` **version-baked** to this tag. That file pulls
+  `tenglin/notebooklm-mcp:<version>`, so the image must exist before the release publishes. The tag
+  push started `publish-docker.yml` in parallel with `publish.yml`; confirm it finished and the tag
+  is live before creating the release:
+  ```bash
+  gh run list --workflow=publish-docker.yml --branch "vX.Y.Z" --json status,conclusion
+  docker manifest inspect tenglin/notebooklm-mcp:X.Y.Z >/dev/null && echo "image present"
+  ```
 - [ ] Create release from tag:
   ```bash
   gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(cat CHANGELOG.md | sed -n '/## \[X.Y.Z\]/,/## \[/p' | sed '$d')"
@@ -392,13 +401,12 @@ The `Publish to PyPI` step in `publish.yml` also opts into **PEP 740 attestation
   - Copy release notes from `CHANGELOG.md`
   - Publish release
 
-- [ ] Publishing a **stable** release fires `publish-mcpb.yml`, which builds
-  `notebooklm-mcp.mcpb` and attaches it to the release as an asset (it re-checks
-  that the manifest, tag, and `pyproject.toml` versions all agree). Confirm the
-  asset appears under the release once the workflow finishes — that is the
-  one-click Claude Desktop bundle users download. Pre-releases skip this step by
-  design (the thin launcher resolves the latest stable server, not the
-  pre-release), so a `vX.Y.ZaN` release carries no `.mcpb`.
+- [ ] Publishing a release (stable **and** pre-release) fires `publish-mcpb.yml`, which attaches
+  four assets: `notebooklm-mcp.mcpb` (the one-click Claude Desktop bundle — the launcher pins this
+  release's version), `notebooklm-skill.zip`, `docker-compose.yml`, and `env.example`. The compose
+  is **version-baked** to this exact release (so a downloaded `docker compose up -d` pulls
+  `tenglin/notebooklm-mcp:<this version>`, not `:latest`). It re-checks manifest/tag/pyproject
+  agreement. Confirm all four assets appear under the release once the workflow finishes.
 
 ### Prune the API-Compat Allowlist
 
