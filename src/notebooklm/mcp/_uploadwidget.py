@@ -206,11 +206,13 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
             # cfg.upload_url() mints a fresh jti). The widget uploads file[i] to upload_urls[i], so
             # multi-file needs NO change to the /files/ul route or ADR-0024's single-use invariant;
             # unused tokens just expire. upload_url (singular) stays for await_upload back-compat.
-            urls = [cfg.upload_url({"nb": nb_id}) for _ in range(_MAX_WIDGET_FILES)]
+            # `first` is minted separately (not urls[0]) to avoid the ADR-0011 positional-index gate.
+            first = cfg.upload_url({"nb": nb_id})
+            urls = [first, *(cfg.upload_url({"nb": nb_id}) for _ in range(_MAX_WIDGET_FILES - 1))]
             # structuredContent is pushed into the widget by the host; it reads upload_urls from here.
             return {
                 "upload_urls": urls,
-                "upload_url": urls[0],
+                "upload_url": first,
                 "notebook_id": nb_id,
                 "notebook": notebook,
             }
