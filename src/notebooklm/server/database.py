@@ -36,7 +36,10 @@ def init_db(db_url: str | None = None) -> None:
     if url.startswith("sqlite"):
         db_path = url[len("sqlite:///"):]
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(url, echo=False, future=True)
+    connect_args = {}
+    if url.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+    engine = create_engine(url, echo=False, future=True, connect_args=connect_args)
     SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
     from . import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
