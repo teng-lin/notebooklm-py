@@ -44,12 +44,11 @@ services:
       # upload widget (renders inline in MCP-Apps hosts like claude.ai). Off by default;
       # requires this http transport + a public URL. See docs/mcp-guide.md.
       NOTEBOOKLM_MCP_UPLOAD_WIDGET: ${NOTEBOOKLM_MCP_UPLOAD_WIDGET:-}
-      # Stateless MCP HTTP (FastMCP): serve each POST /mcp independently, no server-side
-      # session. Required for MCP-Apps hosts (claude.ai) whose app-content fetcher reads the
-      # ui:// widget resource on a connection without the chat Mcp-Session-Id — a stateful
-      # server rejects that as "Missing session ID" and the widget shows "fail to fetch app
-      # content". Recommended on when the upload widget is enabled.
-      FASTMCP_STATELESS_HTTP: ${FASTMCP_STATELESS_HTTP:-}
+      # NOTE: FastMCP stateless HTTP is deliberately NOT passed through here. A compose
+      # `${FASTMCP_STATELESS_HTTP:-}` injects an EMPTY string when unset, and FastMCP's pydantic
+      # Settings() bool-parses it at import and crash-loops the server. Enabling the upload widget
+      # auto-enables stateless in code; a non-widget deploy stays stateful. To force it without the
+      # widget, set FASTMCP_STATELESS_HTTP to a real bool in the process env (never a blank value).
       # Point the app at the mounted profile, independent of the (arbitrary) uid's
       # home. The host dir is always mounted as the profile literally named
       # "server"; NOTEBOOKLM_HOME/profiles/server is where the app reads+writes.
