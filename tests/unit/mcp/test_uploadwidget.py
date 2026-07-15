@@ -84,9 +84,16 @@ async def test_widget_registers_with_claudeai_render_gates(monkeypatch) -> None:
     assert meta.get("ui", {}).get("resourceUri") == _WIDGET_URI
     assert meta.get("ui", {}).get("visibility") == ["model"]
 
+    # ChatGPT (Apps SDK) reads a different key + mime → emit both.
+    assert meta.get("openai/outputTemplate") == "ui://notebooklm/upload-openai-v1"
+
     resources = {str(r.uri): r for r in await mcp._list_resources()}
     res = resources[_WIDGET_URI]
     assert res.mime_type == "text/html;profile=mcp-app"
     ui = (res.meta or {}).get("ui", {})
     assert ui.get("domain") == _widget_domain(_BASE)  # the render gate
     assert ui.get("csp", {}).get("connectDomains") == [_BASE]  # widget → /files/ul allowed
+
+    oai = resources["ui://notebooklm/upload-openai-v1"]
+    assert oai.mime_type == "text/html+skybridge"  # OpenAI Apps SDK mime
+    assert (oai.meta or {}).get("openai/widgetCSP", {}).get("connect_domains") == [_BASE]
