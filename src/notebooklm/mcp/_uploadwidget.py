@@ -91,10 +91,11 @@ _WIDGET_HTML = """<!doctype html>
  setTimeout(()=>ready(oai?"ChatGPT":null),500);
  function size(){post({jsonrpc:"2.0",method:"ui/notifications/size-changed",
    params:{height:document.documentElement.scrollHeight,width:document.documentElement.scrollWidth}});}
- function consider(p){ // tool result: {structuredContent:{upload_url}} | content[].text | raw obj (window.openai.toolOutput)
-   let d=p&&p.structuredContent;
-   if(!d&&p&&p.content)for(const c of p.content)if(c&&c.type==="text"){try{d=JSON.parse(c.text)}catch(e){}}
-   if(!d&&p&&p.upload_url)d=p;
+ function consider(p){ // tool result: {structuredContent:{upload_url}} | {toolResult:…} | content[].text | raw obj
+   if(!p)return; if(p.toolResult)p=p.toolResult; // unwrap the ui/notifications/tool-result envelope
+   let d=p.structuredContent;
+   if(!d&&p.content)for(const c of p.content)if(c&&c.type==="text"){try{d=JSON.parse(c.text)}catch(e){}}
+   if(!d&&p.upload_url)d=p;
    if(d&&d.upload_url&&!uploadUrl){uploadUrl=d.upload_url;document.getElementById('f').disabled=false;
      sub.textContent="pick a file to add"+(d.notebook?" to "+d.notebook:"");}
  }
@@ -112,7 +113,11 @@ _WIDGET_HTML = """<!doctype html>
  // ChatGPT: tool result arrives on window.openai.toolOutput (set at/after load)
  function pullOai(){if(oai&&oai.toolOutput)consider(oai.toolOutput);}
  window.addEventListener("openai:set_globals",pullOai);
- [100,600,1500].forEach(t=>setTimeout(pullOai,t));
+ // ChatGPT fetches the template lazily on the FIRST call, so the iframe can attach AFTER the
+ // one-shot ui/notifications/tool-result fires — toolOutput is the durable fallback. Poll it until
+ // the upload_url lands (first render often sets it late) instead of a few fixed tries, else the
+ // first widget of a chat renders but stays stuck with no upload target.
+ let _pt=0;const _pi=setInterval(()=>{pullOai();if(uploadUrl||++_pt>66)clearInterval(_pi);},300);
  const fi=document.getElementById('f'),btn=document.getElementById('up');
  fi.addEventListener('change',()=>{btn.disabled=!(fi.files&&fi.files[0]);});
  btn.addEventListener('click',async()=>{

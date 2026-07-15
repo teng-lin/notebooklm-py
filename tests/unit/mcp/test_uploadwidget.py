@@ -44,6 +44,8 @@ def test_widget_html_is_cross_host() -> None:
         'method:"ui/notifications/initialized"',  # claude.ai render gate
         "window.openai",  # ChatGPT bridge
         "oai.toolOutput",  # ChatGPT tool-result path
+        "setInterval",  # persistent toolOutput poll — survives ChatGPT's late first-call template fetch
+        "p.toolResult",  # unwrap the ui/notifications/tool-result envelope
         'addEventListener("message"',  # claude.ai/Grok tool-result path
         'type="file"',  # universal picker
         "?filename=",  # direct-PUT to /files/ul
