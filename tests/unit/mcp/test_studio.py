@@ -798,14 +798,14 @@ async def test_artifact_generate_mind_map_interactive_default(mcp_call, mock_cli
 _MM_TREE = {"name": "root", "children": [{"name": "child", "children": []}]}
 
 
-def _interactive_mind_map(tree: object) -> MindMap:
+def _interactive_mind_map(tree: dict[str, Any] | None) -> MindMap:
     """Realistic interactive-generate result: a populated (or empty) ``MindMap``."""
     return MindMap(
         id="mm1",
         notebook_id=NB_ID,
         title="Mind Map",
         kind=MindMapKind.INTERACTIVE,
-        tree=tree,  # type: ignore[arg-type]
+        tree=tree,
     )
 
 
@@ -823,6 +823,7 @@ async def test_artifact_generate_mind_map_payload_is_synchronous(mcp_call, mock_
     assert payload["kind"] == "mind-map"
     assert payload["mind_map"] == _MM_TREE
     assert payload["mind_map"]["name"] == "root"  # root node accessible, not a wrapper
+    assert payload["mind_map_id"] == "mm1"  # handle preserved (no task_id to reference by)
     assert "task_id" not in payload
     assert "status" not in payload
 
@@ -833,14 +834,35 @@ async def test_artifact_generate_mind_map_empty_result_takes_sync_branch(
     """An empty backend map (``MindMap`` with ``tree=None``) still takes the
     synchronous mind-map branch (#1908 review): branching on the KIND, not on a
     populated tree, keeps it out of the poll-shape path — and normalization surfaces
-    ``mind_map=None`` (not an opaque wrapper) so empty is detectable (#1914)."""
+    ``mind_map=None`` (not an opaque wrapper) so empty is detectable (#1914). The
+    ``mind_map_id`` handle is still preserved even when the tree is absent."""
     mock_client.mind_maps.generate = AsyncMock(return_value=_interactive_mind_map(None))
     result = await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "mind-map"})
     payload = result.structured_content
     assert payload["kind"] == "mind-map"
     assert payload["mind_map"] is None
+    assert payload["mind_map_id"] == "mm1"
     assert "task_id" not in payload
     assert "status" not in payload
+
+
+async def test_artifact_generate_mind_map_non_dict_tree_coerced_to_none(
+    mcp_call, mock_client
+) -> None:
+    """A non-dict backend value under the tree attribute (``MindMapResult.mind_map``
+    is typed ``Any``) is coerced to ``None`` rather than forwarded, so the
+    tree-or-``null`` contract holds and ``mind_map["name"]`` is never unsafe (#1914
+    review)."""
+    mock_client.artifacts.generate_mind_map = AsyncMock(
+        return_value=MindMapResult(mind_map="unexpected raw string", note_id="note1")
+    )
+    result = await mcp_call(
+        "studio_generate",
+        {"notebook": NB_ID, "artifact_type": "mind-map", "map_kind": "note-backed"},
+    )
+    payload = result.structured_content
+    assert payload["mind_map"] is None
+    assert payload["mind_map_id"] == "note1"
 
 
 async def test_artifact_generate_mind_map_note_backed_routes(mcp_call, mock_client) -> None:
