@@ -54,11 +54,11 @@
   "mapper_expected": [
     {
       "title": "Professional Briefing",
-      "prompt": "\n- Summarize the material for business professionals.\n- Focus on enterprise use cases."
+      "prompt": "Summarize the material for business professionals.\n- Focus on enterprise use cases."
     },
     {
       "title": "Process Timeline",
-      "prompt": "\n- Present the history of the product as a timeline.\n- Highlight major milestones."
+      "prompt": "Present the history of the product as a timeline.\n- Highlight major milestones."
     }
   ]
 }

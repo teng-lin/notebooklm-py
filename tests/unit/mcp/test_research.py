@@ -91,7 +91,7 @@ class FakeNotebook:
 async def test_research_start(mcp_call, mock_client) -> None:
     mock_client.research.start = AsyncMock(return_value=FakeResearchStart(task_id=TASK_ID))
     result = await mcp_call("research_start", {"notebook": NB_ID, "query": "quantum computing"})
-    assert result.structured_content["task_id"] == TASK_ID
+    assert result.structured_content["poll_task_id"] == TASK_ID
     mock_client.research.start.assert_awaited_once_with(NB_ID, "quantum computing", "web", "fast")
 
 
@@ -122,7 +122,7 @@ async def test_research_start_resolves_notebook_by_name(mcp_call, mock_client) -
     )
     mock_client.research.start = AsyncMock(return_value=FakeResearchStart(task_id=TASK_ID))
     result = await mcp_call("research_start", {"notebook": "My Notebook", "query": "q"})
-    assert result.structured_content["task_id"] == TASK_ID
+    assert result.structured_content["poll_task_id"] == TASK_ID
     mock_client.research.start.assert_awaited_once_with(NB_ID, "q", "web", "fast")
 
 
@@ -134,9 +134,9 @@ async def test_research_start_surfaces_poll_task_id_fast(mcp_call, mock_client) 
     result = await mcp_call("research_start", {"notebook": NB_ID, "query": "q"})
     sc = result.structured_content
     assert sc["poll_task_id"] == TASK_ID
-    # The raw start fields are still present (purely additive).
-    assert sc["task_id"] == TASK_ID
-    assert sc["report_id"] is None
+    # #1909: the raw internal ids are dropped — poll_task_id is the only id field.
+    assert "task_id" not in sc
+    assert "report_id" not in sc
 
 
 async def test_research_start_poll_task_id_prefers_report_id_deep(mcp_call, mock_client) -> None:
@@ -543,10 +543,10 @@ async def test_research_cancel_empty_poll_task_id_rejected(mcp_call, mock_client
 
 
 async def test_research_start_then_status_poll_shape(mcp_call, mock_client) -> None:
-    """start→status: start returns a task_id, status polls the notebook."""
+    """start→status: start returns poll_task_id, status polls the notebook."""
     mock_client.research.start = AsyncMock(return_value=FakeResearchStart(task_id=TASK_ID))
     started = await mcp_call("research_start", {"notebook": NB_ID, "query": "q"})
-    assert started.structured_content["task_id"] == TASK_ID
+    assert started.structured_content["poll_task_id"] == TASK_ID
 
     mock_client.research.poll = AsyncMock(
         return_value=FakeResearchTask(status=FakeResearchStatus.COMPLETED)

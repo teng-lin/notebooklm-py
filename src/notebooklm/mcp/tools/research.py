@@ -150,9 +150,16 @@ def register(mcp: Any) -> None:
                 poll_task_id = result.report_id
             else:
                 poll_task_id = result.task_id
-            # ``poll_task_id`` is placed AFTER the spread so a future
-            # ``ResearchStart`` field can never clobber it.
-            return {"notebook_id": nb_id, **to_jsonable(result), "poll_task_id": poll_task_id}
+            # Surface only ``poll_task_id`` as the id to carry forward (#1909).
+            # The raw ``task_id`` / ``report_id`` are mode-specific internals
+            # (deep's ``report_id`` / fast's ``task_id``) — leaking both plus
+            # ``poll_task_id`` gave three id fields for one concept, so we drop
+            # them from the wire shape. ``poll_task_id`` is placed AFTER the
+            # spread so a future ``ResearchStart`` field can never clobber it.
+            start_fields = to_jsonable(result)
+            start_fields.pop("task_id", None)
+            start_fields.pop("report_id", None)
+            return {"notebook_id": nb_id, **start_fields, "poll_task_id": poll_task_id}
 
     @mcp.tool(annotations=READ_ONLY)
     async def research_status(

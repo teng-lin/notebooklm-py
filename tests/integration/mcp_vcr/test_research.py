@@ -7,7 +7,8 @@ real ``NotebookLMClient`` → VCR-replayed RPC) for the three research tools:
   ``START_FAST_RESEARCH`` ``Ljjv0c`` POST) and ``research_start_deep.yaml``
   (single ``START_DEEP_RESEARCH`` ``QA9ei`` POST). Non-blocking: the tool returns
   the started task, so the assertions pin the ``ResearchStart`` wire shape
-  (``task_id`` / ``report_id`` / ``query`` / ``mode``) — no poll-to-completion.
+  (``poll_task_id`` / ``query`` / ``mode`` — the raw ``task_id`` / ``report_id``
+  are dropped as redundant, issue #1909) — no poll-to-completion.
 * ``research_status`` over ``research_poll.yaml`` (a single in-flight task →
   ``in_progress``) and ``research_poll_empty.yaml`` (no task → ``no_research``).
   ``research_status`` drives ``_app.research.poll_and_classify`` → one
@@ -71,8 +72,9 @@ async def test_mcp_research_start_fast_over_vcr() -> None:
 
     End-to-end: FastMCP ``Client`` → ``research_start`` tool →
     ``client.research.start`` → recorded ``START_FAST_RESEARCH`` (``Ljjv0c``) RPC.
-    Asserts the ``ResearchStart`` wire shape (``{notebook_id, task_id, report_id,
-    query, mode}``); the tool is non-blocking, so it never polls to completion.
+    Asserts the ``ResearchStart`` wire shape (``{notebook_id, poll_task_id,
+    query, mode}`` — raw ``task_id``/``report_id`` dropped, #1909); the tool is
+    non-blocking, so it never polls to completion.
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
@@ -88,13 +90,13 @@ async def test_mcp_research_start_fast_over_vcr() -> None:
     structured = result.structured_content
     assert isinstance(structured, dict)
     assert structured["notebook_id"] == RESEARCH_NOTEBOOK_ID
-    assert structured["task_id"], "expected a server-recorded research task id"
+    # Fast runs poll under the server-recorded task id, surfaced as ``poll_task_id``.
+    assert structured["poll_task_id"], "expected a server-recorded poll_task_id"
     assert structured["mode"] == "fast"
-    # ``report_id`` is None for fast research; ``query`` echoes the request.
-    assert structured["report_id"] is None
     assert structured["query"] == "Python programming best practices"
-    # Fast runs poll under ``task_id`` — ``poll_task_id`` mirrors it.
-    assert structured["poll_task_id"] == structured["task_id"]
+    # #1909: the raw internal ids are dropped — ``poll_task_id`` is the only id field.
+    assert "task_id" not in structured
+    assert "report_id" not in structured
 
 
 @pytest.mark.asyncio
@@ -104,7 +106,8 @@ async def test_mcp_research_start_deep_over_vcr() -> None:
 
     End-to-end: FastMCP ``Client`` → ``research_start`` tool →
     ``client.research.start`` → recorded ``START_DEEP_RESEARCH`` (``QA9ei``) RPC.
-    Deep research carries a ``report_id`` alongside the ``task_id``.
+    Deep research polls under its ``report_id`` (an unpollable sessionId
+    ``task_id`` is never surfaced) — ``poll_task_id`` carries that report id.
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(
@@ -120,13 +123,12 @@ async def test_mcp_research_start_deep_over_vcr() -> None:
     structured = result.structured_content
     assert isinstance(structured, dict)
     assert structured["notebook_id"] == RESEARCH_NOTEBOOK_ID
-    assert structured["task_id"], "expected a server-recorded research task id"
     assert structured["mode"] == "deep"
-    # Deep runs poll under ``report_id`` — ``poll_task_id`` mirrors it, NOT the
-    # (unpollable sessionId) ``task_id``.
-    assert structured["poll_task_id"] == structured["report_id"]
-    # Deep research records a separate report id.
-    assert structured["report_id"], "expected a deep-research report id"
+    # Deep runs poll under the recorded report id, surfaced as ``poll_task_id``
+    # (the raw report_id/task_id are dropped as redundant, #1909).
+    assert structured["poll_task_id"], "expected a deep-research poll_task_id"
+    assert "task_id" not in structured
+    assert "report_id" not in structured
 
 
 @pytest.mark.asyncio
