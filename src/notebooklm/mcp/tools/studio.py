@@ -35,7 +35,7 @@ from ..._app import notes as note_core
 from ..._app.language import is_supported_language
 from ..._app.resolve import FULL_ID_PATTERN
 from ..._app.serialize import to_jsonable
-from ...exceptions import NotFoundError, ValidationError
+from ...exceptions import ArtifactFeatureUnavailableError, NotFoundError, ValidationError
 from .._coerce import coerce_list
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client, get_file_transfer
@@ -225,9 +225,9 @@ def register(mcp: Any) -> None:
 
         * ``detail`` ladder (NOTE bodies only; read a report/data-table body via
           ``studio_download``): ``summary`` (default) gives each note a bounded
-          ``content_preview`` + ``char_count``; ``full`` returns the whole ``content``;
-          ``compact`` collapses every item to ``id`` / ``title`` / ``type`` /
-          ``status_label`` / ``created_at`` (no body/``url``) — a low-token roster.
+          ``content_preview`` + ``char_count`` (artifacts add ``created_at`` +
+          ``generation_prompt``); ``full`` = whole ``content``; ``compact`` = a
+          ``id``/``title``/``type``/``status_label``/``created_at`` roster.
         * ``kind`` filters to one ``type``.
         * ``item`` (name or id) fetches just that item as a 1-element list with the
           note's FULL ``content``; no match is NOT_FOUND. ``limit`` / ``offset`` /
@@ -258,8 +258,15 @@ def register(mcp: Any) -> None:
                     "has_more": False,
                 }
             # ``compact`` needs each row's ``created_at`` (dropped by the default
-            # projection); fetch it only for that mode so the other paths are unchanged.
-            items = await studio_items(client, nb_id, include_created_at=(detail == "compact"))
+            # projection); ``summary`` additionally surfaces each artifact's
+            # ``created_at`` + ``generation_prompt`` (#1925). Fetch each only for its
+            # mode so the by-ref/``full`` paths stay unchanged.
+            items = await studio_items(
+                client,
+                nb_id,
+                include_created_at=(detail == "compact"),
+                include_artifact_meta=(detail == "summary"),
+            )
             if kind is not None:
                 items = [it for it in items if it["type"] == kind]
             page, meta = paginate(items, limit, offset)
@@ -489,9 +496,9 @@ def register(mcp: Any) -> None:
     async def studio_status(ctx: Context, notebook: str, task_id: str) -> dict[str, Any]:
         """Poll a generation task's status. Accepts a notebook name or ID.
 
-        Stateless: pass the ``task_id`` returned by ``studio_generate``. Returns
-        ``status`` / ``url`` / ``error`` / ``is_complete``; call repeatedly until
-        ``is_complete`` is true.
+        Stateless: pass the ``task_id`` from ``studio_generate``. Returns ``status`` /
+        ``url`` / ``error`` / ``is_complete`` / ``media_ready``; poll until done. A
+        pending ``url`` is provisional — trust it only if ``media_ready``.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -817,7 +824,23 @@ def register(mcp: Any) -> None:
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             art_id = await resolve_artifact(client, nb_id, artifact)
-            result = await artifact_core.retry_artifact(client, nb_id, art_id)
+            try:
+                result = await artifact_core.retry_artifact(client, nb_id, art_id)
+            except ArtifactFeatureUnavailableError:
+                # Retry refused (null result). The most common cause is retrying an
+                # artifact that is not FAILED (retry only re-runs a failed one). Turn
+                # the generic "Retry generation is unavailable" into an actionable
+                # message naming the current state — but only on the refusal path, so
+                # the happy path stays free of the extra ``get_or_none`` list (#1924
+                # F15). Re-raise the generic error when the state doesn't explain it
+                # (already-failed artifact, or it vanished between resolve and here).
+                art = await client.artifacts.get_or_none(nb_id, art_id)
+                if art is not None and not art.is_failed:
+                    raise ValidationError(
+                        f"artifact is not failed (status: {art.status_str}); retry only "
+                        "re-runs a failed artifact — use studio_generate for a new one."
+                    ) from None
+                raise
             return {
                 "notebook_id": nb_id,
                 "artifact_id": art_id,

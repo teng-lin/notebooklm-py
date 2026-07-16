@@ -27,6 +27,7 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -223,6 +224,11 @@ class DownloadResult:
     suggestion: str | None = None
     artifact: dict[str, Any] | None = None
     output_path: str | None = None
+    #: On-disk size of a single downloaded file, in bytes. Populated only for a
+    #: ``SINGLE_DOWNLOADED`` outcome (``os.path.getsize`` of the written file);
+    #: ``None`` otherwise, or when the size cannot be read (#1924 F14). Mirrors the
+    #: remote broker's ``size_bytes`` key so the stdio and remote wire shapes agree.
+    size_bytes: int | None = None
     output_dir: str | None = None
     count: int | None = None
     total: int | None = None
@@ -755,6 +761,19 @@ async def _execute_download_all(
     )
 
 
+def _file_size_or_none(path: str) -> int | None:
+    """Return ``os.path.getsize(path)``, or ``None`` when it cannot be read.
+
+    Used to stamp a ``SINGLE_DOWNLOADED`` result's ``size_bytes`` (#1924 F14). A
+    missing/unreadable file (e.g. a mocked ``download_fn`` returning a path without
+    writing) yields ``None`` rather than propagating an ``OSError``.
+    """
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return None
+
+
 async def _execute_download_single(
     plan: DownloadPlan,
     facade: _DownloadFacade,
@@ -826,10 +845,16 @@ async def _execute_download_single(
         result_path = await download_fn(
             nb_id_resolved, str(final_path), artifact_id=str(selected["id"])
         )
+        written_path = result_path or str(final_path)
         return DownloadResult(
             outcome=DownloadOutcome.SINGLE_DOWNLOADED,
             artifact=selected_envelope,
-            output_path=result_path or str(final_path),
+            output_path=written_path,
+            # ``os.path.getsize`` of the just-written file is free — the download
+            # already wrote it to disk (#1924 F14). Tolerate a missing file (e.g. a
+            # mocked ``download_fn`` that returns a path without writing) by leaving
+            # ``size_bytes`` at ``None`` rather than raising.
+            size_bytes=_file_size_or_none(written_path),
         )
     except Exception as e:
         return DownloadResult(outcome=DownloadOutcome.ERROR, error=str(e), artifact=dict(selected))

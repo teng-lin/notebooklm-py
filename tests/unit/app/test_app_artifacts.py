@@ -301,7 +301,23 @@ def test_status_view_projects_full_generation_status() -> None:
         error_code="CODE",
         metadata={"k": "v"},
         is_complete=status.is_complete,
+        media_ready=status.is_complete,
     )
+
+
+def test_status_view_pending_url_is_not_media_ready() -> None:
+    """A pending row that already exposes a url is flagged ``media_ready=False``
+    so a caller knows the url is provisional (#1924 F13)."""
+    status = GenerationStatus(
+        task_id="t",
+        status="pending",
+        url="https://provisional",
+    )
+    view = status_view(status)
+    assert view.is_complete is False
+    assert view.media_ready is False
+    # The url still passes through — flagged, not dropped.
+    assert view.url == "https://provisional"
 
 
 def test_status_view_tolerates_duck_typed_source_without_optional_attrs() -> None:

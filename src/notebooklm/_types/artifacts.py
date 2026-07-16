@@ -12,6 +12,7 @@ from typing import Any
 
 from .._row_adapters.artifacts import ArtifactRow
 from .._row_adapters.notes import NoteRow
+from ..exceptions import UnknownRPCMethodError
 from ..rpc.types import (
     FLASHCARDS_VARIANT,
     INTERACTIVE_MIND_MAP_VARIANT,
@@ -174,6 +175,12 @@ class Artifact:
     _variant: int | None = field(
         default=None, repr=False
     )  # For type 4: 1=flashcards, 2=quiz, 4=interactive_mind_map
+    #: The free-text prompt this artifact was generated from, or ``None`` (e.g. a
+    #: note-backed mind map, or a type whose prompt slot is absent). Decoded from
+    #: the listing row so a listing surfaces it without a per-artifact fetch
+    #: (#1925). ``None`` on prompt-position drift — the read is guarded so a
+    #: reshaped payload never breaks ``artifacts.list``.
+    generation_prompt: str | None = None
 
     @property
     def kind(self) -> ArtifactType:
@@ -207,6 +214,14 @@ class Artifact:
         # guard is needed here.
         url = row.artifact_url(artifact_type, suppress_drift=True)
 
+        # The generation prompt is a nice-to-have listing field, not core to an
+        # artifact's identity — guard its (type-specific) nested read so a prompt-
+        # position drift degrades to ``None`` rather than breaking every listing.
+        try:
+            generation_prompt = row.generation_prompt
+        except UnknownRPCMethodError:
+            generation_prompt = None
+
         return cls(
             id=row.id,
             title=row.title,
@@ -215,6 +230,7 @@ class Artifact:
             created_at=row.created_at,
             url=url,
             _variant=row.variant,
+            generation_prompt=generation_prompt,
         )
 
     @classmethod

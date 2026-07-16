@@ -28,6 +28,7 @@ from notebooklm._types.artifacts import (  # noqa: E402
 )
 from notebooklm._types.mind_maps import MindMapKind  # noqa: E402
 from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
+    ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
     NotebookNotFoundError,
     RateLimitError,
@@ -326,16 +327,21 @@ async def test_studio_list_item_single_fetch_returns_full_body(mcp_call, mock_cl
     assert "content_preview" not in note
 
 
-async def test_studio_list_summary_leaves_artifacts_untouched(mcp_call, mock_client) -> None:
-    """An artifact item (no body) is identical in summary vs full — no preview/char_count."""
+async def test_studio_list_summary_enriches_artifacts_with_meta(mcp_call, mock_client) -> None:
+    """An artifact item gets no note-style preview/char_count, but summary DOES add
+    ``created_at`` + ``generation_prompt`` (the #1925 sliver) — so it differs from full,
+    which leaves the projection untouched."""
     mock_client.notes.list = AsyncMock(return_value=[])
     mock_client.artifacts.list = AsyncMock(return_value=[_completed_artifact("art1", "My Podcast")])
     summary = await mcp_call("studio_list", {"notebook": NB_ID})
     full = await mcp_call("studio_list", {"notebook": NB_ID, "detail": "full"})
-    assert summary.structured_content["items"] == full.structured_content["items"]
     art = summary.structured_content["items"][0]
+    # No note-body projection leaks onto an artifact.
     assert "content_preview" not in art
     assert "char_count" not in art
+    # Summary surfaces the artifact metadata; full does not (scoped enrichment).
+    assert "created_at" in art and "generation_prompt" in art
+    assert "generation_prompt" not in full.structured_content["items"][0]
 
 
 async def test_studio_list_rejects_bad_detail(mcp_call, mock_client) -> None:
@@ -444,6 +450,71 @@ async def test_studio_items_created_at_opt_in() -> None:
     assert "created_at" not in default[0]
     enriched = await studio_items(client, NB_ID, include_created_at=True)
     assert enriched[0]["created_at"] == "2024-01-02T00:00:00+00:00"
+
+
+async def test_studio_items_artifact_meta_opt_in() -> None:
+    """``include_artifact_meta`` adds ``created_at`` + ``generation_prompt`` to ARTIFACT
+    items only; notes are untouched and the default output is unchanged (#1925)."""
+    from notebooklm.mcp.tools._studio_items import studio_items
+
+    art = Artifact(
+        id="art1",
+        title="Pod",
+        _artifact_type=ArtifactTypeCode.AUDIO.value,
+        status=int(ArtifactStatus.COMPLETED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        generation_prompt="Summarize the intro",
+    )
+    client = MagicMock()
+    client.notes.list = AsyncMock(return_value=[FakeNote(id=_NOTE_ID, title="N", content="b")])
+    client.artifacts.list = AsyncMock(return_value=[art])
+
+    default = await studio_items(client, NB_ID)
+    art_row = next(it for it in default if it["type"] == "audio")
+    assert "generation_prompt" not in art_row
+    assert "created_at" not in art_row
+
+    enriched = await studio_items(client, NB_ID, include_artifact_meta=True)
+    art_row = next(it for it in enriched if it["type"] == "audio")
+    assert art_row["generation_prompt"] == "Summarize the intro"
+    assert art_row["created_at"] == "2024-01-01T00:00:00+00:00"
+    # Notes are unaffected by the artifact-only flag.
+    note_row = next(it for it in enriched if it["type"] == "note")
+    assert "generation_prompt" not in note_row
+    assert "created_at" not in note_row
+
+
+async def test_studio_list_summary_artifact_carries_created_at_and_prompt(
+    mcp_call, mock_client
+) -> None:
+    """Sliver of #1925: summary-mode (default) artifact rows surface ``created_at`` +
+    ``generation_prompt`` (already decoded on the row), matching how notes get a
+    preview + char_count."""
+    art = Artifact(
+        id="art1",
+        title="My Podcast",
+        _artifact_type=ArtifactTypeCode.AUDIO.value,
+        status=int(ArtifactStatus.COMPLETED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        generation_prompt="Summarize the intro",
+    )
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[art])
+    result = await mcp_call("studio_list", {"notebook": NB_ID})
+    row = result.structured_content["items"][0]
+    assert row["created_at"] == "2024-01-01T00:00:00+00:00"
+    assert row["generation_prompt"] == "Summarize the intro"
+
+
+async def test_studio_list_full_artifact_omits_prompt(mcp_call, mock_client) -> None:
+    """``detail="full"`` leaves the artifact projection untouched — no ``generation_prompt``
+    (the enrichment is scoped to summary mode)."""
+    art = _completed_artifact("art1", "My Podcast")
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[art])
+    result = await mcp_call("studio_list", {"notebook": NB_ID, "detail": "full"})
+    row = result.structured_content["items"][0]
+    assert "generation_prompt" not in row
 
 
 # ---------------------------------------------------------------------------
@@ -1048,6 +1119,33 @@ async def test_artifact_generate_then_status_poll_shape(mcp_call, mock_client) -
     assert polled.structured_content["is_complete"] is True
 
 
+async def test_artifact_status_pending_url_is_provisional(mcp_call, mock_client) -> None:
+    """F13: a still-pending artifact that already exposes a media url reports
+    ``media_ready: false`` so an agent knows the url is provisional, not final."""
+    mock_client.artifacts.poll_status = AsyncMock(
+        return_value=FakeStatus(
+            task_id=TASK_ID,
+            status=GenerationState.PENDING,
+            url="https://example.com/provisional.mp3",
+        )
+    )
+    result = await mcp_call("studio_status", {"notebook": NB_ID, "task_id": TASK_ID})
+    sc = result.structured_content
+    assert sc["is_complete"] is False
+    assert sc["media_ready"] is False
+    # The url is flagged provisional, not dropped — callers already reading it keep it.
+    assert sc["url"] == "https://example.com/provisional.mp3"
+
+
+async def test_artifact_status_complete_is_media_ready(mcp_call, mock_client) -> None:
+    """F13: a completed artifact reports ``media_ready: true``."""
+    mock_client.artifacts.poll_status = AsyncMock(
+        return_value=FakeStatus(task_id=TASK_ID, status=GenerationState.COMPLETED)
+    )
+    result = await mcp_call("studio_status", {"notebook": NB_ID, "task_id": TASK_ID})
+    assert result.structured_content["media_ready"] is True
+
+
 # ---------------------------------------------------------------------------
 # studio_get_prompt
 # ---------------------------------------------------------------------------
@@ -1126,6 +1224,23 @@ async def test_artifact_download_audio(mcp_call, mock_client, tmp_path) -> None:
     assert result.structured_content["outcome"] == "single_downloaded"
     assert result.structured_content["output_path"] == out
     mock_client.artifacts.download_audio.assert_awaited_once()
+
+
+async def test_artifact_download_reports_size_bytes(mcp_call, mock_client, tmp_path) -> None:
+    """F14: a stdio download echoes the on-disk ``size_bytes`` (the file was just
+    written; ``os.path.getsize`` is free and previously thrown away)."""
+    out = tmp_path / "out.mp3"
+
+    async def _write(*_a: Any, **_k: Any) -> str:
+        out.write_bytes(b"hello world")  # 11 bytes
+        return str(out)
+
+    mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
+    mock_client.artifacts.download_audio = AsyncMock(side_effect=_write)
+    result = await mcp_call(
+        "studio_download", {"notebook": NB_ID, "artifact_type": "audio", "path": str(out)}
+    )
+    assert result.structured_content["size_bytes"] == 11
 
 
 async def test_artifact_download_by_artifact_ref_infers_type(
@@ -1719,6 +1834,59 @@ async def test_artifact_retry_refusal_projects_tool_error(mcp_call, mock_client)
     mock_client.artifacts.retry_failed = AsyncMock(side_effect=_raise)
     with pytest.raises(ToolError):
         await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
+
+
+async def test_artifact_retry_completed_gives_actionable_error(mcp_call, mock_client) -> None:
+    """F15: retrying a completed (non-failed) artifact turns the generic
+    'Retry generation is unavailable' refusal into an actionable error naming the
+    current status and pointing at studio_generate."""
+    art = Artifact(
+        id=_ART_FULL,
+        title="Podcast 1",
+        _artifact_type=ArtifactTypeCode.AUDIO.value,
+        status=int(ArtifactStatus.COMPLETED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    mock_client.artifacts.retry_failed = AsyncMock(
+        side_effect=ArtifactFeatureUnavailableError("retry")
+    )
+    mock_client.artifacts.get_or_none = AsyncMock(return_value=art)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
+    msg = str(excinfo.value)
+    assert "completed" in msg  # names the current status
+    assert "studio_generate" in msg  # actionable next step
+    assert "Retry generation is unavailable" not in msg  # not the generic text
+
+
+async def test_artifact_retry_refusal_on_failed_reraises_generic(mcp_call, mock_client) -> None:
+    """F15 guard: when the artifact IS failed (or vanished) the refusal doesn't fit the
+    'not failed' story, so the original generic error is re-raised unchanged."""
+    art = Artifact(
+        id=_ART_FULL,
+        title="Podcast 1",
+        _artifact_type=ArtifactTypeCode.AUDIO.value,
+        status=int(ArtifactStatus.FAILED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    mock_client.artifacts.retry_failed = AsyncMock(
+        side_effect=ArtifactFeatureUnavailableError("retry")
+    )
+    mock_client.artifacts.get_or_none = AsyncMock(return_value=art)
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
+    assert "Retry generation is unavailable" in str(excinfo.value)
+
+
+async def test_artifact_retry_happy_path_skips_state_check(mcp_call, mock_client) -> None:
+    """F15: the happy path must NOT pay for the extra ``get_or_none`` state read."""
+    mock_client.artifacts.retry_failed = AsyncMock(
+        return_value=FakeStatus(task_id=_ART_FULL, status=GenerationState.IN_PROGRESS, url=None)
+    )
+    mock_client.artifacts.get_or_none = AsyncMock()
+    result = await mcp_call("studio_retry", {"notebook": NB_ID, "artifact": _ART_FULL})
+    assert result.structured_content["status"] == "in_progress"
+    mock_client.artifacts.get_or_none.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

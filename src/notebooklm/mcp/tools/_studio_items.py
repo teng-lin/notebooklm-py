@@ -100,7 +100,11 @@ class StudioResolvedItem:
 
 
 async def studio_items(
-    client: NotebookLMClient, nb_id: str, *, include_created_at: bool = False
+    client: NotebookLMClient,
+    nb_id: str,
+    *,
+    include_created_at: bool = False,
+    include_artifact_meta: bool = False,
 ) -> list[dict[str, Any]]:
     """Fetch + merge a notebook's text notes and studio artifacts into one list.
 
@@ -116,6 +120,12 @@ async def studio_items(
     key (ISO string or ``None``) read from the already-fetched note/artifact row — used
     by ``studio_list(detail="compact")``. It defaults off so the by-ref resolver and the
     default list paths stay byte-identical.
+
+    When ``include_artifact_meta`` is set, each ARTIFACT item additionally carries
+    ``created_at`` and ``generation_prompt`` (both already decoded on the ``Artifact``)
+    — used by ``studio_list(detail="summary")`` to give artifacts the same richer
+    projection notes get. Notes are untouched by this flag. It defaults off so the
+    by-ref resolver and the default list paths stay byte-identical.
 
     Items are keyed by id (notes first) so a hypothetical future note∩artifact
     overlap can't double-list — this never fires today (``notes.list`` excludes
@@ -148,11 +158,16 @@ async def studio_items(
             "status_label": getattr(art, "status_str", None),
             "url": getattr(art, "url", None),
         }
-        if include_created_at:
+        if include_created_at or include_artifact_meta:
             # Direct attribute access — ``created_at`` is an unconditional field on the
             # typed ``Artifact`` (``status_str`` / ``url`` above keep ``getattr`` because
             # minimal fakes/rows can lack them).
             art_item["created_at"] = to_jsonable(art.created_at)
+        if include_artifact_meta:
+            # ``generation_prompt`` is an unconditional field on the typed ``Artifact``
+            # (``getattr`` guards a minimal fake that predates it); ``None`` for a
+            # note-backed mind map or a prompt-less type (#1925).
+            art_item["generation_prompt"] = getattr(art, "generation_prompt", None)
         items[art_id] = art_item
     return list(items.values())
 

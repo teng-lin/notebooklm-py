@@ -266,6 +266,14 @@ class ArtifactStatusView:
     error_code: str | None
     metadata: dict[str, Any] | None
     is_complete: bool
+    #: Whether the artifact's media is fully ready. ``poll_status`` extracts
+    #: ``url`` unconditionally (even for a still-pending row), so a non-null
+    #: ``url`` alone does NOT mean it is safe to use. This mirrors the poll
+    #: adapter's ``is_media_ready`` gate (it downgrades a COMPLETED-but-not-yet-
+    #: populated media row back to in-progress), so it is ``True`` exactly when
+    #: generation has completed — when ``False`` any ``url`` present is
+    #: provisional/expiring and should not be fetched yet (#1924 F13).
+    media_ready: bool
 
 
 def status_view(status: GenerationStatus) -> ArtifactStatusView:
@@ -284,6 +292,11 @@ def status_view(status: GenerationStatus) -> ArtifactStatusView:
         error_code=getattr(status, "error_code", None),
         metadata=getattr(status, "metadata", None),
         is_complete=status.is_complete,
+        # ``poll_status`` only reports ``is_complete`` once the media URL is
+        # populated (it downgrades a COMPLETED-but-empty media row to in-progress
+        # via ``is_media_ready``), so ``is_complete`` is the media-ready signal:
+        # a non-null ``url`` on a not-yet-complete row is provisional (#1924 F13).
+        media_ready=status.is_complete,
     )
 
 
