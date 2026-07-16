@@ -32,7 +32,7 @@ def test_conversation_id_is_forwarded(authed_client: TestClient, fake_client: Fa
     )
     assert resp.status_code == 200
     assert resp.json()["conversation_id"] == "conv-42"
-    assert fake_client.last_ask == {"notebook_id": "nb-1", "conversation_id": "conv-42"}
+    assert fake_client.last_ask == {"notebook_id": "nb-1", "conversation_id": "conv-42", "source_ids": None}
 
 
 def test_rate_limited_ask_is_429(authed_client: TestClient, fake_client: FakeClient) -> None:

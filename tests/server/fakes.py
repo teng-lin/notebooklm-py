@@ -292,11 +292,11 @@ class FakeChat:
         self._s = state
 
     async def ask(
-        self, notebook_id: str, question: str, *, conversation_id: str | None = None
+        self, notebook_id: str, question: str, *, conversation_id: str | None = None, source_ids: list[str] | None = None
     ) -> AskResult:
         if self._s.chat_error is not None:
             raise self._s.chat_error
-        self._s.last_ask = {"notebook_id": notebook_id, "conversation_id": conversation_id}
+        self._s.last_ask = {"notebook_id": notebook_id, "conversation_id": conversation_id, "source_ids": source_ids}
         return AskResult(
             answer=f"answer to: {question}",
             conversation_id=conversation_id or "conv-1",
