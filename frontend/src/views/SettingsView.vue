@@ -52,6 +52,16 @@
           <el-form-item v-if="nbStatus.error" label="错误信息">
             <span class="error-text">{{ nbStatus.error }}</span>
           </el-form-item>
+          <el-form-item>
+            <el-button
+              type="primary"
+              :loading="reconnecting"
+              :disabled="reconnecting"
+              @click="handleReconnect"
+            >
+              {{ reconnecting ? "连接中..." : "重新连接" }}
+            </el-button>
+          </el-form-item>
         </el-form>
       </div>
 
@@ -82,6 +92,7 @@ const displayName = ref(user?.display_name || "")
 const saving = ref(false)
 const isDark = ref(document.documentElement.classList.contains("dark"))
 const nbStatus = reactive({ connected: false, error: null as string | null })
+const reconnecting = ref(false)
 const googleBtnRef = ref<HTMLElement>()
 const googleReady = ref(false)
 const googleError = ref("")
@@ -125,6 +136,26 @@ async function fetchNbStatus() {
     nbStatus.connected = r.data.connected
     nbStatus.error = r.data.error
   } catch { /* ignore */ }
+}
+
+async function handleReconnect() {
+  reconnecting.value = true
+  try {
+    const r = await request.post("/api/settings/notebooklm-retry")
+    if (r.data.connected) {
+      nbStatus.connected = true
+      nbStatus.error = null
+      ElMessage.success("NotebookLM 连接成功")
+    } else {
+      nbStatus.connected = false
+      nbStatus.error = r.data.error || "连接失败"
+      ElMessage.error("连接失败")
+    }
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || "重连失败")
+  } finally {
+    reconnecting.value = false
+  }
 }
 
 function toggleTheme(val: boolean) {

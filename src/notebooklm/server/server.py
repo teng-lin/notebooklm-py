@@ -7,7 +7,9 @@ notebook, source, chat, generation, and external-KB APIs under ``/api/*``.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -38,6 +40,7 @@ from .routes import (
 )
 
 SERVER_NAME = "baoku-server"
+logger = logging.getLogger(__name__)
 
 _frontend_dist = os.path.join(os.path.dirname(__file__), "..", "..", "..", "frontend", "dist")
 
@@ -46,6 +49,15 @@ _PROFILES_DIR = Path.home() / ".notebooklm" / "profiles"
 
 def _profile_storage_path(profile_name: str) -> Path:
     return _PROFILES_DIR / profile_name / "storage_state.json"
+
+
+def _make_state(
+    client: NotebookLMClient | None,
+    pending: PendingRegistry,
+    limiters: ServerLimiters,
+    client_error: BaseException | None,
+) -> AppState:
+    return AppState(client=client, pending=pending, limiters=limiters, client_error=client_error)
 
 
 def create_app() -> FastAPI:
@@ -57,30 +69,50 @@ def create_app() -> FastAPI:
         pending = PendingRegistry()
         limiters = ServerLimiters.from_env()
 
-        storage_path = _profile_storage_path("default")
-        client = None
-        client_error = None
-        if storage_path.exists():
+        app.state.notebooklm = _make_state(
+            client=None, pending=pending, limiters=limiters,
+            client_error=RuntimeError("NotebookLM client is initializing..."),
+        )
+
+        async def _init_client() -> None:
+            storage_path = _profile_storage_path("default")
+            if not storage_path.exists():
+                app.state.notebooklm = _make_state(
+                    client=None, pending=pending, limiters=limiters,
+                    client_error=RuntimeError(
+                        "NotebookLM client is not configured. "
+                        "Go to Settings → NotebookLM 连接 to upload your cookies."
+                    ),
+                )
+                return
             try:
                 ctx = NotebookLMClient.from_storage(path=str(storage_path), timeout=60)
                 client = await ctx.__aenter__()
                 app.state._nlm_ctx = ctx
+                app.state.notebooklm = _make_state(
+                    client=client, pending=pending, limiters=limiters, client_error=None,
+                )
+                logger.info("NotebookLM client connected successfully")
             except Exception as exc:
-                client_error = exc
+                app.state.notebooklm = _make_state(
+                    client=None, pending=pending, limiters=limiters,
+                    client_error=RuntimeError(str(exc) or type(exc).__name__),
+                )
+                logger.warning(
+                    "NotebookLM client connection failed: %s: %s",
+                    type(exc).__name__, exc,
+                )
 
-        if client is None and client_error is None:
-            client_error = RuntimeError(
-                "NotebookLM client is not configured. "
-                "Go to Settings → NotebookLM 连接 to upload your cookies."
-            )
+        task = asyncio.ensure_future(_init_client())
 
-        app.state.notebooklm = AppState(
-            client=client,
-            pending=pending,
-            limiters=limiters,
-            client_error=client_error,
-        )
         yield
+
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         ctx = getattr(app.state, "_nlm_ctx", None)
         if ctx:
             try:
@@ -198,6 +230,44 @@ def create_app() -> FastAPI:
                 HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"Failed to connect: {err_msg}",
             ) from exc
+
+    @app.post("/api/settings/notebooklm-retry")
+    async def notebooklm_retry(
+        request: Request,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, str | bool | None]:
+        storage_path = _profile_storage_path("default")
+        if not storage_path.exists():
+            return {"connected": False, "error": "No storage_state.json found. Run `notebooklm login` first."}
+
+        old_state = getattr(request.app.state, "notebooklm", None)
+        if old_state and old_state.client:
+            try:
+                await old_state.client.aclose()
+            except Exception:
+                pass
+
+        pending = PendingRegistry()
+        limiters = ServerLimiters.from_env()
+        limiters.set_bound_loop(asyncio.get_running_loop())
+
+        try:
+            ctx = NotebookLMClient.from_storage(path=str(storage_path), timeout=60)
+            client = await ctx.__aenter__()
+            request.app.state._nlm_ctx = ctx
+            request.app.state.notebooklm = _make_state(
+                client=client, pending=pending, limiters=limiters, client_error=None,
+            )
+            logger.info("NotebookLM client reconnected successfully")
+            return {"connected": True, "error": None}
+        except Exception as exc:
+            err_msg = str(exc) or type(exc).__name__
+            request.app.state.notebooklm = _make_state(
+                client=None, pending=pending, limiters=limiters,
+                client_error=RuntimeError(err_msg),
+            )
+            logger.warning("NotebookLM reconnect failed: %s: %s", type(exc).__name__, exc)
+            return {"connected": False, "error": err_msg}
 
     if not dev_mode and os.path.isdir(_frontend_dist):
         app.mount("/assets", StaticFiles(directory=os.path.join(_frontend_dist, "assets")), name="assets")
