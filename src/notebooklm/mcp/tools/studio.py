@@ -50,11 +50,13 @@ from .._resolve import (
 from ._passthrough import passthrough_child_id, passthrough_notebook_id
 from ._studio_download import (
     _DOWNLOAD_SPECS,
+    _INLINE_TEXT_TYPES,
     _KIND_TO_DOWNLOAD_KEY,
     DownloadType,
     _broker_download,
     _is_http_transport,
     _passthrough_download_notebook,
+    _read_inline_artifact_text,
     _resolve_artifact_id,
 )
 from ._studio_items import (
@@ -221,11 +223,11 @@ def register(mcp: Any) -> None:
         also carry ``status_label`` / ``url``. Bounded page of ``limit`` (default 50)
         from ``offset``, with ``total`` / ``offset`` / ``has_more``.
 
-        * ``detail`` ladder: ``summary`` (default) gives each note a bounded
-          ``content_preview`` + ``char_count`` (artifacts unaffected); ``full`` returns
-          the whole ``content``; ``compact`` collapses every item to ``id`` / ``title``
-          / ``type`` / ``status_label`` / ``created_at`` (no body/``url``) — a low-token
-          roster.
+        * ``detail`` ladder (NOTE bodies only; read a report/data-table body via
+          ``studio_download``): ``summary`` (default) gives each note a bounded
+          ``content_preview`` + ``char_count``; ``full`` returns the whole ``content``;
+          ``compact`` collapses every item to ``id`` / ``title`` / ``type`` /
+          ``status_label`` / ``created_at`` (no body/``url``) — a low-token roster.
         * ``kind`` filters to one ``type``.
         * ``item`` (name or id) fetches just that item as a 1-element list with the
           note's FULL ``content``; no match is NOT_FOUND. ``limit`` / ``offset`` /
@@ -526,9 +528,8 @@ def register(mcp: Any) -> None:
         """Download a generated artifact. Accepts a notebook name or ID.
 
         Target the artifact in ONE of two ways (exactly one):
-        * ``artifact`` — a name-or-id ref (title / id / unique-id-prefix), the same
-          form the other ``artifact_*`` tools take. The tool resolves it to the
-          artifact's type + id for you.
+        * ``artifact`` — a name-or-id ref (title / id / unique-id-prefix), the form the
+          other ``artifact_*`` tools take; resolves to its type + id.
         * ``artifact_type`` — one of audio|video|slide-deck|infographic|report|
           mind-map|data-table|quiz|flashcards, optionally with ``artifact_id``
           (full or unique-prefix) for a specific one; omit ``artifact_id`` to get
@@ -537,14 +538,14 @@ def register(mcp: Any) -> None:
         ``output_format`` overrides the default file format where supported:
         slide-deck → pdf|pptx; quiz/flashcards → json|markdown|html.
 
-        Over **stdio** the artifact is written to ``path`` (the output file on the
-        server host; required). Over the **remote (http) connector** the server's
-        filesystem is unreachable, so the tool instead returns a clickable
-        ``resource_link`` plus ``{"status": "download_ready", "url": …}`` — a
-        short-lived signed URL; ``path`` is ignored. On the remote connector an
-        explicit ``artifact_id`` (and ``output_format``) is validated up front at the
-        tool call — an unknown/ambiguous id fails immediately, not as a browser-side
-        400 when the link is opened.
+        Over **stdio** the artifact is written to ``path`` (required). Over the
+        **remote (http) connector** the server filesystem is unreachable, so the tool
+        returns a clickable ``resource_link`` plus ``{"status": "download_ready", "url":
+        …}`` — a short-lived signed URL; ``path`` is ignored. A text kind
+        (report/data-table) also returns the body inline (bounded ``content`` +
+        ``char_count`` + ``truncated``) for link-incapable hosts. On the remote
+        connector an explicit ``artifact_id`` (and ``output_format``) is validated up
+        front — an unknown/ambiguous id fails immediately, not as a 400 when opened.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -674,8 +675,25 @@ def register(mcp: Any) -> None:
                                 f"(status: {incomplete.status_str}); wait for it to complete."
                             ) from None
                         raise
+                # For text kinds (report / data-table) also fetch the body and return
+                # it INLINE alongside the link, so a host that can't open a
+                # resource_link still gets the content (#1907). Bounded to
+                # INLINE_TEXT_MAX_CHARS; the link remains the full file.
+                inline = (
+                    await _read_inline_artifact_text(
+                        client, nb_id, spec, output_format, artifact_id
+                    )
+                    if artifact_type in _INLINE_TEXT_TYPES
+                    else None
+                )
                 return _broker_download(
-                    cfg, nb_id, artifact_type, output_format, artifact_id, title=resolved_title
+                    cfg,
+                    nb_id,
+                    artifact_type,
+                    output_format,
+                    artifact_id,
+                    title=resolved_title,
+                    inline=inline,
                 )
             # No file-transfer config. On the remote (http) connector the server
             # filesystem is unreachable REGARDLESS of `path`, so fail clearly here —

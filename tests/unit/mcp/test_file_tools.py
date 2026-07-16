@@ -913,3 +913,144 @@ async def test_artifact_download_remote_ref_path_not_double_validated(mock_clien
     assert result.structured_content["artifact_id"] == _AID_A
     # No list call carried the pre-validation's distinctive type-scoped positional.
     assert all(len(call.args) < 2 for call in mock_client.artifacts.list.await_args_list)
+
+
+async def test_artifact_download_remote_audio_has_no_inline_content(mock_client, config) -> None:
+    # A binary/non-text kind (audio) must NOT gain the inline body fields — the link
+    # remains the only affordance, and no extra download RPC is issued for it (#1907).
+    mock_client.artifacts.list = AsyncMock(return_value=[_audio_artifact(_AID_A)])
+    mock_client.artifacts.download_audio = AsyncMock()
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "audio", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert "content" not in sc and "char_count" not in sc and "truncated" not in sc
+    assert not any(getattr(block, "type", None) == "text" for block in result.content)
+    mock_client.artifacts.download_audio.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# studio_download — inline text for report / data-table (#1907)
+# --------------------------------------------------------------------------- #
+def _report_artifact(art_id: str, title: str = "Q3 Report", *, completed: bool = True) -> Artifact:
+    return Artifact(
+        id=art_id,
+        title=title,
+        _artifact_type=ArtifactTypeCode.REPORT.value,
+        status=int(ArtifactStatus.COMPLETED if completed else ArtifactStatus.PROCESSING),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def _data_table_artifact(art_id: str, title: str = "Table") -> Artifact:
+    return Artifact(
+        id=art_id,
+        title=title,
+        _artifact_type=ArtifactTypeCode.DATA_TABLE.value,
+        status=int(ArtifactStatus.COMPLETED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def _writing_download(body: str, *, encoding: str = "utf-8") -> AsyncMock:
+    """An ``AsyncMock`` for a ``download_<x>`` that writes ``body`` to the given path
+    (mirroring the real download methods) so ``execute_download`` yields a real file
+    for the inline reader to read back."""
+
+    async def _dl(notebook_id: str, output_path: str, artifact_id: str | None = None, **_: Any):
+        with open(output_path, "w", encoding=encoding) as fh:
+            fh.write(body)
+        return output_path
+
+    return AsyncMock(side_effect=_dl)
+
+
+async def test_artifact_download_remote_report_returns_inline_text(mock_client, config) -> None:
+    # The reporter's exact failure (#1907): a completed report over the remote connector
+    # must return the body INLINE alongside the resource_link, so a link-incapable host
+    # can still read it.
+    body = "# Q3 Report\n\nThe numbers are up."
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
+    mock_client.artifacts.download_report = _writing_download(body)
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    # The link is still present (full file for link-capable hosts)...
+    assert any(getattr(b, "type", None) == "resource_link" for b in result.content)
+    # ...and the body rides inline, bounded, with the full char_count + truncated flag.
+    assert sc["content"] == body
+    assert sc["char_count"] == len(body)
+    assert sc["truncated"] is False
+    # A TextContent block carries the body for a host that renders content, not links.
+    text_blocks = [b for b in result.content if getattr(b, "type", None) == "text"]
+    assert len(text_blocks) == 1
+    assert text_blocks[0].text == body
+
+
+async def test_artifact_download_remote_report_truncates_long_body(mock_client, config) -> None:
+    # A body over the cap is truncated: content is the bounded prefix, char_count stays
+    # the FULL length, truncated is True, and the inline block ends with a marker that
+    # points at the link for the full file.
+    body = "x" * (art_mod.INLINE_TEXT_MAX_CHARS + 500)
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
+    mock_client.artifacts.download_report = _writing_download(body)
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["content"] == body[: art_mod.INLINE_TEXT_MAX_CHARS]
+    assert len(sc["content"]) == art_mod.INLINE_TEXT_MAX_CHARS
+    assert sc["char_count"] == len(body)
+    assert sc["truncated"] is True
+    block = next(b for b in result.content if getattr(b, "type", None) == "text")
+    assert block.text.startswith(body[: art_mod.INLINE_TEXT_MAX_CHARS])
+    assert "truncated" in block.text.lower()
+
+
+async def test_artifact_download_remote_report_no_artifact_is_link_only(
+    mock_client, config
+) -> None:
+    # The latest path with no completed report: the inline read yields nothing (the
+    # execute_download returns NO_ARTIFACTS), so the result is link-only — no inline
+    # fields — and the link still stands (opening it surfaces the same state).
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report"},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    assert "content" not in sc
+    assert not any(getattr(b, "type", None) == "text" for b in result.content)
+
+
+async def test_artifact_download_remote_data_table_inline_strips_bom(mock_client, config) -> None:
+    # A data-table is inlined too; the real writer uses utf-8-sig (BOM), so the inline
+    # reader must strip the BOM — the returned content is clean CSV without a leading
+    # BOM (newlines are normalized to \n on read; the link keeps the file's CRLF).
+    csv_body = "col_a,col_b\r\n1,2\r\n"
+    mock_client.artifacts.list = AsyncMock(return_value=[_data_table_artifact(_AID_A)])
+    mock_client.artifacts.download_data_table = _writing_download(csv_body, encoding="utf-8-sig")
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "data-table", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["content"] == "col_a,col_b\n1,2\n"
+    assert not sc["content"].startswith("﻿")  # BOM stripped by utf-8-sig read
+    assert sc["truncated"] is False

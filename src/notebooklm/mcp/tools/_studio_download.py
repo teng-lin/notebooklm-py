@@ -15,12 +15,17 @@ from ``cli/_download_specs.py``.
 
 from __future__ import annotations
 
+import asyncio
+import os
+import shutil
+import tempfile
 import time
-from typing import Any, Literal, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.tools.tool import ToolResult
-from mcp.types import ResourceLink
+from mcp.types import ResourceLink, TextContent
 from pydantic import AnyUrl
 
 from ..._app import download as download_core
@@ -29,18 +34,41 @@ from ...exceptions import ValidationError
 from ...types import ArtifactType
 from .._filelink import DOWNLOAD_TTL, FileTransferConfig
 
+if TYPE_CHECKING:
+    from ...client import NotebookLMClient
+
 __all__ = [
+    "INLINE_TEXT_MAX_CHARS",
     "DownloadType",
     "_DOWNLOAD_SPECS",
+    "_INLINE_TEXT_TYPES",
     "_KIND_TO_DOWNLOAD_KEY",
     "_broker_download",
     "_is_http_transport",
     "_passthrough_download_notebook",
+    "_read_inline_artifact_text",
     "_resolve_artifact_id",
     "download_extension",
     "download_filename",
     "download_mime_type",
 ]
+
+#: Download-type keys whose file is UTF-8 text safe to ALSO return inline in the
+#: ``studio_download`` tool result (alongside the ``resource_link``), so a host that
+#: cannot open a ``resource_link`` — e.g. the claude.ai remote connector — can still
+#: read the body. Every other kind is binary (audio/video/pdf/png) or structured
+#: JSON best consumed as a file. #1907.
+_INLINE_TEXT_TYPES: frozenset[str] = frozenset({"report", "data-table"})
+
+#: Max chars of inline artifact text returned alongside the download link, mirroring
+#: ``source_read``'s 10k content cap (ADR-0025). A longer body is truncated (the tool
+#: marks ``truncated`` and appends a marker to the inline block); the full file stays
+#: reachable via the ``resource_link`` / signed URL.
+INLINE_TEXT_MAX_CHARS = 10_000
+
+#: Appended to the inline TEXT block (not the structured ``content`` prefix) when the
+#: body was truncated, pointing the reader at the link for the complete file.
+_INLINE_TRUNCATION_MARKER = "\n\n[… truncated — open the download link above for the full file …]"
 
 #: The downloadable artifact-type keys (the ``artifact_type`` param's enum).
 DownloadType = Literal[
@@ -272,6 +300,62 @@ def _is_http_transport() -> bool:
     return True
 
 
+async def _read_inline_artifact_text(
+    client: NotebookLMClient,
+    notebook_id: str,
+    spec: download_core.DownloadTypeSpec,
+    output_format: str | None,
+    artifact_id: str | None,
+) -> tuple[str, int, bool] | None:
+    """Download a TEXT artifact server-side and return ``(content, char_count,
+    truncated)`` bounded to :data:`INLINE_TEXT_MAX_CHARS`, or ``None`` when no
+    completed artifact of the type is available.
+
+    Used by :func:`_broker_download` to inline a report / data-table body so a
+    resource-link-incapable host can read it (#1907). Reuses the SAME
+    :func:`~notebooklm._app.download.execute_download` path the ``/files/dl`` route
+    serves — spooling to a private temp file and reading it back — so the inline
+    text is byte-identical to the file the signed link hands out. A missing artifact
+    or a soft download error yields ``None`` (the link still stands); an upstream RPC
+    failure propagates (the link would fail identically).
+
+    ``content`` is the clean first-``INLINE_TEXT_MAX_CHARS``-chars prefix; ``char_count``
+    is the FULL length; ``truncated`` says whether the prefix omits any tail. Read with
+    ``utf-8-sig`` so a data-table CSV's BOM is stripped (a report is plain ``utf-8``).
+    """
+    temp_dir = await asyncio.to_thread(tempfile.mkdtemp, prefix="nblm-mcp-inline-")
+    try:
+        temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
+        args: dict[str, Any] = {
+            "notebook_id": notebook_id,
+            "output_path": temp_path,
+            "latest": artifact_id is None,
+        }
+        if artifact_id is not None:
+            args["artifact_id"] = artifact_id
+        if output_format is not None:
+            args[spec.format_param_name] = output_format
+        plan = download_core.build_download_plan(spec, args, cwd=Path.cwd())
+        result = await download_core.execute_download(
+            plan,
+            client,
+            notebook_resolver=_passthrough_download_notebook,
+            artifact_resolver=_resolve_artifact_id,
+        )
+        if result.outcome != download_core.DownloadOutcome.SINGLE_DOWNLOADED:
+            # No completed artifact / soft download error — return nothing so the
+            # broker still hands out the link (which will surface the same state).
+            return None
+        served = result.output_path or temp_path
+        text = await asyncio.to_thread(Path(served).read_text, encoding="utf-8-sig")
+    finally:
+        await asyncio.to_thread(shutil.rmtree, temp_dir, ignore_errors=True)
+
+    char_count = len(text)
+    truncated = char_count > INLINE_TEXT_MAX_CHARS
+    return text[:INLINE_TEXT_MAX_CHARS], char_count, truncated
+
+
 def _broker_download(
     cfg: FileTransferConfig,
     notebook_id: str,
@@ -280,6 +364,7 @@ def _broker_download(
     artifact_id: str | None = None,
     *,
     title: str | None = None,
+    inline: tuple[str, int, bool] | None = None,
 ) -> ToolResult:
     """Mint a signed download URL + a clickable ``resource_link`` for a remote
     ``studio_download``.
@@ -295,6 +380,13 @@ def _broker_download(
     helpers the ``/files/dl`` route serves with, so the advertised metadata and the
     streamed bytes can't drift. ``size_bytes`` is ``None``: it can't be known
     without eagerly fetching the artifact, which this must not do.
+
+    ``inline`` (``(content, char_count, truncated)``, from
+    :func:`_read_inline_artifact_text` for text kinds — report / data-table) adds the
+    bounded body to the payload AND as a ``TextContent`` block, so a host that cannot
+    open the ``resource_link`` can still read it (#1907). ``content`` is the bounded
+    prefix, ``char_count`` the full length, ``truncated`` whether the prefix omits a
+    tail; the inline block appends a truncation marker when truncated.
     """
     spec = _DOWNLOAD_SPECS[artifact_type]
     payload: dict[str, Any] = {
@@ -335,4 +427,12 @@ def _broker_download(
         uri=AnyUrl(url),
         description=desc,
     )
-    return ToolResult(content=[link], structured_content=structured)
+    content: list[Any] = [link]
+    if inline is not None:
+        inline_content, char_count, truncated = inline
+        structured["content"] = inline_content
+        structured["char_count"] = char_count
+        structured["truncated"] = truncated
+        block = inline_content + _INLINE_TRUNCATION_MARKER if truncated else inline_content
+        content.append(TextContent(type="text", text=block))
+    return ToolResult(content=content, structured_content=structured)
