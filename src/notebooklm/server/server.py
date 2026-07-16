@@ -26,7 +26,7 @@ from ._errors import install_exception_handlers
 from .auth_deps import get_current_user
 from .database import init_db
 from .models import User
-from .routes import auth, chat, external_kb, generation, notebooks, notes, sources
+from .routes import auth, baoku_notes, chat, external_kb, generation, notebooks, sources
 
 SERVER_NAME = "baoku-server"
 
@@ -113,7 +113,7 @@ def create_app() -> FastAPI:
     app.include_router(notebooks.router, prefix="/api")
     app.include_router(sources.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
-    app.include_router(notes.router, prefix="/api")
+    app.include_router(baoku_notes.router, prefix="/api")
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
