@@ -31,28 +31,35 @@ __all__ = [
     "unwrap_prompt_suggestions",
 ]
 
-# A single leading markdown list marker (bullet ``-``/``*``/``+`` or an ordered
-# ``1.`` / ``1)`` counter) plus its trailing space. The backend sometimes
-# formats a suggestion as a markdown list item, so a ``prompt`` / ``title`` leaf
-# can arrive as ``"\n- Ask X"``; an agent piping that straight into ``chat_ask``
-# would send a bullet-dash as the question. We strip one leading marker so both
-# the CLI and the MCP surface get a clean, ready-to-send string.
-_LEADING_LIST_MARKER = re.compile(r"(?:[-*+]|\d+[.)])\s+")
+# A single leading markdown *bullet* marker (``-``/``*``/``+``) plus its trailing
+# space. The backend sometimes frames a suggestion as a markdown list item, so a
+# ``prompt`` / ``title`` leaf can arrive as ``"\n- Ask X"``; an agent piping that
+# straight into ``chat_ask`` would send a bullet-dash as the question. We strip
+# one leading bullet so both the CLI and the MCP surface get a clean, ready-to-send
+# string. Ordered-list counters (``1.`` / ``2026.``) are deliberately NOT matched:
+# the only observed framing is the bullet, and a numeric prefix is frequently
+# legitimate content (a year, a count) that must be preserved (#1912 review).
+_LEADING_LIST_MARKER = re.compile(r"[-*+]\s+")
 
 
 def _strip_leading_list_marker(text: str) -> str:
-    """Return ``text`` with surrounding whitespace and one leading list marker removed.
+    """Return ``text`` with surrounding whitespace and one leading bullet marker removed.
 
     Tight normalization for suggestion leaves (issue #1909): only leading
-    whitespace + a single leading bullet/counter marker + trailing whitespace
-    are removed. Interior newlines and content are left untouched, so a genuinely
-    multi-line prompt keeps its body — only the list-item framing is stripped.
+    whitespace + a single leading bullet marker + trailing whitespace are removed.
+    Interior newlines and content are left untouched, so a genuinely multi-line
+    prompt keeps its body — only the leading list-item framing is stripped.
+
+    ``lstrip`` runs before the match (not a full ``strip``) so a marker-only leaf
+    like ``"\\n-   "`` collapses cleanly to ``""`` rather than a bare ``"-"``
+    (#1912 review): the leading whitespace is removed first, the whole marker then
+    matches, and the empty remainder is returned.
     """
-    stripped = text.strip()
-    marker = _LEADING_LIST_MARKER.match(stripped)
+    lstripped = text.lstrip()
+    marker = _LEADING_LIST_MARKER.match(lstripped)
     if marker:
-        stripped = stripped[marker.end() :].strip()
-    return stripped
+        return lstripped[marker.end() :].strip()
+    return lstripped.rstrip()
 
 
 # ``GeneratePromptSuggestions`` (``otmP3b``) method id, threaded into

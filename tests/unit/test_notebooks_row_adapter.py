@@ -41,12 +41,26 @@ class TestPromptSuggestionRow:
         assert row.prompt == "Summarize."
 
     def test_leading_list_marker_stripped(self) -> None:
-        # Bullet ("- "/"* "/"+ ") and ordered ("1." / "1)") leading markers, with
-        # any surrounding whitespace, are stripped from both title and prompt.
+        # Bullet ("- "/"* "/"+ ") leading markers, with any surrounding
+        # whitespace, are stripped from both title and prompt.
         assert PromptSuggestionRow(["t", "\n- Ask X"]).prompt == "Ask X"
         assert PromptSuggestionRow(["t", "* Ask X"]).prompt == "Ask X"
-        assert PromptSuggestionRow(["t", "  1. Ask X"]).prompt == "Ask X"
+        assert PromptSuggestionRow(["t", "  + Ask X"]).prompt == "Ask X"
         assert PromptSuggestionRow(["\n- A title", "p"]).title == "A title"
+
+    def test_marker_only_leaf_collapses_to_empty(self) -> None:
+        # A leaf that is only a bullet + whitespace collapses to "" — not a bare
+        # "-" (the lstrip-before-match structure handles this, #1912 review).
+        assert PromptSuggestionRow(["t", "\n-   "]).prompt == ""
+
+    def test_numeric_prefix_preserved(self) -> None:
+        # Ordered-list counters are NOT stripped — a legit numeric prefix (a year,
+        # a count) is meaningful content, not list framing (#1912 review).
+        assert (
+            PromptSuggestionRow(["t", "2026. Summarize the annual trends"]).prompt
+            == "2026. Summarize the annual trends"
+        )
+        assert PromptSuggestionRow(["t", "5) reasons to refactor"]).prompt == "5) reasons to refactor"
 
     def test_clean_leaf_unchanged_apart_from_surrounding_whitespace(self) -> None:
         # A leaf with no leading marker keeps its content; only surrounding
