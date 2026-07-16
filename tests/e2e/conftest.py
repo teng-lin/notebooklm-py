@@ -70,12 +70,14 @@ _COVERAGE_FLOOR_MARKERS = {
 # fails if an unregistered generate_/revise_/retry_ method appears on a covered class.
 #
 # Note: wrapping a whole method means a RateLimitError from a *post-create* RPC (e.g.
-# mind_maps.generate(wait=True) polling after the artifact id exists) would also skip
-# before its caller can clean up. The #1819 create-time case raises before any artifact
-# exists (no leak). To avoid the post-create-throttle leak, callers that need cleanup
-# create with wait=False (id captured, cleanup guard armed) and poll for completion
-# inside the guard — see tests/e2e/test_interactive_mind_map.py (#1937). The wrapper is
-# still whole-method: it covers the create-time skip; the guarded poll owns its own.
+# mind_maps.generate(wait=True) polling, or its settling _find_interactive LIST, after
+# CREATE_ARTIFACT already made the artifact) also skips — before generate returns the id
+# to its caller, so the caller can't clean up and the artifact leaks. The #1819
+# create-time case raises before any artifact exists (no leak). Splitting create from
+# poll does NOT close this: even generate(wait=False) issues a post-create LIST. Callers
+# that need cleanup therefore guard with an unconditional teardown sweep of the created
+# artifact type (id capture is unreliable across the skip) — see
+# tests/e2e/test_interactive_mind_map.py's swept_interactive_mind_maps fixture (#1937).
 _GENERATION_SKIP_TARGETS = {
     # ``retry_failed`` re-runs generation and raises RateLimitError on quota, same
     # as generate_*/revise_* — cover it too so a future e2e test doesn't hard-fail.
