@@ -70,7 +70,7 @@ def _create_invalid_argument_error(
     *, method_id: str = RPCMethod.CREATE_NOTEBOOK.value, rpc_code: int = 3
 ) -> RPCError:
     return RPCError(
-        "RPC CCqFvf returned null result with status code 3 (Invalid argument).",
+        "The server rejected this request (invalid argument).",
         method_id=method_id,
         rpc_code=rpc_code,
     )

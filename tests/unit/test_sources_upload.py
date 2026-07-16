@@ -493,13 +493,13 @@ class TestRegisterFileSource:
         # / PERMISSION_DENIED) with an account-routing hint attached — exactly
         # the #114/#294 pattern we suspect for #474.
         mock_core.rpc_executor.rpc_call.side_effect = ClientError(
-            "RPC o4cbdc returned null result with status code 7 (Permission denied). "
+            "The server rejected this request (permission denied). "
             "If you have multiple Google accounts signed in...",
             method_id="o4cbdc",
             rpc_code=7,
         )
 
-        with pytest.raises(SourceAddError, match="Permission denied") as exc_info:
+        with pytest.raises(SourceAddError, match="permission denied") as exc_info:
             await sources_api._register_file_source("nb_123", "test.pdf")
 
         # The original RPCError is preserved as the cause so debuggers can
@@ -1710,7 +1710,7 @@ class TestAddUrlWithYouTube:
         from notebooklm.exceptions import ClientError, SourceAddError
 
         mock_core.rpc_executor.rpc_call.side_effect = ClientError(
-            "RPC <id> returned null result with status code 7 (Permission denied). ...",
+            "The server rejected this request (permission denied). ...",
             method_id="<id>",
             rpc_code=7,
         )

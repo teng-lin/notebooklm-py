@@ -564,7 +564,7 @@ async def test_register_file_source_status3_includes_source_limit_context(
     service: SourceUploadPipeline,
 ) -> None:
     rpc_error = RPCError(
-        "RPC o4cbdc returned null result with status code 3 (Invalid argument).",
+        "The server rejected this request (invalid argument).",
         method_id="o4cbdc",
         rpc_code=3,
     )
@@ -599,7 +599,7 @@ async def test_register_file_source_uses_configured_source_limit_lookup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     rpc_error = RPCError(
-        "RPC o4cbdc returned null result with status code 3 (Invalid argument).",
+        "The server rejected this request (invalid argument).",
         method_id="o4cbdc",
         rpc_code=3,
     )

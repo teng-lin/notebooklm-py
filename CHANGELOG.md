@@ -473,6 +473,17 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
 
 ### Fixed
 
+- **RPC failures no longer leak the obfuscated method id or raw status code into
+  the client-facing message.** A null-result RPC error used to read
+  `RPC LBwxtb returned null result with status code 9 (Failed precondition).
+  Found IDs: [...]` — surfacing the obfuscated method id (the #1 breakage class,
+  which changes whenever Google re-obfuscates a method) and the raw numeric gRPC
+  code to agents/users through MCP, REST, and the CLI. The message is now a
+  stable, human-readable `The server rejected this request (failed precondition).`
+  (or `The server returned an empty result …` when no status is attached); the
+  method id, status code, and found-id list remain on the exception attributes
+  (`method_id` / `rpc_code` / `found_ids`) for logging and debugging.
+  ([#1921](https://github.com/teng-lin/notebooklm-py/issues/1921))
 - **A blank `FASTMCP_STATELESS_HTTP` no longer crash-loops the remote MCP server.**
   The deploy compose passed the variable through as `${FASTMCP_STATELESS_HTTP:-}`,
   which injects an **empty string** when unset — and FastMCP's settings bool-parse

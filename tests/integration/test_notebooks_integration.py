@@ -513,7 +513,7 @@ class TestGetNotebookFailures:
         httpx_mock.add_response(content=raw)
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(RPCError, match="returned null result data"):
+            with pytest.raises(RPCError, match="empty result"):
                 await client.notebooks.get("nb_123")
 
     @pytest.mark.asyncio
@@ -529,7 +529,7 @@ class TestGetNotebookFailures:
         httpx_mock.add_response(content=raw)
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(RPCError, match="returned null result data"):
+            with pytest.raises(RPCError, match="empty result"):
                 await client.notebooks.get("nb_123")
 
 

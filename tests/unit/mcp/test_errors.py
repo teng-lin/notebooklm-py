@@ -15,6 +15,8 @@ ladders stay aligned.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 # Skip cleanly when the `mcp` extra (fastmcp) is absent; see conftest.py.
@@ -205,6 +207,50 @@ def test_mcp_errors_translates_notebooklm_error() -> None:
     with pytest.raises(ToolError) as caught, mcp_errors():  # noqa: PT012
         raise exc.NotFoundError("missing")
     assert "NOT_FOUND" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("error_info", "expected_code"),
+    [
+        ([5], "NOT_FOUND"),  # NOT_FOUND → ClientError, mapped narrowly to NOT_FOUND
+        ([7], "RPC"),  # PERMISSION_DENIED → ClientError, NOT swept into NOT_FOUND
+        ([9], "RPC"),  # FAILED_PRECONDITION → plain RPCError → RPC
+        ([13], "RPC"),  # INTERNAL → plain RPCError → RPC
+    ],
+)
+def test_decoder_null_result_error_does_not_leak_rpc_id_to_mcp_wire(
+    error_info: list[int], expected_code: str
+) -> None:
+    """A decoder null-result error must reach the MCP wire without the obfuscated id.
+
+    #1921: the client-facing message used to interpolate the obfuscated RPC
+    method id and the raw gRPC status code (``RPC LBwxtb returned null result
+    with status code 9 (Failed precondition). Found IDs: [...]``). The MCP
+    ``redact`` scrubber is a credential/path denylist and does NOT strip those,
+    so the fix lives at the decoder source. Drive the real decoder and assert
+    the projected ToolError wire carries neither the obfuscated id nor the raw
+    numeric code nor a ``Found IDs`` dump — while the structured attributes are
+    still preserved on the exception.
+    """
+    from notebooklm.rpc.decoder import decode_response
+    from notebooklm.rpc.types import RPCMethod
+
+    rpc_id = RPCMethod.GET_NOTEBOOK.value
+    chunk = json.dumps(["wrb.fr", rpc_id, None, None, None, error_info, "generic"])
+    raw = f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+    with pytest.raises(exc.RPCError) as caught:
+        decode_response(raw, rpc_id)
+    original = caught.value
+    # Structured attributes still carry the debug signal.
+    assert original.method_id == rpc_id
+    assert rpc_id in original.found_ids
+
+    wire = str(to_tool_error(original))
+    assert wire.startswith(f"{expected_code}:")
+    assert rpc_id not in wire
+    assert "Found IDs" not in wire
+    assert "status code" not in wire
 
 
 def test_mcp_errors_wraps_unexpected_exception() -> None:
