@@ -373,14 +373,13 @@ def register(mcp: Any) -> None:
           briefing-doc|study-guide|blog-post|custom).
 
         Each per-kind option is valid ONLY for the kind(s) listed above; passing one
-        to a different ``artifact_type`` (e.g. ``orientation`` to ``quiz``) is a
-        validation error rather than a silent no-op. Options default to the standard
-        choice when omitted.
+        to a different ``artifact_type`` is a validation error, not a silent no-op.
+        Options default to the standard choice when omitted.
 
         ``source_ids`` (optional) scopes generation to specific sources; omit it
         to use every source. It accepts a real list, a JSON-array string, or a
-        comma-separated string (the comma form cannot carry a source title that
-        itself contains a comma — use a JSON array or a real list for those).
+        comma-separated string (a source title containing a comma needs the
+        JSON-array or list form).
         ``instructions`` is free-text guidance for kinds that accept it
         (including ``mind-map``). ``language`` (optional) is a language code,
         e.g. ``en``/``ja``/``zh_Hans``.

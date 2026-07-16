@@ -31,8 +31,13 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = (
-    39_400  # total serialized inputSchema + description chars (current 39_384; +16 slack)
+    39_400  # total serialized inputSchema + description chars (current 39_361; +39 slack)
 )
+# Budget skew (#1912 + #1913): #1909's warts trim and #1908's mind-map note each
+# merged individually-green, but were measured against a main WITHOUT the other, so
+# their COMBINED total (39_451) breached this cap. Fixed by trimming redundant prose
+# from studio_generate's docstring (the per-kind validation example and the comma
+# source-title aside) — cap held at 39_400, no behavior change.
 # #1908 documented studio_generate's mind-map exception (mind-map renders
 # synchronously → NO pollable task_id; the rendered map is returned inline under
 # mind_map). Absorbed within the existing budget, partly by trimming the redundant
