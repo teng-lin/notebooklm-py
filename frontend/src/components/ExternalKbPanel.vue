@@ -62,7 +62,7 @@ import type { ExternalKbConnection, ExternalKbCollection, ExternalKbDocument } f
 import { fetchConnectionsApi, fetchCollectionsApi, fetchDocumentsApi, searchExternalKbApi, importDocumentApi } from "@/api/external-kb"
 import ExternalKbConnForm from "./ExternalKbConnForm.vue"
 
-const props = defineProps<{ notebookId: number }>()
+const props = defineProps<{ notebookId: string }>()
 const connections = ref<ExternalKbConnection[]>([]); const collections = ref<Record<number, ExternalKbCollection[]>>({}); const documents = ref<Record<string, ExternalKbDocument[]>>({})
 const loading = ref(false); const collectionsLoading = reactive(new Set<number>()); const docsLoading = reactive(new Set<string>())
 const expandedIds = reactive(new Set<number>()); const expandedColls = reactive(new Set<string>()); const searchQueries = reactive<Record<number, string>>({})

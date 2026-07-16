@@ -15,8 +15,8 @@ export interface GeneratedContent {
 export interface GenerateRequest { content_type: string; prompt: string; template?: string; options?: Record<string, any> }
 export interface TemplateInfo { id: string; name: string; description: string; thumbnail_url?: string }
 
-export function fetchGeneratedContentsApi(notebookId: number): Promise<GeneratedContent[]> { return request.get(`/api/notebooks/${notebookId}/generated`).then((r) => r.data) }
-export function generateContentApi(notebookId: number, data: GenerateRequest): Promise<GeneratedContent> { return request.post(`/api/notebooks/${notebookId}/generate`, data).then((r) => r.data) }
+export function fetchGeneratedContentsApi(notebookId: string): Promise<GeneratedContent[]> { return request.get(`/api/notebooks/${notebookId}/generated`).then((r) => r.data) }
+export function generateContentApi(notebookId: string, data: GenerateRequest): Promise<GeneratedContent> { return request.post(`/api/notebooks/${notebookId}/generate`, data).then((r) => r.data) }
 export function fetchTemplatesApi(contentType: string): Promise<TemplateInfo[]> { return request.get("/api/generation/templates", { params: { content_type: contentType } }).then((r) => r.data) }
-export function fetchGeneratedDetailApi(notebookId: number, generatedId: number): Promise<GeneratedContent> { return request.get(`/api/notebooks/${notebookId}/generated/${generatedId}`).then((r) => r.data) }
-export function deleteGeneratedApi(notebookId: number, generatedId: number): Promise<void> { return request.delete(`/api/notebooks/${notebookId}/generated/${generatedId}`).then((r) => r.data) }
+export function fetchGeneratedDetailApi(notebookId: string, generatedId: number): Promise<GeneratedContent> { return request.get(`/api/notebooks/${notebookId}/generated/${generatedId}`).then((r) => r.data) }
+export function deleteGeneratedApi(notebookId: string, generatedId: number): Promise<void> { return request.delete(`/api/notebooks/${notebookId}/generated/${generatedId}`).then((r) => r.data) }

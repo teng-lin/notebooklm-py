@@ -15,7 +15,7 @@
 <script setup lang="ts">
 import { ref } from "vue"; import { ElMessage } from "element-plus"
 import { generateContentApi } from "@/api/generation"
-const props = defineProps<{ notebookId: number }>(); const emit = defineEmits<{ back: [] }>()
+const props = defineProps<{ notebookId: string }>(); const emit = defineEmits<{ back: [] }>()
 const narration = ref(""); const resolution = ref("720p"); const generating = ref(false); const result = ref<any>(null)
 async function handleGenerate() {
   if (!narration.value.trim()) { ElMessage.warning("请输入旁白文本"); return }

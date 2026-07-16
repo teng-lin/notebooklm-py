@@ -49,7 +49,7 @@ import UploadDialog from "@/components/UploadDialog.vue"
 import ExternalKbPanel from "@/components/ExternalKbPanel.vue"
 
 const route = useRoute()
-const notebookId = computed(() => Number(route.params.id))
+const notebookId = computed(() => route.params.id as string)
 const sourceType = ref("local")
 const sources = ref<Source[]>([])
 const loading = ref(false)

@@ -37,7 +37,7 @@ import { useChatStore } from "@/stores/chat"; import type { CitationItem } from 
 import ChatMessage from "@/components/ChatMessage.vue"; import ChatInput from "@/components/ChatInput.vue"; import CitationPopup from "@/components/CitationPopup.vue"
 
 const route = useRoute(); const chatStore = useChatStore()
-const notebookId = computed(() => Number(route.params.id)); const currentSessionId = computed(() => chatStore.currentSessionId)
+const notebookId = computed(() => route.params.id as string); const currentSessionId = computed(() => chatStore.currentSessionId)
 const sessions = computed(() => chatStore.sessions); const messages = computed(() => chatStore.messages)
 const messagesRef = ref<HTMLElement>(); const showCitation = ref(false); const selectedCitation = ref<CitationItem | null>(null)
 

@@ -24,7 +24,7 @@
 import { ref, onMounted } from "vue"; import { ElMessage } from "element-plus"
 import GenerationTemplatePicker from "@/components/GenerationTemplatePicker.vue"
 import { fetchTemplatesApi, generateContentApi } from "@/api/generation"
-const props = defineProps<{ notebookId: number }>(); const emit = defineEmits<{ back: [] }>()
+const props = defineProps<{ notebookId: string }>(); const emit = defineEmits<{ back: [] }>()
 const templates = ref<any[]>([]); const selectedTemplate = ref(""); const prompt = ref(""); const generating = ref(false); const result = ref<any>(null)
 const previewSlides = ref<any[]>([]); const currentSlide = ref(0)
 async function handleGenerate() {

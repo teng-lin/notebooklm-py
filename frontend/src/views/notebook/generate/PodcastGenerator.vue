@@ -18,7 +18,7 @@
 <script setup lang="ts">
 import { ref } from "vue"; import { ElMessage } from "element-plus"
 import { generateContentApi } from "@/api/generation"
-const props = defineProps<{ notebookId: number }>(); const emit = defineEmits<{ back: [] }>()
+const props = defineProps<{ notebookId: string }>(); const emit = defineEmits<{ back: [] }>()
 const speakerCount = ref(2); const speaker1Name = ref("主持人"); const speaker2Name = ref("嘉宾"); const prompt = ref(""); const generating = ref(false); const result = ref<any>(null)
 async function handleGenerate() {
   if (!prompt.value.trim()) { ElMessage.warning("请输入主题"); return }

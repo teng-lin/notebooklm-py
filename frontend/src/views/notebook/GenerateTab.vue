@@ -40,7 +40,7 @@ import PptGenerator from "./generate/PptGenerator.vue"; import MindmapGenerator 
 import InfographicGenerator from "./generate/InfographicGenerator.vue"; import PodcastGenerator from "./generate/PodcastGenerator.vue"
 import VideoGenerator from "./generate/VideoGenerator.vue"; import DocumentGenerator from "./generate/DocumentGenerator.vue"
 
-const router = useRouter(); const route = useRoute(); const notebookId = computed(() => Number(route.params.id))
+const router = useRouter(); const route = useRoute(); const notebookId = computed(() => route.params.id as string)
 const currentType = ref(""); const generatedList = ref<any[]>([])
 const contentTypes = [
   { type: "ppt", label: "PPT", icon: Document, color: "#ff3650" },

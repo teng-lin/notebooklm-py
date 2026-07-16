@@ -41,7 +41,7 @@
 import { ref, computed, onMounted } from "vue"; import { useRoute } from "vue-router"
 import { fetchSourcesApi } from "@/api/sources"; import { fetchGeneratedContentsApi } from "@/api/generation"
 import { fetchSessionsApi } from "@/api/chat"
-const route = useRoute(); const notebookId = computed(() => Number(route.params.id))
+const route = useRoute(); const notebookId = computed(() => route.params.id as string)
 const stats = ref({ source_count: 0, chat_count: 0, generate_count: 0 })
 const summary = ref(""); const activities = ref<any[]>([])
 

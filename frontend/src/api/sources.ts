@@ -7,11 +7,11 @@ export interface Source {
   status: string; created_at: string; updated_at: string
 }
 
-export function fetchSourcesApi(notebookId: number, params?: { page?: number; page_size?: number }): Promise<{ items: Source[]; total: number }> {
+export function fetchSourcesApi(notebookId: string, params?: { page?: number; page_size?: number }): Promise<{ items: Source[]; total: number }> {
   return request.get(`/api/notebooks/${notebookId}/sources`, { params }).then((r) => r.data)
 }
 
-export function uploadSourceApi(notebookId: number, file: File, onProgress?: (pct: number) => void): Promise<Source> {
+export function uploadSourceApi(notebookId: string, file: File, onProgress?: (pct: number) => void): Promise<Source> {
   const form = new FormData()
   form.append("file", file)
   return request.post(`/api/notebooks/${notebookId}/sources/upload`, form, {
@@ -20,14 +20,14 @@ export function uploadSourceApi(notebookId: number, file: File, onProgress?: (pc
   }).then((r) => r.data)
 }
 
-export function addSourceUrlApi(notebookId: number, url: string): Promise<Source> {
+export function addSourceUrlApi(notebookId: string, url: string): Promise<Source> {
   return request.post(`/api/notebooks/${notebookId}/sources/url`, { url }).then((r) => r.data)
 }
 
-export function deleteSourceApi(notebookId: number, sourceId: number): Promise<void> {
+export function deleteSourceApi(notebookId: string, sourceId: number): Promise<void> {
   return request.delete(`/api/notebooks/${notebookId}/sources/${sourceId}`).then((r) => r.data)
 }
 
-export function renameSourceApi(notebookId: number, sourceId: number, filename: string): Promise<Source> {
+export function renameSourceApi(notebookId: string, sourceId: number, filename: string): Promise<Source> {
   return request.put(`/api/notebooks/${notebookId}/sources/${sourceId}`, { filename }).then((r) => r.data)
 }

@@ -30,7 +30,7 @@ import { UploadFilled } from "@element-plus/icons-vue"
 import { ElMessage } from "element-plus"
 import { uploadSourceApi, addSourceUrlApi } from "@/api/sources"
 
-const props = defineProps<{ visible: boolean; notebookId: number }>()
+const props = defineProps<{ visible: boolean; notebookId: string }>()
 const emit = defineEmits<{ "update:visible": [value: boolean]; uploaded: [] }>()
 
 const isDragOver = ref(false); const fileInputRef = ref<HTMLInputElement>(); const urlInput = ref(""); const addingUrl = ref(false)

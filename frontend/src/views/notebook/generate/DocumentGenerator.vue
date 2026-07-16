@@ -15,7 +15,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue"; import { ElMessage } from "element-plus"
 import { generateContentApi } from "@/api/generation"; import { marked } from "@/utils/marked"
-const props = defineProps<{ notebookId: number }>(); const emit = defineEmits<{ back: [] }>()
+const props = defineProps<{ notebookId: string }>(); const emit = defineEmits<{ back: [] }>()
 const docType = ref("notes"); const prompt = ref(""); const generating = ref(false); const result = ref<any>(null)
 const renderedDoc = computed(() => result.value?.content ? marked(result.value.content) : "")
 async function handleGenerate() {
