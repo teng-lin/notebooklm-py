@@ -88,7 +88,10 @@ _BOT_CHALLENGE_PHRASES = frozenset(
         "access denied",
         "security verification",
         "captcha",
-        "ray id",
+        # Vendor-anchored: bare ``ray id`` is a substring of ordinary text like
+        # "array id" / "array identifier"; require the Cloudflare prefix so a normal
+        # technical page can't trip a false WAF warning (#1923 review).
+        "cloudflare ray id",
     }
 )
 

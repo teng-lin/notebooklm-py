@@ -1313,7 +1313,7 @@ async def test_source_wait_bot_challenge_over_scan_cap_not_flagged(mcp_call, moc
         return_value=FakeFulltext(content=body, char_count=_BOT_CHALLENGE_BODY_SCAN_LIMIT)
     )
     result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
-    assert result.structured_content["ready"][0].get("warning") is None
+    assert "warning" not in result.structured_content["ready"][0]
 
 
 async def test_source_wait_bot_challenge_title_not_scanned(mcp_call, mock_client) -> None:
@@ -1331,7 +1331,7 @@ async def test_source_wait_bot_challenge_title_not_scanned(mcp_call, mock_client
         return_value=FakeFulltext(content=body, char_count=len(body))
     )
     result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
-    assert result.structured_content["ready"][0].get("warning") is None
+    assert "warning" not in result.structured_content["ready"][0]
 
 
 async def test_source_wait_bot_challenge_healthy_body_not_flagged(mcp_call, mock_client) -> None:
@@ -1348,7 +1348,25 @@ async def test_source_wait_bot_challenge_healthy_body_not_flagged(mcp_call, mock
         return_value=FakeFulltext(content=body, char_count=len(body))
     )
     result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
-    assert result.structured_content["ready"][0].get("warning") is None
+    assert "warning" not in result.structured_content["ready"][0]
+
+
+async def test_source_wait_bot_challenge_array_id_not_false_positive(mcp_call, mock_client) -> None:
+    """The Cloudflare Ray-ID marker is vendor-anchored, not a bare ``ray id`` substring:
+    ordinary technical prose containing 'array id' / 'array identifier' must NOT trip
+    the WAF warning (#1923 review). Only 'cloudflare ray id' matches."""
+    body = (
+        "Each record in the response carries an array id and an array identifier so "
+        "clients can reconcile the returned rows against the request they submitted."
+    )
+    mock_client.sources.wait_until_ready = AsyncMock(
+        return_value=FakeSource(id=SRC_ID, title="API reference")
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content=body, char_count=len(body))
+    )
+    result = await mcp_call("source_wait", {"notebook": NB_ID, "source": SRC_ID})
+    assert "warning" not in result.structured_content["ready"][0]
 
 
 # ---------------------------------------------------------------------------

@@ -345,8 +345,8 @@ not found`, `whoops!`.
 The full bot-challenge phrase set (a Cloudflare "Just a moment…" or Akamai
 "Access Denied" page that serves HTTP 200 and indexes as ready): `just a moment`,
 `enable javascript and cookies`, `checking your browser`, `attention required`,
-`access denied`, `security verification`, `captcha`, `ray id`. The dead-link scan
-takes precedence when a body trips both.
+`access denied`, `security verification`, `captcha`, `cloudflare ray id`. The
+dead-link scan takes precedence when a body trips both.
 
 Each gate measures the source's **indexed text** length (`char_count` from a
 `source_read` with `detail="full"`), not the raw HTTP response — a large HTML
