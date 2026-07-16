@@ -11,6 +11,7 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
@@ -24,11 +25,56 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AppState",
+    "CancelledResearchTracker",
     "get_cancelled_research",
     "get_client",
     "get_client_from_app",
     "get_file_transfer",
 ]
+
+# Hard ceiling on retained cancel intents (issue #1922, F9). Cancels are rare
+# and user-driven, so this is generous; it only guards against a pathological
+# long-lived server that cancels many runs which are never polled to a terminal
+# state (the usual eviction path). Oldest intents are dropped first (FIFO).
+_CANCEL_INTENT_CAP = 1024
+
+
+class CancelledResearchTracker:
+    """Bounded, insertion-ordered set of cancelled ``(notebook_id, task_id)`` runs.
+
+    Backs the client-side cancel-intent tracking for issue #1922 (F9):
+    ``research_cancel`` records a run here so a later ``research_status`` poll
+    can annotate the resulting generic ``failed`` as ``cancelled`` (the backend
+    surfaces a user-cancelled run as ``FAILED`` with no distinct wire code).
+
+    Bounded two ways so a long-running MCP server cannot leak memory:
+    ``research_status`` evicts an intent (:meth:`discard`) once its run reaches a
+    terminal poll, and a hard FIFO cap (:data:`_CANCEL_INTENT_CAP`) drops the
+    oldest intents even if a cancelled run is never polled to a terminal state.
+    """
+
+    def __init__(self, cap: int = _CANCEL_INTENT_CAP) -> None:
+        self._cap = cap
+        # ``OrderedDict`` as an ordered set (values unused) — preserves insertion
+        # order for FIFO eviction and gives O(1) membership / discard.
+        self._items: OrderedDict[tuple[str, str], None] = OrderedDict()
+
+    def record(self, key: tuple[str, str]) -> None:
+        """Record a cancel intent, evicting the oldest entries past the cap."""
+        self._items.pop(key, None)
+        self._items[key] = None
+        while len(self._items) > self._cap:
+            self._items.popitem(last=False)
+
+    def discard(self, key: tuple[str, str]) -> None:
+        """Drop a cancel intent if present (no-op otherwise)."""
+        self._items.pop(key, None)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._items
+
+    def __len__(self) -> int:
+        return len(self._items)
 
 
 @dataclass
@@ -39,19 +85,14 @@ class AppState:
     validated public base URL); ``None`` on stdio and on an http deployment
     without a public URL (ADR-0024).
 
-    ``cancelled_research`` records the cancel intent tracked client-side for
-    issue #1922 (F9): after a successful ``research_cancel`` the
-    ``(notebook_id, poll_task_id)`` pair is added here so a later
-    ``research_status`` poll can annotate the resulting ``failed`` state as
-    ``cancelled`` (the backend surfaces a user-cancelled run as a generic
-    ``FAILED`` with no distinct wire code). It is process-scoped in-memory state
-    (no persistence, consistent with the loop-bound lifespan client) and small —
-    one tuple per cancelled run — so it is left uncapped.
+    ``cancelled_research`` is the bounded cancel-intent tracker for issue #1922
+    (F9) — see :class:`CancelledResearchTracker`. Process-scoped in-memory state
+    (no persistence, consistent with the loop-bound lifespan client).
     """
 
     client: NotebookLMClient
     file_transfer: FileTransferConfig | None = None
-    cancelled_research: set[tuple[str, str]] = field(default_factory=set)
+    cancelled_research: CancelledResearchTracker = field(default_factory=CancelledResearchTracker)
 
 
 def _app_state(ctx: Context) -> AppState:
@@ -77,13 +118,14 @@ def get_client(ctx: Context) -> NotebookLMClient:
     return _app_state(ctx).client
 
 
-def get_cancelled_research(ctx: Context) -> set[tuple[str, str]]:
-    """Return the process-scoped set of cancelled ``(notebook_id, task_id)`` runs.
+def get_cancelled_research(ctx: Context) -> CancelledResearchTracker:
+    """Return the bounded cancel-intent tracker for the current tool call.
 
-    The mutable set backing the client-side cancel-intent tracking (issue #1922,
-    F9): ``research_cancel`` adds an entry on a successful cancel and
-    ``research_status`` reads it to annotate a later ``failed`` poll as
-    ``cancelled``. Returns the live set so callers mutate it in place. Mirrors
+    The live :class:`CancelledResearchTracker` backing the client-side
+    cancel-intent tracking (issue #1922, F9): ``research_cancel`` records an
+    entry on a successful cancel and ``research_status`` reads it to annotate a
+    later ``failed`` poll as ``cancelled`` (evicting it on the terminal poll).
+    Returns the live tracker so callers mutate it in place. Mirrors
     :func:`get_client`.
     """
     return _app_state(ctx).cancelled_research

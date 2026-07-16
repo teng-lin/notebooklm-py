@@ -219,15 +219,23 @@ def register(mcp: Any) -> None:
 
             # F9 (#1922): a user-cancelled run surfaces as a generic ``failed``
             # with no distinct wire code, so consult the client-side cancel-intent
-            # set recorded by ``research_cancel``. Match on the pinned id AND the
-            # polled task_id (an unfiltered poll resolves the id only in the
-            # result), keyed by notebook so ids never cross notebooks.
+            # tracker recorded by ``research_cancel``. Match on the pinned id AND
+            # the polled task_id (an unfiltered poll resolves the id only in the
+            # result), keyed by notebook so ids never cross notebooks. On ANY
+            # terminal poll (failed / completed) evict the intent so the
+            # process-scoped tracker cannot grow without bound — a later poll of
+            # the same terminal run won't be re-annotated, which is acceptable
+            # (the agent already saw ``cancelled`` on the first terminal poll).
             cancelled = False
-            if result.status == "failed":
+            if result.status in ("failed", "completed"):
                 intents = get_cancelled_research(ctx)
-                cancelled = (nb_id, result.task_id) in intents or (
-                    poll_task_id is not None and (nb_id, poll_task_id) in intents
-                )
+                candidates = [(nb_id, result.task_id)]
+                if poll_task_id is not None and poll_task_id != result.task_id:
+                    candidates.append((nb_id, poll_task_id))
+                hit = any(key in intents for key in candidates)
+                cancelled = hit and result.status == "failed"
+                for key in candidates:
+                    intents.discard(key)
 
             # Report content lives in TWO places — the top-level ``report`` AND
             # each source's ``report_markdown`` — so BOTH are gated by
@@ -345,8 +353,9 @@ def register(mcp: Any) -> None:
             # Record the cancel intent (F9, #1922) so a later ``research_status``
             # poll can annotate the resulting generic ``failed`` as ``cancelled``
             # (the backend surfaces a cancelled run as FAILED with no distinct
-            # wire code). Keyed by notebook so ids never cross notebooks.
-            get_cancelled_research(ctx).add((nb_id, poll_task_id))
+            # wire code). Keyed by notebook so ids never cross notebooks; the
+            # tracker is bounded (evict-on-terminal + hard FIFO cap).
+            get_cancelled_research(ctx).record((nb_id, poll_task_id))
             result = {
                 "status": "cancel_requested",
                 "notebook_id": nb_id,

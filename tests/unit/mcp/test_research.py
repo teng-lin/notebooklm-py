@@ -620,6 +620,31 @@ async def test_research_cancel_then_failed_status_annotated_unfiltered_poll(
     assert result.structured_content["cancelled"] is True
 
 
+async def test_research_cancel_intent_evicted_on_terminal_poll(server_factory, mock_client) -> None:
+    """The cancel intent is evicted once the run reaches a terminal poll, so the
+    tracker cannot grow without bound: the FIRST failed poll is annotated, a
+    SECOND poll of the same terminal run is no longer annotated (#1922, F9)."""
+    server = server_factory()
+    mock_client.research.cancel = AsyncMock(return_value=None)
+    async with Client(server) as client:
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.IN_PROGRESS, task_id=TASK_ID)
+        )
+        await client.call_tool("research_cancel", {"notebook": NB_ID, "poll_task_id": TASK_ID})
+
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.FAILED, task_id=TASK_ID)
+        )
+        first = await client.call_tool(
+            "research_status", {"notebook": NB_ID, "poll_task_id": TASK_ID}
+        )
+        second = await client.call_tool(
+            "research_status", {"notebook": NB_ID, "poll_task_id": TASK_ID}
+        )
+    assert first.structured_content["cancelled"] is True
+    assert "cancelled" not in second.structured_content
+
+
 async def test_research_status_failed_without_cancel_not_annotated(mcp_call, mock_client) -> None:
     """A genuine failure (never cancelled) is NOT annotated — absence of the
     ``cancelled`` key means "not a tracked cancel"."""
