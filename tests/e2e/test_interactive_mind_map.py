@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 
+from notebooklm.exceptions import RateLimitError
 from notebooklm.types import MindMapKind
 
 # Live CREATE_ARTIFACT coverage — monitored by the nightly generation coverage
@@ -29,15 +30,33 @@ async def test_interactive_mind_map_full_lifecycle(client, generation_notebook_i
     source_ids = await client.notebooks.get_source_ids(nb_id)
     assert source_ids, "generation notebook must have at least one source"
 
-    # --- generate (CREATE_ARTIFACT, type 4 / variant 4) + poll to completion ---
+    # --- generate (CREATE_ARTIFACT, type 4 / variant 4), NO wait ---
+    # Split the create from the completion-poll deliberately: ``wait=False``
+    # returns as soon as the artifact id exists, so the id is captured and the
+    # cleanup ``finally`` below is armed BEFORE any polling that can raise. A
+    # create-time quota rejection still raises RateLimitError here (inside the
+    # conftest generation skip wrapper, #1819) before any artifact exists, so
+    # it skips with nothing to leak. A *post-create* throttle, by contrast, now
+    # surfaces during the guarded poll — where the finally always deletes the
+    # already-created artifact instead of orphaning it in the live notebook
+    # (#1937).
     mind_map = await client.mind_maps.generate(
-        nb_id, source_ids, kind=MindMapKind.INTERACTIVE, wait=True
+        nb_id, source_ids, kind=MindMapKind.INTERACTIVE, wait=False
     )
-    # Enter the cleanup guard immediately after create so a failed assertion
-    # below never leaks the real interactive artifact in the live notebook.
     try:
         assert mind_map.kind == MindMapKind.INTERACTIVE
         assert mind_map.id, "generate() must return a non-empty interactive artifact id"
+
+        # --- poll to completion INSIDE the cleanup guard ---
+        # ``mind_maps.generate(wait=False)`` skips this poll, so it lives here
+        # rather than in the wrapped generate call. A post-create quota
+        # rejection is server-side throttling, not a client defect, so mirror
+        # the create-time skip (conftest #1819) — the ``finally`` still runs
+        # first and deletes the artifact, so the skip never leaks it.
+        try:
+            await client.artifacts.wait_for_completion(nb_id, mind_map.id)
+        except RateLimitError as e:
+            pytest.skip(f"Rate limit: {e}")
 
         # --- recognition (Phase 1) ---
         listed = {m.id: m for m in await client.mind_maps.list(nb_id)}
