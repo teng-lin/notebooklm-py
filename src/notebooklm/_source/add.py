@@ -200,6 +200,13 @@ class SourceAddService:
         otherwise duplicate the source on a naive retry. The probe matches
         by ``file_id`` substring against ``source.url`` (Drive URLs embed
         the file_id, e.g. ``https://docs.google.com/document/d/<id>/edit``).
+
+        .. note::
+           The ``title`` is sent on the wire but **ignored** for native Drive
+           imports: NotebookLM re-derives the display title from live Drive
+           metadata, so the returned source keeps the file's Drive name
+           regardless of what you pass here. Call :meth:`rename` after the add
+           if you need a specific title.
         """
         logger.debug("Adding Drive source to notebook %s: %s", notebook_id, title)
         source_data = [

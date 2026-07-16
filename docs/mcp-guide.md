@@ -450,6 +450,50 @@ override. Stateless is harmless for ordinary tool use (each request is self-cont
 ChatGPT caches the widget template per conversation, so the *first* `source_add_widget` call in a
 new chat may not render — call it again and it will (a ChatGPT-side quirk, not a server issue).
 
+## Known limitations for autonomous deep-research ingestion
+
+Curated, interactive use of these tools is solid. **Autonomous bulk deep-research
+ingestion** hits a handful of Google-NotebookLM *backend* behaviors this client cannot
+change — the client surfaces them faithfully, but an agent driving unattended imports
+should **audit the result after the fact** rather than assume all-or-nothing success.
+Client-actionable follow-ups are tracked in
+[#1919](https://github.com/teng-lin/notebooklm-py/issues/1919)–[#1924](https://github.com/teng-lin/notebooklm-py/issues/1924).
+
+- **Research import is not truly atomic.** `research_import` can commit a *partial*
+  import even when the call errors (e.g. on a timeout) — some findings land, some don't.
+  There is no server-side all-or-nothing guarantee. After any errored or timed-out
+  import, call `source_list` to reconcile what actually persisted before retrying.
+  Client-side timeout reconciliation is tracked in
+  [#1920](https://github.com/teng-lin/notebooklm-py/issues/1920).
+- **Retrying a partial import is not idempotent.** Once a first import mutated notebook
+  state, re-importing the same research is rejected server-side with `FAILED_PRECONDITION`
+  (gRPC 9) — the retry does **not** cleanly resume. Reconcile with `source_list` and add
+  any missing sources individually instead of re-driving the whole import.
+- **A failed source add can leave a ghost row.** A rejected add (e.g. the 51st source over
+  a limit) can still persist a backend row, so the notebook's source count may read one
+  higher than the sources that actually imported. Verify against `source_list` /
+  `source_wait` rather than the raw count; count-inflation handling is tracked in
+  [#1919](https://github.com/teng-lin/notebooklm-py/issues/1919).
+- **Deep research does not hard-enforce a primary-source / authority preference.**
+  Discovery and ranking happen server-side; a query that asks for "authoritative" or
+  "primary" sources steers the model but is **advisory**, not a hard filter. There is no
+  client lever over which sources research discovers.
+- **Chat source-quality instructions are softly followed.** Telling `chat_ask` to "use
+  only authoritative sources" is natural-language guidance, not a retrieval filter. The
+  one **hard, deterministic** lever is `chat_ask`'s `source_ids` — scope the answer to the
+  exact sources you trust. Domain/authority filtering is backend-gated.
+- **Note-backed vs interactive mind maps differ in instruction adherence.** The
+  note-backed generation path can collapse a cross-source request into a single-source
+  outline; the interactive mind map follows a multi-source instruction more closely. This
+  is server-side generation behavior, not a client bug.
+- **AI source summaries are interpretive.** `source_read(detail=summary)` returns a
+  model-generated summary — there is no extractive/verbatim mode exposed by the backend.
+  Use `detail=full` when you need the indexed source text itself.
+- **A custom title on a direct Drive add is ignored.** Adding a Google Drive source with a
+  custom title still re-derives the display title from live Drive metadata (the client does
+  send the title; the backend overrides it for native Drive imports). Call `source_rename`
+  after the add if you need a specific title.
+
 ## Tool reference
 
 | Domain | Tools |

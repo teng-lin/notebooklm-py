@@ -540,7 +540,9 @@ class SourcesAPI:
         Args:
             notebook_id: The notebook ID.
             file_id: The Google Drive file ID.
-            title: Display title for the source.
+            title: Display title. **Ignored for native Drive imports** —
+                NotebookLM re-derives it from live Drive metadata, keeping the
+                file's Drive name. Call :meth:`rename` after the add to retitle.
             mime_type: MIME type of the Drive document. Common values:
                 - application/vnd.google-apps.document (Google Docs)
                 - application/vnd.google-apps.presentation (Slides)

@@ -906,6 +906,12 @@ notebooklm source add ./report.bin --type file --mime-type application/pdf
 > (Google Drive sources) selects between `google-doc` / `google-slides` /
 > `google-sheets` / `pdf` Drive document types.
 >
+> The `<title>` you pass to `source add-drive` is **ignored** by NotebookLM for
+> native Drive imports — the backend re-derives the display title from live Drive
+> metadata, so the source keeps its Drive name regardless. Run
+> `notebooklm source rename <id> "<title>"` after the add if you need a specific
+> title.
+>
 > Historical: an earlier release treated the file-source `--mime-type` as a
 > deprecated no-op. It was re-wired to set the upload content-type and is no
 > longer deprecated; the `NOTEBOOKLM_QUIET_DEPRECATIONS` notice it used to
