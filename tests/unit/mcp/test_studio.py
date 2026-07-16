@@ -723,6 +723,21 @@ async def test_artifact_generate_mind_map_interactive_default(mcp_call, mock_cli
     mock_client.artifacts.generate_mind_map.assert_not_called()
 
 
+async def test_artifact_generate_mind_map_payload_is_terminal(mcp_call, mock_client) -> None:
+    """Mind-map generation renders synchronously, so its payload normalizes to a
+    terminal shape (#1908): it carries the tree under ``mind_map`` with
+    ``is_complete=True`` and a ``null`` ``task_id`` (there is nothing to poll),
+    unlike every other kind which returns a pollable ``task_id``."""
+    mock_client.mind_maps.generate = AsyncMock(return_value={"id": "mm1"})
+    result = await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "mind-map"})
+    payload = result.structured_content
+    assert payload["kind"] == "mind-map"
+    assert payload["mind_map"] == {"id": "mm1"}
+    assert payload["is_complete"] is True
+    assert payload["task_id"] is None
+    assert "status" not in payload
+
+
 async def test_artifact_generate_mind_map_note_backed_routes(mcp_call, mock_client) -> None:
     """``map_kind=note-backed`` routes to ``artifacts.generate_mind_map`` instead."""
     mock_client.artifacts.generate_mind_map = AsyncMock(return_value={"id": "mm1"})

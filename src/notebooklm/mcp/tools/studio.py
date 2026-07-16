@@ -343,6 +343,9 @@ def register(mcp: Any) -> None:
 
         Non-blocking: returns immediately with a ``task_id``; poll
         ``studio_status(notebook, task_id)`` until ``is_complete`` is true.
+        Exception: ``mind-map`` renders synchronously — ``task_id`` is ``null``
+        (nothing to poll), ``is_complete`` is true, and the tree is under
+        ``mind_map``.
 
         ``artifact_type`` selects the artifact kind (each routes to its own
         generator):
@@ -370,8 +373,7 @@ def register(mcp: Any) -> None:
         Each per-kind option is valid ONLY for the kind(s) listed above; passing one
         to a different ``artifact_type`` (e.g. ``orientation`` to ``quiz``) is a
         validation error rather than a silent no-op. Options default to the standard
-        choice when omitted. Note ``style`` is shared by ``video`` and ``infographic``
-        but accepts each kind's own set of values.
+        choice when omitted.
 
         ``source_ids`` (optional) scopes generation to specific sources; omit it
         to use every source. It accepts a real list, a JSON-array string, or a
@@ -910,7 +912,10 @@ def _generation_payload(
 
     Surfaces the ``task_id`` an agent polls with ``studio_status`` plus the
     generation outcome (status / url / error) or, for mind maps, the rendered
-    map. Mind-map generation renders synchronously (no ``task_id`` to poll).
+    map. Mind-map generation renders synchronously, so its payload normalizes to
+    a terminal shape a polling caller can branch on uniformly: the tree under
+    ``mind_map`` alongside ``is_complete=True`` and ``task_id=None`` (there is
+    nothing to poll).
     """
     payload: dict[str, Any] = {
         "notebook_id": notebook_id,
@@ -918,6 +923,8 @@ def _generation_payload(
     }
     if result.mind_map is not None:
         payload["mind_map"] = to_jsonable(result.mind_map)
+        payload["task_id"] = None
+        payload["is_complete"] = True
         return payload
     outcome = result.generation
     if outcome is not None:
