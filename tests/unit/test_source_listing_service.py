@@ -321,6 +321,38 @@ async def test_malformed_source_id_shape_logs_and_skips(
 
 
 @pytest.mark.asyncio
+async def test_list_dedups_duplicate_ids_keeping_first(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # #1919: research imports (and ghost/probe rows) can leave the same
+    # id-bearing source in ``nb_info[1]`` more than once. The enumeration must
+    # dedup by resolved id, keeping the first occurrence, so ``source_list`` /
+    # ``metadata.sources`` never over-count.
+    lister = SourceLister(
+        RecordingRpc(
+            [
+                [
+                    "Notebook",
+                    [
+                        source_entry("src_dup", title="First"),
+                        source_entry("src_unique", title="Unique"),
+                        source_entry("src_dup", title="Second"),
+                    ],
+                ]
+            ]
+        )
+    )
+    caplog.set_level("DEBUG", logger="notebooklm._sources")
+
+    sources = await lister.list("nb_123")
+
+    assert [source.id for source in sources] == ["src_dup", "src_unique"]
+    # The FIRST occurrence wins (later duplicate dropped).
+    assert sources[0].title == "First"
+    assert "duplicate source id" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_created_at_uses_shared_timestamp_parser() -> None:
     lister = SourceLister(
         RecordingRpc(
