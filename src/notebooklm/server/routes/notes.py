@@ -1,98 +1,135 @@
-"""Note routes — ``/v1/notebooks/{id}/notes`` list / get / create / update / delete.
-
-Thin adapters over the public ``client.notes`` namespace (the facade already
-owns the raise-on-miss, idempotent-delete, and update-preflight contracts), in
-the same shape as :mod:`.notebooks`. Responses go straight through
-:func:`notebooklm._app.serialize.to_jsonable`.
-
-A missing note surfaces as ``NoteNotFoundError`` from the facade, which the
-server's exception handler projects onto a 404 ``not_found`` envelope — so these
-handlers never hand-raise for the not-found case. ``delete`` is idempotent (never
-404s on an absent id). Mind maps are out of scope here; list them via
-``/v1/notebooks/{id}/artifacts``.
-
-This module imports NO ``click`` / ``rich`` / ``cli``.
-"""
-
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from ..._app.serialize import to_jsonable
-from ...client import NotebookLMClient
-from .._context import get_client
-from .._pagination import MAX_LIMIT, paginate_envelope
-
-__all__ = ["router"]
+from ..auth_deps import get_current_user
+from ..database import get_session
+from ..models import Note as NoteModel
+from ..models import Notebook, User
 
 router = APIRouter(prefix="/notebooks/{notebook_id}/notes", tags=["notes"])
 
-ClientDep = Annotated[NotebookLMClient, Depends(get_client)]
-
 
 class NoteCreate(BaseModel):
-    """Request body for creating a note (both fields default, matching the facade)."""
-
-    title: str = "New Note"
+    title: str | None = None
     content: str = ""
 
 
 class NoteUpdate(BaseModel):
-    """Request body for a full-replacement note update (PUT)."""
+    title: str | None = None
+    content: str | None = None
 
-    title: str
-    content: str
+
+def _get_notebook_db_id(db: Session, notebook_id: str) -> int | None:
+    row = db.query(Notebook).filter(Notebook.remote_id == notebook_id).first()
+    return row.id if row else None
 
 
 @router.get("")
-async def list_notes(
+def list_notes(
     notebook_id: str,
-    client: ClientDep,
-    limit: Annotated[int | None, Query(ge=1, le=MAX_LIMIT)] = None,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """List a notebook's text notes (excludes mind maps and deleted notes).
-
-    Defaults to the full collection under ``notes`` (unchanged). Supply
-    ``?limit=`` to slice and add a ``meta`` block; ``?offset=`` pages forward.
-    """
-    notes = await client.notes.list(notebook_id)
-    return paginate_envelope(
-        to_jsonable(notes), key="notes", limit=limit, offset=offset, notebook_id=notebook_id
+    db_id = _get_notebook_db_id(db, notebook_id)
+    if db_id is None:
+        raise HTTPException(404, "Notebook not found")
+    rows = (
+        db.query(NoteModel)
+        .filter(NoteModel.notebook_id == db_id, NoteModel.user_id == user.id)
+        .order_by(NoteModel.created_at.desc())
+        .all()
     )
-
-
-@router.get("/{note_id}")
-async def get_note(notebook_id: str, note_id: str, client: ClientDep) -> dict[str, Any]:
-    """Fetch one note (raises ``NoteNotFoundError`` → 404 on a miss)."""
-    note = await client.notes.get(notebook_id, note_id)
-    return to_jsonable(note)
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "content": r.content,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+            for r in rows
+        ],
+        "total": len(rows),
+    }
 
 
 @router.post("", status_code=201)
-async def create_note(notebook_id: str, body: NoteCreate, client: ClientDep) -> dict[str, Any]:
-    """Create a note with the given title and content."""
-    note = await client.notes.create(notebook_id, body.title, body.content)
-    return to_jsonable(note)
+def create_note(
+    notebook_id: str,
+    body: NoteCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    db_id = _get_notebook_db_id(db, notebook_id)
+    if db_id is None:
+        raise HTTPException(404, "Notebook not found")
+    record = NoteModel(
+        user_id=user.id,
+        notebook_id=db_id,
+        title=body.title,
+        content=body.content,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return {
+        "id": record.id,
+        "title": record.title,
+        "content": record.content,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        "updated_at": record.updated_at.isoformat() if record.updated_at else None,
+    }
 
 
 @router.put("/{note_id}")
-async def update_note(
-    notebook_id: str, note_id: str, body: NoteUpdate, client: ClientDep
+def update_note(
+    notebook_id: str,
+    note_id: int,
+    body: NoteUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """Replace a note's title and content (raises ``NoteNotFoundError`` → 404 on a miss)."""
-    await client.notes.update(notebook_id, note_id, content=body.content, title=body.title)
-    # Re-fetch so the response carries the canonical note shape (same as GET);
-    # the update preflight already 404s a missing note, so it exists here.
-    note = await client.notes.get(notebook_id, note_id)
-    return to_jsonable(note)
+    record = (
+        db.query(NoteModel)
+        .filter(NoteModel.id == note_id, NoteModel.user_id == user.id)
+        .first()
+    )
+    if not record:
+        raise HTTPException(404, "Note not found")
+    if body.title is not None:
+        record.title = body.title
+    if body.content is not None:
+        record.content = body.content
+    db.commit()
+    db.refresh(record)
+    return {
+        "id": record.id,
+        "title": record.title,
+        "content": record.content,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        "updated_at": record.updated_at.isoformat() if record.updated_at else None,
+    }
 
 
 @router.delete("/{note_id}", status_code=204)
-async def delete_note(notebook_id: str, note_id: str, client: ClientDep) -> Response:
-    """Delete a note (idempotent-on-missing — never 404 for an absent id)."""
-    await client.notes.delete(notebook_id, note_id)
-    return Response(status_code=204)
+def delete_note(
+    notebook_id: str,
+    note_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> None:
+    record = (
+        db.query(NoteModel)
+        .filter(NoteModel.id == note_id, NoteModel.user_id == user.id)
+        .first()
+    )
+    if not record:
+        raise HTTPException(404, "Note not found")
+    db.delete(record)
+    db.commit()
