@@ -325,9 +325,20 @@ async def _await_upload(
     - ``{"status": "expired_or_invalid", "hint": ...}`` — the link failed signature/
       expiry/op checks; mint a fresh one via ``source_add(source_type="file")``.
 
-    ``progress`` (best-effort) is awaited at t=0 and each tick as a keepalive; the design
-    does not depend on it.
+    ``progress`` (best-effort) is awaited at t=0 and each poll tick as a keepalive; the
+    design does not depend on it, so its exceptions are swallowed (a missing client
+    progressToken or a transient notify error must never abort the wait — the re-invoke
+    loop, not the keepalive, is the load-bearing completion path).
     """
+
+    async def _emit_progress() -> None:
+        if progress is None:
+            return
+        try:
+            await progress()
+        except Exception:  # noqa: BLE001 - best-effort keepalive, never abort the poll
+            pass
+
     invalid = {
         "status": "expired_or_invalid",
         "hint": "this upload link is invalid or expired — call "
@@ -360,8 +371,7 @@ async def _await_upload(
         return invalid
     jti = str(payload.get("jti") or "")
     deadline = time.monotonic() + timeout_s
-    if progress is not None:
-        await progress()
+    await _emit_progress()
     while True:
         result = cfg.jti_store.completed(jti)
         if result is not None:
@@ -374,8 +384,7 @@ async def _await_upload(
         # Never sleep past the deadline — cap the tick to the time remaining so a small
         # custom timeout returns ``pending`` on time instead of overshooting by an interval.
         await asyncio.sleep(min(poll_interval_s, max(0.0, deadline - time.monotonic())))
-        if progress is not None:
-            await progress()
+        await _emit_progress()
 
 
 def register_file_tools(mcp: Any) -> None:
@@ -405,7 +414,19 @@ def register_file_tools(mcp: Any) -> None:
                     "await_upload needs the remote signed-URL transport; set "
                     "NOTEBOOKLM_MCP_PUBLIC_URL on the server to enable it"
                 )
-            # ponytail: no ctx.report_progress keepalive yet — the re-invoke loop is the
-            # load-bearing completion path; add one only if a live claude.ai timing test
-            # shows the ~45s poll needs it (ADR-0024 / Phase 1 plan).
-            return await _await_upload(cfg, upload_link, timeout_s=timeout)
+
+            # Emit a progress notification each poll tick (t=0 + every ~2s) so an MCP host
+            # watching for a stalled call sees liveness across the ~45s wait — the re-invoke
+            # loop stays the load-bearing completion path. ``progress`` climbs a plain tick
+            # counter (an honest liveness ping, not an upload %-done — this polls, it doesn't
+            # transfer the bytes). ``report_progress`` no-ops when the client sent no
+            # progressToken, and ``_await_upload`` swallows any error, so this never fails the
+            # tool.
+            ticks = 0
+
+            async def _keepalive() -> None:
+                nonlocal ticks
+                ticks += 1
+                await ctx.report_progress(progress=ticks, message="waiting for the upload to land…")
+
+            return await _await_upload(cfg, upload_link, timeout_s=timeout, progress=_keepalive)
