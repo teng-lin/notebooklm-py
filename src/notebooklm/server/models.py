@@ -281,6 +281,21 @@ class ExternalImport(Base):
     user = relationship("User", back_populates="external_imports")
 
 
+class Note(Base):
+    __tablename__ = "notes"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    notebook_id = Column(Integer, ForeignKey("notebooks.id"), nullable=True)
+    title = Column(String, nullable=True)
+    content = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    user = relationship("User")
+    notebook = relationship("Notebook")
+
+
 ALL_MODELS = [
     User,
     UserSession,
@@ -294,6 +309,7 @@ ALL_MODELS = [
     ExternalKBCollection,
     ExternalKBDocument,
     ExternalImport,
+    Note,
 ]
 
 Index("idx_notebooks_user", Notebook.user_id)
@@ -326,3 +342,5 @@ Index(
     ExternalKBDocument.remote_id,
     unique=True,
 )
+Index("idx_notes_notebook", Note.notebook_id)
+Index("idx_notes_user", Note.user_id)
