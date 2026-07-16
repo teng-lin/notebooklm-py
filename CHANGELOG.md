@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0]
+
+The headline of 0.8.0 is **integrations**: NotebookLM is now reachable from AI
+agents and HTTP clients through two new adapters built over the shared `_app/`
+core (ADR-0021) — an **MCP server** and an experimental **single-tenant REST API
+server** — plus a **remote MCP connector** you can self-host for **claude.ai**
+(and Claude Desktop / Code / Cursor) behind a Cloudflare Tunnel or Tailscale
+Funnel, gated by a single password.
+
+0.8.0 also lands the **breaking half** of the ADR-0019 error contract (the
+[#1346](https://github.com/teng-lin/notebooklm-py/issues/1346) umbrella):
+"absence and refusal **raise**; only success and async-lifecycle state are
+returned." Every flip previewed under `NOTEBOOKLM_FUTURE_ERRORS` in v0.7.0 is
+now the default, and the preview flag — together with the dict-subscript /
+get-returns-None / kwarg-alias deprecation machinery — has been **removed**
+(#1365). See the [Upgrading to v0.8.0](docs/upgrading-to-0.8.0.md) guide and the
+**Breaking** section below.
+
+> **⚠ `NOTEBOOKLM_FUTURE_ERRORS` is gone.** It was the v0.7.0 forward-compat
+> preview gate; its target behavior is now unconditional, so the flag is a no-op
+> (setting it changes nothing). Remove it from your environment / CI config.
+
 ### Added
 
 - **MCP file upload now records and can verify a SHA-256 of the uploaded bytes.**
@@ -32,106 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `:latest` image, and each release now attaches a version-baked
   `docker-compose.yml` + `env.example`
   ([#1904](https://github.com/teng-lin/notebooklm-py/issues/1904)).
-
-### Changed
-
-- **MCP: the standalone `studio_get_prompt` tool was folded into `studio_list`**
-  (net −1 tool, ADR-0025 tool-surface consolidation). Each artifact's
-  `generation_prompt` (the free-text prompt it was generated from, `null` when it
-  records none) now rides the default `studio_list` summary listing, and
-  `studio_list(item=<artifact>)` returns it for a single artifact resolved by id or
-  exact title (the unified cross-type Studio resolver, as `studio_delete` /
-  `studio_rename` use — not the old artifact-scoped title-prefix resolver). The
-  prompt is decoded from the same `LIST_ARTIFACTS` row the listing already fetches,
-  so this adds no extra request. The CLI `notebooklm artifact get-prompt` command
-  is unchanged.
-  ([#1896](https://github.com/teng-lin/notebooklm-py/issues/1896))
-- **The in-app upload widget's token pool gets a longer (1h) TTL.** The widget
-  mints one single-use token per file up front but uploads them sequentially, so
-  a later file in a large batch could hit an expired token mid-upload; the pool
-  now uses `WIDGET_UPLOAD_TTL` instead of the 15-minute default. The single-use /
-  signed-token model is unchanged
-  ([#1894](https://github.com/teng-lin/notebooklm-py/issues/1894)).
-
-### Fixed
-
-- **MCP `notebook_describe(include_metadata=true)` no longer reports a source
-  count that disagrees with its own `sources` list.** The exposed
-  `metadata.notebook.sources_count` is now re-projected to the enumerated
-  (id-bearing, deduped) source count instead of the raw unfiltered
-  `GET_NOTEBOOK` row count, which could inflate it (e.g. 168 vs 50) and mislead
-  autonomous agents on quota / completeness. Source enumeration
-  (`source_list` / `metadata.sources`) also dedups duplicate id-bearing rows
-  (research re-imports, ghost/probe echoes), keeping the first occurrence
-  ([#1919](https://github.com/teng-lin/notebooklm-py/issues/1919)).
-- **MCP `research_import` is safe for unattended use.** The tool now imports via
-  the timeout-tolerant `import_sources_with_verification` (as the CLI does), so a
-  deep-research import that times out is reconciled against what the server
-  actually committed instead of failing as if nothing imported (hiding a large
-  partial import). It also gained optional `cited_only` (import only the sources
-  the report cites) and `max_sources` (cap the count imported, applied after
-  `cited_only`) so one call can't silently blow a notebook to its source cap.
-  ([#1920](https://github.com/teng-lin/notebooklm-py/issues/1920))
-- **`source_add` batch mode isolates a per-URL failure** instead of aborting the
-  whole batch: a bad URL now yields a per-item `SourceAddError` while the other
-  sources in the same call still add, matching the tool's documented behavior
-  ([#1905](https://github.com/teng-lin/notebooklm-py/issues/1905)).
-- **MCP `studio_generate` for interactive mind maps** now normalizes its payload
-  to the bare node tree and returns a terminal poll shape, fixing malformed
-  generate requests and non-terminal status reports
-  ([#1908](https://github.com/teng-lin/notebooklm-py/issues/1908),
-  [#1914](https://github.com/teng-lin/notebooklm-py/issues/1914)).
-- **MCP `research_cancel` distinguishes an already-cancelled run** and surfaces
-  the raw status code instead of a generic failure
-  ([#1922](https://github.com/teng-lin/notebooklm-py/issues/1922)).
-- **Content-sanity flags bot-challenge / WAF interstitial pages**, so a source
-  that fetched a challenge page instead of real content is reported rather than
-  silently ingested as thin content
-  ([#1929](https://github.com/teng-lin/notebooklm-py/issues/1929)).
-- **`suggest_prompts` strips a leading list marker** from returned prompts, and
-  `research_start` drops redundant ids from its result
-  ([#1909](https://github.com/teng-lin/notebooklm-py/issues/1909)).
-- **The MCP server warns at startup when the upload widget is enabled but
-  stateless HTTP is disabled** (`FASTMCP_STATELESS_HTTP` explicitly falsey),
-  which would silently stop the widget from rendering
-  ([#1915](https://github.com/teng-lin/notebooklm-py/issues/1915)).
-
-### Security
-
-- **The loopback DNS-rebinding `Host` guard is no longer bypassed on a tokenless
-  local bind.** The guard is skipped only when an external bind is opted into
-  **and** authentication (bearer or OAuth) is configured — the
-  `ALLOW_EXTERNAL_BIND` flag alone (e.g. set while `--host` stays at loopback) no
-  longer disables it, closing a rebinding gap on an unauthenticated local server
-  ([#1935](https://github.com/teng-lin/notebooklm-py/issues/1935)).
-- **Client-facing RPC errors no longer leak the obfuscated internal method id or
-  the raw upstream status code**, trimming information disclosure in error
-  messages ([#1931](https://github.com/teng-lin/notebooklm-py/issues/1931)).
-
-## [0.8.0]
-
-The headline of 0.8.0 is **integrations**: NotebookLM is now reachable from AI
-agents and HTTP clients through two new adapters built over the shared `_app/`
-core (ADR-0021) — an **MCP server** and an experimental **single-tenant REST API
-server** — plus a **remote MCP connector** you can self-host for **claude.ai**
-(and Claude Desktop / Code / Cursor) behind a Cloudflare Tunnel or Tailscale
-Funnel, gated by a single password.
-
-0.8.0 also lands the **breaking half** of the ADR-0019 error contract (the
-[#1346](https://github.com/teng-lin/notebooklm-py/issues/1346) umbrella):
-"absence and refusal **raise**; only success and async-lifecycle state are
-returned." Every flip previewed under `NOTEBOOKLM_FUTURE_ERRORS` in v0.7.0 is
-now the default, and the preview flag — together with the dict-subscript /
-get-returns-None / kwarg-alias deprecation machinery — has been **removed**
-(#1365). See the [Upgrading to v0.8.0](docs/upgrading-to-0.8.0.md) guide and the
-**Breaking** section below.
-
-> **⚠ `NOTEBOOKLM_FUTURE_ERRORS` is gone.** It was the v0.7.0 forward-compat
-> preview gate; its target behavior is now unconditional, so the flag is a no-op
-> (setting it changes nothing). Remove it from your environment / CI config.
-
-### Added
-
 - **`await_upload` — confirm a brokered file upload landed.** A new MCP tool that
   waits for a source created via the remote signed-URL upload flow to finish,
   returning the added source (`source_id` / name / size / mime) as soon as the
@@ -475,6 +397,23 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
 
 ### Changed
 
+- **MCP: the standalone `studio_get_prompt` tool was folded into `studio_list`**
+  (net −1 tool, ADR-0025 tool-surface consolidation). Each artifact's
+  `generation_prompt` (the free-text prompt it was generated from, `null` when it
+  records none) now rides the default `studio_list` summary listing, and
+  `studio_list(item=<artifact>)` returns it for a single artifact resolved by id or
+  exact title (the unified cross-type Studio resolver, as `studio_delete` /
+  `studio_rename` use — not the old artifact-scoped title-prefix resolver). The
+  prompt is decoded from the same `LIST_ARTIFACTS` row the listing already fetches,
+  so this adds no extra request. The CLI `notebooklm artifact get-prompt` command
+  is unchanged.
+  ([#1896](https://github.com/teng-lin/notebooklm-py/issues/1896))
+- **The in-app upload widget's token pool gets a longer (1h) TTL.** The widget
+  mints one single-use token per file up front but uploads them sequentially, so
+  a later file in a large batch could hit an expired token mid-upload; the pool
+  now uses `WIDGET_UPLOAD_TTL` instead of the 15-minute default. The single-use /
+  signed-token model is unchanged
+  ([#1894](https://github.com/teng-lin/notebooklm-py/issues/1894)).
 - **MCP name refs resolve by unique title prefix** (#1786). Notebook, source,
   note, and artifact name arguments now match on a unique title *prefix*, not
   just an exact title, so an agent can address an entity by the shortest
@@ -574,6 +513,46 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
 
 ### Fixed
 
+- **MCP `notebook_describe(include_metadata=true)` no longer reports a source
+  count that disagrees with its own `sources` list.** The exposed
+  `metadata.notebook.sources_count` is now re-projected to the enumerated
+  (id-bearing, deduped) source count instead of the raw unfiltered
+  `GET_NOTEBOOK` row count, which could inflate it (e.g. 168 vs 50) and mislead
+  autonomous agents on quota / completeness. Source enumeration
+  (`source_list` / `metadata.sources`) also dedups duplicate id-bearing rows
+  (research re-imports, ghost/probe echoes), keeping the first occurrence
+  ([#1919](https://github.com/teng-lin/notebooklm-py/issues/1919)).
+- **MCP `research_import` is safe for unattended use.** The tool now imports via
+  the timeout-tolerant `import_sources_with_verification` (as the CLI does), so a
+  deep-research import that times out is reconciled against what the server
+  actually committed instead of failing as if nothing imported (hiding a large
+  partial import). It also gained optional `cited_only` (import only the sources
+  the report cites) and `max_sources` (cap the count imported, applied after
+  `cited_only`) so one call can't silently blow a notebook to its source cap.
+  ([#1920](https://github.com/teng-lin/notebooklm-py/issues/1920))
+- **`source_add` batch mode isolates a per-URL failure** instead of aborting the
+  whole batch: a bad URL now yields a per-item `SourceAddError` while the other
+  sources in the same call still add, matching the tool's documented behavior
+  ([#1905](https://github.com/teng-lin/notebooklm-py/issues/1905)).
+- **MCP `studio_generate` for interactive mind maps** now normalizes its payload
+  to the bare node tree and returns a terminal poll shape, fixing malformed
+  generate requests and non-terminal status reports
+  ([#1908](https://github.com/teng-lin/notebooklm-py/issues/1908),
+  [#1914](https://github.com/teng-lin/notebooklm-py/issues/1914)).
+- **MCP `research_cancel` distinguishes an already-cancelled run** and surfaces
+  the raw status code instead of a generic failure
+  ([#1922](https://github.com/teng-lin/notebooklm-py/issues/1922)).
+- **Content-sanity flags bot-challenge / WAF interstitial pages**, so a source
+  that fetched a challenge page instead of real content is reported rather than
+  silently ingested as thin content
+  ([#1929](https://github.com/teng-lin/notebooklm-py/issues/1929)).
+- **`suggest_prompts` strips a leading list marker** from returned prompts, and
+  `research_start` drops redundant ids from its result
+  ([#1909](https://github.com/teng-lin/notebooklm-py/issues/1909)).
+- **The MCP server warns at startup when the upload widget is enabled but
+  stateless HTTP is disabled** (`FASTMCP_STATELESS_HTTP` explicitly falsey),
+  which would silently stop the widget from rendering
+  ([#1915](https://github.com/teng-lin/notebooklm-py/issues/1915)).
 - **RPC failures no longer leak the obfuscated method id or raw status code into
   the client-facing message.** A null-result RPC error used to read
   `RPC LBwxtb returned null result with status code 9 (Failed precondition).
@@ -1014,6 +993,18 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
   only when that positional reference carries no `citation_number`: a holed
   marker drops its anchor with a warning instead of anchoring the wrong
   chunk.
+
+### Security
+
+- **The loopback DNS-rebinding `Host` guard is no longer bypassed on a tokenless
+  local bind.** The guard is skipped only when an external bind is opted into
+  **and** authentication (bearer or OAuth) is configured — the
+  `ALLOW_EXTERNAL_BIND` flag alone (e.g. set while `--host` stays at loopback) no
+  longer disables it, closing a rebinding gap on an unauthenticated local server
+  ([#1935](https://github.com/teng-lin/notebooklm-py/issues/1935)).
+- **Client-facing RPC errors no longer leak the obfuscated internal method id or
+  the raw upstream status code**, trimming information disclosure in error
+  messages ([#1931](https://github.com/teng-lin/notebooklm-py/issues/1931)).
 
 ### Breaking
 
