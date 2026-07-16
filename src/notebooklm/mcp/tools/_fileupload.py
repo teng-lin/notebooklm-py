@@ -419,9 +419,8 @@ def register_file_tools(mcp: Any) -> None:
             # watching for a stalled call sees liveness across the ~45s wait — the re-invoke
             # loop stays the load-bearing completion path. ``progress`` climbs a plain tick
             # counter (an honest liveness ping, not an upload %-done — this polls, it doesn't
-            # transfer the bytes). ``report_progress`` no-ops when the client sent no
-            # progressToken, and ``_await_upload`` swallows any error, so this never fails the
-            # tool.
+            # transfer the bytes). It's best-effort by ``_await_upload``'s contract (swallowed
+            # on error; a no-op when the client sent no progressToken).
             ticks = 0
 
             async def _keepalive() -> None:

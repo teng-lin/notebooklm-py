@@ -12,12 +12,13 @@ import asyncio
 import contextlib
 import time
 from collections.abc import AsyncIterator
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 pytest.importorskip("fastmcp")
+
+from fastmcp import Client  # noqa: E402
 
 import notebooklm.mcp._filelink as filelink  # noqa: E402
 from notebooklm.exceptions import ValidationError  # noqa: E402
@@ -207,9 +208,10 @@ async def test_progress_keepalive_errors_are_swallowed() -> None:
     assert out["source_id"] == "s-ok"
 
 
-async def test_await_upload_tool_emits_report_progress() -> None:
-    # End-to-end wiring: the await_upload TOOL passes a ctx.report_progress keepalive down to
-    # the poll, so a real host receives progress notifications during the wait.
+async def test_await_upload_tool_delivers_progress_over_the_protocol() -> None:
+    # End-to-end over the REAL MCP protocol (in-memory Client with a progressToken-bearing
+    # request): the await_upload tool's keepalive reaches the client as an actual progress
+    # notification — not merely that ctx.report_progress was called.
     cfg = _cfg()
     url, jti = _mint(cfg)
     cfg.jti_store.commit(jti, int(time.time()) + 60, result={"source_id": "s-ok"})
@@ -218,18 +220,18 @@ async def test_await_upload_tool_emits_report_progress() -> None:
     async def factory() -> AsyncIterator[MagicMock]:
         yield MagicMock()
 
-    mcp = create_server(client_factory=factory, file_transfer=cfg)
-    tool = {t.name: t for t in await mcp._list_tools()}["await_upload"]
-    report = AsyncMock()
-    ctx = SimpleNamespace(
-        request_context=SimpleNamespace(
-            lifespan_context=SimpleNamespace(client=MagicMock(), file_transfer=cfg)
-        ),
-        report_progress=report,
-    )
+    server = create_server(client_factory=factory, file_transfer=cfg)
+    updates: list[tuple[float, str | None]] = []
 
-    out = await tool.fn(ctx, upload_link=url, timeout=0.0)
-    assert out["status"] == "received"
-    report.assert_awaited()  # the keepalive fired (at least the t=0 emit)
+    async def on_progress(progress: float, total: float | None, message: str | None) -> None:
+        updates.append((progress, message))
+
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "await_upload", {"upload_link": url, "timeout": 0.0}, progress_handler=on_progress
+        )
+
+    assert result.data["status"] == "received"
+    assert updates, "the keepalive must reach the client as a real progress notification"
     # It carries a human-readable status message (an honest liveness ping).
-    assert any(call.kwargs.get("message") for call in report.await_args_list)
+    assert any(msg for _progress, msg in updates)
