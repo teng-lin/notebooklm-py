@@ -328,27 +328,35 @@ rejects**: the source stays READY, `ok` stays `true`, and any fetch failure
 (including a >5s slow `source_read`) degrades to no warning rather than breaking
 the wait.
 
-It fires on a **web-page source only** (`kind == "web_page"`) via two body-only
+It fires on a **web-page source only** (`kind == "web_page"`) via three body-only
 signals — the title is never scanned:
 
 | Signal | Threshold | Warning contains |
 |--------|-----------|------------------|
 | **char-thin** | indexed text shorter than **100 characters** | `"little/no text extracted (N chars) …"` |
-| **dead-link boilerplate** | **indexed text** shorter than **2000 characters** that (casefolded) contains any of the phrases below | `"ingested as ready (N chars) but the body matches a dead-link / error-page pattern …"` |
+| **dead-link boilerplate** | **indexed text** shorter than **2000 characters** that (casefolded) contains any of the dead-link phrases below | `"ingested as ready (N chars) but the body matches a dead-link / error-page pattern …"` |
+| **bot-challenge / WAF interstitial** | **indexed text** shorter than **5000 characters** that (casefolded) contains any of the challenge phrases below | `"ingested as ready (N chars) but the body matches a bot-challenge / WAF interstitial pattern …"` |
 
 The full dead-link phrase set (the complete list, so you can build a fixture that
 trips it): `broken link`, `page not found`, `page isn't available`, `page does
 not exist`, `page no longer available`, `no longer available`, `error 404`, `404
 not found`, `whoops!`.
 
-Both gates measure the source's **indexed text** length (`char_count` from a
+The full bot-challenge phrase set (a Cloudflare "Just a moment…" or Akamai
+"Access Denied" page that serves HTTP 200 and indexes as ready): `just a moment`,
+`enable javascript and cookies`, `checking your browser`, `attention required`,
+`access denied`, `security verification`, `captcha`, `ray id`. The dead-link scan
+takes precedence when a body trips both.
+
+Each gate measures the source's **indexed text** length (`char_count` from a
 `source_read` with `detail="full"`), not the raw HTTP response — a large HTML
-page that indexes to little text is still caught. The 2000-char gate is what
-keeps the weaker phrases safe: a page whose indexed text is 2000 chars or longer
-is never phrase-scanned (so `broken link` in a real article about broken links,
-or a shop's `no longer available`, does not false-positive), and the phrases are
-all multi-word / anchored — no bare `404` or `not found`. Every warning ends with
-`verify with source_read (detail="full").` (trailing period included).
+page that indexes to little text is still caught. The length gate is what keeps
+the phrases safe: a page whose indexed text is at/over its cap (2000 for
+dead-link, 5000 for bot-challenge) is never phrase-scanned (so `broken link` in a
+real article about broken links, or a passing mention of a WAF vendor, does not
+false-positive), and the phrases are all multi-word / anchored — no bare `404` or
+`not found`. Every warning ends with `verify with source_read (detail="full").`
+(trailing period included).
 
 **To exercise the warning branch** (the reason this is documented): note that a
 `text` source — even an empty one — is *never* flagged; only a `web_page` under
@@ -455,7 +463,7 @@ new chat may not render — call it again and it will (a ChatGPT-side quirk, not
 | Domain | Tools |
 |--------|-------|
 | **Notebooks** | `notebook_list(limit?, offset?)` · `notebook_create(title)` · `notebook_describe(notebook, include_metadata?)` (AI description; `include_metadata=true` adds a `metadata` block with notebook details + source list) · `notebook_rename(notebook, new_title)` · `notebook_delete(notebook, confirm)` |
-| **Sources** | `source_list(notebook, status?, label?, detail?, limit?, offset?)` (each source has string `kind`/`status_label`; `status` filters to one of ready\|processing\|error\|preparing — e.g. `status="error"` finds failed imports; `detail=compact` returns a low-token roster of just `id`/`title`/`kind`/`status_label`/`created_at`) · `source_read(notebook, source, detail?, output_format?, max_chars?, offset?)` (`detail=full` (default) → metadata + a bounded slice of the indexed text: `max_chars` caps `content` (default 10k), `offset` pages, plus a `truncated` flag and the full `char_count`; `detail=summary` → low-token triage: AI summary **+ keywords**, not the body; `output_format`: text\|markdown) · `source_rename(notebook, source, new_title)` · `source_delete(notebook, source, confirm)` · `source_wait(notebook, source?, timeout, interval)` (a READY web page with thin/empty text, or a short body matching a dead-link / soft-404 boilerplate pattern, carries a non-blocking `warning`) · `source_add(notebook, source_type, ..., bytes_base64?, filename?, wait?, timeout?, interval?, allow_internal?)` (single; echoes `kind`/`status_label`, flags a failed import inline with a `warning`. `bytes_base64`/`filename` add a small `file` in-channel (no signed URL). `wait=true` folds in `source_wait` → the aggregate plus a top-level `source_id`; single-source only, not a remote `file` upload) / `source_add(notebook, urls=[...], allow_internal?)` (batch → per-item `results`; a synchronously-ready web-page item may also carry the same content-sanity `warning`) |
+| **Sources** | `source_list(notebook, status?, label?, detail?, limit?, offset?)` (each source has string `kind`/`status_label`; `status` filters to one of ready\|processing\|error\|preparing — e.g. `status="error"` finds failed imports; `detail=compact` returns a low-token roster of just `id`/`title`/`kind`/`status_label`/`created_at`) · `source_read(notebook, source, detail?, output_format?, max_chars?, offset?)` (`detail=full` (default) → metadata + a bounded slice of the indexed text: `max_chars` caps `content` (default 10k), `offset` pages, plus a `truncated` flag and the full `char_count`; `detail=summary` → low-token triage: AI summary **+ keywords**, not the body; `output_format`: text\|markdown) · `source_rename(notebook, source, new_title)` · `source_delete(notebook, source, confirm)` · `source_wait(notebook, source?, timeout, interval)` (a READY web page with thin/empty text, or a short body matching a dead-link / soft-404 or bot-challenge / WAF interstitial pattern, carries a non-blocking `warning`) · `source_add(notebook, source_type, ..., bytes_base64?, filename?, wait?, timeout?, interval?, allow_internal?)` (single; echoes `kind`/`status_label`, flags a failed import inline with a `warning`. `bytes_base64`/`filename` add a small `file` in-channel (no signed URL). `wait=true` folds in `source_wait` → the aggregate plus a top-level `source_id`; single-source only, not a remote `file` upload) / `source_add(notebook, urls=[...], allow_internal?)` (batch → per-item `results`; a synchronously-ready web-page item may also carry the same content-sanity `warning`) |
 | **Chat** | `chat_ask(notebook, question?, conversation_id?, references?, source_ids?, history?, suggest_followups?)` (`references`: lite\|full; never returns the raw debug blob; `source_ids` scopes to specific sources — list, JSON-array string, or comma string; omit for all; `history`>0 also returns up to N prior `{question, answer}` pairs — omit `question` to recall only; `suggest_followups=true` also returns `suggested_prompts` (3 questions to ask — works question-less too)) · `chat_configure(notebook, chat_mode?, goal?, response_length?)` (`chat_mode`: default\|learning-guide\|concise\|detailed — a preset, mutually exclusive with `goal`/`response_length`; a **partial** custom call sets just `goal` or just `response_length` and **merges** with the current settings — the omitted field is preserved, not reset; only a bare call, no preset and neither field, is rejected) · `suggest_prompts(notebook, surface?, source_ids?, query?)` (READ_ONLY; `surface`: ask\|audio-deep-dive\|audio-brief\|audio-critique\|audio-debate\|video-explainer\|video-short\|quiz\|flashcards — returns `{title, prompt}` suggestions to steer that studio surface; `ask` (default) = chat questions) |
 | **Notes** | `note_save(notebook, note?, title?, content?)` (upsert: omit `note` to **create** — `title` AND `content` required; pass a `note` ref to **update** — `title` and/or `content`, title-only = rename). Reading and deleting notes fold into the Studio row below. |
 | **Studio** | `studio_list(notebook, item?, kind?, detail?, limit?, offset?)` (the unified Studio panel — **notes AND artifacts** merged into one `items` list; each item has `id`/`title`/`type` where `type` is `note` or a hyphenated artifact kind; artifacts add `status_label`/`url`; `detail=summary` (default) gives each note a bounded `content_preview` + full-body `char_count` to keep a discovery listing low-token, `detail=full` returns the whole note `content`, `detail=compact` collapses every item to `id`/`title`/`type`/`status_label`/`created_at`; `kind` filters to one `type`; `item` fetches one note-or-artifact by ref as a 1-element list, always with the note's full `content`) · `studio_generate(notebook, artifact_type, …)` · `studio_status(notebook, task_id)` · `studio_get_prompt(notebook, artifact)` (the free-text prompt an artifact was generated from; `null` if none) · `studio_download(notebook, artifact? \| artifact_type?, path?, output_format?, artifact_id?)` (target by `artifact` name-or-id ref **or** by `artifact_type` [+ `artifact_id` for a specific one, else latest]) · `studio_rename(notebook, item, new_title)` (cross-type: renames a note OR an artifact resolved from the merged list) · `studio_retry(notebook, artifact)` (re-run a failed artifact in place; task_id == artifact_id) · `studio_delete(notebook, item, confirm)` (cross-type: deletes a note OR an artifact resolved from the merged list) |

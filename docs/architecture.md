@@ -1203,7 +1203,7 @@ src/notebooklm/
 │   ├── _paginate.py             # paginate(items, limit) — bounded page + {total, has_more} for the *_list tools (client-side slice; RPCs don't page); DEFAULT_LIMIT=50
 │   └── tools/                   # Per-domain tool modules; each exposes register(mcp) wired by server.register_all
 │       ├── __init__.py          # Tools package marker (no click/rich/cli)
-│       ├── _content_sanity.py   # _annotate_thin_warnings/_thin_content_warning — advisory thin/soft-404 web-page warning over _app.source_content (used by source_wait + source_add batch)
+│       ├── _content_sanity.py   # _annotate_thin_warnings/_thin_content_warning — advisory thin/soft-404/bot-challenge web-page warning over _app.source_content (used by source_wait + source_add batch)
 │       ├── _fileupload.py       # file-transfer slice of the source tools: _broker_upload (signed-URL upload_required) + _decode_upload_b64/_add_bytes (in-channel base64 byte upload for source_add(source_type="file", bytes_base64=…)) + the shared _add_one plan/execute seam (split from sources.py for the ADR-0008 size budget)
 │       ├── _passthrough.py      # Shared pass-through resolvers (passthrough_notebook_id/passthrough_child_id) for the CLI-shaped _app executors
 │       ├── _preview.py          # title_for_id() — shared id→title lookup for the delete tools' needs_confirmation previews
