@@ -253,13 +253,20 @@ def register(mcp: Any) -> None:
                 # Single fetch by ref over the merged list; the resolved item's full
                 # projection rides on ``.raw`` so this never re-lists. Request artifact
                 # meta so a resolved artifact carries its ``generation_prompt`` — this
-                # single-item path is the replacement for the removed ``studio_get_prompt``.
+                # single-item path (plus the summary listing, which surfaces every
+                # artifact's prompt) replaces the removed ``studio_get_prompt``. It
+                # resolves over the unified cross-type Studio resolver (id / hex-prefix /
+                # exact title), NOT the old artifact-scoped ``resolve_artifact`` — same
+                # resolution as ``studio_delete`` / ``studio_rename``.
                 resolved = await resolve_studio_item(
                     client, nb_id, item, kind, include_artifact_meta=True
                 )
+                # ``raw`` is always the matched item dict on the success path (a miss
+                # raises NOT_FOUND), but it's typed ``dict | None``; fall back to an
+                # empty dict as cheap insurance against a future resolver change.
                 return {
                     "notebook_id": nb_id,
-                    "items": [resolved.raw],
+                    "items": [resolved.raw or {}],
                     "total": 1,
                     "offset": 0,
                     "has_more": False,

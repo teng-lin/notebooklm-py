@@ -80,7 +80,7 @@ bounded content reads) proceed independently of this decision.
 > the surface as of this ADR's original authoring. Intervening additions (the
 > sharing domain, `suggest_prompts`, `source_add_drive_file`, `source_upload_bytes`,
 > `source_add_and_wait`, `await_upload`) took it to **36**; this update brings the
-> **current** surface to **34**.
+> surface to **34** (later **33** — see the #1896 update below).
 
 
 Two source tools shipped as **discrete verbs** over the composite-vs-mega-tool
@@ -106,3 +106,36 @@ same fewer-tools evidence that argued *against* splitting the mega-tools: consol
 these composites lowers the surface-wide schema-token cost the harness ratchets. The
 underlying `_app` add+wait / bytes logic (`_waitagg`, `_fileupload`) is retained
 verbatim — only the two MCP tool *registrations* were removed.
+
+
+## Update (2026-07, #1896): fold `studio_get_prompt` into `studio_list`
+
+> This update brings the current surface to **33**.
+
+`studio_get_prompt(notebook, artifact)` was a discrete read-only tool returning one
+artifact's generation prompt. But the typed `Artifact` already carries
+`generation_prompt` (decoded from the `LIST_ARTIFACTS` row, #1925) and the default
+`studio_list` **summary** listing already surfaces it on every artifact row — so the
+standalone tool duplicated a capability the unified listing tool already had. It was
+removed and its single-artifact lookup folded onto the existing `studio_list(item=…)`
+path (which now threads `include_artifact_meta=True` so a resolved artifact carries its
+prompt).
+
+This is the "prefer folding into an existing tool over a standalone verb" side of the
+ADR-0025 fewer-tools evidence — the same rationale as the #1890 `source_add` fold. The
+prompt rides the `LIST_ARTIFACTS` row the listing already fetches, so there is **no extra
+request** (no per-artifact fetch, no N+1).
+
+Net **34 → 33 tools** and **−367 schema chars** (`SCHEMA_CHAR_BUDGET` ratcheted from
+39,400 to 39,050; measured actual 39,015). The transport-neutral `_app.get_artifact_prompt`
+core is retained verbatim — the CLI `notebooklm artifact get-prompt` and the REST route
+still use it; only the MCP tool *registration* was removed.
+
+**Resolution semantics note:** the `studio_list(item=…)` lookup resolves over the unified
+cross-type Studio resolver (`resolve_studio_item`: full id / hex-prefix / exact title over
+the merged notes+artifacts list — the same resolver `studio_delete` / `studio_rename` use),
+NOT the old artifact-scoped `resolve_artifact`. So, versus `studio_get_prompt`: a title that
+is exact-shared by both a note and an artifact resolves ambiguously (pass `kind` to scope),
+and artifact-*title-prefix* lookups are not supported (use the id or full title). This is a
+deliberate consequence of the one-resolver Studio surface — and moot for the common case,
+since the summary listing already exposes every artifact's prompt without any ref.
