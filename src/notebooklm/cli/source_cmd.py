@@ -526,9 +526,9 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
 def source_add_drive_file(ctx, document_id, notebook_id, title, wait, json_output, client_auth):
     """Add an upload-only Google Drive file (epub/docx/txt/md/rtf/odt/csv/tsv/pdf).
 
-    Downloads the file from Drive (server-side, using your session) and uploads it
-    — for the types NotebookLM's native Drive import can't ingest. DOCUMENT_ID is a
-    raw file id or share URL; use `source add-drive` for native Docs/Slides/Sheets.
+    Downloads the file from Drive (server-side, using your session) and uploads it.
+    A Drive PDF can also go by reference via `source add-drive` (which takes native
+    Docs/Slides/Sheets + PDF). DOCUMENT_ID is a raw file id or share URL.
     """
     nb_id = require_notebook(notebook_id)
 
