@@ -173,7 +173,10 @@ async def poll_importable_research(
         )
     if not status.sources:
         raise ValidationError(f"Research run {run_id!r} completed with no sources to import.")
-    return status.sources, status.report
+    # ``report`` is typed ``str`` upstream (``ResearchTask.report`` defaults to
+    # ""), but coerce defensively so a drifted response that leaves it ``None``
+    # can't violate the return type or break ``select_cited_sources``.
+    return status.sources, status.report or ""
 
 
 async def poll_sources_for_import(

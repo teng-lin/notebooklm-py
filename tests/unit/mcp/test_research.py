@@ -472,7 +472,10 @@ async def test_research_import_max_sources_caps(mcp_call, mock_client) -> None:
     # Only the first two sources are handed to the importer.
     imported_sources = mock_client.research.import_sources_with_verification.await_args.args[2]
     assert len(imported_sources) == 2
-    assert result.structured_content["sources_found"] == 2
+    # ``sources_found`` stays the total the run discovered; ``sources_selected``
+    # is the post-cap count handed to the importer.
+    assert result.structured_content["sources_found"] == 3
+    assert result.structured_content["sources_selected"] == 2
 
 
 async def test_research_import_max_sources_rejects_zero(mcp_call, mock_client) -> None:
@@ -510,7 +513,8 @@ async def test_research_import_cited_only_selects_cited(mcp_call, mock_client) -
     imported_sources = mock_client.research.import_sources_with_verification.await_args.args[2]
     urls = {src["url"] for src in imported_sources}
     assert urls == {"http://a"}
-    assert result.structured_content["sources_found"] == 1
+    assert result.structured_content["sources_found"] == 2
+    assert result.structured_content["sources_selected"] == 1
     assert "cited_only_fallback" not in result.structured_content
 
 
@@ -535,7 +539,38 @@ async def test_research_import_cited_only_fallback_when_none_cited(mcp_call, moc
     )
     imported_sources = mock_client.research.import_sources_with_verification.await_args.args[2]
     assert len(imported_sources) == 2
+    assert result.structured_content["sources_found"] == 2
+    assert result.structured_content["sources_selected"] == 2
     assert result.structured_content["cited_only_fallback"] is True
+
+
+async def test_research_import_cited_only_then_max_sources_order(mcp_call, mock_client) -> None:
+    """cited_only applies first, then max_sources caps the cited subset (#1920)."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(
+            status=FakeResearchStatus.COMPLETED,
+            report="See [A](http://a) and [B](http://b).",
+            sources=[
+                FakeSource(url="http://a", title="A"),
+                FakeSource(url="http://b", title="B"),
+                FakeSource(url="http://c", title="C"),
+            ],
+            task_id=TASK_ID,
+        )
+    )
+    mock_client.research.import_sources_with_verification = AsyncMock(
+        return_value=[{"id": "src-a", "title": "A"}]
+    )
+    result = await mcp_call(
+        "research_import",
+        {"notebook": NB_ID, "poll_task_id": TASK_ID, "cited_only": True, "max_sources": 1},
+    )
+    imported_sources = mock_client.research.import_sources_with_verification.await_args.args[2]
+    # cited_only narrows {a,b,c} → cited {a,b}; max_sources=1 then keeps the first
+    # cited source (a), never an uncited one (c).
+    assert [src["url"] for src in imported_sources] == ["http://a"]
+    assert result.structured_content["sources_found"] == 3
+    assert result.structured_content["sources_selected"] == 1
 
 
 async def test_research_import_empty_poll_task_id_rejected(mcp_call, mock_client) -> None:

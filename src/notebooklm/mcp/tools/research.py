@@ -450,7 +450,14 @@ def register(mcp: Any) -> None:
                 "poll_task_id": poll_task_id,
                 "task_id": poll_task_id,
                 "imported": to_jsonable(imported),
-                "sources_found": len(sources_to_import),
+                # ``sources_found`` keeps its cross-surface meaning: the total the
+                # research run discovered (pre-narrowing), matching the REST route
+                # and CLI. ``sources_selected`` is the post-``cited_only`` /
+                # ``max_sources`` count actually handed to the importer, so a
+                # caller sees both the found total and how many were imported
+                # without a second ``research_status`` poll.
+                "sources_found": len(sources),
+                "sources_selected": len(sources_to_import),
             }
             if cited_only and cited_fallback:
                 result["cited_only_fallback"] = True
