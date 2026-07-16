@@ -2,8 +2,6 @@
   <el-dialog :model-value="visible" title="来源引用" width="500px" @update:model-value="$emit('update:visible', $event)">
     <div v-if="citation" class="citation-detail">
       <div class="citation-field"><span class="field-label">来源文档</span><span class="field-value">{{ citation.source_name }}</span></div>
-      <div v-if="citation.page !== null" class="citation-field"><span class="field-label">页码</span><span class="field-value">第 {{ citation.page }} 页</span></div>
-      <div class="citation-field"><span class="field-label">引用原文</span><blockquote class="citation-quote">{{ citation.text }}</blockquote></div>
     </div>
   </el-dialog>
 </template>
