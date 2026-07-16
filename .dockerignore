@@ -16,6 +16,10 @@ build/
 *.egg-info/
 .sisyphus/
 node_modules/
+frontend/node_modules/
+frontend/dist/
+*.db
+/data/
 # never copy deploy secrets into the build
 deploy/profile/
 deploy/.env

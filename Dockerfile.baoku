@@ -1,0 +1,49 @@
+# Baoku clone — multi-stage Docker image
+#
+# Stage 1: Build frontend
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Python runtime
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system deps needed for generation engines (optional)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    graphviz \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy backend source
+COPY src/ ./src/
+COPY pyproject.toml hatch_build.py ./
+COPY scripts/ ./scripts/
+
+# Install Python dependencies
+RUN pip install --no-cachedir -e ".[server,markdown]"
+
+# Copy built frontend from stage 1
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+
+# Runtime config
+ENV BAOKU_DATABASE_URL=sqlite:///data/baoku.db \
+    BAOKU_MEDIA_ROOT=/data/media \
+    BAOKU_JWT_SECRET=change-me-in-production
+
+RUN useradd --create-home --uid 10001 app
+RUN mkdir -p /data /data/media && chown -R app:app /data
+USER app
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; import sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status == 200 else 1)"
+
+CMD ["uvicorn", "notebooklm.server.server:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

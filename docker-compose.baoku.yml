@@ -1,0 +1,29 @@
+# Baoku clone — Docker Compose
+#
+# Start:   docker compose -f docker-compose.baoku.yml up -d --build
+# Stop:    docker compose -f docker-compose.baoku.yml down
+# Logs:    docker compose -f docker-compose.baoku.yml logs -f
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.baoku
+    ports:
+      - "8000:8000"
+    environment:
+      BAOKU_DATABASE_URL: ${BAOKU_DATABASE_URL:-sqlite:///data/baoku.db}
+      BAOKU_MEDIA_ROOT: /data/media
+      BAOKU_JWT_SECRET: ${BAOKU_JWT_SECRET:-change-me-in-production}
+    volumes:
+      - baoku-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; import sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  baoku-data:

@@ -1,0 +1,34 @@
+$color-main-1: #ff3650;
+$color-main-2: #17181a;
+$color-text-focus: #1a75ff;
+$color-text-1: #2a2b2e;
+$color-text-2: #626469;
+$color-text-3: #939599;
+$color-text-4: #a8aaad;
+$color-bg-1: #fff;
+$color-bg-tab: #f5f6f7;
+$color-divider-1: #eeeff0;
+$radius-card: 12px;
+$radius-tab: 6px;
+$radius-input: 8px;
+$radius-button: 6px;
+$shadow-card: 0px 4px 40px 0px rgba(174, 180, 193, 0.17);
+$font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+  "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+
+:export {
+  colorMain1: $color-main-1;
+  colorMain2: $color-main-2;
+  colorTextFocus: $color-text-focus;
+  colorText1: $color-text-1;
+  colorText2: $color-text-2;
+  colorText3: $color-text-3;
+  colorText4: $color-text-4;
+  colorBg1: $color-bg-1;
+  colorBgTab: $color-bg-tab;
+  colorDivider1: $color-divider-1;
+  radiusCard: $radius-card;
+  radiusTab: $radius-tab;
+  radiusInput: $radius-input;
+  radiusButton: $radius-button;
+}

@@ -1,0 +1,220 @@
+@use "./variables" as *;
+
+:root {
+  --el-color-primary: #{$color-main-1};
+  --el-color-primary-light-3: #{lighten($color-main-1, 12%)};
+  --el-color-primary-light-5: #{lighten($color-main-1, 20%)};
+  --el-color-primary-light-7: #{lighten($color-main-1, 28%)};
+  --el-color-primary-light-8: #{lighten($color-main-1, 34%)};
+  --el-color-primary-light-9: #{lighten($color-main-1, 40%)};
+  --el-color-primary-dark-2: #{darken($color-main-1, 10%)};
+  --el-border-radius-base: #{$radius-button};
+  --el-border-radius-small: #{$radius-tab};
+  --el-border-radius-round: 20px;
+  --el-font-family: #{$font-family};
+  --el-text-color-primary: #{$color-text-1};
+  --el-text-color-regular: #{$color-text-2};
+  --el-text-color-secondary: #{$color-text-3};
+  --el-border-color: #{$color-divider-1};
+  --el-fill-color-light: #{$color-bg-tab};
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-text-4);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-3);
+}
+
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.card {
+  background: var(--color-bg-1);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-1);
+  margin-bottom: 16px;
+}
+
+/* === Responsive mixins === */
+
+@mixin respond-to($bp) {
+  @if $bp == sm {
+    @media (max-width: 639px) { @content; }
+  } @else if $bp == md {
+    @media (min-width: 640px) and (max-width: 1023px) { @content; }
+  } @else if $bp == lg {
+    @media (min-width: 1024px) { @content; }
+  }
+}
+
+@mixin mobile-only {
+  @media (max-width: 639px) { @content; }
+}
+
+@mixin tablet-up {
+  @media (min-width: 640px) { @content; }
+}
+
+@mixin desktop-up {
+  @media (min-width: 1024px) { @content; }
+}
+
+/* === Grid responsive helpers === */
+
+.baoku-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  @media (max-width: 1023px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  @media (max-width: 639px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.baoku-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  @media (max-width: 639px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.baoku-flex-row {
+  display: flex;
+  flex-direction: row;
+  @media (max-width: 639px) {
+    flex-direction: column;
+  }
+}
+
+/* Full-screen dialog on mobile */
+@media (max-width: 639px) {
+  .el-dialog {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0 !important;
+    .el-dialog__header {
+      padding: 16px;
+    }
+    .el-dialog__body {
+      padding: 16px;
+    }
+    .el-dialog__footer {
+      padding: 16px;
+    }
+  }
+}
+
+/* Bottom navigation on mobile */
+.baoku-mobile-bottom-nav {
+  display: none;
+  @media (max-width: 639px) {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: var(--color-bg-2);
+    border-top: 1px solid var(--color-divider-1);
+    padding: 8px 0;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    justify-content: space-around;
+  }
+}
+
+/* Slide-over drawer on mobile */
+.baoku-drawer-overlay {
+  @media (max-width: 639px) {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 900;
+  }
+}
+
+.baoku-drawer {
+  @media (max-width: 639px) {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 80vw;
+    z-index: 1000;
+    background: var(--color-bg-2);
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    &.is-open {
+      transform: translateX(0);
+    }
+  }
+}
+
+/* Horizontal scroll for content type cards */
+.baoku-horizontal-scroll {
+  @media (max-width: 639px) {
+    display: flex;
+    overflow-x: auto;
+    gap: 12px;
+    padding: 8px 0;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    > * {
+      flex-shrink: 0;
+      width: 160px;
+      scroll-snap-align: start;
+    }
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+}
+
+/* Empty state centering */
+.baoku-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  color: var(--color-text-3);
+  .baoku-empty-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+    opacity: 0.6;
+  }
+  .baoku-empty-text {
+    font-size: 15px;
+  }
+}

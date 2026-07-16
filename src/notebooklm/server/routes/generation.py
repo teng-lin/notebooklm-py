@@ -148,6 +148,30 @@ def list_generated_contents(
     }
 
 
+@router.get("/templates")
+def list_templates(
+    content_type: str | None = Query(None),
+) -> list[dict[str, str]]:
+    types: list[str] = [content_type] if content_type else GeneratorRegistry.list_types()
+    result: list[dict[str, str]] = []
+    for ct in types:
+        try:
+            gen = GeneratorRegistry.create(ct)
+            templates = _run_async(gen.get_supported_templates())
+            for t in templates:
+                result.append(
+                    {
+                        "content_type": ct,
+                        "name": t.name,
+                        "label": t.label,
+                        "description": t.description,
+                    }
+                )
+        except ValueError:
+            pass
+    return result
+
+
 @router.get("/{content_id}")
 def get_generated_content(
     content_id: int,
@@ -224,30 +248,6 @@ def delete_generated_content(
 
     db.delete(r)
     db.commit()
-
-
-@router.get("/templates")
-def list_templates(
-    content_type: str | None = Query(None),
-) -> list[dict[str, str]]:
-    types: list[str] = [content_type] if content_type else GeneratorRegistry.list_types()
-    result: list[dict[str, str]] = []
-    for ct in types:
-        try:
-            gen = GeneratorRegistry.create(ct)
-            templates = _run_async(gen.get_supported_templates())
-            for t in templates:
-                result.append(
-                    {
-                        "content_type": ct,
-                        "name": t.name,
-                        "label": t.label,
-                        "description": t.description,
-                    }
-                )
-        except ValueError:
-            pass
-    return result
 
 
 @router.post("/{content_id}/regenerate")

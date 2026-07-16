@@ -101,6 +101,8 @@ all = ["notebooklm-py[browser,dev,headless,markdown,mcp,server]"]
 notebooklm = "notebooklm.notebooklm_cli:main"
 notebooklm-mcp = "notebooklm.mcp.__main__:main"
 notebooklm-server = "notebooklm.server.__main__:main"
+baoku-server = "notebooklm.server.baoku__main__:main"
+build-frontend = "scripts.build_frontend:main"
 
 [build-system]
 requires = ["hatchling", "hatch-fancy-pypi-readme"]
