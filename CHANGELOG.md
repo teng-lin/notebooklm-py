@@ -563,7 +563,8 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
   (or `The server returned an empty result …` when no status is attached); the
   method id, status code, and found-id list remain on the exception attributes
   (`method_id` / `rpc_code` / `found_ids`) for logging and debugging.
-  ([#1921](https://github.com/teng-lin/notebooklm-py/issues/1921))
+  ([#1921](https://github.com/teng-lin/notebooklm-py/issues/1921),
+  [#1931](https://github.com/teng-lin/notebooklm-py/issues/1931))
 - **A blank `FASTMCP_STATELESS_HTTP` no longer crash-loops the remote MCP server.**
   The deploy compose passed the variable through as `${FASTMCP_STATELESS_HTTP:-}`,
   which injects an **empty string** when unset — and FastMCP's settings bool-parse
@@ -1002,9 +1003,6 @@ get-returns-None / kwarg-alias deprecation machinery — has been **removed**
   `ALLOW_EXTERNAL_BIND` flag alone (e.g. set while `--host` stays at loopback) no
   longer disables it, closing a rebinding gap on an unauthenticated local server
   ([#1935](https://github.com/teng-lin/notebooklm-py/issues/1935)).
-- **Client-facing RPC errors no longer leak the obfuscated internal method id or
-  the raw upstream status code**, trimming information disclosure in error
-  messages ([#1931](https://github.com/teng-lin/notebooklm-py/issues/1931)).
 
 ### Breaking
 
