@@ -163,6 +163,13 @@ bearer-only deploy → the two file tools return a clear "not configured" error
   type and the streamed `Content-Type` can't drift), and `size_bytes` (`null` — the
   size isn't known without eagerly fetching the artifact, which the broker won't do;
   the route sets the real `Content-Length` when the link is opened).
+- **Confirm an upload landed:** `await_upload` (pass the `human_upload.url` or bare token)
+  polls the in-process completion record and returns `{source_id, file:{name, size, mime,
+  sha256}}` once the add commits — `sha256` is the digest of exactly the bytes the server
+  received, so a client that hashed its local copy can confirm byte-integrity. An agent
+  `PUT`ing to the upload URL may also append `?sha256=<hex>`: the route verifies the received
+  stream against it and rejects a corrupted transfer with a clean 400 (retryable) *before*
+  adding the source.
 - Links are HMAC-signed and short-lived (upload 15 min, download 30 min) and expire on
   a server restart. Google Drive (`source_add` with a Drive id) remains a no-browser
   alternative for adding files. stdio (local) installs are unchanged — they still read

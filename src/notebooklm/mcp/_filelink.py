@@ -226,7 +226,7 @@ class ConsumedJtiStore:
     #: the concurrent request count and always released in the route's ``finally``, so
     #: it needs no sweep or size cap.
     _active: set[str] = field(default_factory=set)
-    #: jti -> upload result ({source_id, name, size, mime}), recorded on a successful
+    #: jti -> upload result ({source_id, name, size, mime, sha256}), recorded on a successful
     #: :meth:`commit` that carries one. This is the in-process **completion map**
     #: (Phase 1 ``await_upload``): the ``/files/ul`` POST route and the polling tool run
     #: in the same single process (ADR-0024), so a same-loop poll reads what the route
