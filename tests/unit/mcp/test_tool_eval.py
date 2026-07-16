@@ -31,13 +31,13 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = (
-    39_400  # total serialized inputSchema + description chars (current 39_370; +30 slack)
+    39_400  # total serialized inputSchema + description chars (current 39_384; +16 slack)
 )
 # #1908 documented studio_generate's mind-map exception (mind-map renders
-# synchronously → the payload normalizes to task_id=null + is_complete=true with
-# the tree under mind_map, rather than a pollable task_id). Net +51 chars after
-# trimming the redundant "style is shared by video and infographic" sentence
-# (already covered by the per-kind bullets); absorbed within the existing budget.
+# synchronously → NO pollable task_id; the rendered map is returned inline under
+# mind_map). Absorbed within the existing budget, partly by trimming the redundant
+# "style is shared by video and infographic" sentence (already covered by the
+# per-kind bullets).
 # #1890 folded the two source-add composites BACK into source_add (ADR-0025 tool
 # consolidation): the add+wait verb → source_add(wait=True, timeout=, interval=), and
 # the in-channel byte upload → source_add(source_type="file", bytes_base64=, filename=).
