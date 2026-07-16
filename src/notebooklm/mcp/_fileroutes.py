@@ -191,6 +191,22 @@ def _upstream_error_response(exc: NotebookLMError, *, note: str = "") -> PlainTe
 _safe_upload_name = add_core.safe_upload_name
 
 
+#: Lowercase hex chars a SHA-256 digest can contain — the exact alphabet a valid
+#: ``?sha256=`` claim must be drawn from (64 of them).
+_HEX_LOWER = frozenset("0123456789abcdef")
+
+
+def _is_sha256_hex(value: str) -> bool:
+    """True iff ``value`` is a well-formed lowercase SHA-256 hex digest (64 hex chars).
+
+    The client's ``?sha256=`` claim is validated with this BEFORE it reaches
+    :func:`hmac.compare_digest` — which raises ``TypeError`` on any non-ASCII string
+    (e.g. a ``?sha256=%C3%A9`` probe would otherwise 500). A malformed claim is a clean
+    400, never a crash.
+    """
+    return len(value) == 64 and all(c in _HEX_LOWER for c in value)
+
+
 def _cleanup(path: str) -> None:
     """Remove a temp directory tree, ignoring an already-removed path."""
     shutil.rmtree(path, ignore_errors=True)
@@ -531,12 +547,20 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 mime = raw_mime.split(";")[0].strip() if raw_mime else None
                 # Optional client-provided SHA-256 of the file bytes (?sha256=<hex>). When the
                 # client hashed the bytes it holds, we verify the stream we received matches
-                # (end-to-end transit-integrity, #1889 Phase 4). Normalize to lowercase hex; a
-                # non-hex / wrong-length claim simply won't match the computed digest → the same
-                # clean 400 as a corrupted transfer. Absent → no verification, we still record
-                # the server-computed digest below.
+                # (end-to-end transit-integrity, #1889 Phase 4). A blank / whitespace-only value
+                # means "no claim" (skip verification, uniformly with the param being absent). A
+                # present-but-malformed claim (wrong length, non-hex, or non-ASCII — the last
+                # would make ``compare_digest`` raise ``TypeError`` → 500) is rejected here as a
+                # clean 400, BEFORE spooling the body, so garbage never drives a 200 MiB write.
                 claimed_raw = request.query_params.get("sha256")
-                claimed_sha = claimed_raw.strip().lower() if claimed_raw else None
+                # Blank / whitespace-only → None (== absent); otherwise the normalized hex.
+                claimed_sha: str | None = (claimed_raw or "").strip().lower() or None
+                if claimed_sha is not None and not _is_sha256_hex(claimed_sha):
+                    return PlainTextResponse(
+                        "Malformed sha256 parameter (expected 64 hex chars).",
+                        status_code=400,
+                        headers=_CORS_ORIGIN,  # cross-origin widget reads the status
+                    )
 
                 try:
                     temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-ul-")  # mkdtemp is 0o700
@@ -578,13 +602,13 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                             hasher.update(chunk)  # incremental — no extra buffering
                             out.write(chunk)
                     sha256 = hasher.hexdigest()
-                    # Integrity gate (#1889): if the client sent its own hash, the bytes we
-                    # received must match — else the transfer corrupted them. Reject BEFORE the
-                    # add so a corrupted file never becomes a source; the outer ``finally`` rolls
-                    # the jti back (uncommitted), so a corrected retry on the same link works.
-                    # ``compare_digest`` is the idiomatic digest comparison; timing isn't
-                    # sensitive here (the checksum is a client-supplied integrity value, not a
-                    # secret), but it costs nothing and reads clearly.
+                    # Integrity gate (#1889): if the client sent a (well-formed, validated above)
+                    # hash, the bytes we received must match — else the transfer corrupted them.
+                    # Reject BEFORE the add so a corrupted file never becomes a source; the outer
+                    # ``finally`` rolls the jti back (uncommitted), so a corrected retry on the
+                    # same link works. ``compare_digest`` is the idiomatic digest comparison —
+                    # both operands are ASCII hex here (so it never raises), and timing isn't
+                    # sensitive (a client-supplied integrity value, not a secret).
                     if claimed_sha is not None and not hmac.compare_digest(sha256, claimed_sha):
                         return PlainTextResponse(
                             "Upload integrity check failed (sha256 mismatch); retry the upload.",
