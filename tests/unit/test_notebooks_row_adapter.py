@@ -60,7 +60,9 @@ class TestPromptSuggestionRow:
             PromptSuggestionRow(["t", "2026. Summarize the annual trends"]).prompt
             == "2026. Summarize the annual trends"
         )
-        assert PromptSuggestionRow(["t", "5) reasons to refactor"]).prompt == "5) reasons to refactor"
+        assert (
+            PromptSuggestionRow(["t", "5) reasons to refactor"]).prompt == "5) reasons to refactor"
+        )
 
     def test_clean_leaf_unchanged_apart_from_surrounding_whitespace(self) -> None:
         # A leaf with no leading marker keeps its content; only surrounding
