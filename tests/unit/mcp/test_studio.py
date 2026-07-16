@@ -738,6 +738,21 @@ async def test_artifact_generate_mind_map_payload_is_terminal(mcp_call, mock_cli
     assert "status" not in payload
 
 
+async def test_artifact_generate_mind_map_empty_result_still_terminal(mcp_call, mock_client) -> None:
+    """Even when the backend hands back an empty/None map, the payload still
+    normalizes to the terminal shape (#1908 review): branching on the KIND, not on
+    a populated ``mind_map``, guarantees ``task_id=None`` + ``is_complete=True``
+    rather than falling through and dropping the poll fields."""
+    mock_client.mind_maps.generate = AsyncMock(return_value=None)
+    result = await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": "mind-map"})
+    payload = result.structured_content
+    assert payload["kind"] == "mind-map"
+    assert payload["mind_map"] is None
+    assert payload["is_complete"] is True
+    assert payload["task_id"] is None
+    assert "status" not in payload
+
+
 async def test_artifact_generate_mind_map_note_backed_routes(mcp_call, mock_client) -> None:
     """``map_kind=note-backed`` routes to ``artifacts.generate_mind_map`` instead."""
     mock_client.artifacts.generate_mind_map = AsyncMock(return_value={"id": "mm1"})

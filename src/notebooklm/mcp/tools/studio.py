@@ -921,8 +921,14 @@ def _generation_payload(
         "notebook_id": notebook_id,
         "kind": result.kind,
     }
-    if result.mind_map is not None:
-        payload["mind_map"] = to_jsonable(result.mind_map)
+    if result.kind == "mind-map":
+        # Branch on the KIND, not on a populated ``mind_map``: every mind-map
+        # generation — interactive AND note-backed — returns through the
+        # synchronous mind_map path (never the pollable ``generation`` outcome),
+        # so keying on the kind guarantees the terminal shape even if the backend
+        # hands back an empty/``None`` map (which must still normalize, not fall
+        # through and drop the poll fields). #1908.
+        payload["mind_map"] = to_jsonable(result.mind_map) if result.mind_map is not None else None
         payload["task_id"] = None
         payload["is_complete"] = True
         return payload
