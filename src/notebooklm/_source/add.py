@@ -205,8 +205,9 @@ class SourceAddService:
            The ``title`` is sent on the wire but **ignored** for native Drive
            imports: NotebookLM re-derives the display title from live Drive
            metadata, so the returned source keeps the file's Drive name
-           regardless of what you pass here. Call :meth:`rename` after the add
-           if you need a specific title.
+           regardless of what you pass here. Call
+           :meth:`~notebooklm._sources.SourcesAPI.rename` after the add if you
+           need a specific title.
         """
         logger.debug("Adding Drive source to notebook %s: %s", notebook_id, title)
         source_data = [
