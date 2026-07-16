@@ -121,9 +121,9 @@ def register(mcp: Any) -> None:
                 # mislead an agent on quota / completeness. Scoped to this
                 # projection: the shared ``Notebook.sources_count`` semantics stay
                 # untouched elsewhere (e.g. ``notebook_list`` list rows).
-                notebook_record = metadata_block.get("notebook")
-                if isinstance(notebook_record, dict):
-                    notebook_record["sources_count"] = len(meta_result.metadata.sources)
+                # ``NotebookMetadata.notebook`` is a non-optional ``Notebook``
+                # dataclass, so ``to_jsonable`` always emits it as a dict here.
+                metadata_block["notebook"]["sources_count"] = len(meta_result.metadata.sources)
                 output["metadata"] = metadata_block
                 return output
             result = await core.execute_notebook_describe(

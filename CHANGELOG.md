@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP `notebook_describe(include_metadata=true)` no longer reports a source
+  count that disagrees with its own `sources` list.** The exposed
+  `metadata.notebook.sources_count` is now re-projected to the enumerated
+  (id-bearing, deduped) source count instead of the raw unfiltered
+  `GET_NOTEBOOK` row count, which could inflate it (e.g. 168 vs 50) and mislead
+  autonomous agents on quota / completeness. Source enumeration
+  (`source_list` / `metadata.sources`) also dedups duplicate id-bearing rows
+  (research re-imports, ghost/probe echoes), keeping the first occurrence
+  ([#1919](https://github.com/teng-lin/notebooklm-py/issues/1919)).
+
 ## [0.8.0]
 
 The headline of 0.8.0 is **integrations**: NotebookLM is now reachable from AI
