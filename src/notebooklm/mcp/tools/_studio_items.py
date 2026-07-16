@@ -279,7 +279,12 @@ def _match_studio_ref(
 
 
 async def resolve_studio_item(
-    client: NotebookLMClient, nb_id: str, ref: str, kind: str | None = None
+    client: NotebookLMClient,
+    nb_id: str,
+    ref: str,
+    kind: str | None = None,
+    *,
+    include_artifact_meta: bool = False,
 ) -> StudioResolvedItem:
     """Resolve a cross-type studio ref (note OR artifact) over the merged list.
 
@@ -287,12 +292,18 @@ async def resolve_studio_item(
     exact title) within an optional ``kind`` scope. A miss raises
     :class:`~notebooklm.exceptions.NotFoundError` (NOT_FOUND category); an ambiguous
     ref raises :class:`AmbiguousIdError`.
+
+    ``include_artifact_meta`` (keyword-only) is forwarded to :func:`studio_items` so a
+    resolved ARTIFACT carries ``created_at`` + ``generation_prompt`` on its ``.raw``
+    projection — used by ``studio_list(item=…)`` to surface the generation prompt of a
+    single artifact. It defaults off so ``studio_delete`` / ``studio_rename`` (which
+    only need the id + type) keep their byte-identical projection.
     """
     ref = validate_id(ref, "item")
     # Strict IDs-only mode rejects a title/prefix item ref before the list call,
     # matching the notebook/source/note/artifact resolvers (#1808).
     reject_non_canonical_id(ref, "studio item")
-    items = await studio_items(client, nb_id)
+    items = await studio_items(client, nb_id, include_artifact_meta=include_artifact_meta)
     match = _match_studio_ref(items, ref, kind)
     if match is None:
         raise NotFoundError(f"Studio item not found: {ref}")

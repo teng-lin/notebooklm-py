@@ -225,7 +225,6 @@ TOOL_COVERAGE: dict[str, str] = {
     "studio_download": "TestMcpArtifacts.test_download_existing_artifact",
     "studio_rename": "tests/unit/mcp/test_studio.py (cross-type note/artifact rename; no live mutation)",
     "studio_delete": "TestMcpNotes.test_note_crud (note path) + tests/unit/mcp/test_studio.py (artifact path)",
-    "studio_get_prompt": "tests/unit/mcp/test_studio.py (get_prompt; readonly)",
     "studio_retry": "tests/unit/mcp/test_studio.py (retry wiring)",
     # chat / suggestions
     "suggest_prompts": "tests/unit/mcp/ (suggest_prompts wiring; readonly)",

@@ -227,12 +227,14 @@ def register(mcp: Any) -> None:
         * ``detail`` ladder (NOTE bodies only; read a report/data-table body via
           ``studio_download``): ``summary`` (default) gives each note a bounded
           ``content_preview`` + ``char_count`` (artifacts add ``created_at`` +
-          ``generation_prompt``); ``full`` = whole ``content``; ``compact`` = a
+          ``generation_prompt``, the free-text prompt the artifact was generated from,
+          ``null`` when it records none); ``full`` = whole ``content``; ``compact`` = a
           ``id``/``title``/``type``/``status_label``/``created_at`` roster.
         * ``kind`` filters to one ``type``.
         * ``item`` (name or id) fetches just that item as a 1-element list with the
-          note's FULL ``content``; no match is NOT_FOUND. ``limit`` / ``offset`` /
-          ``detail`` are ignored with ``item``; ``kind`` scopes resolution.
+          note's FULL ``content`` (an artifact also carries its ``generation_prompt``);
+          no match is NOT_FOUND. ``limit`` / ``offset`` / ``detail`` are ignored with
+          ``item``; ``kind`` scopes resolution.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -249,8 +251,12 @@ def register(mcp: Any) -> None:
             nb_id = await resolve_notebook(client, notebook)
             if item is not None:
                 # Single fetch by ref over the merged list; the resolved item's full
-                # projection rides on ``.raw`` so this never re-lists.
-                resolved = await resolve_studio_item(client, nb_id, item, kind)
+                # projection rides on ``.raw`` so this never re-lists. Request artifact
+                # meta so a resolved artifact carries its ``generation_prompt`` — this
+                # single-item path is the replacement for the removed ``studio_get_prompt``.
+                resolved = await resolve_studio_item(
+                    client, nb_id, item, kind, include_artifact_meta=True
+                )
                 return {
                     "notebook_id": nb_id,
                     "items": [resolved.raw],
@@ -506,22 +512,6 @@ def register(mcp: Any) -> None:
             status = await artifact_core.poll_artifact(client, nb_id, task_id)
             view = artifact_core.status_view(status)
             return {"notebook_id": nb_id, **to_jsonable(view)}
-
-    @mcp.tool(annotations=READ_ONLY)
-    async def studio_get_prompt(ctx: Context, notebook: str, artifact: str) -> dict[str, Any]:
-        """Fetch the free-text prompt an artifact was generated from.
-
-        Accepts a notebook/artifact name or ID. Returns the stored ``prompt``
-        string, or ``null`` when the artifact records no prompt (e.g. a
-        note-backed mind map) — ``prompt=None`` is a valid result, not an error.
-        An unknown artifact id raises NOT_FOUND.
-        """
-        client = get_client(ctx)
-        with mcp_errors():
-            nb_id = await resolve_notebook(client, notebook)
-            artifact_id = await resolve_artifact(client, nb_id, artifact)
-            prompt = await artifact_core.get_artifact_prompt(client, nb_id, artifact_id)
-            return {"notebook_id": nb_id, "artifact_id": artifact_id, "prompt": prompt}
 
     @mcp.tool
     async def studio_download(

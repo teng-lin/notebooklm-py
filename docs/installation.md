@@ -511,7 +511,7 @@ For a **self-hosted remote connector** (claude.ai / mobile / ChatGPT over a tunn
 attaches a version-baked `docker-compose.yml` + `env.example` — no repo clone: `curl` them, fill
 `.env`, `docker compose --profile cloudflare up -d`. See [`deploy/README.md`](../deploy/README.md#quick-start--end-users-no-repo-cloudflare-tunnel).
 
-Full usage walkthrough (auth, transports, the 34 tools, workflows, troubleshooting): **[mcp-guide.md](mcp-guide.md)**.
+Full usage walkthrough (auth, transports, the 33 tools, workflows, troubleshooting): **[mcp-guide.md](mcp-guide.md)**.
 
 ---
 

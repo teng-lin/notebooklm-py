@@ -5,7 +5,7 @@ in-memory FastMCP ``Client``, then pins:
 
 * the EXACT set of tool names — so a tool can't be silently added, removed, or
   renamed without updating this gate;
-* a tool-count ceiling (40): the current surface is 34 tools; the next tool
+* a tool-count ceiling (40): the current surface is 33 tools; the next tool
   stays under the ceiling, but an accidental explosion still trips the gate;
 * the ``destructiveHint`` annotation + a ``confirm`` parameter on every
   destructive (delete) tool; and
@@ -23,7 +23,7 @@ import pytest
 pytest.importorskip("fastmcp")
 
 
-#: The complete, pinned tool surface. 34 tools across 8 domains. Adding or
+#: The complete, pinned tool surface. 33 tools across 8 domains. Adding or
 #: removing a tool MUST update this set (and the ceiling below if it grows).
 EXPECTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -48,11 +48,10 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "suggest_prompts",
         # Notes (1)
         "note_save",
-        # Studio (8)
+        # Studio (7)
         "studio_list",
         "studio_generate",
         "studio_status",
-        "studio_get_prompt",
         "studio_download",
         "studio_rename",
         "studio_retry",
@@ -78,8 +77,10 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
 #: → source_read) and the Studio consolidation (note_create+note_update → note_save,
 #: note_list+note_delete folded into studio_list/studio_delete) brought it to 32. The
 #: source-add composites (source_add_and_wait, source_upload_bytes) later re-grew it,
-#: then #1890 folded them BACK into source_add (wait= / bytes_base64=) for 34. The
-#: ceiling has headroom, but an accidental explosion still trips the gate.
+#: then #1890 folded them BACK into source_add (wait= / bytes_base64=) for 34, and
+#: #1896 folded studio_get_prompt into studio_list (each artifact's generation_prompt
+#: rides the summary listing / the item= fetch) for 33. The ceiling has headroom, but
+#: an accidental explosion still trips the gate.
 TOOL_CEILING = 40
 
 #: The destructive tools — each carries ``destructiveHint`` AND a ``confirm``
@@ -106,7 +107,6 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "await_upload",
         "studio_list",
         "studio_status",
-        "studio_get_prompt",
         "research_status",
         "share_status",
         "suggest_prompts",

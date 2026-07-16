@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **MCP: the standalone `studio_get_prompt` tool was folded into `studio_list`**
+  (net −1 tool, ADR-0025 tool-surface consolidation). Each artifact's
+  `generation_prompt` (the free-text prompt it was generated from, `null` when it
+  records none) now rides the default `studio_list` summary listing, and
+  `studio_list(item=<artifact>)` returns it for a single artifact — the direct
+  replacement for `studio_get_prompt(notebook, artifact)`. The prompt is decoded
+  from the same `LIST_ARTIFACTS` row the listing already fetches, so this adds no
+  extra request. The CLI `notebooklm artifact get-prompt` command is unchanged.
+  ([#1896](https://github.com/teng-lin/notebooklm-py/issues/1896))
+
 ### Fixed
 
 - **MCP `notebook_describe(include_metadata=true)` no longer reports a source

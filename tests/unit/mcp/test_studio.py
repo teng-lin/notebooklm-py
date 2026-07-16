@@ -1224,65 +1224,45 @@ async def test_artifact_status_complete_is_media_ready(mcp_call, mock_client) ->
 
 
 # ---------------------------------------------------------------------------
-# studio_get_prompt
+# studio_list item= surfaces generation_prompt (folds the removed studio_get_prompt)
 # ---------------------------------------------------------------------------
 
 
-async def test_artifact_get_prompt(mcp_call, mock_client) -> None:
-    """Happy path: the stored prompt string flows through unchanged."""
-    mock_client.artifacts.get_prompt = AsyncMock(return_value="Summarize the intro")
-    result = await mcp_call("studio_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
-    assert result.structured_content == {
-        "notebook_id": NB_ID,
-        "artifact_id": _ART_FULL,
-        "prompt": "Summarize the intro",
-    }
-    # Full-UUID ref fast-paths: the resolver never lists artifacts.
-    mock_client.artifacts.list.assert_not_called()
-    mock_client.artifacts.get_prompt.assert_awaited_once_with(NB_ID, _ART_FULL)
-
-
-async def test_artifact_get_prompt_none_is_success(mcp_call, mock_client) -> None:
-    """``prompt=None`` (artifact records no prompt) is a valid result, not an error."""
-    mock_client.artifacts.get_prompt = AsyncMock(return_value=None)
-    result = await mcp_call("studio_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
-    assert result.structured_content == {
-        "notebook_id": NB_ID,
-        "artifact_id": _ART_FULL,
-        "prompt": None,
-    }
-
-
-async def test_artifact_get_prompt_resolves_by_title(mcp_call, mock_client) -> None:
-    """A title/prefix ref resolves to the artifact id before the prompt fetch."""
+async def test_studio_list_item_artifact_carries_generation_prompt(mcp_call, mock_client) -> None:
+    """``studio_list(item=<artifact>)`` surfaces the artifact's ``generation_prompt`` —
+    the single-item path that replaced the removed ``studio_get_prompt`` tool."""
     art = Artifact(
         id=_ART_FULL,
         title="Podcast 1",
         _artifact_type=ArtifactTypeCode.AUDIO.value,
         status=int(ArtifactStatus.COMPLETED),
         created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        generation_prompt="Summarize the intro",
     )
+    mock_client.notes.list = AsyncMock(return_value=[])
     mock_client.artifacts.list = AsyncMock(return_value=[art])
-    mock_client.artifacts.get_prompt = AsyncMock(return_value="From the podcast")
-    result = await mcp_call("studio_get_prompt", {"notebook": NB_ID, "artifact": "Podcast 1"})
-    assert result.structured_content["artifact_id"] == _ART_FULL
-    assert result.structured_content["prompt"] == "From the podcast"
-    mock_client.artifacts.get_prompt.assert_awaited_once_with(NB_ID, _ART_FULL)
+    result = await mcp_call("studio_list", {"notebook": NB_ID, "item": _ART_FULL})
+    row = result.structured_content["items"][0]
+    assert row["id"] == _ART_FULL
+    assert row["generation_prompt"] == "Summarize the intro"
 
 
-async def test_artifact_get_prompt_unknown_id_projects_tool_error(mcp_call, mock_client) -> None:
-    """An unknown id raises ``ArtifactNotFoundError`` (mapped to NOT_FOUND).
-
-    ``get_prompt`` has no pre-list existence guard — the full-UUID ref reaches the
-    client, whose ``get_prompt`` raises for an absent artifact."""
-
-    def _raise(*_a: Any, **_k: Any) -> Any:
-        raise ArtifactNotFoundError(_ART_FULL)
-
-    mock_client.artifacts.get_prompt = AsyncMock(side_effect=_raise)
-    with pytest.raises(ToolError) as excinfo:
-        await mcp_call("studio_get_prompt", {"notebook": NB_ID, "artifact": _ART_FULL})
-    assert "NOT_FOUND" in str(excinfo.value)
+async def test_studio_list_item_artifact_prompt_none(mcp_call, mock_client) -> None:
+    """``generation_prompt=None`` (artifact records no prompt, e.g. a note-backed mind
+    map) is surfaced as ``None`` on the item path — a valid result, not an error."""
+    art = Artifact(
+        id=_ART_FULL,
+        title="Podcast 1",
+        _artifact_type=ArtifactTypeCode.AUDIO.value,
+        status=int(ArtifactStatus.COMPLETED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        generation_prompt=None,
+    )
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[art])
+    result = await mcp_call("studio_list", {"notebook": NB_ID, "item": _ART_FULL})
+    row = result.structured_content["items"][0]
+    assert row["generation_prompt"] is None
 
 
 # ---------------------------------------------------------------------------
