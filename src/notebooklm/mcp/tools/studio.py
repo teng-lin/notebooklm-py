@@ -35,6 +35,8 @@ from ..._app import notes as note_core
 from ..._app.language import is_supported_language
 from ..._app.resolve import FULL_ID_PATTERN
 from ..._app.serialize import to_jsonable
+from ..._types.mind_maps import MindMap
+from ..._types.research import MindMapResult
 from ...exceptions import ArtifactFeatureUnavailableError, NotFoundError, ValidationError
 from .._coerce import coerce_list
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
@@ -353,8 +355,8 @@ def register(mcp: Any) -> None:
         Non-blocking: returns immediately with a ``task_id``; poll
         ``studio_status(notebook, task_id)`` until ``is_complete`` is true.
         Exception: ``mind-map`` renders synchronously and returns NO ``task_id``
-        (there is nothing to poll) — the rendered map is returned inline under
-        ``mind_map`` instead.
+        (there is nothing to poll) — the rendered map's node tree is returned
+        inline under ``mind_map`` (or ``null``).
 
         ``artifact_type`` selects the artifact kind (each routes to its own
         generator):
@@ -953,6 +955,30 @@ def _artifact_rename_payload(
     }
 
 
+def _mind_map_tree(result_obj: Any) -> Any:
+    """Extract the bare ``{"name", "children"}`` node tree from a mind-map result.
+
+    ``execute_generation`` returns two different objects under
+    ``GenerationExecutionResult.mind_map`` depending on ``map_kind`` — and the
+    tree lives at a different attribute on each (type-coupling kept contained here):
+
+    * ``interactive`` → a :class:`~notebooklm._types.mind_maps.MindMap` whose tree
+      is at ``.tree`` (the generate path polls to completion and fetches the tree,
+      so it is populated — not the lazily-``None`` list-row shape).
+    * ``note-backed`` → a :class:`~notebooklm._types.research.MindMapResult` whose
+      tree is at ``.mind_map`` (a dict, or ``None`` on an empty backend response).
+
+    Returns the tree itself so an agent can read the root node uniformly
+    (``mind_map["name"]`` / ``mind_map["children"]``), or ``None`` when no tree was
+    produced — so an empty result is detectable rather than an opaque wrapper.
+    """
+    if isinstance(result_obj, MindMap):
+        return result_obj.tree
+    if isinstance(result_obj, MindMapResult):
+        return result_obj.mind_map
+    return None
+
+
 def _generation_payload(
     notebook_id: str, result: generate_core.GenerationExecutionResult
 ) -> dict[str, Any]:
@@ -975,10 +1001,11 @@ def _generation_payload(
         # mind-map — interactive AND note-backed — returns through this synchronous
         # path (never the ``generation`` outcome), so an empty/``None`` map still
         # takes this branch rather than falling through to the poll-shape below.
-        # NOTE: ``mind_map``'s shape currently varies by ``map_kind`` (interactive
-        # returns a MindMap; note-backed a MindMapResult) — normalizing it to the
-        # bare tree at one key is tracked separately (#1914).
-        payload["mind_map"] = to_jsonable(result.mind_map)
+        # Normalize the differing result shapes (interactive MindMap.tree /
+        # note-backed MindMapResult.mind_map) to the bare tree at one key, and
+        # ``null`` when no tree was produced, so an agent reads the root node
+        # uniformly and an empty result is detectable (#1914).
+        payload["mind_map"] = to_jsonable(_mind_map_tree(result.mind_map))
         return payload
     outcome = result.generation
     if outcome is not None:
