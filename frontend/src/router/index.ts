@@ -14,7 +14,6 @@ const routes: RouteRecordRaw[] = [
     name: "Notebook",
     component: () => import("@/views/NotebookView.vue"),
     meta: { requiresAuth: true },
-    redirect: (to) => ({ path: `/notebook/${to.params.id}/overview` }),
     children: [
       {
         path: "overview",
