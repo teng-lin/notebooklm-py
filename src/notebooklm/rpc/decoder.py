@@ -525,7 +525,10 @@ def _user_displayable_error_message(error_info: Any) -> str:
     if status is None:
         return message
     code, label = status
-    return f"{message} Upstream status code {code} ({label})."
+    # Keep the stable, human-readable status label but not the raw numeric gRPC
+    # code — it carries no end-user value and is volatile internal detail
+    # (#1921). The numeric code stays available on the exception's ``rpc_code``.
+    return f"{message} (Upstream: {label}.)"
 
 
 _SENTINEL_NO_RESULT = object()

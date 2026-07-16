@@ -465,7 +465,11 @@ class TestExtractRPCResult:
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
         assert exc_info.value.rpc_code == "USER_DISPLAYABLE_ERROR"
-        assert "Upstream status code 8 (Resource exhausted)" in str(exc_info.value)
+        # The stable label is surfaced; the raw numeric gRPC code is not (#1921).
+        message = str(exc_info.value)
+        assert "Resource exhausted" in message
+        assert "status code 8" not in message
+        assert "Upstream status code" not in message
 
     def test_null_result_without_error_info_returns_none(self):
         """Test null result without UserDisplayableError returns None normally."""

@@ -124,7 +124,7 @@ def _is_deep_start_null_result_error(exc: RPCError) -> bool:
     return (
         exc.method_id == method_id
         and method_id in exc.found_ids
-        and any(marker in str(exc) for marker in null_result_markers)
+        and any(marker in str(exc).lower() for marker in null_result_markers)
     )
 
 
