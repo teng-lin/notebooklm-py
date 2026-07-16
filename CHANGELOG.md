@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`source_list` / `metadata.sources`) also dedups duplicate id-bearing rows
   (research re-imports, ghost/probe echoes), keeping the first occurrence
   ([#1919](https://github.com/teng-lin/notebooklm-py/issues/1919)).
+- **MCP `research_import` is safe for unattended use.** The tool now imports via
+  the timeout-tolerant `import_sources_with_verification` (as the CLI does), so a
+  deep-research import that times out is reconciled against what the server
+  actually committed instead of failing as if nothing imported (hiding a large
+  partial import). It also gained optional `cited_only` (import only the sources
+  the report cites) and `max_sources` (cap the count imported, applied after
+  `cited_only`) so one call can't silently blow a notebook to its source cap.
+  ([#1920](https://github.com/teng-lin/notebooklm-py/issues/1920))
 
 ## [0.8.0]
 

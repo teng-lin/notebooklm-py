@@ -23,10 +23,16 @@ real ``NotebookLMClient`` → VCR-replayed RPC) for the three research tools:
     covering the poll→empty-import→empty-result wiring and the
     ``{imported: [], sources_found: 0}`` wire shape.
   - ``research_import_sources_populated.yaml`` (import leg, issue #1541): the
-    recorded poll returns a COMPLETED task with 10 importable url-bearing sources,
-    so ``import_sources`` issues the real ``IMPORT_RESEARCH`` (``LBwxtb``) RPC and
-    the tool returns a populated ``{imported: [...], sources_found: 10}`` — the
-    actual import RPC and its decode, end-to-end.
+    recorded poll returns a COMPLETED task with 10 importable url-bearing sources.
+    The tool now imports via the timeout-tolerant
+    ``import_sources_with_verification`` (#1920), which snapshots the notebook's
+    baseline source list (``GET_NOTEBOOK`` ``rLM1Ne``) before issuing the real
+    ``IMPORT_RESEARCH`` (``LBwxtb``) RPC; the tool returns a populated
+    ``{imported: [...], sources_found: 10}`` — the actual import RPC and its
+    decode, end-to-end. (The ``rLM1Ne`` snapshot leg was spliced in from
+    ``research_import_verification.yaml``'s identical ``GET_NOTEBOOK`` recording,
+    which the ``freq`` structural matcher accepts; on the no-timeout success path
+    the snapshot result is computed but unused.)
 
 Each cassette was recorded against a notebook UUID; the tools are invoked with
 that full UUID so the resolver skips its ``LIST_NOTEBOOKS`` preflight. The
@@ -217,9 +223,11 @@ async def test_mcp_research_import_populated_sources_over_vcr() -> None:
     """``research_import`` imports a completed task's sources via the real LBwxtb leg.
 
     Closes the #1541 gap. The recorded poll (``POLL_RESEARCH`` ``e3bVqc``) returns a
-    COMPLETED task carrying 10 url-bearing sources, so ``import_sources`` issues the
-    real ``IMPORT_RESEARCH`` (``LBwxtb``) RPC (not the empty-sources short-circuit)
-    and the tool returns a populated ``{imported: [...], sources_found: N}`` shape —
+    COMPLETED task carrying 10 url-bearing sources. The tool imports via the
+    timeout-tolerant ``import_sources_with_verification`` (#1920): it snapshots the
+    baseline source list (``GET_NOTEBOOK`` ``rLM1Ne``), then issues the real
+    ``IMPORT_RESEARCH`` (``LBwxtb``) RPC (not the empty-sources short-circuit), and
+    the tool returns a populated ``{imported: [...], sources_found: N}`` shape —
     exercising the import RPC and its decode end-to-end.
     """
     async with build_mcp_client() as mcp_client:

@@ -163,9 +163,11 @@ async def import_research(
     # touching ``import_sources``. The same shared helper backs the MCP
     # ``research_import`` tool so the importable-state ladder cannot drift.
     sources = await research_core.poll_sources_for_import(client, notebook_id, run_id)
-    # Match the MCP ``research_import`` tool exactly — it imports via the plain
-    # ``import_sources`` (NOT ``import_sources_with_verification``), so the REST
-    # route does the same to keep the two surfaces in lock-step.
+    # The MCP ``research_import`` tool imports via the timeout-tolerant
+    # ``import_sources_with_verification`` (#1920), but this synchronous REST route
+    # deliberately stays on the one-shot ``import_sources``: a web request must not
+    # block on a multi-minute reconcile-and-retry loop. A REST caller that hits a
+    # timeout reconciles by polling ``GET .../sources`` for what actually committed.
     imported = await client.research.import_sources(notebook_id, run_id, sources)
     # Record each new source id in the pending registry so the source poll route
     # can answer 200-pending (not 404) for the not-yet-listable window.

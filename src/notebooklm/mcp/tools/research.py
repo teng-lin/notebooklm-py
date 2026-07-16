@@ -11,7 +11,8 @@ Thin adapters over the research surface:
 * ``research_status`` drives the neutral ``_app.research.poll_and_classify`` core
   (a single non-blocking poll classified into render fields).
 * ``research_import`` polls the notebook's completed research, then imports its
-  sources via ``client.research.import_sources``.
+  sources via the timeout-tolerant ``client.research.import_sources_with_verification``
+  (optionally narrowed by ``cited_only`` / bounded by ``max_sources``).
 * ``research_cancel`` preflights the run via ``poll_and_classify`` and sends the
   fire-and-forget cancel unless the run is already terminal (``completed`` /
   ``failed``); a transiently-absent just-started run (replication lag) is still
@@ -45,6 +46,7 @@ from ..._app import research as research_core
 from ..._app.serialize import to_jsonable
 from ..._deprecation import warn_deprecated
 from ...exceptions import ValidationError
+from ...research import select_cited_sources
 from .._confirm import READ_ONLY
 from .._context import get_cancelled_research, get_client
 from .._errors import mcp_errors
@@ -115,10 +117,10 @@ def register(mcp: Any) -> None:
         """Start a research session in a notebook. Accepts a notebook name or ID.
 
         Non-blocking. Carry the returned ``poll_task_id`` into
-        ``research_status`` / ``research_import`` / ``research_cancel`` — it is
-        the single id that drives polling (the tool resolves deep's ``report_id``
-        vs fast's ``task_id`` for you). Poll ``research_status`` until
-        ``completed``, then ``research_import`` to add the found sources.
+        ``research_status`` / ``research_import`` / ``research_cancel`` — the
+        single id that drives polling (it resolves deep vs fast for you). Poll
+        ``research_status`` until ``completed``, then ``research_import`` to add
+        the sources.
 
         ``source`` is ``web`` (default) or ``drive``. ``mode`` is ``fast``
         (default) or ``deep`` (deep is web-only).
@@ -175,19 +177,18 @@ def register(mcp: Any) -> None:
         """Check a notebook's research status. Accepts a notebook name or ID.
 
         Returns ``status`` (no_research|in_progress|completed|failed|not_found),
-        the polled ``poll_task_id``, the found ``sources``, and report metadata.
-        Poll until ``completed``, then pass ``poll_task_id`` to ``research_import``.
+        ``poll_task_id``, the ``sources``, and report metadata. Poll until
+        ``completed``, then pass ``poll_task_id`` to ``research_import``.
 
-        The deep ``report`` and each source's ``report_markdown`` are omitted by
-        default; set ``include_report=True`` (optionally ``report_max_chars``) to
-        include them, truncated to that length. ``report_char_count`` is the full
-        size; ``report_truncated`` is true whenever the returned ``report`` omits
-        text. ``source_limit`` / ``source_offset`` page ``sources``.
+        ``report`` and each source's ``report_markdown`` are omitted by default;
+        set ``include_report=True`` (optionally ``report_max_chars``) to include
+        them, truncated to that length. ``report_char_count`` is the full size;
+        ``report_truncated`` flags an omitted/truncated ``report``.
+        ``source_limit`` / ``source_offset`` page ``sources``.
 
-        ``poll_task_id`` (optional) pins one task when several are in flight. Omit
-        it for a single task; omitting it with two or more running errors as
-        ambiguous. An unmatched pin reports ``not_found``. ``task_id`` is a
-        deprecated alias (removed in v0.9.0).
+        ``poll_task_id`` (optional) pins one of several in-flight tasks; omit it
+        for a single task (ambiguous with two+ running). An unmatched pin reports
+        ``not_found``. ``task_id`` is a deprecated alias (removed in v0.9.0).
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -302,13 +303,11 @@ def register(mcp: Any) -> None:
         value from ``research_start`` / ``research_status``. ``run_id`` is a
         deprecated alias (removed in v0.9.0).
 
-        Preflights the notebook and sends the cancel unless the run is already
-        TERMINAL (``completed`` / ``failed``), which returns
-        ``cancel_requested: false`` with the observed ``status`` and no RPC.
-        Otherwise it cancels and returns ``cancel_requested: true`` with
-        ``run_status_before`` (the preflight status). A just-started run can
-        transiently read ``not_found`` / ``no_research`` (replication lag), so
-        those are cancelled too. The cancel is fire-and-forget; poll
+        Sends the cancel unless the run is already TERMINAL (``completed`` /
+        ``failed``), which returns ``cancel_requested: false`` with the observed
+        ``status`` and no RPC. Otherwise returns ``cancel_requested: true`` with
+        ``run_status_before``; a just-started run reading ``not_found`` /
+        ``no_research`` (replication lag) is cancelled too. Fire-and-forget; poll
         ``research_status`` afterward to confirm.
         """
         client = get_client(ctx)
@@ -374,6 +373,8 @@ def register(mcp: Any) -> None:
         notebook: str,
         poll_task_id: str | None = None,
         task_id: str | None = None,
+        max_sources: int | None = None,
+        cited_only: bool = False,
     ) -> dict[str, Any]:
         """Import a completed research task's sources into the notebook.
 
@@ -381,11 +382,13 @@ def register(mcp: Any) -> None:
         value from ``research_start`` / ``research_status``. ``task_id`` is a
         deprecated alias (removed in v0.9.0).
 
-        The supplied id is the task discriminator: the notebook is polled FOR
-        THAT TASK so only its sources are imported, never a different task's. If
-        the task is not among the notebook's polled tasks, the import fails
-        cleanly (``not_found``). Returns the imported sources (verify with
+        The id pins the task: only its sources import (else ``not_found``).
+        Timeout-tolerant: a timed-out import reconciles against what the server
+        actually committed. Returns the imported sources (verify with
         ``source_list``).
+
+        ``cited_only`` imports only report-cited sources (all, if none resolve).
+        ``max_sources`` caps the count (after ``cited_only``).
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -398,32 +401,59 @@ def register(mcp: Any) -> None:
             # the notebook happens to have in flight (cross-wire).
             if not poll_task_id or not poll_task_id.strip():
                 raise ValidationError("poll_task_id is required to import a research task")
+            # Validate the bound BEFORE the poll so a bad request never spends a
+            # read-only RPC (mirrors research_status's up-front bounds checks).
+            if max_sources is not None and max_sources < 1:
+                raise ValidationError("max_sources must be >= 1 (omit it to import all)")
             poll_task_id = poll_task_id.strip()
             nb_id = await resolve_notebook(client, notebook)
             # Poll FOR THE REQUESTED task (via the shared importable-state guard,
             # which forwards ``poll_task_id`` to ``poll`` as the discriminator) so
             # the polled sources belong to it and every non-importable state
             # (not_found / failed / non-completed / empty) is refused before we
-            # touch ``import_sources`` — we never fall back to importing whatever
-            # the notebook's current task happens to be. The same helper backs
-            # the REST import route so the ladder cannot drift.
-            sources = await research_core.poll_sources_for_import(client, nb_id, poll_task_id)
-            # TOCTOU note: ``import_sources`` imports the sources from the poll
-            # snapshot above rather than re-fetching atomically, so a
-            # concurrent/external change to the task between the poll and the
-            # import could theoretically race. Acceptable here: research tasks are
-            # user-driven (no high-frequency concurrent mutation), and the pinned
-            # id prevents cross-task wiring — we never import a *different* task's
-            # sources.
-            imported = await client.research.import_sources(nb_id, poll_task_id, sources)
+            # import — we never fall back to importing whatever the notebook's
+            # current task happens to be. The report is returned alongside the
+            # sources so cited-only selection can match citations without a second
+            # poll. The same guard backs the REST import route so it cannot drift.
+            sources, report = await research_core.poll_importable_research(
+                client, nb_id, poll_task_id
+            )
+            # Selection/bounding, in that order: narrow to report-cited sources
+            # first, then cap the count. Both are opt-in; without them every
+            # completed source is imported (unchanged default behavior).
+            # ``sources_to_import`` widens to ``ResearchSourceInput`` because
+            # ``select_cited_sources`` may hand back typed sources, not just dicts.
+            sources_to_import: list[Any] = list(sources)
+            cited_fallback = False
+            if cited_only:
+                selection = select_cited_sources(sources_to_import, report)
+                sources_to_import = list(selection.sources)
+                cited_fallback = selection.used_fallback
+            if max_sources is not None:
+                sources_to_import = sources_to_import[:max_sources]
+            # Import via the timeout-tolerant variant (as the CLI does): the
+            # underlying IMPORT_RESEARCH RPC commonly runs >30 s on deep payloads
+            # and a one-shot call times out client-side even after the server
+            # committed. On timeout this probes sources.list and reconciles against
+            # what actually landed instead of raising as if nothing imported.
+            #
+            # TOCTOU note: the sources come from the poll snapshot above rather
+            # than an atomic re-fetch, so a concurrent/external change between poll
+            # and import could theoretically race. Acceptable: research tasks are
+            # user-driven, and the pinned id prevents cross-task wiring.
+            imported = await client.research.import_sources_with_verification(
+                nb_id, poll_task_id, sources_to_import
+            )
             result: dict[str, Any] = {
                 "status": "imported",
                 "notebook_id": nb_id,
                 "poll_task_id": poll_task_id,
                 "task_id": poll_task_id,
                 "imported": to_jsonable(imported),
-                "sources_found": len(sources),
+                "sources_found": len(sources_to_import),
             }
+            if cited_only and cited_fallback:
+                result["cited_only_fallback"] = True
             if deprecation is not None:
                 result["deprecation"] = deprecation
             return result

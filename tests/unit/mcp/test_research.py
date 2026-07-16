@@ -402,7 +402,9 @@ async def test_research_import(mcp_call, mock_client) -> None:
             task_id=TASK_ID,
         )
     )
-    mock_client.research.import_sources = AsyncMock(return_value=[{"id": "src-1", "title": "A"}])
+    mock_client.research.import_sources_with_verification = AsyncMock(
+        return_value=[{"id": "src-1", "title": "A"}]
+    )
     result = await mcp_call("research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID})
     assert result.structured_content["notebook_id"] == NB_ID
     assert result.structured_content["imported"] == [{"id": "src-1", "title": "A"}]
@@ -413,10 +415,127 @@ async def test_research_import(mcp_call, mock_client) -> None:
     # The requested id is threaded through ``poll`` as the discriminator so the
     # freshly-polled sources belong to that task (not the notebook's current task).
     mock_client.research.poll.assert_awaited_once_with(NB_ID, TASK_ID)
-    mock_client.research.import_sources.assert_awaited_once()
-    called = mock_client.research.import_sources.await_args.args
+    # #1920: the import routes through the timeout-tolerant verification variant
+    # (reconciles a committed partial import on timeout), not the naive one-shot.
+    mock_client.research.import_sources_with_verification.assert_awaited_once()
+    called = mock_client.research.import_sources_with_verification.await_args.args
     assert called[0] == NB_ID
     assert called[1] == TASK_ID
+
+
+async def test_research_import_reconciles_committed_partial_on_timeout(
+    mcp_call, mock_client
+) -> None:
+    """#1920 Part 1: routing through import_sources_with_verification means a
+    timeout that hid a committed import is reconciled (returned as imported), not
+    re-raised as if nothing landed. The MCP tool just delegates to the variant;
+    the reconciliation lives in (and is unit-tested at) the library layer, so
+    here we assert the tool returns whatever the verification variant resolved."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(
+            status=FakeResearchStatus.COMPLETED,
+            sources=[FakeSource(url="http://a", title="A")],
+            task_id=TASK_ID,
+        )
+    )
+    # The verification variant reconciled a committed source after a timeout.
+    mock_client.research.import_sources_with_verification = AsyncMock(
+        return_value=[{"id": "committed-1", "title": "A"}]
+    )
+    # The naive one-shot path must NOT be used.
+    mock_client.research.import_sources = AsyncMock(return_value=[])
+    result = await mcp_call("research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID})
+    assert result.structured_content["imported"] == [{"id": "committed-1", "title": "A"}]
+    mock_client.research.import_sources_with_verification.assert_awaited_once()
+    mock_client.research.import_sources.assert_not_called()
+
+
+async def test_research_import_max_sources_caps(mcp_call, mock_client) -> None:
+    """#1920 Part 2: max_sources bounds how many sources are imported."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(
+            status=FakeResearchStatus.COMPLETED,
+            sources=[
+                FakeSource(url="http://a", title="A"),
+                FakeSource(url="http://b", title="B"),
+                FakeSource(url="http://c", title="C"),
+            ],
+            task_id=TASK_ID,
+        )
+    )
+    mock_client.research.import_sources_with_verification = AsyncMock(
+        return_value=[{"id": "src-1", "title": "A"}, {"id": "src-2", "title": "B"}]
+    )
+    result = await mcp_call(
+        "research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID, "max_sources": 2}
+    )
+    # Only the first two sources are handed to the importer.
+    imported_sources = mock_client.research.import_sources_with_verification.await_args.args[2]
+    assert len(imported_sources) == 2
+    assert result.structured_content["sources_found"] == 2
+
+
+async def test_research_import_max_sources_rejects_zero(mcp_call, mock_client) -> None:
+    """max_sources < 1 is rejected up front (before any poll/import)."""
+    mock_client.research.poll = AsyncMock(return_value=FakeResearchTask())
+    mock_client.research.import_sources_with_verification = AsyncMock(return_value=[])
+    with pytest.raises(ToolError) as excinfo:
+        await mcp_call(
+            "research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID, "max_sources": 0}
+        )
+    assert "VALIDATION" in str(excinfo.value)
+    mock_client.research.poll.assert_not_called()
+    mock_client.research.import_sources_with_verification.assert_not_called()
+
+
+async def test_research_import_cited_only_selects_cited(mcp_call, mock_client) -> None:
+    """#1920 Part 2: cited_only imports only sources the report cites."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(
+            status=FakeResearchStatus.COMPLETED,
+            report="See [A](http://a) for details.",
+            sources=[
+                FakeSource(url="http://a", title="A"),
+                FakeSource(url="http://b", title="B"),
+            ],
+            task_id=TASK_ID,
+        )
+    )
+    mock_client.research.import_sources_with_verification = AsyncMock(
+        return_value=[{"id": "src-a", "title": "A"}]
+    )
+    result = await mcp_call(
+        "research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID, "cited_only": True}
+    )
+    imported_sources = mock_client.research.import_sources_with_verification.await_args.args[2]
+    urls = {src["url"] for src in imported_sources}
+    assert urls == {"http://a"}
+    assert result.structured_content["sources_found"] == 1
+    assert "cited_only_fallback" not in result.structured_content
+
+
+async def test_research_import_cited_only_fallback_when_none_cited(mcp_call, mock_client) -> None:
+    """cited_only with an uncited report falls back to all sources and flags it."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(
+            status=FakeResearchStatus.COMPLETED,
+            report="No links here.",
+            sources=[
+                FakeSource(url="http://a", title="A"),
+                FakeSource(url="http://b", title="B"),
+            ],
+            task_id=TASK_ID,
+        )
+    )
+    mock_client.research.import_sources_with_verification = AsyncMock(
+        return_value=[{"id": "src-a", "title": "A"}, {"id": "src-b", "title": "B"}]
+    )
+    result = await mcp_call(
+        "research_import", {"notebook": NB_ID, "poll_task_id": TASK_ID, "cited_only": True}
+    )
+    imported_sources = mock_client.research.import_sources_with_verification.await_args.args[2]
+    assert len(imported_sources) == 2
+    assert result.structured_content["cited_only_fallback"] is True
 
 
 async def test_research_import_empty_poll_task_id_rejected(mcp_call, mock_client) -> None:
@@ -891,13 +1010,15 @@ async def test_research_import_task_id_alias_matches_poll_task_id(mcp_call, mock
             task_id=TASK_ID,
         )
     )
-    mock_client.research.import_sources = AsyncMock(return_value=[{"id": "src-1", "title": "A"}])
+    mock_client.research.import_sources_with_verification = AsyncMock(
+        return_value=[{"id": "src-1", "title": "A"}]
+    )
     result = await mcp_call("research_import", {"notebook": NB_ID, "task_id": TASK_ID})
     sc = result.structured_content
     assert sc["imported"] == [{"id": "src-1", "title": "A"}]
     assert sc["poll_task_id"] == TASK_ID
     mock_client.research.poll.assert_awaited_once_with(NB_ID, TASK_ID)
-    assert mock_client.research.import_sources.await_args.args[1] == TASK_ID
+    assert mock_client.research.import_sources_with_verification.await_args.args[1] == TASK_ID
     assert "task_id" in sc["deprecation"]
 
 

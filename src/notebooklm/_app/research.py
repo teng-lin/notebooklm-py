@@ -117,10 +117,10 @@ async def poll_and_classify(
     )
 
 
-async def poll_sources_for_import(
+async def poll_importable_research(
     client: Any, notebook_id: str, run_id: str
-) -> list[dict[str, Any]]:
-    """Poll a research run and return its importable sources, or raise.
+) -> tuple[list[dict[str, Any]], str]:
+    """Poll a research run and return its ``(importable sources, report)``, or raise.
 
     The single shared importable-state guard for the "import a completed run's
     found sources" flow — driven by BOTH the MCP ``research_import`` tool and the
@@ -143,8 +143,10 @@ async def poll_sources_for_import(
     * ``completed`` with no sources — refuse the silent empty import.
 
     Returns the completed run's importable sources (the legacy ``list[dict]``
-    shape) on success. The caller then drives ``client.research.import_sources``
-    and shapes its own response.
+    shape) AND the run's report text on success. The report is returned so a
+    caller doing cited-only selection (:func:`~notebooklm.research.select_cited_sources`)
+    can match citations against it without a second poll; :func:`poll_sources_for_import`
+    delegates here and drops the report for callers that import everything.
 
     The ``run`` noun is surface-neutral (the MCP tool documents it as the
     ``task_id``); the message names no adapter-specific route or tool so the one
@@ -171,7 +173,21 @@ async def poll_sources_for_import(
         )
     if not status.sources:
         raise ValidationError(f"Research run {run_id!r} completed with no sources to import.")
-    return status.sources
+    return status.sources, status.report
+
+
+async def poll_sources_for_import(
+    client: Any, notebook_id: str, run_id: str
+) -> list[dict[str, Any]]:
+    """Poll a research run and return its importable sources, or raise.
+
+    Thin wrapper over :func:`poll_importable_research` that drops the report for
+    callers (the REST import route) that import every source unconditionally. The
+    importable-state guard ladder lives in :func:`poll_importable_research` so the
+    two never drift.
+    """
+    sources, _report = await poll_importable_research(client, notebook_id, run_id)
+    return sources
 
 
 # ===========================================================================
@@ -418,6 +434,7 @@ __all__ = [
     "cancel_research",
     "execute_research_wait",
     "poll_and_classify",
+    "poll_importable_research",
     "poll_sources_for_import",
     "validate_research_wait_flags",
 ]

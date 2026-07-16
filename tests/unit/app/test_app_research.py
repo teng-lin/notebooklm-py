@@ -26,6 +26,8 @@ from notebooklm._app.research import (
     cancel_research,
     execute_research_wait,
     poll_and_classify,
+    poll_importable_research,
+    poll_sources_for_import,
     validate_research_wait_flags,
 )
 from notebooklm.exceptions import ValidationError
@@ -160,6 +162,62 @@ async def test_poll_classifies_failed_as_other() -> None:
 
     assert result.kind == "other"
     assert result.status == "failed"
+
+
+# ===========================================================================
+# poll_importable_research / poll_sources_for_import
+# ===========================================================================
+
+
+async def test_poll_importable_returns_sources_and_report() -> None:
+    client = _client(
+        poll=_task(
+            status=ResearchStatus.COMPLETED,
+            sources=[{"title": "S", "url": "http://example.com/1"}],
+            report="# Report",
+        )
+    )
+    sources, report = await poll_importable_research(client, "nb_1", "run_1")
+    assert report == "# Report"
+    assert sources[0]["url"] == "http://example.com/1"
+    # The pinned run id is threaded through poll as the discriminator.
+    client.research.poll.assert_awaited_once_with("nb_1", "run_1")
+
+
+async def test_poll_sources_for_import_drops_report() -> None:
+    """The thin wrapper returns just the sources (REST import path)."""
+    client = _client(
+        poll=_task(
+            status=ResearchStatus.COMPLETED,
+            sources=[{"title": "S", "url": "http://example.com/1"}],
+            report="# Report",
+        )
+    )
+    sources = await poll_sources_for_import(client, "nb_1", "run_1")
+    assert sources[0]["url"] == "http://example.com/1"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        ResearchStatus.NOT_FOUND,
+        ResearchStatus.FAILED,
+        ResearchStatus.IN_PROGRESS,
+        ResearchStatus.NO_RESEARCH,
+    ],
+)
+async def test_poll_importable_refuses_non_completed(status: ResearchStatus) -> None:
+    client = _client(
+        poll=_task(status=status, sources=[{"title": "S", "url": "http://example.com/1"}])
+    )
+    with pytest.raises(ValidationError):
+        await poll_importable_research(client, "nb_1", "run_1")
+
+
+async def test_poll_importable_refuses_completed_empty() -> None:
+    client = _client(poll=_task(status=ResearchStatus.COMPLETED, sources=[]))
+    with pytest.raises(ValidationError):
+        await poll_importable_research(client, "nb_1", "run_1")
 
 
 # ===========================================================================
