@@ -78,11 +78,19 @@
           </div>
         </div>
 
-        <div v-else-if="!isAuthenticated || notebooks.length === 0" class="empty-state card">
+        <div v-else-if="!isAuthenticated" class="empty-state card">
           <div class="empty-card-inner">
             <el-icon :size="48" color="#d0d0d0"><FolderOpened /></el-icon>
             <p class="empty-title">登录后开始使用知识宝库</p>
             <button class="btn-login" @click="openLogin">立即登录</button>
+          </div>
+        </div>
+
+        <div v-else-if="notebooks.length === 0" class="empty-state card">
+          <div class="empty-card-inner">
+            <el-icon :size="48" color="#d0d0d0"><FolderOpened /></el-icon>
+            <p class="empty-title">还没有知识宝库</p>
+            <button class="btn-login" @click="openCreate">立即创建</button>
           </div>
         </div>
 
@@ -174,6 +182,11 @@ function openCreate() {
 }
 
 async function handleCreate() {
+  if (!isAuthenticated.value) {
+    ElMessage.error("请先登录")
+    openLogin?.()
+    return
+  }
   const valid = await createFormRef.value?.validate().catch(() => false)
   if (!valid) return
   creating.value = true

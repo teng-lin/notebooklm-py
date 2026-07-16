@@ -26,7 +26,7 @@ request.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem("token")
       localStorage.removeItem("user")
-      window.location.hash = "#/login"
+      window.location.hash = "#/"
     }
     return Promise.reject(error)
   },

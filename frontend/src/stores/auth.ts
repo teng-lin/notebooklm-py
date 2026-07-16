@@ -35,10 +35,8 @@ export const useAuthStore = defineStore("auth", () => {
           localStorage.setItem("user", JSON.stringify(u))
         })
         .catch(() => {
-          token.value = null
-          user.value = null
-          localStorage.removeItem("token")
-          localStorage.removeItem("user")
+          // Only clear token if the API explicitly returns 401 (expired/invalid).
+          // Network errors or server issues should NOT log the user out.
         })
     }
   }
