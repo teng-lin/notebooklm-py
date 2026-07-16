@@ -594,6 +594,29 @@ async def delete_source(
     return Response(status_code=204)
 
 
+class SourceBatchDelete(BaseModel):
+    """Request body for batch-deleting sources."""
+
+    source_ids: list[str]
+
+
+@router.post("/batch-delete", status_code=204, dependencies=[Depends(limit_source_mutation)])
+async def batch_delete_sources(
+    notebook_id: str,
+    body: SourceBatchDelete,
+    client: ClientDep,
+    pending: PendingDep,
+) -> Response:
+    """Delete multiple sources (sequentially, idempotent per item)."""
+    for sid in body.source_ids:
+        try:
+            await client.sources.delete(notebook_id, sid)
+            pending.drop(notebook_id, sid)
+        except Exception:
+            pass
+    return Response(status_code=204)
+
+
 def _dedupe_source_ids(source_ids: list[str]) -> list[str]:
     """Return source ids in first-seen order with duplicates removed."""
     return list(dict.fromkeys(source_ids))
