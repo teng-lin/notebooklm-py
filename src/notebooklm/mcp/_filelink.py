@@ -194,7 +194,8 @@ class FileLinkSigner:
 
 
 #: Cap on the consumed-jti record. The server mints one jti per file-tool call and
-#: every entry is inline-swept once its token's ``exp`` passes (≤ ``UPLOAD_TTL``), so
+#: every entry is inline-swept once its token's ``exp`` passes (≤ the token's TTL —
+#: ``UPLOAD_TTL``, or ``WIDGET_UPLOAD_TTL`` for a widget-pool token), so
 #: the live set is tiny in practice; an attacker cannot mint jtis (no key). This bound
 #: is pure defense-in-depth against a runaway — 8192 is generous headroom.
 _MAX_SEEN_JTIS = 8192
@@ -230,7 +231,8 @@ class ConsumedJtiStore:
     #: (Phase 1 ``await_upload``): the ``/files/ul`` POST route and the polling tool run
     #: in the same single process (ADR-0024), so a same-loop poll reads what the route
     #: wrote — no DB, no cross-process state. Keyed by jti and swept with :attr:`_seen`,
-    #: so a record never outlives its token's ``exp`` (≤ ``UPLOAD_TTL``).
+    #: so a record never outlives its token's ``exp`` (≤ that token's TTL — ``UPLOAD_TTL``,
+    #: or ``WIDGET_UPLOAD_TTL`` for a widget-pool token).
     _results: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def _sweep(self, now: int) -> None:

@@ -445,7 +445,9 @@ MCP-Apps hosts (e.g. claude.ai), so a mobile user can pick and upload **one or m
 10 per call) without leaving the chat. The tool returns a small pool of independent single-use
 tokens (`upload_urls`, one per file); the widget uploads each file to its own token via the same
 signed `/files/ul` route as the link flow — so multi-file needs no change to the route or the
-single-use invariant. To confirm, call `await_upload` on the specific `upload_urls` entry for a
+single-use invariant. The pool is minted up front but uploaded sequentially, so its tokens carry a
+longer **1 h** lifetime (vs the 15-min single link) so a late file in a slow batch can't outlive its
+token. To confirm, call `await_upload` on the specific `upload_urls` entry for a
 file (`upload_url` is the first of the pool, kept for back-compat), or use `source_list` to verify
 the whole batch — for a multi-file add, don't rely on `upload_url` alone (the first file may be
 skipped while later ones land).
