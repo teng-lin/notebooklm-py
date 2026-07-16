@@ -39,20 +39,20 @@ def register(mcp: Any) -> None:
         title: str | None = None,
         wait: bool = False,
     ) -> dict[str, Any]:
-        """Add an upload-only Google Drive file (epub/docx/txt/md/rtf/odt/csv/tsv/pdf).
+        """Add a Google Drive file by downloading it server-side and uploading it (supports
+        epub/docx/txt/md/rtf/odt/csv/tsv/pdf).
 
-        Use this for the Drive file types NotebookLM's native Drive import can't
-        ingest: the file is downloaded from Drive on the server and uploaded. For
-        a Google-native Doc/Slides/Sheet (imported by reference), use
-        ``source_add(source_type='drive', mime_type=…)`` instead — this tool
-        returns a pointer error for those, since they aren't downloadable.
+        Probes the Drive file and routes: a downloadable type is fetched server-side and
+        uploaded; a Google-native Doc/Slides/Sheet isn't downloadable and returns a pointer
+        error → use ``source_add(source_type='drive', mime_type=…)`` for those (or for a
+        Drive PDF you'd rather add by reference). Use ``source_add(source_type='file')`` when
+        you hold the bytes locally.
 
-        Accepts a notebook name or ID, and a raw Drive file id or a Drive share
-        URL (``/d/<id>``, ``/file/d/<id>/…``, or ``?id=<id>``). The fetch runs
-        server-side with the profile's session, so it works over the remote (http)
-        connector too — no ``upload_required`` step. The import is processed
-        ASYNCHRONOUSLY; pass ``wait=true`` to block until it is READY (or confirm
-        later with ``source_wait`` / ``source_list(status="error")``).
+        Accepts a notebook name or ID and a Drive file id or share URL (``/d/<id>``,
+        ``/file/d/<id>/…``, ``?id=<id>``). The fetch runs server-side with the profile's
+        session, so it works on the remote (http) connector too — no ``upload_required``
+        step. Processed ASYNCHRONOUSLY; pass ``wait=true`` to block until READY (else
+        confirm via ``source_wait`` / ``source_list(status="error")``).
         """
         client = get_client(ctx)
         with mcp_errors():
