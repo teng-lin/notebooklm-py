@@ -1109,6 +1109,31 @@ async def test_artifact_download_remote_inline_skipped_when_cap_exceeded(
     mock_client.artifacts.download_report.assert_not_called()
 
 
+async def test_artifact_download_remote_report_read_error_is_link_only(
+    mock_client, config, monkeypatch
+) -> None:
+    # A local read/decode failure of the spooled file must stay within the best-effort
+    # contract: degrade to link-only rather than failing the whole download (the
+    # guaranteed resource_link is still returned).
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
+    mock_client.artifacts.download_report = _writing_download("# Body")
+
+    def _boom(_path: str):
+        raise UnicodeDecodeError("utf-8", b"", 0, 1, "bad byte")
+
+    monkeypatch.setattr(art_mod, "_read_bounded_text", _boom)
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    assert "content" not in sc
+    assert any(getattr(b, "type", None) == "resource_link" for b in result.content)
+
+
 async def test_artifact_download_remote_data_table_inline_strips_bom(mock_client, config) -> None:
     # A data-table is inlined too; the real writer uses utf-8-sig (BOM), so the inline
     # reader must strip the BOM — the returned content is clean CSV without a leading

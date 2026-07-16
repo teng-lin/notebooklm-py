@@ -410,7 +410,11 @@ async def _do_read_inline_artifact_text(
 ) -> _InlineText | None:
     """Spool + read one inline artifact (the body of :func:`_read_inline_artifact_text`,
     split out so the concurrency-counter increment/decrement wraps it cleanly)."""
-    temp_dir = await asyncio.to_thread(tempfile.mkdtemp, prefix="nblm-mcp-inline-")
+    # mkdtemp runs synchronously (it is a quick syscall, and this is how _fileroutes
+    # spools) so the dir handle is bound to ``temp_dir`` in the SAME step it is created:
+    # an ``await asyncio.to_thread(mkdtemp)`` could be cancelled after the dir exists but
+    # before the result is assigned, orphaning it past the ``finally`` cleanup.
+    temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-inline-")
     try:
         temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
         args: dict[str, Any] = {
@@ -440,7 +444,14 @@ async def _do_read_inline_artifact_text(
             # broker still hands out the link (which will surface the same state).
             return None
         served = result.output_path or temp_path
-        content, char_count, truncated = await asyncio.to_thread(_read_bounded_text, served)
+        try:
+            content, char_count, truncated = await asyncio.to_thread(_read_bounded_text, served)
+        except (OSError, ValueError):
+            # Best-effort: a local read/decode failure (I/O error, or a malformed file
+            # that isn't valid UTF-8 → UnicodeError ⊂ ValueError) degrades to link-only,
+            # same as the soft download failures above — it must NOT sink the whole
+            # studio_download call and its guaranteed resource_link.
+            return None
     finally:
         await asyncio.to_thread(shutil.rmtree, temp_dir, ignore_errors=True)
 
