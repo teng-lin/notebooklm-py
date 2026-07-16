@@ -679,13 +679,21 @@ def register(mcp: Any) -> None:
                 # it INLINE alongside the link, so a host that can't open a
                 # resource_link still gets the content (#1907). Bounded to
                 # INLINE_TEXT_MAX_CHARS; the link remains the full file.
-                inline = (
-                    await _read_inline_artifact_text(
+                inline: tuple[str, int, bool] | None = None
+                if artifact_type in _INLINE_TEXT_TYPES:
+                    read = await _read_inline_artifact_text(
                         client, nb_id, spec, output_format, artifact_id
                     )
-                    if artifact_type in _INLINE_TEXT_TYPES
-                    else None
-                )
+                    if read is not None:
+                        inline = (read.content, read.char_count, read.truncated)
+                        # Pin the signed link to the SAME artifact whose body we inlined
+                        # — on the "latest" path (artifact_id was None) this stops the
+                        # link from drifting to a newer artifact if one completes before
+                        # the link is opened. Also adopt its title for the filename.
+                        if read.artifact_id is not None:
+                            artifact_id = read.artifact_id
+                        if resolved_title is None:
+                            resolved_title = read.title
                 return _broker_download(
                     cfg,
                     nb_id,

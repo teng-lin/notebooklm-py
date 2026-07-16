@@ -1021,6 +1021,32 @@ async def test_artifact_download_remote_report_truncates_long_body(mock_client, 
     assert "truncated" in block.text.lower()
 
 
+async def test_artifact_download_remote_report_latest_pins_link_to_selected_id(
+    mock_client, config
+) -> None:
+    # The "latest" path (no artifact_id) inlines the concrete latest report AND pins the
+    # signed link to that same artifact's id — so the inline body and the file the link
+    # serves can't drift to different artifacts if a newer one completes in between.
+    body = "# Latest\n\nbody"
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A, "Latest")])
+    mock_client.artifacts.download_report = _writing_download(body)
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report"},  # no artifact_id → latest
+    )
+    sc = result.structured_content
+    assert sc["content"] == body
+    # The link is pinned: structured payload echoes the resolved id and the token
+    # carries it as `aid` (not a moving latest link).
+    assert sc["artifact_id"] == _AID_A
+    token = sc["url"].rsplit("/", 1)[1]
+    assert config.signer.verify(token, op="dl")["aid"] == _AID_A
+    # Filename adopts the resolved artifact's title.
+    assert sc["filename"] == "Latest.md"
+
+
 async def test_artifact_download_remote_report_no_artifact_is_link_only(
     mock_client, config
 ) -> None:
@@ -1060,6 +1086,27 @@ async def test_artifact_download_remote_report_inline_failure_is_link_only(
     assert "content" not in sc
     assert any(getattr(b, "type", None) == "resource_link" for b in result.content)
     assert not any(getattr(b, "type", None) == "text" for b in result.content)
+
+
+async def test_artifact_download_remote_inline_skipped_when_cap_exceeded(
+    mock_client, config, monkeypatch
+) -> None:
+    # When too many inline reads are already in flight, the (best-effort) inline body is
+    # skipped WITHOUT spooling — the tool still returns the link, and no download RPC is
+    # issued for the body. Simulated by setting the cap to 0.
+    monkeypatch.setattr(art_mod, "_MAX_CONCURRENT_INLINE_READS", 0)
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
+    mock_client.artifacts.download_report = _writing_download("# Body")
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    assert "content" not in sc
+    mock_client.artifacts.download_report.assert_not_called()
 
 
 async def test_artifact_download_remote_data_table_inline_strips_bom(mock_client, config) -> None:

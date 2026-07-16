@@ -21,7 +21,7 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.tools.tool import ToolResult
@@ -69,6 +69,58 @@ INLINE_TEXT_MAX_CHARS = 10_000
 #: Appended to the inline TEXT block (not the structured ``content`` prefix) when the
 #: body was truncated, pointing the reader at the link for the complete file.
 _INLINE_TRUNCATION_MARKER = "\n\n[… truncated — open the download link above for the full file …]"
+
+#: Chunk size (chars) for streaming past the inline prefix to count the remaining
+#: length without materializing the whole file in memory.
+_INLINE_READ_CHUNK = 65536
+
+#: Cap concurrent inline reads. Each spools an artifact to a private temp dir and
+#: fetches it from Google before reading it back, so many parallel report/data-table
+#: ``studio_download`` calls could otherwise drive unbounded temp disk + upstream
+#: fetch fan-out (mirrors ``_fileroutes._MAX_CONCURRENT_DOWNLOADS``). Because inline
+#: text is best-effort, exceeding the cap simply SKIPS the inline body (the tool still
+#: returns the link) rather than erroring. A plain counter (mutated only between
+#: ``await`` points in this single-process async server) suffices — no lock, and no
+#: asyncio primitive that would bind to one event loop.
+_MAX_CONCURRENT_INLINE_READS = 4
+_inflight_inline_reads = 0
+
+
+class _InlineText(NamedTuple):
+    """The bounded inline body of a text artifact plus the artifact it came from.
+
+    ``artifact_id`` / ``title`` are the CONCRETE artifact ``execute_download`` selected
+    (even on the "latest" path where the caller passed no id), so the broker can PIN the
+    signed link to the exact artifact whose body was inlined — otherwise a "latest" link
+    could resolve to a newer artifact than the inline text if one completes in between.
+    """
+
+    content: str
+    char_count: int
+    truncated: bool
+    artifact_id: str | None
+    title: str | None
+
+
+def _read_bounded_text(path: str) -> tuple[str, int, bool]:
+    """Read the first :data:`INLINE_TEXT_MAX_CHARS` chars of ``path`` as the inline
+    ``content`` and stream the rest only to COUNT it — returning
+    ``(content, char_count, truncated)`` without ever holding more than the prefix plus
+    one chunk in memory (so a large data-table/report can't OOM the tool call).
+
+    ``char_count`` is the FULL post-decode length (mirroring ``source_read``); read with
+    ``utf-8-sig`` so a data-table CSV's BOM is stripped (a report is plain ``utf-8``).
+    """
+    with open(path, encoding="utf-8-sig") as fh:
+        content = fh.read(INLINE_TEXT_MAX_CHARS)
+        remainder = 0
+        while True:
+            chunk = fh.read(_INLINE_READ_CHUNK)
+            if not chunk:
+                break
+            remainder += len(chunk)
+    return content, len(content) + remainder, remainder > 0
+
 
 #: The downloadable artifact-type keys (the ``artifact_type`` param's enum).
 DownloadType = Literal[
@@ -306,9 +358,9 @@ async def _read_inline_artifact_text(
     spec: download_core.DownloadTypeSpec,
     output_format: str | None,
     artifact_id: str | None,
-) -> tuple[str, int, bool] | None:
-    """Download a TEXT artifact server-side and return ``(content, char_count,
-    truncated)`` bounded to :data:`INLINE_TEXT_MAX_CHARS`, or ``None`` when no
+) -> _InlineText | None:
+    """Download a TEXT artifact server-side and return its bounded inline body plus the
+    concrete artifact it was read from (:class:`_InlineText`), or ``None`` when no
     completed artifact of the type is available.
 
     Used by :func:`_broker_download` to inline a report / data-table body so a
@@ -316,6 +368,13 @@ async def _read_inline_artifact_text(
     :func:`~notebooklm._app.download.execute_download` path the ``/files/dl`` route
     serves — spooling to a private temp file and reading it back — so the inline
     text is byte-identical to the file the signed link hands out.
+
+    On the "latest" path (``artifact_id is None``) ``execute_download`` still selects a
+    CONCRETE artifact; its id + title ride back in the result so the broker can pin the
+    signed link to the same artifact (see :class:`_InlineText`). The body is read with a
+    bounded/streaming reader (:func:`_read_bounded_text`) so a large export can't OOM the
+    call — only the ``INLINE_TEXT_MAX_CHARS`` prefix is held; the tail is counted, not
+    materialized.
 
     Inline text is strictly **best-effort**: a missing/incomplete artifact, a soft
     download error, OR an upstream list/RPC failure all yield ``None`` so the broker
@@ -325,10 +384,32 @@ async def _read_inline_artifact_text(
     refs are already validated before this runs, so a swallowed error here can only be
     an infra/transient failure, never a bad-id miss.
 
-    ``content`` is the clean first-``INLINE_TEXT_MAX_CHARS``-chars prefix; ``char_count``
-    is the FULL length; ``truncated`` says whether the prefix omits any tail. Read with
-    ``utf-8-sig`` so a data-table CSV's BOM is stripped (a report is plain ``utf-8``).
+    Bounded by :data:`_MAX_CONCURRENT_INLINE_READS`: when too many inline reads are
+    already in flight this returns ``None`` (link-only) WITHOUT spooling — so a burst of
+    concurrent report/data-table downloads can't exhaust temp disk / upstream fetch
+    fan-out (the best-effort contract makes skipping safe).
     """
+    global _inflight_inline_reads
+    if _inflight_inline_reads >= _MAX_CONCURRENT_INLINE_READS:
+        return None
+    _inflight_inline_reads += 1
+    try:
+        return await _do_read_inline_artifact_text(
+            client, notebook_id, spec, output_format, artifact_id
+        )
+    finally:
+        _inflight_inline_reads -= 1
+
+
+async def _do_read_inline_artifact_text(
+    client: NotebookLMClient,
+    notebook_id: str,
+    spec: download_core.DownloadTypeSpec,
+    output_format: str | None,
+    artifact_id: str | None,
+) -> _InlineText | None:
+    """Spool + read one inline artifact (the body of :func:`_read_inline_artifact_text`,
+    split out so the concurrency-counter increment/decrement wraps it cleanly)."""
     temp_dir = await asyncio.to_thread(tempfile.mkdtemp, prefix="nblm-mcp-inline-")
     try:
         temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
@@ -359,13 +440,14 @@ async def _read_inline_artifact_text(
             # broker still hands out the link (which will surface the same state).
             return None
         served = result.output_path or temp_path
-        text = await asyncio.to_thread(Path(served).read_text, encoding="utf-8-sig")
+        content, char_count, truncated = await asyncio.to_thread(_read_bounded_text, served)
     finally:
         await asyncio.to_thread(shutil.rmtree, temp_dir, ignore_errors=True)
 
-    char_count = len(text)
-    truncated = char_count > INLINE_TEXT_MAX_CHARS
-    return text[:INLINE_TEXT_MAX_CHARS], char_count, truncated
+    # The concrete artifact execute_download selected — id + title — so the broker can
+    # PIN the link to it (the "latest" path passed no id but resolved one here).
+    selected = result.artifact or {}
+    return _InlineText(content, char_count, truncated, selected.get("id"), selected.get("title"))
 
 
 def _broker_download(
