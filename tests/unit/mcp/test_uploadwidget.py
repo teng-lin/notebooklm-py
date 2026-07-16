@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import time
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -18,7 +19,12 @@ import pytest
 pytest.importorskip("fastmcp")
 
 from notebooklm.mcp import _uploadwidget  # noqa: E402
-from notebooklm.mcp._filelink import FileLinkSigner, FileTransferConfig  # noqa: E402
+from notebooklm.mcp._filelink import (  # noqa: E402
+    UPLOAD_TTL,
+    WIDGET_UPLOAD_TTL,
+    FileLinkSigner,
+    FileTransferConfig,
+)
 from notebooklm.mcp._uploadwidget import (  # noqa: E402
     _MAX_WIDGET_FILES,
     _WIDGET_HTML,
@@ -134,3 +140,32 @@ async def test_widget_tool_returns_single_use_token_pool(monkeypatch) -> None:
     assert all("/files/ul/" in u for u in urls)
     assert result["upload_url"] == urls[0]  # await_upload back-compat
     assert result["notebook_id"] == "nb-123"
+
+
+async def test_widget_pool_tokens_carry_the_longer_widget_ttl(monkeypatch) -> None:
+    """The whole pool is minted at one instant but uploaded sequentially, so every token must
+    carry the longer WIDGET_UPLOAD_TTL — otherwise a later file's token expires mid-batch and
+    its upload silently 403s (#1894)."""
+    monkeypatch.setenv("NOTEBOOKLM_MCP_UPLOAD_WIDGET", "1")
+    cfg = _cfg()
+    mcp = _server(cfg)
+    tool = {t.name: t for t in await mcp._list_tools()}["source_add_widget"]
+    monkeypatch.setattr(_uploadwidget, "resolve_notebook", AsyncMock(return_value="nb-123"))
+    ctx = SimpleNamespace(
+        request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(client=MagicMock(), file_transfer=cfg)
+        )
+    )
+
+    before = int(time.time())
+    result = await tool.fn(ctx, notebook="My Notebook")
+
+    assert WIDGET_UPLOAD_TTL > UPLOAD_TTL  # the whole point: pool outlives the single-link window
+    for url in result["upload_urls"]:
+        payload = cfg.signer.verify(url.rsplit("/", 1)[1], op="ul")
+        # Every pool token gets the longer widget TTL, and stays a proper single-use ul token.
+        assert (
+            before + WIDGET_UPLOAD_TTL <= payload["exp"] <= int(time.time()) + WIDGET_UPLOAD_TTL + 1
+        )
+        assert payload["op"] == "ul"
+        assert isinstance(payload["jti"], str) and payload["jti"]

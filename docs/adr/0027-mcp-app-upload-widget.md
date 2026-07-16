@@ -88,6 +88,12 @@ tool-count / schema-char budgets) unless a deployment enables it.
   token[i]. This keeps multi-file entirely on the existing single-use `/files/ul` route with no
   change to the completion map, `await_upload`, or this ADR's single-use invariant — unused tokens
   just expire, and minting is stateless (no jti store entry until a token is committed on success).
+  The whole pool is minted at one instant but uploaded **sequentially**, so the pool uses a longer
+  `WIDGET_UPLOAD_TTL` (1 h) rather than the 15-min single-link `UPLOAD_TTL`: a later token must
+  outlive the sum of every earlier file's transfer, or a slow multi-file batch silently 403s a late
+  file (#1894). The longer window is a smaller risk class — a pool token is single-use,
+  notebook-scoped, and never enters a URL bar / history / `Referer` (it lives only in the widget's
+  `structuredContent` / `fetch` body), unlike the human link the tight `UPLOAD_TTL` guards.
 - One host resource, the MCP-Apps standard mime `text/html;profile=mcp-app`, serves both claude.ai
   and ChatGPT (a `text/html+skybridge` variant is unnecessary; OpenAI's SDK accepts the standard
   mime). ChatGPT caches the template per conversation, so the first call in a new chat may not

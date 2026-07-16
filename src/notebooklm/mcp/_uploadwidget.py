@@ -31,6 +31,7 @@ from fastmcp.apps import AppConfig, ResourceCSP
 
 from ._context import get_client, get_file_transfer
 from ._errors import mcp_errors
+from ._filelink import WIDGET_UPLOAD_TTL
 from ._resolve import resolve_notebook
 
 if TYPE_CHECKING:
@@ -213,8 +214,19 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
             # multi-file needs NO change to the /files/ul route or ADR-0024's single-use invariant;
             # unused tokens just expire. upload_url (singular) stays for await_upload back-compat.
             # `first` is minted separately (not urls[0]) to avoid the ADR-0011 positional-index gate.
-            first = cfg.upload_url({"nb": nb_id})
-            urls = [first, *(cfg.upload_url({"nb": nb_id}) for _ in range(_MAX_WIDGET_FILES - 1))]
+            #
+            # WIDGET_UPLOAD_TTL (longer than the single-link UPLOAD_TTL): the whole pool is minted at
+            # THIS instant but uploaded sequentially, so a later token must outlive every earlier
+            # file's transfer — at the 15-min link TTL a slow multi-file batch silently 403s a late
+            # file (#1894). Single-use is enforced by the route regardless of TTL.
+            first = cfg.upload_url({"nb": nb_id}, ttl=WIDGET_UPLOAD_TTL)
+            urls = [
+                first,
+                *(
+                    cfg.upload_url({"nb": nb_id}, ttl=WIDGET_UPLOAD_TTL)
+                    for _ in range(_MAX_WIDGET_FILES - 1)
+                ),
+            ]
             # structuredContent is pushed into the widget by the host; it reads upload_urls from here.
             return {
                 "upload_urls": urls,

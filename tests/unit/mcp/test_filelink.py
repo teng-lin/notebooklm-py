@@ -20,6 +20,7 @@ import notebooklm.mcp._filelink as filelink
 from notebooklm.mcp._filelink import (
     DOWNLOAD_TTL,
     UPLOAD_TTL,
+    WIDGET_UPLOAD_TTL,
     ConsumedJtiStore,
     FileLinkError,
     FileLinkSigner,
@@ -160,6 +161,31 @@ def test_config_builds_ttl_scoped_urls() -> None:
     down_exp = signer.verify(down.rsplit("/", 1)[1], op="dl")["exp"]
     assert UPLOAD_TTL == 15 * 60 and DOWNLOAD_TTL == 30 * 60
     assert down_exp - up_exp >= DOWNLOAD_TTL - UPLOAD_TTL - 2
+
+
+def test_upload_url_honors_custom_ttl() -> None:
+    # The in-app upload widget (ADR-0027) mints its sequentially-uploaded token pool with the
+    # longer WIDGET_UPLOAD_TTL so a later file's token cannot expire mid-batch (#1894). The
+    # builder still stamps op="ul" (route-matched) and injects a jti (single-use), regardless of ttl.
+    signer = _signer()
+    config = FileTransferConfig(signer=signer, base_url="https://host.example")
+    before = int(time.time())
+    url = config.upload_url({"nb": "n1"}, ttl=WIDGET_UPLOAD_TTL)
+    payload = signer.verify(url.rsplit("/", 1)[1], op="ul")
+    assert WIDGET_UPLOAD_TTL == 60 * 60
+    assert WIDGET_UPLOAD_TTL > UPLOAD_TTL  # widget pool outlives the single-link window
+    assert before + WIDGET_UPLOAD_TTL <= payload["exp"] <= int(time.time()) + WIDGET_UPLOAD_TTL + 1
+    assert payload["op"] == "ul"
+    assert isinstance(payload["jti"], str) and payload["jti"]  # still single-use
+
+
+def test_upload_url_defaults_to_upload_ttl() -> None:
+    # The default (no ttl kwarg) is unchanged — the single-link broker keeps the tight UPLOAD_TTL.
+    signer = _signer()
+    config = FileTransferConfig(signer=signer, base_url="https://host.example")
+    before = int(time.time())
+    payload = signer.verify(config.upload_url({"nb": "n1"}).rsplit("/", 1)[1], op="ul")
+    assert before + UPLOAD_TTL <= payload["exp"] <= int(time.time()) + UPLOAD_TTL + 1
 
 
 # --------------------------------------------------------------------------- #
