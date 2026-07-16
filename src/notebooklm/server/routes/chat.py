@@ -38,6 +38,7 @@ class ChatAsk(BaseModel):
 
     question: str
     conversation_id: str | None = None
+    source_ids: list[str] | None = None
 
 
 class ChatConfigure(BaseModel):
@@ -65,7 +66,12 @@ async def ask(notebook_id: str, body: ChatAsk, client: ClientDep) -> dict[str, A
     Pass ``conversation_id`` to continue a specific conversation; omit it to
     continue the notebook's most-recent conversation (or start a new one).
     """
-    result = await client.chat.ask(notebook_id, body.question, conversation_id=body.conversation_id)
+    result = await client.chat.ask(
+        notebook_id,
+        body.question,
+        source_ids=body.source_ids,
+        conversation_id=body.conversation_id,
+    )
     # Shared view: drop the internal ``raw_response`` debug blob (identical on the
     # MCP chat_ask surface); the field stays on the dataclass, just not on the wire.
     return ask_result_view(result)
