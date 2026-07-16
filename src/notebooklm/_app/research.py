@@ -68,6 +68,11 @@ class ResearchStatusResult:
     report: str
     public_dict: dict[str, Any]
     task_id: str = ""
+    # Raw backend status code carried through from ``ResearchTask.status_code``
+    # (issue #1922, F10). ``None`` when the poll had no code (empty / not-found).
+    # The MCP ``research_status`` tool surfaces it so an agent can distinguish
+    # failure sub-codes the coarse ``status`` flattens into ``failed``.
+    status_code: int | None = None
 
 
 def _classify_status_kind(status_val: str) -> ResearchStatusKind:
@@ -108,6 +113,7 @@ async def poll_and_classify(
         report=status.report,
         public_dict=status.to_public_dict(),
         task_id=status.task_id,
+        status_code=status.status_code,
     )
 
 

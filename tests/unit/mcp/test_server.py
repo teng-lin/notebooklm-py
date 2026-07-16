@@ -16,6 +16,7 @@ from fastmcp import Client, FastMCP  # noqa: E402 - after importorskip guard
 from notebooklm.mcp import __main__ as entry  # noqa: E402 - after importorskip guard
 from notebooklm.mcp._context import (  # noqa: E402 - after importorskip guard
     AppState,
+    get_cancelled_research,
     get_client,
 )
 from notebooklm.mcp.server import (  # noqa: E402 - after importorskip guard
@@ -65,6 +66,21 @@ def test_get_client_reads_appstate() -> None:
     ctx = MagicMock()
     ctx.request_context.lifespan_context = state
     assert get_client(ctx) is sentinel
+
+
+def test_get_cancelled_research_returns_live_appstate_set() -> None:
+    """get_cancelled_research returns the mutable set on the bound AppState so
+    research_cancel/research_status share cancel intent (issue #1922, F9)."""
+    state = AppState(client=MagicMock())
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = state
+
+    intents = get_cancelled_research(ctx)
+    assert intents == set()
+    intents.add(("nb", "task"))
+    # The same live set is returned on the next call (process-scoped state).
+    assert get_cancelled_research(ctx) == {("nb", "task")}
+    assert state.cancelled_research == {("nb", "task")}
 
 
 # --------------------------------------------------------------------------- #

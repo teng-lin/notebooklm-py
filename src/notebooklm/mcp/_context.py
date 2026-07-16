@@ -11,7 +11,7 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
 from fastmcp import Context
@@ -22,7 +22,13 @@ if TYPE_CHECKING:
     from ..client import NotebookLMClient
     from ._filelink import FileTransferConfig
 
-__all__ = ["AppState", "get_client", "get_client_from_app", "get_file_transfer"]
+__all__ = [
+    "AppState",
+    "get_cancelled_research",
+    "get_client",
+    "get_client_from_app",
+    "get_file_transfer",
+]
 
 
 @dataclass
@@ -32,10 +38,20 @@ class AppState:
     ``file_transfer`` is the optional remote file-transfer config (signer +
     validated public base URL); ``None`` on stdio and on an http deployment
     without a public URL (ADR-0024).
+
+    ``cancelled_research`` records the cancel intent tracked client-side for
+    issue #1922 (F9): after a successful ``research_cancel`` the
+    ``(notebook_id, poll_task_id)`` pair is added here so a later
+    ``research_status`` poll can annotate the resulting ``failed`` state as
+    ``cancelled`` (the backend surfaces a user-cancelled run as a generic
+    ``FAILED`` with no distinct wire code). It is process-scoped in-memory state
+    (no persistence, consistent with the loop-bound lifespan client) and small —
+    one tuple per cancelled run — so it is left uncapped.
     """
 
     client: NotebookLMClient
     file_transfer: FileTransferConfig | None = None
+    cancelled_research: set[tuple[str, str]] = field(default_factory=set)
 
 
 def _app_state(ctx: Context) -> AppState:
@@ -59,6 +75,18 @@ def get_client(ctx: Context) -> NotebookLMClient:
             lifespan binding is always present during a real tool invocation).
     """
     return _app_state(ctx).client
+
+
+def get_cancelled_research(ctx: Context) -> set[tuple[str, str]]:
+    """Return the process-scoped set of cancelled ``(notebook_id, task_id)`` runs.
+
+    The mutable set backing the client-side cancel-intent tracking (issue #1922,
+    F9): ``research_cancel`` adds an entry on a successful cancel and
+    ``research_status`` reads it to annotate a later ``failed`` poll as
+    ``cancelled``. Returns the live set so callers mutate it in place. Mirrors
+    :func:`get_client`.
+    """
+    return _app_state(ctx).cancelled_research
 
 
 def get_file_transfer(ctx: Context) -> FileTransferConfig | None:

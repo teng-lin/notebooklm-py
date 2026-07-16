@@ -18,6 +18,7 @@ import pytest
 # Skip cleanly when the `mcp` extra (fastmcp) is absent; see conftest.py.
 pytest.importorskip("fastmcp")
 
+from fastmcp import Client  # noqa: E402 - after importorskip guard
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
 from notebooklm import ResearchStartUnavailableError  # noqa: E402 - after importorskip guard
@@ -68,6 +69,7 @@ class FakeResearchTask:
     summary: str = ""
     report: str = ""
     task_id: str = TASK_ID
+    status_code: int | None = None
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -540,6 +542,137 @@ async def test_research_cancel_empty_poll_task_id_rejected(mcp_call, mock_client
     assert "VALIDATION" in str(excinfo.value)
     mock_client.research.poll.assert_not_called()
     mock_client.research.cancel.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# F10 (#1922): research_status surfaces the raw backend status code
+# ---------------------------------------------------------------------------
+
+
+async def test_research_status_surfaces_status_code(mcp_call, mock_client) -> None:
+    """The raw ``task_info[4]`` code is surfaced so an agent can tell a
+    "no matches" failure sub-code from a genuine error (the coarse ``status``
+    flattens both to ``failed``)."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(status=FakeResearchStatus.FAILED, status_code=7)
+    )
+    result = await mcp_call("research_status", {"notebook": NB_ID})
+    assert result.structured_content["status"] == "failed"
+    assert result.structured_content["status_code"] == 7
+
+
+async def test_research_status_status_code_none_when_absent(mcp_call, mock_client) -> None:
+    """A poll carrying no code surfaces ``status_code: None`` (not omitted)."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(status=FakeResearchStatus.IN_PROGRESS)
+    )
+    result = await mcp_call("research_status", {"notebook": NB_ID})
+    assert result.structured_content["status_code"] is None
+
+
+# ---------------------------------------------------------------------------
+# F9 (#1922): a cancelled run's later ``failed`` poll is annotated ``cancelled``
+# ---------------------------------------------------------------------------
+
+
+async def test_research_cancel_then_failed_status_is_annotated_cancelled(
+    server_factory, mock_client
+) -> None:
+    """After a successful cancel, a later ``failed`` poll for that run is flagged
+    ``cancelled: true`` (cancel intent is tracked client-side; the backend
+    surfaces a cancelled run as a generic FAILED). Both tool calls share one
+    open client so they hit the same lifespan ``AppState``."""
+    server = server_factory()
+    mock_client.research.cancel = AsyncMock(return_value=None)
+    async with Client(server) as client:
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.IN_PROGRESS, task_id=TASK_ID)
+        )
+        await client.call_tool("research_cancel", {"notebook": NB_ID, "poll_task_id": TASK_ID})
+
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.FAILED, task_id=TASK_ID)
+        )
+        result = await client.call_tool(
+            "research_status", {"notebook": NB_ID, "poll_task_id": TASK_ID}
+        )
+    assert result.structured_content["status"] == "failed"
+    assert result.structured_content["cancelled"] is True
+
+
+async def test_research_cancel_then_failed_status_annotated_unfiltered_poll(
+    server_factory, mock_client
+) -> None:
+    """The annotation keys off the polled ``task_id`` too, so an unfiltered
+    ``research_status`` (no pin) after a cancel is still flagged."""
+    server = server_factory()
+    mock_client.research.cancel = AsyncMock(return_value=None)
+    async with Client(server) as client:
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.IN_PROGRESS, task_id=TASK_ID)
+        )
+        await client.call_tool("research_cancel", {"notebook": NB_ID, "poll_task_id": TASK_ID})
+
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.FAILED, task_id=TASK_ID)
+        )
+        result = await client.call_tool("research_status", {"notebook": NB_ID})
+    assert result.structured_content["cancelled"] is True
+
+
+async def test_research_status_failed_without_cancel_not_annotated(mcp_call, mock_client) -> None:
+    """A genuine failure (never cancelled) is NOT annotated — absence of the
+    ``cancelled`` key means "not a tracked cancel"."""
+    mock_client.research.poll = AsyncMock(
+        return_value=FakeResearchTask(status=FakeResearchStatus.FAILED, task_id=TASK_ID)
+    )
+    result = await mcp_call("research_status", {"notebook": NB_ID, "poll_task_id": TASK_ID})
+    assert result.structured_content["status"] == "failed"
+    assert "cancelled" not in result.structured_content
+
+
+async def test_research_cancel_does_not_annotate_different_task(
+    server_factory, mock_client
+) -> None:
+    """Cancel intent for one run does not leak onto a DIFFERENT failed run."""
+    other = "research-task-2"
+    server = server_factory()
+    mock_client.research.cancel = AsyncMock(return_value=None)
+    async with Client(server) as client:
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.IN_PROGRESS, task_id=TASK_ID)
+        )
+        await client.call_tool("research_cancel", {"notebook": NB_ID, "poll_task_id": TASK_ID})
+
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.FAILED, task_id=other)
+        )
+        result = await client.call_tool(
+            "research_status", {"notebook": NB_ID, "poll_task_id": other}
+        )
+    assert "cancelled" not in result.structured_content
+
+
+async def test_research_cancel_then_completed_status_not_annotated(
+    server_factory, mock_client
+) -> None:
+    """``cancelled`` only annotates a ``failed`` outcome — a cancel that lost the
+    race and the run completed anyway is not mislabelled."""
+    server = server_factory()
+    mock_client.research.cancel = AsyncMock(return_value=None)
+    async with Client(server) as client:
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.IN_PROGRESS, task_id=TASK_ID)
+        )
+        await client.call_tool("research_cancel", {"notebook": NB_ID, "poll_task_id": TASK_ID})
+
+        mock_client.research.poll = AsyncMock(
+            return_value=FakeResearchTask(status=FakeResearchStatus.COMPLETED, task_id=TASK_ID)
+        )
+        result = await client.call_tool(
+            "research_status", {"notebook": NB_ID, "poll_task_id": TASK_ID}
+        )
+    assert "cancelled" not in result.structured_content
 
 
 async def test_research_start_then_status_poll_shape(mcp_call, mock_client) -> None:

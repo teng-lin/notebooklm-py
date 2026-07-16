@@ -255,6 +255,28 @@ class TestParseResearchTasks:
         # ``tasks`` key); the model's ``_to_task_dict`` is the matching builder.
         assert tasks[0]._to_task_dict() == parse_research_tasks([[["task_123", task_info]]])[0]
 
+    def test_parse_preserves_raw_status_code(self):
+        """The raw ``task_info[4]`` code is kept on the model verbatim (#1922, F10),
+        even when the coarse ``status`` enum flattens it (an unknown code → FAILED)."""
+        # An unknown terminal code coarsens to FAILED but the raw int survives.
+        task_info = [None, ["query"], None, [[], None], 99]
+        tasks = parse_research_task_models([[["task_fail", task_info]]])
+        assert tasks[0].status == "failed"
+        assert tasks[0].status_code == 99
+
+        # A completed run keeps its raw code too.
+        task_info_ok = [None, ["query"], None, [[], None], 2]
+        ok = parse_research_task_models([[["task_ok", task_info_ok]]])
+        assert ok[0].status == "completed"
+        assert ok[0].status_code == 2
+
+    def test_parse_status_code_none_when_non_int(self):
+        """A non-int ``task_info[4]`` yields ``status_code=None`` (→ in_progress)."""
+        task_info = [None, ["query"], None, [[], None], "weird"]
+        tasks = parse_research_task_models([[["task_x", task_info]]])
+        assert tasks[0].status == "in_progress"
+        assert tasks[0].status_code is None
+
     def test_research_source_public_dict_preserves_unknown_result_type(self):
         source = ResearchSource(
             url="https://example.com/video",

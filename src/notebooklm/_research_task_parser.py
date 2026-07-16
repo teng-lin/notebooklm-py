@@ -278,6 +278,10 @@ def parse_research_task_models(result: Any) -> list[ResearchTask]:
                 sources=tuple(parsed_sources),
                 summary=summary_opt or "",
                 report=report,
+                # Preserve the raw ``task_info[4]`` integer alongside the coarsened
+                # ``status`` enum (issue #1922, F10) so a caller can distinguish
+                # failure sub-codes the enum flattens into ``FAILED``.
+                status_code=status_code,
             )
         )
 

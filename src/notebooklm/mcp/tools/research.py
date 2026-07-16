@@ -46,7 +46,7 @@ from ..._app.serialize import to_jsonable
 from ..._deprecation import warn_deprecated
 from ...exceptions import ValidationError
 from .._confirm import READ_ONLY
-from .._context import get_client
+from .._context import get_cancelled_research, get_client
 from .._errors import mcp_errors
 from .._resolve import resolve_notebook
 
@@ -217,6 +217,18 @@ def register(mcp: Any) -> None:
             nb_id = await resolve_notebook(client, notebook)
             result = await research_core.poll_and_classify(client, nb_id, poll_task_id)
 
+            # F9 (#1922): a user-cancelled run surfaces as a generic ``failed``
+            # with no distinct wire code, so consult the client-side cancel-intent
+            # set recorded by ``research_cancel``. Match on the pinned id AND the
+            # polled task_id (an unfiltered poll resolves the id only in the
+            # result), keyed by notebook so ids never cross notebooks.
+            cancelled = False
+            if result.status == "failed":
+                intents = get_cancelled_research(ctx)
+                cancelled = (nb_id, result.task_id) in intents or (
+                    poll_task_id is not None and (nb_id, poll_task_id) in intents
+                )
+
             # Report content lives in TWO places — the top-level ``report`` AND
             # each source's ``report_markdown`` — so BOTH are gated by
             # ``include_report`` or a deep report leaks through the source rows.
@@ -246,6 +258,10 @@ def register(mcp: Any) -> None:
                 "poll_task_id": result.task_id,
                 "kind": result.kind,
                 "status": result.status,
+                # Raw backend status code preserved from the poll (F10, #1922);
+                # ``None`` when the poll carried no code. Lets an agent tell a
+                # "no matches" failure sub-code from a genuine error.
+                "status_code": result.status_code,
                 "query": result.query,
                 "sources": windowed,
                 "sources_total": sources_total,
@@ -256,6 +272,11 @@ def register(mcp: Any) -> None:
                 "report_char_count": report_char_count,
                 "report_truncated": report_truncated,
             }
+            # Only annotate a failure known to be user-cancelled (F9, #1922);
+            # absence means "not a tracked cancel", so a genuine failure stays
+            # un-annotated.
+            if cancelled:
+                payload["cancelled"] = True
             if deprecation is not None:
                 payload["deprecation"] = deprecation
             return payload
@@ -321,6 +342,11 @@ def register(mcp: Any) -> None:
             # preflight actually observed so a caller can tell a confirmed-running
             # cancel from an unconfirmed (lag-or-unknown) one.
             await client.research.cancel(nb_id, poll_task_id)
+            # Record the cancel intent (F9, #1922) so a later ``research_status``
+            # poll can annotate the resulting generic ``failed`` as ``cancelled``
+            # (the backend surfaces a cancelled run as FAILED with no distinct
+            # wire code). Keyed by notebook so ids never cross notebooks.
+            get_cancelled_research(ctx).add((nb_id, poll_task_id))
             result = {
                 "status": "cancel_requested",
                 "notebook_id": nb_id,
