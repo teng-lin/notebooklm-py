@@ -4,22 +4,10 @@ import { useAuthStore } from "@/stores/auth"
 
 const routes: RouteRecordRaw[] = [
   {
-    path: "/login",
-    name: "Login",
-    component: () => import("@/views/LoginView.vue"),
-    meta: { requiresAuth: false },
-  },
-  {
-    path: "/auth/google",
-    name: "AuthGoogle",
-    component: () => import("@/views/AuthGoogleView.vue"),
-    meta: { requiresAuth: true },
-  },
-  {
     path: "/",
     name: "Home",
     component: () => import("@/views/HomeView.vue"),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: false },
   },
   {
     path: "/notebook/:id",
@@ -92,13 +80,13 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _from, next) => {
-  if (to.meta.requiresAuth === false) {
+  if (to.meta.requiresAuth !== true) {
     next()
     return
   }
   const authStore = useAuthStore()
   if (!authStore.isAuthenticated) {
-    next("/login")
+    next("/")
   } else {
     next()
   }
