@@ -1,0 +1,41 @@
+{
+  "textColors": [
+    "rgb(0, 0, 0)",
+    "rgb(42, 43, 46)",
+    "rgb(47, 123, 255)",
+    "rgb(255, 255, 255)",
+    "rgb(147, 149, 153)",
+    "rgb(23, 24, 26)",
+    "rgb(76, 123, 217)",
+    "rgb(98, 100, 105)",
+    "rgb(128, 138, 154)"
+  ],
+  "bgColors": [
+    "rgb(255, 255, 255)",
+    "rgb(254, 254, 255)",
+    "rgb(238, 239, 240)",
+    "rgb(250, 250, 250)",
+    "rgb(23, 24, 26)",
+    "rgba(155, 165, 175, 0.12)",
+    "rgba(26, 117, 255, 0.3)",
+    "rgba(0, 0, 0, 0.7)",
+    "rgba(26, 31, 46, 0.4)",
+    "rgb(26, 31, 46)",
+    "rgba(0, 0, 0, 0.38)",
+    "rgba(0, 0, 0, 0.72)",
+    "rgb(226, 229, 236)"
+  ],
+  "fonts": [
+    "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "-apple-system, \"system-ui\", \"PingFang SC\", \"Helvetica Neue\", \"Noto Sans SC\", \"Microsoft YaHei\", sans-serif"
+  ],
+  "fontSizes": [
+    "12px",
+    "13px",
+    "14px",
+    "15px",
+    "16px",
+    "17px",
+    "28px"
+  ]
+}

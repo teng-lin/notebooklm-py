@@ -1,34 +1,42 @@
-$color-main-1: #ff3650;
-$color-main-2: #17181a;
-$color-text-focus: #1a75ff;
-$color-text-1: #2a2b2e;
-$color-text-2: #626469;
-$color-text-3: #939599;
-$color-text-4: #a8aaad;
-$color-bg-1: #fff;
-$color-bg-tab: #f5f6f7;
-$color-divider-1: #eeeff0;
-$radius-card: 12px;
-$radius-tab: 6px;
-$radius-input: 8px;
-$radius-button: 6px;
-$shadow-card: 0px 4px 40px 0px rgba(174, 180, 193, 0.17);
-$font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-  "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+:root {
+  /* Youdao Baoku design tokens */
+  --baoku-bg: #f5f6f7;
+  --baoku-bg-2: #fafafa;
+  --baoku-surface: #ffffff;
+  --baoku-surface-hover: #f8f9fa;
+  --baoku-text: #17181a;
+  --baoku-text-2: #626469;
+  --baoku-text-3: #939599;
+  --baoku-text-4: #a8aaad;
+  --baoku-primary: #2f7bff;
+  --baoku-primary-hover: #1a6aff;
+  --baoku-blue: #2f7bff;
+  --baoku-red: #ff3650;
+  --baoku-border: #eeeff0;
+  --baoku-border-2: #e0e1e2;
+  --baoku-shadow: 0 2px 12px rgba(23, 24, 26, 0.06);
+  --baoku-shadow-card: 0 4px 24px rgba(23, 24, 26, 0.06);
+  --baoku-radius: 12px;
+  --baoku-radius-sm: 8px;
+  --baoku-radius-lg: 16px;
+  --baoku-header-height: 54px;
+  --baoku-font: -apple-system, system-ui, "PingFang SC", "Helvetica Neue", "Noto Sans SC", "Microsoft YaHei", sans-serif;
 
-:export {
-  colorMain1: $color-main-1;
-  colorMain2: $color-main-2;
-  colorTextFocus: $color-text-focus;
-  colorText1: $color-text-1;
-  colorText2: $color-text-2;
-  colorText3: $color-text-3;
-  colorText4: $color-text-4;
-  colorBg1: $color-bg-1;
-  colorBgTab: $color-bg-tab;
-  colorDivider1: $color-divider-1;
-  radiusCard: $radius-card;
-  radiusTab: $radius-tab;
-  radiusInput: $radius-input;
-  radiusButton: $radius-button;
+  /* Legacy variables kept for compatibility */
+  --color-main-1: var(--baoku-primary);
+  --color-main-2: var(--baoku-text);
+  --color-text-focus: var(--baoku-primary);
+  --color-text-1: var(--baoku-text);
+  --color-text-2: var(--baoku-text-2);
+  --color-text-3: var(--baoku-text-3);
+  --color-text-4: var(--baoku-text-4);
+  --color-bg-1: var(--baoku-surface);
+  --color-bg-tab: var(--baoku-bg);
+  --color-divider-1: var(--baoku-border);
+  --radius-card: var(--baoku-radius);
+  --radius-tab: var(--baoku-radius-sm);
+  --radius-input: var(--baoku-radius-sm);
+  --radius-button: var(--baoku-radius-sm);
+  --shadow-card: var(--baoku-shadow-card);
+  --font-family: var(--baoku-font);
 }

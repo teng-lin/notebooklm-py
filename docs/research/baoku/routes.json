@@ -1,0 +1,75 @@
+[
+  {
+    "path": "/shared/view",
+    "name": "sharedView",
+    "children": []
+  },
+  {
+    "path": "/activity/member-points",
+    "name": "activityMemberPoints",
+    "children": []
+  },
+  {
+    "path": "/error/not-found",
+    "name": "kbNotFound",
+    "children": []
+  },
+  {
+    "path": "/error/no-permission",
+    "name": "permissionRevoked",
+    "children": []
+  },
+  {
+    "path": "/",
+    "name": "index",
+    "children": []
+  },
+  {
+    "path": "/notebook",
+    "name": "notebook",
+    "children": []
+  },
+  {
+    "path": "/",
+    "name": "home",
+    "children": [
+      {
+        "path": "/",
+        "name": "index"
+      },
+      {
+        "path": "/notebook",
+        "name": "notebook"
+      },
+      {
+        "path": "/shared/view",
+        "name": "sharedView"
+      }
+    ]
+  },
+  {
+    "path": "/shared",
+    "name": "shared",
+    "children": []
+  },
+  {
+    "path": "/open-url",
+    "name": "openUrl",
+    "children": []
+  },
+  {
+    "path": "/ppt-presenter",
+    "name": "pptPresenter",
+    "children": []
+  },
+  {
+    "path": "/changelog",
+    "name": "changelog",
+    "children": []
+  },
+  {
+    "path": "/login",
+    "name": "login",
+    "children": []
+  }
+]

@@ -42,7 +42,8 @@ class TokenResponse(BaseModel):
 
 
 class GoogleBindRequest(BaseModel):
-    google_token: str
+    google_token: str | None = None
+    credential: str | None = None
     expires_at: str | None = None
 
 
@@ -53,6 +54,12 @@ class UserInfo(BaseModel):
     avatar_url: str | None
     google_bound: bool
     created_at: datetime | None
+
+
+@router.get("/google/client-id")
+def google_client_id() -> dict[str, str]:
+    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+    return {"client_id": client_id}
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -120,9 +127,13 @@ def google_bind(
 ):
     from cryptography.fernet import Fernet
 
+    token = body.credential or body.google_token
+    if not token:
+        raise HTTPException(status_code=400, detail="credential or google_token is required")
+
     key = _get_fernet_key()
     cipher = Fernet(key)
-    encrypted = cipher.encrypt(body.google_token.encode())
+    encrypted = cipher.encrypt(token.encode())
     current_user.google_token = encrypted.decode()
     if body.expires_at:
         try:
@@ -130,7 +141,28 @@ def google_bind(
         except ValueError:
             pass
     db.commit()
-    return {"ok": True}
+
+    import base64 as _b64
+    import json as _json
+
+    display_name = current_user.display_name
+    avatar_url = current_user.avatar_url
+    try:
+        parts = token.split(".")
+        if len(parts) >= 2:
+            payload_b64 = parts[1] + "=" * (4 - len(parts[1]) % 4)
+            payload = _json.loads(_b64.urlsafe_b64decode(payload_b64))
+            display_name = payload.get("name", display_name)
+            avatar_url = payload.get("picture", avatar_url)
+            if display_name and display_name != current_user.display_name:
+                current_user.display_name = display_name
+            if avatar_url:
+                current_user.avatar_url = avatar_url
+            db.commit()
+    except Exception:
+        pass
+
+    return {"ok": True, "display_name": display_name, "avatar_url": avatar_url}
 
 
 @router.delete("/logout")

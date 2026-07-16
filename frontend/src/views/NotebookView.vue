@@ -53,7 +53,7 @@ import { useNotebooksStore } from "@/stores/notebooks"
 const router = useRouter()
 const route = useRoute()
 const notebooksStore = useNotebooksStore()
-const notebookId = computed(() => Number(route.params.id))
+const notebookId = computed(() => String(route.params.id))
 const notebook = computed(() => notebooksStore.currentNotebook)
 
 const activeTab = ref("overview")
@@ -104,18 +104,16 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.notebook-page { min-height: 100vh; background: var(--color-bg-tab); }
-.notebook-header { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; height: 48px; background: var(--color-bg-1); border-bottom: 1px solid var(--color-divider-1); position: sticky; top: 0; z-index: 100; }
-.header-left { display: flex; align-items: center; gap: 12px; }
-.back-btn { font-size: 14px; color: var(--color-text-2); .el-icon { margin-right: 4px; } }
-.notebook-title { font-size: 16px; font-weight: 600; }
-.header-right { display: flex; align-items: center; gap: 4px; }
-.sync-btn, .more-btn { color: var(--color-text-2); }
-.tab-bar { background: var(--color-bg-1); padding: 0 24px; border-bottom: 1px solid var(--color-divider-1); }
+.notebook-page { min-height: calc(100vh - var(--baoku-header-height)); background: var(--baoku-bg); }
+.notebook-header { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; height: 56px; background: var(--baoku-surface); border-bottom: 1px solid var(--baoku-border); }
+.back-btn { font-size: 14px; color: var(--baoku-text-2); .el-icon { margin-right: 4px; } }
+.notebook-title { font-size: 16px; font-weight: 600; color: var(--baoku-text); }
+.sync-btn, .more-btn { color: var(--baoku-text-2); }
+.tab-bar { background: var(--baoku-surface); padding: 0 24px; border-bottom: 1px solid var(--baoku-border); }
 .notebook-tabs {
   :deep(.el-tabs__header) { margin: 0; }
-  :deep(.el-tabs__item) { height: 40px; font-size: 14px; color: var(--color-text-2); &.is-active { color: var(--color-main-1); font-weight: 500; } }
-  :deep(.el-tabs__active-bar) { background-color: var(--color-main-1); }
+  :deep(.el-tabs__item) { height: 40px; font-size: 14px; color: var(--baoku-text-2); &.is-active { color: var(--baoku-primary); font-weight: 500; } }
+  :deep(.el-tabs__active-bar) { background-color: var(--baoku-primary); }
   :deep(.el-tabs__nav-wrap::after) { display: none; }
 }
 .tab-content { padding: 24px; }

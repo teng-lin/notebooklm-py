@@ -13,20 +13,20 @@ export const useNotebooksStore = defineStore("notebooks", () => {
     try { const res = await fetchNotebooksApi(params); notebooks.value = res.items; total.value = res.total }
     finally { loading.value = false }
   }
-  async function fetchNotebook(id: number) { const nb = await fetchNotebookApi(id); currentNotebook.value = nb; return nb }
+  async function fetchNotebook(id: string) { const nb = await fetchNotebookApi(id); currentNotebook.value = nb; return nb }
   async function createNotebook(data: CreateNotebookRequest) { const nb = await createNotebookApi(data); notebooks.value.unshift(nb); total.value++; return nb }
-  async function updateNotebook(id: number, data: UpdateNotebookRequest) {
+  async function updateNotebook(id: string, data: UpdateNotebookRequest) {
     const nb = await updateNotebookApi(id, data)
     const idx = notebooks.value.findIndex((n) => n.id === id)
     if (idx !== -1) notebooks.value[idx] = nb
     if (currentNotebook.value?.id === id) currentNotebook.value = nb
     return nb
   }
-  async function deleteNotebook(id: number) {
+  async function deleteNotebook(id: string) {
     await deleteNotebookApi(id); notebooks.value = notebooks.value.filter((n) => n.id !== id); total.value--
     if (currentNotebook.value?.id === id) currentNotebook.value = null
   }
-  async function syncNotebook(id: number) {
+  async function syncNotebook(id: string) {
     const nb = await syncNotebookApi(id)
     const idx = notebooks.value.findIndex((n) => n.id === id)
     if (idx !== -1) notebooks.value[idx] = nb

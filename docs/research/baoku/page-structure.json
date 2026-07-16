@@ -1,0 +1,859 @@
+{
+  "tag": "div",
+  "classes": "",
+  "text": null,
+  "rect": {
+    "x": 0,
+    "y": 0,
+    "w": 1440,
+    "h": 900
+  },
+  "bg": null,
+  "bgImage": null,
+  "fontSize": "16px",
+  "color": "rgb(0, 0, 0)",
+  "display": "block",
+  "flexDirection": "row",
+  "padding": "0px",
+  "borderRadius": null,
+  "childCount": 1,
+  "children": [
+    {
+      "tag": "div",
+      "classes": "layout-wrapper",
+      "text": null,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 900
+      },
+      "bg": null,
+      "bgImage": null,
+      "fontSize": "16px",
+      "color": "rgb(0, 0, 0)",
+      "display": "flex",
+      "flexDirection": "column",
+      "padding": "0px",
+      "borderRadius": null,
+      "childCount": 2,
+      "children": [
+        {
+          "tag": "div",
+          "classes": "web-header",
+          "text": null,
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 1440,
+            "h": 54
+          },
+          "bg": "rgb(255, 255, 255)",
+          "bgImage": null,
+          "fontSize": "16px",
+          "color": "rgb(0, 0, 0)",
+          "display": "flex",
+          "flexDirection": "row",
+          "padding": "0px 16px",
+          "borderRadius": null,
+          "childCount": 2,
+          "children": [
+            {
+              "tag": "div",
+              "classes": "header-left",
+              "text": "",
+              "rect": {
+                "x": 16,
+                "y": 9,
+                "w": 1282,
+                "h": 36
+              },
+              "bg": null,
+              "bgImage": null,
+              "fontSize": "16px",
+              "color": "rgb(0, 0, 0)",
+              "display": "flex",
+              "flexDirection": "row",
+              "padding": "0px",
+              "borderRadius": null,
+              "childCount": 1,
+              "children": [
+                {
+                  "tag": "div",
+                  "classes": "logo-area",
+                  "text": "",
+                  "rect": {
+                    "x": 16,
+                    "y": 9,
+                    "w": 139,
+                    "h": 36
+                  },
+                  "bg": null,
+                  "bgImage": null,
+                  "fontSize": "16px",
+                  "color": "rgb(0, 0, 0)",
+                  "display": "flex",
+                  "flexDirection": "row",
+                  "padding": "0px",
+                  "borderRadius": null,
+                  "childCount": 2,
+                  "children": [
+                    {
+                      "tag": "img",
+                      "classes": "logo-icon",
+                      "text": "",
+                      "rect": {
+                        "x": 16,
+                        "y": 9,
+                        "w": 36,
+                        "h": 36
+                      },
+                      "bg": null,
+                      "bgImage": null,
+                      "fontSize": "16px",
+                      "color": "rgb(0, 0, 0)",
+                      "display": "block",
+                      "flexDirection": "row",
+                      "padding": "0px",
+                      "borderRadius": null,
+                      "childCount": 0,
+                      "children": []
+                    },
+                    {
+                      "tag": "img",
+                      "classes": "product-name",
+                      "text": "",
+                      "rect": {
+                        "x": 60,
+                        "y": 17,
+                        "w": 95,
+                        "h": 20
+                      },
+                      "bg": null,
+                      "bgImage": null,
+                      "fontSize": "16px",
+                      "color": "rgb(42, 43, 46)",
+                      "display": "block",
+                      "flexDirection": "row",
+                      "padding": "0px",
+                      "borderRadius": null,
+                      "childCount": 0,
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "tag": "div",
+              "classes": "header-right",
+              "text": null,
+              "rect": {
+                "x": 1298,
+                "y": 11,
+                "w": 126,
+                "h": 32
+              },
+              "bg": null,
+              "bgImage": null,
+              "fontSize": "16px",
+              "color": "rgb(0, 0, 0)",
+              "display": "flex",
+              "flexDirection": "row",
+              "padding": "0px",
+              "borderRadius": null,
+              "childCount": 2,
+              "children": [
+                {
+                  "tag": "div",
+                  "classes": "btn-vip-wrapper",
+                  "text": "升级会员",
+                  "rect": {
+                    "x": 1298,
+                    "y": 11,
+                    "w": 82,
+                    "h": 32
+                  },
+                  "bg": null,
+                  "bgImage": null,
+                  "fontSize": "16px",
+                  "color": "rgb(0, 0, 0)",
+                  "display": "block",
+                  "flexDirection": "row",
+                  "padding": "0px",
+                  "borderRadius": null,
+                  "childCount": 1,
+                  "children": [
+                    {
+                      "tag": "button",
+                      "classes": "btn-vip",
+                      "text": null,
+                      "rect": {
+                        "x": 1298,
+                        "y": 11,
+                        "w": 82,
+                        "h": 32
+                      },
+                      "bg": null,
+                      "bgImage": null,
+                      "fontSize": "13px",
+                      "color": "rgb(47, 123, 255)",
+                      "display": "flex",
+                      "flexDirection": "row",
+                      "padding": "0px 14px",
+                      "borderRadius": "9999px",
+                      "childCount": 1,
+                      "children": [
+                        {
+                          "tag": "span",
+                          "classes": "vip-label",
+                          "text": "升级会员",
+                          "rect": {
+                            "x": 1313,
+                            "y": 17,
+                            "w": 52,
+                            "h": 20
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "13px",
+                          "color": "rgb(47, 123, 255)",
+                          "display": "block",
+                          "flexDirection": "row",
+                          "padding": "0px",
+                          "borderRadius": null,
+                          "childCount": 0,
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "tag": "div",
+                  "classes": "avatar-wrapper",
+                  "text": "隐私政策服务条款有道宝库cli下载电脑版更新日志立即登录",
+                  "rect": {
+                    "x": 1392,
+                    "y": 11,
+                    "w": 32,
+                    "h": 32
+                  },
+                  "bg": null,
+                  "bgImage": null,
+                  "fontSize": "16px",
+                  "color": "rgb(0, 0, 0)",
+                  "display": "block",
+                  "flexDirection": "row",
+                  "padding": "0px",
+                  "borderRadius": null,
+                  "childCount": 2,
+                  "children": [
+                    {
+                      "tag": "div",
+                      "classes": "avatar",
+                      "text": "",
+                      "rect": {
+                        "x": 1392,
+                        "y": 11,
+                        "w": 32,
+                        "h": 32
+                      },
+                      "bg": "rgb(255, 255, 255)",
+                      "bgImage": null,
+                      "fontSize": "16px",
+                      "color": "rgb(0, 0, 0)",
+                      "display": "flex",
+                      "flexDirection": "row",
+                      "padding": "0px 6px",
+                      "borderRadius": "9999px",
+                      "childCount": 1,
+                      "children": [
+                        {
+                          "tag": "span",
+                          "classes": "el-avatar el-avatar--circle",
+                          "text": "",
+                          "rect": {
+                            "x": 1400,
+                            "y": 19,
+                            "w": 16,
+                            "h": 16
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "14px",
+                          "color": "rgb(255, 255, 255)",
+                          "display": "flex",
+                          "flexDirection": "row",
+                          "padding": "0px",
+                          "borderRadius": "50%",
+                          "childCount": 1,
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "tag": "div",
+                      "classes": "avatar-dropdown",
+                      "text": null,
+                      "rect": {
+                        "x": 1224,
+                        "y": 47,
+                        "w": 200,
+                        "h": 257
+                      },
+                      "bg": "rgb(254, 254, 255)",
+                      "bgImage": null,
+                      "fontSize": "16px",
+                      "color": "rgb(0, 0, 0)",
+                      "display": "block",
+                      "flexDirection": "row",
+                      "padding": "6px",
+                      "borderRadius": "12px",
+                      "childCount": 7,
+                      "children": [
+                        {
+                          "tag": "a",
+                          "classes": "dropdown-item",
+                          "text": "隐私政策",
+                          "rect": {
+                            "x": 1231,
+                            "y": 54,
+                            "w": 186,
+                            "h": 39
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "14px",
+                          "color": "rgb(42, 43, 46)",
+                          "display": "flex",
+                          "flexDirection": "row",
+                          "padding": "9px 12px",
+                          "borderRadius": "8px",
+                          "childCount": 2,
+                          "children": []
+                        },
+                        {
+                          "tag": "a",
+                          "classes": "dropdown-item",
+                          "text": "服务条款",
+                          "rect": {
+                            "x": 1231,
+                            "y": 93,
+                            "w": 186,
+                            "h": 39
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "14px",
+                          "color": "rgb(42, 43, 46)",
+                          "display": "flex",
+                          "flexDirection": "row",
+                          "padding": "9px 12px",
+                          "borderRadius": "8px",
+                          "childCount": 2,
+                          "children": []
+                        },
+                        {
+                          "tag": "a",
+                          "classes": "dropdown-item",
+                          "text": "有道宝库cli",
+                          "rect": {
+                            "x": 1231,
+                            "y": 132,
+                            "w": 186,
+                            "h": 39
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "14px",
+                          "color": "rgb(42, 43, 46)",
+                          "display": "flex",
+                          "flexDirection": "row",
+                          "padding": "9px 12px",
+                          "borderRadius": "8px",
+                          "childCount": 2,
+                          "children": []
+                        },
+                        {
+                          "tag": "div",
+                          "classes": "dropdown-item-download",
+                          "text": "下载电脑版",
+                          "rect": {
+                            "x": 1231,
+                            "y": 171,
+                            "w": 186,
+                            "h": 39
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "16px",
+                          "color": "rgb(0, 0, 0)",
+                          "display": "block",
+                          "flexDirection": "row",
+                          "padding": "0px",
+                          "borderRadius": null,
+                          "childCount": 2,
+                          "children": []
+                        },
+                        {
+                          "tag": "a",
+                          "classes": "dropdown-item",
+                          "text": "更新日志",
+                          "rect": {
+                            "x": 1231,
+                            "y": 210,
+                            "w": 186,
+                            "h": 39
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "14px",
+                          "color": "rgb(42, 43, 46)",
+                          "display": "flex",
+                          "flexDirection": "row",
+                          "padding": "9px 12px",
+                          "borderRadius": "8px",
+                          "childCount": 2,
+                          "children": []
+                        },
+                        {
+                          "tag": "div",
+                          "classes": "dropdown-divider",
+                          "text": "",
+                          "rect": {
+                            "x": 1231,
+                            "y": 253,
+                            "w": 186,
+                            "h": 1
+                          },
+                          "bg": "rgb(238, 239, 240)",
+                          "bgImage": null,
+                          "fontSize": "16px",
+                          "color": "rgb(0, 0, 0)",
+                          "display": "block",
+                          "flexDirection": "row",
+                          "padding": "0px",
+                          "borderRadius": null,
+                          "childCount": 0,
+                          "children": []
+                        },
+                        {
+                          "tag": "button",
+                          "classes": "dropdown-item dropdown-item--login",
+                          "text": "立即登录",
+                          "rect": {
+                            "x": 1231,
+                            "y": 258,
+                            "w": 186,
+                            "h": 39
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "14px",
+                          "color": "rgb(23, 24, 26)",
+                          "display": "flex",
+                          "flexDirection": "row",
+                          "padding": "9px 12px",
+                          "borderRadius": "8px",
+                          "childCount": 2,
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "tag": "div",
+          "classes": "page-content",
+          "text": null,
+          "rect": {
+            "x": 0,
+            "y": 54,
+            "w": 1440,
+            "h": 846
+          },
+          "bg": null,
+          "bgImage": null,
+          "fontSize": "16px",
+          "color": "rgb(0, 0, 0)",
+          "display": "block",
+          "flexDirection": "row",
+          "padding": "0px",
+          "borderRadius": null,
+          "childCount": 1,
+          "children": [
+            {
+              "tag": "div",
+              "classes": "home color_bg_3 flex flex-col h-full scroll-bar relative",
+              "text": null,
+              "rect": {
+                "x": 0,
+                "y": 54,
+                "w": 1436,
+                "h": 846
+              },
+              "bg": "rgb(255, 255, 255)",
+              "bgImage": null,
+              "fontSize": "16px",
+              "color": "rgb(0, 0, 0)",
+              "display": "flex",
+              "flexDirection": "column",
+              "padding": "0px",
+              "borderRadius": null,
+              "childCount": 1,
+              "children": [
+                {
+                  "tag": "div",
+                  "classes": "home-content mx-auto",
+                  "text": null,
+                  "rect": {
+                    "x": 62,
+                    "y": 54,
+                    "w": 1312,
+                    "h": 815
+                  },
+                  "bg": null,
+                  "bgImage": null,
+                  "fontSize": "16px",
+                  "color": "rgb(0, 0, 0)",
+                  "display": "block",
+                  "flexDirection": "row",
+                  "padding": "32px 40px",
+                  "borderRadius": null,
+                  "childCount": 5,
+                  "children": [
+                    {
+                      "tag": "div",
+                      "classes": "welcome-banner",
+                      "text": "用私有资料，一键生成知识体系脑图探索知识的深度理解及管理，详细了解宝库 >导入有道历史创建直接创建",
+                      "rect": {
+                        "x": 102,
+                        "y": 86,
+                        "w": 1232,
+                        "h": 148
+                      },
+                      "bg": "rgb(250, 250, 250)",
+                      "bgImage": null,
+                      "fontSize": "16px",
+                      "color": "rgb(0, 0, 0)",
+                      "display": "flex",
+                      "flexDirection": "row",
+                      "padding": "40px 48px",
+                      "borderRadius": "16px",
+                      "childCount": 2,
+                      "children": [
+                        {
+                          "tag": "div",
+                          "classes": "banner-left",
+                          "text": "用私有资料，一键生成知识体系脑图探索知识的深度理解及管理，详细了解宝库 >",
+                          "rect": {
+                            "x": 130,
+                            "y": 126,
+                            "w": 443,
+                            "h": 68
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "16px",
+                          "color": "rgb(0, 0, 0)",
+                          "display": "flex",
+                          "flexDirection": "column",
+                          "padding": "0px",
+                          "borderRadius": null,
+                          "childCount": 2,
+                          "children": []
+                        },
+                        {
+                          "tag": "div",
+                          "classes": "banner-actions",
+                          "text": "导入有道历史创建直接创建",
+                          "rect": {
+                            "x": 956,
+                            "y": 155,
+                            "w": 350,
+                            "h": 44
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "16px",
+                          "color": "rgb(0, 0, 0)",
+                          "display": "flex",
+                          "flexDirection": "row",
+                          "padding": "0px",
+                          "borderRadius": null,
+                          "childCount": 2,
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "tag": "div",
+                      "classes": "tab-filter",
+                      "text": null,
+                      "rect": {
+                        "x": 102,
+                        "y": 254,
+                        "w": 1232,
+                        "h": 32
+                      },
+                      "bg": null,
+                      "bgImage": null,
+                      "fontSize": "16px",
+                      "color": "rgb(0, 0, 0)",
+                      "display": "flex",
+                      "flexDirection": "row",
+                      "padding": "0px",
+                      "borderRadius": null,
+                      "childCount": 3,
+                      "children": [
+                        {
+                          "tag": "button",
+                          "classes": "tab-item active",
+                          "text": "全部",
+                          "rect": {
+                            "x": 102,
+                            "y": 254,
+                            "w": 60,
+                            "h": 32
+                          },
+                          "bg": "rgba(155, 165, 175, 0.12)",
+                          "bgImage": null,
+                          "fontSize": "14px",
+                          "color": "rgb(42, 43, 46)",
+                          "display": "block",
+                          "flexDirection": "row",
+                          "padding": "6px 16px",
+                          "borderRadius": "20px",
+                          "childCount": 0,
+                          "children": []
+                        },
+                        {
+                          "tag": "button",
+                          "classes": "tab-item",
+                          "text": "精选",
+                          "rect": {
+                            "x": 166,
+                            "y": 254,
+                            "w": 60,
+                            "h": 32
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "14px",
+                          "color": "rgb(147, 149, 153)",
+                          "display": "block",
+                          "flexDirection": "row",
+                          "padding": "6px 16px",
+                          "borderRadius": "20px",
+                          "childCount": 0,
+                          "children": []
+                        },
+                        {
+                          "tag": "button",
+                          "classes": "tab-item",
+                          "text": "我的",
+                          "rect": {
+                            "x": 230,
+                            "y": 254,
+                            "w": 60,
+                            "h": 32
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "14px",
+                          "color": "rgb(147, 149, 153)",
+                          "display": "block",
+                          "flexDirection": "row",
+                          "padding": "6px 16px",
+                          "borderRadius": "20px",
+                          "childCount": 0,
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "tag": "div",
+                      "classes": "featured-section",
+                      "text": null,
+                      "rect": {
+                        "x": 102,
+                        "y": 302,
+                        "w": 1232,
+                        "h": 188
+                      },
+                      "bg": null,
+                      "bgImage": null,
+                      "fontSize": "16px",
+                      "color": "rgb(0, 0, 0)",
+                      "display": "block",
+                      "flexDirection": "row",
+                      "padding": "0px",
+                      "borderRadius": null,
+                      "childCount": 2,
+                      "children": [
+                        {
+                          "tag": "div",
+                          "classes": "section-header",
+                          "text": "精选知识宝库查看全部",
+                          "rect": {
+                            "x": 102,
+                            "y": 302,
+                            "w": 1232,
+                            "h": 34
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "16px",
+                          "color": "rgb(0, 0, 0)",
+                          "display": "flex",
+                          "flexDirection": "row",
+                          "padding": "0px",
+                          "borderRadius": null,
+                          "childCount": 2,
+                          "children": []
+                        },
+                        {
+                          "tag": "div",
+                          "classes": "featured-grid single-row",
+                          "text": null,
+                          "rect": {
+                            "x": 98,
+                            "y": 339,
+                            "w": 1240,
+                            "h": 150
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "16px",
+                          "color": "rgb(0, 0, 0)",
+                          "display": "grid",
+                          "flexDirection": "row",
+                          "padding": "4px 4px 0px",
+                          "borderRadius": null,
+                          "childCount": 48,
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "tag": "div",
+                      "classes": "section-header",
+                      "text": "我的知识宝库",
+                      "rect": {
+                        "x": 102,
+                        "y": 517,
+                        "w": 1232,
+                        "h": 32
+                      },
+                      "bg": null,
+                      "bgImage": null,
+                      "fontSize": "16px",
+                      "color": "rgb(0, 0, 0)",
+                      "display": "flex",
+                      "flexDirection": "row",
+                      "padding": "0px",
+                      "borderRadius": null,
+                      "childCount": 2,
+                      "children": [
+                        {
+                          "tag": "div",
+                          "classes": "section-dot",
+                          "text": "",
+                          "rect": {
+                            "x": 102,
+                            "y": 530,
+                            "w": 7,
+                            "h": 7
+                          },
+                          "bg": "rgba(26, 117, 255, 0.3)",
+                          "bgImage": null,
+                          "fontSize": "16px",
+                          "color": "rgb(0, 0, 0)",
+                          "display": "block",
+                          "flexDirection": "row",
+                          "padding": "0px",
+                          "borderRadius": "50%",
+                          "childCount": 0,
+                          "children": []
+                        },
+                        {
+                          "tag": "span",
+                          "classes": "",
+                          "text": "我的知识宝库",
+                          "rect": {
+                            "x": 119,
+                            "y": 525,
+                            "w": 102,
+                            "h": 17
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "17px",
+                          "color": "rgb(42, 43, 46)",
+                          "display": "block",
+                          "flexDirection": "row",
+                          "padding": "0px",
+                          "borderRadius": null,
+                          "childCount": 0,
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "tag": "div",
+                      "classes": "empty-card",
+                      "text": "登录后开始使用知识宝库立即登录",
+                      "rect": {
+                        "x": 102,
+                        "y": 557,
+                        "w": 1232,
+                        "h": 280
+                      },
+                      "bg": "rgb(250, 250, 250)",
+                      "bgImage": null,
+                      "fontSize": "16px",
+                      "color": "rgb(0, 0, 0)",
+                      "display": "flex",
+                      "flexDirection": "row",
+                      "padding": "0px",
+                      "borderRadius": "16px",
+                      "childCount": 1,
+                      "children": [
+                        {
+                          "tag": "div",
+                          "classes": "empty-card-inner",
+                          "text": "登录后开始使用知识宝库立即登录",
+                          "rect": {
+                            "x": 641,
+                            "y": 628,
+                            "w": 154,
+                            "h": 138
+                          },
+                          "bg": null,
+                          "bgImage": null,
+                          "fontSize": "16px",
+                          "color": "rgb(0, 0, 0)",
+                          "display": "flex",
+                          "flexDirection": "column",
+                          "padding": "0px",
+                          "borderRadius": null,
+                          "childCount": 3,
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

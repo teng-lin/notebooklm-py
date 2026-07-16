@@ -26,11 +26,21 @@ export interface AuthResponse {
 }
 
 export function loginApi(data: LoginRequest): Promise<AuthResponse> {
-  return request.post("/api/auth/login", data).then((r) => r.data)
+  return request.post("/api/auth/login", data).then(async (r) => {
+    const { access_token } = r.data
+    localStorage.setItem("token", access_token)
+    const user = await fetchMeApi()
+    return { token: access_token, user }
+  })
 }
 
 export function registerApi(data: RegisterRequest): Promise<AuthResponse> {
-  return request.post("/api/auth/register", data).then((r) => r.data)
+  return request.post("/api/auth/register", data).then(async (r) => {
+    const { access_token } = r.data
+    localStorage.setItem("token", access_token)
+    const user = await fetchMeApi()
+    return { token: access_token, user }
+  })
 }
 
 export function logoutApi(): Promise<void> {
@@ -41,6 +51,6 @@ export function fetchMeApi(): Promise<UserInfo> {
   return request.get("/api/auth/me").then((r) => r.data)
 }
 
-export function bindGoogleApi(code: string): Promise<UserInfo> {
-  return request.post("/api/auth/google/bind", { code }).then((r) => r.data)
+export function bindGoogleApi(credential: string): Promise<UserInfo> {
+  return request.post("/api/auth/google/bind", { credential }).then((r) => r.data)
 }
