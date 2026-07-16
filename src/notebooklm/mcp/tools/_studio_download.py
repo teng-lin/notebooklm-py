@@ -30,7 +30,7 @@ from pydantic import AnyUrl
 
 from ..._app import download as download_core
 from ..._app.resolve import resolve_ref
-from ...exceptions import ValidationError
+from ...exceptions import NotebookLMError, ValidationError
 from ...types import ArtifactType
 from .._filelink import DOWNLOAD_TTL, FileTransferConfig
 
@@ -315,9 +315,15 @@ async def _read_inline_artifact_text(
     resource-link-incapable host can read it (#1907). Reuses the SAME
     :func:`~notebooklm._app.download.execute_download` path the ``/files/dl`` route
     serves — spooling to a private temp file and reading it back — so the inline
-    text is byte-identical to the file the signed link hands out. A missing artifact
-    or a soft download error yields ``None`` (the link still stands); an upstream RPC
-    failure propagates (the link would fail identically).
+    text is byte-identical to the file the signed link hands out.
+
+    Inline text is strictly **best-effort**: a missing/incomplete artifact, a soft
+    download error, OR an upstream list/RPC failure all yield ``None`` so the broker
+    still hands out the ``resource_link`` (the guaranteed deliverable — the link needs
+    no RPC to mint on the "latest" path, and opening it later re-runs this fetch, so a
+    transient hiccup must not fail the whole ``studio_download`` call). Explicit-id
+    refs are already validated before this runs, so a swallowed error here can only be
+    an infra/transient failure, never a bad-id miss.
 
     ``content`` is the clean first-``INLINE_TEXT_MAX_CHARS``-chars prefix; ``char_count``
     is the FULL length; ``truncated`` says whether the prefix omits any tail. Read with
@@ -336,12 +342,18 @@ async def _read_inline_artifact_text(
         if output_format is not None:
             args[spec.format_param_name] = output_format
         plan = download_core.build_download_plan(spec, args, cwd=Path.cwd())
-        result = await download_core.execute_download(
-            plan,
-            client,
-            notebook_resolver=_passthrough_download_notebook,
-            artifact_resolver=_resolve_artifact_id,
-        )
+        try:
+            result = await download_core.execute_download(
+                plan,
+                client,
+                notebook_resolver=_passthrough_download_notebook,
+                artifact_resolver=_resolve_artifact_id,
+            )
+        except NotebookLMError:
+            # Upstream list/RPC failure (execute_download does not wrap its own list
+            # call). Inline text is best-effort, so degrade to link-only rather than
+            # failing the whole download.
+            return None
         if result.outcome != download_core.DownloadOutcome.SINGLE_DOWNLOADED:
             # No completed artifact / soft download error — return nothing so the
             # broker still hands out the link (which will surface the same state).

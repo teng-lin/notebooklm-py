@@ -961,7 +961,10 @@ def _writing_download(body: str, *, encoding: str = "utf-8") -> AsyncMock:
     for the inline reader to read back."""
 
     async def _dl(notebook_id: str, output_path: str, artifact_id: str | None = None, **_: Any):
-        with open(output_path, "w", encoding=encoding) as fh:
+        # newline="" disables platform newline translation so the on-disk bytes are
+        # identical on POSIX and Windows (a text-mode write would turn "\r\n" into
+        # "\r\r\n" on Windows and break the reader assertions).
+        with open(output_path, "w", encoding=encoding, newline="") as fh:
             fh.write(body)
         return output_path
 
@@ -1034,6 +1037,28 @@ async def test_artifact_download_remote_report_no_artifact_is_link_only(
     sc = result.structured_content
     assert sc["status"] == "download_ready"
     assert "content" not in sc
+    assert not any(getattr(b, "type", None) == "text" for b in result.content)
+
+
+async def test_artifact_download_remote_report_inline_failure_is_link_only(
+    mock_client, config
+) -> None:
+    # Inline text is best-effort: an upstream listing/RPC failure during the inline read
+    # must NOT fail the whole download — the link (the guaranteed deliverable) is still
+    # returned, just without the inline body.
+    from notebooklm.exceptions import ServerError
+
+    mock_client.artifacts.list = AsyncMock(side_effect=ServerError("upstream 500"))
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report"},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    assert "content" not in sc
+    assert any(getattr(b, "type", None) == "resource_link" for b in result.content)
     assert not any(getattr(b, "type", None) == "text" for b in result.content)
 
 
