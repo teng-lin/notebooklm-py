@@ -43,15 +43,21 @@ async def swept_interactive_mind_maps(client, generation_notebook_id):
     any artifact exists, so the sweep simply finds nothing. Best-effort: a
     throttled sweep can't clean up, but the next session's pre-test
     ``_cleanup_generation_notebook`` deletes all artifacts anyway.
+
+    Enumerates via the *unfiltered* ``client.artifacts.list`` and matches
+    ``is_interactive_mind_map`` OR ``is_unclassified_type4`` — mirroring
+    ``_find_interactive(allow_unclassified=True)``. The strict
+    ``client.mind_maps.list`` filter would exclude a still-settling type-4 row
+    whose ``variant`` slot has not populated (``variant=None``), which is
+    exactly the state a throttled settling ``_find_interactive`` LIST leaves
+    behind — so the sweep must tolerate it too, or that narrowest window leaks.
     """
     yield
     with contextlib.suppress(Exception):
-        for m in await client.mind_maps.list(generation_notebook_id):
-            if m.kind == MindMapKind.INTERACTIVE:
+        for art in await client.artifacts.list(generation_notebook_id):
+            if art.is_interactive_mind_map or art.is_unclassified_type4:
                 with contextlib.suppress(Exception):
-                    await client.mind_maps.delete(
-                        generation_notebook_id, m.id, kind=MindMapKind.INTERACTIVE
-                    )
+                    await client.artifacts.delete(generation_notebook_id, art.id)
 
 
 @pytest.mark.e2e
