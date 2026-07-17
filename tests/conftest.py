@@ -453,7 +453,8 @@ def legacy_vcr_follow_up_probe(monkeypatch):
 
     original = ChatAPI.get_conversation_turns
 
-    async def _get_conversation_turns(self, notebook_id, conversation_id=None, limit=100):
+    async def _get_conversation_turns(self, notebook_id: str, conversation_id: str, limit: int = 2):
+        """Replay legacy chat cassettes without changing the production signature."""
         if limit == 1:
             return [[[None, None, 1, "Existing cassette conversation turn"]]]
         return await original(self, notebook_id, conversation_id, limit)

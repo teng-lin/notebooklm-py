@@ -568,8 +568,9 @@ class TestChatNewConversationLocks:
                 return result
 
             async def get_conversation_turns(
-                self, notebook_id: str, conversation_id: str | None = None, limit: int = 100
+                self, notebook_id: str, conversation_id: str, limit: int = 2
             ) -> list[Any]:
+                """Return existing history through the production method contract."""
                 return [[[None, None, 1, "Existing question?"]]]
 
         async def fake_perform_authed_post(*args: Any, **kwargs: Any) -> httpx.Response:
