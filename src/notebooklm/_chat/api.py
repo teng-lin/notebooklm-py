@@ -448,24 +448,14 @@ class ChatAPI(LoopBoundPrimitive):
                         if cached_turns:
                             is_follow_up = True
                         else:
-                            try:
-                                turns_data = await self.get_conversation_turns(
-                                    notebook_id, override, limit=1
+                            turns_data = await self.get_conversation_turns(
+                                notebook_id, override, limit=1
+                            )
+                            is_follow_up = bool(
+                                unwrap_conversation_turns(
+                                    turns_data, source="_chat.ask.follow_up_probe"
                                 )
-                                is_follow_up = bool(
-                                    unwrap_conversation_turns(
-                                        turns_data, source="_chat.ask.follow_up_probe"
-                                    )
-                                )
-                            except (ChatError, NetworkError, UnknownRPCMethodError) as e:
-                                # Preserve ask availability when the metadata probe
-                                # fails; an existing id remains the safest fallback.
-                                logger.warning(
-                                    "Failed to inspect current conversation %s before ask: %s",
-                                    override,
-                                    e,
-                                )
-                                is_follow_up = True
+                            )
                     posted = await perform_request(
                         conversation_history=None,
                         active_conversation_id=None,

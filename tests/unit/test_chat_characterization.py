@@ -1081,21 +1081,19 @@ class TestAskServerAssignedConversationId:
         assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
 
     @pytest.mark.asyncio
-    async def test_conversation_probe_failure_preserves_follow_up_fallback(
+    async def test_current_conversation_with_turns_is_a_follow_up(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """A failed history probe must not prevent asking in an existing conversation."""
+        """A cold cache still detects prior server-side conversation turns."""
         import json
         import re
 
-        from notebooklm.exceptions import NetworkError
-
-        current_id = "unavailable-current-conversation"
+        current_id = "existing-current-conversation"
         inner_json = json.dumps(
-            [["Fallback answer.", None, ["stream-id", 12345], None, [[], None, None, [], 1]]]
+            [["Next answer.", None, ["stream-id", 12345], None, [[], None, None, [], 1]]]
         )
         chunk_json = json.dumps([["wrb.fr", None, inner_json]])
         httpx_mock.add_response(
@@ -1110,18 +1108,56 @@ class TestAskServerAssignedConversationId:
             ).encode(),
             method="POST",
         )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_CONVERSATION_TURNS,
+                [[[None, None, 1, "Earlier question?"]]],
+            ).encode(),
+            method="POST",
+        )
 
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.chat,
-                "get_conversation_turns",
-                new=AsyncMock(side_effect=NetworkError("history unavailable")),
-            ):
-                result = await client.chat.ask("nb_123", "Continue?", source_ids=["src_001"])
+            result = await client.chat.ask("nb_123", "Continue?", source_ids=["src_001"])
 
         assert result.conversation_id == current_id
         assert result.turn_number == 1
         assert result.is_follow_up is True
+        assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
+
+    @pytest.mark.asyncio
+    async def test_conversation_probe_failure_raises_before_chat_post(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A failed history probe aborts before generating an answer."""
+        import re
+
+        from notebooklm.exceptions import ServerError
+
+        current_id = "unavailable-current-conversation"
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_LAST_CONVERSATION_ID, [[[current_id]]]
+            ).encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            status_code=500,
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+            with pytest.raises(ServerError, match="500"):
+                await client.chat.ask("nb_123", "Continue?", source_ids=["src_001"])
+
+        assert not any(
+            "GenerateFreeFormStreamed" in str(request.url) for request in httpx_mock.get_requests()
+        )
 
     @pytest.mark.asyncio
     async def test_new_conversation_raises_when_hptbtc_returns_no_conversation(
