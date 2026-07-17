@@ -158,7 +158,7 @@ class TestSources:
 
 class TestChatAndArtifacts:
     @notebooklm_vcr.use_cassette("chat_ask.yaml", allow_playback_repeats=True)
-    def test_chat_ask(self, real_authed_client: TestClient) -> None:
+    def test_chat_ask(self, real_authed_client: TestClient, legacy_vcr_follow_up_probe) -> None:
         resp = real_authed_client.post(
             f"/v1/notebooks/{_NB}/chat", json={"question": "What is this notebook about?"}
         )

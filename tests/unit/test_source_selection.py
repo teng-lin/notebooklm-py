@@ -75,6 +75,8 @@ def mock_core():
     async def _rpc_call_dispatch(method, params, **kwargs):
         if method == _RPC.GET_LAST_CONVERSATION_ID:
             return [[["mock-core-conv-id"]]]
+        if method == _RPC.GET_CONVERSATION_TURNS:
+            return [[[None, None, 1, "Existing question?"]]]
         return rpc_call.return_value
 
     rpc_call.side_effect = _rpc_call_dispatch

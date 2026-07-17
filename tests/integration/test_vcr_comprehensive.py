@@ -628,7 +628,7 @@ class TestChatAPI:
         # because most endpoints do not send ``f.req``.
         match_on=["method", "scheme", "host", "port", "path", "freq"],
     )
-    async def test_ask(self):
+    async def test_ask(self, legacy_vcr_follow_up_probe):
         """Ask a question."""
         async with vcr_client() as client:
             result = await client.chat.ask(
@@ -648,7 +648,7 @@ class TestChatAPI:
         # by replay-order. See ``test_ask`` above for the full rationale.
         match_on=["method", "scheme", "host", "port", "path", "freq"],
     )
-    async def test_ask_with_references(self):
+    async def test_ask_with_references(self, legacy_vcr_follow_up_probe):
         """Ask a question that generates references."""
         async with vcr_client() as client:
             result = await client.chat.ask(

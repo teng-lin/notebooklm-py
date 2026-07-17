@@ -441,6 +441,27 @@ def mock_get_conversation_id(httpx_mock, build_rpc_response):
 
 
 @pytest.fixture
+def legacy_vcr_follow_up_probe(monkeypatch):
+    """Supply the pre-existing turn omitted from chat cassettes recorded before #1973.
+
+    The old recordings contain the current-conversation lookup and chat POST,
+    but not the new pre-POST ``khqZz`` probe. Keep those recordings immutable;
+    dedicated characterization tests exercise the real probe request and its
+    empty, non-empty, and failure branches.
+    """
+    from notebooklm._chat import ChatAPI
+
+    original = ChatAPI.get_conversation_turns
+
+    async def _get_conversation_turns(self, notebook_id, conversation_id=None, limit=100):
+        if limit == 1:
+            return [[[None, None, 1, "Existing cassette conversation turn"]]]
+        return await original(self, notebook_id, conversation_id, limit)
+
+    monkeypatch.setattr(ChatAPI, "get_conversation_turns", _get_conversation_turns)
+
+
+@pytest.fixture
 def auth_tokens():
     """Canonical mock ``AuthTokens`` for unit tests.
 

@@ -104,7 +104,7 @@ class TestChatGoldenDecoded:
     @pytest.mark.vcr
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette("chat_ask.yaml", match_on=_CHAT_MATCH_ON)
-    async def test_ask_decoded_golden(self):
+    async def test_ask_decoded_golden(self, legacy_vcr_follow_up_probe):
         """``chat.ask`` decodes the recorded answer / conversation / references."""
         async with vcr_client() as client:
             result = await client.chat.ask(
@@ -160,7 +160,7 @@ class TestChatGoldenDecoded:
     @pytest.mark.vcr
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette("chat_ask_with_references.yaml", match_on=_CHAT_MATCH_ON)
-    async def test_ask_with_references_decoded_golden(self):
+    async def test_ask_with_references_decoded_golden(self, legacy_vcr_follow_up_probe):
         """``chat.ask`` decodes per-reference offsets AND server relevance scores.
 
         This cassette additionally exercises the ``score`` slot (server-side

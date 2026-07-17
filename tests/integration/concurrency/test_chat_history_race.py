@@ -73,6 +73,13 @@ def _build_get_conversation_id_response_body(conversation_id: str) -> str:
     return f")]}}'\n{len(chunk)}\n{chunk}\n"
 
 
+def _build_get_conversation_turns_response_body() -> str:
+    """Build a minimal ``khqZz`` response containing one existing turn."""
+    inner = json.dumps([[[None, None, 1, "Existing question?"]]])
+    chunk = json.dumps(["wrb.fr", RPCMethod.GET_CONVERSATION_TURNS.value, inner, None, None])
+    return f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+
 def _parse_chat_params(request: httpx.Request) -> list:
     """Decode the params list out of a chat POST body.
 
@@ -156,6 +163,13 @@ class _SerializingChatTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         if "batchexecute" in str(request.url):
             notebook_id = _extract_source_path_notebook_id(request)
+            if "rpcids=khqZz" in str(request.url):
+                self._events.append(("khqzz", notebook_id, None))
+                return httpx.Response(
+                    200,
+                    text=_build_get_conversation_turns_response_body(),
+                    request=request,
+                )
             self._events.append(("hptbtc", notebook_id, None))
             conversation_id = self._conversation_ids_by_notebook.get(
                 notebook_id,
