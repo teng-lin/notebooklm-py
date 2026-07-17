@@ -457,7 +457,7 @@ class ChatAPI(LoopBoundPrimitive):
                                         turns_data, source="_chat.ask.follow_up_probe"
                                     )
                                 )
-                            except Exception as e:  # noqa: BLE001 - metadata probe is best-effort
+                            except (ChatError, NetworkError, UnknownRPCMethodError) as e:
                                 # Preserve ask availability when the metadata probe
                                 # fails; an existing id remains the safest fallback.
                                 logger.warning(
