@@ -388,7 +388,7 @@ def build_rpc_response():
 
 @pytest.fixture
 def mock_get_conversation_id(httpx_mock, build_rpc_response):
-    """Register a batchexecute response for ``ChatAPI.get_conversation_id``.
+    """Register batchexecute responses for an existing conversation.
 
     After issue #659, ``ChatAPI.ask`` calls ``get_conversation_id``
     (wire-level ``hPTbtc``) post-ask for new conversations to recover the
@@ -396,7 +396,8 @@ def mock_get_conversation_id(httpx_mock, build_rpc_response):
     chat response. Any test that exercises the new-conversation path
     through ``client.chat.ask(...)`` without a ``conversation_id``
     argument must register a response, or the SDK will time out retrying
-    the unmocked call.
+    the unmocked call. The optional ``khqZz`` response gives that id one
+    existing turn when ``ask`` probes implicit follow-up state (#1973).
 
     Usage::
 
@@ -422,6 +423,17 @@ def mock_get_conversation_id(httpx_mock, build_rpc_response):
             content=response.encode(),
             method="POST",
             is_reusable=reusable,
+        )
+        turns_response = build_rpc_response(
+            RPCMethod.GET_CONVERSATION_TURNS,
+            [[[None, None, 1, "Existing question?"]]],
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=turns_response.encode(),
+            method="POST",
+            is_optional=True,
+            is_reusable=True,
         )
         return conv_id
 

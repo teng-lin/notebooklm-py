@@ -439,10 +439,33 @@ class ChatAPI(LoopBoundPrimitive):
                     # conversation for the null POST, so drop the override and
                     # recover the real id post-POST, not the deleted one (#1875).
                     override = None if current_id in self._deleted_conversations else current_id
-                    # Resuming a live current conversation is a genuine
-                    # follow-up; a deleted one makes the server start fresh, so
-                    # it is not (override is None ⇒ new conversation) (#1965).
-                    is_follow_up = override is not None
+                    # A current id can refer to an auto-created, zero-turn
+                    # conversation. Only classify it as a follow-up when it has
+                    # local or server-side history (#1973).
+                    is_follow_up = False
+                    if override is not None:
+                        cached_turns = self._cache.get_cached_conversation(override)
+                        if cached_turns:
+                            is_follow_up = True
+                        else:
+                            try:
+                                turns_data = await self.get_conversation_turns(
+                                    notebook_id, override, limit=1
+                                )
+                                is_follow_up = bool(
+                                    unwrap_conversation_turns(
+                                        turns_data, source="_chat.ask.follow_up_probe"
+                                    )
+                                )
+                            except Exception as e:  # noqa: BLE001 - metadata probe is best-effort
+                                # Preserve ask availability when the metadata probe
+                                # fails; an existing id remains the safest fallback.
+                                logger.warning(
+                                    "Failed to inspect current conversation %s before ask: %s",
+                                    override,
+                                    e,
+                                )
+                                is_follow_up = True
                     posted = await perform_request(
                         conversation_history=None,
                         active_conversation_id=None,
