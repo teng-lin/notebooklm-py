@@ -80,6 +80,7 @@ from .exceptions import (
     LabelNotFoundError,
     MindMapError,
     MindMapNotFoundError,
+    MissingDependencyError,
     # Network
     NetworkError,
     # Idempotency
@@ -233,6 +234,7 @@ __all__ = [
     "NotebookLMError",
     "ValidationError",
     "ConfigurationError",
+    "MissingDependencyError",
     # Cross-domain umbrellas
     "NotFoundError",
     # RPC/Network Exceptions

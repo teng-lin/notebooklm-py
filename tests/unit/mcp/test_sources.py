@@ -498,9 +498,12 @@ async def test_source_read_invalid_format_rejected(mcp_call, mock_client) -> Non
     assert "text" in msg and "markdown" in msg
 
 
-async def test_source_read_markdown_missing_extra_is_config_error(mcp_call, mock_client) -> None:
-    """``output_format='markdown'`` without the ``markdownify`` extra surfaces a CONFIG
-    error (with the install hint), not a bug-class UNEXPECTED."""
+async def test_source_read_markdown_missing_extra_is_dependency_error(
+    mcp_call, mock_client
+) -> None:
+    """``output_format='markdown'`` without the ``markdownify`` extra surfaces a
+    DEPENDENCY error whose hint names the install command — NOT the CONFIG
+    auth/storage hint, and not a bug-class UNEXPECTED (#1959)."""
     mock_client.sources.get_or_none = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Doc"))
     mock_client.sources.get_fulltext = AsyncMock(
         side_effect=ImportError(
@@ -514,18 +517,22 @@ async def test_source_read_markdown_missing_extra_is_config_error(mcp_call, mock
             {"notebook": NB_ID, "source": SRC_ID, "output_format": "markdown"},
         )
     msg = str(excinfo.value)
-    assert "CONFIG" in msg
-    assert "markdownify" in msg  # the actionable install hint survives
+    assert "DEPENDENCY" in msg
+    assert "pip install" in msg  # the actionable install hint survives
+    # The wrong remediation from the old CONFIG remap must be gone (#1959).
+    assert "auth profile" not in msg
 
 
 async def test_source_read_text_import_error_not_remapped(mcp_call, mock_client) -> None:
     """An ImportError on the TEXT path is genuinely unexpected — it must NOT be
-    relabeled CONFIG (the remap is restricted to the markdown case)."""
+    relabeled CONFIG/DEPENDENCY (the remap is restricted to the markdown case)."""
     mock_client.sources.get_or_none = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Doc"))
     mock_client.sources.get_fulltext = AsyncMock(side_effect=ImportError("unrelated boom"))
     with pytest.raises(ToolError) as excinfo:
         await mcp_call("source_read", {"notebook": NB_ID, "source": SRC_ID})
-    assert "CONFIG" not in str(excinfo.value)
+    msg = str(excinfo.value)
+    assert "CONFIG" not in msg
+    assert "DEPENDENCY" not in msg
 
 
 async def test_source_read_not_ready_returns_null_without_fetch(mcp_call, mock_client) -> None:

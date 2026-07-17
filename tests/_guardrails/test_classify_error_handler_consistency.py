@@ -38,6 +38,9 @@ _CATEGORY_TO_CLI_CODE: dict[ErrorCategory, str] = {
     ErrorCategory.RATE_LIMITED: "RATE_LIMITED",
     ErrorCategory.VALIDATION: "VALIDATION_ERROR",
     ErrorCategory.CONFIG: "CONFIG_ERROR",
+    # MissingDependencyError subclasses ConfigurationError, so the CLI handler's
+    # ``except ConfigurationError`` folds DEPENDENCY into CONFIG_ERROR.
+    ErrorCategory.DEPENDENCY: "CONFIG_ERROR",
     ErrorCategory.NETWORK: "NETWORK_ERROR",
     ErrorCategory.NOTEBOOK_LIMIT: "NOTEBOOK_LIMIT",
     ErrorCategory.ARTIFACT_TIMEOUT: "ARTIFACT_TIMEOUT",
@@ -60,6 +63,7 @@ _EXEMPLARS: list[tuple[ErrorCategory, BaseException]] = [
     (ErrorCategory.RATE_LIMITED, exc.RateLimitError("slow down", retry_after=5)),
     (ErrorCategory.VALIDATION, exc.ValidationError("bad input")),
     (ErrorCategory.CONFIG, exc.ConfigurationError("missing config")),
+    (ErrorCategory.DEPENDENCY, exc.MissingDependencyError("markdownify not installed")),
     (ErrorCategory.NETWORK, exc.NetworkError("connection refused")),
     (ErrorCategory.NOTEBOOK_LIMIT, exc.NotebookLimitError(499, limit=500)),
     (ErrorCategory.ARTIFACT_TIMEOUT, exc.ArtifactTimeoutError("nb-1", "task-1", 30.0)),

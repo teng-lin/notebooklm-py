@@ -37,6 +37,7 @@ _FATAL_CATEGORIES = frozenset(
         ErrorCategory.AUTH,
         ErrorCategory.RATE_LIMITED,
         ErrorCategory.CONFIG,
+        ErrorCategory.DEPENDENCY,
         ErrorCategory.NETWORK,
         ErrorCategory.ARTIFACT_TIMEOUT,
         ErrorCategory.TIMEOUT,

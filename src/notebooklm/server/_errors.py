@@ -105,6 +105,7 @@ CATEGORY_STATUS: dict[ErrorCategory, int] = {
     ErrorCategory.RATE_LIMITED: 429,
     ErrorCategory.VALIDATION: 400,
     ErrorCategory.CONFIG: 500,
+    ErrorCategory.DEPENDENCY: 500,
     ErrorCategory.NETWORK: 502,
     ErrorCategory.NOTEBOOK_LIMIT: 409,
     ErrorCategory.ARTIFACT_TIMEOUT: 504,

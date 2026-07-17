@@ -19,6 +19,7 @@ The category set is deliberately granular enough that the CLI's
 ``RATE_LIMITED``            ``RATE_LIMITED``
 ``VALIDATION``              ``VALIDATION_ERROR``
 ``CONFIG``                  ``CONFIG_ERROR``
+``DEPENDENCY``              ``CONFIG_ERROR`` (missing optional extra; folds into CONFIG_ERROR)
 ``NETWORK``                 ``NETWORK_ERROR``
 ``NOTEBOOK_LIMIT``          ``NOTEBOOK_LIMIT``
 ``ARTIFACT_TIMEOUT``        ``ARTIFACT_TIMEOUT``
@@ -59,6 +60,7 @@ from ..exceptions import (
     AuthError,
     ClientError,
     ConfigurationError,
+    MissingDependencyError,
     NetworkError,
     NotebookLimitError,
     NotebookLMError,
@@ -93,6 +95,11 @@ class ErrorCategory(Enum):
     VALIDATION = "validation"
     #: Missing or invalid configuration (auth storage, env).
     CONFIG = "config"
+    #: A required *optional* dependency (an install extra) is not installed —
+    #: e.g. ``output_format="markdown"`` needs the ``markdownify`` extra. Distinct
+    #: from the generic :attr:`CONFIG` (a bad auth/storage setup) so adapters can
+    #: surface an *install the extra* hint instead of the auth/storage one (#1959).
+    DEPENDENCY = "dependency"
     #: Connection / DNS / pre-RPC transport failure.
     NETWORK = "network"
     #: Notebook quota appears exhausted.
@@ -142,6 +149,9 @@ CATEGORY_HINTS: dict[ErrorCategory, str | None] = {
     ErrorCategory.RATE_LIMITED: "Back off and retry after a short delay.",
     ErrorCategory.VALIDATION: "Fix the invalid argument and retry; this will not succeed unchanged.",
     ErrorCategory.CONFIG: "Check the auth profile / storage configuration.",
+    ErrorCategory.DEPENDENCY: (
+        "Install the optional dependency, then retry (e.g. pip install 'notebooklm-py[markdown]')."
+    ),
     ErrorCategory.NETWORK: "Transient connectivity issue; retry.",
     ErrorCategory.NOTEBOOK_LIMIT: "Notebook quota is exhausted; delete an existing notebook first.",
     ErrorCategory.ARTIFACT_TIMEOUT: (
@@ -296,6 +306,11 @@ def _category_for(exc: BaseException) -> ErrorCategory:
     # ResearchTaskMismatchError subclasses ValidationError; caught here.
     if isinstance(exc, ValidationError):
         return ErrorCategory.VALIDATION
+    # MissingDependency subclasses ConfigurationError; it MUST precede the
+    # ConfigurationError branch so a missing optional extra gets the "install the
+    # extra" hint rather than the auth/storage one (#1959).
+    if isinstance(exc, MissingDependencyError):
+        return ErrorCategory.DEPENDENCY
     if isinstance(exc, ConfigurationError):
         return ErrorCategory.CONFIG
 

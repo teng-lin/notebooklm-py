@@ -369,7 +369,8 @@ async def get_source_content(
     ``output_format`` (``text`` default / ``markdown``) selects the extracted-body
     format for ``detail=full`` (ignored for ``summary``); ``markdown`` needs the
     server's ``markdownify`` extra and otherwise fails with a deterministic
-    ``config`` error. Mirrors the MCP ``source_read`` tool's ``output_format``.
+    ``dependency`` error (HTTP 500). Mirrors the MCP ``source_read`` tool's
+    ``output_format``.
 
     ``detail=summary`` returns the AI source-guide digest ``{summary, keywords}``
     for cheap low-token triage.

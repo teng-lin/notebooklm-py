@@ -130,8 +130,9 @@ _CORS_ORIGIN = {"Access-Control-Allow-Origin": "*"}
 #: MCP layer must NOT import ``notebooklm.server`` (it pulls ``fastapi``; the
 #: boundary is enforced by ``tests/_guardrails/test_mcp_boundary.py``). Deliberate
 #: deviations from the REST table (because these routes are a *gateway* to the
-#: NotebookLM backend, not the backend itself): ``AUTH`` / ``CONFIG`` → **502**, not
-#: 401/500 — they are authenticated by the signed token, so a *server-side* broken
+#: NotebookLM backend, not the backend itself): ``AUTH`` / ``CONFIG`` /
+#: ``DEPENDENCY`` → **502**, not 401/500 — they are authenticated by the signed
+#: token, so a *server-side* broken
 #: Google session is an upstream-dependency failure (Bad Gateway) the token-bearing
 #: caller cannot fix by re-authenticating (401 would be misleading); and
 #: ``LIBRARY`` → **502**, not 500, for the same gateway reason (an unclassified
@@ -144,6 +145,7 @@ _FILE_ROUTE_STATUS: dict[ErrorCategory, int] = {
     ErrorCategory.RATE_LIMITED: 429,
     ErrorCategory.VALIDATION: 400,
     ErrorCategory.CONFIG: 502,
+    ErrorCategory.DEPENDENCY: 502,
     ErrorCategory.NETWORK: 502,
     ErrorCategory.NOTEBOOK_LIMIT: 409,
     ErrorCategory.ARTIFACT_TIMEOUT: 504,

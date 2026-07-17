@@ -72,8 +72,10 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
     #
     # ``exceptions.py`` is the canonical public exception home — ``__all__`` and
     # the public-surface manifest pin every class to ``notebooklm.exceptions``, so
-    # the classes cannot move to sibling files without forking that home.
-    "exceptions.py": 1512,
+    # the classes cannot move to sibling files without forking that home. Bumped
+    # 1512 -> 1524 for ``MissingDependencyError`` (the new DEPENDENCY category's
+    # public exception; #1959) — an irreducible addition to this home.
+    "exceptions.py": 1524,
     # ``mcp/tools/sources.py`` was allowlisted at 1020 (over the 1000-line budget after
     # #1871's shared source-policy wiring + the await_upload era). #1890 folded
     # source_add_and_wait + source_upload_bytes BACK into source_add — removing the two

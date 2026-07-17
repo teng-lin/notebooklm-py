@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from ..exceptions import ConfigurationError, SourceNotFoundError, ValidationError
+from ..exceptions import MissingDependencyError, SourceNotFoundError, ValidationError
 
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
@@ -187,7 +187,8 @@ async def execute_source_read(client: NotebookLMClient, plan: SourceReadPlan) ->
       "no content".
     * ``output_format='markdown'`` needs the optional ``markdownify`` extra; an
       :class:`ImportError` on that path is remapped to a deterministic
-      :class:`ConfigurationError` (the text path re-raises — a genuine bug).
+      :class:`~notebooklm.exceptions.MissingDependencyError` so adapters surface
+      an *install the extra* hint (#1959); the text path re-raises — a genuine bug.
     """
     if plan.max_chars is not None and plan.max_chars < 0:
         raise ValidationError(f"max_chars must be >= 0; got {plan.max_chars}")
@@ -216,7 +217,7 @@ async def execute_source_read(client: NotebookLMClient, plan: SourceReadPlan) ->
         except ImportError as exc:
             if plan.output_format != "markdown":
                 raise
-            raise ConfigurationError(str(exc)) from exc
+            raise MissingDependencyError(str(exc)) from exc
         content = fulltext_result.fulltext.content or None
         char_count = fulltext_result.fulltext.char_count
 

@@ -272,7 +272,7 @@ def register(mcp: Any) -> None:
             # + max_chars/offset windowing live in the shared ``execute_source_read``
             # core (also driven by the REST content route), so both surfaces stay in
             # lock-step. A resolved-but-missing source raises NOT_FOUND; a not-ready
-            # source returns content=None; the markdown ImportError→CONFIG remap and
+            # source returns content=None; the markdown ImportError→DEPENDENCY remap and
             # the default cap are handled inside the core.
             read = await content_core.execute_source_read(
                 client,

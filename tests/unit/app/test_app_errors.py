@@ -84,6 +84,9 @@ def test_every_library_exception_classifies_as_a_library_category(cls: type) -> 
         (exc.AuthError("expired"), ErrorCategory.AUTH, False),
         (exc.ValidationError("bad"), ErrorCategory.VALIDATION, False),
         (exc.ConfigurationError("no auth"), ErrorCategory.CONFIG, False),
+        # A missing optional extra classifies as DEPENDENCY (not CONFIG) even
+        # though it subclasses ConfigurationError — most-specific-first (#1959).
+        (exc.MissingDependencyError("markdownify missing"), ErrorCategory.DEPENDENCY, False),
         (exc.SourceNotFoundError("src"), ErrorCategory.NOT_FOUND, False),
         (exc.NotebookNotFoundError("nb"), ErrorCategory.NOT_FOUND, False),
         (exc.DecodingError("schema drift"), ErrorCategory.RPC, False),
@@ -290,6 +293,7 @@ def test_retriable_only_for_transient_categories() -> None:
         ErrorCategory.AUTH: exc.AuthError("x"),
         ErrorCategory.VALIDATION: exc.ValidationError("x"),
         ErrorCategory.CONFIG: exc.ConfigurationError("x"),
+        ErrorCategory.DEPENDENCY: exc.MissingDependencyError("x"),
         ErrorCategory.NOTEBOOK_LIMIT: exc.NotebookLimitError(1),
         ErrorCategory.RPC: exc.DecodingError("x"),
         ErrorCategory.LIBRARY: exc.NotebookLMError("x"),
@@ -343,6 +347,12 @@ def test_category_hints_are_surface_neutral() -> None:
             )
     assert CATEGORY_HINTS[ErrorCategory.AUTH] == "Re-authenticate and retry."
     assert "task status" in CATEGORY_HINTS[ErrorCategory.ARTIFACT_TIMEOUT]
+    # The DEPENDENCY hint must name the install command, NOT the auth/storage
+    # remediation the CONFIG hint carries (#1959).
+    dep_hint = CATEGORY_HINTS[ErrorCategory.DEPENDENCY]
+    assert dep_hint is not None
+    assert "pip install" in dep_hint and "markdown" in dep_hint
+    assert dep_hint != CATEGORY_HINTS[ErrorCategory.CONFIG]
 
 
 # --- did_you_mean_hint (issue #1787) ---------------------------------------

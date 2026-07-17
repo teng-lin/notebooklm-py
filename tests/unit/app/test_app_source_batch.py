@@ -23,6 +23,7 @@ _EXEMPLARS: list[tuple[ErrorCategory, BaseException]] = [
     (ErrorCategory.RATE_LIMITED, exc.RateLimitError("slow down", retry_after=5)),
     (ErrorCategory.VALIDATION, exc.ValidationError("bad input")),
     (ErrorCategory.CONFIG, exc.ConfigurationError("missing config")),
+    (ErrorCategory.DEPENDENCY, exc.MissingDependencyError("markdownify not installed")),
     (ErrorCategory.NETWORK, exc.NetworkError("connection refused")),
     (ErrorCategory.NOTEBOOK_LIMIT, exc.NotebookLimitError(499, limit=500)),
     (ErrorCategory.ARTIFACT_TIMEOUT, exc.ArtifactTimeoutError("nb-1", "task-1", 30.0)),
@@ -44,6 +45,7 @@ _EXPECTED_FATAL: dict[ErrorCategory, bool] = {
     ErrorCategory.RATE_LIMITED: True,  # 429
     ErrorCategory.VALIDATION: False,  # 400
     ErrorCategory.CONFIG: True,  # 500
+    ErrorCategory.DEPENDENCY: True,  # 500
     ErrorCategory.NETWORK: True,  # 502
     ErrorCategory.NOTEBOOK_LIMIT: False,  # 409
     ErrorCategory.ARTIFACT_TIMEOUT: True,  # 504

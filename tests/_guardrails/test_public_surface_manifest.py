@@ -407,6 +407,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "LabelNotFoundError",
     "MindMapError",
     "MindMapNotFoundError",
+    "MissingDependencyError",
     "NetworkError",
     "NonIdempotentRetryError",
     "NotFoundError",

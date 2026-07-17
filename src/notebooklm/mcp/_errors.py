@@ -66,6 +66,7 @@ _CATEGORY_CODES: dict[ErrorCategory, str] = {
     ErrorCategory.RATE_LIMITED: "RATE_LIMITED",
     ErrorCategory.VALIDATION: "VALIDATION",
     ErrorCategory.CONFIG: "CONFIG",
+    ErrorCategory.DEPENDENCY: "DEPENDENCY",
     ErrorCategory.NETWORK: "NETWORK",
     ErrorCategory.NOTEBOOK_LIMIT: "NOTEBOOK_LIMIT",
     ErrorCategory.ARTIFACT_TIMEOUT: "ARTIFACT_TIMEOUT",
