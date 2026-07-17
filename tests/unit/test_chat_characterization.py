@@ -1126,6 +1126,49 @@ class TestAskServerAssignedConversationId:
         assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
 
     @pytest.mark.asyncio
+    async def test_server_probe_overrides_stale_cached_turns(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A warm cache cannot override an externally emptied conversation."""
+        import json
+        import re
+
+        current_id = "externally-emptied-conversation"
+        inner_json = json.dumps(
+            [["Fresh answer.", None, ["stream-id", 12345], None, [[], None, None, [], 1]]]
+        )
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=f")]}}'\n{len(chunk_json)}\n{chunk_json}\n".encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_LAST_CONVERSATION_ID, [[[current_id]]]
+            ).encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(RPCMethod.GET_CONVERSATION_TURNS, [[]]).encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            client.chat._cache.cache_conversation_turn(
+                current_id, "Cached question?", "Cached answer.", turn_number=1
+            )
+            result = await client.chat.ask("nb_123", "Fresh question?", source_ids=["src_001"])
+
+        assert result.is_follow_up is False
+        assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
+
+    @pytest.mark.asyncio
     async def test_conversation_probe_failure_raises_before_chat_post(
         self,
         auth_tokens,
