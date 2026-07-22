@@ -34,6 +34,8 @@ def _handle_rookiepy_error(e: Exception, browser_name: str) -> str:
     if "keychain" in msg or "decrypt" in msg:
         return (
             f"[red]Could not decrypt {browser_name} cookies.[/red]\n"
-            "On macOS, allow Keychain access when prompted, or try a different browser."
+            "On macOS, allow Keychain access when prompted. On Windows, DPAPI cookie "
+            "decryption requires the same interactive user session that owns the browser "
+            "profile. Otherwise, try a different browser."
         )
     return f"[red]Failed to read cookies from {browser_name}:[/red] {e}"

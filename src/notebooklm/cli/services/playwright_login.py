@@ -458,17 +458,29 @@ def run_playwright_login(plan: PlaywrightLoginPlan, io: LoginIO) -> None:
     io.emit(f"[yellow]Opening {browser_label} for Google login...[/yellow]")
     io.emit(f"[dim]Using persistent profile: {plan.browser_profile}[/dim]")
 
-    result: CaptureResult = run_browser_capture(
-        BrowserCapturePlan(
-            browser=plan.browser,
-            browser_profile=plan.browser_profile,
-            storage_path=plan.storage_path,
-            include_domains=plan.include_domains,
-        ),
-        io,
-        headless=False,
-        interactive=True,
-    )
+    try:
+        result: CaptureResult = run_browser_capture(
+            BrowserCapturePlan(
+                browser=plan.browser,
+                browser_profile=plan.browser_profile,
+                storage_path=plan.storage_path,
+                include_domains=plan.include_domains,
+            ),
+            io,
+            headless=False,
+            interactive=True,
+        )
+    except Exception as exc:
+        if sys.platform == "win32" and "spawn unknown" in str(exc).lower():
+            io.emit(
+                "[red]Chromium could not start in this Windows session.[/red]\n"
+                "Playwright needs an interactive desktop or window station to open the "
+                "login browser.\n"
+                "Run notebooklm login from an interactive Windows session, or, if the "
+                "browser profile is accessible, try: notebooklm login --browser-cookies chrome"
+            )
+            io.fail(1)
+        raise
 
     repair_playwright_account_metadata(plan.storage_path, io, page_html=result.page_html)
 
