@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `notebooklm login` now recognizes `notebook.google.com` as the personal app landing
+  host after the Gemini Notebook rebrand, preventing successful browser sign-ins from
+  timing out after five minutes. Enterprise and RPC base-host validation remain
+  unchanged. (#2013)
 - `server_info(include_account=True)` (MCP tool and the REST `GET /v1/server/info`
   route) now adds an `output_language_is_default` boolean to the account block. When
   the account has never set an explicit output language, `output_language` is `null`

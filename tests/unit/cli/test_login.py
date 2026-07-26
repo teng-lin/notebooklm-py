@@ -67,6 +67,7 @@ class TestLoginUrlValidation:
         )
 
         assert _url_matches_base_host("https://notebooklm.google.com/notebook/abc")
+        assert _url_matches_base_host("https://notebook.google.com/notebook/abc")
         assert not _url_matches_base_host(
             "https://example.com/path?next=https://notebooklm.google.com/"
         )
@@ -80,6 +81,7 @@ class TestLoginUrlValidation:
 
         assert _url_matches_base_host("https://notebooklm.cloud.google.com/notebook/abc")
         assert not _url_matches_base_host("https://notebooklm.google.com/notebook/abc")
+        assert not _url_matches_base_host("https://notebook.google.com/notebook/abc")
 
     def test_connection_error_help_uses_enterprise_base_host(self, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
@@ -410,13 +412,13 @@ class TestLoginCommand:
     ):
         """When the initial page is on accounts.google.com, wait_for_url is called."""
         mock_page = mock_login_browser_with_storage
-        # Initial URL is on Google login, then wait_for_url "succeeds" and the
-        # next reads of mock_page.url return the NotebookLM host for the
-        # subsequent cookie-forcing navigation.
+        # Initial URL is on Google login, then wait_for_url reaches the personal
+        # app alias used by the Gemini Notebook rebrand.
         mock_page.url = "https://accounts.google.com/signin"
 
-        def succeed(url, **kwargs):
-            mock_page.url = "https://notebooklm.google.com/"
+        def succeed(predicate, **kwargs):
+            assert predicate("https://notebook.google.com/")
+            mock_page.url = "https://notebook.google.com/"
 
         mock_page.wait_for_url.side_effect = succeed
 

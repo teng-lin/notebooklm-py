@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 from urllib.parse import urlparse
 
 from .._atomic_io import atomic_write_json
-from ..config import get_base_host, get_base_url
+from ..config import PERSONAL_BASE_HOST, get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError
 from .cookie_policy import build_cookie_domain_allowlist
 
@@ -340,9 +340,12 @@ def is_navigation_interrupted_error(error: str | Exception) -> bool:
 
 
 def url_matches_base_host(url: str) -> bool:
-    """Return True when ``url`` is on the configured NotebookLM host."""
+    """Return True when ``url`` is on the configured NotebookLM host or personal-app alias."""
     current_host = (urlparse(url).hostname or "").lower()
-    return current_host == get_base_host().lower()
+    base_host = get_base_host().lower()
+    return current_host == base_host or (
+        base_host == PERSONAL_BASE_HOST and current_host == "notebook.google.com"
+    )
 
 
 def connection_error_help() -> str:
@@ -621,7 +624,7 @@ def run_browser_capture(
                     # host. Cookies are read later at storage_state() (after the
                     # cookie-forcing round-trips), so resolving early is safe;
                     # page.content() at capture time is best-effort/None-tolerant.
-                    page.wait_for_url(f"{get_base_url()}/**", wait_until="commit", timeout=300_000)
+                    page.wait_for_url(url_matches_base_host, wait_until="commit", timeout=300_000)
                 except PlaywrightTimeout:
                     io.emit(
                         "[red]Login not detected within 5 minutes.[/red]\n"
