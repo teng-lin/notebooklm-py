@@ -105,10 +105,10 @@ def test_master_token_capture_uses_default_windows_policy(monkeypatch, cdp_url):
         current_policy = policy
         transitions.append(policy)
 
-    monkeypatch.setattr(browser_capture.sys, "platform", "win32")
     monkeypatch.setattr(asyncio, "get_event_loop_policy", get_policy)
     monkeypatch.setattr(asyncio, "set_event_loop_policy", set_policy)
     monkeypatch.setattr(asyncio, "DefaultEventLoopPolicy", lambda: default_policy)
+    monkeypatch.setattr(browser_capture.sys, "platform", "win32")
 
     with (
         patch(
