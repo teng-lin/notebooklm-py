@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `notebooklm login --master-token` now starts Playwright with the required Windows
+  event-loop policy, avoiding a pre-browser `NotImplementedError` (#2011).
 - `notebooklm login` now recognizes `notebook.google.com` as the personal app landing
   host after the Gemini Notebook rebrand, preventing successful browser sign-ins from
   timing out after five minutes. Enterprise and RPC base-host validation remain
