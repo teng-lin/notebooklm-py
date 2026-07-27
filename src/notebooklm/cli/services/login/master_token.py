@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from ...._auth.browser_capture import sync_playwright_context  # noqa: TID252
 from ....auth import (  # noqa: TID252 (package-relative; public boundary, not _auth.*)
     MasterTokenError,
     exchange_master_token,
@@ -125,14 +126,14 @@ def capture_oauth_token(
     Requires the ``[browser]`` extra. Attaches to a running Chrome via ``cdp_url``
     when given, else launches a headed Playwright browser."""
     try:
-        from playwright.sync_api import sync_playwright  # noqa: PLC0415
+        import playwright.sync_api  # noqa: F401, PLC0415
     except ImportError as exc:  # pragma: no cover - import guard
         raise MasterTokenError(
             "Browser-assisted oauth_token capture needs the [browser] extra "
             "(pip install 'notebooklm-py[browser]'), or pass --oauth-token manually."
         ) from exc
 
-    with sync_playwright() as p:
+    with sync_playwright_context() as p:
         # Track what WE created so teardown never closes the user's own browser/
         # context (CDP adopts the user's live session) and always runs on error.
         owns_browser = owns_context = False
