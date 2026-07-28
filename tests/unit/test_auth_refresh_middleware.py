@@ -46,6 +46,7 @@ import pytest
 
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
+from notebooklm._middleware.context import RPC_CONTEXT_RETRY_DEADLINE
 from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._runtime.helpers import is_auth_error
@@ -411,6 +412,41 @@ async def test_refresh_retry_delay_zero_skips_sleep() -> None:
     await chain(make_request())
 
     assert slept == []
+
+
+@pytest.mark.asyncio
+async def test_refresh_retry_delay_clamped_by_inherited_deadline() -> None:
+    """Issue #1873: the wire-401 post-refresh sleep is clamped to the aggregate.
+
+    When the RPC executor seeds ``RPC_CONTEXT_RETRY_DEADLINE``, the auth-refresh
+    layer must clamp its post-refresh sleep to the time remaining since T0 —
+    otherwise a ``refresh_retry_delay`` larger than the remaining budget would
+    re-POST past the logical call's deadline (mirroring the decode-time path).
+    """
+    from notebooklm._deadline import RuntimeDeadline
+
+    clock = [1000.0]
+
+    def monotonic() -> float:
+        return clock[0]
+
+    # 10s aggregate budget; advance the clock so only 2s remain when the
+    # post-refresh sleep is computed.
+    deadline = RuntimeDeadline.start(10.0, monotonic=monotonic)
+    clock[0] = 1008.0
+
+    boom = _auth_error()
+    terminal, _calls = _scripted_terminal([boom, httpx.Response(200, content=b"ok")])
+    sleep, slept = _recording_sleep()
+
+    # refresh_retry_delay (100s) far exceeds the 2s remaining budget.
+    middleware = _make_middleware(refresh_retry_delay=100.0, sleep=sleep)
+    chain = build_chain([middleware], terminal)
+
+    await chain(make_request(context={RPC_CONTEXT_RETRY_DEADLINE: deadline}))
+
+    # Clamped to the remaining 2s, not the full 100s.
+    assert slept == [2.0]
 
 
 # ---------------------------------------------------------------------------

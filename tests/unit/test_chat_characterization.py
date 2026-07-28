@@ -589,7 +589,9 @@ class TestChatReferences:
             )
         assert result.answer == "This is a valid answer returned without the answer marker."
         assert result.conversation_id is not None
-        assert result.is_follow_up is False
+        # The pre-POST hPTbtc resolve returns a current conversation id, so this
+        # null ask resumes an existing conversation → a follow-up (#1965).
+        assert result.is_follow_up is True
 
     @pytest.mark.asyncio
     async def test_ask_prefers_marked_over_unmarked_in_streaming_response(
@@ -655,6 +657,7 @@ class TestChatAskErrorHandling:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test ask() raises NetworkError on httpx.TimeoutException."""
         import re
@@ -663,6 +666,9 @@ class TestChatAskErrorHandling:
 
         from notebooklm.exceptions import NetworkError
 
+        # A null ask resolves the notebook's current conversation via hPTbtc
+        # before the POST (issue #1875); mock it so the POST is what fails.
+        mock_get_conversation_id()
         httpx_mock.add_exception(
             httpx.TimeoutException("timed out"),
             url=re.compile(r".*GenerateFreeFormStreamed.*"),
@@ -682,6 +688,7 @@ class TestChatAskErrorHandling:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test ask() raises ChatError on httpx.HTTPStatusError.
         After the chat-path refactor, the chat path uses
@@ -696,6 +703,9 @@ class TestChatAskErrorHandling:
 
         from notebooklm.exceptions import ChatError
 
+        # A null ask resolves the notebook's current conversation via hPTbtc
+        # before the POST (issue #1875); mock it so the POST is what fails.
+        mock_get_conversation_id()
         httpx_mock.add_response(
             url=re.compile(r".*GenerateFreeFormStreamed.*"),
             status_code=500,
@@ -714,6 +724,7 @@ class TestChatAskErrorHandling:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test ask() raises NetworkError on httpx.RequestError."""
         import re
@@ -722,6 +733,9 @@ class TestChatAskErrorHandling:
 
         from notebooklm.exceptions import NetworkError
 
+        # A null ask resolves the notebook's current conversation via hPTbtc
+        # before the POST (issue #1875); mock it so the POST is what fails.
+        mock_get_conversation_id()
         httpx_mock.add_exception(
             httpx.ConnectError("connection refused"),
             url=re.compile(r".*GenerateFreeFormStreamed.*"),
@@ -977,16 +991,22 @@ class TestAskServerAssignedConversationId:
             content=chat_response_body.encode(),
             method="POST",
         )
-        # Post-ask hPTbtc returns the REAL conversation_id. AskResult
-        # must adopt this, NOT first[2][0].
-        real_conv = "real-1111-2222-3333-444444444444"
-        hptbtc_response = build_rpc_response(
-            RPCMethod.GET_LAST_CONVERSATION_ID,
-            [[[real_conv]]],
-        )
+        # Genuine new conversation: the pre-POST hPTbtc resolve finds no current
+        # conversation (empty envelope → None), so ask() creates a fresh one and
+        # keeps is_follow_up False (#1965)...
         httpx_mock.add_response(
-            url=re.compile(r".*batchexecute.*"),
-            content=hptbtc_response.encode(),
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(RPCMethod.GET_LAST_CONVERSATION_ID, [[[]]]).encode(),
+            method="POST",
+        )
+        # ...then recovers the REAL conversation_id via the post-POST hPTbtc
+        # round-trip. AskResult must adopt this, NOT first[2][0].
+        real_conv = "real-1111-2222-3333-444444444444"
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_LAST_CONVERSATION_ID, [[[real_conv]]]
+            ).encode(),
             method="POST",
         )
         async with NotebookLMClient(auth_tokens) as client:
@@ -1016,6 +1036,170 @@ class TestAskServerAssignedConversationId:
         # And the SDK must have made the hPTbtc call.
         assert any("batchexecute" in str(r.url) for r in httpx_mock.get_requests()), (
             "SDK must call hPTbtc after a new-conversation ask to obtain the real conversation_id."
+        )
+
+    @pytest.mark.asyncio
+    async def test_empty_current_conversation_is_not_a_follow_up(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """An auto-created current conversation with no turns is still fresh (#1973)."""
+        import json
+        import re
+
+        current_id = "empty-current-conversation"
+        inner_json = json.dumps(
+            [["First answer.", None, ["stream-id", 12345], None, [[], None, None, [], 1]]]
+        )
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=f")]}}'\n{len(chunk_json)}\n{chunk_json}\n".encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_LAST_CONVERSATION_ID, [[[current_id]]]
+            ).encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(RPCMethod.GET_CONVERSATION_TURNS, [[]]).encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.chat.ask("nb_123", "First question?", source_ids=["src_001"])
+
+        assert result.conversation_id == current_id
+        assert result.turn_number == 1
+        assert result.is_follow_up is False
+        assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
+
+    @pytest.mark.asyncio
+    async def test_current_conversation_with_turns_is_a_follow_up(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A cold cache still detects prior server-side conversation turns."""
+        import json
+        import re
+
+        current_id = "existing-current-conversation"
+        inner_json = json.dumps(
+            [["Next answer.", None, ["stream-id", 12345], None, [[], None, None, [], 1]]]
+        )
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=f")]}}'\n{len(chunk_json)}\n{chunk_json}\n".encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_LAST_CONVERSATION_ID, [[[current_id]]]
+            ).encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_CONVERSATION_TURNS,
+                [[[None, None, 1, "Earlier question?"]]],
+            ).encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.chat.ask("nb_123", "Continue?", source_ids=["src_001"])
+
+        assert result.conversation_id == current_id
+        assert result.turn_number == 1
+        assert result.is_follow_up is True
+        assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
+
+    @pytest.mark.asyncio
+    async def test_server_probe_overrides_stale_cached_turns(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A warm cache cannot override an externally emptied conversation."""
+        import json
+        import re
+
+        current_id = "externally-emptied-conversation"
+        inner_json = json.dumps(
+            [["Fresh answer.", None, ["stream-id", 12345], None, [[], None, None, [], 1]]]
+        )
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=f")]}}'\n{len(chunk_json)}\n{chunk_json}\n".encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_LAST_CONVERSATION_ID, [[[current_id]]]
+            ).encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(RPCMethod.GET_CONVERSATION_TURNS, [[]]).encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            client.chat._cache.cache_conversation_turn(
+                current_id, "Cached question?", "Cached answer.", turn_number=1
+            )
+            result = await client.chat.ask("nb_123", "Fresh question?", source_ids=["src_001"])
+
+        assert result.is_follow_up is False
+        assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
+
+    @pytest.mark.asyncio
+    async def test_conversation_probe_failure_raises_before_chat_post(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A failed history probe aborts before generating an answer."""
+        import re
+
+        from notebooklm.exceptions import ServerError
+
+        current_id = "unavailable-current-conversation"
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_LAST_CONVERSATION_ID, [[[current_id]]]
+            ).encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            status_code=500,
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+            with pytest.raises(ServerError, match="500"):
+                await client.chat.ask("nb_123", "Continue?", source_ids=["src_001"])
+
+        assert not any(
+            "GenerateFreeFormStreamed" in str(request.url) for request in httpx_mock.get_requests()
         )
 
     @pytest.mark.asyncio
@@ -1051,12 +1235,18 @@ class TestAskServerAssignedConversationId:
             content=chat_response_body.encode(),
             method="POST",
         )
-        # hPTbtc returns an empty result -> get_conversation_id() -> None
+        # hPTbtc returns an empty result -> get_conversation_id() -> None.
+        # A null ask now does TWO hPTbtc lookups (issue #1875): a pre-POST
+        # resolve of the notebook's current conversation and the existing
+        # post-POST id recovery. Both hit this empty response, so mark it
+        # reusable — otherwise the second lookup is unmocked and the test
+        # would fail there instead of on the intended ChatError.
         empty_hptbtc = build_rpc_response(RPCMethod.GET_LAST_CONVERSATION_ID, [])
         httpx_mock.add_response(
             url=re.compile(r".*batchexecute.*"),
             content=empty_hptbtc.encode(),
             method="POST",
+            is_reusable=True,
         )
         async with NotebookLMClient(auth_tokens) as client:
             with pytest.raises(ChatError, match="hPTbtc"):

@@ -97,6 +97,7 @@ class _Owner:
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
         refresh_budget: Any = None,
+        retry_deadline: Any = None,
     ) -> httpx.Response:
         url, body, headers = build_request(self.snapshot)
         self.perform_calls.append(
@@ -107,6 +108,7 @@ class _Owner:
                 "body": body,
                 "headers": headers,
                 "refresh_budget": refresh_budget,
+                "retry_deadline": retry_deadline,
             }
         )
         return self.response
@@ -249,6 +251,7 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
         refresh_budget: Any = None,
+        retry_deadline: Any = None,
     ) -> httpx.Response:
         return _ok_response("wire")
 
@@ -574,6 +577,54 @@ async def test_decode_time_auth_retry_threads_refresh_budget_to_transport() -> N
     assert all(isinstance(b, RefreshBudget) for b in budgets)
     assert budgets[0] is budgets[1]
     assert budgets[0].available is False
+
+
+@pytest.mark.asyncio
+async def test_decode_time_auth_retry_threads_retry_deadline_to_transport() -> None:
+    """Issue #1873: the executor seeds the chain with the SAME aggregate deadline.
+
+    The aggregate ``RuntimeDeadline`` is minted once on the first
+    ``_execute_once`` and threaded into ``perform_authed_post`` on BOTH the
+    initial attempt AND the decode-time auth-refresh retry, so the chain's
+    ``RetryMiddleware`` inherits a single T0-anchored budget instead of
+    restarting the retry clock on the retry leg.
+    """
+    from notebooklm._deadline import RuntimeDeadline
+
+    async def refresh_callback() -> object:
+        return object()
+
+    # A finite timeout so ``_start_retry_deadline`` mints a real deadline.
+    owner = _Owner(refresh_callback=refresh_callback)
+    owner._timeout = 30.0
+    decode_calls = 0
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        nonlocal decode_calls
+        decode_calls += 1
+        if decode_calls == 1:
+            raise RPCError("authentication expired")
+        return {"ok": True}
+
+    result = await _executor(
+        owner,
+        decode_response=decode,
+        is_auth_error=lambda exc: True,
+    )._execute_once(
+        RPCMethod.LIST_NOTEBOOKS,
+        [],
+        "/",
+        False,
+        False,
+    )
+
+    assert result == {"ok": True}
+    # Two transport calls (initial + decode-time retry); both carry the SAME
+    # (non-None) aggregate deadline instance.
+    deadlines = [call["retry_deadline"] for call in owner.perform_calls]
+    assert len(deadlines) == 2
+    assert all(isinstance(d, RuntimeDeadline) for d in deadlines)
+    assert deadlines[0] is deadlines[1]
 
 
 @pytest.mark.asyncio

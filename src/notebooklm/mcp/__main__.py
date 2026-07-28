@@ -111,6 +111,71 @@ def _check_http_auth_required(host: str, token: str | None, oauth: OAuthConfig |
         )
 
 
+def _host_guard_bypass_allowed(
+    *, allow_external: bool, token: str | None, oauth: OAuthConfig | None
+) -> bool:
+    """Whether the loopback ``Host``-header (DNS-rebinding) guard may be bypassed.
+
+    The guard is safe to skip only when the operator opted into an external bind
+    (``ALLOW_EXTERNAL_BIND``) **and** auth is configured — a bearer/OAuth server can't
+    be DNS-rebound because the attacker's page can't present the credential. The env
+    flag ALONE is NOT sufficient (#1935): with the flag set but ``--host`` left at the
+    loopback default, :func:`_check_http_auth_required` does not require auth (a loopback
+    bind), so a flag-keyed bypass would leave a *tokenless* local server open to
+    DNS-rebinding — the exact hole #1876 set out to close. Keying on auth also keeps the
+    guard active for the default no-flag Claude Code bind (defense-in-depth) while still
+    letting an authed external/tunnel deployment accept its public-origin ``Host``.
+    """
+    return allow_external and (token is not None or oauth is not None)
+
+
+#: Values of ``FASTMCP_STATELESS_HTTP`` that FastMCP (pydantic-settings) reads as False.
+#: An explicit one of these (paired with the upload widget) is the footgun this warning
+#: guards (#1915). Kept in sync with pydantic's bool-false set (case-insensitive).
+_FALSEY_STATELESS_VALUES = frozenset({"0", "false", "f", "no", "n", "off"})
+
+
+def _resolve_stateless_http() -> bool | None:
+    """Resolve the ``stateless_http`` value for the http transport, warning on a footgun.
+
+    * Widget on + ``FASTMCP_STATELESS_HTTP`` unset → return ``True`` (auto-enable stateless,
+      which the MCP-Apps upload widget needs to render) and log it.
+    * Widget on + ``FASTMCP_STATELESS_HTTP`` explicitly **falsey** → warn: the widget cannot
+      render (an MCP-Apps host fetches the ``ui://`` resource without a session id, which a
+      stateful server rejects), then return ``None`` (honor the operator's explicit choice).
+    * Otherwise → return ``None`` (FastMCP reads ``FASTMCP_STATELESS_HTTP`` itself).
+
+    An empty ``FASTMCP_STATELESS_HTTP`` is already stripped to *unset* by ``notebooklm.mcp``
+    at import (#1898), so a present value here is a real, non-empty one.
+    """
+    from ._uploadwidget import _WIDGET_FLAG
+
+    if os.environ.get(_WIDGET_FLAG) != "1":
+        return None  # Widget off → nothing to resolve; FastMCP reads the env itself.
+
+    stateless_env = os.environ.get("FASTMCP_STATELESS_HTTP")
+    log = logging.getLogger(__name__)
+    if stateless_env is None:
+        log.info(
+            "%s=1 → enabling stateless HTTP (required for MCP-Apps widget rendering)",
+            _WIDGET_FLAG,
+        )
+        return True
+    # No .strip(): pydantic-settings does not strip, so a whitespace-padded value is
+    # rejected at FastMCP import (a loud crash, not a silent non-render) — this warning
+    # targets exactly the values FastMCP reads as False, matching pydantic's set.
+    if stateless_env.lower() in _FALSEY_STATELESS_VALUES:
+        log.warning(
+            "%s=1 but FASTMCP_STATELESS_HTTP=%s — the in-app upload widget CANNOT render: an "
+            "MCP-Apps host fetches the ui:// resource without a chat session id, which a stateful "
+            "server rejects. Unset FASTMCP_STATELESS_HTTP (the widget auto-enables stateless) or "
+            "set it to a true value.",
+            _WIDGET_FLAG,
+            stateless_env,
+        )
+    return None
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="notebooklm-mcp",
@@ -239,11 +304,34 @@ def main(argv: list[str] | None = None) -> None:
         # ourselves via NOTEBOOKLM_MCP_TRUST_PROXY (CF-Connecting-IP only), so keep the ASGI
         # peer the true socket peer. Nothing here derives security from the forwarded scheme
         # (OAuth endpoints + signed links use the explicitly-configured base URL).
+        # DNS-rebinding guard: a loopback bind that isn't otherwise authenticated must
+        # reject any request whose Host header isn't a loopback literal (mirrors the REST
+        # server; #1869). The guard is bypassed ONLY when the operator opted into an
+        # external bind AND auth is configured (a credential the rebinding page can't
+        # present); the ALLOW_EXTERNAL_BIND flag alone is not enough, since with the flag
+        # set but --host left at loopback the auth-required check is skipped (#1935).
+        from starlette.middleware import Middleware
+
+        from ._host_guard import LoopbackHostGuardMiddleware
+
+        host_guard_bypass = _host_guard_bypass_allowed(
+            allow_external=allow_external, token=token, oauth=oauth_config
+        )
+
+        # The MCP-App upload widget needs stateless HTTP: an MCP-Apps host (claude.ai) fetches the
+        # ui:// widget resource on a connection WITHOUT the chat Mcp-Session-Id, which a stateful
+        # server rejects as "Missing session ID" ("fail to fetch app content"). Enabling the widget
+        # implies stateless unless the operator set FASTMCP_STATELESS_HTTP explicitly — and an
+        # explicit falsey value is warned about (it silently breaks the widget). See #1915.
+        stateless_http = _resolve_stateless_http()  # None → FastMCP reads FASTMCP_STATELESS_HTTP
+
         server.run(
             transport="http",
             host=host,
             port=_resolve_port(args.port),
+            stateless_http=stateless_http,
             uvicorn_config={"proxy_headers": False},
+            middleware=[Middleware(LoopbackHostGuardMiddleware, allow_external=host_guard_bypass)],
         )
     else:
         # show_banner=False keeps FastMCP's startup banner out of the host's logs

@@ -29,11 +29,13 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 from __future__ import annotations
 
 import contextlib
+import math
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ..exceptions import ValidationError
 from ..types import (
     Source,
     SourceNotFoundError,
@@ -43,6 +45,36 @@ from ..types import (
 
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
+
+#: Upper bound on a single ``source_wait`` timeout (seconds) — bounds how long one
+#: request can hold a worker, and turns a ``timeout=inf`` into a clean rejection.
+MAX_WAIT_TIMEOUT = 3600.0
+
+#: Max source ids one ``source_wait`` may target — blocks pathological fan-out while
+#: preserving normal all-source waits (notebooks are source-limited).
+MAX_WAIT_SOURCE_IDS = 100
+
+
+def validate_wait_bounds(timeout: float, interval: float) -> None:
+    """Reject out-of-range / non-finite ``source wait`` knobs (shared by every adapter).
+
+    JSON permits ``Infinity`` / ``NaN`` (Python's ``json`` parses both), and a
+    ``NaN`` slips through every ``<`` / ``>`` comparison — so ``math.isfinite`` is
+    checked first, before the range guards. ``timeout=inf`` would wait forever;
+    ``NaN`` would break the polling arithmetic. Raises the public
+    :class:`~notebooklm.exceptions.ValidationError`; the MCP tool and the REST
+    route each map that to their own error surface, so the two can't drift.
+    """
+    if not math.isfinite(timeout):
+        raise ValidationError(f"timeout must be a finite number; got {timeout}")
+    if not math.isfinite(interval):
+        raise ValidationError(f"interval must be a finite number; got {interval}")
+    if timeout < 0:
+        raise ValidationError(f"timeout must be >= 0; got {timeout}")
+    if timeout > MAX_WAIT_TIMEOUT:
+        raise ValidationError(f"timeout must be <= {MAX_WAIT_TIMEOUT}; got {timeout}")
+    if interval <= 0:
+        raise ValidationError(f"interval must be > 0; got {interval}")
 
 
 @dataclass(frozen=True)
@@ -123,7 +155,71 @@ async def execute_source_wait(
     return SourceWaitReady(source=source)
 
 
+async def wait_all_sources(
+    client: NotebookLMClient,
+    notebook_id: str,
+    source_ids: list[str],
+    *,
+    timeout: float,
+    interval: float,
+) -> list[SourceWaitOutcome]:
+    """Wait for many sources with ONE notebook snapshot per poll tick.
+
+    One typed outcome per source, in input order. Delegates to
+    ``client.sources.wait_all_until_ready``, which fetches the whole notebook
+    source list once per tick and resolves every pending source against that
+    single snapshot (instead of fanning out one whole-notebook poll per source,
+    which was O(N^2) — see #1870). It RETURNS the three handled per-source
+    failures instead of raising, so a slow/failed source never discards its
+    siblings' progress; this maps each neutral result to its typed outcome in
+    input order. An UNEXPECTED escape (auth/transport ``RPCError``, a bug)
+    propagates out of the single await for the adapter's classify-once handler.
+    This is the single implementation both the REST route and the MCP tool call.
+
+    A shared fan-out backstop rejects more than :data:`MAX_WAIT_SOURCE_IDS` ids so
+    no adapter path (an explicit subset OR an omitted-``sources`` wait-all) can
+    drift into an unbounded wait — the cap is enforced here, at the one chokepoint
+    every caller passes through, not re-derived per adapter.
+    """
+    if not source_ids:
+        return []
+
+    if len(source_ids) > MAX_WAIT_SOURCE_IDS:
+        raise ValidationError(
+            f"cannot wait on more than {MAX_WAIT_SOURCE_IDS} sources at once; "
+            f"got {len(source_ids)}. Wait on a smaller subset."
+        )
+
+    results = await client.sources.wait_all_until_ready(
+        notebook_id,
+        source_ids,
+        timeout=timeout,
+        initial_interval=interval,
+    )
+    return [_to_outcome(result) for result in results]
+
+
+def _to_outcome(
+    result: Source | SourceNotFoundError | SourceProcessingError | SourceTimeoutError,
+) -> SourceWaitOutcome:
+    """Map one neutral ``wait_all_until_ready`` result to its typed outcome.
+
+    The three terminal failures are checked BEFORE the ``Source`` fallback: the
+    loop RETURNS them rather than raising, and anything that is not one of them is
+    the ready source (a ``Source`` is the ready case, not an error).
+    """
+    if isinstance(result, SourceNotFoundError):
+        return SourceWaitNotFound(error=result)
+    if isinstance(result, SourceProcessingError):
+        return SourceWaitProcessingError(error=result)
+    if isinstance(result, SourceTimeoutError):
+        return SourceWaitTimeout(error=result)
+    return SourceWaitReady(source=result)
+
+
 __all__ = [
+    "MAX_WAIT_SOURCE_IDS",
+    "MAX_WAIT_TIMEOUT",
     "SourceWaitNotFound",
     "SourceWaitOutcome",
     "SourceWaitPlan",
@@ -131,4 +227,6 @@ __all__ = [
     "SourceWaitReady",
     "SourceWaitTimeout",
     "execute_source_wait",
+    "validate_wait_bounds",
+    "wait_all_sources",
 ]

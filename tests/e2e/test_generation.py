@@ -28,6 +28,13 @@ from notebooklm import (
 
 from .conftest import assert_generation_started, requires_auth
 
+# Live CREATE_ARTIFACT coverage — monitored by the nightly generation coverage
+# floor (tests/e2e/conftest.py, #1819): a fully-throttled run where every marked
+# generation test skipped and none passed reds the nightly instead of hollow-green.
+# INVARIANT: keep this module generation-only — a passing non-generation test here
+# would satisfy the floor and mask a genuinely throttled generation surface.
+pytestmark = pytest.mark.live_generation
+
 
 @requires_auth
 class TestAudioGeneration:

@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import mimetypes
 import re
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from urllib.parse import SplitResult, parse_qsl, urlsplit
 
-from ..exceptions import ValidationError
+import httpx
+
+from .._transport_errors import parse_retry_after
+from ..exceptions import AuthError, RateLimitError, ServerError, ValidationError
 from ..rpc import get_upload_url
 
 _SOURCE_ID_UUID_PATTERN = re.compile(
@@ -338,3 +342,127 @@ def _validate_upload_file_supported(file_path: Path, content_type: str) -> None:
             "HTML file uploads are not supported by NotebookLM's upload endpoint: "
             f"{file_path.name}. Convert the page to .txt, .md, or .pdf first, then retry."
         )
+
+
+def _raise_from_upload_http_status(exc: httpx.HTTPStatusError, filename: str) -> NoReturn:
+    """Convert a raw ``httpx.HTTPStatusError`` from the file-upload endpoint into a
+    classified :class:`~notebooklm.exceptions.NotebookLMError` (issue #1892).
+
+    NotebookLM's resumable-upload endpoint (``/upload/_/``) answers with an HTTP
+    status, not a batchexecute envelope, so it never passes through the RPC
+    executor's status mapper — the client layer must map it here or a raw
+    ``httpx.HTTPStatusError`` leaks to every caller (the MCP ``/files/ul`` route
+    turned it into an opaque 500; the CLI/REST ``add_file`` path leaked it too).
+
+    The status classes mirror the RPC executor's contract (429 →
+    :class:`RateLimitError`, 401/403 and **3xx** → :class:`AuthError`, 5xx →
+    :class:`ServerError`) with one deliberate deviation: a generic **4xx** is
+    raised as :class:`ValidationError`, not ``ClientError``. The endpoint returns
+    **400** when it rejects the file *type/content* (e.g. a ``.pub`` that slips
+    past the local :func:`_validate_upload_file_supported` allowlist), which is the
+    same bad-input outcome as that local check — so it surfaces as a clean,
+    redacted 4xx through the MCP/REST adapters instead of a gateway 5xx/500.
+
+    ``httpx.raise_for_status`` raises for **any** non-2xx (the upload clients do
+    not follow redirects), so an unfollowed **3xx** reaches here too. A redirect
+    during upload means the request was bounced (typically an expired/invalid
+    Google session redirected to a login page) rather than accepted, so it is
+    classified as auth — NOT swept into the ``ValidationError`` "unsupported file"
+    catch-all, which would mislabel a dead session as a bad file.
+    """
+    status = exc.response.status_code
+    reason = exc.response.reason_phrase
+    if status == 429:
+        retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
+        msg = f"Upload of {filename!r} was rate limited"
+        if retry_after:
+            msg += f"; retry after {retry_after} seconds"
+        raise RateLimitError(msg, retry_after=retry_after) from exc
+    if status in (401, 403):
+        raise AuthError(f"Authentication failed uploading {filename!r} (HTTP {status})") from exc
+    if 300 <= status < 400:
+        raise AuthError(
+            f"Upload of {filename!r} was redirected (HTTP {status}); the Google session "
+            "may have expired — re-run `notebooklm login`."
+        ) from exc
+    if status >= 500:
+        raise ServerError(
+            f"NotebookLM upload endpoint returned {status} for {filename!r}: {reason}",
+            status_code=status,
+        ) from exc
+    # Remaining case: a 4xx client rejection (raise_for_status fired, and 3xx/5xx
+    # are handled above). The request/file was rejected — treat it as invalid
+    # input, same category as the local unsupported-type check, so it becomes a
+    # clean 4xx rather than an opaque 500.
+    raise ValidationError(
+        f"NotebookLM rejected the upload of {filename!r} (HTTP {status}: {reason}). "
+        "The file type or content may be unsupported."
+    ) from exc
+
+
+def raise_for_upload_status(response: httpx.Response, filename: str) -> None:
+    """``response.raise_for_status()`` that classifies a failure via
+    :func:`_raise_from_upload_http_status` instead of leaking the raw
+    ``httpx.HTTPStatusError`` to callers (issue #1892)."""
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        _raise_from_upload_http_status(exc, filename)
+
+
+GetSourceLimit = Callable[[], Awaitable[int | None]]
+
+_SOURCE_LIMIT_HINT_FLOOR = 50
+_TIER_SOURCE_LIMITS_SUMMARY = "50/100/300/600"
+
+
+async def _build_invalid_argument_source_limit_hint(
+    *,
+    source_count: int | None,
+    get_source_limit: GetSourceLimit | None,
+    logger: Any,
+) -> str:
+    """Build a best-effort hint for ADD_SOURCE_FILE status code 3 failures."""
+    source_limit: int | None = None
+    if get_source_limit is not None:
+        try:
+            source_limit = await get_source_limit()
+        except Exception:  # noqa: BLE001 - hint lookup must not mask the upload error.
+            logger.debug(
+                "register_file_source: source-limit lookup failed; continuing without limit hint",
+                exc_info=True,
+            )
+
+    if source_limit is not None and source_limit <= 0:
+        source_limit = None
+
+    if source_count is not None and source_limit is not None:
+        if source_count >= source_limit:
+            return (
+                f" Notebook currently has {source_count}/{source_limit} sources, "
+                "so this likely means the notebook has reached its tier-specific "
+                "per-notebook source limit. Delete sources or try a fresh notebook, "
+                "then retry."
+            )
+        return (
+            f" Notebook currently has {source_count}/{source_limit} sources, below "
+            "the advertised account limit. If the file is valid, try the same add "
+            "in a fresh notebook to distinguish file rejection from notebook state."
+        )
+
+    if source_count is not None and source_count >= _SOURCE_LIMIT_HINT_FLOOR:
+        return (
+            f" Notebook currently has {source_count} sources; status code 3 can "
+            "indicate the notebook is at or near the tier-specific per-notebook "
+            f"source limit ({_TIER_SOURCE_LIMITS_SUMMARY}). Delete sources or "
+            "try a fresh notebook, then retry."
+        )
+
+    if source_limit is not None:
+        return (
+            f" Advertised source limit for this tier is {source_limit}; compare "
+            "it with this notebook's source count. Status code 3 can indicate a "
+            "per-notebook source-limit rejection."
+        )
+
+    return ""

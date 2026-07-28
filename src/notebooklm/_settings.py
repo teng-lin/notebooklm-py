@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 _ACCOUNT_LIMITS_PATH = (0, 1)
 _NOTEBOOK_LIMIT_INDEX = 1
 _SOURCE_LIMIT_INDEX = 2
+# index 3 = max_characters_per_source (e.g. 500000) — not surfaced today
+_TIER_INDEX = 4
 
 
 def build_get_user_settings_params() -> list[Any]:
@@ -121,10 +123,13 @@ def extract_account_limits(data: list | None) -> AccountLimits:
     source_limit = (
         _positive_int(limits[_SOURCE_LIMIT_INDEX]) if len(limits) > _SOURCE_LIMIT_INDEX else None
     )
+    # Tier enum rides the same block (idx 4); absent on legacy 4-element blocks.
+    tier = _positive_int(limits[_TIER_INDEX]) if len(limits) > _TIER_INDEX else None
     return AccountLimits(
         notebook_limit=notebook_limit,
         source_limit=source_limit,
         raw_limits=raw_limits,
+        tier=tier,
     )
 
 

@@ -75,7 +75,12 @@ class PendingRegistry:
         """Forget ``resource_id`` (it reached a terminal state — now listable/gone)."""
         with self._lock:
             ids = self._ids.get(notebook_id)
-            if ids is not None:
-                ids.discard(resource_id)
-                if not ids:
-                    del self._ids[notebook_id]
+            if ids is None or resource_id not in ids:
+                return
+            ids.discard(resource_id)
+            if not ids:
+                del self._ids[notebook_id]
+            try:
+                self._order.remove((notebook_id, resource_id))
+            except ValueError:  # pragma: no cover — invariant guard
+                pass

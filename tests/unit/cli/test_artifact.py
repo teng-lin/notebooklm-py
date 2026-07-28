@@ -942,9 +942,11 @@ class TestArtifactExport:
         call_args = mock_client.artifacts.export.call_args
         from notebooklm.rpc import ExportType
 
-        # call_args[0] = (notebook_id, artifact_id, content, title, export_type)
-        assert call_args[0][2] is None, "content should be None (backend retrieves it)"
-        assert call_args[0][4] == ExportType.DOCS, "export_type should be ExportType.DOCS"
+        # call_args[0] = (notebook_id, artifact_id, title, export_type); content is
+        # keyword-only and OMITTED entirely (not passed as an explicit None) so the
+        # backend retrieves it from the artifact id.
+        assert "content" not in call_args.kwargs, "content should be omitted (backend retrieves it)"
+        assert call_args[0][3] == ExportType.DOCS, "export_type should be ExportType.DOCS"
 
     def test_artifact_export_sheets(self, runner, mock_auth):
         mock_client = create_mock_client()
@@ -983,9 +985,11 @@ class TestArtifactExport:
         call_args = mock_client.artifacts.export.call_args
         from notebooklm.rpc import ExportType
 
-        # call_args[0] = (notebook_id, artifact_id, content, title, export_type)
-        assert call_args[0][2] is None, "content should be None (backend retrieves it)"
-        assert call_args[0][4] == ExportType.SHEETS, "export_type should be ExportType.SHEETS"
+        # call_args[0] = (notebook_id, artifact_id, title, export_type); content is
+        # keyword-only and OMITTED entirely (not passed as an explicit None) so the
+        # backend retrieves it from the artifact id.
+        assert "content" not in call_args.kwargs, "content should be omitted (backend retrieves it)"
+        assert call_args[0][3] == ExportType.SHEETS, "export_type should be ExportType.SHEETS"
 
     def test_artifact_export_json_output(self, runner, mock_auth):
         """`artifact export --json` emits structured payload with the export result."""

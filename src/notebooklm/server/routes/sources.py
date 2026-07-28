@@ -23,12 +23,10 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 
 from __future__ import annotations
 
-import asyncio
-import math
 import os
 import shutil
 import tempfile
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 import pydantic
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
@@ -38,12 +36,18 @@ from ..._app import source_add as add_core
 from ..._app import source_content as content_core
 from ..._app import source_mutations as mut_core
 from ..._app import source_wait as wait_core
-from ..._app.errors import classify
+from ..._app.source_batch import MAX_BATCH_URLS, batch_item_is_fatal
+from ..._app.source_wait import (
+    MAX_WAIT_SOURCE_IDS,
+    MAX_WAIT_TIMEOUT,
+    validate_wait_bounds,
+    wait_all_sources,
+)
 from ..._app.views import source_view
 from ...client import NotebookLMClient
 from ...exceptions import ValidationError
 from .._context import get_client, get_pending, limit_source_mutation, limit_source_wait
-from .._errors import CATEGORY_STATUS, error_item, safe_detail
+from .._errors import error_item, safe_detail
 from .._pagination import MAX_LIMIT, paginate_envelope
 from .._pending import PendingRegistry
 from ._passthrough import passthrough_source_id
@@ -51,7 +55,6 @@ from ._passthrough import passthrough_source_id
 __all__ = [
     "MAX_BATCH_URLS",
     "MAX_UPLOAD_BYTES",
-    "MAX_WAIT_CONCURRENT_SOURCES",
     "MAX_WAIT_SOURCE_IDS",
     "MAX_WAIT_TIMEOUT",
     "router",
@@ -69,28 +72,14 @@ _field_validator = getattr(pydantic, "field_validator", pydantic.validator)
 #: single-user-safe.
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
-#: Max URL entries accepted by the REST batch-add endpoint. Each entry is added
-#: sequentially under the source-mutation limiter, so the cap bounds how long a
-#: single request can occupy one shared mutation slot.
-MAX_BATCH_URLS = 20
-
 #: Chunk size when streaming an upload to the temp file.
 _UPLOAD_CHUNK = 1024 * 1024
 
-#: Upper bound on a ``source_wait`` timeout (seconds). Bounds how long a single
-#: request can hold a worker; a caller wanting to wait longer re-polls. Also the
-#: backstop that turns a ``timeout=inf`` (valid JSON) into a clean 400 rather
-#: than a request that never returns.
-MAX_WAIT_TIMEOUT = 3600.0
-
-#: Max source ids accepted by one ``source_wait`` request. NotebookLM notebooks
-#: are source-limited; this cap preserves normal all-source waits while blocking
-#: pathological route fanout.
-MAX_WAIT_SOURCE_IDS = 100
-
-#: Max simultaneous per-source wait pollers spawned by one REST wait request.
-MAX_WAIT_CONCURRENT_SOURCES = 8
-
+# The batch/wait cap policy (MAX_BATCH_URLS, MAX_WAIT_TIMEOUT, MAX_WAIT_SOURCE_IDS)
+# and the fatal-vs-isolate classifier now live in the transport-neutral _app core
+# (_app.source_batch / _app.source_wait) and are imported above so the MCP adapter
+# shares the exact same policy. tests/_guardrails/test_source_policy_parity.py
+# forbids re-declaring them here.
 
 #: Safe-basename sanitizer for a spooled upload. Aliased to the shared neutral
 #: helper (:func:`notebooklm._app.source_add.safe_upload_name`) so the REST
@@ -126,6 +115,24 @@ class SourceAddDrive(BaseModel):
     document_id: str
     title: str | None = None
     mime_type: mut_core.DriveMimeChoice
+
+    # ``field_validator`` (not the v1-compat ``_field_validator`` alias) so mypy
+    # sees the v2 ``mode="before"`` overload — the hint must run BEFORE the
+    # ``Literal`` core check rejects an unsupported value with a bare enum error.
+    @pydantic.field_validator("mime_type", mode="before")
+    def _guide_unsupported_mime(cls, value: object) -> object:
+        """Give an unsupported ``mime_type`` (e.g. ``epub``) the upload hint before
+        the ``Literal`` check rejects it with a bare enum error. Google-native +
+        PDF are the only by-reference Drive types; other Drive files must be
+        downloaded and added as a ``file`` source (#1827)."""
+        if isinstance(value, str) and value not in get_args(mut_core.DriveMimeChoice):
+            raise ValueError(
+                f"{value!r} is not importable via Drive. NotebookLM's Drive import "
+                "supports google-doc/google-slides/google-sheets/pdf only; download an "
+                "upload-only file (epub/docx/txt/md/rtf/odt/csv) and add it as a `file` "
+                "source instead."
+            )
+        return value
 
 
 class SourceAddBatch(BaseModel):
@@ -362,7 +369,8 @@ async def get_source_content(
     ``output_format`` (``text`` default / ``markdown``) selects the extracted-body
     format for ``detail=full`` (ignored for ``summary``); ``markdown`` needs the
     server's ``markdownify`` extra and otherwise fails with a deterministic
-    ``config`` error. Mirrors the MCP ``source_read`` tool's ``output_format``.
+    ``dependency`` error (HTTP 500). Mirrors the MCP ``source_read`` tool's
+    ``output_format``.
 
     ``detail=summary`` returns the AI source-guide digest ``{summary, keywords}``
     for cheap low-token triage.
@@ -432,25 +440,6 @@ async def add_drive(
     return source_view(result.source)
 
 
-def _batch_item_is_fatal(exc: BaseException) -> bool:
-    """Decide whether a per-item add failure must abort the whole batch.
-
-    Per-item isolation is correct ONLY for per-URL, user-input failures (a bad
-    URL / SSRF-blocked host / not-found → 4xx-input): those are properly reported
-    as a per-entry ``error`` while the rest of the batch proceeds. A service /
-    infrastructure failure (expired auth, rate limiting, an upstream 5xx /
-    transport error) is NOT specific to the one URL — folding it into a per-item
-    result would return a ``200``/``201`` batch envelope for what is really a
-    top-level ``401`` / ``429`` / ``5xx``. So classify the exception and treat it
-    as fatal (re-raise, letting the top-level handler map it) when its projected
-    HTTP status is ``401`` / ``429`` or a server error (``>= 500``); everything
-    else (``400`` bad URL, ``404`` not-found, ``409`` conflict, ``422``) stays
-    isolated. ``CancelledError`` is a ``BaseException`` and is never passed here.
-    """
-    status = CATEGORY_STATUS[classify(exc).category]
-    return status in (401, 429) or status >= 500
-
-
 @router.post("/batch", status_code=201, dependencies=[Depends(limit_source_mutation)])
 async def add_batch(
     notebook_id: str,
@@ -464,9 +453,12 @@ async def add_batch(
     The shared notebook / auth context is validated ONCE up front (a bad
     ``notebook_id`` or stale auth surfaces as the normal top-level 404 / 401),
     so a whole-batch failure is never masked as ``201`` with every item errored.
-    Only per-entry URL / add failures inside the loop are isolated — recorded as
-    an ``error`` item and skipped, never aborting the batch — so partial failure
-    stays visible. Each entry is added SEQUENTIALLY (concurrent bulk writes
+    Only per-entry **input** failures (bad URL / 404 / SSRF-blocked host) are
+    isolated — recorded as an ``error`` item and skipped — so partial failure stays
+    visible; a **fatal** service failure (auth / rate-limit / 5xx, per
+    :func:`batch_item_is_fatal`) re-raises so the top-level handler maps it to the
+    right 401 / 429 / 5xx instead of a partial-success envelope. Each entry is added
+    SEQUENTIALLY (concurrent bulk writes
     invite backend rate-limiting) with ``source_type="url"`` so the http/https
     SSRF guard runs per item. Results are positional (``results[i]`` ↔
     ``urls[i]``).
@@ -504,7 +496,7 @@ async def add_batch(
             # transport) so the top-level handler maps them to the correct
             # 401 / 429 / 5xx instead of masking them as a 200/201 batch
             # envelope; keep per-item isolation only for per-URL input failures.
-            if _batch_item_is_fatal(exc):
+            if batch_item_is_fatal(exc):
                 raise
             # ``error_item`` routes ``str(exc)`` through the shared ``_redact``
             # chokepoint (same scrubber as ``safe_detail``), so the per-item text
@@ -551,20 +543,10 @@ async def wait_sources(notebook_id: str, body: SourceWaitBody, client: ClientDep
     all three error buckets are empty — the all-sources mode reports partial
     progress rather than discarding the sources that did become ready.
     """
-    # Reject non-finite bounds first: JSON allows ``inf`` / ``NaN`` (Python's
-    # json module parses ``Infinity`` / ``NaN``), and ``timeout=inf`` would wait
-    # forever while ``NaN`` breaks every comparison. ``math.isfinite`` is False
-    # for both.
-    if not math.isfinite(body.timeout):
-        raise ValidationError(f"timeout must be a finite number; got {body.timeout}")
-    if not math.isfinite(body.interval):
-        raise ValidationError(f"interval must be a finite number; got {body.interval}")
-    if body.timeout < 0:
-        raise ValidationError(f"timeout must be >= 0; got {body.timeout}")
-    if body.timeout > MAX_WAIT_TIMEOUT:
-        raise ValidationError(f"timeout must be <= {MAX_WAIT_TIMEOUT}; got {body.timeout}")
-    if body.interval <= 0:
-        raise ValidationError(f"interval must be > 0; got {body.interval}")
+    # Non-finite + range guards (shared with the MCP tools so the two can't
+    # drift): JSON allows ``inf`` / ``NaN`` and ``NaN`` slips through every
+    # comparison, so ``math.isfinite`` is checked before the range bounds.
+    validate_wait_bounds(body.timeout, body.interval)
     if body.source_ids is not None:
         # An EXPLICIT empty list is rejected: it would otherwise return an
         # immediate ``ok:true`` with nothing waited on — a false "ready" for a
@@ -582,7 +564,7 @@ async def wait_sources(notebook_id: str, body: SourceWaitBody, client: ClientDep
                 f"notebook has {len(ids)} sources; wait-all is capped at "
                 f"{MAX_WAIT_SOURCE_IDS}. Pass source_ids to wait for a smaller subset."
             )
-    outcomes = await _wait_all_sources(
+    outcomes = await wait_all_sources(
         client, notebook_id, ids, timeout=body.timeout, interval=body.interval
     )
     return _aggregate_wait_outcomes(notebook_id, outcomes)
@@ -611,62 +593,6 @@ async def delete_source(
     await client.sources.delete(notebook_id, source_id)
     pending.drop(notebook_id, source_id)
     return Response(status_code=204)
-
-
-async def _wait_all_sources(
-    client: NotebookLMClient,
-    notebook_id: str,
-    source_ids: list[str],
-    *,
-    timeout: float,
-    interval: float,
-) -> list[wait_core.SourceWaitOutcome]:
-    """Wait for every source concurrently, one typed outcome per source.
-
-    Each per-source wait runs through ``execute_source_wait`` (which maps the
-    three handled ``SourceWait*`` failures to a typed outcome instead of raising),
-    so a slow or failed source never discards its siblings' progress. An
-    UNEXPECTED escape (auth/transport ``RPCError``, a bug) cancels + drains the
-    still-running sibling pollers before re-raising (it then flows through the
-    server's classify-once handler) rather than leaking coroutines.
-    """
-    if not source_ids:
-        return []
-
-    outcomes: list[wait_core.SourceWaitOutcome | None] = [None] * len(source_ids)
-    source_iter = iter(enumerate(source_ids))
-
-    async def _worker() -> None:
-        for index, sid in source_iter:
-            outcomes[index] = await wait_core.execute_source_wait(
-                client,
-                wait_core.SourceWaitPlan(
-                    notebook_id=notebook_id,
-                    source_id=sid,
-                    timeout=timeout,
-                    interval=interval,
-                ),
-            )
-
-    tasks = [
-        asyncio.create_task(_worker())
-        for _ in range(min(len(source_ids), MAX_WAIT_CONCURRENT_SOURCES))
-    ]
-    try:
-        await asyncio.gather(*tasks)
-    except BaseException:
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        raise
-
-    ready_outcomes: list[wait_core.SourceWaitOutcome] = []
-    for outcome in outcomes:
-        if outcome is None:
-            raise AssertionError("source wait worker exited without producing an outcome")
-        ready_outcomes.append(outcome)
-    return ready_outcomes
 
 
 def _dedupe_source_ids(source_ids: list[str]) -> list[str]:

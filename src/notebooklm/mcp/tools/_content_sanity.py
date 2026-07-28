@@ -10,7 +10,7 @@ ready web-page views and attaches the warning in place.
 Extracted from ``sources.py`` (it stayed under the ADR-0008 module-size budget):
 the logic is a self-contained, reusable unit consumed by both the wait aggregate
 (:func:`._waitagg._aggregate_wait_outcomes`, behind ``source_wait`` /
-``source_add_and_wait``) and the ``source_add`` batch
+``source_add(wait=True)``) and the ``source_add`` batch
 (:func:`._sources._add_url_batch`). Reads only ``_app.source_content`` — imports
 NO ``click`` / ``rich`` / ``cli`` (MCP-layer boundary).
 """
@@ -64,6 +64,34 @@ _SOFT_404_PHRASES = frozenset(
         "error 404",
         "404 not found",
         "whoops!",
+    }
+)
+
+#: A bot-challenge / WAF interstitial (Cloudflare "Just a moment…", Akamai "Access
+#: Denied") also serves HTTP 200 and ingests as a READY ``web_page``, but its body
+#: clears the char-thin gate and carries none of the dead-link vocabulary above, so
+#: #1709 missed it. Scanned (casefolded) up to :data:`_BOT_CHALLENGE_BODY_SCAN_LIMIT`
+#: — a wider cap than :data:`_SOFT_404_BODY_SCAN_LIMIT` because a challenge page
+#: carries more script/boilerplate than a soft-404 stub, so a real interstitial can
+#: land just over the tighter dead-link cap. Anchored to interstitial phrasing (no
+#: bare ``"cloudflare"`` / ``"cookies"``) so a real article that merely mentions a
+#: WAF vendor doesn't false-positive; advisory only, misses non-English pages. See
+#: :func:`_thin_content_warning`.
+_BOT_CHALLENGE_BODY_SCAN_LIMIT = 5000
+
+_BOT_CHALLENGE_PHRASES = frozenset(
+    {
+        "just a moment",
+        "enable javascript and cookies",
+        "checking your browser",
+        "attention required",
+        "access denied",
+        "security verification",
+        "captcha",
+        # Vendor-anchored: bare ``ray id`` is a substring of ordinary text like
+        # "array id" / "array identifier"; require the Cloudflare prefix so a normal
+        # technical page can't trip a false WAF warning (#1923 review).
+        "cloudflare ray id",
     }
 )
 
@@ -125,6 +153,11 @@ async def _thin_content_warning(
        :data:`_SOFT_404_PHRASES` marker (a full-bodied "Whoops! broken link" page
        that sails past the char-thin rule). The length gate runs BEFORE the body is
        casefolded, so a large healthy page is never lowercased + scanned.
+    3. **bot-challenge / WAF interstitial** — a body SHORTER than
+       :data:`_BOT_CHALLENGE_BODY_SCAN_LIMIT` chars (a wider cap than the dead-link
+       pass) that contains a :data:`_BOT_CHALLENGE_PHRASES` marker (a Cloudflare
+       "Just a moment…" or Akamai "Access Denied" page that ingests as ready but is
+       not the real content). Dead-link takes precedence when a body trips both.
 
     **web-page only** (short pasted text / transcripts are legitimate, never flagged;
     callers also pre-filter). **best-effort**: the body fetch reuses
@@ -152,18 +185,30 @@ async def _thin_content_warning(
                 "not-yet-indexed, a soft-404/dead link, blocked, or paywalled; "
                 'verify with source_read (detail="full").'
             )
-        # ponytail: a short multi-word phrase scan over a length-gated body — no
+        # ponytail: short multi-word phrase scans over a length-gated body — no
         # liveness probe, no classifier; misses non-English / long-bodied error pages.
-        if char_count < _SOFT_404_BODY_SCAN_LIMIT:
+        # The bot-challenge cap is the wider of the two, so it drives the outer gate;
+        # the dead-link pass keeps its own tighter cap. Dead-link takes precedence when
+        # a body somehow trips both.
+        if char_count < _BOT_CHALLENGE_BODY_SCAN_LIMIT:
             # ``content`` is typed ``str`` but guard against a backend that reports a
             # non-thin ``char_count`` yet a ``None`` body — make the intent explicit
             # rather than lean on the outer ``except`` silently swallowing it.
             body = (result.fulltext.content or "").casefold()
-            if any(phrase in body for phrase in _SOFT_404_PHRASES):
+            if char_count < _SOFT_404_BODY_SCAN_LIMIT and any(
+                phrase in body for phrase in _SOFT_404_PHRASES
+            ):
                 return (
                     f"ingested as ready ({char_count} chars) but the body matches a "
                     "dead-link / error-page pattern (e.g. 'broken link') — likely a "
                     'soft-404; verify with source_read (detail="full").'
+                )
+            if any(phrase in body for phrase in _BOT_CHALLENGE_PHRASES):
+                return (
+                    f"ingested as ready ({char_count} chars) but the body matches a "
+                    "bot-challenge / WAF interstitial pattern (e.g. 'Just a moment' / "
+                    "'access denied') — the real page was likely blocked "
+                    '(Cloudflare / Akamai); verify with source_read (detail="full").'
                 )
     except Exception:  # noqa: BLE001 - sanity check must never break a wait
         return None

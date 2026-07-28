@@ -110,7 +110,9 @@ class TestWorkflowTracerBullet:
         # here keeps the per-cassette ``match_on`` self-contained.
         match_on=["method", "scheme", "host", "port", "path", "rpcids", "freq"],
     )
-    async def test_full_workflow(self, tmp_path: Path, fast_sleep: None) -> None:
+    async def test_full_workflow(
+        self, tmp_path: Path, fast_sleep: None, legacy_vcr_follow_up_probe
+    ) -> None:
         """End-to-end user journey produces a downloadable report.
 
         Asserts each phase's intermediate output:

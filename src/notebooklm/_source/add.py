@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -25,10 +26,56 @@ from .upload_payloads import build_template_block
 ListSources = Callable[[str], Awaitable[list[Source]]]
 WaitUntilReady = Callable[..., Awaitable[Source]]
 RawSourceAdder = Callable[[str, str], Awaitable[Any]]
+RenameSource = Callable[[str, str, str], Awaitable[Source | None]]
 ParseUrl = Callable[[str], Any]
 ExtractVideoId = Callable[[Any, str], str | None]
 ValidateVideoId = Callable[[str], bool]
 YoutubeDetector = Callable[[str], bool]
+
+
+async def honor_requested_title(
+    rename: RenameSource,
+    notebook_id: str,
+    source: Source,
+    requested_title: str | None,
+    logger: logging.Logger,
+) -> Source:
+    """Best-effort post-add rename so an explicit ``title`` survives backend
+    re-derivation (#1960).
+
+    YouTube, native Google Drive, and web-page imports re-derive the display
+    title server-side (from the video / Drive / page metadata), silently
+    discarding the ``title`` sent with the add. Live-verified (URL, YouTube, and
+    Drive): the backend derives the title *synchronously* — the added source comes
+    back already carrying the re-derived title — so a follow-up ``rename`` lands
+    after that derivation and sticks. When an explicit ``title`` differs from the
+    one the add returned, issue the rename so the requested title wins.
+
+    Non-fatal by contract: the add already succeeded, so a rename failure keeps
+    the added source (with its upstream title) and logs a warning rather than
+    raising — callers detect the miss by comparing the returned ``source.title``
+    against the title they requested (the MCP tool surfaces this).
+    """
+    if not requested_title:
+        return source
+    requested = requested_title.strip()
+    if not requested or source.title == requested:
+        return source
+    try:
+        renamed = await rename(notebook_id, source.id, requested)
+    except (RPCError, NetworkError):
+        logger.warning(
+            "Source %s added but rename to %r failed; keeping upstream title %r",
+            source.id,
+            requested,
+            source.title,
+            exc_info=True,
+        )
+        return source
+    # UPDATE_SOURCE's echo can be sparse (id + title only), so returning it wholesale
+    # would drop url / kind / status. Keep the fully-hydrated added source and swap in
+    # just the new title — mirrors the file-upload rename (``_source/upload.py``).
+    return replace(source, title=(renamed.title if renamed else None) or requested)
 
 
 class SourceAddService:
@@ -200,6 +247,14 @@ class SourceAddService:
         otherwise duplicate the source on a naive retry. The probe matches
         by ``file_id`` substring against ``source.url`` (Drive URLs embed
         the file_id, e.g. ``https://docs.google.com/document/d/<id>/edit``).
+
+        .. note::
+           The ``title`` is sent on the wire but **ignored** for native Drive
+           imports: NotebookLM re-derives the display title from live Drive
+           metadata, so the returned source keeps the file's Drive name
+           regardless of what you pass here. Call
+           :meth:`~notebooklm._sources.SourcesAPI.rename` after the add if you
+           need a specific title.
         """
         logger.debug("Adding Drive source to notebook %s: %s", notebook_id, title)
         source_data = [
@@ -248,7 +303,15 @@ class SourceAddService:
 
             if result is None:
                 raise SourceAddError(
-                    title, message=f"API returned no data for Drive source: {title}"
+                    title,
+                    message=(
+                        f"API returned no data for Drive source: {title} "
+                        f"(mime_type={mime_type!r}). This Drive file type may not be "
+                        "importable via Drive — NotebookLM's Drive import supports "
+                        "Google-native Docs/Slides/Sheets + PDF only. If it is an "
+                        "upload-only type (e.g. epub/docx/txt/md/rtf/odt/csv), "
+                        "download it and add it as a `file` source instead."
+                    ),
                 )
             return Source.from_api_response(result, method_id=RPCMethod.ADD_SOURCE.value)
 

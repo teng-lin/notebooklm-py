@@ -1,21 +1,11 @@
 """Source management CLI commands — thin Click-handler layer (ADR-0008).
 
-Each command builds a plan or command-layer input values and delegates to
-transport-neutral ``_app/source_*`` cores, with CLI service adapters kept
-where they provide presentation-pipeline glue or compatibility imports:
-
-* ``_app/source_content.py``       — data fetchers for get, fulltext, guide, stale
-* ``_app/source_wait.py``          — wait
-* ``_app/source_add.py``           — add
-* ``_app/source_clean.py``         — clean (pure orchestration: classify +
-  batched delete; rendering + exit codes live here in the command layer)
-* ``_app/source_listing.py`` via ``services/source_listing.py`` — list
-* ``_app/source_mutations.py`` via ``services/source_mutations.py`` — delete, delete-by-title, rename,
-  refresh, add-drive
-* ``_app/source_research.py`` via ``services/source_research.py`` — add-research
-
-The full per-command listing lives in the ``source`` click group docstring
-below (it is what ``notebooklm source --help`` shows).
+Each command builds a plan (or command-layer inputs) and delegates to the
+transport-neutral ``_app/source_*`` cores — ``source_content`` / ``source_wait``
+/ ``source_add`` / ``source_clean`` directly, and ``source_listing`` /
+``source_mutations`` (delete/delete-by-title/rename/refresh/add-drive/
+add-drive-file) / ``source_research`` via their ``services/`` adapters. The full
+per-command listing is the ``source`` click group docstring below.
 """
 
 import asyncio  # noqa: F401 — re-exported for regression tests that patch source_cmd.asyncio.sleep
@@ -62,6 +52,7 @@ from ._source_render import (  # noqa: F401
     _print_add_research_task_ids,
     _print_clean_candidates,
     _render_add_research_result,
+    _render_source_add_drive_file_result,
     _render_source_add_drive_result,
     _render_source_delete_result,
     _render_source_fulltext_result,
@@ -99,6 +90,7 @@ from .runtime import is_quiet
 from .services.label_listing import LabelResolutionError
 from .services.source_listing import SourceListPlan, execute_source_list
 from .services.source_mutations import (
+    SourceAddDriveFilePlan,
     SourceAddDrivePlan,
     SourceDeleteByTitlePlan,
     SourceDeletePlan,
@@ -106,6 +98,7 @@ from .services.source_mutations import (
     SourceRefreshPlan,
     SourceRenamePlan,
     execute_source_add_drive,
+    execute_source_add_drive_file,
     execute_source_delete,
     execute_source_delete_by_title,
     execute_source_refresh,
@@ -127,7 +120,8 @@ def source():
     Commands:
       list             List sources in a notebook
       add              Add a source (url, text, file, youtube)
-      add-drive        Add a Google Drive document
+      add-drive        Add a Google Drive document (native Docs/Slides/Sheets + PDF)
+      add-drive-file   Add an upload-only Drive file (epub/docx/txt/...) via download
       add-research     Search web/drive and add sources from results
       get              Get source details
       fulltext         Get full indexed text content
@@ -210,9 +204,8 @@ def source_list(ctx, notebook_id, json_output, label_filter, limit, no_truncate,
     help="MIME type for uploaded file sources. Overrides filename-extension inference.",
 )
 @click.option(
-    # ``--request-timeout`` is the self-documenting canonical name (per-request
-    # HTTP socket timeout, not a poll/wait budget); ``--timeout`` stays as a
-    # back-compat alias. See the matching wiring on ``chat ask``.
+    # ``--request-timeout`` is the canonical name (per-request HTTP socket
+    # timeout, not a poll/wait budget); ``--timeout`` is a back-compat alias.
     "--request-timeout",
     "--timeout",
     "timeout",
@@ -466,20 +459,42 @@ def source_refresh(ctx, source_id, notebook_id, json_output, client_auth):
     return _run()
 
 
+class _DriveMimeChoice(click.Choice):
+    """``--mime-type`` choice that, on an unsupported value, steers the user to the
+    file-upload path (NotebookLM's Drive import is Google-native + PDF only)."""
+
+    def convert(self, value: Any, param: Any, ctx: Any) -> Any:
+        try:
+            return super().convert(value, param, ctx)
+        except click.BadParameter:
+            raise click.BadParameter(  # cli-input-validation: unsupported --mime-type steered to file-upload path
+                f"{value!r} is not importable via Drive. NotebookLM's Drive import "
+                "supports google-doc/google-slides/google-sheets/pdf only; download an "
+                "upload-only file (epub/docx/txt/md/rtf/odt/csv) and add it via "
+                "`source add <path> --type file` instead.",
+                ctx=ctx,
+                param=param,
+            ) from None
+
+
 @source.command("add-drive")
 @click.argument("file_id")
 @click.argument("title")
 @notebook_option
 @click.option(
     "--mime-type",
-    type=click.Choice(["google-doc", "google-slides", "google-sheets", "pdf"]),
+    type=_DriveMimeChoice(["google-doc", "google-slides", "google-sheets", "pdf"]),
     default="google-doc",
     help="Document type (default: google-doc)",
 )
 @json_option
 @with_client
 def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, client_auth):
-    """Add a Google Drive document as a source."""
+    """Add a Google Drive document as a source.
+
+    Only Google-native Docs/Slides/Sheets + PDF import by reference; download an
+    upload-only Drive file (epub/docx/txt/md) and add it via `source add` instead.
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
@@ -497,6 +512,38 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
                 with cli_status("Adding Drive source...", ctx=ctx):
                     result = await execute_source_add_drive(client, plan)
             _render_source_add_drive_result(result, json_output=json_output, ctx=ctx)
+
+    return _run()
+
+
+@source.command("add-drive-file")
+@click.argument("document_id")
+@notebook_option
+@click.option("--title", default=None, help="Custom title (default: the file's Drive name)")
+@click.option("--wait", is_flag=True, default=False, help="Wait for processing to finish")
+@json_option
+@with_client
+def source_add_drive_file(ctx, document_id, notebook_id, title, wait, json_output, client_auth):
+    """Add an upload-only Google Drive file (epub/docx/txt/md/rtf/odt/csv/tsv/pdf).
+
+    Downloads the file from Drive (server-side, using your session) and uploads it.
+    A Drive PDF can also go by reference via `source add-drive` (which takes native
+    Docs/Slides/Sheets + PDF). DOCUMENT_ID is a raw file id or share URL.
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with resolve_client_factory(ctx)(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            plan = SourceAddDriveFilePlan(
+                notebook_id=nb_id_resolved, document_id=document_id, title=title, wait=wait
+            )
+            if json_output:
+                result = await execute_source_add_drive_file(client, plan)
+            else:
+                with cli_status("Downloading + adding Drive file...", ctx=ctx):
+                    result = await execute_source_add_drive_file(client, plan)
+            _render_source_add_drive_file_result(result, json_output=json_output, ctx=ctx)
 
     return _run()
 
@@ -729,16 +776,12 @@ def source_guide(ctx, source_id, notebook_id, json_output, client_auth):
 def source_stale(ctx, source_id, notebook_id, exit_on_stale, json_output, client_auth):
     """Check if a URL/Drive source needs refresh.
 
-    Default exit codes follow the standard CLI convention: ``0`` when the
-    freshness check completes (regardless of the result), ``1`` on error
-    (validation, auth, network, not-found, etc.). Branch on the JSON
-    ``stale`` field (or stdout text) to decide whether to refresh.
-
-    Pass ``--exit-on-stale`` to opt into the back-compat inverted-predicate
-    semantics — exit ``0`` if stale, ``1`` if fresh — so the shell idiom
-    ``if notebooklm source stale --exit-on-stale ID; then refresh; fi``
-    keeps working for scripts written against the prior default. See
-    ``docs/cli-exit-codes.md`` for the full rationale.
+    Default exit codes: ``0`` when the freshness check completes (whatever the
+    result), ``1`` on error. Branch on the JSON ``stale`` field (or stdout text)
+    to decide whether to refresh. Pass ``--exit-on-stale`` for the back-compat
+    inverted-predicate semantics (exit ``0`` if stale, ``1`` if fresh) so the
+    idiom ``if notebooklm source stale --exit-on-stale ID; then refresh; fi``
+    keeps working. See ``docs/cli-exit-codes.md`` for the full rationale.
     """
     nb_id = require_notebook(notebook_id)
 

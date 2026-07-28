@@ -91,6 +91,32 @@ For automated environments, multiple accounts, or parallel agent workflows:
 3. **Per-agent isolation via home:** Set unique `NOTEBOOKLM_HOME` per agent: `export NOTEBOOKLM_HOME=/tmp/agent-$ID`
 4. **Use full UUIDs:** Avoid partial IDs in automation (they can become ambiguous)
 
+## Sandboxed Agents (Claude Cowork / Headless)
+
+Sandboxed, no-display agent environments — **Claude Cowork** (Anthropic's desktop agent for non-developers) and similar headless sandboxes — can't run `notebooklm login` (it needs a browser), and they reset between sessions. Everything else works with two adjustments:
+
+1. **Bootstrap each session.** The sandbox resets, so install at the start of every session. You do **not** need `[browser]`/Playwright here — that extra exists only for the interactive `login` flow, which you run on a host machine, not in the sandbox. Chat, sources, generation, and download all run on the base install:
+   ```bash
+   pip install notebooklm-py   # no [browser] needed for queries/generation
+   ```
+   (This is the one place the mandatory `[browser]` install at the top of this guide does not apply — you are reusing auth, not logging in here.)
+2. **Reuse a host-generated `storage_state.json`.** Log in once on a machine with a display (`notebooklm login`), then bring the resulting `storage_state.json` into a sandbox-accessible folder and point at it either way:
+   ```bash
+   # Per-invocation root flag (a persistent, sandbox-accessible path):
+   notebooklm --storage /path/to/storage_state.json list
+   # OR inline via env var (no file needed — e.g. from a Cowork-stored secret):
+   export NOTEBOOKLM_AUTH_JSON="$(cat /path/to/storage_state.json)"
+   notebooklm list
+   ```
+
+   > ⚠️ **`storage_state.json` / `NOTEBOOKLM_AUTH_JSON` are bearer credentials** — anyone holding them can act as your Google account. Keep the file `0600`, load it from the sandbox's secret store rather than a committed file, never print or log it, and `unset NOTEBOOKLM_AUTH_JSON` when finished.
+
+**Verify** as in [Agent Setup Verification](#agent-setup-verification) below — e.g. `notebooklm --storage <path> auth check --test --json` (require `"status": "ok"` AND `"checks.token_fetch": true`).
+
+**Context does not survive a reset** either: the selected-notebook context (`context.json`) is gone each session, so pass an explicit `-n/--notebook <id>` on notebook-scoped commands instead of relying on `notebooklm use`.
+
+If Cowork reads `~/.claude/skills/`, `notebooklm skill install` registers this skill there automatically; otherwise build the uploadable archive on the host with `notebooklm skill package` (writes `notebooklm-skill.zip`, zipping the whole skill directory) and add it via **Claude Settings → Capabilities**. Full recipe (extras matrix, headless auth, CI env-var notes): [Installation guide on GitHub](https://github.com/teng-lin/notebooklm-py/blob/main/docs/installation.md#a-ai-agent-primary-persona).
+
 ## Agent Setup Verification
 
 Before starting workflows, verify auth is in place. **Use `--test --json` (not bare `--json`)** — bare `--json` only proves the cookie file parses; `--test` makes a network call and proves the cookies still authenticate against Google.

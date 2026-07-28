@@ -286,7 +286,7 @@ class TestChatMultiSource:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    async def test_ask_with_five_explicit_sources(self) -> None:
+    async def test_ask_with_five_explicit_sources(self, legacy_vcr_follow_up_probe) -> None:
         """A chat ask against five explicit sources round-trips successfully.
 
         Recording-mode behavior: create scratch notebook + five sources

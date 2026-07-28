@@ -12,7 +12,6 @@ from notebooklm.rpc.types import SourceStatus
 from notebooklm.server._pagination import MAX_LIMIT
 from notebooklm.server.routes.sources import (
     MAX_BATCH_URLS,
-    MAX_WAIT_CONCURRENT_SOURCES,
     MAX_WAIT_SOURCE_IDS,
 )
 
@@ -460,12 +459,17 @@ def test_add_drive_pdf_kind_not_spreadsheet(
 
 
 def test_add_drive_bad_mime_is_422(authed_client: TestClient) -> None:
-    # mime_type is a Literal → rejected at the schema boundary.
+    # mime_type is a Literal → rejected at the schema boundary. A before-validator
+    # enriches the 422 with the file-upload hint (Google-native + PDF only).
     resp = authed_client.post(
         "/v1/notebooks/nb-1/sources/drive",
         json={"document_id": "doc-1", "mime_type": "bogus"},
     )
     assert resp.status_code == 422
+    body = resp.text.lower()
+    assert "not importable via drive" in body
+    assert "download" in body
+    assert "file" in body
 
 
 # --- Phase 4: batch URL add --------------------------------------------------
@@ -615,6 +619,50 @@ def test_add_batch_mid_item_rate_limit_is_top_level_429(
     assert "results" not in resp.json()
 
 
+def test_add_batch_mid_item_source_add_error_isolates_not_aborts(
+    authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
+) -> None:
+    # A per-URL SourceAddError (bad domain) is a 4xx INPUT failure specific to the
+    # one URL — it must isolate as a per-item source_add error (422 partition) while
+    # the rest of the batch proceeds, NOT abort with a misleading top-level 5xx
+    # (regression for #1905; the same shared classifier the MCP tool uses).
+    import pytest
+
+    from notebooklm.exceptions import SourceAddError
+
+    assert isinstance(monkeypatch, pytest.MonkeyPatch)
+    _seed_notebook(fake_client)
+
+    real_add_url = fake_client.sources.add_url
+
+    async def _maybe_bad(notebook_id: str, url: str) -> object:
+        if "bad-domain" in url:
+            raise SourceAddError(url)
+        return await real_add_url(notebook_id, url)
+
+    monkeypatch.setattr(fake_client.sources, "add_url", _maybe_bad)
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={
+            "urls": [
+                "https://good-a.example.com",
+                "https://bad-domain.example.com",
+                "https://good-b.example.com",
+            ]
+        },
+    )
+    # Isolated, not aborted: a 201 batch envelope with per-item results.
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["status"] == "added"
+    assert body["added"] == 2
+    assert body["failed"] == 1
+    assert [item["status"] for item in body["results"]] == ["added", "error", "added"]
+    err = body["results"][1]["error"]
+    assert err["category"] == "source_add"
+    assert err["retriable"] is False
+
+
 def test_add_batch_per_item_error_is_redacted(
     authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
 ) -> None:
@@ -713,13 +761,14 @@ def test_wait_all_sources_over_max_is_validation_error(
     assert fake_client.wait_calls == []
 
 
-def test_wait_uses_bounded_per_request_concurrency(
+def test_wait_all_sources_resolves_every_id_in_one_request(
     authed_client: TestClient, fake_client: FakeClient
 ) -> None:
-    source_ids = [f"src-{i}" for i in range(MAX_WAIT_CONCURRENT_SOURCES + 3)]
+    """The multi-source wait resolves every requested id through the single
+    snapshot loop (#1870) — every id is waited on and reported ready."""
+    source_ids = [f"src-{i}" for i in range(12)]
     for source_id in source_ids:
         _seed_source(fake_client, "nb-1", source_id)
-    fake_client.wait_delay = 0.01
 
     resp = authed_client.post(
         "/v1/notebooks/nb-1/sources/wait",
@@ -729,9 +778,7 @@ def test_wait_uses_bounded_per_request_concurrency(
     assert resp.status_code == 200
     body = resp.json()
     assert {source["id"] for source in body["ready"]} == set(source_ids)
-    assert len(fake_client.wait_calls) == len(source_ids)
     assert set(fake_client.wait_calls) == set(source_ids)
-    assert fake_client.wait_max_active == MAX_WAIT_CONCURRENT_SOURCES
 
 
 def test_wait_all_sources_partial(authed_client: TestClient, fake_client: FakeClient) -> None:

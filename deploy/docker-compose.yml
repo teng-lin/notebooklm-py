@@ -5,18 +5,25 @@
 #   docker compose --profile tailscale  up -d   # Tailscale Funnel (no domain; *.ts.net)
 #   # (the Makefile wraps this: `make dev` / `make dev TUNNEL=tailscale`)
 #
+# OAuth users invoking `docker compose up` DIRECTLY (not via `make`) must first create
+# the OAuth-state mount dir as yourself: `mkdir -p ./oauth-state && chmod 700 ./oauth-state`.
+# Otherwise Docker auto-creates it root-owned and the (uid 1000) container cannot write it;
+# the chmod keeps this full-account-secret dir private (shell mkdir honors umask). `make`
+# targets do this for you.
+#
 # The notebooklm-mcp service runs under either profile; exactly one tunnel sidecar
 # is selected. No host ports are published — the ONLY way in is through the chosen
 # tunnel, which terminates TLS at its edge (no CA cert for you to manage). See README.md.
 services:
   notebooklm-mcp:
-    # Pull the published image by default. `make up` / `make prod` require or
-    # inject a version; raw docker compose pull must set NOTEBOOKLM_MCP_VERSION.
-    # Override the namespace/tag via
-    # NOTEBOOKLM_MCP_IMAGE / NOTEBOOKLM_MCP_VERSION in .env. Contributors
-    # building from THIS checkout run `make dev`, which layers
-    # docker-compose.build.yml to add a `build:` section back (see that file).
-    image: ${NOTEBOOKLM_MCP_IMAGE:-tenglin/notebooklm-mcp}:${NOTEBOOKLM_MCP_VERSION:-set-version}
+    # Pull the published image. Default tag is `latest` = the latest STABLE release
+    # (pre-releases never move `:latest`), so a bare `docker compose up -d` works
+    # out of the box once a stable release exists. Pin a specific release with
+    # NOTEBOOKLM_MCP_VERSION=X.Y.Z in .env (release-download users get a compose with
+    # the exact version baked in). `make up`/`make prod` inject the checkout's version.
+    # Override the namespace via NOTEBOOKLM_MCP_IMAGE. Contributors building from THIS
+    # checkout run `make dev`, which layers docker-compose.build.yml (see that file).
+    image: ${NOTEBOOKLM_MCP_IMAGE:-tenglin/notebooklm-mcp}:${NOTEBOOKLM_MCP_VERSION:-latest}
     restart: unless-stopped
     # Run as YOUR uid:gid so the mounted profile's files (owned by you on the
     # host) are readable AND writable with NO chown — and your own `notebooklm`
@@ -33,13 +40,28 @@ services:
       NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND: "1"
       # Optional self-hosted OAuth (for claude.ai). Unset → bearer-only; set both
       # together (partial → refuses to start). See .env.example. The OAuth state
-      # (registered clients + tokens) persists under the mounted profile volume.
+      # (registered clients + tokens) persists under the dedicated /data/oauth mount
+      # below — keyed on the base_url, INDEPENDENT of the served profile, so switching
+      # NOTEBOOKLM_PROFILE_DIR no longer orphans registered clients.
       NOTEBOOKLM_MCP_OAUTH_PASSWORD: ${NOTEBOOKLM_MCP_OAUTH_PASSWORD:-}
       NOTEBOOKLM_MCP_OAUTH_BASE_URL: ${NOTEBOOKLM_MCP_OAUTH_BASE_URL:-}
+      # Optional explicit OAuth-state path. Unset → derived default
+      # /data/oauth/<slug>.json on the mount below. Must be listed here to reach the
+      # container (compose `.env` is interpolation-source only, not container env).
+      NOTEBOOKLM_MCP_OAUTH_STATE_PATH: ${NOTEBOOKLM_MCP_OAUTH_STATE_PATH:-}
       # Optional (Cloudflare profile only): trust the tunnel's CF-Connecting-IP header as
       # the per-IP login-throttle key. Default off → throttle keys on the socket peer (the
       # tunnel egress), i.e. one global bucket. Tailscale Funnel does not set this header.
       NOTEBOOKLM_MCP_TRUST_PROXY: ${NOTEBOOKLM_MCP_TRUST_PROXY:-}
+      # Optional (experimental): NOTEBOOKLM_MCP_UPLOAD_WIDGET=1 exposes an in-app MCP-App
+      # upload widget (renders inline in MCP-Apps hosts like claude.ai). Off by default;
+      # requires this http transport + a public URL. See docs/mcp-guide.md.
+      NOTEBOOKLM_MCP_UPLOAD_WIDGET: ${NOTEBOOKLM_MCP_UPLOAD_WIDGET:-}
+      # NOTE: FastMCP stateless HTTP is deliberately NOT passed through here. A compose
+      # `${FASTMCP_STATELESS_HTTP:-}` injects an EMPTY string when unset, and FastMCP's pydantic
+      # Settings() bool-parses it at import and crash-loops the server. Enabling the upload widget
+      # auto-enables stateless in code; a non-widget deploy stays stateful. To force it without the
+      # widget, set FASTMCP_STATELESS_HTTP to a real bool in the process env (never a blank value).
       # Point the app at the mounted profile, independent of the (arbitrary) uid's
       # home. The host dir is always mounted as the profile literally named
       # "server"; NOTEBOOKLM_HOME/profiles/server is where the app reads+writes.
@@ -55,6 +77,11 @@ services:
       # in .env to point at a different profile dir (e.g. a dedicated/throwaway one).
       # Treat the dir as a secret — master_token.json is a full-account credential.
       - "${NOTEBOOKLM_PROFILE_DIR:-${HOME}/.notebooklm/profiles/default}:/data/profiles/server:rw"
+      # READ-WRITE, deployment-scoped: the OAuth client registry + issued tokens live
+      # here (/data/oauth/<slug>.json), NOT in the profile dir — so switching the served
+      # profile keeps registered clients. Pre-create the host dir as yourself (the `make`
+      # targets do; direct `docker compose up` users: `mkdir -p ./oauth-state && chmod 700 ./oauth-state`).
+      - "${NOTEBOOKLM_OAUTH_STATE_DIR:-./oauth-state}:/data/oauth:rw"
     # No `ports:` — not reachable except via the tunnel.
 
   # --- Tunnel option A: Cloudflare (needs a domain in your Cloudflare account) ----

@@ -20,10 +20,12 @@ import notebooklm.mcp._filelink as filelink
 from notebooklm.mcp._filelink import (
     DOWNLOAD_TTL,
     UPLOAD_TTL,
+    WIDGET_UPLOAD_TTL,
     ConsumedJtiStore,
     FileLinkError,
     FileLinkSigner,
     FileTransferConfig,
+    ShortLinkStore,
     _b64url_decode,
 )
 
@@ -161,6 +163,31 @@ def test_config_builds_ttl_scoped_urls() -> None:
     assert down_exp - up_exp >= DOWNLOAD_TTL - UPLOAD_TTL - 2
 
 
+def test_upload_url_honors_custom_ttl() -> None:
+    # The in-app upload widget (ADR-0027) mints its sequentially-uploaded token pool with the
+    # longer WIDGET_UPLOAD_TTL so a later file's token cannot expire mid-batch (#1894). The
+    # builder still stamps op="ul" (route-matched) and injects a jti (single-use), regardless of ttl.
+    signer = _signer()
+    config = FileTransferConfig(signer=signer, base_url="https://host.example")
+    before = int(time.time())
+    url = config.upload_url({"nb": "n1"}, ttl=WIDGET_UPLOAD_TTL)
+    payload = signer.verify(url.rsplit("/", 1)[1], op="ul")
+    assert WIDGET_UPLOAD_TTL == 60 * 60
+    assert WIDGET_UPLOAD_TTL > UPLOAD_TTL  # widget pool outlives the single-link window
+    assert before + WIDGET_UPLOAD_TTL <= payload["exp"] <= int(time.time()) + WIDGET_UPLOAD_TTL + 1
+    assert payload["op"] == "ul"
+    assert isinstance(payload["jti"], str) and payload["jti"]  # still single-use
+
+
+def test_upload_url_defaults_to_upload_ttl() -> None:
+    # The default (no ttl kwarg) is unchanged — the single-link broker keeps the tight UPLOAD_TTL.
+    signer = _signer()
+    config = FileTransferConfig(signer=signer, base_url="https://host.example")
+    before = int(time.time())
+    payload = signer.verify(config.upload_url({"nb": "n1"}).rsplit("/", 1)[1], op="ul")
+    assert before + UPLOAD_TTL <= payload["exp"] <= int(time.time()) + UPLOAD_TTL + 1
+
+
 # --------------------------------------------------------------------------- #
 # jti minting (single-use support — #1746)
 # --------------------------------------------------------------------------- #
@@ -253,6 +280,65 @@ def test_store_recommit_same_jti_does_not_evict_at_cap(monkeypatch) -> None:
     store.commit("a", base + 9)  # re-commit "a" — must refresh, not evict "b"
     assert set(store._seen) == {"a", "b"}
     assert store._seen["a"] == base + 9  # exp refreshed in place
+
+
+def test_store_commit_records_and_reads_back_completion_result() -> None:
+    # #Phase-1 await_upload: commit may carry the upload result so the in-process
+    # completion map lets a same-process poll surface {source_id, name, size, mime}.
+    store = ConsumedJtiStore()
+    exp = int(time.time()) + 60
+    assert store.completed("j1") is None  # nothing recorded yet
+    store.commit("j1", exp, result={"source_id": "s-1", "name": "report.pdf"})
+    assert store.completed("j1") == {"source_id": "s-1", "name": "report.pdf"}
+
+
+def test_store_commit_without_result_leaves_no_completion_record() -> None:
+    # A plain single-use burn (no result) records nothing readable — await_upload then
+    # stays "pending" rather than inventing an empty received payload.
+    store = ConsumedJtiStore()
+    store.commit("j1", int(time.time()) + 60)
+    assert store.completed("j1") is None
+
+
+def test_store_sweeps_expired_completion_results() -> None:
+    # The completion record is bounded to the token's life like _seen: once exp passes,
+    # a later commit sweeps it so the map cannot leak past TTL.
+    store = ConsumedJtiStore()
+    now = int(time.time())
+    store.commit("old", now - 10, result={"source_id": "s-old"})  # already expired
+    store.commit("fresh", now + 60, result={"source_id": "s-fresh"})  # live → triggers sweep
+    assert store.completed("old") is None
+    assert store.completed("fresh") == {"source_id": "s-fresh"}
+
+
+def test_short_link_store_round_trips_token() -> None:
+    # Short-link indirection: mint a tap-friendly /u/<shortid> that resolves to the long
+    # signed token in-process (no DB), so the mobile URL survives a tap and model transcription.
+    store = ShortLinkStore()
+    exp = int(time.time()) + 60
+    sid = store.put("the.signed.token", exp)
+    assert sid and "/" not in sid  # URL-path-safe, non-empty
+    assert store.get(sid) == "the.signed.token"
+
+
+def test_short_link_store_unique_ids_per_put() -> None:
+    store = ShortLinkStore()
+    exp = int(time.time()) + 60
+    a = store.put("tok-a", exp)
+    b = store.put("tok-b", exp)
+    assert a != b
+    assert store.get(a) == "tok-a"
+    assert store.get(b) == "tok-b"
+
+
+def test_short_link_store_expired_id_returns_none() -> None:
+    store = ShortLinkStore()
+    sid = store.put("tok", int(time.time()) - 1)  # already expired
+    assert store.get(sid) is None  # not resolvable past its token's exp
+
+
+def test_short_link_store_unknown_id_returns_none() -> None:
+    assert ShortLinkStore().get("nope") is None
 
 
 def test_config_jti_store_excluded_from_equality_and_default_constructed() -> None:

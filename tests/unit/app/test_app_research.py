@@ -26,6 +26,8 @@ from notebooklm._app.research import (
     cancel_research,
     execute_research_wait,
     poll_and_classify,
+    poll_importable_research,
+    poll_sources_for_import,
     validate_research_wait_flags,
 )
 from notebooklm.exceptions import ValidationError
@@ -160,6 +162,62 @@ async def test_poll_classifies_failed_as_other() -> None:
 
     assert result.kind == "other"
     assert result.status == "failed"
+
+
+# ===========================================================================
+# poll_importable_research / poll_sources_for_import
+# ===========================================================================
+
+
+async def test_poll_importable_returns_sources_and_report() -> None:
+    client = _client(
+        poll=_task(
+            status=ResearchStatus.COMPLETED,
+            sources=[{"title": "S", "url": "http://example.com/1"}],
+            report="# Report",
+        )
+    )
+    sources, report = await poll_importable_research(client, "nb_1", "run_1")
+    assert report == "# Report"
+    assert sources[0]["url"] == "http://example.com/1"
+    # The pinned run id is threaded through poll as the discriminator.
+    client.research.poll.assert_awaited_once_with("nb_1", "run_1")
+
+
+async def test_poll_sources_for_import_drops_report() -> None:
+    """The thin wrapper returns just the sources (REST import path)."""
+    client = _client(
+        poll=_task(
+            status=ResearchStatus.COMPLETED,
+            sources=[{"title": "S", "url": "http://example.com/1"}],
+            report="# Report",
+        )
+    )
+    sources = await poll_sources_for_import(client, "nb_1", "run_1")
+    assert sources[0]["url"] == "http://example.com/1"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        ResearchStatus.NOT_FOUND,
+        ResearchStatus.FAILED,
+        ResearchStatus.IN_PROGRESS,
+        ResearchStatus.NO_RESEARCH,
+    ],
+)
+async def test_poll_importable_refuses_non_completed(status: ResearchStatus) -> None:
+    client = _client(
+        poll=_task(status=status, sources=[{"title": "S", "url": "http://example.com/1"}])
+    )
+    with pytest.raises(ValidationError):
+        await poll_importable_research(client, "nb_1", "run_1")
+
+
+async def test_poll_importable_refuses_completed_empty() -> None:
+    client = _client(poll=_task(status=ResearchStatus.COMPLETED, sources=[]))
+    with pytest.raises(ValidationError):
+        await poll_importable_research(client, "nb_1", "run_1")
 
 
 # ===========================================================================
@@ -387,3 +445,58 @@ async def test_wait_runs_inside_injected_wait_context() -> None:
     )
 
     assert events == ["enter", "exit"]
+
+
+# ---------------------------------------------------------------------------
+# import_research_sources (#1961 idempotent import wrapper)
+# ---------------------------------------------------------------------------
+
+
+async def test_import_research_sources_reports_already_present() -> None:
+    from notebooklm._app.research import ResearchImportOutcome, import_research_sources
+    from notebooklm._research import _imported_result
+
+    client = MagicMock()
+    client.research = MagicMock()
+    client.research.import_sources_with_verification = AsyncMock(
+        return_value=_imported_result(
+            [{"id": "new_1", "title": "New"}],
+            [{"id": "old_1", "title": "Old", "url": "https://old.example.com"}],
+        )
+    )
+
+    outcome = await import_research_sources(
+        client, "nb_1", "task_1", [{"url": "https://new.example.com", "title": "New"}]
+    )
+
+    assert isinstance(outcome, ResearchImportOutcome)
+    assert outcome.newly_imported == [{"id": "new_1", "title": "New"}]
+    assert outcome.already_present == [
+        {"id": "old_1", "title": "Old", "url": "https://old.example.com"}
+    ]
+    assert outcome.newly_imported_count == 1
+    assert outcome.already_present_count == 1
+    # First three args are positional (MCP tests assert args[0]/args[1]); the
+    # opt-out threads through as a keyword.
+    args, kwargs = client.research.import_sources_with_verification.await_args
+    assert args[0] == "nb_1"
+    assert args[1] == "task_1"
+    assert args[2] == [{"url": "https://new.example.com", "title": "New"}]
+    assert kwargs == {"allow_duplicate": False}
+
+
+async def test_import_research_sources_plain_list_return_has_empty_already_present() -> None:
+    from notebooklm._app.research import import_research_sources
+
+    client = MagicMock()
+    client.research = MagicMock()
+    client.research.import_sources_with_verification = AsyncMock(
+        return_value=[{"id": "new_1", "title": "New"}]
+    )
+
+    outcome = await import_research_sources(client, "nb_1", "task_1", [], allow_duplicate=True)
+
+    assert outcome.newly_imported == [{"id": "new_1", "title": "New"}]
+    assert outcome.already_present == []
+    _, kwargs = client.research.import_sources_with_verification.await_args
+    assert kwargs == {"allow_duplicate": True}

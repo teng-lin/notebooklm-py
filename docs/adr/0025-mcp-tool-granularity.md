@@ -73,3 +73,69 @@ bounded content reads) proceed independently of this decision.
 - The offline tool-eval harness (schema-token cost + param-count proxy) is the
   tripwire: if either mega-tool grows, or the surface-wide token cost creeps up,
   the ratchet fails and forces a fresh look.
+
+## Update (2026-07, #1890): fold the source-add composites back into `source_add`
+
+> The **35/40** figures in the Context/Consequences above are **historical** —
+> the surface as of this ADR's original authoring. Intervening additions (the
+> sharing domain, `suggest_prompts`, `source_add_drive_file`, `source_upload_bytes`,
+> `source_add_and_wait`, `await_upload`) took it to **36**; this update brings the
+> surface to **34** (later **33** — see the #1896 update below).
+
+
+Two source tools shipped as **discrete verbs** over the composite-vs-mega-tool
+tension: `source_add_and_wait` (single-mode add + `source_wait` in one call) and
+`source_upload_bytes` (in-channel base64 file-add). Neither is a distinct operation —
+each is just a facet of adding a source: `source_upload_bytes` is a *file input mode*
+(bytes instead of a path, decoded before the add runs), and `source_add_and_wait` is a
+*same-call composition* of an add with the follow-on `source_wait` poll. On top of that,
+`source_add_drive_file` already carried a `wait: bool`, making a separate wait-*verb* an
+inconsistency. They were folded back into `source_add`:
+
+- **add + wait** → `source_add(..., wait=True, timeout=…, interval=…)` — returns the
+  `source_wait` aggregate + top-level `source_id`; single-source only, not for a remote
+  `file` signed-URL upload.
+- **in-channel bytes** → `source_add(source_type="file", bytes_base64=…, filename=…)` —
+  the `file` alternative to `path`, on any transport.
+
+Net **36 → 34 tools** and **−3,099 schema chars** (`SCHEMA_CHAR_BUDGET` ratcheted from
+42,450 to 39,400). `source_add` grows to **15 params** — still well under
+`MAX_PARAMS_PER_TOOL = 22`, and the `test_mega_tools_do_not_grow` param ceiling holds.
+This is the "prefer overloading an existing tool over adding a new one" side of the
+same fewer-tools evidence that argued *against* splitting the mega-tools: consolidating
+these composites lowers the surface-wide schema-token cost the harness ratchets. The
+underlying `_app` add+wait / bytes logic (`_waitagg`, `_fileupload`) is retained
+verbatim — only the two MCP tool *registrations* were removed.
+
+
+## Update (2026-07, #1896): fold `studio_get_prompt` into `studio_list`
+
+> This update brings the current surface to **33**.
+
+`studio_get_prompt(notebook, artifact)` was a discrete read-only tool returning one
+artifact's generation prompt. But the typed `Artifact` already carries
+`generation_prompt` (decoded from the `LIST_ARTIFACTS` row, #1925) and the default
+`studio_list` **summary** listing already surfaces it on every artifact row — so the
+standalone tool duplicated a capability the unified listing tool already had. It was
+removed and its single-artifact lookup folded onto the existing `studio_list(item=…)`
+path (which now threads `include_artifact_meta=True` so a resolved artifact carries its
+prompt).
+
+This is the "prefer folding into an existing tool over a standalone verb" side of the
+ADR-0025 fewer-tools evidence — the same rationale as the #1890 `source_add` fold. The
+prompt rides the `LIST_ARTIFACTS` row the listing already fetches, so there is **no extra
+request** (no per-artifact fetch, no N+1).
+
+Net **34 → 33 tools** and **−367 schema chars** (`SCHEMA_CHAR_BUDGET` ratcheted from
+39,400 to 39,050; measured actual 39,015). The transport-neutral `_app.get_artifact_prompt`
+core is retained verbatim — the CLI `notebooklm artifact get-prompt` and the REST route
+still use it; only the MCP tool *registration* was removed.
+
+**Resolution semantics note:** the `studio_list(item=…)` lookup resolves over the unified
+cross-type Studio resolver (`resolve_studio_item`: full id / hex-prefix / exact title over
+the merged notes+artifacts list — the same resolver `studio_delete` / `studio_rename` use),
+NOT the old artifact-scoped `resolve_artifact`. So, versus `studio_get_prompt`: a title that
+is exact-shared by both a note and an artifact resolves ambiguously (pass `kind` to scope),
+and artifact-*title-prefix* lookups are not supported (use the id or full title). This is a
+deliberate consequence of the one-resolver Studio surface — and moot for the common case,
+since the summary listing already exposes every artifact's prompt without any ref.

@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING
 
 from ..._app.source_mutations import (
     DriveMimeChoice,
+    SourceAddDriveFilePlan,
+    SourceAddDriveFileResult,
     SourceAddDrivePlan,
     SourceAddDriveResult,
     SourceDeleteByTitlePlan,
@@ -40,6 +42,7 @@ from ..._app.source_mutations import (
     SourceRenameResult,
     build_id_ambiguity_error,
     execute_source_add_drive,
+    execute_source_add_drive_file,
     looks_like_full_source_id,
     require_yes_in_json,
 )
@@ -128,6 +131,8 @@ async def execute_source_refresh(
 
 __all__ = [
     "DriveMimeChoice",
+    "SourceAddDriveFilePlan",
+    "SourceAddDriveFileResult",
     "SourceAddDrivePlan",
     "SourceAddDriveResult",
     "SourceDeleteByTitlePlan",
@@ -142,6 +147,7 @@ __all__ = [
     "SourceRenameResult",
     "build_id_ambiguity_error",
     "execute_source_add_drive",
+    "execute_source_add_drive_file",
     "execute_source_delete",
     "execute_source_delete_by_title",
     "execute_source_refresh",

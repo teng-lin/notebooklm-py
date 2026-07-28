@@ -8,6 +8,16 @@
   },
   "allowed_breaks": [
     {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.export",
+      "reason": "v0.8.0 #1874: export()'s `content` parameter is now keyword-only so its positional slots align with export_report/export_data_table (title in slot 3) — this closes a silent title->content misbind footgun (a caller writing export(nb, artifact_id, \"My Title\") previously bound the title into `content`). export() also now enforces exactly-one-of(artifact_id, content). Only callers passing `content` positionally (the footgun path) break; pass content=... instead. See CHANGELOG.md."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.client.NotebookLMClient.artifacts.export",
+      "reason": "Same break as notebooklm.NotebookLMClient.artifacts.export above; this entry covers the audit's dotted-module-path view of the same callable."
+    },
+    {
       "code": "changed-enum-value",
       "object": "notebooklm.VideoStyle.ANIME",
       "reason": "v0.8.0 #1594: VideoStyle wire values were stale and generated the wrong NotebookLM video style. Updated to match live Web UI captures; see CHANGELOG.md and docs/rpc-reference.md."

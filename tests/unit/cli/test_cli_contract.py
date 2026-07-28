@@ -237,6 +237,7 @@ JSON_CONTRACT_EXEMPTIONS: dict[str, str] = {
     "auth logout": "Local auth-state mutation: clears on-disk creds, no auth required.",
     "auth refresh": "Local keepalive: rotates/rewrites the on-disk cookie jar, not an auth-gated RPC.",
     "clear": "Local context reset: clears the active-notebook file, no auth required.",
+    "skill package": "Local artifact build: zips the packaged skill to disk, no auth required.",
     "skill status": "Local install introspection: reads on-disk skill targets, no auth required.",
     "auth check": "Diagnostic command: emits a status report payload and exits 0.",
     "doctor": "Diagnostic/repair command: emits a checks report payload, not the error envelope.",

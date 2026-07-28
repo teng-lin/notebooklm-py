@@ -769,3 +769,213 @@ class TestSkillSourceFallback:
 # were MOVED down to ``tests/unit/app/test_app_skill.py`` (direct calls, no
 # Click). ``TestSkillSourceFallback`` stays here because ``get_skill_source_content``
 # is CLI-owned (the packaged-source loader is not part of ``_app.skill``).
+
+
+class TestSkillPackage:
+    """Tests for skill package (Claude-uploadable archive for chat/Cowork).
+
+    ``package`` reads the whole packaged skill tree through
+    ``get_skill_source_tree`` (``{relative_posix_path: content}``), same as
+    ``install`` -- so these tests patch the tree seam with a small dict
+    fixture instead of a single source string (mirrors ``TestSkillInstall``).
+    """
+
+    SOURCE_TREE = {
+        "SKILL.md": "---\nname: notebooklm\ndescription: test skill\n---\n# Source body v1",
+        "references/setup.md": "# Setup",
+        "scripts/nlm": "#!/usr/bin/env bash\necho hi\n",
+    }
+
+    def _stamped(
+        self, source: dict[str, str] | None = None, version: str = "1.0.0"
+    ) -> dict[str, str]:
+        return skill_module.stamp_skill_files(source or self.SOURCE_TREE, version)
+
+    def _invoke(self, runner, *extra_args: str, source: dict[str, str] | None = None):
+        with (
+            patch.object(
+                skill_module,
+                "get_skill_source_tree",
+                return_value=source or self.SOURCE_TREE,
+            ),
+            patch.object(skill_module, "get_package_version", return_value="1.0.0"),
+        ):
+            return runner.invoke(cli, ["skill", "package", *extra_args])
+
+    def _read_archive(self, archive_path: Path) -> dict[str, str]:
+        import io
+        import zipfile
+
+        with zipfile.ZipFile(io.BytesIO(archive_path.read_bytes())) as archive:
+            prefix = f"{skill_module.SKILL_ARCHIVE_DIRNAME}/"
+            return {
+                name.removeprefix(prefix): archive.read(name).decode("utf-8")
+                for name in archive.namelist()
+            }
+
+    def _read_entry(self, archive_path: Path) -> str:
+        return self._read_archive(archive_path)[skill_module.SKILL_ENTRY]
+
+    def test_package_default_output_in_cwd(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path):
+            result = self._invoke(runner)
+
+            assert result.exit_code == 0, result.output
+            archive = Path(skill_module.DEFAULT_ARCHIVE_FILENAME)
+            assert archive.exists()
+            assert self._read_archive(archive) == self._stamped()
+            assert "Packaged" in result.output
+            assert "Capabilities" in result.output
+
+    def test_package_output_file_path(self, runner, tmp_path):
+        target = tmp_path / "custom-name.zip"
+        result = self._invoke(runner, "--output", str(target))
+
+        assert result.exit_code == 0, result.output
+        assert self._read_archive(target) == self._stamped()
+
+    def test_package_output_directory_uses_default_filename(self, runner, tmp_path):
+        result = self._invoke(runner, "--output", str(tmp_path))
+
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / skill_module.DEFAULT_ARCHIVE_FILENAME).exists()
+
+    def test_package_output_directory_with_existing_archive_refuses(self, runner, tmp_path):
+        (tmp_path / skill_module.DEFAULT_ARCHIVE_FILENAME).write_bytes(b"old")
+        result = self._invoke(runner, "--output", str(tmp_path))
+
+        assert result.exit_code == 1
+        assert (tmp_path / skill_module.DEFAULT_ARCHIVE_FILENAME).read_bytes() == b"old"
+
+    def test_package_refuses_overwrite_without_force(self, runner, tmp_path):
+        target = tmp_path / "skill.zip"
+        target.write_bytes(b"old")
+        result = self._invoke(runner, "--output", str(target))
+
+        assert result.exit_code == 1
+        assert target.read_bytes() == b"old"
+
+    def test_package_force_overwrites(self, runner, tmp_path):
+        target = tmp_path / "skill.zip"
+        target.write_bytes(b"old")
+        result = self._invoke(runner, "--output", str(target), "--force")
+
+        assert result.exit_code == 0, result.output
+        assert self._read_archive(target) == self._stamped()
+
+    def test_package_missing_source_errors(self, runner, tmp_path):
+        with (
+            patch.object(skill_module, "get_skill_source_tree", return_value=None),
+            patch.object(skill_module, "get_package_version", return_value="1.0.0"),
+        ):
+            result = runner.invoke(
+                cli, ["skill", "package", "--output", str(tmp_path / "skill.zip")]
+            )
+
+        assert result.exit_code == 1
+        assert not (tmp_path / "skill.zip").exists()
+
+    def test_package_json_success_shape(self, runner, tmp_path):
+        target = tmp_path / "skill.zip"
+        result = self._invoke(runner, "--output", str(target), "--json")
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["path"] == str(target)
+        assert payload["version"] == "1.0.0"
+        assert payload["entries"] == sorted(
+            f"{skill_module.SKILL_ARCHIVE_DIRNAME}/{rel_path}" for rel_path in self.SOURCE_TREE
+        )
+        assert payload["size_bytes"] == len(target.read_bytes())
+
+    def test_package_json_failure_output_exists_envelope(self, runner, tmp_path):
+        target = tmp_path / "skill.zip"
+        target.write_bytes(b"old")
+        result = self._invoke(runner, "--output", str(target), "--json")
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["error"] is True
+        assert payload["code"] == "OUTPUT_EXISTS"
+        assert "message" in payload
+
+    def test_package_json_failure_missing_source_envelope(self, runner, tmp_path):
+        with (
+            patch.object(skill_module, "get_skill_source_tree", return_value=None),
+            patch.object(skill_module, "get_package_version", return_value="1.0.0"),
+        ):
+            result = runner.invoke(
+                cli, ["skill", "package", "--output", str(tmp_path / "skill.zip"), "--json"]
+            )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["error"] is True
+        assert payload["code"] == "SKILL_SOURCE_MISSING"
+
+    def test_package_is_deterministic_across_paths(self, runner, tmp_path):
+        first = tmp_path / "one.zip"
+        second = tmp_path / "two.zip"
+        assert self._invoke(runner, "--output", str(first)).exit_code == 0
+        assert self._invoke(runner, "--output", str(second)).exit_code == 0
+
+        assert first.read_bytes() == second.read_bytes()
+
+    def test_package_long_description_warns_on_stderr_in_json_mode(self, runner, tmp_path):
+        long_tree = {
+            **self.SOURCE_TREE,
+            "SKILL.md": f"---\nname: notebooklm\ndescription: {'x' * 1100}\n---\n# Body",
+        }
+        target = tmp_path / "skill.zip"
+        result = self._invoke(runner, "--output", str(target), "--json", source=long_tree)
+
+        assert result.exit_code == 0, result.output
+        json.loads(result.stdout)  # stdout stays pure JSON
+        assert "1100 characters" in result.stderr
+
+    def test_package_short_description_does_not_warn(self, runner, tmp_path):
+        target = tmp_path / "skill.zip"
+        result = self._invoke(runner, "--output", str(target), "--json")
+
+        assert result.exit_code == 0, result.output
+        assert result.stderr == ""
+
+    def test_atomic_write_bytes_uses_shared_replace_helper(self, tmp_path, monkeypatch):
+        """Binary skill writes share the Windows transient-retry replace helper."""
+        calls: list[tuple[Path, Path]] = []
+
+        def fake_replace(temp_path: Path, path: Path) -> None:
+            calls.append((temp_path, path))
+            temp_path.replace(path)
+
+        monkeypatch.setattr(skill_module, "replace_file_atomically", fake_replace)
+        target = tmp_path / "skills" / "archive.zip"
+
+        skill_module.atomic_write_bytes(target, b"content")
+
+        assert target.read_bytes() == b"content"
+        assert len(calls) == 1
+        assert calls[0][1] == target
+
+    def test_package_write_failure_emits_envelope(self, runner, tmp_path, monkeypatch):
+        """An OSError from the archive write surfaces as WRITE_FAILED, not a traceback."""
+
+        def boom(path: Path, data: bytes) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(skill_module, "atomic_write_bytes", boom)
+        result = self._invoke(runner, "--output", str(tmp_path / "skill.zip"), "--json")
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["error"] is True
+        assert payload["code"] == "WRITE_FAILED"
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
+    def test_package_trailing_slash_directory_intent(self, runner, tmp_path):
+        """A nonexistent --output ending in a separator creates the directory and
+        writes the default filename inside it (Path would silently drop the slash)."""
+        result = self._invoke(runner, "--output", str(tmp_path / "newdir") + "/")
+
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / "newdir" / skill_module.DEFAULT_ARCHIVE_FILENAME).exists()

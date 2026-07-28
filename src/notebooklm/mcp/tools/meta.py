@@ -89,9 +89,19 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
         "available": True,
         "notebook_limit": limits.notebook_limit,
         "source_limit": limits.source_limit,
-        # Global account output language (e.g. "en" / "ja" / "zh_Hans"); ``None``
-        # when unset or unparseable. Read-only here — a setter is tracked in #1723.
+        # Subscription tier enum from the same GET_USER_SETTINGS limits block (idx 4);
+        # ``None`` on legacy blocks. Opaque key, not an ordinal — see AccountLimits.tier.
+        "tier": limits.tier,
+        # Global account output language, e.g. "en" / "ja" / "zh_Hans" (``None``
+        # when the account has never set one). ``output_language_is_default``
+        # disambiguates that ``None``: ``True`` means the account simply uses
+        # NotebookLM's default language — NOT a missing/broken value. Envelope-level
+        # drift never reaches this branch (``safe_index`` raises → ``available:
+        # False`` above); per ADR-0011 drift *at the optional language slot* is by
+        # design indistinguishable from unset, so it too surfaces as the default.
+        # Read-only here — a setter is tracked in #1723.
         "output_language": output_language,
+        "output_language_is_default": output_language is None,
     }
 
 
@@ -109,16 +119,16 @@ def register(mcp: Any) -> None:
         the server host.
 
         Set ``include_account=True`` to also fetch an ``account`` block: the
-        signed-in identity ``{email, authuser}`` (in-memory/persisted first, then a
-        single live ``WIZ_global_data`` probe when authenticated — ``email`` is
-        ``None`` only when it can't be discovered at all) plus quota-pacing fields
-        ``{available, notebook_limit, source_limit, output_language}``
-        (``output_language`` is the global account setting, e.g. ``"en"``/``"ja"``,
-        or ``None`` when unset or unparseable). The quota fields need a *live*
-        session (a few reads), so the block is off by default — the default call is
-        a fast, network-free probe. When the session is missing or stale the quota
-        fields degrade to ``{available: False, reason: ...}`` (identity still
-        included) rather than failing the whole call.
+        signed-in identity ``{email, authuser}`` (persisted first, then a live
+        ``WIZ_global_data`` probe when authenticated; ``None`` only when it can't be
+        discovered) plus quota fields ``{available, notebook_limit,
+        source_limit, tier, output_language, output_language_is_default}``
+        (``output_language`` is the global account code, e.g. ``"en"``, or ``None``
+        with ``output_language_is_default: true`` when using NotebookLM's default).
+        The quota fields need a *live* session, so the block is off by default — the
+        default call is a fast, network-free probe. When the session is missing or
+        stale the fields degrade to ``{available: False, reason: ...}`` (identity
+        still included) rather than failing the whole call.
 
         ``profile`` names the resolved storage profile the probe ran against
         (e.g. ``"default"``); the booleans are the actual health signals.

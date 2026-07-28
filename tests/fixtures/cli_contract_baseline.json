@@ -98,6 +98,7 @@
     ],
     "skill": [
       "install",
+      "package",
       "show",
       "status",
       "uninstall"
@@ -105,6 +106,7 @@
     "source": [
       "add",
       "add-drive",
+      "add-drive-file",
       "add-research",
       "clean",
       "delete",
@@ -9102,6 +9104,7 @@
       "class": "Group",
       "commands": [
         "install",
+        "package",
         "show",
         "status",
         "uninstall"
@@ -9215,6 +9218,75 @@
         }
       ],
       "short_help": "Install or update the NotebookLM skill for..."
+    },
+    "skill package": {
+      "class": "Command",
+      "params": [
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Archive path to write (default: ./notebooklm-skill.zip). If PATH is an existing directory or ends with a path separator, the default filename is written inside it.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "output",
+          "opts": [
+            "--output",
+            "-o"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "allow_dash": false,
+            "dir_okay": true,
+            "executable": false,
+            "exists": false,
+            "file_okay": true,
+            "name": "path",
+            "readable": true,
+            "resolve_path": false,
+            "writable": false
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Overwrite an existing archive file.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "force",
+          "opts": [
+            "--force"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Build a Claude-uploadable skill archive..."
     },
     "skill show": {
       "class": "Command",
@@ -9398,6 +9470,7 @@
       "commands": [
         "add",
         "add-drive",
+        "add-drive-file",
         "add-research",
         "clean",
         "delete",
@@ -9667,6 +9740,94 @@
         }
       ],
       "short_help": "Add a Google Drive document as a source."
+    },
+    "source add-drive-file": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "document_id",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": "NOTEBOOKLM_NOTEBOOK",
+          "has_custom_shell_complete": true,
+          "help": "Notebook ID (uses current if not set). Supports partial IDs.",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "notebook_id",
+          "opts": [
+            "-n",
+            "--notebook"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Custom title (default: the file's Drive name)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "title",
+          "opts": [
+            "--title"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Wait for processing to finish",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "wait",
+          "opts": [
+            "--wait"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Add an upload-only Google Drive file..."
     },
     "source add-research": {
       "class": "Command",

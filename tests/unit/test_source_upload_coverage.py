@@ -451,6 +451,30 @@ async def test_add_file_asserts_bound_loop_before_work(tmp_path) -> None:
     lifecycle.assert_bound_loop.assert_called_once()
 
 
+def test_get_download_semaphore_asserts_bound_loop_before_building(tmp_path) -> None:
+    """``get_download_semaphore`` asserts loop ownership before building the primitive.
+
+    This is the Drive auto-route download seam (#1884): a cross-loop
+    ``add_drive_file`` must fail before it can acquire the lazy semaphore on the
+    wrong loop (or start a fetch), mirroring ``add_file``'s upload-seam guard.
+    """
+    lifecycle = _Lifecycle()
+    auth = MagicMock()
+    auth.authuser = 0
+    auth.account_email = None
+    pipeline = SourceUploadPipeline(
+        rpc=MagicMock(), drain=_Drain(), lifecycle=lifecycle, kernel=MagicMock(), auth=auth
+    )
+    lifecycle.assert_bound_loop = MagicMock(  # type: ignore[method-assign]
+        side_effect=RuntimeError("wrong loop")
+    )
+    with pytest.raises(RuntimeError, match="wrong loop"):
+        pipeline.get_download_semaphore()
+    lifecycle.assert_bound_loop.assert_called_once()
+    # The primitive was NOT built — the guard fired first.
+    assert pipeline._download_semaphore is None
+
+
 # =============================================================================
 # register_file_source() probe / create branches
 # =============================================================================

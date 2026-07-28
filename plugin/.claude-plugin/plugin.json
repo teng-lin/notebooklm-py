@@ -1,7 +1,7 @@
 {
   "name": "notebooklm-mcp",
   "displayName": "NotebookLM (notebooklm-py)",
-  "version": "0.8.0a3",
+  "version": "0.8.0rc1",
   "description": "Connect Claude to Google NotebookLM: manage notebooks and sources, chat over your notebooks, generate podcasts/videos/quizzes/mind maps, and run research. Bundles the notebooklm Agent Skill (a CLI-first skill with self-bootstrapping launcher and workflow scripts) alongside the MCP server.",
   "author": {
     "name": "Teng Lin",

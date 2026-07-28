@@ -547,3 +547,30 @@ class TestPendingRegistryBounded:
         reg.record("nb", "x")
         reg.drop("nb", "x")
         assert reg.knows("nb", "x") is False
+
+    def test_drop_then_rerecord_survives_eviction_churn(self) -> None:
+        # #1872: drop() must remove the stale FIFO tuple. Fill to the cap, then
+        # drop + re-record "x" (moving it to newest) and push one more entry so a
+        # REAL eviction fires. The fix evicts the genuinely-oldest entry ("y-0")
+        # and keeps the live, re-recorded "x". With the bug, drop() leaves x's
+        # stale tuple in _order, the re-record duplicates it, and that stale copy
+        # sits at the front — so it is evicted first, dropping "x" from _ids and
+        # making knows() wrongly False.
+        reg = PendingRegistry()
+        reg.record("nb", "x")
+        for i in range(_MAX_ENTRIES - 1):
+            reg.record("nb", f"y-{i}")  # now at the cap: _order = [x, y-0 .. y-(MAX-2)]
+        reg.drop("nb", "x")
+        reg.record("nb", "x")  # re-recorded as the newest entry
+        reg.record("nb", "z")  # one over the cap -> exactly one real eviction
+        assert reg.knows("nb", "x") is True  # the live re-recorded id survives
+        assert reg.knows("nb", "z") is True
+        assert reg.knows("nb", "y-0") is False  # the genuinely-oldest entry was evicted
+
+    def test_drop_removes_fifo_tuple_no_duplicate_on_rerecord(self) -> None:
+        reg = PendingRegistry()
+        reg.record("nb", "x")
+        reg.drop("nb", "x")
+        assert ("nb", "x") not in reg._order
+        reg.record("nb", "x")
+        assert list(reg._order).count(("nb", "x")) == 1

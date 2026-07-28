@@ -5,9 +5,10 @@ Re-exports the cluster's public service classes; importers may also reach submod
 directly (``from .._source.upload import SourceUploadPipeline``).
 """
 
-from . import add, content, listing, polling, upload, upload_payloads
+from . import add, content, drive_import, listing, polling, upload, upload_payloads
 from .add import SourceAddService
 from .content import SourceContentRenderer
+from .drive_import import DriveFetcher, DriveImportService
 from .listing import SourceLister
 from .polling import SourcePoller
 from .upload import SourceUploadPipeline
@@ -21,10 +22,13 @@ from .upload_payloads import (
 __all__ = [
     "add",
     "content",
+    "drive_import",
     "listing",
     "polling",
     "upload",
     "upload_payloads",
+    "DriveFetcher",
+    "DriveImportService",
     "SourceAddService",
     "SourceContentRenderer",
     "SourceLister",

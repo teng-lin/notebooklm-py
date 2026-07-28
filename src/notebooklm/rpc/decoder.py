@@ -525,7 +525,10 @@ def _user_displayable_error_message(error_info: Any) -> str:
     if status is None:
         return message
     code, label = status
-    return f"{message} Upstream status code {code} ({label})."
+    # Keep the stable, human-readable status label but not the raw numeric gRPC
+    # code — it carries no end-user value and is volatile internal detail
+    # (#1921). The numeric code stays available on the exception's ``rpc_code``.
+    return f"{message} (Upstream: {label}.)"
 
 
 _SENTINEL_NO_RESULT = object()
@@ -711,14 +714,18 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
         # This means wrb.fr had null result_data without UserDisplayableError.
         # Enrich the message if the server attached a bare status code at
         # index 5 (issues #114 / #294 showed GET_NOTEBOOK returning [5]).
+        #
+        # The obfuscated ``rpc_id`` (the #1 breakage class per CLAUDE.md — it
+        # changes whenever Google re-obfuscates a method) and the raw numeric
+        # gRPC ``code`` carry no value for the end user and, when surfaced
+        # through MCP/CLI, leak volatile internal detail (#1921). Keep them on
+        # the exception ATTRIBUTES (``method_id`` / ``rpc_code`` / ``found_ids``)
+        # for logging and debugging, but keep the human-readable message free of
+        # them — only the stable gRPC status label is user-facing.
         status = _find_wrb_status(chunks, rpc_id)
-        # The base ``RPCError.__str__`` does not surface ``found_ids``, so embed
-        # it in the message text too — otherwise the strongest debugging signal
-        # is silently dropped from plain logs and tracebacks for these branches.
-        found_ids_suffix = f" Found IDs: {found_ids}."
         if status is not None:
             code, label = status
-            message = f"RPC {rpc_id} returned null result with status code {code} ({label})."
+            message = f"The server rejected this request ({label.lower()})."
             # Route NOT_FOUND (5) / PERMISSION_DENIED (7) through ClientError
             # so is_auth_error does not misclassify them as auth
             # failures and trigger a spurious token-refresh retry. The
@@ -726,22 +733,21 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
             # other codes (e.g. INTERNAL 13) get a plain message.
             if code in (5, 7):
                 raise ClientError(
-                    message + found_ids_suffix + _ACCOUNT_MISMATCH_HINT,
+                    message + _ACCOUNT_MISMATCH_HINT,
                     method_id=rpc_id,
                     rpc_code=code,
                     found_ids=found_ids,
                     raw_response=response_preview,
                 )
             raise RPCError(
-                message + found_ids_suffix,
+                message,
                 method_id=rpc_id,
                 rpc_code=code,
                 found_ids=found_ids,
                 raw_response=response_preview,
             )
         raise RPCError(
-            f"RPC {rpc_id} returned null result data "
-            f"(possible server error or parameter mismatch).{found_ids_suffix}",
+            "The server returned an empty result (possible server error or parameter mismatch).",
             method_id=rpc_id,
             found_ids=found_ids,
             raw_response=response_preview,

@@ -253,7 +253,7 @@ async def test_server_info_include_account_authenticated(
     mock_client.get_account_authuser = MagicMock(return_value=1)
     mock_client.settings.get_user_settings = AsyncMock(
         return_value=UserSettings(
-            limits=AccountLimits(notebook_limit=100, source_limit=50),
+            limits=AccountLimits(notebook_limit=100, source_limit=50, tier=1),
             output_language="ja",
         )
     )
@@ -264,7 +264,10 @@ async def test_server_info_include_account_authenticated(
         "available": True,
         "notebook_limit": 100,
         "source_limit": 50,
+        "tier": 1,
         "output_language": "ja",
+        # An explicit code is not the default.
+        "output_language_is_default": False,
     }
     # The live probe is enabled only when the local auth check passed.
     mock_client.get_account_email.assert_awaited_once_with(live_fallback=True)
@@ -315,7 +318,14 @@ async def test_server_info_include_account_degrades_on_rpc_error(
 async def test_server_info_include_account_success_with_null_fields(
     mcp_call, mock_client, tmp_path, monkeypatch
 ) -> None:
-    """Bare limits + no language is available:True (locks the success-with-null contract)."""
+    """Bare limits + no language is available:True (locks the success-with-null contract).
+
+    A ``None`` ``output_language`` on the ``available: True`` path means the account
+    never set an explicit language, so it uses NotebookLM's default — signalled by
+    ``output_language_is_default: True`` rather than a bare null that reads as
+    missing/broken. (A genuinely unparseable settings response degrades to
+    ``available: False`` instead, so it never reaches this branch.)
+    """
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     _write_authed_storage()
     mock_client.settings.get_user_settings = AsyncMock(
@@ -329,7 +339,10 @@ async def test_server_info_include_account_success_with_null_fields(
         "available": True,
         "notebook_limit": None,
         "source_limit": None,
+        "tier": None,
         "output_language": None,
+        # No explicit code on a live session → the account uses the default.
+        "output_language_is_default": True,
     }
 
 

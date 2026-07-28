@@ -216,7 +216,11 @@ class TestAddSourceDrive:
     @pytest.mark.asyncio
     async def test_add_source_drive_payload_structure(self):
         """Test add_drive creates the expected payload."""
-        rpc_call = AsyncMock(return_value=[["source_id_123"]])
+        # Echo the requested title so the #1960 honor-title path is a no-op (the
+        # add already returned "My Document") and only the ADD_SOURCE call fires.
+        rpc_call = AsyncMock(
+            return_value=[[[["source_id_123"], "My Document", [None, 0], [None, 2]]]]
+        )
         core = make_fake_core(rpc_call=rpc_call)
         sources = SourcesAPI(core.rpc_executor, uploader=MagicMock())
 

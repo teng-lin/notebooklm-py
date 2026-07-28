@@ -33,10 +33,42 @@ class TestPromptSuggestionRow:
     """Permissive position reads for one ``SUGGEST_PROMPTS`` suggestion row."""
 
     def test_well_formed_row(self) -> None:
+        # The backend formats the prompt as a markdown list item; the leading
+        # "\n- " marker is stripped so it is a clean ready-to-send string (#1909).
         row = PromptSuggestionRow(["Professional Briefing", "\n- Summarize."])
         assert row.is_well_formed
         assert row.title == "Professional Briefing"
-        assert row.prompt == "\n- Summarize."
+        assert row.prompt == "Summarize."
+
+    def test_leading_list_marker_stripped(self) -> None:
+        # Bullet ("- "/"* "/"+ ") leading markers, with any surrounding
+        # whitespace, are stripped from both title and prompt.
+        assert PromptSuggestionRow(["t", "\n- Ask X"]).prompt == "Ask X"
+        assert PromptSuggestionRow(["t", "* Ask X"]).prompt == "Ask X"
+        assert PromptSuggestionRow(["t", "  + Ask X"]).prompt == "Ask X"
+        assert PromptSuggestionRow(["\n- A title", "p"]).title == "A title"
+
+    def test_marker_only_leaf_collapses_to_empty(self) -> None:
+        # A leaf that is only a bullet + whitespace collapses to "" — not a bare
+        # "-" (the lstrip-before-match structure handles this, #1912 review).
+        assert PromptSuggestionRow(["t", "\n-   "]).prompt == ""
+
+    def test_numeric_prefix_preserved(self) -> None:
+        # Ordered-list counters are NOT stripped — a legit numeric prefix (a year,
+        # a count) is meaningful content, not list framing (#1912 review).
+        assert (
+            PromptSuggestionRow(["t", "2026. Summarize the annual trends"]).prompt
+            == "2026. Summarize the annual trends"
+        )
+        assert (
+            PromptSuggestionRow(["t", "5) reasons to refactor"]).prompt == "5) reasons to refactor"
+        )
+
+    def test_clean_leaf_unchanged_apart_from_surrounding_whitespace(self) -> None:
+        # A leaf with no leading marker keeps its content; only surrounding
+        # whitespace is trimmed, and interior newlines are preserved.
+        assert PromptSuggestionRow(["t", "Ask X"]).prompt == "Ask X"
+        assert PromptSuggestionRow(["t", "Line one\n- Line two"]).prompt == "Line one\n- Line two"
 
     def test_short_row_degrades_without_raise(self) -> None:
         # Missing the prompt slot (< _MIN_LEN): not well-formed; reads degrade to "".

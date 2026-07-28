@@ -14,13 +14,18 @@ Each install target is a **directory** (``SKILL.md`` + ``references/`` +
 inside that directory that carries the version stamp and is read for
 ``show`` / status-version purposes.
 
+This module also owns the **byte construction** of the uploadable skill
+archive (:func:`build_skill_archive_bytes`, used by ``skill package``); it
+zips the whole stamped tree, not just the entry file, so it is a pure
+bytes-in/bytes-out helper over the same tree shape as install.
+
 What stays in the CLI adapter (``cli/skill_cmd.py``):
 
-* the actual atomic file writes (``atomic_write_text``) and directory
-  replacement (``shutil.rmtree``) — it reads the ``replace_file_atomically``
-  helper off the command module at call time so the historical
-  ``monkeypatch.setattr(skill_cmd, "replace_file_atomically", ...)`` test seam
-  keeps landing, and
+* the actual atomic file writes (``atomic_write_text`` / ``atomic_write_bytes``)
+  and directory replacement (``shutil.rmtree``) — it reads the
+  ``replace_file_atomically`` helper off the command module at call time so
+  the historical ``monkeypatch.setattr(skill_cmd, "replace_file_atomically",
+  ...)`` test seam keeps landing, and
 * the packaged-source loaders (``get_skill_source_content`` /
   ``get_skill_source_tree``) — they forward to the CLI-owned
   ``agent_templates`` package-data readers, which tests patch on the command
@@ -32,7 +37,9 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 
 from __future__ import annotations
 
+import io
 import re
+import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +63,20 @@ TARGETS: dict[str, SkillTarget] = {
     "agents": SkillTarget("Agent Skills", Path(".agents") / "skills" / "notebooklm"),
 }
 SCOPES = ("user", "project")
+
+# Claude custom-skill upload format (chat + Cowork, Settings -> Capabilities):
+# a ZIP whose root contains the skill *folder*; the folder name must equal the
+# SKILL.md frontmatter ``name``.
+SKILL_ARCHIVE_DIRNAME = "notebooklm"
+SKILL_ARCHIVE_ENTRY = f"{SKILL_ARCHIVE_DIRNAME}/SKILL.md"
+DEFAULT_ARCHIVE_FILENAME = "notebooklm-skill.zip"
+
+# Fixed metadata so identical content yields byte-identical archives (within
+# one environment -- deflate output may differ across zlib versions).
+_ARCHIVE_DATE_TIME = (2020, 1, 1, 0, 0, 0)
+_ARCHIVE_CREATE_SYSTEM = 3  # Unix
+_ARCHIVE_EXTERNAL_ATTR = 0o100644 << 16  # S_IFREG | 0644
+_ARCHIVE_EXTERNAL_ATTR_EXEC = 0o100755 << 16  # S_IFREG | 0755 (scripts/ entries)
 
 # Per-target classification used by ``skill install`` to decide whether each
 # target needs a write, would clobber differing content, or is already in sync.
@@ -134,6 +155,36 @@ def stamp_skill_files(files: dict[str, str], version: str) -> dict[str, str]:
     }
 
 
+def build_skill_archive_bytes(stamped_files: dict[str, str]) -> bytes:
+    """Build a Claude-uploadable skill archive in memory.
+
+    Returns the bytes of a ZIP whose root contains the ``notebooklm/``
+    skill folder (:data:`SKILL_ARCHIVE_DIRNAME`) holding every file in
+    ``stamped_files`` (as produced by :func:`stamp_skill_files`) -- the
+    entry file plus its ``references/`` and ``scripts/`` tree. Metadata is
+    pinned (fixed timestamp, Unix create system, regular-file mode; ``scripts/``
+    entries additionally get the executable bit, mirroring the ``chmod``
+    ``install`` applies on disk) so identical input produces byte-identical
+    archives within one environment. Compression is set per entry because
+    ``ZipFile``'s archive-level default does not apply to an explicit
+    ``ZipInfo`` (which would silently fall back to ``ZIP_STORED``).
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for rel_path, content in stamped_files.items():
+            info = zipfile.ZipInfo(
+                f"{SKILL_ARCHIVE_DIRNAME}/{rel_path}", date_time=_ARCHIVE_DATE_TIME
+            )
+            info.create_system = _ARCHIVE_CREATE_SYSTEM
+            info.external_attr = (
+                _ARCHIVE_EXTERNAL_ATTR_EXEC
+                if rel_path.startswith("scripts/")
+                else _ARCHIVE_EXTERNAL_ATTR
+            )
+            archive.writestr(info, content, compress_type=zipfile.ZIP_DEFLATED)
+    return buffer.getvalue()
+
+
 def remove_empty_parents(skill_path: Path, scope: str) -> None:
     """Remove empty skill directories without touching the scope root."""
     stop_at = get_scope_root(scope)
@@ -210,7 +261,10 @@ def report_mixed_no_clobber_up_to_date(
 
 
 __all__ = [
+    "DEFAULT_ARCHIVE_FILENAME",
     "SCOPES",
+    "SKILL_ARCHIVE_DIRNAME",
+    "SKILL_ARCHIVE_ENTRY",
     "SKILL_ENTRY",
     "TARGET_CREATE",
     "TARGET_OVERWRITE",
@@ -218,6 +272,7 @@ __all__ = [
     "TARGETS",
     "SkillTarget",
     "add_version_comment",
+    "build_skill_archive_bytes",
     "classify_target",
     "get_installed_content",
     "get_package_version",

@@ -18,7 +18,13 @@ from notebooklm._source.upload import (
     _transient_error_types_for_upload,
     _validate_resumable_upload_url,
 )
-from notebooklm.exceptions import NetworkError, ValidationError
+from notebooklm.exceptions import (
+    AuthError,
+    NetworkError,
+    RateLimitError,
+    ServerError,
+    ValidationError,
+)
 from notebooklm.rpc import RPCError, RPCMethod
 from notebooklm.types import Source, SourceAddError
 
@@ -558,7 +564,7 @@ async def test_register_file_source_status3_includes_source_limit_context(
     service: SourceUploadPipeline,
 ) -> None:
     rpc_error = RPCError(
-        "RPC o4cbdc returned null result with status code 3 (Invalid argument).",
+        "The server rejected this request (invalid argument).",
         method_id="o4cbdc",
         rpc_code=3,
     )
@@ -593,7 +599,7 @@ async def test_register_file_source_uses_configured_source_limit_lookup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     rpc_error = RPCError(
-        "RPC o4cbdc returned null result with status code 3 (Invalid argument).",
+        "The server rejected this request (invalid argument).",
         method_id="o4cbdc",
         rpc_code=3,
     )
@@ -772,6 +778,51 @@ async def test_start_resumable_upload_rejects_untrusted_upload_header_url() -> N
             "src_123",
             "application/pdf",
         )
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_exc"),
+    [
+        (400, ValidationError),  # unsupported file type (.pub) → clean 4xx
+        (415, ValidationError),  # unsupported media type → clean 4xx
+        (401, AuthError),  # session/credentials rejected → auth
+        (403, AuthError),  # forbidden → auth
+        (302, AuthError),  # session bounced to login → auth, NOT "unsupported file"
+        (503, ServerError),  # transient upstream failure stays a (retriable) server error
+        (429, RateLimitError),  # rate limit stays a rate-limit error
+    ],
+)
+@pytest.mark.asyncio
+async def test_start_resumable_upload_maps_upstream_status_to_notebooklm_error(
+    status: int, expected_exc: type[Exception]
+) -> None:
+    # NotebookLM's /upload endpoint answers with a raw HTTP status (not a
+    # batchexecute envelope), so the client layer must classify it — a raw
+    # ``httpx.HTTPStatusError`` must never leak to callers (#1892). A 4xx
+    # request/file rejection surfaces as ``ValidationError`` (the same bad-input
+    # category as the local unsupported-type check) so the MCP/REST adapters
+    # render a clean, redacted 4xx instead of an opaque 500.
+    req = httpx.Request("POST", "https://notebooklm.google.com/upload/_/")
+    response = httpx.Response(status, request=req, text="upstream rejected the upload")
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=response)
+    client_cm = AsyncMock()
+    client_cm.__aenter__.return_value = client
+    client_factory = MagicMock(return_value=client_cm)
+    runtime = HttpRuntime()
+    service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
+
+    with pytest.raises(expected_exc) as exc_info:
+        await service.start_resumable_upload(
+            "nb_123",
+            "newsletter.pub",
+            12,
+            "src_123",
+            "application/vnd.ms-publisher",
+        )
+    # The filename rides in the classified message; the raw httpx error is chained.
+    assert "newsletter.pub" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, httpx.HTTPStatusError)
 
 
 @pytest.mark.asyncio

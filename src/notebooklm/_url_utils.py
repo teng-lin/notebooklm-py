@@ -5,7 +5,13 @@ flagged by CodeQL (py/incomplete-url-substring-sanitization).
 """
 
 import re
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
+
+# Control characters (C0, DEL, C1) that ``unquote`` can reintroduce into a
+# derived display title — a NUL/newline must never reach a source title.
+_TITLE_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# Upper bound on a URL-derived display title (a filename stem; 200 is generous).
+_MAX_URL_TITLE_LEN = 200
 
 # The NotebookLM marketing/landing host (note: no ``.com``). A request to the
 # app host ``notebooklm.google.com`` is redirected here — typically
@@ -15,6 +21,49 @@ from urllib.parse import parse_qs, urlparse
 # This is distinct from the ``accounts.google.com`` login redirect (expired or
 # invalid auth) and from a genuine page-structure change.
 _NOTEBOOKLM_MARKETING_HOST = "notebooklm.google"
+
+
+def pdf_url_display_title(url: str) -> str | None:
+    """Derive a display title from a direct-PDF ``url``, or ``None`` to keep it.
+
+    Direct-PDF-URL sources arrive from the server with the raw request URL in
+    their title slot (Google extracts ``<title>`` for HTML pages but leaves the
+    URL verbatim for a link that points straight at a ``.pdf``) — issue #1850.
+    When such a URL is used as a title, this returns a cleaner display title:
+    the decoded, ``.pdf``-stripped final path segment, e.g.
+    ``https://host/papers/Some%20Paper.pdf?v=2#p3`` → ``Some Paper``.
+
+    Returns ``None`` (so the caller keeps the original title) for anything that
+    would not yield a clean filename:
+
+    * a non-``http(s)`` scheme (``data:`` / ``ftp:`` / opaque),
+    * a path whose basename has no ``.pdf`` extension — e.g.
+      ``https://host/download?file=x.pdf`` (path basename is ``download``),
+    * a degenerate segment (root URL ``https://host/``, ``.`` / ``..``, or a
+      segment that is only control characters).
+
+    Query and fragment are ignored; a trailing slash is stripped. The result is
+    control-char scrubbed and length-bounded so a title never carries a
+    NUL/newline or unbounded base64 noise.
+    """
+    try:
+        parsed = urlparse(url)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if parsed.scheme not in ("http", "https"):
+        return None
+    # Split the still-encoded path first, then decode the leaf — so a
+    # percent-encoded ``%2F`` inside a segment is not treated as a separator.
+    segment = unquote(parsed.path.rstrip("/").rsplit("/", 1)[-1])
+    if segment[-4:].lower() != ".pdf":
+        return None
+    stem = _TITLE_CONTROL_CHARS.sub("", segment[:-4]).strip()
+    # A separator only reaches the leaf via a percent-encoded ``%2F`` / ``%5C``
+    # (real PDF filenames have none) — treat such adversarial encodings, and
+    # bare ``.`` / ``..``, as "no clean title" and keep the raw URL.
+    if not stem or stem in (".", "..") or "/" in stem or "\\" in stem:
+        return None
+    return stem[:_MAX_URL_TITLE_LEN]
 
 
 def is_youtube_url(url: str) -> bool:

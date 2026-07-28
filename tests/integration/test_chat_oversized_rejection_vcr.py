@@ -117,7 +117,9 @@ def _recorded_notebook_id() -> str:
 
 @pytest.mark.vcr
 @pytest.mark.asyncio
-async def test_oversized_question_raises_chat_error_not_parse_error() -> None:
+async def test_oversized_question_raises_chat_error_not_parse_error(
+    legacy_vcr_follow_up_probe,
+) -> None:
     """An over-long question surfaces a ``ChatError`` rejection, not a parse error.
 
     The assertion is the regression: pre-fix this raised

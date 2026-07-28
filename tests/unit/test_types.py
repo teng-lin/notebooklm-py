@@ -251,7 +251,7 @@ def test_representative_public_dataclasses_pickle_round_trip():
     chat_reference = ChatReference(source_id="src_1", citation_number=1, cited_text="quoted")
     shared_user = SharedUser(email="reader@example.com", permission=SharePermission.VIEWER)
     instances = [
-        AccountLimits(notebook_limit=10, source_limit=50, raw_limits=("raw",)),
+        AccountLimits(notebook_limit=10, source_limit=50, raw_limits=("raw",), tier=2),
         Artifact(
             id="artifact_1",
             title="Audio",
@@ -931,6 +931,134 @@ class TestSource:
         assert api_source.created_at == listing_source.created_at
         # type code lives at metadata[4] (== 5 → WEB_PAGE) for both paths.
         assert api_source.kind == listing_source.kind == SourceType.WEB_PAGE
+
+    def test_pdf_url_title_derives_basename(self):
+        """A direct-PDF URL used as the title falls back to the path basename.
+
+        Regression for #1850: Google leaves the raw request URL in the title
+        slot for a link that points straight at a ``.pdf`` (HTML pages get an
+        extracted ``<title>``). ``from_row`` derives a display title from the
+        URL path basename while leaving ``url`` untouched.
+        """
+        url = "https://example.com/papers/SomePaper.pdf"
+        # Medium-nested entry, type_code 3 (PDF), title == the raw URL.
+        entry = [["src_pdf"], url, [None, None, None, None, 3, None, None, [url]]]
+        source = Source.from_api_response([entry])
+
+        assert source.title == "SomePaper"
+        assert source.url == url
+        assert source.kind == SourceType.PDF
+
+    def test_pdf_url_title_derives_on_both_funnels(self):
+        """The fallback fires identically on the add and list construction paths."""
+        from notebooklm._row_adapters.sources import SourceRow
+        from notebooklm.rpc import RPCMethod
+
+        url = "https://example.com/reports/Q3%20Report.pdf"
+        entry = [["src_pdf2"], url, [None, None, None, None, 3, None, None, [url]]]
+
+        listing_source = Source.from_row(
+            SourceRow.from_entry(entry, method_id=RPCMethod.GET_NOTEBOOK.value)
+        )
+        api_source = Source.from_api_response([entry])
+
+        assert api_source == listing_source
+        assert api_source.title == listing_source.title == "Q3 Report"
+
+    def test_pdf_real_title_untouched(self):
+        """A PDF whose title is a real string (not a URL) is left alone."""
+        entry = [
+            ["src_pdf3"],
+            "Quarterly Earnings",
+            [None, None, None, None, 3, None, None, ["https://example.com/q.pdf"]],
+        ]
+        source = Source.from_api_response([entry])
+        assert source.title == "Quarterly Earnings"
+
+    def test_non_pdf_url_title_untouched(self):
+        """The fallback is PDF-only: a web_page whose title is a URL is untouched."""
+        url = "https://example.com/page.pdf"
+        # type_code 5 == WEB_PAGE, even though the title looks like a .pdf URL.
+        entry = [["src_web"], url, [None, None, None, None, 5, None, None, [url]]]
+        source = Source.from_api_response([entry])
+        assert source.title == url
+        assert source.kind == SourceType.WEB_PAGE
+
+    def test_drive_pdf_title_untouched(self):
+        """A Drive-hosted PDF (type_code 14 → PDF by MIME) keeps its filename title.
+
+        Drive sources carry no URL and a filename title, so the URL-shape gate
+        in the fallback never fires — the #1832 disambiguation and the #1850
+        fallback do not collide.
+        """
+        metadata = [None] * 20
+        metadata[4] = 14  # ambiguous native-Sheet / Drive-binary code
+        metadata[19] = "application/pdf"  # MIME disambiguates 14 → PDF
+        entry = [["src_drive"], "MyReport.pdf", metadata]
+        source = Source.from_api_response([entry])
+
+        assert source.kind == SourceType.PDF
+        assert source.title == "MyReport.pdf"
+
+    def test_pdf_url_title_is_idempotent(self):
+        """Re-parsing an already-derived title (not the source URL) is a no-op."""
+        entry = [
+            ["src_pdf4"],
+            "SomePaper",
+            [None, None, None, None, 3, None, None, ["https://example.com/SomePaper.pdf"]],
+        ]
+        source = Source.from_api_response([entry])
+        assert source.title == "SomePaper"
+
+    def test_pdf_explicit_url_shaped_title_preserved(self):
+        """A PDF title that is a URL but NOT the source URL is left intact.
+
+        Only the server degradation (title == the source ``url``) is corrected;
+        an explicit title set via rename/upload that merely looks like a ``.pdf``
+        URL must survive (#1850 review — codex).
+        """
+        entry = [
+            ["src_renamed"],
+            "https://example.com/LegalName.pdf",  # deliberate title, a URL string
+            [
+                None,
+                None,
+                None,
+                None,
+                3,
+                None,
+                None,
+                ["https://example.com/actual-source.pdf"],  # different source url
+            ],
+        ]
+        source = Source.from_api_response([entry])
+        assert source.title == "https://example.com/LegalName.pdf"
+
+    def test_unknown_type_code_does_not_warn_at_construction(self):
+        """Parsing an unknown-typed source must not emit ``UnknownTypeWarning``.
+
+        The PDF title fallback uses a plain type-code lookup (not
+        ``_safe_source_type``), so warnings-as-error environments can still
+        ``list()``/``get()`` an unknown source; the warning stays at ``.kind``
+        access (#1850 review — codex).
+        """
+        import warnings
+
+        from notebooklm._types.common import UnknownTypeWarning
+
+        # type_code 999 is unmapped, and a title is present so the fallback runs.
+        entry = [
+            ["src_unknown"],
+            "Some Title",
+            [None, None, None, None, 999, None, None, ["https://example.com/x"]],
+        ]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnknownTypeWarning)
+            source = Source.from_api_response([entry])  # must not raise
+        assert source.title == "Some Title"
+        # ``.kind`` remains the documented warning point.
+        with pytest.warns(UnknownTypeWarning):
+            _ = source.kind
 
     def test_from_api_response_forwards_method_id_to_row(self):
         """``method_id`` threads through to the constructed ``SourceRow`` so

@@ -334,7 +334,14 @@ async def test_add_drive_raises_source_add_error_on_null_result(
         )
 
     assert exc_info.value.url == "Drive Doc"
-    assert "API returned no data for Drive source: Drive Doc" in str(exc_info.value)
+    msg = str(exc_info.value)
+    assert "API returned no data for Drive source: Drive Doc" in msg
+    # The message names the attempted mime and hints (not asserts) that the type
+    # may not be importable via Drive, steering the user to the `file` upload path.
+    assert "mime_type=" in msg
+    assert "may not be importable" in msg
+    assert "file" in msg
+    assert "download" in msg.lower()
 
 
 @pytest.mark.asyncio
@@ -439,6 +446,127 @@ async def test_sources_api_add_url_uses_late_bound_facade_hooks() -> None:
     api._add_youtube_source.assert_awaited_once_with("nb_1", "https://youtu.be/video")
     api._add_url_source.assert_not_awaited()
     api.wait_until_ready.assert_awaited_once_with("nb_1", "src_yt", timeout=3.0)
+
+
+# ---------------------------------------------------------------------------
+# #1960: honor an explicit ``title`` for backend-re-derived source types
+# (YouTube / Drive / web page) via a best-effort post-add rename.
+# ---------------------------------------------------------------------------
+
+
+def _sources_api_with_mocked_adder() -> SourcesAPI:
+    api = SourcesAPI(MagicMock(), uploader=MagicMock())
+    api._adder = MagicMock()  # type: ignore[assignment]
+    return api
+
+
+@pytest.mark.asyncio
+async def test_add_url_honors_title_via_post_add_rename() -> None:
+    api = _sources_api_with_mocked_adder()
+    api._adder.add_url = AsyncMock(return_value=Source(id="src_yt", title="Upstream Video Title"))
+    api.rename = AsyncMock(return_value=Source(id="src_yt", title="My Title"))  # type: ignore[method-assign]
+
+    result = await api.add_url("nb_1", "https://youtu.be/video", title="My Title")
+
+    api.rename.assert_awaited_once_with("nb_1", "src_yt", "My Title")
+    assert result.id == "src_yt"
+    assert result.title == "My Title"
+
+
+@pytest.mark.asyncio
+async def test_add_drive_honors_title_via_post_add_rename() -> None:
+    api = _sources_api_with_mocked_adder()
+    api._adder.add_drive = AsyncMock(return_value=Source(id="d1", title="Drive Name"))
+    api.rename = AsyncMock(return_value=Source(id="d1", title="My Title"))  # type: ignore[method-assign]
+
+    result = await api.add_drive("nb_1", "file123", "My Title")
+
+    api.rename.assert_awaited_once_with("nb_1", "d1", "My Title")
+    assert result.title == "My Title"
+
+
+@pytest.mark.asyncio
+async def test_add_url_without_title_skips_rename() -> None:
+    api = _sources_api_with_mocked_adder()
+    api._adder.add_url = AsyncMock(return_value=Source(id="s1", title="Upstream"))
+    api.rename = AsyncMock()  # type: ignore[method-assign]
+
+    result = await api.add_url("nb_1", "https://example.com")
+
+    api.rename.assert_not_awaited()
+    assert result.title == "Upstream"
+
+
+@pytest.mark.asyncio
+async def test_add_drive_empty_title_skips_rename() -> None:
+    api = _sources_api_with_mocked_adder()
+    api._adder.add_drive = AsyncMock(return_value=Source(id="d1", title="Drive Name"))
+    api.rename = AsyncMock()  # type: ignore[method-assign]
+
+    result = await api.add_drive("nb_1", "file123", "")
+
+    api.rename.assert_not_awaited()
+    assert result.title == "Drive Name"
+
+
+@pytest.mark.asyncio
+async def test_add_url_title_matching_upstream_skips_rename() -> None:
+    api = _sources_api_with_mocked_adder()
+    api._adder.add_url = AsyncMock(return_value=Source(id="s1", title="Same Title"))
+    api.rename = AsyncMock()  # type: ignore[method-assign]
+
+    # A leading/trailing-whitespace-only difference is not a real retitle.
+    result = await api.add_url("nb_1", "https://example.com", title="  Same Title  ")
+
+    api.rename.assert_not_awaited()
+    assert result.title == "Same Title"
+
+
+@pytest.mark.asyncio
+async def test_add_rename_failure_is_non_fatal(caplog: pytest.LogCaptureFixture) -> None:
+    api = _sources_api_with_mocked_adder()
+    api._adder.add_drive = AsyncMock(return_value=Source(id="d1", title="Drive Name"))
+    api.rename = AsyncMock(side_effect=NetworkError("boom"))  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.WARNING):
+        result = await api.add_drive("nb_1", "file123", "My Title")
+
+    # The add succeeded — a failed rename must not raise; the upstream title is kept.
+    assert result.id == "d1"
+    assert result.title == "Drive Name"
+    api.rename.assert_awaited_once_with("nb_1", "d1", "My Title")
+    assert "rename" in caplog.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_add_url_honor_preserves_metadata_over_sparse_rename_echo() -> None:
+    """UPDATE_SOURCE's echo can be sparse (id + title only); the honored result must keep
+    the added source's url/type and only swap in the new title, not return the bare echo
+    (which would drop url → kind='unknown'). #1960."""
+    api = _sources_api_with_mocked_adder()
+    added = Source(id="s1", title="Upstream Video Title", url="https://youtu.be/v", _type_code=5)
+    api._adder.add_url = AsyncMock(return_value=added)
+    # A sparse UPDATE_SOURCE echo: just id + the renamed title, no url/_type_code.
+    api.rename = AsyncMock(return_value=Source(id="s1", title="My Title"))  # type: ignore[method-assign]
+
+    result = await api.add_url("nb_1", "https://youtu.be/v", title="My Title")
+
+    assert result.title == "My Title"  # requested title applied
+    assert result.url == "https://youtu.be/v"  # preserved from the added source
+    assert result._type_code == 5  # preserved — not dropped by the sparse echo
+
+
+@pytest.mark.asyncio
+async def test_add_text_does_not_rename() -> None:
+    api = _sources_api_with_mocked_adder()
+    api._adder.add_text = AsyncMock(return_value=Source(id="t1", title="My Notes"))
+    api.rename = AsyncMock()  # type: ignore[method-assign]
+
+    result = await api.add_text("nb_1", "My Notes", "content")
+
+    # ``text`` sources honor ``title`` on the wire — no post-add rename.
+    api.rename.assert_not_awaited()
+    assert result.title == "My Notes"
 
 
 # ---------------------------------------------------------------------------

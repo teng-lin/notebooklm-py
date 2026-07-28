@@ -372,10 +372,15 @@ class TestChatRefreshRetry:
                 # through this fake_post. Identify it by URL and return a
                 # minimal RPC response that decodes to a valid conv_id.
                 if "batchexecute" in str(url):
-                    rpc_body = (
-                        ")]}'\n"
-                        '63\n[["wrb.fr","hPTbtc","[[[\\"real-conv-id-from-hptbtc\\"]]]",null,null]]'
+                    rpc_id = "khqZz" if "rpcids=khqZz" in str(url) else "hPTbtc"
+                    data = (
+                        [[[None, None, 1, "Existing question?"]]]
+                        if rpc_id == "khqZz"
+                        else [[["real-conv-id-from-hptbtc"]]]
                     )
+                    inner = json.dumps(data)
+                    chunk = json.dumps(["wrb.fr", rpc_id, inner, None, None])
+                    rpc_body = f")]}}'\n{len(chunk)}\n{chunk}\n"
                     return httpx.Response(
                         200,
                         request=httpx.Request("POST", url),
@@ -561,6 +566,12 @@ class TestChatNewConversationLocks:
                 if isinstance(result, ChatError):
                     raise result
                 return result
+
+            async def get_conversation_turns(
+                self, notebook_id: str, conversation_id: str, limit: int = 2
+            ) -> list[Any]:
+                """Return existing history through the production method contract."""
+                return [[[None, None, 1, "Existing question?"]]]
 
         async def fake_perform_authed_post(*args: Any, **kwargs: Any) -> httpx.Response:
             return httpx.Response(

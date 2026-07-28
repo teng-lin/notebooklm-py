@@ -27,9 +27,11 @@ from .._row_adapters.chat import (
 from .._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES, DEFAULT_CHAT_TIMEOUT
 from .._runtime.contracts import LoopGuard, RpcCaller
 from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError, ValidationError
+from .deleted_tracker import RecentlyDeletedConversations
 from .notes import save_chat_answer_as_note
 from .transport import chat_aware_authed_post
 from .wire import (
+    _extract_next_turn_content,
     build_streaming_chat_request,
     collect_texts_from_nested,
     extract_answer_and_refs_from_chunk,
@@ -60,42 +62,6 @@ from ..types import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_next_turn_content(next_turn: Any) -> str | None:
-    """Extract the response content from a streaming-chat next_turn frame.
-
-    The ``khqZz`` (``GET_CONVERSATION_TURNS``) response packs each AI answer
-    as ``turn[4][0][0]`` — three nested wrappers around the answer text. The
-    descent goes through :func:`safe_index` under strict decoding (the only
-    mode since the ``NOTEBOOKLM_STRICT_DECODE=0`` opt-out was retired in
-    v0.7.0; rationale in ADR-0011): a genuine descent failure raises
-    :class:`~notebooklm.exceptions.UnknownRPCMethodError` so callers fail
-    fast on Google-side shape drift.
-
-    ``next_turn`` is a validated answer row (a list with ``len > 4`` and the
-    answer role code — see ``ConversationTurnRow.is_answer``). Returns the
-    answer-text string, or ``None`` when the leaf descends successfully to a
-    non-string value (the caller's empty-answer fallback).
-    """
-    content = safe_index(
-        next_turn,
-        4,
-        0,
-        0,
-        method_id=RPCMethod.GET_CONVERSATION_TURNS.value,
-        source="_chat._extract_next_turn_content",
-    )
-    if not isinstance(content, str):
-        # A non-string leaf at a structurally-valid path is normalised to
-        # ``None`` so the caller's empty-answer fallback fires uniformly. This
-        # is distinct from shape drift, which safe_index raises on.
-        logger.debug(
-            "next_turn content is not a string (type=%s); treating as drift",
-            type(content).__name__,
-        )
-        return None
-    return content
 
 
 class ChatAPI(LoopBoundPrimitive):
@@ -188,6 +154,9 @@ class ChatAPI(LoopBoundPrimitive):
         self._new_conversation_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
+        # Recently deleted conversation ids (see ``deleted_tracker``); a null ask
+        # that resolved a since-deleted id re-checks here after taking its lock.
+        self._deleted_conversations = RecentlyDeletedConversations()
         # Event-loop binding for the two lazy lock maps. ``set_bound_loop`` comes
         # from :class:`~notebooklm._loop_bound.LoopBoundPrimitive`; this API
         # overrides :meth:`_on_loop_rebind` to clear the maps on a loop change so
@@ -310,11 +279,18 @@ class ChatAPI(LoopBoundPrimitive):
             source_ids = await self._notebooks.get_source_ids(notebook_id)
 
         is_new_conversation = conversation_id is None
+        # ``is_follow_up`` records whether this ask CONTINUED an existing
+        # conversation. An explicit ``conversation_id`` is always a follow-up.
+        # A null ask is a follow-up only when the notebook already had a current
+        # conversation that we resumed — refined on the null-ask path below,
+        # where a first-ever (or just-deleted) conversation starts fresh (#1965).
+        is_follow_up = not is_new_conversation
 
         async def perform_request(
             *,
             conversation_history: list[Any] | None,
             active_conversation_id: str | None,
+            resolved_id_override: str | None = None,
         ) -> tuple[str, list[ChatReference], str, str]:
             # Capture into closure-local variables so the nested ``build_request``
             # closure carries explicit types — mypy doesn't propagate flow
@@ -372,7 +348,12 @@ class ChatAPI(LoopBoundPrimitive):
             )
 
             resolved_conversation_id = active_conversation_id
-            if is_new_conversation:
+            if resolved_id_override is not None:
+                # Caller resolved the current id under the notebook lock and
+                # holds its conversation lock; skip the post-POST hPTbtc
+                # recovery — the id is known and re-fetching is redundant.
+                resolved_conversation_id = resolved_id_override
+            elif is_new_conversation:
                 # The real conversation_id is not present anywhere in the
                 # streamed chat response. The only way to recover it is to
                 # query ``hPTbtc`` (GET_LAST_CONVERSATION_ID), which returns
@@ -432,30 +413,55 @@ class ChatAPI(LoopBoundPrimitive):
                 turn_number = len(turns)
             return turn_number
 
-        # Follow-ups use the per-conversation lock from history build through
-        # cache update. Null-conversation asks have no id to lock on yet, but
-        # the server still appends them to the notebook's current conversation.
-        # Serialize those by notebook until hPTbtc returns the real id; then
-        # release the notebook path and use the existing conversation-id lock
-        # for the local cache update.
-        #
-        # A null ask cannot serialize its streamed POST against an explicit
-        # follow-up that already knows the same eventual conversation id; the
-        # null path does not know that key until hPTbtc returns. The handoff
-        # below still serializes the local cache update with that follow-up.
+        # Null-conversation asks carry no caller id; the server appends them to
+        # the notebook's *current* conversation (params[4]=null). Resolve that id
+        # under the notebook lock, then serialize the POST on it like an explicit
+        # follow-up (#1875). Residual assumption: a follow-up to a *different*
+        # conversation won't move the server's current pointer between the
+        # resolve and this POST.
         if is_new_conversation:
             async with self._get_new_conversation_lock(notebook_id):
-                (
-                    answer_text,
-                    references,
-                    resolved_conversation_id,
-                    raw_response,
-                ) = await perform_request(
-                    conversation_history=None,
-                    active_conversation_id=None,
-                )
-            async with self._get_conversation_lock(resolved_conversation_id):
-                turn_number = cache_turn(resolved_conversation_id, answer_text)
+                current_id = await self.get_conversation_id(notebook_id)
+                if current_id is None:
+                    # First-ever conversation: no id to lock on, so serialize the
+                    # create under the notebook lock; recover the id post-POST.
+                    posted = await perform_request(
+                        conversation_history=None, active_conversation_id=None
+                    )
+                    answer_text, references, resolved_conversation_id, raw_response = posted
+            # Existing conversation: release the notebook lock and serialize on the
+            # conversation lock alone, so other null asks on this notebook resolve
+            # in parallel yet still serialize here on that shared lock.
+            if current_id is not None:
+                async with self._get_conversation_lock(current_id):
+                    # A delete_conversation for current_id may have finished while
+                    # we blocked on this lock; the server then starts a fresh
+                    # conversation for the null POST, so drop the override and
+                    # recover the real id post-POST, not the deleted one (#1875).
+                    override = None if current_id in self._deleted_conversations else current_id
+                    # A current id can refer to an auto-created, zero-turn
+                    # conversation. Query the server even when local turns are
+                    # cached because another client may have deleted them (#1973).
+                    is_follow_up = False
+                    if override is not None:
+                        turns_data = await self.get_conversation_turns(
+                            notebook_id, override, limit=1
+                        )
+                        is_follow_up = bool(
+                            unwrap_conversation_turns(
+                                turns_data, source="_chat.ask.follow_up_probe"
+                            )
+                        )
+                    posted = await perform_request(
+                        conversation_history=None,
+                        active_conversation_id=None,
+                        resolved_id_override=override,
+                    )
+                    answer_text, references, resolved_conversation_id, raw_response = posted
+                    turn_number = cache_turn(resolved_conversation_id, answer_text)
+            else:
+                async with self._get_conversation_lock(resolved_conversation_id):
+                    turn_number = cache_turn(resolved_conversation_id, answer_text)
         else:
             assert conversation_id is not None  # narrowed by is_new_conversation
             async with self._get_conversation_lock(conversation_id):
@@ -475,7 +481,7 @@ class ChatAPI(LoopBoundPrimitive):
             answer=answer_text,
             conversation_id=resolved_conversation_id,
             turn_number=turn_number,
-            is_follow_up=not is_new_conversation,
+            is_follow_up=is_follow_up,
             references=references,
             raw_response=raw_response[:1000],
         )
@@ -697,6 +703,10 @@ class ChatAPI(LoopBoundPrimitive):
             )
             # Clear the cache only after a successful RPC (failure raises above).
             self._cache.clear(conversation_id)
+            # Record under the conversation lock so a null ask blocked on this
+            # same lock learns, on wake, not to pin its POST to the deleted id
+            # (see ``ask`` null-conversation path, #1875).
+            self._deleted_conversations.record(conversation_id)
         # v0.8.0 (#1290): the uninformative always-``True`` return becomes ``None``.
         return None
 

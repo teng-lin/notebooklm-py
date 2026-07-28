@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 import notebooklm.auth as auth_module
 from notebooklm.cli import helpers as helpers_module
+from notebooklm.exceptions import ValidationError
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import (
     Source,
@@ -1083,6 +1084,19 @@ class TestSourceAddDrive:
 
         assert result.exit_code == 0
 
+    def test_source_add_drive_unsupported_mime_hints_upload(self, runner, mock_auth):
+        """An unsupported Drive mime (e.g. ``epub``) is rejected at the CLI boundary
+        with the file-upload hint, not a bare Click choice error (#1827)."""
+        result = runner.invoke(
+            cli,
+            ["source", "add-drive", "file_id", "Book", "--mime-type", "epub", "-n", "nb_123"],
+        )
+        assert result.exit_code == 2
+        out = result.output.lower()
+        assert "not importable via drive" in out
+        assert "download" in out
+        assert "file" in out
+
     def test_source_add_drive_mime_type_no_deprecation_warning(self, runner, mock_auth):
         """Regression guard: Drive ``--mime-type`` MUST stay deprecation-free.
 
@@ -1122,6 +1136,83 @@ class TestSourceAddDrive:
                 f"Drive --mime-type={choice} unexpectedly triggered the "
                 f"file-source deprecation notice"
             )
+
+
+class TestSourceAddDriveFile:
+    """The ``source add-drive-file`` command (#1884) — auto-route upload-only types."""
+
+    def test_happy_path_text(self, runner, mock_auth):
+        mock_client = create_mock_client()
+        mock_client.sources.add_drive_file = AsyncMock(
+            return_value=Source(id="src_epub", title="Book.epub", _type_code=17)
+        )
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["source", "add-drive-file", "drive_epub_id", "-n", "nb_123"],
+                obj=inject_client(mock_client),
+            )
+        assert result.exit_code == 0, result.output
+        assert "Added Drive file source" in result.output
+        mock_client.sources.add_drive_file.assert_awaited_once_with(
+            "nb_123", "drive_epub_id", title=None, wait=False, wait_timeout=120.0
+        )
+
+    def test_json_envelope(self, runner, mock_auth):
+        mock_client = create_mock_client()
+        mock_client.sources.add_drive_file = AsyncMock(
+            return_value=Source(id="src_epub", title="Book.epub", _type_code=17)
+        )
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                [
+                    "source",
+                    "add-drive-file",
+                    "drive_epub_id",
+                    "--title",
+                    "My Book",
+                    "-n",
+                    "nb_123",
+                    "--json",
+                ],
+                obj=inject_client(mock_client),
+            )
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["action"] == "add-drive-file"
+        assert data["source"]["id"] == "src_epub"
+        assert data["source"]["type"] == "epub"
+        assert data["document_id"] == "drive_epub_id"
+        assert data["notebook_id"] == "nb_123"
+        mock_client.sources.add_drive_file.assert_awaited_once_with(
+            "nb_123", "drive_epub_id", title="My Book", wait=False, wait_timeout=120.0
+        )
+
+    def test_unsupported_type_error_exits_nonzero(self, runner, mock_auth):
+        mock_client = create_mock_client()
+        mock_client.sources.add_drive_file = AsyncMock(
+            side_effect=ValidationError(
+                "HTML isn't supported by NotebookLM upload; convert to .txt/.md/.pdf first."
+            )
+        )
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["source", "add-drive-file", "drive_html_id", "-n", "nb_123"],
+                obj=inject_client(mock_client),
+            )
+        assert result.exit_code != 0
+        assert "HTML" in result.output or "html" in result.output
 
 
 # =============================================================================

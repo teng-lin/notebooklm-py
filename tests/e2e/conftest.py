@@ -50,6 +50,45 @@ _RATE_LIMIT_PHRASES = (
     "too many requests",
 )
 _LIVE_CHAT_ASK_MARKER = "live_chat_ask"
+_LIVE_GENERATION_MARKER = "live_generation"
+# Coverage-floor markers → human label. A floor "fails" when at least one marked
+# test was rate-limit-skipped and none passed (hollow-green coverage). Enforced
+# only when E2E_ENFORCE_COVERAGE_FLOOR=1 (the nightly), so a shared daily-quota
+# exhaustion never reds a release job — see #1819 / _coverage_floor_enforced.
+_COVERAGE_FLOOR_MARKERS = {
+    _LIVE_CHAT_ASK_MARKER: "live chat",
+    _LIVE_GENERATION_MARKER: "live generation",
+}
+
+# Every live entrypoint that issues CREATE_ARTIFACT and can raise a quota
+# RateLimitError *before* any GenerationStatus exists (so assert_generation_started's
+# skip never runs). Keyed by client-namespace attr → predicate over method name.
+# Quizzes/flashcards/audio/video/etc. ride client.artifacts.generate_*/revise_*; the
+# interactive mind map goes through the separate client.mind_maps.generate path (the
+# #1819 gap that hard-failed the suite). Add new generation namespaces here — the guard
+# test TestGenerationSkipRegistryCoverage.test_registry_covers_all_generate_and_revise_methods
+# fails if an unregistered generate_/revise_/retry_ method appears on a covered class.
+#
+# Note: wrapping a whole method means a RateLimitError from a *post-create* RPC (e.g.
+# mind_maps.generate(wait=True) polling, or its settling _find_interactive LIST, after
+# CREATE_ARTIFACT already made the artifact) also skips — before generate returns the id
+# to its caller, so the caller can't clean up and the artifact leaks. The #1819
+# create-time case raises before any artifact exists (no leak). Splitting create from
+# poll does NOT close this: even generate(wait=False) issues a post-create LIST. Callers
+# that need cleanup therefore guard with an unconditional teardown sweep of the created
+# artifact type (id capture is unreliable across the skip) — see
+# tests/e2e/test_interactive_mind_map.py's swept_interactive_mind_maps fixture (#1937).
+_GENERATION_SKIP_TARGETS = {
+    # ``retry_failed`` re-runs generation and raises RateLimitError on quota, same
+    # as generate_*/revise_* — cover it too so a future e2e test doesn't hard-fail.
+    "artifacts": lambda n: n.startswith(("generate_", "revise_")) or n == "retry_failed",
+    "mind_maps": lambda n: n == "generate",
+    # Deliberately NOT here: client.labels.generate (CREATE_LABEL, the AI Auto-label
+    # action) and client.research.start (Deep Research). These are separate limit
+    # classes, not the daily CREATE_ARTIFACT quota — labels has no documented quota,
+    # and research already tolerates throttling via @pytest.mark.xfail. Don't lump
+    # them in on theory; add here (with evidence) only if one actually hard-fails CI.
+}
 
 
 def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
@@ -72,7 +111,7 @@ def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
 
 
 def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
-    """Wrap ``client.artifacts.generate_*``/``revise_*`` so ``RateLimitError`` becomes a skip.
+    """Wrap every live CREATE_ARTIFACT entrypoint so ``RateLimitError`` becomes a skip.
 
     The RPC layer raises a typed ``RateLimitError`` when Google rejects
     CREATE_ARTIFACT with a quota error (e.g. upstream status 8, Resource
@@ -81,6 +120,10 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
     That is server-side throttling, not a client defect. Only the precise
     typed ``RateLimitError`` skips; every other exception still raises so
     real defects stay visible.
+
+    Covers every namespace in ``_GENERATION_SKIP_TARGETS`` — not just
+    ``client.artifacts`` — so paths like ``client.mind_maps.generate`` (the
+    interactive mind map, #1819) skip on quota exhaustion instead of hard-failing.
     """
 
     def _wrap(original):
@@ -95,13 +138,17 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
 
         return _with_skip
 
-    for name in dir(client.artifacts):
-        if not (name.startswith("generate_") or name.startswith("revise_")):
+    for ns_name, matches in _GENERATION_SKIP_TARGETS.items():
+        namespace = getattr(client, ns_name, None)
+        if namespace is None:
             continue
-        original = getattr(client.artifacts, name)
-        if not callable(original):
-            continue
-        setattr(client.artifacts, name, _wrap(original))
+        for name in dir(namespace):
+            if not matches(name):
+                continue
+            original = getattr(namespace, name)
+            if not callable(original):
+                continue
+            setattr(namespace, name, _wrap(original))
 
 
 def _emit_auth_route_diagnostic(auth_tokens: AuthTokens) -> None:
@@ -331,24 +378,92 @@ def _rate_limit_skip_reports(terminalreporter) -> list[Any]:
     ]
 
 
-def _live_chat_floor_failures(terminalreporter, exitstatus) -> list[Any]:
-    if exitstatus != pytest.ExitCode.OK:
+def _coverage_floor_enforced() -> bool:
+    """Whether coverage floors escalate to a suite failure.
+
+    Off by default so a shared daily-quota exhaustion can never red a release job
+    (e.g. Verify Package, #1819) — the release path skips rate-limited
+    generation/chat freely. The nightly sets ``E2E_ENFORCE_COVERAGE_FLOOR=1`` to
+    turn hollow-green (every marked test skipped, none passed) into a red where
+    the quota is fresh and the signal is real.
+    """
+    return os.environ.get("E2E_ENFORCE_COVERAGE_FLOOR") == "1"
+
+
+def _coverage_floor_failures(terminalreporter, exitstatus, marker: str) -> list[Any]:
+    """Rate-limit skips that breach the coverage floor for ``marker``.
+
+    Non-empty only when at least one ``marker`` test was rate-limit-skipped and no
+    ``marker`` test passed — i.e. that live surface produced zero real coverage.
+    """
+    # Only meaningful for a *completed* run: everything passed (OK) or some tests
+    # failed (TESTS_FAILED). A broken run (usage/internal/interrupt/no-tests) is its
+    # own signal — don't evaluate the floor or rewrite that exit code.
+    #
+    # We deliberately do NOT bail on TESTS_FAILED. Under the nightly's
+    # ``continue-on-error`` main step + ``--last-failed`` retry, an *unrelated* test
+    # that fails on the main run and then passes on retry lands the job green — so a
+    # blanket ``exitstatus != OK`` bail would let that transient failure MASK a
+    # genuinely hollow generation/chat surface (all rate-limited, none passed). We
+    # still record the breach; only a failure of a test *with this marker* defers,
+    # since the retry may re-run it into a pass (real coverage). Caught by
+    # test_generation_floor_records_breach_despite_unrelated_failure (#1819).
+    if exitstatus not in (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED):
         return []
 
-    live_chat_rate_limit_skips = [
+    marked_skips = [
         report
         for report in _rate_limit_skip_reports(terminalreporter)
-        if _has_marker(report, _LIVE_CHAT_ASK_MARKER)
+        if _has_marker(report, marker)
     ]
-    if not live_chat_rate_limit_skips:
+    if not marked_skips:
         return []
 
-    live_chat_passes = [
+    marked_passes = [
         report
         for report in terminalreporter.stats.get("passed", [])
-        if _is_call_report(report) and _has_marker(report, _LIVE_CHAT_ASK_MARKER)
+        if _is_call_report(report) and _has_marker(report, marker)
     ]
-    return [] if live_chat_passes else live_chat_rate_limit_skips
+    if marked_passes:
+        return []
+
+    # No marked test passed and some were rate-limited. A marked *failure* has its
+    # real outcome deferred to the retry (may pass there → coverage), so hold off;
+    # otherwise this is a final zero-coverage breach — record it even when other,
+    # unmarked tests failed. Count a failure in ANY phase (setup/call/teardown):
+    # ``--last-failed`` retries a test that failed in any phase, so a setup-phase
+    # failure of a marked test is just as deferrable as a call-phase one (gemini/codex).
+    marked_failures = [
+        report for report in terminalreporter.stats.get("failed", []) if _has_marker(report, marker)
+    ]
+    if marked_failures:
+        return []
+
+    return marked_skips
+
+
+def _coverage_events(terminalreporter, exitstatus) -> list[str]:
+    """Per-marker ``PASS``/``SKIP`` events for cross-run coverage-floor accumulation.
+
+    One tab-separated line per monitored surface that produced a signal this run:
+    ``PASS\t<label>`` when a marked test passed (real coverage), else
+    ``SKIP\t<label>`` when a marked test was rate-limit-skipped (candidate breach).
+    A surface that neither passed nor skipped emits nothing.
+    """
+    if exitstatus not in (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED):
+        return []
+    skip_reports = _rate_limit_skip_reports(terminalreporter)
+    events: list[str] = []
+    for marker, label in _COVERAGE_FLOOR_MARKERS.items():
+        passed = any(
+            _is_call_report(r) and _has_marker(r, marker)
+            for r in terminalreporter.stats.get("passed", [])
+        )
+        if passed:
+            events.append(f"PASS\t{label}")
+        elif any(_has_marker(r, marker) for r in skip_reports):
+            events.append(f"SKIP\t{label}")
+    return events
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -356,8 +471,61 @@ def pytest_sessionfinish(session, exitstatus):
     if terminalreporter is None:
         return
 
-    if _live_chat_floor_failures(terminalreporter, exitstatus):
+    # Coverage floors are advisory unless the nightly opts in (see
+    # _coverage_floor_enforced), so a rate-limited release job stays green (#1819).
+    if not _coverage_floor_enforced():
+        return
+
+    sentinel = os.environ.get("E2E_COVERAGE_FLOOR_SENTINEL")
+    if sentinel:
+        # Sentinel delivery (nightly). The main e2e step is ``continue-on-error`` and
+        # its ``--last-failed`` retry re-runs only failures, so a ``session.exitstatus``
+        # override would be masked. Instead every enforcing run (main AND retry)
+        # appends PASS/SKIP events; the "Enforce coverage floors" step breaches a
+        # surface seen SKIP but never PASS across all runs. This closes the retry gap
+        # (a marked test that fails on main then skips on retry) WITHOUT false-breaching
+        # when coverage was achieved in another run (codex/coderabbit). Exit status is
+        # left alone so a pure-skip run stays exit 0 and doesn't trip a spurious retry;
+        # a write failure falls back to the inline exit code (best-effort).
+        events = _coverage_events(terminalreporter, exitstatus)
+        if not events or _append_sentinel(sentinel, events):
+            return
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
+        return
+
+    # Inline delivery (local runs, simple jobs, unit tests): no retry, so decide from
+    # this single run.
+    breached = any(
+        _coverage_floor_failures(terminalreporter, exitstatus, marker)
+        for marker in _COVERAGE_FLOOR_MARKERS
+    )
+    if breached:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def _append_sentinel(path: str, lines: list[str]) -> bool:
+    """Append lines to the coverage-floor sentinel. Returns True on success.
+
+    Creates the parent directory first so a missing directory can't turn the
+    enforcement signal into a silent no-op (gemini).
+    """
+    try:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            for line in lines:
+                f.write(line + "\n")
+        return True
+    except OSError as exc:
+        # The sentinel IS the enforcement signal — a silent write failure would let a
+        # hollow-green nightly pass. Fail loud AND signal the caller to fall back to
+        # the inline exit-code path.
+        print(
+            f"::error::could not write coverage-floor sentinel {path!r} ({exc})",
+            file=sys.stderr,
+        )
+        return False
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
@@ -391,11 +559,24 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         joined = ", ".join(nodeids)
         print(f"::warning::{len(nodeids)} test(s) skipped due to rate-limit: {joined}")
 
-    live_chat_rate_limit_skips = _live_chat_floor_failures(terminalreporter, exitstatus)
-    if live_chat_rate_limit_skips:
-        terminalreporter.write_sep("=", "live chat coverage floor failed", red=True)
-        terminalreporter.write_line("No marked live chat ask test completed successfully.")
-        for report in live_chat_rate_limit_skips:
+    enforced = _coverage_floor_enforced()
+    for marker, label in _COVERAGE_FLOOR_MARKERS.items():
+        breaches = _coverage_floor_failures(terminalreporter, exitstatus, marker)
+        if not breaches:
+            continue
+        if enforced:
+            terminalreporter.write_sep("=", f"{label} coverage floor failed", red=True)
+            terminalreporter.write_line(
+                f"No marked {label} test completed successfully (all rate-limited)."
+            )
+        else:
+            terminalreporter.write_sep(
+                "=", f"{label} coverage floor breached (not enforced)", yellow=True
+            )
+            terminalreporter.write_line(
+                f"No marked {label} test passed; not failing (E2E_ENFORCE_COVERAGE_FLOOR unset)."
+            )
+        for report in breaches:
             terminalreporter.write_line(f"  {report.nodeid}")
 
 
@@ -1098,14 +1279,28 @@ def run_cli(
     ``notebooklm use`` (that mutates shared profile state).
     """
     env = os.environ.copy()
+    # Belt for the child's *encode* side: force UTF-8 stdout so a non-Latin-1
+    # char in a live answer can't crash the child on a non-UTF-8-locale runner.
+    # (On Windows the CLI already does this itself via
+    # ``notebooklm_cli._configure_windows_runtime``; this mirrors it for any
+    # other locale.) Set as a base default so ``extra_env`` can override it.
+    env.setdefault("PYTHONUTF8", "1")
     if notebook is not None:
         env["NOTEBOOKLM_NOTEBOOK"] = notebook
     if extra_env:
         env.update(extra_env)
+    # The load-bearing fix is our *decode* side: without ``encoding=``,
+    # ``text=True`` decodes the child's UTF-8 stdout with the locale codec
+    # (cp1252 on Windows), which raises ``UnicodeDecodeError`` on an undefined
+    # byte (e.g. 0x9d, the tail of a closing curly quote U+201D → ``E2 80 9D``);
+    # the reader thread dies, ``proc.stdout`` becomes ``None``, and
+    # ``json.loads(None)`` fails with a misleading ``TypeError``. Pin the decode
+    # to UTF-8; ``errors="replace"`` guarantees a ``str`` (never ``None``).
     return subprocess.run(
         [sys.executable, "-m", "notebooklm.notebooklm_cli", *args],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         env=env,
         timeout=timeout,
     )

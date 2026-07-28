@@ -100,7 +100,11 @@ class StudioResolvedItem:
 
 
 async def studio_items(
-    client: NotebookLMClient, nb_id: str, *, include_created_at: bool = False
+    client: NotebookLMClient,
+    nb_id: str,
+    *,
+    include_created_at: bool = False,
+    include_artifact_meta: bool = False,
 ) -> list[dict[str, Any]]:
     """Fetch + merge a notebook's text notes and studio artifacts into one list.
 
@@ -116,6 +120,12 @@ async def studio_items(
     key (ISO string or ``None``) read from the already-fetched note/artifact row — used
     by ``studio_list(detail="compact")``. It defaults off so the by-ref resolver and the
     default list paths stay byte-identical.
+
+    When ``include_artifact_meta`` is set, each ARTIFACT item additionally carries
+    ``created_at`` and ``generation_prompt`` (both already decoded on the ``Artifact``)
+    — used by ``studio_list(detail="summary")`` to give artifacts the same richer
+    projection notes get. Notes are untouched by this flag. It defaults off so the
+    by-ref resolver and the default list paths stay byte-identical.
 
     Items are keyed by id (notes first) so a hypothetical future note∩artifact
     overlap can't double-list — this never fires today (``notes.list`` excludes
@@ -148,11 +158,16 @@ async def studio_items(
             "status_label": getattr(art, "status_str", None),
             "url": getattr(art, "url", None),
         }
-        if include_created_at:
+        if include_created_at or include_artifact_meta:
             # Direct attribute access — ``created_at`` is an unconditional field on the
             # typed ``Artifact`` (``status_str`` / ``url`` above keep ``getattr`` because
             # minimal fakes/rows can lack them).
             art_item["created_at"] = to_jsonable(art.created_at)
+        if include_artifact_meta:
+            # ``generation_prompt`` is an unconditional field on the typed ``Artifact``
+            # (``getattr`` guards a minimal fake that predates it); ``None`` for a
+            # note-backed mind map or a prompt-less type (#1925).
+            art_item["generation_prompt"] = getattr(art, "generation_prompt", None)
         items[art_id] = art_item
     return list(items.values())
 
@@ -264,7 +279,12 @@ def _match_studio_ref(
 
 
 async def resolve_studio_item(
-    client: NotebookLMClient, nb_id: str, ref: str, kind: str | None = None
+    client: NotebookLMClient,
+    nb_id: str,
+    ref: str,
+    kind: str | None = None,
+    *,
+    include_artifact_meta: bool = False,
 ) -> StudioResolvedItem:
     """Resolve a cross-type studio ref (note OR artifact) over the merged list.
 
@@ -272,12 +292,18 @@ async def resolve_studio_item(
     exact title) within an optional ``kind`` scope. A miss raises
     :class:`~notebooklm.exceptions.NotFoundError` (NOT_FOUND category); an ambiguous
     ref raises :class:`AmbiguousIdError`.
+
+    ``include_artifact_meta`` (keyword-only) is forwarded to :func:`studio_items` so a
+    resolved ARTIFACT carries ``created_at`` + ``generation_prompt`` on its ``.raw``
+    projection — used by ``studio_list(item=…)`` to surface the generation prompt of a
+    single artifact. It defaults off so ``studio_delete`` / ``studio_rename`` (which
+    only need the id + type) keep their byte-identical projection.
     """
     ref = validate_id(ref, "item")
     # Strict IDs-only mode rejects a title/prefix item ref before the list call,
     # matching the notebook/source/note/artifact resolvers (#1808).
     reject_non_canonical_id(ref, "studio item")
-    items = await studio_items(client, nb_id)
+    items = await studio_items(client, nb_id, include_artifact_meta=include_artifact_meta)
     match = _match_studio_ref(items, ref, kind)
     if match is None:
         raise NotFoundError(f"Studio item not found: {ref}")

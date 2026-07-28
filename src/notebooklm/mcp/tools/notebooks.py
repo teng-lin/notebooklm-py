@@ -111,7 +111,20 @@ def register(mcp: Any) -> None:
                     await asyncio.gather(*tasks, return_exceptions=True)
                     raise
                 output = to_jsonable(result)
-                output["metadata"] = to_jsonable(meta_result.metadata)
+                metadata_block = to_jsonable(meta_result.metadata)
+                # Re-project the exposed ``sources_count`` to the enumerated
+                # (id-bearing, deduped) source count so the metadata block is
+                # internally consistent (#1919). The raw ``Notebook.sources_count``
+                # is an unfiltered ``len(nb_info[1])`` row count that includes
+                # id-less placeholder / ghost rows the ``sources`` list drops, so
+                # the two can disagree wildly (168 vs 50) inside one response and
+                # mislead an agent on quota / completeness. Scoped to this
+                # projection: the shared ``Notebook.sources_count`` semantics stay
+                # untouched elsewhere (e.g. ``notebook_list`` list rows).
+                # ``NotebookMetadata.notebook`` is a non-optional ``Notebook``
+                # dataclass, so ``to_jsonable`` always emits it as a dict here.
+                metadata_block["notebook"]["sources_count"] = len(meta_result.metadata.sources)
+                output["metadata"] = metadata_block
                 return output
             result = await core.execute_notebook_describe(
                 client, nb_id, resolve_notebook_id=passthrough_notebook_id

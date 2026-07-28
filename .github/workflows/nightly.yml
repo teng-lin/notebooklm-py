@@ -118,6 +118,10 @@ jobs:
       # path on every OS — see test.yml for the rationale (sidesteps the
       # actions/cache@v6 Windows dual-path restore flake).
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      # Single source of truth for the coverage-floor sentinel path, referenced by
+      # both the E2E step (writes it) and the "Enforce coverage floors" step (gates
+      # on it). Harmless when unset-enforcement steps run — they never write it.
+      E2E_COVERAGE_FLOOR_SENTINEL: ${{ github.workspace }}/.e2e-coverage-floor-failed
 
     concurrency:
       group: nightly-${{ needs.resolve-branch.outputs.branch }}-${{ matrix.os }}
@@ -248,6 +252,14 @@ jobs:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+        # Enforce the live coverage floors on the nightly only (fresh quota): if a
+        # monitored surface (live chat / live generation) produced zero real coverage
+        # because every marked test was rate-limited, record it to the sentinel that
+        # the "Enforce coverage floors" step below gates on. Written (not raised) so
+        # a pure-skip run stays exit 0 and doesn't trip the continue-on-error retry.
+        # The release job (verify-package) leaves this unset → skip-only (#1819).
+        # (E2E_COVERAGE_FLOOR_SENTINEL is defined once at job level.)
+        E2E_ENFORCE_COVERAGE_FLOOR: "1"
         # Route every workflow_dispatch input + upstream needs.* value through
         # the env block so crafted values (e.g. ``"; echo PWN``) reach pytest
         # as literal strings, not as inlined shell. ``TARGET_BRANCH`` is
@@ -259,6 +271,9 @@ jobs:
       shell: bash
       run: |
         echo "Testing branch: $TARGET_BRANCH"
+        # Start from a clean coverage-floor sentinel so a stale file from a prior
+        # run on a reused/self-hosted runner can't false-red the enforcement step.
+        rm -f "$E2E_COVERAGE_FLOOR_SENTINEL"
         # --reruns 1 catches sub-minute network blips; longer chat-throttle
         # recovery is handled by the cool-down retry step below.
         if [ -n "$TEST_FILTER" ]; then
@@ -266,6 +281,10 @@ jobs:
           # ``--`` separator forces $TEST_FILTER to be parsed as positional
           # file/path args, never as pytest options (e.g. a crafted ``--co``
           # or ``-k "expr"`` value cannot inject pytest flags).
+          # The coverage floor is a whole-surface guarantee — meaningless for a
+          # single filtered test, and a marked-but-throttled pick would false-red
+          # the run — so disable enforcement for filtered dispatches (codex).
+          unset E2E_ENFORCE_COVERAGE_FLOOR
           uv run pytest -s -v --tb=short --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
         elif [ "$MATRIX_OS" = "ubuntu-latest" ]; then
           # Linux: run all E2E tests except variants
@@ -288,6 +307,11 @@ jobs:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+        # Enforce here too: a marked test that failed on the main run and turns into
+        # a rate-limit skip after the cool-down would otherwise leave no PASS event
+        # for its surface. Appends PASS/SKIP events to the same job-level sentinel
+        # (the main step's rm -f already cleared any stale one). (codex/coderabbit)
+        E2E_ENFORCE_COVERAGE_FLOOR: "1"
       shell: bash
       run: |
         # Missing lastfailed after a failed e2e step means pytest crashed
@@ -325,3 +349,32 @@ jobs:
         NOTEBOOKLM_TRANSPORT: curl_cffi
       shell: bash
       run: uv run pytest tests/e2e -m impersonate_smoke -s -v --tb=short --reruns 1 --reruns-delay 30
+
+    - name: Enforce coverage floors
+      # Gate the nightly on the live coverage floors independently of the
+      # continue-on-error main run + --last-failed retry (which can't re-attempt
+      # throttled generation — those are skips, not failures). The main e2e step
+      # records a breach to the sentinel; fail here if any surface produced zero
+      # real coverage (every marked live-chat / live-generation test rate-limited).
+      # ``always()`` so a breach recorded before an unrelated later failure still
+      # surfaces. The release job never sets the sentinel, so this is nightly-only.
+      if: ${{ always() && needs.resolve-branch.outputs.is_standard == 'true' }}
+      shell: bash
+      run: |
+        sentinel="$E2E_COVERAGE_FLOOR_SENTINEL"
+        if [ ! -f "$sentinel" ]; then
+          echo "Coverage floors satisfied (no monitored surface emitted a skip)."
+          exit 0
+        fi
+        # Reconcile PASS/SKIP events accumulated across the main run + retry: a
+        # surface breaches only if it was SKIP-ped somewhere and PASSed nowhere.
+        passed="$(awk -F'\t' '$1=="PASS"{print $2}' "$sentinel" | sort -u)"
+        skipped="$(awk -F'\t' '$1=="SKIP"{print $2}' "$sentinel" | sort -u)"
+        breach="$(comm -23 <(printf '%s\n' "$skipped" | sed '/^$/d') \
+                            <(printf '%s\n' "$passed" | sed '/^$/d'))"
+        if [ -n "$breach" ]; then
+          echo "::error::E2E coverage floor breached — surface(s) rate-limited with zero real coverage:"
+          printf '  %s\n' "$breach"
+          exit 1
+        fi
+        echo "Coverage floors satisfied (every skipped surface also had a passing test)."

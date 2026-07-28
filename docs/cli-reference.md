@@ -335,6 +335,7 @@ Manage NotebookLM agent skill integration. The skill is a *directory*
 | `status` | Check installed targets, version info, and file count | `skill status --scope project` |
 | `uninstall` | Remove one or more installed skill directories | `skill uninstall --target agents` |
 | `show` | Display the packaged `SKILL.md` or an installed target's `SKILL.md` | `skill show --target source` |
+| `package` | Build a Claude-uploadable skill archive of the whole skill directory (chat/Cowork) | `skill package -o dist/` |
 
 Defaults:
 
@@ -344,6 +345,7 @@ Defaults:
 - `install` writes every packaged file and chmods `scripts/*` entries `0755`; `uninstall` removes the entire target directory, not just `SKILL.md`
 - `status --json` reports a `"files"` count per target (`Files: N` in plain output); a target counts as installed once its `SKILL.md` exists
 - `show --target source` prints only the canonical packaged `SKILL.md` (not `references/`/`scripts/`)
+- `package` zips the whole packaged skill directory (`SKILL.md` + `references/` + `scripts/`, with `scripts/*` kept executable), not just the entry file — see `entries` in `--json` output for the full archived-file list
 - Project-scope installs support `--dry-run`, `--no-clobber`, and `--force`; these flags are rejected for user-scope installs.
 
 The packaged wheel includes the whole `plugin/skills/notebooklm/` directory (as `notebooklm/data/skill/`), so the same skill content powers `notebooklm skill install`, GitHub discovery, and `npx skills add teng-lin/notebooklm-py`.
@@ -908,6 +910,12 @@ notebooklm source add ./report.bin --type file --mime-type application/pdf
 > **Note:** The same `--mime-type` flag on `notebooklm source add-drive`
 > (Google Drive sources) selects between `google-doc` / `google-slides` /
 > `google-sheets` / `pdf` Drive document types.
+>
+> The `<title>` you pass to `source add-drive` is **ignored** by NotebookLM for
+> native Drive imports — the backend re-derives the display title from live Drive
+> metadata, so the source keeps its Drive name regardless. Run
+> `notebooklm source rename <id> "<title>"` after the add if you need a specific
+> title.
 >
 > Historical: an earlier release treated the file-source `--mime-type` as a
 > deprecated no-op. It was re-wired to set the upload content-type and is no
@@ -1475,7 +1483,7 @@ notebooklm profile delete old-account --yes
 
 > **Note:** `profile delete` refuses to remove the currently active default profile. Switch to a different profile first (`notebooklm profile switch <other>`) and then delete.
 
-### Skill: `install`, `status`, `uninstall`, `show`
+### Skill: `install`, `status`, `uninstall`, `show`, `package`
 
 Manage the bundled NotebookLM agent-skill directory (`SKILL.md` + `references/*.md` + `scripts/*`; source at [`plugin/skills/notebooklm/`](../plugin/skills/notebooklm/)). `install`/`uninstall`/`status` operate on the whole tree; installing materializes a copy under one of:
 - `.claude/skills/notebooklm/` (Claude Code, `--target claude`)
@@ -1483,18 +1491,21 @@ Manage the bundled NotebookLM agent-skill directory (`SKILL.md` + `references/*.
 
 `--scope` selects whether to write into the **user's** home (`~/.claude/skills/...`, `~/.agents/skills/...`) or the **current project** (`./.claude/skills/...`, `./.agents/skills/...`).
 
+`skill package` takes neither `--scope` nor `--target`: it builds a ZIP archive (zip root: `notebooklm/SKILL.md`, version-stamped) for upload via **Claude Settings → Capabilities** — the supported hand-off for sandboxed agent environments such as Claude Cowork, which cannot run `skill install` against a local directory.
+
 ```bash
-notebooklm skill <install|status|uninstall|show> [OPTIONS]
+notebooklm skill <install|status|uninstall|show|package> [OPTIONS]
 ```
 
 **Options matrix** (defaults: `--scope user --target all`):
 
-| Subcommand | `--scope` choices | `--target` choices | Default `--target` |
-|---|---|---|---|
-| `install` | `user`, `project` | `all`, `claude`, `agents` | `all` |
-| `status` | `user`, `project` | `all`, `claude`, `agents` | `all` |
-| `uninstall` | `user`, `project` | `all`, `claude`, `agents` | `all` |
-| `show` | `user`, `project` | `source`, `claude`, `agents` | `source` |
+| Subcommand | `--scope` choices | `--target` choices | Default `--target` | Other options |
+|---|---|---|---|---|
+| `install` | `user`, `project` | `all`, `claude`, `agents` | `all` | `--dry-run`, `--no-clobber`, `--force` (project scope) |
+| `status` | `user`, `project` | `all`, `claude`, `agents` | `all` | `--json` |
+| `uninstall` | `user`, `project` | `all`, `claude`, `agents` | `all` | — |
+| `show` | `user`, `project` | `source`, `claude`, `agents` | `source` | — |
+| `package` | — | — | — | `-o/--output PATH` (default `./notebooklm-skill.zip`; an existing directory — or a PATH ending in a separator — gets the default filename inside it), `--force`, `--json` |
 
 `install` writes every packaged file (`SKILL.md`, `references/*.md`, `scripts/*`) and chmods `scripts/*` to `0755`; `uninstall` removes the entire target directory, not just `SKILL.md`; `status` reports a `files` count per target (`Files: N` in plain output, `"files"` in `--json`) alongside `installed`/`skill_version`.
 
@@ -1527,7 +1538,20 @@ notebooklm skill show --scope project --target claude
 
 # Remove all installed targets from the current project
 notebooklm skill uninstall --scope project --target all
+
+# Build the uploadable archive in the current directory (./notebooklm-skill.zip)
+notebooklm skill package
+
+# Write to an explicit file, or drop the default filename into a directory
+notebooklm skill package --output dist/notebooklm-v0.8.zip
+notebooklm skill package --output dist/
+
+# Overwrite an existing archive, or emit a machine-readable result
+notebooklm skill package --output dist/ --force
+notebooklm skill package --json
 ```
+
+`skill package` refuses to overwrite an existing archive unless `--force` is passed. With `--json` it prints `{"path", "version", "entries", "size_bytes"}` on success and the standard error envelope on failure.
 
 Codex does not consume the `skill` subcommand. In this repository it reads the root [`AGENTS.md`](../AGENTS.md) file and invokes the `notebooklm` CLI or Python API directly.
 
@@ -1535,6 +1559,8 @@ Codex does not consume the `skill` subcommand. In this repository it reads the r
 
 Add a Google Drive document, slide deck, sheet, or PDF as a source. The Drive `--mime-type` selects which Drive document type to import (Google Doc / Slides / Sheets / PDF). This is distinct from the file-source `--mime-type` documented above, which sets the resumable-upload content-type for a locally-uploaded file.
 
+> **By-reference vs upload-only:** NotebookLM's Drive import only ingests Google-native Docs/Slides/Sheets + PDF by reference — the four `--mime-type` choices above. An upload-only file that merely *lives* in Drive (e.g. `epub`/`docx`/`txt`/`md`/`rtf`/`odt`/`csv`) cannot be imported this way; download it and add it with `source add <path> --type file` instead.
+>
 > **Python equivalent:** [`client.sources.add_drive(nb_id, file_id, title, mime_type=...)`](python-api.md#sourcesapi-clientsources).
 
 ```bash

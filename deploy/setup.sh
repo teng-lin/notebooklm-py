@@ -73,6 +73,12 @@ umask 077
   fi
 } > .env
 
+# Pre-create the OAuth-state mount dir (host ./oauth-state → /data/oauth) as the invoking
+# user, so Docker never root-creates it and the uid-mapped container can write it. chmod
+# 700 — it holds a full-account secret and shell `mkdir` honors umask. The `make` targets
+# also do this via `_ensure-state-dir`; harmless to repeat.
+[ -n "$OAUTH" ] && { mkdir -p ./oauth-state && chmod 700 ./oauth-state; }
+
 echo
 echo "✓ Wrote deploy/.env — TUNNEL=$TUNNEL, bearer token generated${OAUTH:+, OAuth password generated}."
 echo "Next:"

@@ -32,6 +32,23 @@ def test_generate_audio_returns_202_and_task_id(authed_client: TestClient) -> No
     assert task_id
 
 
+def test_generate_unknown_field_is_422(authed_client: TestClient) -> None:
+    """#1874-A: ArtifactGenerate forbids extra keys; a typo'd option -> 422."""
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts", json={"type": "audio", "stylee": "anime"}
+    )
+    assert resp.status_code == 422
+
+
+def test_generate_valid_body_still_202(authed_client: TestClient) -> None:
+    """#1874-A: a valid body with known optional fields is unaffected by extra='forbid'."""
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts",
+        json={"type": "audio", "instructions": "Keep it short", "language": "en"},
+    )
+    assert resp.status_code == 202
+
+
 def test_poll_known_task_not_found_is_200_pending(
     authed_client: TestClient, fake_client: FakeClient
 ) -> None:

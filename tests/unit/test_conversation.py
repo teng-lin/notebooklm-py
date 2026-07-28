@@ -7,11 +7,14 @@ import pytest
 
 from notebooklm import AskResult, NotebookLMClient
 from notebooklm.exceptions import ChatError
+from notebooklm.rpc import RPCMethod
 
 
 class TestAsk:
     @pytest.mark.asyncio
-    async def test_ask_new_conversation(self, auth_tokens, httpx_mock, mock_get_conversation_id):
+    async def test_ask_new_conversation(
+        self, auth_tokens, httpx_mock, mock_get_conversation_id, build_rpc_response
+    ):
         import re
 
         # Mock the chat-ask streamed response.
@@ -35,9 +38,16 @@ class TestAsk:
             content=response_body.encode(),
             method="POST",
         )
-        # New conversations now require a hPTbtc round-trip post-ask
-        # (issue #659): the SDK fetches the real conversation_id from
-        # there because the streamed response only contains a stream id.
+        # First-ever conversation: the pre-POST hPTbtc resolve finds no current
+        # conversation (empty envelope → None), so the null ask creates a fresh
+        # one. Its real conversation_id is recovered via a second, post-POST
+        # hPTbtc round-trip (issue #659). The None-then-real ordering makes this
+        # a genuine new conversation, so is_follow_up stays False (#1965).
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(RPCMethod.GET_LAST_CONVERSATION_ID, [[[]]]).encode(),
+            method="POST",
+        )
         mock_get_conversation_id(conv_id="real-conv-id")
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -52,6 +62,63 @@ class TestAsk:
         assert result.is_follow_up is False
         assert result.turn_number == 1
         assert result.conversation_id == "real-conv-id"
+
+    @pytest.mark.asyncio
+    async def test_ask_implicit_continue_is_follow_up(
+        self, auth_tokens, httpx_mock, mock_get_conversation_id, build_rpc_response
+    ):
+        """Two null asks on one notebook: the second continues the conversation.
+
+        Regression for #1965. When ``ask()`` is called without a
+        ``conversation_id``, it appends to the notebook's current conversation.
+        The *first* such ask on a fresh notebook starts a new conversation
+        (``is_follow_up=False``); the *second* resumes it and must report
+        ``is_follow_up=True`` with ``turn_number == 2`` and the same id.
+        """
+        import re
+
+        def stream_body(answer: str) -> bytes:
+            inner_json = json.dumps([[answer, None, ["stream-id-not-conv", 12345], None, [1]]])
+            chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+            return f")]}}'\n{len(chunk_json)}\n{chunk_json}\n".encode()
+
+        # One streamed answer per ask (reusable — both asks POST the same URL).
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=stream_body("First answer, long enough to be a valid reply."),
+            method="POST",
+            is_reusable=True,
+        )
+        # Ask #1 (fresh notebook): pre-POST hPTbtc resolves to None, so a new
+        # conversation is created and its id recovered post-POST.
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(RPCMethod.GET_LAST_CONVERSATION_ID, [[[]]]).encode(),
+            method="POST",
+        )
+        # Every subsequent hPTbtc call (post-POST recovery for ask #1, and the
+        # pre-POST resolve for ask #2) returns the now-current conversation id.
+        mock_get_conversation_id(conv_id="conv-x", reusable=True)
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result1 = await client.chat.ask(
+                notebook_id="nb_123",
+                question="First question?",
+                source_ids=["test_source"],
+            )
+            result2 = await client.chat.ask(
+                notebook_id="nb_123",
+                question="Second question?",
+                source_ids=["test_source"],
+            )
+
+        assert result1.is_follow_up is False
+        assert result1.turn_number == 1
+        assert result1.conversation_id == "conv-x"
+
+        assert result2.is_follow_up is True
+        assert result2.turn_number == 2
+        assert result2.conversation_id == "conv-x"
 
     @pytest.mark.asyncio
     async def test_ask_follow_up(self, auth_tokens, httpx_mock):
@@ -92,8 +159,13 @@ class TestAsk:
         assert result.turn_number == 2
 
     @pytest.mark.asyncio
-    async def test_ask_raises_chat_error_on_rate_limit(self, auth_tokens, httpx_mock):
+    async def test_ask_raises_chat_error_on_rate_limit(
+        self, auth_tokens, httpx_mock, mock_get_conversation_id
+    ):
         """ask() raises ChatError when the server returns UserDisplayableError."""
+        # A null ask resolves the notebook's current conversation via hPTbtc
+        # before the POST (issue #1875); mock it so the POST is what fails.
+        mock_get_conversation_id()
         error_chunk = json.dumps(
             [
                 [

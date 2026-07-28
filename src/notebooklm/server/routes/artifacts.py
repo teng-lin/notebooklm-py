@@ -38,7 +38,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from starlette.types import Receive, Scope, Send
 
 from ..._app import artifacts as artifact_core
@@ -310,7 +310,12 @@ class ArtifactGenerate(BaseModel):
     accept it — passing one to a different ``type`` (e.g. ``orientation`` to
     ``quiz``) is a 400, not a silent no-op. ``style`` is shared by ``video`` and
     ``infographic`` with each kind's own value set.
+
+    Unknown fields are rejected (``extra="forbid"``) so a typo'd option (e.g.
+    ``stylee``) fails loudly with a 422 rather than being silently ignored.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     type: str
     source_ids: list[str] | None = None

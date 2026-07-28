@@ -117,7 +117,7 @@ class SourceAddValidationError(ValidationError):
 class SourceAddFacade(Protocol):
     """Subset of ``client.sources`` needed by source-add orchestration."""
 
-    async def add_url(self, notebook_id: str, url: str) -> Source: ...
+    async def add_url(self, notebook_id: str, url: str, *, title: str | None = None) -> Source: ...
 
     async def add_text(self, notebook_id: str, title: str, content: str) -> Source: ...
 
@@ -393,6 +393,12 @@ async def add_source(
 ) -> Source:
     """Add a source using a prepared source-add plan."""
     if plan.detected_type in {"url", "youtube"}:
+        # YouTube / web-page imports re-derive the display title server-side, so
+        # ``add_url`` honors an explicit ``title`` via a best-effort post-add
+        # rename (#1960). Only forward a title that was actually given — a
+        # title-less add keeps the historical call shape (no ``title`` kwarg).
+        if plan.title:
+            return await sources.add_url(notebook_id, plan.content, title=plan.title)
         return await sources.add_url(notebook_id, plan.content)
 
     if plan.detected_type == "text":

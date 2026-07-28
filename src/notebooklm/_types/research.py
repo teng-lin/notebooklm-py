@@ -141,6 +141,15 @@ class ResearchTask:
     summary: str = ""
     report: str = ""
     tasks: tuple[ResearchTask, ...] = ()
+    # Raw backend status code (``task_info[4]``) preserved verbatim (issue
+    # #1922, F10). ``status`` coarsens this into the lifecycle enum and cannot
+    # tell a "no matches" failure sub-code from a genuine error; keeping the raw
+    # integer lets a caller distinguish failure sub-codes. ``None`` when the poll
+    # carried no code (empty / not-found placeholders, or a malformed row). It is
+    # deliberately absent from :meth:`to_public_dict` / :meth:`_to_task_dict` so
+    # the CLI ``--json`` shape stays byte-stable — the MCP ``research_status``
+    # tool surfaces it directly from the attribute.
+    status_code: int | None = None
 
     @classmethod
     def empty(cls) -> ResearchTask:

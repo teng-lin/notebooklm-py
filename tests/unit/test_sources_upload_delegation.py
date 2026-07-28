@@ -338,12 +338,16 @@ def test_sources_upload_helpers_are_pure_delegators() -> None:
     # uploader-delegating helper would be silently skipped by the loop below.
     # ``__init__`` is excluded: it only *wires* the uploader (configuring the
     # shared lister/poller and source-limit lookup), it does not delegate an
-    # upload operation to it.
+    # upload operation to it. ``add_drive_file`` (#1884) is excluded too: it only
+    # reads the ``self._uploader.live_cookies`` seam to authenticate the Drive
+    # fetch — it does not re-implement or delegate a resumable-upload operation
+    # (its upload leg goes through the public ``self.add_file``, already covered).
+    _uploader_seam_only = {"__init__", "add_drive_file"}
     uploader_methods = {
         node.name
         for node in class_def.body
         if isinstance(node, func_types)
-        and node.name != "__init__"
+        and node.name not in _uploader_seam_only
         and "self._uploader" in ast.unparse(node)
     }
     assert uploader_methods == set(expected), (

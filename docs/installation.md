@@ -1,6 +1,6 @@
 # Installation
 
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-07-11
 
 This is the canonical installation guide for `notebooklm-py`. The README has a quickstart; everything else lives here.
 
@@ -119,6 +119,28 @@ notebooklm login --browser-cookies auto    # rookiepy autodetects an installed b
 ```
 
 If the agent is in a no-display sandbox AND `[cookies]` isn't installed (Python 3.13+ skipped it), ask the user to run `notebooklm login` on a workstation and copy the resulting `~/.notebooklm/profiles/default/storage_state.json` to the agent's environment (or set `NOTEBOOKLM_AUTH_JSON`).
+
+#### Sandboxed agents (Claude Cowork)
+
+**Claude Cowork** (Anthropic's sandboxed desktop agent for non-developers) and similar no-display sandboxes are a special case of the headless path above: there is no browser for `notebooklm login`, and the sandbox resets between sessions. Two adjustments make everything except `login` work:
+
+- **Bootstrap each session** with the base install — `[browser]`/Playwright is *not* needed here, only for `login` (which you run elsewhere, once):
+  <!-- not mirrored: Cowork per-session bootstrap; not part of the contributor flow -->
+  ```bash
+  pip install notebooklm-py    # queries/generation/download need no extras
+  ```
+- **Reuse a host-generated `storage_state.json`.** Run `notebooklm login` once on a machine with a display, then bring the file into a sandbox-accessible folder. Point at it with the root `--storage` flag or `NOTEBOOKLM_AUTH_JSON` — the same mechanism as [Persona D](#d-headless-server-or-ci):
+  <!-- not mirrored: Cowork auth reuse; not part of the contributor flow -->
+  ```bash
+  notebooklm --storage /path/to/storage_state.json list             # per-invocation flag
+  # OR inline via env var (no file needed — e.g. from a Cowork-stored secret):
+  export NOTEBOOKLM_AUTH_JSON="$(cat /path/to/storage_state.json)"
+  notebooklm list
+  ```
+
+> ⚠️ **Security:** `storage_state.json` and `NOTEBOOKLM_AUTH_JSON` are bearer credentials for your Google account — store the file `0600` or in the sandbox's secret store, never commit or log them, and `unset NOTEBOOKLM_AUTH_JSON` after use.
+
+Pass an explicit `-n/--notebook <id>` on notebook-scoped commands — the selected-notebook context does not survive a session reset. If Cowork reads `~/.claude/skills/`, `notebooklm skill install` registers the skill there; otherwise build the uploadable archive on the host with `notebooklm skill package` (writes `notebooklm-skill.zip`; see [cli-reference.md](cli-reference.md#skill-commands-notebooklm-skill-cmd)) and add it via **Claude Settings → Capabilities**.
 
 **Verification (machine-parseable):**
 
@@ -487,7 +509,11 @@ Wire it into an MCP client with either:
 - `notebooklm mcp install <client>` — auto-writes the server config for `claude-desktop`, `claude-code`, `cursor`, or `windsurf`; or
 - the one-click `.mcpb` desktop bundle — download it from the [latest release](https://github.com/teng-lin/notebooklm-py/releases/latest) (**Assets**) and use Claude Desktop's "Install Extension". Each stable release attaches a prebuilt, version-matched bundle; see [`desktop-extension/README.md`](../desktop-extension/README.md).
 
-Full usage walkthrough (auth, transports, the 35 tools, workflows, troubleshooting): **[mcp-guide.md](mcp-guide.md)**.
+For a **self-hosted remote connector** (claude.ai / mobile / ChatGPT over a tunnel), each release also
+attaches a version-baked `docker-compose.yml` + `env.example` — no repo clone: `curl` them, fill
+`.env`, `docker compose --profile cloudflare up -d`. See [`deploy/README.md`](../deploy/README.md#quick-start--end-users-no-repo-cloudflare-tunnel).
+
+Full usage walkthrough (auth, transports, the 33 tools, workflows, troubleshooting): **[mcp-guide.md](mcp-guide.md)**.
 
 ---
 

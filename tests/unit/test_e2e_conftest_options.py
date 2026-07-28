@@ -152,10 +152,11 @@ class TestRateLimitSkipSummary:
         reports,
         *,
         passed=None,
+        failed=None,
     ):
         write_calls: list[tuple] = []
         return SimpleNamespace(
-            stats={"skipped": reports, "passed": passed or []},
+            stats={"skipped": reports, "passed": passed or [], "failed": failed or []},
             write_sep=lambda *a, **kw: write_calls.append(("sep", a, kw)),
             write_line=lambda *a, **kw: write_calls.append(("line", a, kw)),
             _writes=write_calls,
@@ -183,9 +184,27 @@ class TestRateLimitSkipSummary:
         conftest.pytest_sessionfinish(session, exitstatus)
         return session
 
+    @pytest.fixture(autouse=True)
+    def _enforce_floor(self, monkeypatch):
+        # Default these tests to the enforced path (nightly semantics) with inline
+        # exit-status delivery (no sentinel), matching the pre-existing assertions.
+        # Individual tests override (delenv the flag, or set the sentinel path).
+        monkeypatch.setenv("E2E_ENFORCE_COVERAGE_FLOOR", "1")
+        monkeypatch.delenv("E2E_COVERAGE_FLOOR_SENTINEL", raising=False)
+
     @staticmethod
-    def _report(nodeid: str, *, live_chat_ask: bool = False, when: str = "call"):
-        keywords = {"live_chat_ask": 1} if live_chat_ask else {}
+    def _report(
+        nodeid: str,
+        *,
+        live_chat_ask: bool = False,
+        live_generation: bool = False,
+        when: str = "call",
+    ):
+        keywords: dict[str, int] = {}
+        if live_chat_ask:
+            keywords["live_chat_ask"] = 1
+        if live_generation:
+            keywords["live_generation"] = 1
         return SimpleNamespace(nodeid=nodeid, keywords=keywords, when=when)
 
     @classmethod
@@ -195,17 +214,27 @@ class TestRateLimitSkipSummary:
         reason: str,
         *,
         live_chat_ask: bool = False,
+        live_generation: bool = False,
         when: str = "call",
     ) -> SimpleNamespace:
-        report = cls._report(nodeid, live_chat_ask=live_chat_ask, when=when)
+        report = cls._report(
+            nodeid, live_chat_ask=live_chat_ask, live_generation=live_generation, when=when
+        )
         report.longrepr = ("file.py", 1, f"Skipped: {reason}")
         return report
 
     @classmethod
     def _passed(
-        cls, nodeid: str, *, live_chat_ask: bool = False, when: str = "call"
+        cls,
+        nodeid: str,
+        *,
+        live_chat_ask: bool = False,
+        live_generation: bool = False,
+        when: str = "call",
     ) -> SimpleNamespace:
-        return cls._report(nodeid, live_chat_ask=live_chat_ask, when=when)
+        return cls._report(
+            nodeid, live_chat_ask=live_chat_ask, live_generation=live_generation, when=when
+        )
 
     def test_counts_only_rate_limit_skips(self, monkeypatch, tmp_path, capsys):
         monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
@@ -358,6 +387,148 @@ class TestRateLimitSkipSummary:
             for call in tr._writes
         )
 
+    def test_floor_not_enforced_without_flag_stays_green(self, monkeypatch):
+        # Release-path semantics (#1819): with E2E_ENFORCE_COVERAGE_FLOOR unset, a
+        # fully-throttled surface skips freely and never reds the job.
+        monkeypatch.delenv("E2E_ENFORCE_COVERAGE_FLOOR", raising=False)
+        monkeypatch.delenv("E2E_COVERAGE_FLOOR_SENTINEL", raising=False)
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter([self._skipped("t::a", "rate limited", live_chat_ask=True)])
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.OK
+
+    def test_generation_floor_fails_when_all_marked_rate_limited(self, monkeypatch):
+        conftest = _load_e2e_conftest()
+        tr = self._make_reporter(
+            [
+                self._skipped(
+                    "test_interactive_mind_map.py::t", "Rate limit: quota", live_generation=True
+                )
+            ]
+        )
+        session = self._finish(conftest, tr)
+        assert session.exitstatus == pytest.ExitCode.TESTS_FAILED
+
+    def test_generation_floor_allows_one_marked_pass(self, monkeypatch):
+        conftest = _load_e2e_conftest()
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::t_audio", "Rate limit: q", live_generation=True)],
+            passed=[self._passed("test_generation.py::t_report", live_generation=True)],
+        )
+        session = self._finish(conftest, tr)
+        assert session.exitstatus == pytest.ExitCode.OK
+
+    def test_sentinel_records_skip_event_without_failing_exit(self, monkeypatch, tmp_path):
+        # Nightly delivery: a hollow surface (marked skip, no marked pass) appends a
+        # SKIP event and leaves exit status alone, so a pure-skip run stays exit 0 and
+        # doesn't trip the continue-on-error retry. The enforce step reconciles later.
+        sentinel = tmp_path / "floor"
+        monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::t", "Rate limit: q", live_generation=True)]
+        )
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.OK
+        assert "SKIP\tlive generation" in sentinel.read_text()
+
+    def test_sentinel_records_skip_despite_unrelated_failure(self, monkeypatch, tmp_path):
+        # Masking guard (#1819): the SKIP event is still recorded when an UNRELATED
+        # test failed on the main run, so a transient failure that recovers on retry
+        # can't mask a hollow surface.
+        sentinel = tmp_path / "floor"
+        monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::t", "Rate limit: q", live_generation=True)],
+            failed=[self._report("test_notebooks.py::unrelated", when="call")],
+        )
+        self._finish(conftest, tr, exitstatus=pytest.ExitCode.TESTS_FAILED)
+
+        assert "SKIP\tlive generation" in sentinel.read_text()
+
+    def test_sentinel_records_pass_event_when_marked_test_passed(self, monkeypatch, tmp_path):
+        # A marked pass records PASS (real coverage) even when another marked test
+        # rate-limit-skipped in the same run — the enforce step reconciles SKIP vs PASS
+        # so this surface does NOT breach.
+        sentinel = tmp_path / "floor"
+        monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::a", "Rate limit: q", live_generation=True)],
+            passed=[self._passed("test_generation.py::b", live_generation=True)],
+        )
+        self._finish(conftest, tr)
+
+        text = sentinel.read_text()
+        assert "PASS\tlive generation" in text
+        assert "SKIP\tlive generation" not in text
+
+    def test_sentinel_records_skip_when_marked_test_failed(self, monkeypatch, tmp_path):
+        # A marked FAILURE is not a pass, so the surface still records SKIP (a breach
+        # candidate). The retry step appends its own PASS/SKIP, and the enforce step
+        # reconciles — so a marked test that fails on main then passes on retry clears
+        # the surface, while one that fails then skips keeps it breached (codex/coderabbit).
+        sentinel = tmp_path / "floor"
+        monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::a", "Rate limit: q", live_generation=True)],
+            failed=[self._report("test_generation.py::b", live_generation=True, when="setup")],
+        )
+        self._finish(conftest, tr, exitstatus=pytest.ExitCode.TESTS_FAILED)
+
+        assert "SKIP\tlive generation" in sentinel.read_text()
+
+    def test_floor_falls_back_to_exitstatus_when_sentinel_unwritable(self, monkeypatch, tmp_path):
+        # If the sentinel write fails, don't silently hollow-green: fall back to the
+        # inline exit-code path (best-effort) (codex). Point the sentinel at a path
+        # whose parent is a file, so makedirs + open both fail.
+        blocker = tmp_path / "blocker"
+        blocker.write_text("not a dir")
+        monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(blocker / "floor"))
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::a", "Rate limit: q", live_generation=True)]
+        )
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.TESTS_FAILED
+
+    def test_floor_sentinel_creates_missing_parent_dir(self, monkeypatch, tmp_path):
+        # A missing parent directory must not turn the enforcement signal into a
+        # silent no-op — the writer creates it (gemini).
+        sentinel = tmp_path / "nested" / "sub" / "floor"
+        monkeypatch.setenv("E2E_COVERAGE_FLOOR_SENTINEL", str(sentinel))
+        conftest = _load_e2e_conftest()
+
+        tr = self._make_reporter(
+            [self._skipped("test_generation.py::a", "Rate limit: q", live_generation=True)]
+        )
+        session = self._finish(conftest, tr)
+
+        assert session.exitstatus == pytest.ExitCode.OK
+        assert "SKIP\tlive generation" in sentinel.read_text()
+
+    def test_floor_ignores_broken_run_exit_codes(self, monkeypatch):
+        # A usage/internal error is its own signal — the floor must not evaluate or
+        # rewrite that exit code (claude review).
+        conftest = _load_e2e_conftest()
+        tr = self._make_reporter(
+            [self._skipped("t::a", "rate limited", live_chat_ask=True)],
+        )
+        session = self._finish(conftest, tr, exitstatus=pytest.ExitCode.USAGE_ERROR)
+
+        assert session.exitstatus == pytest.ExitCode.USAGE_ERROR
+
     def test_live_chat_floor_changes_real_pytest_exit_code(self, pytester: pytest.Pytester):
         pytester.makepyprojecttoml(
             """
@@ -420,10 +591,20 @@ class TestGenerationRateLimitSkip:
             async def revise_slide(self, notebook_id):
                 raise ValueError("not a rate limit")
 
+            async def retry_failed(self, notebook_id, artifact_id):
+                raise RateLimitError("Resource exhausted (status 8): quota")
+
             async def delete(self, notebook_id, artifact_id):
                 raise RateLimitError("should never be wrapped")
 
-        return SimpleNamespace(artifacts=FakeArtifacts())
+        class FakeMindMaps:
+            async def generate(self, notebook_id):
+                raise RateLimitError("Resource exhausted (status 8): quota")
+
+            async def list(self, notebook_id):
+                raise RateLimitError("read path — should never be wrapped")
+
+        return SimpleNamespace(artifacts=FakeArtifacts(), mind_maps=FakeMindMaps())
 
     async def test_rate_limit_error_becomes_skip(self):
         conftest = _load_e2e_conftest()
@@ -461,3 +642,71 @@ class TestGenerationRateLimitSkip:
 
         with pytest.raises(RateLimitError):
             await client.artifacts.delete("nb-1", "art-1")
+
+    async def test_mind_maps_generate_becomes_skip(self):
+        # The #1819 gap: the interactive mind map creates via client.mind_maps.generate,
+        # a different namespace than client.artifacts.generate_* — it must skip too.
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(pytest.skip.Exception) as excinfo:
+            await client.mind_maps.generate("nb-1")
+        assert any(p in str(excinfo.value).lower() for p in conftest._RATE_LIMIT_PHRASES)
+
+    async def test_mind_maps_read_methods_are_not_wrapped(self):
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(RateLimitError):
+            await client.mind_maps.list("nb-1")
+
+    async def test_retry_failed_becomes_skip(self):
+        # retry_failed re-runs generation and raises RateLimitError on quota, so it
+        # must skip like generate_* (claude review — same #1819 regression class).
+        conftest = _load_e2e_conftest()
+        client = self._make_client()
+        conftest._install_generation_rate_limit_skip(client)
+
+        with pytest.raises(pytest.skip.Exception):
+            await client.artifacts.retry_failed("nb-1", "art-1")
+
+
+class TestGenerationSkipRegistryCoverage:
+    """The skip registry must cover every live generate/revise entrypoint.
+
+    Guards against a new CREATE_ARTIFACT method (or namespace) landing without
+    being wrapped for the RateLimitError→skip fixture — the exact regression class
+    that caused #1819 (mind_maps.generate was created after the artifacts-only
+    wrapper and slipped through).
+    """
+
+    def test_registry_covers_all_generate_and_revise_methods(self):
+        from notebooklm._artifacts import ArtifactsAPI
+        from notebooklm._mind_maps_api import MindMapsAPI
+
+        conftest = _load_e2e_conftest()
+        classes = {"artifacts": ArtifactsAPI, "mind_maps": MindMapsAPI}
+
+        # Registry namespaces and the known generation-capable classes must stay in
+        # lockstep — adding one without the other trips this guard.
+        assert set(conftest._GENERATION_SKIP_TARGETS) == set(classes)
+
+        for ns_name, cls in classes.items():
+            matches = conftest._GENERATION_SKIP_TARGETS[ns_name]
+            # generate*/revise*/retry* are the CREATE_ARTIFACT-quota surfaces that
+            # raise RateLimitError before a GenerationStatus exists (retry_failed
+            # re-runs generation, so it raises on quota too).
+            gen_methods = [
+                name
+                for name in dir(cls)
+                if not name.startswith("_")
+                and name.startswith(("generate", "revise", "retry"))
+                and callable(getattr(cls, name))
+            ]
+            assert gen_methods, f"{ns_name}: expected at least one generate/revise/retry method"
+            uncovered = [name for name in gen_methods if not matches(name)]
+            assert not uncovered, (
+                f"{ns_name}: generate/revise/retry methods not in skip registry: {uncovered}"
+            )

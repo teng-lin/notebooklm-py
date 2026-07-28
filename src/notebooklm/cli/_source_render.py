@@ -43,6 +43,7 @@ from .rendering import (
     json_output_response,
 )
 from .services.source_mutations import (
+    SourceAddDriveFileResult,
     SourceAddDriveResult,
     SourceDeleteByTitleResult,
     SourceDeleteResult,
@@ -567,6 +568,30 @@ def _render_source_add_drive_result(
         return
 
     cli_print(f"[green]Added Drive source:[/green] {result.source.id}", ctx=ctx)
+    cli_print(f"[bold]Title:[/bold] {result.source.title}", ctx=ctx)
+
+
+def _render_source_add_drive_file_result(
+    result: SourceAddDriveFileResult,
+    *,
+    json_output: bool,
+    ctx: click.Context,
+) -> None:
+    if json_output:
+        # Mirrors the add-drive envelope: the ``source_summary_payload`` serializer
+        # is presentation, so the envelope is built here rather than on the neutral
+        # result. ``document_id`` echoes the raw id/URL the caller passed.
+        json_output_response(
+            {
+                "action": "add-drive-file",
+                "source": source_summary_payload(result.source),
+                "document_id": result.document_id,
+                "notebook_id": result.notebook_id,
+            }
+        )
+        return
+
+    cli_print(f"[green]Added Drive file source:[/green] {result.source.id}", ctx=ctx)
     cli_print(f"[bold]Title:[/bold] {result.source.title}", ctx=ctx)
 
 

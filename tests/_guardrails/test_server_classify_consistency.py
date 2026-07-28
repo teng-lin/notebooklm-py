@@ -40,6 +40,7 @@ _CATEGORY_TO_STATUS: dict[ErrorCategory, int] = {
     ErrorCategory.RATE_LIMITED: 429,
     ErrorCategory.VALIDATION: 400,
     ErrorCategory.CONFIG: 500,
+    ErrorCategory.DEPENDENCY: 500,
     ErrorCategory.NETWORK: 502,
     ErrorCategory.NOTEBOOK_LIMIT: 409,
     ErrorCategory.ARTIFACT_TIMEOUT: 504,
@@ -47,6 +48,7 @@ _CATEGORY_TO_STATUS: dict[ErrorCategory, int] = {
     ErrorCategory.SERVER: 502,
     ErrorCategory.RPC: 502,
     ErrorCategory.SOURCE_MUTATION: 422,
+    ErrorCategory.SOURCE_ADD: 422,
     ErrorCategory.LIBRARY: 500,
     ErrorCategory.UNEXPECTED: 500,
 }
@@ -58,6 +60,7 @@ _EXEMPLARS: list[tuple[ErrorCategory, BaseException]] = [
     (ErrorCategory.RATE_LIMITED, exc.RateLimitError("slow down", retry_after=5)),
     (ErrorCategory.VALIDATION, exc.ValidationError("bad input")),
     (ErrorCategory.CONFIG, exc.ConfigurationError("missing config")),
+    (ErrorCategory.DEPENDENCY, exc.MissingDependencyError("markdownify not installed")),
     (ErrorCategory.NETWORK, exc.NetworkError("connection refused")),
     (ErrorCategory.NOTEBOOK_LIMIT, exc.NotebookLimitError(499, limit=500)),
     (ErrorCategory.ARTIFACT_TIMEOUT, exc.ArtifactTimeoutError("nb-1", "task-1", 30.0)),
@@ -65,6 +68,7 @@ _EXEMPLARS: list[tuple[ErrorCategory, BaseException]] = [
     (ErrorCategory.SERVER, exc.ServerError("upstream 503")),
     (ErrorCategory.RPC, exc.RPCError("decode failed", method_id="abc123")),
     (ErrorCategory.SOURCE_MUTATION, SourceMutationError("ambiguous", "AMBIGUOUS_ID")),
+    (ErrorCategory.SOURCE_ADD, exc.SourceAddError("http://bad.example")),
     (ErrorCategory.LIBRARY, exc.NotebookLMError("some library error")),
     (ErrorCategory.UNEXPECTED, RuntimeError("boom")),
 ]

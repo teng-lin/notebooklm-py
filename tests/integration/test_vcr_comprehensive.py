@@ -221,14 +221,17 @@ class TestSourcesAPI:
             source = await client.sources.add_drive(
                 MUTABLE_NOTEBOOK_ID,
                 file_id="1oAk_INJHbIPsIh49jgNqj3FESSGHZrzxFY7t05Lvvl0",
-                title="VCR Test Drive Doc",
+                # Pass the doc's actual Drive title so the #1960 honor-title path is a
+                # no-op (add returns this title, so no post-add rename fires — the
+                # cassette records only the ADD_SOURCE call). A DIFFERENT title would
+                # trigger a follow-up rename, covered by the unit tests.
+                title="Rubisco Research: Status and Future",
                 mime_type="application/vnd.google-apps.document",
                 wait=False,  # Don't wait for processing during VCR recording
             )
         assert source is not None
         assert source.id, "Expected non-empty source ID"
-        # Drive sources use the actual document title, not the passed title
-        assert source.title, "Expected non-empty source title"
+        assert source.title == "Rubisco Research: Status and Future"
 
 
 # =============================================================================
@@ -628,7 +631,7 @@ class TestChatAPI:
         # because most endpoints do not send ``f.req``.
         match_on=["method", "scheme", "host", "port", "path", "freq"],
     )
-    async def test_ask(self):
+    async def test_ask(self, legacy_vcr_follow_up_probe):
         """Ask a question."""
         async with vcr_client() as client:
             result = await client.chat.ask(
@@ -648,7 +651,7 @@ class TestChatAPI:
         # by replay-order. See ``test_ask`` above for the full rationale.
         match_on=["method", "scheme", "host", "port", "path", "freq"],
     )
-    async def test_ask_with_references(self):
+    async def test_ask_with_references(self, legacy_vcr_follow_up_probe):
         """Ask a question that generates references."""
         async with vcr_client() as client:
             result = await client.chat.ask(

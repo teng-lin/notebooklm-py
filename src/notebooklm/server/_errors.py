@@ -105,6 +105,7 @@ CATEGORY_STATUS: dict[ErrorCategory, int] = {
     ErrorCategory.RATE_LIMITED: 429,
     ErrorCategory.VALIDATION: 400,
     ErrorCategory.CONFIG: 500,
+    ErrorCategory.DEPENDENCY: 500,
     ErrorCategory.NETWORK: 502,
     ErrorCategory.NOTEBOOK_LIMIT: 409,
     ErrorCategory.ARTIFACT_TIMEOUT: 504,
@@ -112,6 +113,7 @@ CATEGORY_STATUS: dict[ErrorCategory, int] = {
     ErrorCategory.SERVER: 502,
     ErrorCategory.RPC: 502,
     ErrorCategory.SOURCE_MUTATION: 422,
+    ErrorCategory.SOURCE_ADD: 422,
     ErrorCategory.LIBRARY: 500,
     ErrorCategory.UNEXPECTED: 500,
 }

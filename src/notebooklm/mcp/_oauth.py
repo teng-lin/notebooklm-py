@@ -39,25 +39,32 @@ exposes the co-located full-account ``master_token.json``):
   owner's authorize from being *rejected*, but a sustained pre-auth flood can still
   evict the owner's idle in-flight ``sid`` BEFORE they submit the password ("login link
   expired"); the owner simply retries. Availability-only; bounded by the 300s TTL.
-* persisted tokens — refresh tokens are long-lived and written (0600) to
-  ``oauth_state.json``; treat that file as a FULL-ACCOUNT secret (same tier as
-  ``master_token.json``). Real revocation = delete ``oauth_state.json`` + restart;
-  rotating ``NOTEBOOKLM_MCP_OAUTH_PASSWORD`` does NOT revoke already-issued tokens.
+* persisted tokens — refresh tokens are long-lived and written (0600) to the OAuth
+  state file (path logged at startup; default ``<home>/oauth/<slug>.json`` keyed on the
+  base_url — see :func:`get_oauth_config`); treat it as a FULL-ACCOUNT secret (same tier
+  as ``master_token.json``). Real revocation = delete THAT file + restart; a legacy
+  profile-dir ``oauth_state.json`` migrated once is renamed ``.migrated`` and never
+  re-read, so deleting the live file does not resurrect its tokens. Rotating
+  ``NOTEBOOKLM_MCP_OAUTH_PASSWORD`` does NOT revoke already-issued tokens.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hashlib
 import hmac
 import html
 import json
 import logging
 import os
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
+from urllib.parse import urlsplit
 
 import anyio
 from fastmcp.server.auth import AuthProvider
@@ -76,8 +83,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from notebooklm._atomic_io import atomic_write_json
-from notebooklm.paths import get_profile_dir
+from notebooklm._atomic_io import atomic_update_json, atomic_write_json
+from notebooklm.paths import get_home_dir, get_profile_dir
 
 from ._urlcheck import _validate_bare_https_origin
 
@@ -86,6 +93,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "OAUTH_BASE_URL_ENV",
     "OAUTH_PASSWORD_ENV",
+    "OAUTH_STATE_PATH_ENV",
     "TRUST_PROXY_ENV",
     "OAuthConfig",
     "SelfHostedOAuthProvider",
@@ -97,6 +105,12 @@ __all__ = [
 #: enable OAuth; unset → bearer-only (Phase A unchanged).
 OAUTH_PASSWORD_ENV = "NOTEBOOKLM_MCP_OAUTH_PASSWORD"
 OAUTH_BASE_URL_ENV = "NOTEBOOKLM_MCP_OAUTH_BASE_URL"
+#: Optional override for where the OAuth client registry + issued tokens persist. When
+#: set (non-empty) it wins over the derived default; used verbatim as a path
+#: (operator-supplied, so no traversal guard). Unset → ``<home>/oauth/<slug>.json`` keyed
+#: on the base_url (the AS issuer) — deployment-scoped, NOT tied to the served account
+#: profile, so switching profiles no longer orphans registered clients.
+OAUTH_STATE_PATH_ENV = "NOTEBOOKLM_MCP_OAUTH_STATE_PATH"
 #: Opt-in: trust the proxy-set ``CF-Connecting-IP`` header as the login-throttle key
 #: (``"1"`` to enable). Default off → key on the socket peer. Only set this when a trusted
 #: proxy (e.g. the Cloudflare tunnel) authoritatively sets the header; if the origin is
@@ -137,9 +151,110 @@ class OAuthConfig:
     password: str = field(repr=False)
     base_url: str = field(repr=True)
     state_path: Path | None = field(default=None)  # persist target; None → no persistence
+    # One-time migration source: the pre-#1765-reversal profile-dir oauth_state.json.
+    # Read ONCE at startup if ``state_path`` does not exist yet, then renamed ``.migrated``.
+    legacy_state_path: Path | None = field(default=None)
     # Trust the proxy-set CF-Connecting-IP header for throttle keying (default off — the
     # socket peer is used unless an operator asserts a trusted proxy sets the header).
     trust_proxy: bool = field(default=False)
+
+
+def _slug_for_base_url(base_url: str) -> str:
+    """Filesystem-safe, collision-resistant filename stem for an OAuth issuer.
+
+    A readable ``netloc`` prefix (cosmetic) plus a 64-bit hash of the normalized origin
+    (the disambiguator). Distinct origins → distinct hash → distinct file, even when the
+    sanitized prefix collides — :func:`_validate_bare_https_origin` restricts neither the
+    host charset nor the port, so the prefix alone is not unique.
+    """
+    norm = base_url.strip().rstrip("/").lower()
+    # Cap the readable prefix so a pathologically long hostname can't push the filename
+    # past the 255-byte limit; the hash (over the FULL origin) still disambiguates.
+    readable = (re.sub(r"[^a-z0-9._-]", "_", urlsplit(base_url).netloc.lower()) or "origin")[:64]
+    digest = hashlib.sha256(norm.encode()).hexdigest()[:16]
+    return f"{readable}.{digest}"
+
+
+def _derived_state_path(base_url: str) -> Path:
+    """Default OAuth-state path ``<home>/oauth/<slug(base_url)>.json``.
+
+    Keyed on the base_url (the AS issuer), so it is deployment-scoped: two servers with
+    different issuers get different files; one server keeps its file across a
+    served-account switch (the base_url is unchanged)."""
+    return get_home_dir() / "oauth" / f"{_slug_for_base_url(base_url)}.json"
+
+
+def _migrate_legacy_state(state_path: Path, legacy_path: Path | None) -> None:
+    """One-time, non-destructive migration of a legacy profile-dir ``oauth_state.json``.
+
+    Best-effort and never fatal: any failure is logged and startup continues. The
+    ``.migrated`` rename is the durable "already handled" marker — it is independent of
+    ``state_path`` (so it survives a revocation that deletes the live file), and it is
+    committed by renaming the legacy file BEFORE the migrated state is exposed at
+    ``state_path``. That ordering is what makes revocation safe even if the write fails:
+    a failed write rolls the rename back for a clean retry, and there is never a window
+    where a live ``state_path`` coexists with a still-migratable legacy file. Concurrent
+    startups are safe — only one wins the atomic rename; the loser sees the legacy gone.
+    """
+    if legacy_path is None or not legacy_path.exists():
+        return
+    # If an explicit override points the live state AT the legacy file itself, there is
+    # nothing to migrate — and retiring it would delete the very file the provider loads.
+    if legacy_path == state_path or (state_path.exists() and legacy_path.samefile(state_path)):
+        return
+    migrated = legacy_path.with_name(legacy_path.name + ".migrated")
+    # Migration already happened for this deployment — either the ``.migrated`` marker
+    # exists (a reappeared oauth_state.json is a backup restore or leftover, and importing
+    # it could resurrect revoked tokens) or the live state file is present (a prior rename
+    # failed/crashed). Retire the reappeared/lingering legacy so it is never re-migrated,
+    # and never overwrite the authoritative live state.
+    if migrated.exists() or state_path.exists():
+        with contextlib.suppress(OSError):
+            os.replace(legacy_path, migrated)
+        return
+    try:
+        raw = legacy_path.read_bytes()
+    except OSError as exc:  # transient read error — leave in place, retry next startup
+        logger.warning("Could not read legacy OAuth state %s (will retry): %s", legacy_path, exc)
+        return
+    try:
+        data = json.loads(raw)  # bytes: invalid UTF-8 or bad JSON → ValueError family
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        # Corrupt or non-object payload: retire it (so it isn't re-parsed every startup)
+        # WITHOUT writing it as state.
+        logger.warning("Legacy OAuth state %s is unusable; retiring without migrating", legacy_path)
+        with contextlib.suppress(OSError):
+            os.replace(legacy_path, migrated)
+        return
+    try:
+        if os.name == "posix":
+            state_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        else:
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+        # Commit the marker FIRST (os.replace is atomic + cross-platform, unlike
+        # Path.rename which raises on Windows if the dest exists): retire the legacy
+        # source before exposing migrated state, so no failure past this point can leave
+        # a resurrectable legacy file beside a live state_path.
+        os.replace(legacy_path, migrated)
+    except OSError as exc:
+        logger.warning(
+            "Skipped legacy OAuth-state migration (retiring %s failed): %s", legacy_path, exc
+        )
+        return
+    try:
+        # Locked (atomic_update_json wraps a filelock) + race-safe: keep a concurrent
+        # startup's fresh state rather than clobbering it with the legacy copy.
+        atomic_update_json(state_path, lambda cur: cur if cur else data, mode=0o600)
+    except (OSError, ValueError) as exc:
+        # Write failed after the marker committed — roll the rename back so the next
+        # startup retries cleanly instead of stranding the data in ``.migrated``.
+        with contextlib.suppress(OSError):
+            os.replace(migrated, legacy_path)
+        logger.warning("Legacy OAuth-state migration write failed (rolled back): %s", exc)
+        return
+    logger.info("Migrated legacy OAuth state %s → %s", legacy_path, state_path)
 
 
 def get_oauth_config(profile: str | None = None) -> OAuthConfig | None:
@@ -150,19 +265,21 @@ def get_oauth_config(profile: str | None = None) -> OAuthConfig | None:
     URL must be https (the MCP SDK rejects non-HTTPS non-localhost issuers anyway).
 
     ``state_path`` (where issued tokens + registered clients persist, 0600) is
-    resolved through the SAME canonical profile resolver the client runtime uses
-    (:func:`notebooklm.paths.get_profile_dir`), so it always tracks the profile the
-    server actually drives — the ``--profile`` flag, ``NOTEBOOKLM_PROFILE``, the
-    ``notebooklm use``-set active profile, or the ``~/.notebooklm`` home default
-    (#1765). Pass ``profile`` to bind an explicit one; ``None`` resolves the active
-    profile.
+    **deployment-scoped**, keyed on the ``base_url`` (the OAuth issuer): the
+    ``NOTEBOOKLM_MCP_OAUTH_STATE_PATH`` override wins, else ``<home>/oauth/<slug>.json``
+    (:func:`_derived_state_path`). This intentionally REVERSES #1765's profile-dir
+    coupling — the client registry is a property of the server, not the served account,
+    so switching profiles no longer orphans registered clients. ``legacy_state_path``
+    (the old profile-dir ``oauth_state.json``, resolved best-effort via ``profile`` —
+    ``None`` if the profile is malformed) is migrated once at startup, see
+    :func:`_migrate_legacy_state`.
 
     Args:
-        profile: Explicit auth profile to persist OAuth state under. ``None``
-            resolves the active profile via the standard precedence.
+        profile: Auth profile whose legacy ``oauth_state.json`` is the one-time
+            migration source. ``None`` resolves the active profile.
 
     Raises:
-        SystemExit: partial/invalid config, or a malformed ``profile`` name.
+        SystemExit: partial/invalid OAuth config (missing var, weak password, bad URL).
     """
     password = os.environ.get(OAUTH_PASSWORD_ENV) or ""
     base_url = (os.environ.get(OAUTH_BASE_URL_ENV) or "").strip()
@@ -187,22 +304,29 @@ def get_oauth_config(profile: str | None = None) -> OAuthConfig | None:
     # fine.) The same check guards the file-transfer base URL — shared helper.
     _validate_bare_https_origin(base_url, OAUTH_BASE_URL_ENV)
 
-    # Persist OAuth state under the SAME profile dir the client runtime drives —
-    # not a separate raw-env derivation that silently diverged (#1765). Honors the
-    # --profile flag / NOTEBOOKLM_PROFILE / active profile / ~/.notebooklm default.
+    # Deployment-scoped OAuth-state path, keyed on the base_url (the AS issuer), NOT the
+    # served profile (#1765 reversal — see the docstring). An explicit override wins.
+    override = os.environ.get(OAUTH_STATE_PATH_ENV)
+    state_path: Path = Path(override).expanduser() if override else _derived_state_path(base_url)
+    # One-time migration source: the old profile-dir oauth_state.json. Best-effort — a
+    # malformed profile name (get_profile_dir raises ValueError) just means "no legacy to
+    # migrate", NOT a startup failure (the profile guard still fires where the client
+    # runtime actually uses it for storage).
     try:
-        state_path: Path = get_profile_dir(profile) / "oauth_state.json"
-    except ValueError as exc:
-        # Malformed profile name (e.g. path traversal). Fail clean on the http
-        # startup path instead of leaking a traceback.
-        raise SystemExit(str(exc)) from exc
+        legacy_state_path: Path | None = get_profile_dir(profile) / "oauth_state.json"
+    except ValueError:
+        legacy_state_path = None
 
     # Opt-in trusted-proxy: only reached once OAuth is fully configured, so it never
     # fires on the OAuth-off path. Default off keeps the throttle keyed on the socket peer.
     trust_proxy = os.environ.get(TRUST_PROXY_ENV) == "1"
 
     return OAuthConfig(
-        password=password, base_url=base_url, state_path=state_path, trust_proxy=trust_proxy
+        password=password,
+        base_url=base_url,
+        state_path=state_path,
+        legacy_state_path=legacy_state_path,
+        trust_proxy=trust_proxy,
     )
 
 
@@ -257,6 +381,15 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         self._kdf_limiter = anyio.CapacityLimiter(4)
         self._state_path = state_path
         self._trust_proxy = trust_proxy
+        # Serialize saves. ``_save_state`` snapshots in-memory state on the loop
+        # then offloads the atomic write to a worker thread; without this lock
+        # two concurrent saves could snapshot in one order but have their fsyncs
+        # complete in the opposite order, letting an OLDER snapshot's write
+        # clobber a newer one (dropping a just-registered client/token, or
+        # resurrecting a revoked token on the next restart). Holding the lock
+        # across snapshot+offloaded-write makes a later save snapshot only after
+        # the earlier write has landed, so the last save started always wins.
+        self._save_lock = asyncio.Lock()
         # sid -> _Pending(client, validated params, expiry_ts, attempts). Pre-auth + bounded.
         self._pending: dict[str, _Pending] = {}
         # per-IP failed-login timestamps (throttle).
@@ -293,7 +426,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
                 )
             self.clients.pop(evictable, None)
         await super().register_client(client_info)
-        self._save_state()
+        await self._save_state()
 
     # -- password gate ---------------------------------------------------------
     async def authorize(
@@ -447,7 +580,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
         token = await super().exchange_authorization_code(client, authorization_code)
-        self._save_state()
+        await self._save_state()
         return token
 
     async def exchange_refresh_token(
@@ -457,25 +590,48 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         scopes: list[str],
     ) -> OAuthToken:
         token = await super().exchange_refresh_token(client, refresh_token, scopes)
-        self._save_state()
+        await self._save_state()
         return token
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         await super().revoke_token(token)
-        self._save_state()
+        await self._save_state()
 
-    def _save_state(self) -> None:
+    async def _save_state(self) -> None:
         if self._state_path is None:
             return
-        data = {
-            "clients": {k: v.model_dump(mode="json") for k, v in self.clients.items()},
-            "access_tokens": {k: v.model_dump(mode="json") for k, v in self.access_tokens.items()},
-            "refresh_tokens": {
-                k: v.model_dump(mode="json") for k, v in self.refresh_tokens.items()
-            },
-            "a2r": dict(self._access_to_refresh_map),
-            "r2a": dict(self._refresh_to_access_map),
-        }
+        # Serialize saves so the snapshot order equals the on-disk write order
+        # (see ``self._save_lock``). The lock is held across BOTH the on-loop
+        # snapshot and the offloaded write, so a later save cannot snapshot
+        # until the earlier save's fsync has completed — the last save started
+        # always wins, and no older snapshot can clobber a newer one.
+        async with self._save_lock:
+            # Build the snapshot dict ON the event loop, BEFORE offloading, so
+            # we never iterate the live ``clients`` / token maps from the worker
+            # thread while a concurrent coroutine mutates them (the model_dump
+            # calls only read loop-owned state here). The blocking mkdir +
+            # atomic_write_json (os.fsync under filelock) then runs OFF the loop.
+            data: dict[str, Any] = {
+                "clients": {k: v.model_dump(mode="json") for k, v in self.clients.items()},
+                "access_tokens": {
+                    k: v.model_dump(mode="json") for k, v in self.access_tokens.items()
+                },
+                "refresh_tokens": {
+                    k: v.model_dump(mode="json") for k, v in self.refresh_tokens.items()
+                },
+                "a2r": dict(self._access_to_refresh_map),
+                "r2a": dict(self._refresh_to_access_map),
+            }
+            await anyio.to_thread.run_sync(self._write_state_file, data)
+
+    def _write_state_file(self, data: dict[str, Any]) -> None:
+        """Blocking mkdir + atomic write. Runs OFF the event loop via a worker.
+
+        Kept separate from :meth:`_save_state` so the fsync-under-filelock work
+        never blocks the loop (see :meth:`_save_state`). ``self._state_path`` is
+        non-``None`` here (guarded by the caller).
+        """
+        assert self._state_path is not None
         try:
             # Persistence is on by default now (#1765) and this dir may be created here
             # before any `login`, so create it 0700 (like get_profile_dir) — a full-account
@@ -536,9 +692,15 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
 def build_oauth_provider(config: OAuthConfig) -> AuthProvider:
     """Build the self-hosted OAuth provider from validated config.
 
-    Runs once at HTTP-server startup. ``config.state_path`` is resolved by
-    :func:`get_oauth_config` under the active profile dir, so issued tokens +
-    registered clients persist (0600) across restarts by default (#1765)."""
+    Runs once at HTTP-server startup. ``config.state_path`` is the deployment-scoped,
+    base_url-keyed path resolved by :func:`get_oauth_config`, so issued tokens +
+    registered clients persist (0600) across restarts and survive a served-account
+    switch. Before constructing the provider we migrate a legacy profile-dir
+    ``oauth_state.json`` once (:func:`_migrate_legacy_state`) so existing deployments
+    keep their registered clients across the #1765 reversal."""
+    if config.state_path is not None:
+        _migrate_legacy_state(config.state_path, config.legacy_state_path)
+        logger.info("OAuth client registry + tokens persist at %s", config.state_path)
     return SelfHostedOAuthProvider(
         password=config.password,
         base_url=config.base_url,

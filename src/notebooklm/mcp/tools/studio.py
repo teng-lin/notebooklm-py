@@ -35,7 +35,7 @@ from ..._app import notes as note_core
 from ..._app.language import is_supported_language
 from ..._app.resolve import FULL_ID_PATTERN
 from ..._app.serialize import to_jsonable
-from ...exceptions import NotFoundError, ValidationError
+from ...exceptions import ArtifactFeatureUnavailableError, NotFoundError, ValidationError
 from .._coerce import coerce_list
 from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
 from .._context import get_client, get_file_transfer
@@ -50,11 +50,13 @@ from .._resolve import (
 from ._passthrough import passthrough_child_id, passthrough_notebook_id
 from ._studio_download import (
     _DOWNLOAD_SPECS,
+    _INLINE_TEXT_TYPES,
     _KIND_TO_DOWNLOAD_KEY,
     DownloadType,
     _broker_download,
     _is_http_transport,
     _passthrough_download_notebook,
+    _read_inline_artifact_text,
     _resolve_artifact_id,
 )
 from ._studio_items import (
@@ -63,6 +65,7 @@ from ._studio_items import (
     studio_items,
     summarize_studio_item,
 )
+from ._studio_payloads import _artifact_rename_payload, _generation_payload
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
@@ -221,15 +224,17 @@ def register(mcp: Any) -> None:
         also carry ``status_label`` / ``url``. Bounded page of ``limit`` (default 50)
         from ``offset``, with ``total`` / ``offset`` / ``has_more``.
 
-        * ``detail`` ladder: ``summary`` (default) gives each note a bounded
-          ``content_preview`` + ``char_count`` (artifacts unaffected); ``full`` returns
-          the whole ``content``; ``compact`` collapses every item to ``id`` / ``title``
-          / ``type`` / ``status_label`` / ``created_at`` (no body/``url``) — a low-token
-          roster.
+        * ``detail`` ladder (NOTE bodies only; read a report/data-table body via
+          ``studio_download``): ``summary`` (default) gives each note a bounded
+          ``content_preview`` + ``char_count`` (artifacts add ``created_at`` +
+          ``generation_prompt``, the free-text prompt the artifact was generated from,
+          ``null`` when it records none); ``full`` = whole ``content``; ``compact`` = a
+          ``id``/``title``/``type``/``status_label``/``created_at`` roster.
         * ``kind`` filters to one ``type``.
         * ``item`` (name or id) fetches just that item as a 1-element list with the
-          note's FULL ``content``; no match is NOT_FOUND. ``limit`` / ``offset`` /
-          ``detail`` are ignored with ``item``; ``kind`` scopes resolution.
+          note's FULL ``content`` (an artifact also carries its ``generation_prompt``);
+          no match is NOT_FOUND. ``limit`` / ``offset`` / ``detail`` are ignored with
+          ``item``; ``kind`` scopes resolution.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -246,18 +251,36 @@ def register(mcp: Any) -> None:
             nb_id = await resolve_notebook(client, notebook)
             if item is not None:
                 # Single fetch by ref over the merged list; the resolved item's full
-                # projection rides on ``.raw`` so this never re-lists.
-                resolved = await resolve_studio_item(client, nb_id, item, kind)
+                # projection rides on ``.raw`` so this never re-lists. Request artifact
+                # meta so a resolved artifact carries its ``generation_prompt`` — this
+                # single-item path (plus the summary listing, which surfaces every
+                # artifact's prompt) replaces the removed ``studio_get_prompt``. It
+                # resolves over the unified cross-type Studio resolver (id / hex-prefix /
+                # exact title), NOT the old artifact-scoped ``resolve_artifact`` — same
+                # resolution as ``studio_delete`` / ``studio_rename``.
+                resolved = await resolve_studio_item(
+                    client, nb_id, item, kind, include_artifact_meta=True
+                )
+                # ``raw`` is always the matched item dict on the success path (a miss
+                # raises NOT_FOUND), but it's typed ``dict | None``; fall back to an
+                # empty dict as cheap insurance against a future resolver change.
                 return {
                     "notebook_id": nb_id,
-                    "items": [resolved.raw],
+                    "items": [resolved.raw or {}],
                     "total": 1,
                     "offset": 0,
                     "has_more": False,
                 }
             # ``compact`` needs each row's ``created_at`` (dropped by the default
-            # projection); fetch it only for that mode so the other paths are unchanged.
-            items = await studio_items(client, nb_id, include_created_at=(detail == "compact"))
+            # projection); ``summary`` additionally surfaces each artifact's
+            # ``created_at`` + ``generation_prompt`` (#1925). Fetch each only for its
+            # mode so the by-ref/``full`` paths stay unchanged.
+            items = await studio_items(
+                client,
+                nb_id,
+                include_created_at=(detail == "compact"),
+                include_artifact_meta=(detail == "summary"),
+            )
             if kind is not None:
                 items = [it for it in items if it["type"] == kind]
             page, meta = paginate(items, limit, offset)
@@ -343,6 +366,8 @@ def register(mcp: Any) -> None:
 
         Non-blocking: returns immediately with a ``task_id``; poll
         ``studio_status(notebook, task_id)`` until ``is_complete`` is true.
+        Exception: ``mind-map`` renders synchronously (no ``task_id``) — its node
+        tree is under ``mind_map`` (or ``null``), the map's id under ``mind_map_id``.
 
         ``artifact_type`` selects the artifact kind (each routes to its own
         generator):
@@ -368,15 +393,13 @@ def register(mcp: Any) -> None:
           briefing-doc|study-guide|blog-post|custom).
 
         Each per-kind option is valid ONLY for the kind(s) listed above; passing one
-        to a different ``artifact_type`` (e.g. ``orientation`` to ``quiz``) is a
-        validation error rather than a silent no-op. Options default to the standard
-        choice when omitted. Note ``style`` is shared by ``video`` and ``infographic``
-        but accepts each kind's own set of values.
+        to a different ``artifact_type`` is a validation error, not a silent no-op.
+        Options default to the standard choice when omitted.
 
         ``source_ids`` (optional) scopes generation to specific sources; omit it
         to use every source. It accepts a real list, a JSON-array string, or a
-        comma-separated string (the comma form cannot carry a source title that
-        itself contains a comma — use a JSON array or a real list for those).
+        comma-separated string (a source title containing a comma needs the
+        JSON-array or list form).
         ``instructions`` is free-text guidance for kinds that accept it
         (including ``mind-map``). ``language`` (optional) is a language code,
         e.g. ``en``/``ja``/``zh_Hans``.
@@ -486,9 +509,9 @@ def register(mcp: Any) -> None:
     async def studio_status(ctx: Context, notebook: str, task_id: str) -> dict[str, Any]:
         """Poll a generation task's status. Accepts a notebook name or ID.
 
-        Stateless: pass the ``task_id`` returned by ``studio_generate``. Returns
-        ``status`` / ``url`` / ``error`` / ``is_complete``; call repeatedly until
-        ``is_complete`` is true.
+        Stateless: pass the ``task_id`` from ``studio_generate``. Returns ``status`` /
+        ``url`` / ``error`` / ``is_complete`` / ``media_ready``; poll until done. A
+        pending ``url`` is provisional — trust it only if ``media_ready``.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -496,22 +519,6 @@ def register(mcp: Any) -> None:
             status = await artifact_core.poll_artifact(client, nb_id, task_id)
             view = artifact_core.status_view(status)
             return {"notebook_id": nb_id, **to_jsonable(view)}
-
-    @mcp.tool(annotations=READ_ONLY)
-    async def studio_get_prompt(ctx: Context, notebook: str, artifact: str) -> dict[str, Any]:
-        """Fetch the free-text prompt an artifact was generated from.
-
-        Accepts a notebook/artifact name or ID. Returns the stored ``prompt``
-        string, or ``null`` when the artifact records no prompt (e.g. a
-        note-backed mind map) — ``prompt=None`` is a valid result, not an error.
-        An unknown artifact id raises NOT_FOUND.
-        """
-        client = get_client(ctx)
-        with mcp_errors():
-            nb_id = await resolve_notebook(client, notebook)
-            artifact_id = await resolve_artifact(client, nb_id, artifact)
-            prompt = await artifact_core.get_artifact_prompt(client, nb_id, artifact_id)
-            return {"notebook_id": nb_id, "artifact_id": artifact_id, "prompt": prompt}
 
     @mcp.tool
     async def studio_download(
@@ -526,9 +533,8 @@ def register(mcp: Any) -> None:
         """Download a generated artifact. Accepts a notebook name or ID.
 
         Target the artifact in ONE of two ways (exactly one):
-        * ``artifact`` — a name-or-id ref (title / id / unique-id-prefix), the same
-          form the other ``artifact_*`` tools take. The tool resolves it to the
-          artifact's type + id for you.
+        * ``artifact`` — a name-or-id ref (title / id / unique-id-prefix), the form the
+          other ``artifact_*`` tools take; resolves to its type + id.
         * ``artifact_type`` — one of audio|video|slide-deck|infographic|report|
           mind-map|data-table|quiz|flashcards, optionally with ``artifact_id``
           (full or unique-prefix) for a specific one; omit ``artifact_id`` to get
@@ -537,14 +543,14 @@ def register(mcp: Any) -> None:
         ``output_format`` overrides the default file format where supported:
         slide-deck → pdf|pptx; quiz/flashcards → json|markdown|html.
 
-        Over **stdio** the artifact is written to ``path`` (the output file on the
-        server host; required). Over the **remote (http) connector** the server's
-        filesystem is unreachable, so the tool instead returns a clickable
-        ``resource_link`` plus ``{"status": "download_ready", "url": …}`` — a
-        short-lived signed URL; ``path`` is ignored. On the remote connector an
-        explicit ``artifact_id`` (and ``output_format``) is validated up front at the
-        tool call — an unknown/ambiguous id fails immediately, not as a browser-side
-        400 when the link is opened.
+        Over **stdio** the artifact is written to ``path`` (required). Over the
+        **remote (http) connector** the server filesystem is unreachable, so the tool
+        returns a clickable ``resource_link`` plus ``{"status": "download_ready", "url":
+        …}`` — a short-lived signed URL; ``path`` is ignored. A text kind
+        (report/data-table) also returns the body inline (bounded ``content`` +
+        ``char_count`` + ``truncated``) for link-incapable hosts. On the remote
+        connector an explicit ``artifact_id`` (and ``output_format``) is validated up
+        front — an unknown/ambiguous id fails immediately, not as a 400 when opened.
         """
         client = get_client(ctx)
         with mcp_errors():
@@ -674,8 +680,33 @@ def register(mcp: Any) -> None:
                                 f"(status: {incomplete.status_str}); wait for it to complete."
                             ) from None
                         raise
+                # For text kinds (report / data-table) also fetch the body and return
+                # it INLINE alongside the link, so a host that can't open a
+                # resource_link still gets the content (#1907). Bounded to
+                # INLINE_TEXT_MAX_CHARS; the link remains the full file.
+                inline: tuple[str, int, bool] | None = None
+                if artifact_type in _INLINE_TEXT_TYPES:
+                    read = await _read_inline_artifact_text(
+                        client, nb_id, spec, output_format, artifact_id
+                    )
+                    if read is not None:
+                        inline = (read.content, read.char_count, read.truncated)
+                        # Pin the signed link to the SAME artifact whose body we inlined
+                        # — on the "latest" path (artifact_id was None) this stops the
+                        # link from drifting to a newer artifact if one completes before
+                        # the link is opened. Also adopt its title for the filename.
+                        if read.artifact_id is not None:
+                            artifact_id = read.artifact_id
+                        if resolved_title is None:
+                            resolved_title = read.title
                 return _broker_download(
-                    cfg, nb_id, artifact_type, output_format, artifact_id, title=resolved_title
+                    cfg,
+                    nb_id,
+                    artifact_type,
+                    output_format,
+                    artifact_id,
+                    title=resolved_title,
+                    inline=inline,
                 )
             # No file-transfer config. On the remote (http) connector the server
             # filesystem is unreachable REGARDLESS of `path`, so fail clearly here —
@@ -790,7 +821,23 @@ def register(mcp: Any) -> None:
         with mcp_errors():
             nb_id = await resolve_notebook(client, notebook)
             art_id = await resolve_artifact(client, nb_id, artifact)
-            result = await artifact_core.retry_artifact(client, nb_id, art_id)
+            try:
+                result = await artifact_core.retry_artifact(client, nb_id, art_id)
+            except ArtifactFeatureUnavailableError:
+                # Retry refused (null result). The most common cause is retrying an
+                # artifact that is not FAILED (retry only re-runs a failed one). Turn
+                # the generic "Retry generation is unavailable" into an actionable
+                # message naming the current state — but only on the refusal path, so
+                # the happy path stays free of the extra ``get_or_none`` list (#1924
+                # F15). Re-raise the generic error when the state doesn't explain it
+                # (already-failed artifact, or it vanished between resolve and here).
+                art = await client.artifacts.get_or_none(nb_id, art_id)
+                if art is not None and not art.is_failed:
+                    raise ValidationError(
+                        f"artifact is not failed (status: {art.status_str}); retry only "
+                        "re-runs a failed artifact — use studio_generate for a new one."
+                    ) from None
+                raise
             return {
                 "notebook_id": nb_id,
                 "artifact_id": art_id,
@@ -881,52 +928,3 @@ def register(mcp: Any) -> None:
                 "type": resolved.type,
                 "was_note_backed": was_note_backed,
             }
-
-
-def _artifact_rename_payload(
-    notebook_id: str, result: artifact_core.ArtifactRenameResult, item_type: str
-) -> dict[str, Any]:
-    """Project an :class:`ArtifactRenameResult` onto the ``studio_rename`` wire shape.
-
-    Shared by the two artifact-rename branches (the full-UUID carve-out and the
-    resolved-artifact path), which differ only in the ``type`` label they surface —
-    the carve-out can't know the type from a list it wasn't in, the resolved path
-    carries ``resolved.type``.
-    """
-    return {
-        "status": "renamed",
-        "notebook_id": notebook_id,
-        "item_id": result.artifact_id,
-        "type": item_type,
-        "new_title": result.new_title,
-        "is_mind_map": result.is_mind_map,
-    }
-
-
-def _generation_payload(
-    notebook_id: str, result: generate_core.GenerationExecutionResult
-) -> dict[str, Any]:
-    """Project a :class:`GenerationExecutionResult` onto the wire shape.
-
-    Surfaces the ``task_id`` an agent polls with ``studio_status`` plus the
-    generation outcome (status / url / error) or, for mind maps, the rendered
-    map. Mind-map generation renders synchronously (no ``task_id`` to poll).
-    """
-    payload: dict[str, Any] = {
-        "notebook_id": notebook_id,
-        "kind": result.kind,
-    }
-    if result.mind_map is not None:
-        payload["mind_map"] = to_jsonable(result.mind_map)
-        return payload
-    outcome = result.generation
-    if outcome is not None:
-        payload.update(
-            {
-                "task_id": outcome.task_id,
-                "status": outcome.status,
-                "url": outcome.url,
-                "error": outcome.error,
-            }
-        )
-    return payload

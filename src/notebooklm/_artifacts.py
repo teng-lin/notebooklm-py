@@ -11,13 +11,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-# ``_mind_map`` is re-exported as ``_artifacts._mind_map`` so legacy patch
-# seams can still resolve the module via the artifacts facade (monkeypatch
-# convenience only). Runtime code talks to the injected
-# ``NoteBackedMindMapService`` / ``NoteService`` instances.
+# ``_mind_map`` re-exported as ``_artifacts._mind_map`` for legacy monkeypatch seams (runtime uses injected services).
 from . import _mind_map  # noqa: F401 — re-exported as facade attribute
 from ._artifact import formatters as _artifact_formatters
 from ._artifact import polling as _artifact_polling
+from ._artifact import validation as _artifact_validation
 from ._artifact.downloads import ArtifactDownloadService, DownloadResult
 from ._artifact.generation import ArtifactGenerationService
 from ._artifact.listing import ArtifactListingService
@@ -203,8 +201,7 @@ class ArtifactsAPI:
         logger.debug("Getting artifact %s from notebook %s", artifact_id, notebook_id)
         return await self._listing.get(notebook_id, artifact_id, list_artifacts=self.list)
 
-    # Internal optional-lookup alias: a stable private name so internal call
-    # sites and tests use the ``None``-on-miss lookup rather than the raising get().
+    # Internal optional-lookup alias: stable private name for the ``None``-on-miss lookup (vs. raising ``get()``).
     _get_or_none = get_or_none
 
     async def get_prompt(self, notebook_id: str, artifact_id: str) -> str | None:
@@ -318,6 +315,7 @@ class ArtifactsAPI:
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a report artifact."""
+        report_format = _artifact_validation.coerce_report_format(report_format)
         return await self._generation.generate_report(
             notebook_id,
             report_format=report_format,
@@ -828,11 +826,13 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         artifact_id: str | None = None,
-        content: str | None = None,
         title: str = "Export",
         export_type: ExportType = ExportType.DOCS,
+        *,
+        content: str | None = None,
     ) -> Any:
-        """Export any artifact to Google Drive (live ``ExportToDrive``; ``export_type`` picks Docs/Sheets)."""
+        """Export any artifact to Drive; exactly one of ``artifact_id=``/``content=`` (``export_type`` picks Docs/Sheets)."""
+        _artifact_validation.check_exactly_one_export_target(artifact_id, content)
         params = [None, artifact_id, content, title, int(export_type)]
         return await self._rpc.rpc_call(
             RPCMethod.EXPORT_ARTIFACT,

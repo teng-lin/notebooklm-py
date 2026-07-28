@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 import notebooklm.cli.services.login.master_token as mt_service
+from notebooklm._auth import browser_capture
 from notebooklm.notebooklm_cli import cli
 from notebooklm.paths import get_storage_path
 
@@ -66,6 +69,58 @@ def test_master_token_bootstrap_browser_capture_when_no_oauth(tmp_path, monkeypa
     assert result.exit_code == 0, result.output
     assert cap.called
     assert boot.call_args.kwargs["oauth_token"] == "CAPTOK"
+
+
+class _ReachedPlaywright(RuntimeError):
+    pass
+
+
+class _PolicyProbe:
+    def __init__(self, get_policy, default_policy):
+        self._get_policy = get_policy
+        self._default_policy = default_policy
+
+    def __enter__(self):
+        assert self._get_policy() is self._default_policy
+        raise _ReachedPlaywright
+
+    def __exit__(self, *args):
+        return False
+
+
+@pytest.mark.requires_playwright
+@pytest.mark.parametrize("cdp_url", [None, "http://localhost:9222"])
+def test_master_token_capture_uses_default_windows_policy(monkeypatch, cdp_url):
+    """The policy swap must happen before Playwright enters, then be restored."""
+    original_policy = object()
+    default_policy = object()
+    current_policy = original_policy
+    transitions = []
+
+    def get_policy():
+        return current_policy
+
+    def set_policy(policy):
+        nonlocal current_policy
+        current_policy = policy
+        transitions.append(policy)
+
+    monkeypatch.setattr(asyncio, "get_event_loop_policy", get_policy)
+    monkeypatch.setattr(asyncio, "set_event_loop_policy", set_policy)
+    monkeypatch.setattr(asyncio, "DefaultEventLoopPolicy", lambda: default_policy)
+    monkeypatch.setattr(browser_capture.sys, "platform", "win32")
+
+    with (
+        patch(
+            "playwright.sync_api.sync_playwright",
+            return_value=_PolicyProbe(get_policy, default_policy),
+        ),
+        pytest.raises(_ReachedPlaywright),
+    ):
+        mt_service.capture_oauth_token(cdp_url=cdp_url)
+
+    assert transitions == [default_policy, original_policy]
+    assert current_policy is original_policy
 
 
 def test_master_token_refuses_account_clobber(tmp_path, monkeypatch):

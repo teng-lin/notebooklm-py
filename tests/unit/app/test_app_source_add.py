@@ -368,6 +368,28 @@ async def test_add_source_youtube_uses_add_url() -> None:
 
 
 @pytest.mark.asyncio
+async def test_add_source_url_forwards_explicit_title() -> None:
+    # #1960: a caller-supplied title must reach add_url so it can honor it via a
+    # post-add rename (web pages / YouTube re-derive the title server-side).
+    facade = _make_sources_facade()
+    plan = SourceAddPlan(
+        content="https://ex.com/a", detected_type="url", title="My Title", upload_path=None
+    )
+    await add_source(facade, notebook_id="nb_1", plan=plan)
+    facade.add_url.assert_awaited_once_with("nb_1", "https://ex.com/a", title="My Title")
+
+
+@pytest.mark.asyncio
+async def test_add_source_youtube_forwards_explicit_title() -> None:
+    facade = _make_sources_facade()
+    plan = SourceAddPlan(
+        content="https://youtu.be/abc", detected_type="youtube", title="Talk", upload_path=None
+    )
+    await add_source(facade, notebook_id="nb_1", plan=plan)
+    facade.add_url.assert_awaited_once_with("nb_1", "https://youtu.be/abc", title="Talk")
+
+
+@pytest.mark.asyncio
 async def test_add_source_text_dispatch_default_title() -> None:
     facade = _make_sources_facade()
     plan = SourceAddPlan(content="some text", detected_type="text", title=None, upload_path=None)

@@ -25,7 +25,7 @@ else
 fi
 ```
 
-Full install matrix (extras, GitHub-tag install, contributor flow): [docs/installation.md](https://github.com/teng-lin/notebooklm-py/blob/main/docs/installation.md). Skill-install methods, prerequisites, CI/CD & multi-account env vars: [references/setup.md](references/setup.md).
+Full install matrix (extras, GitHub-tag install, contributor flow): [docs/installation.md](https://github.com/teng-lin/notebooklm-py/blob/main/docs/installation.md). Skill-install methods, prerequisites, CI/CD & multi-account env vars, and sandboxed agents (Claude Cowork/headless): [references/setup.md](references/setup.md).
 
 ⚠️ **DO NOT install from the `main` branch** (`pip install git+https://...notebooklm-py`) — it may contain unreleased/unstable changes. Use PyPI or a release tag.
 

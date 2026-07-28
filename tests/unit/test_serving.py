@@ -37,6 +37,28 @@ def test_is_loopback(host: str, expected: bool) -> None:
     assert _serving.is_loopback(host) is expected
 
 
+@pytest.mark.parametrize(
+    "host_header, expected",
+    [
+        ("127.0.0.1", True),
+        ("127.0.0.1:9420", True),
+        ("localhost", True),
+        ("LocalHost:8080", True),
+        ("[::1]", True),
+        ("[::1]:9420", True),
+        ("evil.example", False),
+        ("evil.example:9420", False),
+        ("127.0.0.1.evil.com", False),
+        ("[::1]evil.com", False),
+        ("0.0.0.0", False),
+        ("", False),
+        ("   ", False),
+    ],
+)
+def test_host_header_is_loopback(host_header: str, expected: bool) -> None:
+    assert _serving.host_header_is_loopback(host_header) is expected
+
+
 def test_addr_is_loopback_ipv4_mapped() -> None:
     # The primitive server/_auth._addr_is_loopback delegates to — the request-path
     # loopback check must agree with the bind-path one on the mapped form.

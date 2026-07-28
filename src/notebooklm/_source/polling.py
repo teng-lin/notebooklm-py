@@ -20,9 +20,15 @@ from ..types import Source, SourceNotFoundError, SourceProcessingError, SourceTi
 _TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = (10, 0, None)
 
 GetSource = Callable[[str, str], Awaitable[Source | None]]
+ListSources = Callable[[str], Awaitable[builtins.list[Source]]]
 WaitUntilReady = Callable[..., Coroutine[Any, Any, Source]]
 Sleep = Callable[[float], Awaitable[Any]]
 Monotonic = Callable[[], float]
+
+# One neutral per-source result from ``wait_all_until_ready``. Terminal failures
+# are RETURNED (not raised) so one bad source never discards its siblings'
+# progress; ``_app`` maps each to a typed ``SourceWaitOutcome``.
+SourceWaitResult = Source | SourceNotFoundError | SourceProcessingError | SourceTimeoutError
 
 
 class SourcePoller:
@@ -140,6 +146,115 @@ class SourcePoller:
             await sleep(sleep_time)
             interval = min(interval * backoff_factor, max_interval)
 
+    async def wait_all_until_ready(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str],
+        *,
+        timeout: float = 120.0,
+        initial_interval: float = 1.0,
+        max_interval: float = 10.0,
+        backoff_factor: float = 1.5,
+        transient_error_types: tuple[int | None, ...] | None = None,
+        list_sources: ListSources,
+        sleep: Sleep,
+        monotonic: Monotonic,
+        logger: logging.Logger,
+    ) -> builtins.list[SourceWaitResult]:
+        """Wait for many sources with ONE notebook snapshot per poll tick.
+
+        Fetches the whole notebook source list once per tick and resolves every
+        still-pending source against that single snapshot, instead of fanning
+        out one whole-notebook poll per source (O(N) GETs per tick -> O(N^2)).
+
+        Returns one :data:`SourceWaitResult` per input id, in input order.
+        Terminal per-source failures (missing / processing error / timeout) are
+        RETURNED, not raised, so a slow/failed source never discards the
+        progress of its siblings. Only an UNEXPECTED transport error (e.g.
+        ``RPCError`` from ``list_sources``) propagates out of the single await.
+        """
+        deadline = RuntimeDeadline.start(timeout, monotonic=monotonic)
+        interval = initial_interval
+        transient_errors = (
+            _TRANSIENT_ERROR_TYPES if transient_error_types is None else transient_error_types
+        )
+
+        results: builtins.list[SourceWaitResult | None] = [None] * len(source_ids)
+        pending: dict[int, str] = dict(enumerate(source_ids))
+        # Per-source (keyed by pending index) last observed status, so a timed-out
+        # source reports its OWN last status rather than a sibling's.
+        last_status: dict[int, int | None] = {}
+
+        while pending:
+            if deadline.expired():
+                self._fill_timeouts(results, pending, last_status, timeout)
+                break
+
+            # ONE whole-notebook snapshot per tick, shared across all pending ids.
+            snapshot = await list_sources(notebook_id)
+            by_id = {source.id: source for source in snapshot}
+
+            resolved: builtins.list[int] = []
+            for index, sid in pending.items():
+                source = by_id.get(sid)
+
+                if source is None:
+                    # Parity with wait_until_ready: absent id is not-found.
+                    results[index] = SourceNotFoundError(sid)
+                    resolved.append(index)
+                    continue
+
+                last_status[index] = source.status
+
+                if source.is_ready:
+                    results[index] = source
+                    resolved.append(index)
+                    continue
+
+                if source.is_error:
+                    if source._type_code not in transient_errors:
+                        results[index] = SourceProcessingError(sid, source.status)
+                        resolved.append(index)
+                        continue
+                    logger.debug(
+                        "Source %s reported transient ERROR status for type %s; continuing poll",
+                        sid,
+                        source._type_code,
+                    )
+                # PROCESSING (or transient ERROR): stays pending for the next tick.
+
+            for index in resolved:
+                del pending[index]
+
+            if not pending:
+                break
+
+            if deadline.expired():
+                self._fill_timeouts(results, pending, last_status, timeout)
+                break
+
+            sleep_time = deadline.clamp_sleep(interval)
+            await sleep(sleep_time)
+            interval = min(interval * backoff_factor, max_interval)
+
+        final: builtins.list[SourceWaitResult] = []
+        for result in results:
+            if result is None:
+                raise AssertionError("wait_all_until_ready left a source unresolved")
+            final.append(result)
+        return final
+
+    @staticmethod
+    def _fill_timeouts(
+        results: builtins.list[SourceWaitResult | None],
+        pending: dict[int, str],
+        last_status: dict[int, int | None],
+        timeout: float,
+    ) -> None:
+        """Resolve every still-pending source to its own :class:`SourceTimeoutError`."""
+        for index, sid in pending.items():
+            results[index] = SourceTimeoutError(sid, timeout, last_status.get(index))
+
     async def wait_for_sources(
         self,
         notebook_id: str,
@@ -175,4 +290,4 @@ class SourcePoller:
             raise
 
 
-__all__ = ["SourcePoller"]
+__all__ = ["SourcePoller", "SourceWaitResult"]

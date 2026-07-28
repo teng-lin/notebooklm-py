@@ -52,7 +52,24 @@ class SourceLister:
         if sources_list is None:
             return []
 
-        return [source for src in sources_list if (source := self._parse_source(src)) is not None]
+        # Dedup by resolved id, keeping the FIRST occurrence (#1919). The
+        # backend can surface the same id-bearing source in ``nb_info[1]`` more
+        # than once — research imports re-emit a URL, and ghost/probe rows can
+        # echo an existing id — which would otherwise over-count both
+        # ``source_list`` and ``metadata.sources``. A collision is a benign
+        # backend artifact, so it logs at DEBUG rather than WARNING.
+        seen_ids: set[str] = set()
+        sources: builtins.list[Source] = []
+        for src in sources_list:
+            source = self._parse_source(src)
+            if source is None:
+                continue
+            if source.id in seen_ids:
+                logger.debug("SourcesAPI.list: Skipping duplicate source id %s", source.id)
+                continue
+            seen_ids.add(source.id)
+            sources.append(source)
+        return sources
 
     async def get(
         self,

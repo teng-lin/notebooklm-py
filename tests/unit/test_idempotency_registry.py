@@ -504,6 +504,7 @@ def _build_rpc_executor() -> Any:
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
         refresh_budget: Any = None,
+        retry_deadline: Any = None,
     ) -> httpx.Response:
         captured["disable_internal_retries"] = disable_internal_retries
         captured["log_label"] = log_label

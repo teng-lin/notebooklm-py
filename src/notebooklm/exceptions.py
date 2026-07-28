@@ -75,6 +75,7 @@ __all__ = [
     # Validation/Config
     "ValidationError",
     "ConfigurationError",
+    "MissingDependencyError",
     # Headless re-auth (layer-3 auth recovery)
     "HeadlessReauthError",
     "HeadlessLoginRequiredError",
@@ -246,6 +247,17 @@ class ValidationError(NotebookLMError):
 
 class ConfigurationError(NotebookLMError):
     """Missing or invalid configuration (auth, storage)."""
+
+
+class MissingDependencyError(ConfigurationError):
+    """A required *optional* dependency (an install extra) is not installed.
+
+    Raised e.g. when ``output_format="markdown"`` needs the ``markdownify`` extra.
+    Subclasses :class:`ConfigurationError` (so existing handlers keep working) but
+    :func:`notebooklm._app.errors.classify` routes it to the more specific
+    ``DEPENDENCY`` category so adapters surface an *install the extra* hint rather
+    than the auth/storage one (#1959).
+    """
 
 
 # =============================================================================

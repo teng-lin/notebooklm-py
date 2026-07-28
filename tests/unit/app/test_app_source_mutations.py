@@ -26,6 +26,7 @@ import pytest
 
 from notebooklm._app.resolve import resolve_ref
 from notebooklm._app.source_mutations import (
+    SourceAddDriveFilePlan,
     SourceAddDrivePlan,
     SourceDeleteByTitlePlan,
     SourceDeletePlan,
@@ -34,6 +35,7 @@ from notebooklm._app.source_mutations import (
     SourceRenamePlan,
     build_id_ambiguity_error,
     execute_source_add_drive,
+    execute_source_add_drive_file,
     execute_source_delete,
     execute_source_delete_by_title,
     execute_source_refresh,
@@ -504,6 +506,51 @@ async def test_add_drive_bad_mime_raises_validation_error() -> None:
     )
     with pytest.raises(ValidationError) as excinfo:
         await execute_source_add_drive(client, plan)
+    msg = str(excinfo.value)
     # The message lists the valid keys so the caller can self-correct.
-    assert "google-doc" in str(excinfo.value)
+    assert "google-doc" in msg
+    # ...and steers upload-only Drive files (e.g. epub) to the `file` source path.
+    assert "file" in msg
+    assert "download" in msg.lower()
+    client.sources.add_drive.assert_not_called()
+
+
+# ===========================================================================
+# execute_source_add_drive_file — thin delegate to the public client (#1884)
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_add_drive_file_delegates_to_public_client() -> None:
+    """The executor forwards to ``client.sources.add_drive_file`` and echoes the id."""
+    client = _client()
+    added = Source(id="src_epub", title="Book.epub")
+    client.sources.add_drive_file = AsyncMock(return_value=added)
+    plan = SourceAddDriveFilePlan(
+        notebook_id="nb_1",
+        document_id="1W20RJpJUD2JqXSEiM9Il48_fsdOtZ5fD",
+        title="Book",
+        wait=True,
+        wait_timeout=90.0,
+    )
+    result = await execute_source_add_drive_file(client, plan)
+    assert result.source is added
+    assert result.notebook_id == "nb_1"
+    assert result.document_id == "1W20RJpJUD2JqXSEiM9Il48_fsdOtZ5fD"
+    client.sources.add_drive_file.assert_awaited_once_with(
+        "nb_1",
+        "1W20RJpJUD2JqXSEiM9Il48_fsdOtZ5fD",
+        title="Book",
+        wait=True,
+        wait_timeout=90.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_add_drive_file_uses_only_the_public_surface() -> None:
+    """The executor never touches the native ``add_drive`` RPC (auto-route ≠ native)."""
+    client = _client()
+    client.sources.add_drive_file = AsyncMock(return_value=Source(id="s", title="t"))
+    plan = SourceAddDriveFilePlan(notebook_id="nb_1", document_id="a" * 33)
+    await execute_source_add_drive_file(client, plan)
     client.sources.add_drive.assert_not_called()

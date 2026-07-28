@@ -16,6 +16,8 @@ from fastmcp import Client, FastMCP  # noqa: E402 - after importorskip guard
 from notebooklm.mcp import __main__ as entry  # noqa: E402 - after importorskip guard
 from notebooklm.mcp._context import (  # noqa: E402 - after importorskip guard
     AppState,
+    CancelledResearchTracker,
+    get_cancelled_research,
     get_client,
 )
 from notebooklm.mcp.server import (  # noqa: E402 - after importorskip guard
@@ -65,6 +67,40 @@ def test_get_client_reads_appstate() -> None:
     ctx = MagicMock()
     ctx.request_context.lifespan_context = state
     assert get_client(ctx) is sentinel
+
+
+def test_get_cancelled_research_returns_live_appstate_tracker() -> None:
+    """get_cancelled_research returns the live tracker on the bound AppState so
+    research_cancel/research_status share cancel intent (issue #1922, F9)."""
+    state = AppState(client=MagicMock())
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = state
+
+    intents = get_cancelled_research(ctx)
+    assert len(intents) == 0
+    intents.record(("nb", "task"))
+    # The same live tracker is returned on the next call (process-scoped state).
+    assert ("nb", "task") in get_cancelled_research(ctx)
+    assert state.cancelled_research is intents
+
+
+def test_cancelled_research_tracker_discard_and_cap() -> None:
+    """The tracker discards spent intents and enforces a hard FIFO cap so it
+    cannot grow without bound (issue #1922, F9)."""
+    tracker = CancelledResearchTracker(cap=3)
+    tracker.record(("nb", "a"))
+    assert ("nb", "a") in tracker
+    tracker.discard(("nb", "a"))
+    assert ("nb", "a") not in tracker
+    # discard is a no-op on an absent key.
+    tracker.discard(("nb", "missing"))
+
+    # Recording past the cap evicts the OLDEST entries (FIFO).
+    for i in range(5):
+        tracker.record(("nb", str(i)))
+    assert len(tracker) == 3
+    assert ("nb", "0") not in tracker and ("nb", "1") not in tracker
+    assert all(("nb", str(i)) in tracker for i in (2, 3, 4))
 
 
 # --------------------------------------------------------------------------- #

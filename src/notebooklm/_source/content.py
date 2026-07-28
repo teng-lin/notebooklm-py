@@ -10,7 +10,7 @@ from typing import Any, Literal
 from .._row_adapters.sources import SourceFulltextRow, SourceGuideRow
 from .._runtime.contracts import RpcCaller
 from .._types.research import SourceGuide
-from .._types.sources import _disambiguate_type_code
+from .._types.sources import _disambiguate_type_code, _pdf_url_title_fallback
 from ..rpc import RPCMethod
 from ..types import SourceFulltext, SourceNotFoundError, _extract_source_url
 
@@ -146,7 +146,11 @@ class SourceContentRenderer:
 
         return SourceFulltext(
             source_id=source_id,
-            title=title,
+            # Same #1850 direct-PDF-URL title fallback as ``Source.from_row``,
+            # so ``source fulltext`` shows the basename too (not the raw URL).
+            # ``or title`` keeps the ``str`` type: the helper only ever returns
+            # the (str) input title or a derived stem, never ``None`` here.
+            title=_pdf_url_title_fallback(title, url, source_type) or title,
             content=content,
             _type_code=source_type,
             url=url,

@@ -60,7 +60,7 @@ CONFIGURE_NOTEBOOK_ID = "2bba3730-4547-48c7-b5f5-e631eb5332ca"
 
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("chat_ask.yaml")
-async def test_mcp_chat_ask_with_references_over_vcr() -> None:
+async def test_mcp_chat_ask_with_references_over_vcr(legacy_vcr_follow_up_probe) -> None:
     """``chat_ask`` returns the recorded answer + citations through the real client.
 
     End-to-end: FastMCP ``Client`` → ``chat_ask`` tool → ``client.chat.ask`` →

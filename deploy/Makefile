@@ -15,6 +15,15 @@ COMPOSE ?= docker compose
 _TUNNEL_DOTENV := $(shell [ -f .env ] && sed -n 's/^TUNNEL=//p' .env | tr -d '\r' | head -1)
 TUNNEL ?= $(if $(_TUNNEL_DOTENV),$(_TUNNEL_DOTENV),cloudflare)
 
+# OAUTH_STATE_DIR: host dir bind-mounted to /data/oauth for the OAuth client registry.
+# CLI/env override wins; else deploy/.env; else ./oauth-state (matches the compose
+# default). make-only, so `_ensure-state-dir` can pre-create it (user-owned) before `up`.
+_OAUTH_STATE_DOTENV := $(shell [ -f .env ] && sed -n 's/^NOTEBOOKLM_OAUTH_STATE_DIR=//p' .env | tr -d '\r' | head -1)
+# Match Compose's own interpolation precedence: an exported NOTEBOOKLM_OAUTH_STATE_DIR
+# (which Compose reads directly) wins, then deploy/.env, then the default. Otherwise
+# `NOTEBOOKLM_OAUTH_STATE_DIR=/x make up` would mount /x but pre-create ./oauth-state.
+OAUTH_STATE_DIR ?= $(or $(NOTEBOOKLM_OAUTH_STATE_DIR),$(_OAUTH_STATE_DOTENV),./oauth-state)
+
 # Pin a published image tag with `make prod VERSION=x.y.z`. Otherwise, keep the
 # override order: shell/CLI env, deploy/.env, this checkout's pyproject version,
 # then Make's missing-version guard.
@@ -41,6 +50,11 @@ DC_BUILD = $(DC) -f docker-compose.yml -f docker-compose.build.yml
 # Run the container as YOUR uid/gid so the mounted profile needs no chown.
 export NOTEBOOKLM_UID ?= $(shell id -u)
 export NOTEBOOKLM_GID ?= $(shell id -g)
+# Short commit of the checkout, handed to the from-source build so the image's
+# server_info reports it (.dockerignore strips .git). Empty outside a checkout.
+# Guard on ../.git first (matches hatch_build.py) so an *enclosing* repo can't
+# leak its unrelated hash when `..` is not itself a checkout.
+export GIT_COMMIT ?= $(shell [ -e ../.git ] && git -C .. rev-parse --short=8 HEAD 2>/dev/null)
 # NOTE: do NOT set/export NOTEBOOKLM_PROFILE_DIR here. make does not read .env, so a
 # `?=` default would resolve to "default" and `export` would push it into compose's
 # env, where it OUTRANKS the .env value (shell env > .env) — silently ignoring the
@@ -75,19 +89,26 @@ _require-tunnel-token:
 			|| { echo "✗ TUNNEL=tailscale needs TS_AUTHKEY — set it in deploy/.env"; exit 1; }; \
 	else echo "✗ Unknown TUNNEL=$(TUNNEL) (use cloudflare or tailscale)"; exit 1; fi
 
+# Pre-create the OAuth-state mount dir as the invoking user, so Docker never
+# root-creates it (which the uid-mapped container then couldn't write). chmod 700
+# because it holds a full-account secret and shell `mkdir` honors umask (0755 under the
+# common 022). Harmless when OAuth is off — just an empty dir the server ignores.
+_ensure-state-dir:
+	@mkdir -p "$(OAUTH_STATE_DIR)" && chmod 700 "$(OAUTH_STATE_DIR)"
+
 setup: ## Interactive first run: pick a tunnel + generate secrets → writes .env
 	@sh setup.sh
 
 up: prod ## Pull the published image and start (the easy path)
 
-prod: _require-image-version _require-tunnel-token ## Pull a published version and start (VERSION=x.y.z, or pin NOTEBOOKLM_MCP_VERSION in .env)
+prod: _require-image-version _require-tunnel-token _ensure-state-dir ## Pull a published version and start (VERSION=x.y.z, or pin NOTEBOOKLM_MCP_VERSION in .env)
 	$(DC) pull
 	$(DC) up -d
 
-dev: _require-image-version _require-tunnel-token ## Build THIS checkout and start (contributors; TUNNEL=cloudflare|tailscale)
+dev: _require-image-version _require-tunnel-token _ensure-state-dir ## Build THIS checkout and start (contributors; TUNNEL=cloudflare|tailscale)
 	$(DC_BUILD) up -d --build
 
-restart: _require-image-version _require-tunnel-token ## Rebuild THIS checkout + recreate after a source/config change
+restart: _require-image-version _require-tunnel-token _ensure-state-dir ## Rebuild THIS checkout + recreate after a source/config change
 	$(DC_BUILD) up -d --build
 
 logs: ## Tail the server logs

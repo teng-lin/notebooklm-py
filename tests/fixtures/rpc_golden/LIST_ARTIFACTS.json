@@ -64,7 +64,8 @@
       "status": 3,
       "created_at": null,
       "url": null,
-      "_variant": null
+      "_variant": null,
+      "generation_prompt": null
     },
     {
       "id": "SCRUBBED_ARTIFACT_002",
@@ -73,7 +74,8 @@
       "status": 3,
       "created_at": null,
       "url": null,
-      "_variant": null
+      "_variant": null,
+      "generation_prompt": null
     }
   ]
 }

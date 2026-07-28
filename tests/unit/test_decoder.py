@@ -465,7 +465,11 @@ class TestExtractRPCResult:
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
         assert exc_info.value.rpc_code == "USER_DISPLAYABLE_ERROR"
-        assert "Upstream status code 8 (Resource exhausted)" in str(exc_info.value)
+        # The stable label is surfaced; the raw numeric gRPC code is not (#1921).
+        message = str(exc_info.value)
+        assert "Resource exhausted" in message
+        assert "status code 8" not in message
+        assert "Upstream status code" not in message
 
     def test_null_result_without_error_info_returns_none(self):
         """Test null result without UserDisplayableError returns None normally."""
@@ -730,8 +734,12 @@ class TestIssue114Reproduction:
         chunk = json.dumps(["wrb.fr", self.RPC_ID, None, None, None, None])
         body = f"{len(chunk)}\n{chunk}\n"
         raw = self._build_raw(body)
-        with pytest.raises(RPCError, match="returned null result data"):
+        with pytest.raises(RPCError, match="empty result") as exc_info:
             decode_response(raw, self.RPC_ID)
+        # The obfuscated method id must not leak into the human-readable
+        # message (#1921), but stays on the exception attributes.
+        assert self.RPC_ID not in str(exc_info.value)
+        assert exc_info.value.method_id == self.RPC_ID
 
     # Scenario D: Short item (2 elements) — wrb.fr found but skipped by extract_rpc_result
     def test_scenario_d_short_item(self):
@@ -741,7 +749,7 @@ class TestIssue114Reproduction:
         raw = self._build_raw(body)
         # Short items are skipped by extract_rpc_result (len < 3),
         # but collect_rpc_ids still finds the ID (len >= 2)
-        with pytest.raises(RPCError, match="returned null result data"):
+        with pytest.raises(RPCError, match="empty result"):
             decode_response(raw, self.RPC_ID)
 
     def test_all_scenarios_include_method_id(self):
@@ -770,6 +778,11 @@ class TestNullResultStatusCodeEnrichment:
     (which ``notebooklm._runtime.helpers.is_auth_error`` treats as non-auth),
     other codes stay as RPCError, and the account-routing hint avoids legacy
     auth-word substrings.
+
+    The status code and label live on the exception attributes (``rpc_code``),
+    and the stable gRPC status *label* is user-facing, but the obfuscated
+    method id, the raw numeric code, and the ``Found IDs`` dump must NOT leak
+    into the human-readable message (#1921) — they stay on the attributes.
     """
 
     RPC_ID = RPCMethod.GET_NOTEBOOK.value
@@ -791,7 +804,7 @@ class TestNullResultStatusCodeEnrichment:
             )
 
     def test_not_found_raises_client_error(self):
-        """[5] → ClientError with rpc_code=5, 'Not found', authuser hint."""
+        """[5] → ClientError with rpc_code=5, 'not found' label, authuser hint."""
         with pytest.raises(ClientError) as exc_info:
             decode_response(self._build_raw([5]), self.RPC_ID)
 
@@ -799,21 +812,26 @@ class TestNullResultStatusCodeEnrichment:
         assert exc_info.value.method_id == self.RPC_ID
         assert self.RPC_ID in exc_info.value.found_ids
         message = str(exc_info.value)
-        assert "Not found" in message
-        assert "status code 5" in message
+        # Human-readable label is surfaced; the obfuscated method id and the
+        # raw numeric code are not (#1921).
+        assert "not found" in message.lower()
+        assert self.RPC_ID not in message
+        assert "status code" not in message
+        assert "Found IDs" not in message
         assert "authuser" in message.lower()
         assert "#114" in message and "#294" in message
         self._assert_no_auth_patterns(message)
 
     def test_permission_denied_raises_client_error(self):
-        """[7] → ClientError with rpc_code=7, 'Permission denied'."""
+        """[7] → ClientError with rpc_code=7, 'permission denied' label."""
         with pytest.raises(ClientError) as exc_info:
             decode_response(self._build_raw([7]), self.RPC_ID)
 
         assert exc_info.value.rpc_code == 7
         message = str(exc_info.value)
-        assert "Permission denied" in message
-        assert "status code 7" in message
+        assert "permission denied" in message.lower()
+        assert self.RPC_ID not in message
+        assert "status code" not in message
         self._assert_no_auth_patterns(message)
 
     def test_internal_code_raises_plain_rpc_error(self):
@@ -829,8 +847,9 @@ class TestNullResultStatusCodeEnrichment:
         assert not isinstance(exc_info.value, ClientError)
         assert exc_info.value.rpc_code == 13
         message = str(exc_info.value)
-        assert "status code 13" in message
-        assert "Internal" in message
+        assert "internal" in message.lower()
+        assert self.RPC_ID not in message
+        assert "status code" not in message
         assert "authuser" not in message.lower()
         assert "#114" not in message and "#294" not in message
         self._assert_no_auth_patterns(message)
@@ -859,7 +878,7 @@ class TestNullResultStatusCodeEnrichment:
         assert not isinstance(exc_info.value, ClientError)
         assert exc_info.value.rpc_code is None
         message = str(exc_info.value)
-        assert "returned null result data" in message
+        assert "empty result" in message
         assert "status code" not in message
 
     def test_multi_element_error_info_falls_through(self):
@@ -870,7 +889,7 @@ class TestNullResultStatusCodeEnrichment:
         assert not isinstance(exc_info.value, ClientError)
         assert exc_info.value.rpc_code is None
         message = str(exc_info.value)
-        assert "returned null result data" in message
+        assert "empty result" in message
         assert "status code" not in message
 
     def test_allow_null_suppresses_enrichment_for_client_error_codes(self):
@@ -883,19 +902,24 @@ class TestNullResultStatusCodeEnrichment:
             result = decode_response(self._build_raw([code]), self.RPC_ID, allow_null=True)
             assert result is None, f"allow_null=True leaked for code {code}"
 
-    def test_enriched_messages_surface_found_ids(self):
-        """found_ids must appear in the message text, not just the attribute.
+    def test_enriched_messages_do_not_leak_method_id_or_codes(self):
+        """The human-readable message must not leak the obfuscated id or codes.
 
-        The base RPCError.__str__ does not append found_ids, so embedding it in
-        the message keeps the strongest drift/debug signal visible in plain logs
-        and tracebacks across all three null-result enrichment branches.
+        The obfuscated method id is the #1 breakage class (it changes whenever
+        Google re-obfuscates a method) and carries no end-user value; the raw
+        numeric gRPC code and the ``Found IDs`` dump are likewise volatile
+        internal detail. All three must stay OFF the message and ON the
+        exception attributes so logs/tracebacks retain the debug signal (#1921).
         """
         for error_info in ([5], [13], [99]):
             with pytest.raises(RPCError) as exc_info:
                 decode_response(self._build_raw(error_info), self.RPC_ID)
             message = str(exc_info.value)
-            assert "Found IDs:" in message
-            assert self.RPC_ID in message
+            assert self.RPC_ID not in message
+            assert "Found IDs" not in message
+            assert "status code" not in message
+            # The debug signal is preserved on the attribute.
+            assert self.RPC_ID in exc_info.value.found_ids
 
     def test_boolean_error_info_is_not_treated_as_status_code(self):
         """[true] must not be accepted as code 1 — bool is a subclass of int.
@@ -910,7 +934,7 @@ class TestNullResultStatusCodeEnrichment:
         assert not isinstance(exc_info.value, ClientError)
         assert exc_info.value.rpc_code is None
         message = str(exc_info.value)
-        assert "returned null result data" in message
+        assert "empty result" in message
         assert "status code" not in message
 
 
@@ -1163,7 +1187,7 @@ class TestMalformedChunkResilience:
         # decode_response will still raise RPCError for the null result, but
         # the malformed-chunk traversal must not raise IndexError on its way
         # there.
-        with pytest.raises(RPCError, match="returned null result data"):
+        with pytest.raises(RPCError, match="empty result"):
             decode_response(raw, rpc_id)
 
 

@@ -8,6 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from .._url_utils import pdf_url_display_title
 from ..rpc.types import SourceStatus
 from .common import (
     UnknownTypeWarning,
@@ -157,6 +158,37 @@ def _extract_source_created_at(metadata: Any) -> datetime | None:
     return SourceRow.created_at_from_metadata(metadata)
 
 
+def _pdf_url_title_fallback(
+    title: str | None, url: str | None, type_code: int | None
+) -> str | None:
+    """Derive a display title for a direct-PDF-URL source, or return ``title``.
+
+    Direct-PDF URLs arrive with the raw request URL in the title slot (the
+    server extracts ``<title>`` for HTML pages but not for a link that points
+    straight at a ``.pdf``), so this falls back to the URL path basename —
+    e.g. ``https://host/papers/SomePaper.pdf`` → ``SomePaper`` (#1850).
+
+    Fires only when the title is *exactly* the source ``url`` (the server
+    degradation — never a user-set title that merely resembles a URL, e.g. a
+    PDF renamed to a URL string) and the source is a PDF. Uses a plain
+    :data:`_SOURCE_TYPE_CODE_MAP` lookup rather than :func:`_safe_source_type`
+    so parsing an unknown-typed source never emits ``UnknownTypeWarning`` at
+    construction time (the warning stays at ``.kind`` access).
+
+    Shared by :meth:`Source.from_row` (add + list paths) and the
+    ``source fulltext`` / ``GET_SOURCE`` read (``SourceContentRenderer``), so
+    every user-visible read of a degraded PDF title is corrected consistently.
+    """
+    if (
+        title is not None
+        and title == url
+        and type_code is not None
+        and _SOURCE_TYPE_CODE_MAP.get(type_code) is SourceType.PDF
+    ):
+        return pdf_url_display_title(title) or title
+    return title
+
+
 @dataclass
 class Source:
     """Represents a NotebookLM source."""
@@ -216,14 +248,19 @@ class Source:
         single field mapping below therefore covers all three wire shapes
         identically.
         """
+        # Correct the type_code==14 native-Sheet/Drive-PDF overload by the row
+        # MIME before it reaches ``kind`` (#1832). No-op for every other type
+        # code and for real Sheets.
+        type_code = _disambiguate_type_code(row.type_code, row.mime)
         return cls(
             id=row.id,
-            title=row.title,
+            # #1850: a direct-PDF URL arrives with the raw URL in the title slot
+            # (the server extracts <title> for HTML pages but not for a link
+            # that points straight at a .pdf). Fall back to the URL path
+            # basename. This single funnel covers the add and list paths.
+            title=_pdf_url_title_fallback(row.title, row.url, type_code),
             url=row.url,
-            # Correct the type_code==14 native-Sheet/Drive-PDF overload by the
-            # row MIME before it reaches ``kind`` (#1832). No-op for every other
-            # type code and for real Sheets.
-            _type_code=_disambiguate_type_code(row.type_code, row.mime),
+            _type_code=type_code,
             created_at=row.created_at,
             status=row.status,
         )

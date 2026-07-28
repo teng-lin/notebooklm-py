@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 from urllib.parse import urlparse
 
 from .._atomic_io import atomic_write_json
-from ..config import get_base_host, get_base_url
+from ..config import PERSONAL_BASE_HOST, get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError
 from .cookie_policy import build_cookie_domain_allowlist
 
@@ -310,6 +310,15 @@ def windows_playwright_event_loop() -> Iterator[None]:
         asyncio.set_event_loop_policy(original_policy)
 
 
+@contextmanager
+def sync_playwright_context() -> Iterator[Any]:
+    """Enter synchronous Playwright with its required Windows event-loop policy."""
+    from playwright.sync_api import sync_playwright
+
+    with windows_playwright_event_loop(), sync_playwright() as playwright:
+        yield playwright
+
+
 def recover_page(context: BrowserContext, io: BrowserCaptureIO) -> Page:
     """Get a fresh page from a persistent browser context.
 
@@ -340,9 +349,12 @@ def is_navigation_interrupted_error(error: str | Exception) -> bool:
 
 
 def url_matches_base_host(url: str) -> bool:
-    """Return True when ``url`` is on the configured NotebookLM host."""
+    """Return True when ``url`` is on the configured NotebookLM host or personal-app alias."""
     current_host = (urlparse(url).hostname or "").lower()
-    return current_host == get_base_host().lower()
+    base_host = get_base_host().lower()
+    return current_host == base_host or (
+        base_host == PERSONAL_BASE_HOST and current_host == "notebook.google.com"
+    )
 
 
 def connection_error_help() -> str:
@@ -493,7 +505,6 @@ def run_browser_capture(
     ensure_playwright_available(io, browser=browser)
     from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import TimeoutError as PlaywrightTimeout
-    from playwright.sync_api import sync_playwright
 
     def _capture_page_html(page: Any) -> str | None:
         try:
@@ -505,9 +516,7 @@ def run_browser_capture(
 
     captured_page_html: str | None = None
 
-    # Use context manager to restore ProactorEventLoop for Playwright on Windows
-    # (fixes #89: NotImplementedError on Windows Python 3.12)
-    with windows_playwright_event_loop(), sync_playwright() as p:
+    with sync_playwright_context() as p:
         launch_kwargs: dict[str, Any] = {
             "user_data_dir": str(browser_profile),
             "headless": headless,
@@ -621,7 +630,7 @@ def run_browser_capture(
                     # host. Cookies are read later at storage_state() (after the
                     # cookie-forcing round-trips), so resolving early is safe;
                     # page.content() at capture time is best-effort/None-tolerant.
-                    page.wait_for_url(f"{get_base_url()}/**", wait_until="commit", timeout=300_000)
+                    page.wait_for_url(url_matches_base_host, wait_until="commit", timeout=300_000)
                 except PlaywrightTimeout:
                     io.emit(
                         "[red]Login not detected within 5 minutes.[/red]\n"
@@ -803,7 +812,6 @@ def run_cdp_capture(
     """
     ensure_playwright_available(io, browser="chromium")
     from playwright.sync_api import Error as PlaywrightError
-    from playwright.sync_api import sync_playwright
 
     storage_path = plan.storage_path
     include_domains = plan.include_domains
@@ -817,7 +825,7 @@ def run_cdp_capture(
             return None
         return content if isinstance(content, str) else None
 
-    with windows_playwright_event_loop(), sync_playwright() as p:
+    with sync_playwright_context() as p:
         browser = p.chromium.connect_over_cdp(cdp_url)
         page = None
         try:
@@ -912,6 +920,7 @@ __all__ = [
     "recover_page",
     "run_browser_capture",
     "run_cdp_capture",
+    "sync_playwright_context",
     "url_matches_base_host",
     "windows_playwright_event_loop",
 ]

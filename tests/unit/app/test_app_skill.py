@@ -16,17 +16,23 @@ net-new direct coverage of the neutral surface.
 
 from __future__ import annotations
 
+import io
+import re
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 from notebooklm._app.skill import (
     SCOPES,
+    SKILL_ARCHIVE_DIRNAME,
+    SKILL_ARCHIVE_ENTRY,
     SKILL_ENTRY,
     TARGET_CREATE,
     TARGET_OVERWRITE,
     TARGET_UP_TO_DATE,
     TARGETS,
     add_version_comment,
+    build_skill_archive_bytes,
     classify_target,
     get_installed_content,
     get_scope_root,
@@ -424,3 +430,73 @@ def test_remove_empty_parents_never_removes_scope_root(tmp_path: Path) -> None:
         remove_empty_parents(skill_path, "user")
 
     assert home.exists()
+
+
+# ---------------------------------------------------------------------------
+# build_skill_archive_bytes (Claude-uploadable skill archive)
+# ---------------------------------------------------------------------------
+
+_STAMPED_FILES = {
+    "SKILL.md": "---\nname: notebooklm\ndescription: test\n---\n<!-- notebooklm-py v1.2.3 -->\n# Body\n",
+    "references/setup.md": "# Setup\n",
+    "scripts/nlm": "#!/usr/bin/env bash\necho hi\n",
+}
+
+
+def test_build_skill_archive_bytes_roundtrip() -> None:
+    data = build_skill_archive_bytes(_STAMPED_FILES)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        assert set(archive.namelist()) == {
+            f"{SKILL_ARCHIVE_DIRNAME}/{rel_path}" for rel_path in _STAMPED_FILES
+        }
+        extracted = archive.read(SKILL_ARCHIVE_ENTRY).decode("utf-8")
+    assert extracted == _STAMPED_FILES[SKILL_ENTRY]
+    # Frontmatter must stay the first bytes for upload validation.
+    assert extracted.startswith("---\n")
+
+
+def test_build_skill_archive_bytes_is_deterministic() -> None:
+    assert build_skill_archive_bytes(_STAMPED_FILES) == build_skill_archive_bytes(_STAMPED_FILES)
+
+
+def test_build_skill_archive_bytes_entries_are_deflated() -> None:
+    # ZipFile's archive-level compression default does NOT apply to an
+    # explicit ZipInfo; guard against a silent ZIP_STORED regression.
+    data = build_skill_archive_bytes(_STAMPED_FILES)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        for info in archive.infolist():
+            assert info.compress_type == zipfile.ZIP_DEFLATED
+
+
+def test_build_skill_archive_bytes_pins_entry_metadata() -> None:
+    data = build_skill_archive_bytes(_STAMPED_FILES)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        info = archive.getinfo(SKILL_ARCHIVE_ENTRY)
+    assert info.date_time == (2020, 1, 1, 0, 0, 0)
+    assert info.create_system == 3
+    assert info.external_attr == 0o100644 << 16
+
+
+def test_build_skill_archive_bytes_marks_scripts_executable() -> None:
+    data = build_skill_archive_bytes(_STAMPED_FILES)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        info = archive.getinfo(f"{SKILL_ARCHIVE_DIRNAME}/scripts/nlm")
+    assert info.external_attr == 0o100755 << 16
+
+
+def test_skill_archive_entry_lives_in_archive_dirname() -> None:
+    assert f"{SKILL_ARCHIVE_DIRNAME}/SKILL.md" == SKILL_ARCHIVE_ENTRY
+
+
+def test_skill_archive_dirname_matches_repo_frontmatter_name() -> None:
+    # Upload validation requires the zip-root folder name to equal the
+    # SKILL.md frontmatter ``name`` (R3 tripwire).
+    skill_md = Path(__file__).resolve().parents[3] / "plugin" / "skills" / "notebooklm" / "SKILL.md"
+    frontmatter = skill_md.read_text(encoding="utf-8").split("---", 2)[1]
+    match = re.search(r"^name:\s*(.*)$", frontmatter, flags=re.MULTILINE)
+    assert match is not None
+    assert match.group(1).strip() == SKILL_ARCHIVE_DIRNAME

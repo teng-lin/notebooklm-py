@@ -1,6 +1,6 @@
 """Source-wait outcome aggregation for the source MCP tools.
 
-The shared projection behind ``source_wait`` and ``source_add_and_wait``: fan a
+The shared projection behind ``source_wait`` and ``source_add(wait=True)``: fan a
 per-source wait out concurrently (:func:`_wait_all_sources`) and fold the typed
 ``SourceWaitOutcome`` values onto the unified aggregate wire shape
 (:func:`_aggregate_wait_outcomes`) — ``{notebook_id, ok, ready, timed_out,
@@ -16,7 +16,6 @@ Extracted from ``sources.py`` (ADR-0008 module-size budget); reads only
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Any
 
 from ..._app import source_wait as wait_core
@@ -41,43 +40,19 @@ async def _wait_all_sources(
     timeout: float,
     interval: float,
 ) -> list[wait_core.SourceWaitOutcome]:
-    """Wait for every source concurrently, returning one outcome per source.
+    """Wait for many sources, one typed outcome each — via the shared snapshot loop.
 
-    Unlike ``client.sources.wait_for_sources`` (which re-raises the first failure
-    and discards the sources that already became ready), each per-source wait runs
-    through :func:`execute_source_wait`, which maps the three handled
-    ``SourceWait*`` failures to a typed outcome instead of raising — so a slow or
-    failed source never throws away its siblings' progress.
-
-    An UNEXPECTED exception (e.g. an auth/transport ``RPCError``, a bug) is NOT a
-    handled outcome: a bare ``asyncio.gather`` would re-raise it without cancelling
-    the still-running sibling pollers, leaking coroutines. Mirror the library's
-    ``wait_for_sources`` discipline (``_source/polling.py``): drive explicit tasks
-    and, on any such escape, cancel + drain the pending siblings before re-raising
-    (it then flows through ``mcp_errors()``).
+    Delegates to :func:`notebooklm._app.source_wait.wait_all_sources`, the single
+    implementation the REST route also uses: it polls the whole notebook source
+    list ONCE per tick and resolves every pending source against that single
+    snapshot (previously one whole-notebook poll per source — O(N^2), #1870),
+    maps the three handled ``SourceWait*`` failures to typed outcomes so a
+    slow/failed source never discards its siblings' progress, and lets any
+    UNEXPECTED escape propagate (it then flows through ``mcp_errors()``).
     """
-    tasks = [
-        asyncio.create_task(
-            wait_core.execute_source_wait(
-                client,
-                wait_core.SourceWaitPlan(
-                    notebook_id=notebook_id,
-                    source_id=sid,
-                    timeout=timeout,
-                    interval=interval,
-                ),
-            )
-        )
-        for sid in source_ids
-    ]
-    try:
-        return list(await asyncio.gather(*tasks))
-    except BaseException:
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        raise
+    return await wait_core.wait_all_sources(
+        client, notebook_id, source_ids, timeout=timeout, interval=interval
+    )
 
 
 def _wait_bucket_entry(
@@ -95,7 +70,7 @@ async def _aggregate_wait_outcomes(
     """Project per-source wait outcomes onto the unified aggregate wire shape.
 
     Both ``source_wait`` modes (single source, all sources) — and
-    ``source_add_and_wait`` — share this contract: ready sources are returned
+    ``source_add(wait=True)`` — share this contract: ready sources are returned
     alongside the ones that timed out / failed / went missing, so the all-sources
     mode reports partial progress instead of discarding the sources that did become
     ready. ``ok`` is ``True`` iff nothing landed in an error bucket.

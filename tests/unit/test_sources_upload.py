@@ -100,6 +100,21 @@ def sources_api(mock_core):
     return SourcesAPI(mock_core, uploader=uploader)
 
 
+@pytest.mark.asyncio
+async def test_add_drive_file_asserts_bound_loop_before_fetch(sources_api, mock_core):
+    """A cross-loop ``add_drive_file`` fails before any download/fetch runs (#1884).
+
+    The download-gating semaphore's ``assert_bound_loop`` is the seam: it fires
+    from ``get_download_semaphore`` BEFORE ``DriveImportService.add_drive_file``
+    (and thus any network fetch). Getting exactly that ``wrong loop`` error back —
+    not a network/httpx error — proves the fetch never ran.
+    """
+    mock_core.assert_bound_loop = MagicMock(side_effect=RuntimeError("wrong loop"))
+    with pytest.raises(RuntimeError, match="wrong loop"):
+        await sources_api.add_drive_file("nb_1", "https://drive.google.com/open?id=" + "a" * 33)
+    mock_core.assert_bound_loop.assert_called()
+
+
 def test_sources_api_makes_uploader_share_lifecycle_collaborators(sources_api):
     """SourcesAPI is the single owner of the source-lifecycle verbs.
 
@@ -204,6 +219,10 @@ class TestWaitArgsKeywordOnly:
         target = sources_api._uploader if method_name == "add_file" else sources_api._adder
         patched = AsyncMock(return_value=Source(id="src_123", title="Source"))
         setattr(target, method_name, patched)
+        # #1960: add_url/add_drive run a best-effort post-add rename when a requested
+        # title differs from the returned one; stub it so this wait-arg forwarding
+        # test stays focused on the adder call.
+        sources_api.rename = AsyncMock(return_value=Source(id="src_123", title="Source"))
 
         method = getattr(sources_api, method_name)
         with warnings.catch_warnings():
@@ -478,13 +497,13 @@ class TestRegisterFileSource:
         # / PERMISSION_DENIED) with an account-routing hint attached — exactly
         # the #114/#294 pattern we suspect for #474.
         mock_core.rpc_executor.rpc_call.side_effect = ClientError(
-            "RPC o4cbdc returned null result with status code 7 (Permission denied). "
+            "The server rejected this request (permission denied). "
             "If you have multiple Google accounts signed in...",
             method_id="o4cbdc",
             rpc_code=7,
         )
 
-        with pytest.raises(SourceAddError, match="Permission denied") as exc_info:
+        with pytest.raises(SourceAddError, match="permission denied") as exc_info:
             await sources_api._register_file_source("nb_123", "test.pdf")
 
         # The original RPCError is preserved as the cause so debuggers can
@@ -1695,7 +1714,7 @@ class TestAddUrlWithYouTube:
         from notebooklm.exceptions import ClientError, SourceAddError
 
         mock_core.rpc_executor.rpc_call.side_effect = ClientError(
-            "RPC <id> returned null result with status code 7 (Permission denied). ...",
+            "The server rejected this request (permission denied). ...",
             method_id="<id>",
             rpc_code=7,
         )

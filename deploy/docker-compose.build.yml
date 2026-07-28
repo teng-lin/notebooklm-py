@@ -9,6 +9,9 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+      args:
+        # Baked into _commit.py so server_info reports the source commit (the
+        # Makefile exports GIT_COMMIT; empty when not a git checkout).
+        GIT_COMMIT: ${GIT_COMMIT:-}
       # To build from a published PyPI release instead of this checkout:
-      # args:
       #   NOTEBOOKLM_SPEC: "notebooklm-py[mcp,headless]==<version>"

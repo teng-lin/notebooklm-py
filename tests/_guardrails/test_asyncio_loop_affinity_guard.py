@@ -119,6 +119,20 @@ ALLOWLIST: tuple[_AllowlistEntry, ...] = (
         "Guarded by set_bound_loop + call-site assert_bound_loop in "
         "next_reqid; the lazy Lock is never held across open().",
     ),
+    # Server-lifetime singleton: ``SelfHostedOAuthProvider`` is constructed once
+    # by ``build_oauth_provider`` and used entirely within the single MCP-server
+    # event loop (the OAuth handlers). The save-serialization Lock is never
+    # shared across loops — the provider is not reopened on a fresh loop the way
+    # a reusable client is — so it is structurally loop-safe without the
+    # open()/close() affinity protocol.
+    _AllowlistEntry(
+        "src/notebooklm/mcp/_oauth.py",
+        "SelfHostedOAuthProvider",
+        "Server-lifetime singleton built once by build_oauth_provider and used "
+        "entirely within the single MCP-server event loop; the save-lock is "
+        "never shared across loops, so it is structurally loop-safe without the "
+        "open()/close() affinity protocol.",
+    ),
     # Module-global, PER-RUNNING-LOOP registries: the lock is keyed by
     # ``asyncio.get_running_loop()`` in a ``WeakKeyDictionary``, so every loop
     # gets its own lock and a stale cross-loop primitive can never be reused.

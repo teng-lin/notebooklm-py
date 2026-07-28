@@ -13,15 +13,23 @@
 FROM python:3.12-slim
 
 ARG NOTEBOOKLM_SPEC=""
+# Short git commit of the build source. .dockerignore strips .git, so the
+# in-container hatch build can't discover it — the host passes it in (Makefile
+# → compose build arg) and we bake _commit.py so server_info reports the commit.
+ARG GIT_COMMIT=""
 
 # Copy the repo source (build context = repo root; see .dockerignore for excludes).
 COPY . /src
 
 # Empty NOTEBOOKLM_SPEC → install the copied source (dev). Non-empty → install
-# that spec from PyPI (production) and ignore the copied source.
+# that spec from PyPI (production) and ignore the copied source. PyPI wheels
+# already carry _commit.py (baked by CI where .git existed), so only the
+# from-source path needs the hand-off.
 RUN if [ -n "$NOTEBOOKLM_SPEC" ]; then \
         pip install --no-cache-dir "$NOTEBOOKLM_SPEC"; \
     else \
+        if [ -n "$GIT_COMMIT" ]; then printf 'COMMIT = "%s"\n' "$GIT_COMMIT" > /src/src/notebooklm/_commit.py; \
+        else rm -f /src/src/notebooklm/_commit.py; fi; \
         pip install --no-cache-dir "/src[mcp,headless]"; \
     fi
 

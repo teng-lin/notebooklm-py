@@ -1,4 +1,6 @@
-# Build the Claude Desktop `.mcpb` bundle and attach it to the GitHub Release.
+# Build the release bundles — the Claude Desktop `.mcpb` and the
+# Claude-uploadable skill archive (`notebooklm-skill.zip`, for chat / Cowork
+# Settings -> Capabilities) — and attach them to the GitHub Release.
 #
 # Why `release: published` (not `push: tags`)?
 #   The release process (docs/releasing.md) creates the GitHub Release by hand
@@ -16,13 +18,14 @@
 # resolving the latest *stable* server. A stable bundle stays unpinned.
 #
 # Two jobs by design (token isolation, mirrors publish.yml): the `build` job
-# runs the third-party npm packer with NO release-write token, uploads the
-# `.mcpb` as a workflow artifact; the minimal `attach` job carries
-# `contents: write` and runs only first-party download + `gh release upload`.
-# Splitting across jobs means nothing the packer does (e.g. persisting a fake
-# `gh` onto `$GITHUB_PATH`, or `$GITHUB_ENV`) can reach the write token — a
-# same-job `env: GITHUB_TOKEN: ""` on the pack step would not stop that.
-name: Attach .mcpb to GitHub Release
+# runs the third-party npm packer (and the pipx-built `skill package` CLI)
+# with NO release-write token, uploads the bundles as workflow artifacts; the
+# minimal `attach` job carries `contents: write` and runs only first-party
+# download + `gh release upload`. Splitting across jobs means nothing the
+# packer does (e.g. persisting a fake `gh` onto `$GITHUB_PATH`, or
+# `$GITHUB_ENV`) can reach the write token — a same-job
+# `env: GITHUB_TOKEN: ""` on the pack step would not stop that.
+name: Attach release bundles (.mcpb, skill zip)
 
 on:
   release:
@@ -43,7 +46,7 @@ permissions:
 
 jobs:
   build:
-    name: Pack notebooklm-mcp.mcpb
+    name: Pack the release bundles
     runs-on: ubuntu-latest
     # Only the canonical repo ships the bundle (forks' manifest URLs point
     # here anyway); both stable and pre-releases (see the version note above).
@@ -95,6 +98,13 @@ jobs:
         # deliberately, like the SHA-pinned actions.
         run: npx --yes @anthropic-ai/mcpb@2.1.2 pack desktop-extension notebooklm-mcp.mcpb
 
+      - name: Build the skill archive
+        # `pipx run --spec .` builds the tagged checkout into an isolated venv
+        # (pipx is preinstalled on ubuntu-latest) and runs the `notebooklm`
+        # console script — same read-only job as the mcpb packer, so the
+        # pip-installed dependency tree never sees a release-write token.
+        run: pipx run --spec . notebooklm skill package --output notebooklm-skill.zip
+
       - name: Upload the bundle as a workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # @ v7
         with:
@@ -103,8 +113,42 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Upload the skill archive as a workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # @ v7
+        with:
+          name: notebooklm-skill-zip
+          path: notebooklm-skill.zip
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Stage the deploy assets (version-baked compose + env template)
+        # Bake THIS release's exact version into the compose default so a downloaded
+        # `docker compose up -d` resolves without depending on `:latest` (which only
+        # exists at a stable release). env.example is renamed non-hidden because
+        # actions/upload-artifact drops dotfiles by default (include-hidden-files=false).
+        env:
+          # TAG_NAME is step-scoped elsewhere in this job — declare it here too.
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          V="${TAG_NAME#v}"
+          sed "s#\${NOTEBOOKLM_MCP_VERSION:-latest}#\${NOTEBOOKLM_MCP_VERSION:-$V}#" \
+              deploy/docker-compose.yml > docker-compose.yml
+          grep -qF "\${NOTEBOOKLM_MCP_VERSION:-$V}" docker-compose.yml \
+              || { echo "::error::version bake did not apply (compose default drifted from :-latest)"; exit 1; }
+          cp deploy/.env.example env.example
+
+      - name: Upload the deploy assets as a workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # @ v7
+        with:
+          name: deploy-assets
+          path: |
+            docker-compose.yml
+            env.example
+          if-no-files-found: error
+          retention-days: 1
+
   attach:
-    name: Attach notebooklm-mcp.mcpb to the release
+    name: Attach the bundles to the release
     needs: build
     runs-on: ubuntu-latest
     # Minimal write-scoped job: only first-party download + `gh release upload`
@@ -118,8 +162,19 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # @ v8.0.1
         with:
           name: notebooklm-mcp-mcpb
+          merge-multiple: true
 
-      - name: Attach the bundle to the release
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # @ v8.0.1
+        with:
+          name: notebooklm-skill-zip
+          merge-multiple: true
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # @ v8.0.1
+        with:
+          name: deploy-assets
+          merge-multiple: true
+
+      - name: Attach the bundles to the release
         env:
           GH_TOKEN: ${{ github.token }}
           # This job has no checkout, so `gh` has no local git remote to infer
@@ -130,4 +185,4 @@ jobs:
           TAG_NAME: ${{ github.event.release.tag_name }}
         # `--clobber` makes re-runs idempotent (replaces an existing asset of
         # the same name instead of erroring).
-        run: gh release upload "$TAG_NAME" notebooklm-mcp.mcpb --clobber
+        run: gh release upload "$TAG_NAME" notebooklm-mcp.mcpb notebooklm-skill.zip docker-compose.yml env.example --clobber

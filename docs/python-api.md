@@ -1026,7 +1026,7 @@ print(url)
 | `add_url(notebook_id, url, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
-| `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
+| `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). **`title` is ignored** by NotebookLM for native Drive imports — the backend re-derives the display title from live Drive metadata; call `rename(...)` after the add if you need a specific title. |
 | `rename(notebook_id, source_id, new_title, *, return_object=True)` | `str, str, str` | `Source \| None` | Rename source (prefers the `UPDATE_SOURCE` echo, else re-fetched; raises `SourceNotFoundError` if missing). `return_object=False` returns `None` without hydrating. |
 | `refresh(notebook_id, source_id)` | `str, str` | `None` | Refresh URL/Drive source |
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
@@ -1283,11 +1283,13 @@ result = await client.artifacts.export_data_table(
 )
 # result contains the Google Sheets URL
 
-# Generic export (e.g., export any artifact to Sheets). All trailing
-# parameters have defaults: `artifact_id=None`, `content=None`,
-# `title="Export"`, `export_type=ExportType.DOCS`. Supply `content=...`
-# instead of `artifact_id=...` to export inline text without a pre-existing
-# artifact.
+# Generic export (e.g., export any artifact to Sheets). Signature:
+# `export(notebook_id, artifact_id=None, title="Export",
+# export_type=ExportType.DOCS, *, content=None)`. Exactly one of
+# `artifact_id=` or `content=` must be supplied (both or neither raises
+# `ValidationError`). `content` is keyword-only so the positional slots line
+# up with `export_report` / `export_data_table` (`title` in slot 3); supply
+# `content=...` to export inline text without a pre-existing artifact.
 result = await client.artifacts.export(
     nb_id,
     artifact_id="artifact_789",
@@ -2257,7 +2259,21 @@ class AccountLimits:
     notebook_limit: int | None = None  # Max notebooks the account can hold
     source_limit: int | None = None    # Max sources per notebook
     raw_limits: tuple[Any, ...] = ()   # Untouched RPC payload for forensic use
+    tier: int | None = None            # Subscription tier enum (opaque; see below)
 ```
+
+`tier` is the subscription tier read from the same authoritative `GET_USER_SETTINGS`
+limits block (index 4). It is an **opaque enum key, not an ordinal rank** — look it up,
+never compare with `<`/`>`. Mapping (per
+[Google's plan table](https://support.google.com/notebooklm/answer/16213268)):
+`1`=Standard/Free, `2`=Pro, `4`=Plus, `3`=Ultra (20 TB), `6`=Ultra (30 TB); `5` aligns
+with the Workspace "Expanded" access level (inferred — not a consumer plan, so it is
+absent from Google's consumer page); Enterprise is separate.
+Only `1` and `2` are live-confirmed. `tier` is `None` on legacy 4-element blocks or when
+the value is absent/non-positive. (The pre-v0.8.0 promotions-based tier / `plan_name`
+label is **not** back — it could not distinguish free from paid; this reads the real
+quota block instead.) The full per-tier notebook/source/studio limits keyed to these
+ints are in [quota-limits.md](quota-limits.md).
 
 ### UserSettings
 

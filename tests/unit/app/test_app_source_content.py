@@ -30,13 +30,16 @@ from notebooklm._app.source_content import (
     SourceGetPlan,
     SourceGuidePlan,
     SourceGuideResult,
+    SourceReadPlan,
     SourceStalePlan,
     SourceStaleResult,
     execute_source_fulltext,
     execute_source_get,
     execute_source_guide,
+    execute_source_read,
     execute_source_stale,
 )
+from notebooklm.exceptions import MissingDependencyError
 from notebooklm.types import Source, SourceFulltext, SourceGuide
 
 
@@ -86,6 +89,44 @@ async def test_fulltext_threads_output_format() -> None:
     )
     assert result.fulltext is ft
     client.sources.get_fulltext.assert_awaited_once_with("nb_1", "src_1", output_format="markdown")
+
+
+@pytest.mark.asyncio
+async def test_read_markdown_missing_extra_raises_missing_dependency() -> None:
+    """A markdown ``ImportError`` (no ``markdownify`` extra) is remapped to
+    ``MissingDependencyError`` — a distinct type so adapters give the install hint
+    rather than the auth/storage one (#1959). The message survives for the hint."""
+    client = _client()
+    ready = MagicMock(spec=Source)
+    ready.is_ready = True
+    client.sources.get_or_none = AsyncMock(return_value=ready)
+    client.sources.get_fulltext = AsyncMock(
+        side_effect=ImportError(
+            "The 'markdown' format requires the 'markdownify' package. "
+            "Install it with: pip install 'notebooklm-py[markdown]'"
+        )
+    )
+    with pytest.raises(MissingDependencyError, match="markdownify"):
+        await execute_source_read(
+            client,
+            SourceReadPlan(notebook_id="nb_1", source_id="src_1", output_format="markdown"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_read_text_import_error_is_not_remapped() -> None:
+    """An ``ImportError`` on the TEXT path is a genuine bug — it must propagate as
+    a raw ImportError, NOT get relabelled a missing-dependency error."""
+    client = _client()
+    ready = MagicMock(spec=Source)
+    ready.is_ready = True
+    client.sources.get_or_none = AsyncMock(return_value=ready)
+    client.sources.get_fulltext = AsyncMock(side_effect=ImportError("unrelated boom"))
+    with pytest.raises(ImportError) as excinfo:
+        await execute_source_read(
+            client, SourceReadPlan(notebook_id="nb_1", source_id="src_1", output_format="text")
+        )
+    assert not isinstance(excinfo.value, MissingDependencyError)
 
 
 # ===========================================================================

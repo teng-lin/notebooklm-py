@@ -17,7 +17,13 @@ from __future__ import annotations
 
 import ipaddress
 
-__all__ = ["LOOPBACK_HOSTNAMES", "addr_is_loopback", "check_bind_allowed", "is_loopback"]
+__all__ = [
+    "LOOPBACK_HOSTNAMES",
+    "addr_is_loopback",
+    "check_bind_allowed",
+    "host_header_is_loopback",
+    "is_loopback",
+]
 
 #: Hostnames always treated as loopback even though they are not numeric IP
 #: literals. An empty / whitespace host is intentionally absent — it must be
@@ -56,6 +62,33 @@ def is_loopback(host: str) -> bool:
     if stripped.lower() in LOOPBACK_HOSTNAMES:
         return True
     return addr_is_loopback(stripped)
+
+
+def host_header_is_loopback(host_header: str) -> bool:
+    """Whether an HTTP ``Host`` header addresses a loopback literal.
+
+    Like :func:`is_loopback` but for a request ``Host`` header rather than a bind
+    host: strips an optional ``:port`` suffix and tolerates the bracketed IPv6 form
+    (``[::1]`` / ``[::1]:9420``). A public DNS name, ``0.0.0.0``, or an empty host is
+    rejected — this is the DNS-rebinding guard for a loopback-bound HTTP server.
+    """
+    host = host_header.strip()
+    if not host:
+        return False
+    if host.startswith("["):
+        end = host.find("]")
+        if end == -1:
+            return False
+        candidate = host[1:end]
+        # Anything after "]" must be empty or a ":port" — reject "[::1]evil.com".
+        rest = host[end + 1 :]
+        if rest and not (rest.startswith(":") and rest[1:].isdigit()):
+            return False
+    else:
+        # Strip a trailing :port only when there is a single colon (a bare IPv6
+        # literal has several and isn't a valid Host-with-port anyway).
+        candidate = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+    return is_loopback(candidate)
 
 
 def check_bind_allowed(host: str, *, allow_external: bool, what: str, allow_env: str) -> None:

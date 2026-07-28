@@ -47,9 +47,12 @@ from typing import Any
 __all__ = [
     "DOWNLOAD_TTL",
     "UPLOAD_TTL",
+    "WIDGET_UPLOAD_TTL",
+    "ConsumedJtiStore",
     "FileLinkError",
     "FileLinkSigner",
     "FileTransferConfig",
+    "ShortLinkStore",
 ]
 
 #: Signed-URL lifetimes. Upload links are shorter-lived than downloads: an upload
@@ -59,6 +62,24 @@ __all__ = [
 #: ``Referrer-Policy: no-referrer``).
 UPLOAD_TTL = 15 * 60
 DOWNLOAD_TTL = 30 * 60
+
+#: Lifetime of a token in the in-app upload **widget's** pool (ADR-0027). Longer than
+#: the single-link ``UPLOAD_TTL`` because the widget uploads a whole *batch*
+#: sequentially through one browser: it mints the pool up front (all tokens share this
+#: one mint instant), then uploads file[0], file[1], … one after another, so the LAST
+#: token must still be live after the sum of every earlier file's transfer plus the
+#: user's file-picking think-time. At the 15-min link TTL a slow mobile link could
+#: expire a later token mid-batch → a silent 403, the file lost (#1894). An hour
+#: comfortably covers a realistic mobile batch of documents/photos.
+#:
+#: The longer window is a different — and smaller — risk class than the human_upload
+#: link's: a pool token is (a) single-use (it authorizes exactly one *successful* add,
+#: burned via :class:`ConsumedJtiStore`), (b) notebook-scoped, and (c) never shown to
+#: the user or placed in a URL bar — it lives only inside the widget's
+#: ``structuredContent`` / ``fetch`` body, never a location bar, history entry, or
+#: ``Referer``. The tight ``UPLOAD_TTL`` guards the *human* link the user opens in a
+#: browser (a genuinely higher-exposure surface); the widget pool never enters it.
+WIDGET_UPLOAD_TTL = 60 * 60
 
 #: Reject a token longer than this BEFORE any base64/HMAC/JSON work — an absurdly
 #: long path segment must not drive decode/allocation cost. Real tokens are well
@@ -120,7 +141,7 @@ class FileLinkSigner:
         mac = hmac.new(self.key, encoded.encode("ascii"), hashlib.sha256).digest()
         return f"{encoded}.{_b64url(mac)}"
 
-    def verify(self, token: str, *, op: str) -> dict[str, Any]:
+    def verify(self, token: str, *, op: str, allow_expired: bool = False) -> dict[str, Any]:
         """Verify ``token`` and return its payload, or raise :class:`FileLinkError`.
 
         Order matters: the length cap runs BEFORE any decode, then the MAC is
@@ -132,6 +153,11 @@ class FileLinkSigner:
             op: The operation the route serves (``"ul"`` / ``"dl"``). A token
                 minted for the other operation is rejected (an upload link cannot
                 be replayed against the download route or vice-versa).
+            allow_expired: Skip ONLY the ``exp`` check (MAC + shape + ``op`` are still
+                enforced). Used exclusively to recover a *committed* upload's result
+                when ``await_upload`` is re-invoked just after the start-token expired
+                — the ``/files/ul`` POST already verified the token while it was live,
+                so honoring the result is safe. NEVER use this to authorize a new write.
         """
         if len(token) > _MAX_TOKEN_LEN:
             raise FileLinkError("token too long")
@@ -158,7 +184,9 @@ class FileLinkSigner:
         if not isinstance(payload, dict):
             raise FileLinkError("malformed token body")
         exp = payload.get("exp")
-        if not isinstance(exp, int) or isinstance(exp, bool) or time.time() > exp:
+        if not isinstance(exp, int) or isinstance(exp, bool):
+            raise FileLinkError("token expired")
+        if not allow_expired and time.time() > exp:
             raise FileLinkError("token expired")
         if payload.get("op") != op:
             raise FileLinkError("operation mismatch")
@@ -166,7 +194,8 @@ class FileLinkSigner:
 
 
 #: Cap on the consumed-jti record. The server mints one jti per file-tool call and
-#: every entry is inline-swept once its token's ``exp`` passes (≤ ``UPLOAD_TTL``), so
+#: every entry is inline-swept once its token's ``exp`` passes (≤ the token's TTL —
+#: ``UPLOAD_TTL``, or ``WIDGET_UPLOAD_TTL`` for a widget-pool token), so
 #: the live set is tiny in practice; an attacker cannot mint jtis (no key). This bound
 #: is pure defense-in-depth against a runaway — 8192 is generous headroom.
 _MAX_SEEN_JTIS = 8192
@@ -197,6 +226,14 @@ class ConsumedJtiStore:
     #: the concurrent request count and always released in the route's ``finally``, so
     #: it needs no sweep or size cap.
     _active: set[str] = field(default_factory=set)
+    #: jti -> upload result ({source_id, name, size, mime, sha256}), recorded on a successful
+    #: :meth:`commit` that carries one. This is the in-process **completion map**
+    #: (Phase 1 ``await_upload``): the ``/files/ul`` POST route and the polling tool run
+    #: in the same single process (ADR-0024), so a same-loop poll reads what the route
+    #: wrote — no DB, no cross-process state. Keyed by jti and swept with :attr:`_seen`,
+    #: so a record never outlives its token's ``exp`` (≤ that token's TTL — ``UPLOAD_TTL``,
+    #: or ``WIDGET_UPLOAD_TTL`` for a widget-pool token).
+    _results: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def _sweep(self, now: int) -> None:
         # ``exp < now`` (strict), matching ``verify``'s ``time.time() > exp`` rejection:
@@ -205,6 +242,13 @@ class ConsumedJtiStore:
         # window at the exact expiry second. ``now`` is the caller's ``int(time.time())``.
         for expired_jti in [j for j, exp in self._seen.items() if exp < now]:
             del self._seen[expired_jti]
+            self._results.pop(expired_jti, None)
+
+    def completed(self, jti: str) -> dict[str, Any] | None:
+        """Return the recorded upload result for ``jti``, or ``None`` if not (yet)
+        completed. ``None`` covers both "not uploaded yet" and "burned without a
+        result"; the caller treats either as *pending*."""
+        return self._results.get(jti)
 
     def try_begin(self, jti: str) -> bool:
         """Atomically claim ``jti`` for a single upload.
@@ -219,11 +263,13 @@ class ConsumedJtiStore:
         self._active.add(jti)
         return True
 
-    def commit(self, jti: str, exp: int) -> None:
+    def commit(self, jti: str, exp: int, result: dict[str, Any] | None = None) -> None:
         """Burn ``jti`` permanently (its upload succeeded).
 
-        Sweeps expired entries and enforces the size bound here — the only mutating hot
-        path — so :meth:`try_begin` stays O(1).
+        When ``result`` is given it is recorded in the completion map (:meth:`completed`)
+        so a same-process ``await_upload`` poll can surface the added source. Sweeps
+        expired entries and enforces the size bound here — the only mutating hot path —
+        so :meth:`try_begin` stays O(1).
         """
         self._active.discard(jti)
         self._sweep(int(time.time()))
@@ -235,13 +281,77 @@ class ConsumedJtiStore:
             # the soonest-to-expire entry — the least loss of protection, since it is
             # closest to natural expiry anyway. ``_seen`` is non-empty here, so ``min`` is
             # safe.
-            del self._seen[min(self._seen, key=self._seen.__getitem__)]
+            evicted = min(self._seen, key=self._seen.__getitem__)
+            del self._seen[evicted]
+            self._results.pop(evicted, None)  # keep the completion map in step with _seen
         self._seen[jti] = exp
+        if result is not None:
+            self._results[jti] = result
 
     def rollback(self, jti: str) -> None:
         """Release a claimed-but-unfinished ``jti`` (upload failed / aborted / 429) so
         the same link can be retried — honors ADR-0024's large-file retry window."""
         self._active.discard(jti)
+
+
+#: Short-id length in random bytes. ``token_urlsafe(12)`` → 16 URL-safe chars (96 bits) —
+#: still short enough to survive a mobile tap / model transcription, but wide enough that a
+#: ``/u/<shortid>`` link (unauthenticated, resolves to a valid write-capable upload token for
+#: its ≤15-min TTL, and the 302/404 route is an online oracle with no per-id rate limit here)
+#: cannot be feasibly guessed. 48 bits was defensible but this keeps a comfortable margin.
+_SHORT_ID_BYTES = 12
+#: Bound mirrors ``_MAX_SEEN_JTIS`` — one entry per file-tool call, all TTL-swept.
+_MAX_SHORT_LINKS = 8192
+
+
+@dataclass
+class ShortLinkStore:
+    """In-process ``shortid -> (token, exp)`` map backing the tap-friendly ``/u/<shortid>``
+    upload links.
+
+    The long ``/files/ul/<token>`` URL (~250 chars) is fragile through a mobile chat: it gets
+    tap-truncated, re-typed with dropped characters by the model, or autocorrected — every
+    corruption breaks the HMAC (live-confirmed). A short random id sidesteps all of that; this
+    store resolves it back to the real signed token server-side.
+
+    Same contract as :class:`ConsumedJtiStore`: single process / single tenant, every method is
+    synchronous (no ``await`` → atomic on the one event loop, no lock), TTL-swept, dies with the
+    process. No DB, no background sweeper.
+    """
+
+    #: shortid -> (signed token, exp unix seconds). exp mirrors the token's own ``exp`` so a
+    #: resolved link never outlives the token it points at.
+    _links: dict[str, tuple[str, int]] = field(default_factory=dict)
+
+    def _sweep(self, now: int) -> None:
+        for sid in [s for s, (_t, exp) in self._links.items() if exp < now]:
+            del self._links[sid]
+
+    def put(self, token: str, exp: int) -> str:
+        """Register ``token`` (valid until ``exp``) under a fresh short id and return the id.
+
+        Sweeps expired entries and enforces the size bound here (the only growing path), so
+        :meth:`get` stays O(1)."""
+        now = int(time.time())
+        self._sweep(now)
+        if len(self._links) >= _MAX_SHORT_LINKS:
+            # Evict the soonest-to-expire entry (least loss — closest to natural expiry).
+            del self._links[min(self._links, key=lambda s: self._links[s][1])]
+        shortid = secrets.token_urlsafe(_SHORT_ID_BYTES)
+        self._links[shortid] = (token, exp)
+        return shortid
+
+    def get(self, shortid: str) -> str | None:
+        """Return the token for ``shortid``, or ``None`` if unknown or its token has expired
+        (an expired entry is dropped in passing)."""
+        entry = self._links.get(shortid)
+        if entry is None:
+            return None
+        token, exp = entry
+        if int(time.time()) > exp:
+            self._links.pop(shortid, None)
+            return None
+        return token
 
 
 @dataclass(frozen=True)
@@ -262,15 +372,38 @@ class FileTransferConfig:
     #: mutable, dict-bearing (unhashable) object, so including it in ``__eq__``/
     #: ``__hash__`` would make every config unhashable and equality depend on live state.
     jti_store: ConsumedJtiStore = field(default_factory=ConsumedJtiStore, compare=False)
+    #: In-process ``shortid -> token`` map backing the ``/u/<shortid>`` tap-friendly links
+    #: (:meth:`short_upload_url`). ``compare=False`` for the same reason as :attr:`jti_store`.
+    short_links: ShortLinkStore = field(default_factory=ShortLinkStore, compare=False)
 
-    def upload_url(self, payload: dict[str, Any]) -> str:
+    def short_upload_url(self, payload: dict[str, Any]) -> str:
+        """Mint an upload token for ``payload`` and return a tap-friendly ``/u/<shortid>`` URL.
+
+        Signs the same ``ul`` token :meth:`upload_url` would, registers it under a short id
+        (keyed to the token's ``exp``), and returns the short URL — the long ``/files/ul``
+        URL a ``GET /u/<shortid>`` redirects to. Robust to mobile-chat corruption (see
+        :class:`ShortLinkStore`)."""
+        token = self.signer.sign({**payload, "op": "ul"}, UPLOAD_TTL)
+        # ``sign`` stamped ``exp = now + UPLOAD_TTL``; recompute it directly rather than
+        # re-verifying the token (a full HMAC+decode) just to read one field back. This
+        # ``now`` is a hair later, so the store entry expires at-or-after the token — never
+        # before it (a short link is never live past its token). Negligible on a 15-min TTL.
+        exp = int(time.time()) + UPLOAD_TTL
+        shortid = self.short_links.put(token, exp)
+        return f"{self.base_url.rstrip('/')}/u/{shortid}"
+
+    def upload_url(self, payload: dict[str, Any], *, ttl: int = UPLOAD_TTL) -> str:
         """Sign ``payload`` with the upload TTL and build the ``/files/ul`` URL.
 
         The builder OWNS the ``op`` claim (stamps ``"ul"``) so the token always
         matches the route it is minted for — a caller cannot accidentally produce
         a token the route would 403.
+
+        ``ttl`` defaults to the single-link :data:`UPLOAD_TTL`; the in-app upload
+        widget passes the longer :data:`WIDGET_UPLOAD_TTL` for its sequentially-uploaded
+        token pool (ADR-0027). The route enforces single-use regardless of TTL.
         """
-        return self._build("ul", self.signer.sign({**payload, "op": "ul"}, UPLOAD_TTL))
+        return self._build("ul", self.signer.sign({**payload, "op": "ul"}, ttl))
 
     def download_url(self, payload: dict[str, Any]) -> str:
         """Sign ``payload`` with the download TTL and build the ``/files/dl`` URL.

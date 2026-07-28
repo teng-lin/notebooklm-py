@@ -790,6 +790,12 @@ _SESSION_LOCAL_RATIONALE = (
     "tests/unit/cli/test_cli_session_local.py + test_auth_subcommands.py "
     "(incl. auth refresh --verify failure and the --browser-cookies refusal)."
 )
+_SKILL_PACKAGE_RATIONALE = (
+    "Local artifact build (no NotebookLMClient); the ``--json`` success "
+    "payload AND the OUTPUT_EXISTS / SKILL_SOURCE_MISSING / WRITE_FAILED "
+    "error envelopes are asserted directly in "
+    "tests/unit/cli/test_skill.py::TestSkillPackage."
+)
 
 
 JSON_SUCCESS_WAIVED: dict[tuple[str, ...], str] = {
@@ -802,6 +808,7 @@ JSON_SUCCESS_WAIVED: dict[tuple[str, ...], str] = {
     ("profile", "delete"): _PROFILE_RATIONALE,
     ("profile", "rename"): _PROFILE_RATIONALE,
     ("profile", "switch"): _PROFILE_RATIONALE,
+    ("skill", "package"): _SKILL_PACKAGE_RATIONALE,
     ("skill", "status"): _INTROSPECTION_RATIONALE,
     # artifact group — get/poll/wait need a real or fully-stubbed generation
     # status payload that round-trips through the artifact formatter chain.
@@ -866,6 +873,7 @@ JSON_SUCCESS_WAIVED: dict[tuple[str, ...], str] = {
     # mutations or wait-loops.
     ("source", "add"): _MUTATION_RATIONALE_SUCCESS,
     ("source", "add-drive"): _MUTATION_RATIONALE_SUCCESS,
+    ("source", "add-drive-file"): _MUTATION_RATIONALE_SUCCESS,
     ("source", "clean"): _MUTATION_RATIONALE_SUCCESS,
     ("source", "delete"): _MUTATION_RATIONALE_SUCCESS,
     ("source", "delete-by-title"): _MUTATION_RATIONALE_SUCCESS,
@@ -890,6 +898,7 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     ("profile", "delete"): _PROFILE_RATIONALE,
     ("profile", "rename"): _PROFILE_RATIONALE,
     ("profile", "switch"): _PROFILE_RATIONALE,
+    ("skill", "package"): _SKILL_PACKAGE_RATIONALE,
     ("skill", "status"): _INTROSPECTION_RATIONALE,
     # artifact group — error envelope is covered for list + wait. Remaining
     # entries are mutations that surface @with_client's UNEXPECTED_ERROR
@@ -952,6 +961,7 @@ JSON_ERROR_WAIVED: dict[tuple[str, ...], str] = {
     # source group — list error is covered; remaining mutations + introspection.
     ("source", "add"): _MUTATION_RATIONALE_ERROR,
     ("source", "add-drive"): _MUTATION_RATIONALE_ERROR,
+    ("source", "add-drive-file"): _MUTATION_RATIONALE_ERROR,
     ("source", "clean"): _MUTATION_RATIONALE_ERROR,
     ("source", "delete"): _MUTATION_RATIONALE_ERROR,
     ("source", "delete-by-title"): _MUTATION_RATIONALE_ERROR,

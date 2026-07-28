@@ -424,7 +424,7 @@ class TestNotebookCreate:
         """Create emits structured JSON when notebook quota is detected."""
         mock_client = create_mock_client()
         original = RPCError(
-            "RPC CCqFvf returned null result with status code 3 (Invalid argument).",
+            "The server rejected this request (invalid argument).",
             method_id=RPCMethod.CREATE_NOTEBOOK.value,
             rpc_code=3,
         )

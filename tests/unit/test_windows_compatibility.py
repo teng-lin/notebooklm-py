@@ -17,6 +17,9 @@ from unittest.mock import patch
 
 import pytest
 
+from notebooklm._auth.browser_capture import (
+    sync_playwright_context as _sync_playwright_context,
+)
 from notebooklm.cli.services.playwright_login import (
     windows_playwright_event_loop as _windows_playwright_event_loop,
 )
@@ -38,10 +41,7 @@ class TestPlaywrightSmokeTest:
         sync_playwright() raises NotImplementedError on Windows because
         WindowsSelectorEventLoopPolicy doesn't support subprocess spawning.
         """
-        from playwright.sync_api import sync_playwright
-
-        # This would fail without the context manager fix
-        with _windows_playwright_event_loop(), sync_playwright() as p:
+        with _sync_playwright_context() as p:
             # Just verify Playwright initializes - don't launch a browser
             assert p.chromium is not None
             assert p.firefox is not None
@@ -55,10 +55,7 @@ class TestPlaywrightSmokeTest:
         if sys.platform == "win32":
             pytest.skip("Non-Windows test")
 
-        from playwright.sync_api import sync_playwright
-
-        # Context manager is no-op on non-Windows, Playwright should still work
-        with _windows_playwright_event_loop(), sync_playwright() as p:
+        with _sync_playwright_context() as p:
             assert p.chromium is not None
 
 

@@ -75,6 +75,8 @@ def mock_core():
     async def _rpc_call_dispatch(method, params, **kwargs):
         if method == _RPC.GET_LAST_CONVERSATION_ID:
             return [[["mock-core-conv-id"]]]
+        if method == _RPC.GET_CONVERSATION_TURNS:
+            return [[[None, None, 1, "Existing question?"]]]
         return rpc_call.return_value
 
     rpc_call.side_effect = _rpc_call_dispatch
@@ -1074,6 +1076,114 @@ class TestArtifactsSourceSelection:
         # Verify result parsing
         assert len(result) == 1
         assert result[0].title == "Report Title"
+
+
+class TestArtifactValidationFootguns:
+    """Regression tests for the #1874 validation footguns (B: generate_report
+    positional coercion; C: export exactly-one-of + keyword-only content)."""
+
+    def _api(self, mock_core, mock_mind_map_service):
+        return ArtifactsAPI(
+            rpc=mock_core,
+            drain=mock_core,
+            lifecycle=mock_core,
+            notebooks=MagicMock(),
+            **mock_mind_map_service,
+        )
+
+    # --- B: generate_report ------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_generate_report_source_ids_in_format_slot_raises(
+        self, mock_core, mock_mind_map_service
+    ):
+        """generate_report("nb", ["s1", "s2"]) -> ValidationError (not TypeError).
+
+        The second positional is ``report_format`` (unlike every sibling
+        ``generate_*`` where it is ``source_ids``); passing a list must fail
+        loudly with a message that points at ``source_ids=``.
+        """
+        api = self._api(mock_core, mock_mind_map_service)
+
+        with pytest.raises(ValidationError, match="source_ids"):
+            await api.generate_report("nb_123", ["s1", "s2"])
+
+    @pytest.mark.asyncio
+    async def test_generate_report_accepts_enum_format(self, mock_core, mock_mind_map_service):
+        """A valid ReportFormat enum still works (idempotent coercion)."""
+        from notebooklm.rpc.types import ReportFormat
+
+        api = self._api(mock_core, mock_mind_map_service)
+        mock_core.rpc_executor.rpc_call.return_value = [["a", "Report", 2, None, 1]]
+
+        await api.generate_report("nb_123", ReportFormat.STUDY_GUIDE, source_ids=["src_x"])
+        mock_core.rpc_executor.rpc_call.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_generate_report_accepts_valid_format_string(
+        self, mock_core, mock_mind_map_service
+    ):
+        """A valid str-enum value ("briefing_doc") is coerced, not rejected."""
+        api = self._api(mock_core, mock_mind_map_service)
+        mock_core.rpc_executor.rpc_call.return_value = [["a", "Report", 2, None, 1]]
+
+        await api.generate_report("nb_123", "briefing_doc", source_ids=["src_x"])
+        mock_core.rpc_executor.rpc_call.assert_called_once()
+
+    # --- C: export ---------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_export_neither_target_raises(self, mock_core, mock_mind_map_service):
+        """export("nb") with neither artifact_id nor content -> ValidationError."""
+        api = self._api(mock_core, mock_mind_map_service)
+
+        with pytest.raises(ValidationError, match="exactly one"):
+            await api.export("nb_123")
+
+    @pytest.mark.asyncio
+    async def test_export_both_targets_raises(self, mock_core, mock_mind_map_service):
+        """export with both artifact_id and content -> ValidationError."""
+        api = self._api(mock_core, mock_mind_map_service)
+
+        with pytest.raises(ValidationError, match="exactly one"):
+            await api.export("nb_123", artifact_id="a", content="c")
+
+    @pytest.mark.asyncio
+    async def test_export_by_artifact_id_params(self, mock_core, mock_mind_map_service):
+        """export("nb", "art_001") sends [None, "art_001", None, "Export", DOCS]."""
+        from notebooklm.rpc import ExportType, RPCMethod
+
+        api = self._api(mock_core, mock_mind_map_service)
+        await api.export("nb_123", "art_001")
+
+        call_args = mock_core.rpc_call.call_args
+        assert call_args.args[0] == RPCMethod.EXPORT_ARTIFACT
+        assert call_args.args[1] == [None, "art_001", None, "Export", int(ExportType.DOCS)]
+
+    @pytest.mark.asyncio
+    async def test_export_by_content_params(self, mock_core, mock_mind_map_service):
+        """export("nb", content="hello") sends [None, None, "hello", ...]."""
+        api = self._api(mock_core, mock_mind_map_service)
+        await api.export("nb_123", content="hello")
+
+        params = mock_core.rpc_call.call_args.args[1]
+        assert params[0] is None
+        assert params[1] is None
+        assert params[2] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_export_positional_title_binds_to_title_not_content(
+        self, mock_core, mock_mind_map_service
+    ):
+        """export("nb", "art_001", "My Title") binds title (slot 3), matching siblings."""
+        api = self._api(mock_core, mock_mind_map_service)
+        await api.export("nb_123", "art_001", "My Title")
+
+        params = mock_core.rpc_call.call_args.args[1]
+        # [client_opt, artifact_id, content, title, export_type]
+        assert params[1] == "art_001"
+        assert params[2] is None  # content stays None (not mis-bound)
+        assert params[3] == "My Title"
 
 
 class TestEmptySourceIds:

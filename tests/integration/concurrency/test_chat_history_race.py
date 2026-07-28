@@ -73,6 +73,13 @@ def _build_get_conversation_id_response_body(conversation_id: str) -> str:
     return f")]}}'\n{len(chunk)}\n{chunk}\n"
 
 
+def _build_get_conversation_turns_response_body() -> str:
+    """Build a minimal ``khqZz`` response containing one existing turn."""
+    inner = json.dumps([[[None, None, 1, "Existing question?"]]])
+    chunk = json.dumps(["wrb.fr", RPCMethod.GET_CONVERSATION_TURNS.value, inner, None, None])
+    return f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+
 def _parse_chat_params(request: httpx.Request) -> list:
     """Decode the params list out of a chat POST body.
 
@@ -156,6 +163,13 @@ class _SerializingChatTransport(httpx.AsyncBaseTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         if "batchexecute" in str(request.url):
             notebook_id = _extract_source_path_notebook_id(request)
+            if "rpcids=khqZz" in str(request.url):
+                self._events.append(("khqzz", notebook_id, None))
+                return httpx.Response(
+                    200,
+                    text=_build_get_conversation_turns_response_body(),
+                    request=request,
+                )
             self._events.append(("hptbtc", notebook_id, None))
             conversation_id = self._conversation_ids_by_notebook.get(
                 notebook_id,
@@ -447,13 +461,16 @@ async def test_different_notebook_new_conversation_asks_run_in_parallel(auth_tok
 async def test_new_conversation_cache_update_waits_for_resolved_conversation_lock(
     auth_tokens,
 ) -> None:
-    """After hPTbtc returns, a null ask must use the conversation-id lock.
+    """A null ask resolving to a conversation shares that conversation's lock.
 
-    The explicit follow-up below holds ``_conversation_locks[conversation_id]``
-    while its delayed response is in flight. The null ask resolves to that
-    same id sooner; if it wrote the cache without taking the conversation lock,
-    it would land before the already-running follow-up. The expected cache
-    order proves the null ask waits for the follow-up's existing lock.
+    The explicit follow-up contends ``_conversation_locks[conversation_id]``.
+    Under the #1875 two-phase design the null ask resolves that same id under
+    the notebook lock and then holds the conversation lock across BOTH its POST
+    and its cache write — so the two serialize on one lock (peak in-flight 1)
+    and produce contiguous, non-corrupted turns. Which of the two wins the lock
+    is a scheduling detail; the invariant is that neither clobbers the other's
+    turn. Pre-fix the null ask POSTed under the notebook lock and only took the
+    conversation lock for the cache write, so the two POSTs overlapped.
     """
     notebook_id = "nb_new_followup"
     conversation_id = "conv_new_followup"
@@ -490,6 +507,219 @@ async def test_new_conversation_cache_update_waits_for_resolved_conversation_loc
     finally:
         await client._collaborators.kernel.get_http_client().aclose()
 
+    # Both asks serialize on the resolved conversation's lock: peak in-flight 1.
+    assert transport.peak_chat_inflight() == 1, (
+        "a null ask resolving to the follow-up's conversation must serialize "
+        f"on its lock; got peak_chat_inflight={transport.peak_chat_inflight()}"
+    )
+    # Serialized under one lock → contiguous turns, no lost update, both present
+    # (exact order depends on which task wins the lock and is not asserted).
     cached_turns = client.chat.get_cached_turns(conversation_id)
-    assert [turn.query for turn in cached_turns] == ["q0", "q-follow", "q-new"]
     assert [turn.turn_number for turn in cached_turns] == [1, 2, 3]
+    assert {turn.query for turn in cached_turns} == {"q0", "q-new", "q-follow"}
+
+
+@pytest.mark.asyncio
+async def test_null_ask_serializes_with_explicit_current_conversation(auth_tokens) -> None:
+    """A null ask and an explicit follow-up on the *current* conversation serialize.
+
+    Regression for #1875: the server appends a ``conversation_id=None`` ask to
+    the notebook's current conversation (``params[4]=null``). When that current
+    conversation is the same one an explicit follow-up targets, the two must
+    hold the SAME per-conversation lock so their streamed POSTs serialize.
+    Pre-fix the null ask POSTed under the notebook lock while the follow-up
+    POSTed under the conversation lock — disjoint locks, peak in-flight 2.
+    Post-fix the null ask resolves the current id under the notebook lock and
+    takes that conversation's lock around POST + cache — peak in-flight 1.
+    """
+    notebook_id = "nb_1875_same"
+    conversation_id = "conv_1875_same"
+
+    transport = _SerializingChatTransport(
+        response_delay=0.1,
+        conversation_ids_by_notebook={notebook_id: conversation_id},
+    )
+    transport.set_answer("q-null", "answer-null")
+    transport.set_answer("q-follow", "answer-follow")
+
+    client = _make_client(transport, auth_tokens)
+    try:
+        client.chat._cache.cache_conversation_turn(conversation_id, "q0", "answer-0", turn_number=1)
+        await asyncio.gather(
+            client.chat.ask(notebook_id, "q-null", source_ids=["src_001"]),
+            client.chat.ask(
+                notebook_id,
+                "q-follow",
+                source_ids=["src_001"],
+                conversation_id=conversation_id,
+            ),
+        )
+    finally:
+        await client._collaborators.kernel.get_http_client().aclose()
+
+    assert transport.peak_chat_inflight() == 1, (
+        "a null ask and an explicit follow-up on the notebook's current "
+        "conversation must serialize on the same per-conversation lock; "
+        f"got peak_chat_inflight={transport.peak_chat_inflight()}"
+    )
+
+    # Cache coherent: seed turn + the two serialized asks, contiguous 1/2/3.
+    cached_turns = client.chat.get_cached_turns(conversation_id)
+    assert [turn.turn_number for turn in cached_turns] == [1, 2, 3]
+    assert {turn.query for turn in cached_turns} == {"q0", "q-null", "q-follow"}
+
+
+@pytest.mark.asyncio
+async def test_null_ask_parallel_with_followup_on_other_conversation(auth_tokens) -> None:
+    """Granularity guard: a null ask resolving to convX runs parallel to convY.
+
+    The #1875 fix must not become a coarse notebook/global POST lock: a null
+    ask whose current conversation is convX shares no lock with an explicit
+    follow-up on an unrelated convY, so the two overlap at the transport
+    (peak in-flight 2). A regression to a notebook-wide POST lock caps this at 1.
+    """
+    notebook_id = "nb_1875_other"
+    conversation_x = "conv_1875_x"
+    conversation_y = "conv_1875_y"
+
+    transport = _SerializingChatTransport(
+        response_delay=0.1,
+        conversation_ids_by_notebook={notebook_id: conversation_x},
+    )
+    transport.set_answer("q-null", "answer-null")
+    transport.set_answer("q-other", "answer-other")
+
+    client = _make_client(transport, auth_tokens)
+    try:
+        client.chat._cache.cache_conversation_turn(conversation_y, "q0", "answer-0", turn_number=1)
+        await asyncio.gather(
+            client.chat.ask(notebook_id, "q-null", source_ids=["src_001"]),
+            client.chat.ask(
+                notebook_id,
+                "q-other",
+                source_ids=["src_001"],
+                conversation_id=conversation_y,
+            ),
+        )
+    finally:
+        await client._collaborators.kernel.get_http_client().aclose()
+
+    assert transport.peak_chat_inflight() == 2, (
+        "a null ask resolving to convX must not serialize with a follow-up on "
+        f"a different convY; got peak_chat_inflight={transport.peak_chat_inflight()}"
+    )
+
+
+def _build_delete_ok_body() -> str:
+    """Minimal success envelope for a DELETE_CONVERSATION (``J7Gthc``) RPC."""
+    inner = json.dumps([])
+    chunk = json.dumps(["wrb.fr", RPCMethod.DELETE_CONVERSATION.value, inner, None, None])
+    return f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+
+def _request_rpcid(request: httpx.Request) -> str:
+    """Return the ``rpcids`` query param of a batchexecute request."""
+    return parse_qs(urlparse(str(request.url)).query).get("rpcids", [""])[0]
+
+
+class _DeleteRaceTransport(httpx.AsyncBaseTransport):
+    """Transport that lets a ``delete_conversation`` hold the conversation lock
+    while a concurrent null ask resolves the same id and blocks on that lock.
+
+    The DELETE RPC sleeps for ``delete_delay`` (holding the per-conversation
+    lock the whole time), so a null ask gathered *after* it resolves the current
+    id (first ``hPTbtc`` -> ``resolved_id``) and then parks on the same lock.
+    When the delete finishes it marks the id deleted; the null ask wakes, drops
+    its ``resolved_id_override``, POSTs (server starts a fresh conversation) and
+    recovers the real id via the second ``hPTbtc`` -> ``recovered_id``.
+    """
+
+    def __init__(self, *, resolved_id: str, recovered_id: str, delete_delay: float = 0.1) -> None:
+        self._resolved_id = resolved_id
+        self._recovered_id = recovered_id
+        self._delete_delay = delete_delay
+        self._hptbtc_calls = 0
+        self._events: list[str] = []
+
+    def events(self) -> list[str]:
+        return list(self._events)
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if "batchexecute" in str(request.url):
+            rpcid = _request_rpcid(request)
+            if rpcid == RPCMethod.GET_LAST_CONVERSATION_ID.value:
+                self._hptbtc_calls += 1
+                cid = self._resolved_id if self._hptbtc_calls == 1 else self._recovered_id
+                self._events.append(f"hptbtc:{cid}")
+                return httpx.Response(
+                    200,
+                    text=_build_get_conversation_id_response_body(cid),
+                    request=request,
+                )
+            # DELETE_CONVERSATION: hold the conversation lock for the delay.
+            self._events.append("delete-start")
+            await asyncio.sleep(self._delete_delay)
+            self._events.append("delete-end")
+            return httpx.Response(200, text=_build_delete_ok_body(), request=request)
+        # Null chat POST: params[4] is null; the answer's stream id is discarded
+        # and the real id comes from the post-POST hPTbtc (recovered_id).
+        self._events.append("chat-post")
+        return httpx.Response(
+            200,
+            text=_build_chat_response_body("answer-after-delete", "stream-id-discarded"),
+            request=request,
+        )
+
+
+@pytest.mark.asyncio
+async def test_null_ask_recovers_when_current_conversation_deleted_mid_flight(
+    auth_tokens,
+) -> None:
+    """A delete that lands between resolve and POST must not pin the turn to the
+    deleted id.
+
+    Regression for the #1875 review (Codex P2): the null ask resolves
+    ``current_id`` = X, then blocks on ``_get_conversation_lock(X)`` held by a
+    concurrent ``delete_conversation(notebook, X)``. When the delete completes,
+    the server starts a FRESH conversation for the null POST. Without the
+    deleted-id re-check the null ask would suppress the post-POST ``hPTbtc``
+    recovery (``resolved_id_override=X``) and cache/report the new turn under the
+    DELETED id X. Post-fix it drops the override and recovers the real id Y.
+    """
+    notebook_id = "nb_1875_delrace"
+    deleted_id = "conv_1875_deleted"
+    fresh_id = "conv_1875_fresh"
+
+    transport = _DeleteRaceTransport(
+        resolved_id=deleted_id, recovered_id=fresh_id, delete_delay=0.1
+    )
+    client = _make_client(transport, auth_tokens)
+    try:
+        # Seed a turn under the soon-to-be-deleted id so we can prove the cache
+        # entry is gone (delete clears it) and the new turn lands under Y, not X.
+        client.chat._cache.cache_conversation_turn(deleted_id, "q0", "a0", turn_number=1)
+        # Delete is gathered first so it acquires the conversation lock before the
+        # null ask, which then resolves X and parks on that same lock.
+        _, result = await asyncio.gather(
+            client.chat.delete_conversation(notebook_id, deleted_id),
+            client.chat.ask(notebook_id, "q-after-delete", source_ids=["src_001"]),
+        )
+    finally:
+        await client._collaborators.kernel.get_http_client().aclose()
+
+    # The turn is reported and cached under the FRESH id, never the deleted one.
+    assert result.conversation_id == fresh_id, (
+        "null ask must recover the fresh server conversation after its resolved "
+        f"current conversation was deleted mid-flight; got {result.conversation_id!r}"
+    )
+    assert client.chat.get_cached_turns(fresh_id), "new turn must be cached under the fresh id"
+    assert not client.chat.get_cached_turns(deleted_id), (
+        "the deleted conversation's cache (and the recovered turn) must not live "
+        "under the deleted id"
+    )
+    # Ordering proof: the delete completed before the chat POST started.
+    events = transport.events()
+    assert "delete-end" in events and "chat-post" in events
+    assert events.index("delete-end") < events.index("chat-post"), (
+        f"delete must complete before the null POST for the race to be exercised; events={events!r}"
+    )

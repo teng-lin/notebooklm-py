@@ -1,6 +1,6 @@
 [project]
 name = "notebooklm-py"
-version = "0.8.0a3"
+version = "0.8.0rc1"
 description = "Unofficial Python library for automating Google NotebookLM"
 dynamic = ["readme"]
 requires-python = ">=3.10"
@@ -81,7 +81,7 @@ dev = [
     "python-dotenv>=1.0.0,<2",
     "mypy>=1.0.0,<3",
     "pre-commit>=4.5.1,<5",
-    "ruff==0.15.20",
+    "ruff==0.15.21",
     "tomli>=2.0.0,<3; python_version < '3.11'",  # for tests/unit/test_install_docs.py on Python 3.10 (tomllib is 3.11+)
     "vcrpy>=6.0.0,<9",
     "packaging>=23.0,<27",  # for tests/unit/test_version_gate.py (PEP 440 version parsing)
@@ -167,6 +167,7 @@ timeout = 60
 markers = [
     "e2e: end-to-end tests requiring authentication (run with pytest tests/e2e -m e2e)",
     "live_chat_ask: E2E live chat ask tests monitored for CI coverage floors",
+    "live_generation: E2E live artifact-generation tests monitored for CI coverage floors (nightly-enforced)",
     "variants: parameter variant tests (skip to save quota)",
     "readonly: read-only tests against user's test notebook",
     "impersonate_smoke: minimal live smoke run under NOTEBOOKLM_TRANSPORT=curl_cffi in the nightly (read/ask/upload/download — one per transport-critical op)",

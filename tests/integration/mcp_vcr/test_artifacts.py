@@ -131,7 +131,9 @@ async def test_mcp_studio_list_over_vcr() -> None:
     Pins the merged ``items`` wire shape: the key is ``items`` (never
     ``notes``/``artifacts``), each item carries a hyphenated ``type`` discriminator,
     the pagination meta is present, and the notebook's interactive mind map surfaces
-    as a ``mind-map`` item.
+    as a ``mind-map`` item. Also pins the #1896 fold of the removed ``studio_get_prompt``:
+    summary mode (the default) enriches every ARTIFACT row with a ``generation_prompt``
+    key decoded from the recorded ``gArtLc`` response (notes never carry it).
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool("studio_list", {"notebook": STUDIO_LIST_NOTEBOOK_ID})
@@ -146,14 +148,64 @@ async def test_mcp_studio_list_over_vcr() -> None:
     assert structured["total"] == len(items) if not structured["has_more"] else True
     assert structured["offset"] == 0
     types = set()
+    prompts: list[str | None] = []
     for it in items:
         assert isinstance(it, dict)
         assert it.get("id"), "studio item is missing an id"
         assert "title" in it
         assert it["type"] in _STUDIO_TYPES, f"unexpected studio type: {it['type']!r}"
         types.add(it["type"])
+        # #1896 fold: summary mode carries ``generation_prompt`` on every ARTIFACT row
+        # (the value may be ``None`` — e.g. a note-backed mind map — but the KEY proves
+        # the enrichment ran); notes never carry it.
+        if it["type"] == "note":
+            assert "generation_prompt" not in it
+        else:
+            assert "generation_prompt" in it, (
+                f"summary-mode artifact {it['id']} is missing generation_prompt"
+            )
+            prompts.append(it["generation_prompt"])
     # The recording is a mind-map notebook, so a ``mind-map`` item is present.
     assert "mind-map" in types, f"expected a mind-map item; got types {sorted(types)}"
+    # A canary against a decode that silently yields ``None`` for every row: the
+    # recorded data-table artifact carries a real, non-empty prompt, so at least one
+    # artifact row must surface a non-empty prompt string (not just the key).
+    assert any(isinstance(p, str) and p for p in prompts), (
+        f"expected at least one non-empty generation_prompt; got {prompts}"
+    )
+
+
+#: mind_maps_interactive.yaml — the completed data-table artifact whose recorded
+#: ``gArtLc`` row carries a stored generation prompt (decoded from the response).
+STUDIO_LIST_PROMPTED_ARTIFACT_ID = "9d37b0f5-4c96-4fcf-bdbf-3a95d247275d"
+STUDIO_LIST_PROMPTED_ARTIFACT_PROMPT = "Create a comparison table of key concepts"
+
+
+@pytest.mark.asyncio
+@notebooklm_vcr.use_cassette("mind_maps_interactive.yaml")
+async def test_mcp_studio_list_item_prompt_over_vcr() -> None:
+    """``studio_list(item=<artifact>)`` surfaces the artifact's generation prompt over VCR.
+
+    The single-item path that replaced the removed ``studio_get_prompt`` (#1896):
+    end-to-end, the tool resolves ``item`` over the merged studio listing (``cFji9``
+    ×2 + ``gArtLc``, the exact sequence ``mind_maps_interactive.yaml`` records) and
+    returns the matched artifact row with its ``generation_prompt`` decoded from the
+    recorded ``gArtLc`` response — a REAL, non-null prompt (the pinned data-table id
+    carries one).
+    """
+    async with build_mcp_client() as mcp_client:
+        result = await mcp_client.call_tool(
+            "studio_list",
+            {"notebook": STUDIO_LIST_NOTEBOOK_ID, "item": STUDIO_LIST_PROMPTED_ARTIFACT_ID},
+        )
+
+    structured = result.structured_content
+    assert isinstance(structured, dict)
+    assert structured["total"] == 1
+    row = structured["items"][0]
+    assert row["id"] == STUDIO_LIST_PROMPTED_ARTIFACT_ID
+    assert row["type"] == "data-table"
+    assert row["generation_prompt"] == STUDIO_LIST_PROMPTED_ARTIFACT_PROMPT
 
 
 @pytest.mark.asyncio

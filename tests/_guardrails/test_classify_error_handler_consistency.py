@@ -38,6 +38,9 @@ _CATEGORY_TO_CLI_CODE: dict[ErrorCategory, str] = {
     ErrorCategory.RATE_LIMITED: "RATE_LIMITED",
     ErrorCategory.VALIDATION: "VALIDATION_ERROR",
     ErrorCategory.CONFIG: "CONFIG_ERROR",
+    # MissingDependencyError subclasses ConfigurationError, so the CLI handler's
+    # ``except ConfigurationError`` folds DEPENDENCY into CONFIG_ERROR.
+    ErrorCategory.DEPENDENCY: "CONFIG_ERROR",
     ErrorCategory.NETWORK: "NETWORK_ERROR",
     ErrorCategory.NOTEBOOK_LIMIT: "NOTEBOOK_LIMIT",
     ErrorCategory.ARTIFACT_TIMEOUT: "ARTIFACT_TIMEOUT",
@@ -45,6 +48,7 @@ _CATEGORY_TO_CLI_CODE: dict[ErrorCategory, str] = {
     ErrorCategory.SERVER: "NOTEBOOKLM_ERROR",
     ErrorCategory.RPC: "NOTEBOOKLM_ERROR",
     ErrorCategory.SOURCE_MUTATION: "NOTEBOOKLM_ERROR",
+    ErrorCategory.SOURCE_ADD: "NOTEBOOKLM_ERROR",
     ErrorCategory.LIBRARY: "NOTEBOOKLM_ERROR",
     ErrorCategory.UNEXPECTED: "UNEXPECTED_ERROR",
 }
@@ -59,6 +63,7 @@ _EXEMPLARS: list[tuple[ErrorCategory, BaseException]] = [
     (ErrorCategory.RATE_LIMITED, exc.RateLimitError("slow down", retry_after=5)),
     (ErrorCategory.VALIDATION, exc.ValidationError("bad input")),
     (ErrorCategory.CONFIG, exc.ConfigurationError("missing config")),
+    (ErrorCategory.DEPENDENCY, exc.MissingDependencyError("markdownify not installed")),
     (ErrorCategory.NETWORK, exc.NetworkError("connection refused")),
     (ErrorCategory.NOTEBOOK_LIMIT, exc.NotebookLimitError(499, limit=500)),
     (ErrorCategory.ARTIFACT_TIMEOUT, exc.ArtifactTimeoutError("nb-1", "task-1", 30.0)),
@@ -66,6 +71,7 @@ _EXEMPLARS: list[tuple[ErrorCategory, BaseException]] = [
     (ErrorCategory.SERVER, exc.ServerError("upstream 503")),
     (ErrorCategory.RPC, exc.RPCError("decode failed", method_id="abc123")),
     (ErrorCategory.SOURCE_MUTATION, SourceMutationError("ambiguous", "AMBIGUOUS_ID")),
+    (ErrorCategory.SOURCE_ADD, exc.SourceAddError("http://bad.example")),
     (ErrorCategory.LIBRARY, exc.NotebookLMError("some library error")),
     (ErrorCategory.UNEXPECTED, RuntimeError("boom")),
 ]

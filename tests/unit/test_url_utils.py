@@ -12,6 +12,7 @@ from notebooklm._url_utils import (
     is_notebooklm_unavailable_redirect,
     is_youtube_url,
     notebooklm_unavailable_location,
+    pdf_url_display_title,
 )
 
 
@@ -258,3 +259,67 @@ class TestNotebookLMUnavailableLocation:
         assert notebooklm_unavailable_location("https://notebooklm.google/?location=%0A%20") is None
         long = notebooklm_unavailable_location("https://notebooklm.google/?location=" + "a" * 200)
         assert long is not None and len(long) == 64
+
+
+class TestPdfUrlDisplayTitle:
+    """Tests for pdf_url_display_title() — the #1850 direct-PDF-URL title fallback."""
+
+    @pytest.mark.parametrize(
+        "url,expected",
+        [
+            # Happy path: basename stem, extension stripped.
+            ("https://example.com/papers/SomePaper.pdf", "SomePaper"),
+            # Query and fragment are ignored.
+            ("https://example.com/papers/SomePaper.pdf?v=2#page=3", "SomePaper"),
+            # Trailing slash is stripped before taking the basename.
+            ("https://example.com/papers/SomePaper.pdf/", "SomePaper"),
+            # Only the trailing .pdf is stripped; inner dots are preserved.
+            ("https://example.com/paper.v2.pdf", "paper.v2"),
+            # Case-insensitive extension match.
+            ("https://example.com/SomePaper.PDF", "SomePaper"),
+            # Percent-encoding is decoded (after the path is split into segments).
+            ("https://example.com/%E6%97%A5%E6%9C%AC.pdf", "日本"),
+            ("https://example.com/Some%20Paper.pdf", "Some Paper"),
+        ],
+    )
+    def test_derives_clean_title(self, url: str, expected: str):
+        assert pdf_url_display_title(url) == expected
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            # Root URL / no path segment → nothing to derive.
+            "https://example.com/",
+            "https://example.com",
+            # Basename has no .pdf extension — the ".pdf" lives in the query, so
+            # deriving "download" would be worse than keeping the URL.
+            "https://example.com/download?file=x.pdf",
+            # Directory-style URL whose leaf is not a .pdf file.
+            "https://example.com/papers/",
+            # Non-http(s) schemes are out of scope (also neutralizes data: noise).
+            "data:application/pdf;base64,JVBERi0xLjQK",
+            "ftp://example.com/paper.pdf",
+            # Degenerate leaf: the whole basename is the extension.
+            "https://example.com/.pdf",
+            # A segment that is only control chars once the .pdf is stripped.
+            "https://example.com/%00%01.pdf",
+            # Percent-encoded path separators must not slip into the title.
+            "https://example.com/%2Fa%2Fb.pdf",
+            "https://example.com/..%2F.pdf",
+        ],
+    )
+    def test_keeps_url_when_no_clean_title(self, url: str):
+        assert pdf_url_display_title(url) is None
+
+    def test_strips_control_chars_from_stem(self):
+        # unquote can reintroduce control chars; they must never reach a title.
+        assert pdf_url_display_title("https://example.com/a%0Ab.pdf") == "ab"
+
+    def test_bounds_length(self):
+        long_stem = "a" * 500
+        result = pdf_url_display_title(f"https://example.com/{long_stem}.pdf")
+        assert result is not None and len(result) == 200
+
+    @pytest.mark.parametrize("bad", [None, 123, ["x"]])
+    def test_non_string_input_returns_none(self, bad):
+        assert pdf_url_display_title(bad) is None

@@ -605,7 +605,10 @@ async def execute_source_add_drive(
     """
     if plan.mime_type not in _DRIVE_MIME_MAP:
         raise ValidationError(
-            f"Invalid mime_type {plan.mime_type!r}; expected one of {sorted(_DRIVE_MIME_MAP)}"
+            f"Invalid mime_type {plan.mime_type!r}; expected one of {sorted(_DRIVE_MIME_MAP)}. "
+            "NotebookLM's Drive import only ingests Google-native Docs/Slides/Sheets + PDF; "
+            "an upload-only Drive file (e.g. epub/docx/txt/md/rtf/odt/csv) must be "
+            "downloaded and added as a `file` source instead."
         )
     mime = _DRIVE_MIME_MAP[plan.mime_type]
 
@@ -625,7 +628,65 @@ async def execute_source_add_drive(
     )
 
 
+# ---------------------------------------------------------------------------
+# source add-drive-file (auto-route: download + upload upload-only Drive types)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SourceAddDriveFileResult:
+    """Outcome of ``source add-drive-file`` (#1884).
+
+    Typed-fields-only (§11): the ``--json`` envelope is built by the surface
+    adapter (the CLI renderer / MCP tool) from these fields. ``document_id`` is
+    the raw id/URL the caller passed, echoed for provenance.
+    """
+
+    source: Source
+    notebook_id: str
+    document_id: str
+
+
+@dataclass(frozen=True)
+class SourceAddDriveFilePlan:
+    """Prepared inputs for ``execute_source_add_drive_file``."""
+
+    notebook_id: str
+    document_id: str
+    title: str | None = None
+    wait: bool = False
+    wait_timeout: float = 120.0
+
+
+async def execute_source_add_drive_file(
+    client: NotebookLMClient,
+    plan: SourceAddDriveFilePlan,
+) -> SourceAddDriveFileResult:
+    """Auto-route an upload-only Drive file: download it server-side, then upload.
+
+    Thin executor over the public client (boundary-legal): the download +
+    classification + resumable upload live in ``SourcesAPI.add_drive_file``. A
+    native Google Doc/Slides/Sheet (not directly downloadable), an unsupported
+    type, or expired Drive auth surface as :class:`ValidationError` from the
+    client, which the surface adapters render.
+    """
+    src = await client.sources.add_drive_file(
+        plan.notebook_id,
+        plan.document_id,
+        title=plan.title,
+        wait=plan.wait,
+        wait_timeout=plan.wait_timeout,
+    )
+    return SourceAddDriveFileResult(
+        source=src,
+        notebook_id=plan.notebook_id,
+        document_id=plan.document_id,
+    )
+
+
 __all__ = [
+    "SourceAddDriveFilePlan",
+    "SourceAddDriveFileResult",
     "SourceAddDrivePlan",
     "SourceAddDriveResult",
     "SourceDeleteByTitlePlan",
@@ -641,6 +702,7 @@ __all__ = [
     "build_id_ambiguity_error",
     "drive_mime_type_code",
     "execute_source_add_drive",
+    "execute_source_add_drive_file",
     "execute_source_delete",
     "execute_source_delete_by_title",
     "execute_source_refresh",

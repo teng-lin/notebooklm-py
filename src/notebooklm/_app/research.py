@@ -34,7 +34,7 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, NoReturn, Protocol
 
@@ -68,6 +68,11 @@ class ResearchStatusResult:
     report: str
     public_dict: dict[str, Any]
     task_id: str = ""
+    # Raw backend status code carried through from ``ResearchTask.status_code``
+    # (issue #1922, F10). ``None`` when the poll had no code (empty / not-found).
+    # The MCP ``research_status`` tool surfaces it so an agent can distinguish
+    # failure sub-codes the coarse ``status`` flattens into ``failed``.
+    status_code: int | None = None
 
 
 def _classify_status_kind(status_val: str) -> ResearchStatusKind:
@@ -108,13 +113,14 @@ async def poll_and_classify(
         report=status.report,
         public_dict=status.to_public_dict(),
         task_id=status.task_id,
+        status_code=status.status_code,
     )
 
 
-async def poll_sources_for_import(
+async def poll_importable_research(
     client: Any, notebook_id: str, run_id: str
-) -> list[dict[str, Any]]:
-    """Poll a research run and return its importable sources, or raise.
+) -> tuple[list[dict[str, Any]], str]:
+    """Poll a research run and return its ``(importable sources, report)``, or raise.
 
     The single shared importable-state guard for the "import a completed run's
     found sources" flow — driven by BOTH the MCP ``research_import`` tool and the
@@ -137,8 +143,10 @@ async def poll_sources_for_import(
     * ``completed`` with no sources — refuse the silent empty import.
 
     Returns the completed run's importable sources (the legacy ``list[dict]``
-    shape) on success. The caller then drives ``client.research.import_sources``
-    and shapes its own response.
+    shape) AND the run's report text on success. The report is returned so a
+    caller doing cited-only selection (:func:`~notebooklm.research.select_cited_sources`)
+    can match citations against it without a second poll; :func:`poll_sources_for_import`
+    delegates here and drops the report for callers that import everything.
 
     The ``run`` noun is surface-neutral (the MCP tool documents it as the
     ``task_id``); the message names no adapter-specific route or tool so the one
@@ -165,7 +173,83 @@ async def poll_sources_for_import(
         )
     if not status.sources:
         raise ValidationError(f"Research run {run_id!r} completed with no sources to import.")
-    return status.sources
+    # ``report`` is typed ``str`` upstream (``ResearchTask.report`` defaults to
+    # ""), but coerce defensively so a drifted response that leaves it ``None``
+    # can't violate the return type or break ``select_cited_sources``.
+    return status.sources, status.report or ""
+
+
+async def poll_sources_for_import(
+    client: Any, notebook_id: str, run_id: str
+) -> list[dict[str, Any]]:
+    """Poll a research run and return its importable sources, or raise.
+
+    Thin wrapper over :func:`poll_importable_research` that drops the report for
+    callers (the REST import route) that import every source unconditionally. The
+    importable-state guard ladder lives in :func:`poll_importable_research` so the
+    two never drift.
+    """
+    sources, _report = await poll_importable_research(client, notebook_id, run_id)
+    return sources
+
+
+# ===========================================================================
+# research import
+# ===========================================================================
+
+
+@dataclass(frozen=True)
+class ResearchImportOutcome:
+    """Typed outcome of an idempotent research import (#1961).
+
+    ``newly_imported`` are the entries this call actually added;
+    ``already_present`` are the requested sources skipped because their URL
+    already existed in the notebook (each an ``{id, title, url}`` of the
+    EXISTING source). On a repeat import ``newly_imported`` is empty and
+    ``already_present`` lists the previously-imported sources.
+    """
+
+    newly_imported: list[dict[str, str]]
+    already_present: list[dict[str, str]]
+
+    @property
+    def newly_imported_count(self) -> int:
+        return len(self.newly_imported)
+
+    @property
+    def already_present_count(self) -> int:
+        return len(self.already_present)
+
+
+async def import_research_sources(
+    client: Any,
+    notebook_id: str,
+    task_id: str,
+    sources: Sequence[Any],
+    *,
+    allow_duplicate: bool = False,
+) -> ResearchImportOutcome:
+    """Import a completed run's sources idempotently, reporting skips.
+
+    Drives the timeout-tolerant ``client.research.import_sources_with_verification``
+    (which pre-filters requested sources whose URL already exists in the
+    notebook unless ``allow_duplicate`` is true) and lifts its ``already_present``
+    side channel into a typed result, so every adapter (the MCP tool today, a
+    REST route tomorrow) surfaces the same idempotency contract without
+    re-implementing URL dedup. The first three arguments are passed positionally
+    to match the underlying method's call shape.
+    """
+    imported = await client.research.import_sources_with_verification(
+        notebook_id,
+        task_id,
+        sources,
+        allow_duplicate=allow_duplicate,
+    )
+    already_present = list(getattr(imported, "already_present", []) or [])
+    return ResearchImportOutcome(
+        newly_imported=list(imported),
+        already_present=already_present,
+    )
 
 
 # ===========================================================================
@@ -404,6 +488,7 @@ async def execute_research_wait(
 
 __all__ = [
     "ResearchImportLike",
+    "ResearchImportOutcome",
     "ResearchStatusKind",
     "ResearchStatusResult",
     "ResearchWaitOutcome",
@@ -411,7 +496,9 @@ __all__ = [
     "ResearchWaitResult",
     "cancel_research",
     "execute_research_wait",
+    "import_research_sources",
     "poll_and_classify",
+    "poll_importable_research",
     "poll_sources_for_import",
     "validate_research_wait_flags",
 ]

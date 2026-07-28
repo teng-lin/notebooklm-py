@@ -70,11 +70,13 @@ from .context import (
     RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
     RPC_CONTEXT_LOG_LABEL,
     RPC_CONTEXT_REFRESH_BUDGET,
+    RPC_CONTEXT_RETRY_DEADLINE,
 )
 from .core import NextCall, RpcRequest, RpcResponse, materialize_rpc_request
 
 if TYPE_CHECKING:
     from .._client_metrics import ClientMetrics
+    from .._deadline import RuntimeDeadline
 
 
 class AuthRefreshMiddleware:
@@ -246,6 +248,18 @@ class AuthRefreshMiddleware:
             # closure must keep it after that point.
             original_auth_error = exc
 
+            # The logical call's aggregate deadline, seeded by the RPC executor
+            # (issue #1873). Passing it clamps the post-refresh sleep to the
+            # time remaining since T0 so a ``refresh_retry_delay`` larger than
+            # the remaining budget cannot re-POST past the logical call's
+            # deadline — mirroring the decode-time refresh path in
+            # ``RpcExecutor.try_refresh_and_retry``. Absent (chat path) → the
+            # historical unclamped delay is slept.
+            retry_deadline = cast(
+                "RuntimeDeadline | None",
+                request.context.get(RPC_CONTEXT_RETRY_DEADLINE),
+            )
+
             # Shared refresh body (log → refresh → on-failure raise → sleep →
             # log → metric). Refresh failure wraps the original auth
             # ``HTTPStatusError`` in ``TransportAuthExpired`` — the chain's
@@ -261,6 +275,7 @@ class AuthRefreshMiddleware:
                 log_label=log_label,
                 logger=self._logger,
                 metrics=self._metrics,
+                retry_deadline=retry_deadline,
             )
 
             # Mark AFTER a successful refresh (a refresh failure raised above

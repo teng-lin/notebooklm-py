@@ -31,7 +31,7 @@ from ..exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodErro
 from ..rpc._safe_index import safe_index
 from ..rpc.decoder import strip_anti_xssi
 from ..rpc.encoder import nest_source_ids
-from ..rpc.types import get_query_url
+from ..rpc.types import RPCMethod, get_query_url
 from ..types import ChatReference
 
 # Deliberate: use the ``notebooklm._chat`` logger namespace (not this module's)
@@ -744,3 +744,39 @@ def extract_uuid_from_nested(data: Any, max_depth: int = 10) -> str | None:
                 return result
 
     return None
+
+
+def _extract_next_turn_content(next_turn: Any) -> str | None:
+    """Extract the response content from a streaming-chat next_turn frame.
+
+    The ``khqZz`` (``GET_CONVERSATION_TURNS``) response packs each AI answer
+    as ``turn[4][0][0]`` — three nested wrappers around the answer text. The
+    descent goes through :func:`safe_index` under strict decoding (the only
+    mode since the ``NOTEBOOKLM_STRICT_DECODE=0`` opt-out was retired in
+    v0.7.0; rationale in ADR-0011): a genuine descent failure raises
+    :class:`~notebooklm.exceptions.UnknownRPCMethodError` so callers fail
+    fast on Google-side shape drift.
+
+    ``next_turn`` is a validated answer row (a list with ``len > 4`` and the
+    answer role code — see ``ConversationTurnRow.is_answer``). Returns the
+    answer-text string, or ``None`` when the leaf descends successfully to a
+    non-string value (the caller's empty-answer fallback).
+    """
+    content = safe_index(
+        next_turn,
+        4,
+        0,
+        0,
+        method_id=RPCMethod.GET_CONVERSATION_TURNS.value,
+        source="_chat._extract_next_turn_content",
+    )
+    if not isinstance(content, str):
+        # A non-string leaf at a structurally-valid path is normalised to
+        # ``None`` so the caller's empty-answer fallback fires uniformly. This
+        # is distinct from shape drift, which safe_index raises on.
+        logger.debug(
+            "next_turn content is not a string (type=%s); treating as drift",
+            type(content).__name__,
+        )
+        return None
+    return content

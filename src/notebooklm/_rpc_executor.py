@@ -259,6 +259,7 @@ class RpcExecutor:
                 disable_internal_retries=effective_disable_internal_retries,
                 rpc_method=method.name,
                 refresh_budget=_refresh_budget,
+                retry_deadline=_retry_deadline,
             )
         except TransportAuthExpired as exc:
             # Preserve the historical raw transport exception on refresh failure.

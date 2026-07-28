@@ -111,13 +111,16 @@ class TestSuggestPrompts:
     ) -> None:
         result = await api.suggest_prompts("nb_xyz", source_ids=["s1"], mode=4)
         assert result == [
+            # The backend frames each prompt as a markdown list item ("\n- …");
+            # the row adapter strips that leading marker (#1909), so the decoded
+            # ``prompt`` is the clean ready-to-send string.
             PromptSuggestion(
                 title="Professional Briefing",
-                prompt="\n- Summarize the material for business professionals.",
+                prompt="Summarize the material for business professionals.",
             ),
             PromptSuggestion(
                 title="Process Timeline",
-                prompt="\n- Present the history of the product as a timeline.",
+                prompt="Present the history of the product as a timeline.",
             ),
         ]
 
@@ -164,7 +167,8 @@ class TestSuggestPrompts:
         """A wrapped single-row envelope (``[[[t, p]]]``) decodes one suggestion."""
         mock_rpc.rpc_call.return_value = [[["Solo", "\n- One prompt."]]]
         result = await api.suggest_prompts("nb_xyz", source_ids=["s1"])
-        assert result == [PromptSuggestion(title="Solo", prompt="\n- One prompt.")]
+        # Leading "\n- " markdown-list marker stripped by the row adapter (#1909).
+        assert result == [PromptSuggestion(title="Solo", prompt="One prompt.")]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("payload", [None, [], [[]], "unexpected", [None]])

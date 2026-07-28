@@ -232,6 +232,27 @@ async def test_drive_pdf_type_code_14_fulltext_decodes_to_pdf() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pdf_url_title_fallback_applies_to_fulltext() -> None:
+    """``source fulltext`` corrects a degraded direct-PDF-URL title (#1850).
+
+    The fallback lives in a shared helper used by both ``Source.from_row`` and
+    this ``GET_SOURCE`` read, so ``source fulltext`` shows the basename too —
+    not the raw URL (codex review on #1858).
+    """
+    url = "https://example.com/papers/SomePaper.pdf"
+    meta = [None, None, None, None, 3, None, None, [url]]
+    renderer = SourceContentRenderer(
+        RecordingRpc([["src_pdf", url, meta], None, None, [[["Body."]]]])
+    )
+
+    fulltext = await renderer.get_fulltext("nb_1", "src_pdf")
+
+    assert fulltext.title == "SomePaper"
+    assert fulltext.url == url
+    assert fulltext._type_code == 3
+
+
+@pytest.mark.asyncio
 async def test_native_sheet_type_code_14_fulltext_stays_spreadsheet() -> None:
     """A native Sheet read via GET_SOURCE stays GOOGLE_SPREADSHEET (no regression, #1832)."""
     from notebooklm.types import SourceType

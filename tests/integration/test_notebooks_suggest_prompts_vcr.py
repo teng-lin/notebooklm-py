@@ -95,9 +95,11 @@ class TestSuggestPromptsVCR:
         assert len(suggestions) == 3
         assert all(isinstance(s, PromptSuggestion) for s in suggestions)
         assert all(s.title and s.prompt for s in suggestions)
-        # Each prompt is a ready-to-send multi-line instruction (leading newline
-        # + bullet, matching the live wire shape).
-        assert suggestions[0].prompt.startswith("\n- ")
+        # The live wire frames each prompt as a markdown list item ("\n- …");
+        # the row adapter strips that leading marker (#1909) so the decoded prompt
+        # is a clean ready-to-send instruction, not a bullet line.
+        assert not suggestions[0].prompt.startswith(("\n", "- ", "* "))
+        assert suggestions[0].prompt == suggestions[0].prompt.strip()
 
     def test_cassette_carries_expected_wire_shape(self) -> None:
         """The recorded otmP3b body pins the six-slot request shape."""

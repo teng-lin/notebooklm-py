@@ -65,6 +65,7 @@ from .._middleware.context import (
     RPC_CONTEXT_MAX_RESPONSE_BYTES,
     RPC_CONTEXT_READ_TIMEOUT,
     RPC_CONTEXT_REFRESH_BUDGET,
+    RPC_CONTEXT_RETRY_DEADLINE,
     RPC_CONTEXT_RPC_METHOD,
     RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS,
 )
@@ -80,6 +81,7 @@ from .._transport_errors import raise_mapped_post_error
 if TYPE_CHECKING:
     from .._auth_refresh_retry import RefreshBudget
     from .._client_metrics import ClientMetrics
+    from .._deadline import RuntimeDeadline
     from .._kernel import Kernel
 
 
@@ -251,6 +253,7 @@ class RuntimeTransport:
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
         refresh_budget: RefreshBudget | None = None,
+        retry_deadline: RuntimeDeadline | None = None,
         read_timeout: float | None = None,
         max_response_bytes: int | None = None,
         disable_read_timeout_retries: bool = False,
@@ -275,6 +278,16 @@ class RuntimeTransport:
         (issue #1205). Callers that drive the chain without a budget (the
         chat path) pass ``None``; the middleware then falls back to its
         per-chain ``RPC_CONTEXT_AUTH_REFRESHED`` boolean.
+
+        ``retry_deadline`` is an optional
+        :class:`notebooklm._deadline.RuntimeDeadline` seeded by the RPC
+        executor so the chain's :class:`RetryMiddleware` INHERITS the logical
+        call's aggregate retry deadline (anchored at T0) instead of minting a
+        fresh one at chain re-entry. This keeps the 429/5xx retry budget from
+        restarting across a decode-time auth-refresh retry (issue #1873).
+        Callers that drive the chain without an aggregate deadline (the chat
+        path) pass ``None``; ``RetryMiddleware`` then falls back to
+        ``_start_retry_deadline()``.
 
         Raises:
             RuntimeError: if the chain provider returns ``None``. The
@@ -311,6 +324,12 @@ class RuntimeTransport:
         # ``RPC_CONTEXT_AUTH_REFRESHED`` boolean.
         if refresh_budget is not None:
             context[RPC_CONTEXT_REFRESH_BUDGET] = refresh_budget
+        # Only seed the aggregate retry deadline when one is supplied. Callers
+        # that drive the chain without an aggregate deadline (the chat path)
+        # leave the key ABSENT; ``RetryMiddleware`` then mints its own via
+        # ``_start_retry_deadline()`` (issue #1873).
+        if retry_deadline is not None:
+            context[RPC_CONTEXT_RETRY_DEADLINE] = retry_deadline
         snapshot = await self._snapshot_provider()
 
         request = materialize_rpc_request(

@@ -2,14 +2,16 @@
 
 Full-stack coverage (MCP tool -> ``artifacts.py`` Studio adapter -> real
 ``NotebookLMClient`` -> VCR-replayed RPC) for every Studio mutating/read op that
-was unit-only before #1733: ``studio_retry``, ``studio_get_prompt``,
-``studio_rename``, and ``studio_delete`` (both cross-type routes). Replay only —
-``NOTEBOOKLM_VCR_RECORD`` is deliberately NOT set here.
+was unit-only before #1733: ``studio_retry``, ``studio_rename``, and
+``studio_delete`` (both cross-type routes). Replay only — ``NOTEBOOKLM_VCR_RECORD``
+is deliberately NOT set here. (The ``generation_prompt`` fold that replaced
+``studio_get_prompt`` in #1896 is pinned over VCR by ``test_mcp_studio_list_over_vcr``
+in ``test_artifacts.py``.)
 
 Two cassette provenances:
 
-* ``studio_retry`` / ``studio_get_prompt`` REUSE cassettes the CLI ``artifact``
-  VCR suite already recorded (``artifacts_retry_failed.yaml`` / ``artifacts_list.yaml``).
+* ``studio_retry`` REUSES a cassette the CLI ``artifact`` VCR suite already
+  recorded (``artifacts_retry_failed.yaml``).
 * ``studio_rename`` / ``studio_delete`` needed a bespoke recording — their
   merged-list / kind-probe preflight issues ``GET_NOTES_AND_MIND_MAPS`` (``cFji9``)
   **twice or thrice** + ``LIST_ARTIFACTS`` (``gArtLc``) before the mutation RPC, a
@@ -38,11 +40,6 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 # id; the notebook id is decorative (lives in the URL, which the matcher ignores).
 RETRY_NOTEBOOK_ID = "f66923f0-1df4-4ffe-9822-3ed63c558b1c"
 RETRY_ARTIFACT_ID = "11111111-2222-3333-4444-555555555555"
-
-# artifacts_list.yaml — a completed REPORT artifact whose ``gArtLc`` row carries a
-# stored generation prompt (decoded from the recorded response).
-PROMPT_NOTEBOOK_ID = "c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e"
-PROMPT_ARTIFACT_ID = "fdd20d4a-f422-42b3-896c-60997035f4ca"
 
 # mcp_studio_*.yaml — recorded (scratch-notebook) ids. The notebook holds ONE note
 # and ONE report; studio_delete/rename resolve these ids over the merged list, so
@@ -74,32 +71,6 @@ async def test_mcp_studio_retry_over_vcr() -> None:
     assert structured["artifact_id"] == RETRY_ARTIFACT_ID
     assert structured["task_id"], "retry must return a resume task_id"
     assert isinstance(structured["status"], str)
-
-
-@pytest.mark.asyncio
-@notebooklm_vcr.use_cassette("artifacts_list.yaml")
-async def test_mcp_studio_get_prompt_over_vcr() -> None:
-    """``studio_get_prompt`` reads an artifact's generation prompt over VCR.
-
-    End-to-end: tool -> ``resolve_artifact`` (full UUID, no list) ->
-    ``get_artifact_prompt`` -> studio listing (``gArtLc`` + the mind-map facade
-    ``cFji9``) -> the row's stored prompt. Pins the ``{"notebook_id",
-    "artifact_id", "prompt"}`` wire shape with a real, non-null prompt (the pinned
-    id is a completed report whose row carries one).
-    """
-    async with build_mcp_client() as mcp_client:
-        result = await mcp_client.call_tool(
-            "studio_get_prompt",
-            {"notebook": PROMPT_NOTEBOOK_ID, "artifact": PROMPT_ARTIFACT_ID},
-        )
-
-    structured = result.structured_content
-    assert isinstance(structured, dict)
-    assert structured["notebook_id"] == PROMPT_NOTEBOOK_ID
-    assert structured["artifact_id"] == PROMPT_ARTIFACT_ID
-    # This artifact records a prompt — a real string, not the valid-but-empty None.
-    assert isinstance(structured["prompt"], str)
-    assert structured["prompt"]
 
 
 @pytest.mark.asyncio

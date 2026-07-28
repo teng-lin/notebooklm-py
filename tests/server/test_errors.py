@@ -49,6 +49,7 @@ def _client_raising(error: BaseException) -> TestClient:
         (exc.RateLimitError("slow down"), 429, "rate_limited"),
         (exc.AuthError("expired"), 401, "auth"),
         (exc.ValidationError("bad"), 400, "validation"),
+        (exc.MissingDependencyError("markdownify missing"), 500, "dependency"),
         (exc.RPCError("decode failed"), 502, "rpc"),
         (RuntimeError("boom"), 500, "unexpected"),
     ],

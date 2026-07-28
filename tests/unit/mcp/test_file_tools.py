@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import mimetypes
 import os
 import textwrap
 from collections.abc import AsyncIterator
@@ -71,7 +72,7 @@ class FakeSource:
 
 @dataclass
 class FakeReadyPdf:
-    """A READY pdf ``Source`` for the ``source_upload_bytes`` happy path — carries the
+    """A READY pdf ``Source`` for the ``source_add(bytes_base64=…)`` happy path — carries the
     ``kind`` / ``status`` / ``is_error`` properties ``_source_view`` reads (the plain
     ``FakeSource`` above lacks them, so it can't flow through ``_add_result_payload``)."""
 
@@ -147,9 +148,13 @@ async def test_source_add_file_with_config_returns_upload_url(mock_client, confi
     assert payload["title"] == "My Doc"
     assert payload["mime"] == "application/pdf"
     # Human/browser path is first-class (a named object, not prose) so an agent that
-    # can't upload the bytes itself reliably surfaces it to the user (#1801).
+    # can't upload the bytes itself reliably surfaces it to the user (#1801). It is now the
+    # SHORT tap-friendly /u/<shortid> link (a long opaque token gets mangled in mobile chat),
+    # NOT the deprecated top-level /files/ul url — and it resolves to the same signed token.
     human = sc["human_upload"]
-    assert human["url"] == sc["url"]
+    assert human["url"].startswith(f"{BASE}/u/")
+    assert human["url"] != sc["url"]
+    assert config.short_links.get(human["url"].rsplit("/", 1)[1]) == token
     assert "browser" in human["instructions"]
     # The mobile case is what makes the human path first-class — lock it in (#1801).
     assert "mobile" in human["instructions"]
@@ -230,9 +235,10 @@ async def test_source_add_file_stdio_keeps_path_behavior(mock_client) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# source_upload_bytes (in-channel small-file byte upload — #1803)
+# source_add(source_type="file", bytes_base64=…) — in-channel small-file byte
+# upload (#1803), folded into source_add by #1890 (was source_upload_bytes).
 # --------------------------------------------------------------------------- #
-async def test_source_upload_bytes_adds_and_echoes_source(mock_client) -> None:
+async def test_source_add_bytes_adds_and_echoes_source(mock_client) -> None:
     # The decoded bytes are spooled to a private 0600 temp file and handed to the
     # SAME add_file path source_add uses; the added source is echoed with labels.
     seen: dict[str, Any] = {}
@@ -251,9 +257,10 @@ async def test_source_upload_bytes_adds_and_echoes_source(mock_client) -> None:
     result = await _call(
         mock_client,
         None,  # transport-agnostic: needs no file-transfer config
-        "source_upload_bytes",
+        "source_add",
         {
             "notebook": NB_ID,
+            "source_type": "file",
             "bytes_base64": base64.b64encode(b"%PDF-1.4 hello").decode(),
             "filename": "report.pdf",
             "mime_type": "application/pdf",
@@ -282,7 +289,7 @@ async def test_source_upload_bytes_adds_and_echoes_source(mock_client) -> None:
     assert not os.path.exists(seen["path"])
 
 
-async def test_source_upload_bytes_default_filename_and_no_mime(mock_client) -> None:
+async def test_source_add_bytes_default_filename_and_no_mime(mock_client) -> None:
     seen: dict[str, Any] = {}
 
     async def _capture(nb_id, path, mime, *, title=None):
@@ -294,15 +301,109 @@ async def test_source_upload_bytes_default_filename_and_no_mime(mock_client) -> 
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
-        {"notebook": NB_ID, "bytes_base64": base64.b64encode(b"data").decode()},
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "source_type": "file",
+            "bytes_base64": base64.b64encode(b"data").decode(),
+        },
     )
     # No filename → the shared safe-name default; no mime → None passed through.
     assert os.path.basename(seen["path"]) == "upload.bin"
     assert seen["mime"] is None
 
 
-async def test_source_upload_bytes_sanitizes_traversal_filename(mock_client) -> None:
+# _seed_upload_filename (#1955): a bytes upload with no `filename` must still land a
+# real extension (NotebookLM 400s an extensionless upload) by seeding it from the
+# title + mime, and must NEVER regress the extensioned `upload.bin` fallback nor
+# bypass the shared safe_upload_name security pass.
+#
+# ``application/pdf`` is a single, stable mime→ext mapping, so ``.pdf`` is asserted
+# literally. ``text/plain`` maps to many extensions whose order (hence
+# ``guess_extension``'s pick) depends on the platform's mime.types, so those rows
+# compute the expected extension from ``mimetypes`` rather than hardcoding it —
+# what the fix guarantees is "an extension is seeded", not which one.
+_TXT_EXT = mimetypes.guess_extension("text/plain")
+
+
+@pytest.mark.parametrize(
+    ("filename", "title", "mime_type", "expected"),
+    [
+        # Explicit filename always wins verbatim — title/mime don't touch it.
+        ("report.pdf", "My Title", "text/plain", "report.pdf"),
+        # title + mime → stem from title, extension from mime.
+        (None, "b3-stress-bytes", "text/plain", f"b3-stress-bytes{_TXT_EXT}"),
+        # A parameterized Content-Type (charset param) is normalized to the bare type
+        # before the extension lookup — otherwise it'd miss and reproduce #1955.
+        (None, "b3-stress-bytes", "text/plain; charset=utf-8", f"b3-stress-bytes{_TXT_EXT}"),
+        # mime only (no title) → the default "upload" stem + mime extension.
+        (None, None, "application/pdf", "upload.pdf"),
+        (None, "", "application/pdf", "upload.pdf"),
+        # Title already spells the mime extension → don't double it.
+        (None, "report.pdf", "application/pdf", "report.pdf"),
+        # No mime, but the title carries its own extension → seed from the title.
+        (None, "notes.txt", None, "notes.txt"),
+        # A generic octet-stream mime carries no real extension → don't let its ".bin"
+        # guess clobber the title's own extension (notes.txt, NOT notes.txt.bin).
+        (None, "notes.txt", "application/octet-stream", "notes.txt"),
+        (None, "notes.txt", "binary/octet-stream", "notes.txt"),
+        # Generic octet-stream with no title extension → no signal → None (upload.bin).
+        (None, "data", "application/octet-stream", None),
+        (None, None, "application/octet-stream", None),
+        # No usable extension signal at all → None (→ safe_upload_name's upload.bin).
+        (None, "notes", None, None),
+        (None, None, None, None),
+        (None, "   ", None, None),
+        # Unknown mime yields no extension → fall back like the no-signal case.
+        (None, "blob", "application/x-not-a-real-mime", None),
+    ],
+)
+def test_seed_upload_filename(filename, title, mime_type, expected) -> None:
+    assert fileupload_mod._seed_upload_filename(filename, title, mime_type) == expected
+
+
+def test_text_plain_resolves_to_an_extension() -> None:
+    # Guards the assumption the #1955 fix rests on: a text/plain bytes upload can be
+    # given a real extension. If a platform's mimetypes can't map text/plain, the seed
+    # would fall back to upload.bin — surface that here rather than in a confusing
+    # basename mismatch elsewhere.
+    assert _TXT_EXT and _TXT_EXT.startswith(".")
+
+
+async def test_source_add_bytes_title_and_mime_seed_extension(mock_client) -> None:
+    # The #1955 trap: bytes + title (no filename) with a known mime must reach disk
+    # under a real extension (…​.txt), not the extensionless upload.bin that 400s.
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        seen["path"] = path
+        seen["mime"] = mime
+        seen["title"] = title
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    result = await _call(
+        mock_client,
+        None,
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "source_type": "file",
+            "bytes_base64": base64.b64encode(b"Hello. Grounded RAG rocks.\n").decode(),
+            "title": "b3-stress-bytes",
+            "mime_type": "text/plain",
+        },
+    )
+    assert result.structured_content["status"] == "added"
+    assert os.path.basename(seen["path"]) == f"b3-stress-bytes{_TXT_EXT}"
+    # The title still rides through as the source label, independent of the basename.
+    assert seen["title"] == "b3-stress-bytes"
+    assert seen["mime"] == "text/plain"
+
+
+async def test_source_add_bytes_mime_only_seeds_extension(mock_client) -> None:
+    # No filename, no title — just a mime. The default "upload" stem gets the
+    # mime-inferred extension so the spooled file isn't extensionless.
     seen: dict[str, Any] = {}
 
     async def _capture(nb_id, path, mime, *, title=None):
@@ -313,9 +414,85 @@ async def test_source_upload_bytes_sanitizes_traversal_filename(mock_client) -> 
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
+        "source_add",
         {
             "notebook": NB_ID,
+            "source_type": "file",
+            "bytes_base64": base64.b64encode(b"%PDF-1.4 hi").decode(),
+            "mime_type": "application/pdf",
+        },
+    )
+    assert os.path.basename(seen["path"]) == "upload.pdf"
+
+
+async def test_source_add_bytes_unknown_mime_keeps_upload_bin(mock_client) -> None:
+    # An unknown mime yields no extension → the extensioned upload.bin fallback holds
+    # (never a bare extensionless name that would 400).
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        seen["path"] = path
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    await _call(
+        mock_client,
+        None,
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "source_type": "file",
+            "bytes_base64": base64.b64encode(b"data").decode(),
+            "title": "just-a-label",
+            "mime_type": "application/x-not-a-real-mime",
+        },
+    )
+    assert os.path.basename(seen["path"]) == "upload.bin"
+
+
+async def test_source_add_bytes_seeded_name_still_sanitized(mock_client) -> None:
+    # The seeded candidate is NOT trusted — it still flows through safe_upload_name,
+    # so a traversal-shaped title can't escape the temp dir (#1955 must not weaken the
+    # security pass shared with the /files/ul route).
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        seen["path"] = path
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    await _call(
+        mock_client,
+        None,
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "source_type": "file",
+            "bytes_base64": base64.b64encode(b"x").decode(),
+            "title": "../../etc/passwd",
+            "mime_type": "text/plain",
+        },
+    )
+    # basename strips the traversal; the mime extension is appended to the safe leaf.
+    assert os.path.basename(seen["path"]) == f"passwd{_TXT_EXT}"
+    assert "/etc/passwd" not in seen["path"]
+
+
+async def test_source_add_bytes_sanitizes_traversal_filename(mock_client) -> None:
+    seen: dict[str, Any] = {}
+
+    async def _capture(nb_id, path, mime, *, title=None):
+        seen["path"] = path
+        return FakeReadyPdf(id="s")
+
+    mock_client.sources.add_file = AsyncMock(side_effect=_capture)
+    await _call(
+        mock_client,
+        None,
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "source_type": "file",
             "bytes_base64": base64.b64encode(b"x").decode(),
             "filename": "../../etc/passwd",
         },
@@ -325,7 +502,7 @@ async def test_source_upload_bytes_sanitizes_traversal_filename(mock_client) -> 
     assert "/etc/passwd" not in seen["path"]
 
 
-async def test_source_upload_bytes_tolerates_wrapped_base64(mock_client) -> None:
+async def test_source_add_bytes_tolerates_wrapped_base64(mock_client) -> None:
     # 76-col-wrapped (MIME-style) base64 with newlines still decodes to the exact bytes.
     seen: dict[str, Any] = {}
 
@@ -340,13 +517,13 @@ async def test_source_upload_bytes_tolerates_wrapped_base64(mock_client) -> None
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
-        {"notebook": NB_ID, "bytes_base64": wrapped, "filename": "blob.bin"},
+        "source_add",
+        {"notebook": NB_ID, "source_type": "file", "bytes_base64": wrapped, "filename": "blob.bin"},
     )
     assert seen["bytes"] == raw
 
 
-async def test_source_upload_bytes_accepts_wrapped_base64_near_cap(mock_client) -> None:
+async def test_source_add_bytes_accepts_wrapped_base64_near_cap(mock_client) -> None:
     # Regression: the cap is applied to the WHITESPACE-STRIPPED base64, not the raw
     # string. A valid wrapped payload whose raw length (incl. newlines) exceeds the
     # cap but whose cleaned length is within it must be ACCEPTED — an earlier draft
@@ -367,20 +544,23 @@ async def test_source_upload_bytes_accepts_wrapped_base64_near_cap(mock_client) 
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
-        {"notebook": NB_ID, "bytes_base64": wrapped, "filename": "b.bin"},
+        "source_add",
+        {"notebook": NB_ID, "source_type": "file", "bytes_base64": wrapped, "filename": "b.bin"},
     )
     assert seen["bytes"] == raw
 
 
-async def test_source_upload_bytes_rejects_oversized_before_add(mock_client) -> None:
+async def test_source_add_bytes_rejects_oversized_before_add(mock_client) -> None:
     # A payload over the base64-char cap is rejected up front — no add_file call.
     mock_client.sources.add_file = AsyncMock()
     big = base64.b64encode(os.urandom(9000)).decode()  # ~12000 chars > 10000 cap
     assert len(big) > fileupload_mod._MAX_UPLOAD_B64_CHARS
     with pytest.raises(ToolError) as excinfo:
         await _call(
-            mock_client, None, "source_upload_bytes", {"notebook": NB_ID, "bytes_base64": big}
+            mock_client,
+            None,
+            "source_add",
+            {"notebook": NB_ID, "source_type": "file", "bytes_base64": big},
         )
     msg = str(excinfo.value)
     assert "cap" in msg
@@ -389,23 +569,21 @@ async def test_source_upload_bytes_rejects_oversized_before_add(mock_client) -> 
     mock_client.sources.add_file.assert_not_awaited()
 
 
-async def test_source_upload_bytes_rejects_malformed_base64(mock_client) -> None:
+async def test_source_add_bytes_rejects_malformed_base64(mock_client) -> None:
     mock_client.sources.add_file = AsyncMock()
     with pytest.raises(ToolError) as excinfo:
         await _call(
             mock_client,
             None,
-            "source_upload_bytes",
-            {"notebook": NB_ID, "bytes_base64": "!!! not base64 !!!"},
+            "source_add",
+            {"notebook": NB_ID, "source_type": "file", "bytes_base64": "!!! not base64 !!!"},
         )
     assert "not valid base64" in str(excinfo.value)
     mock_client.sources.add_file.assert_not_awaited()
 
 
 @pytest.mark.parametrize("payload", ["", "   \n\t  "])
-async def test_source_upload_bytes_rejects_empty_or_whitespace_payload(
-    mock_client, payload
-) -> None:
+async def test_source_add_bytes_rejects_empty_or_whitespace_payload(mock_client, payload) -> None:
     # Both an empty AND an all-whitespace payload decode to zero bytes (whitespace is
     # stripped before decode) — rejected before any add.
     mock_client.sources.add_file = AsyncMock()
@@ -413,14 +591,14 @@ async def test_source_upload_bytes_rejects_empty_or_whitespace_payload(
         await _call(
             mock_client,
             None,
-            "source_upload_bytes",
-            {"notebook": NB_ID, "bytes_base64": payload},
+            "source_add",
+            {"notebook": NB_ID, "source_type": "file", "bytes_base64": payload},
         )
     assert "no bytes" in str(excinfo.value)
     mock_client.sources.add_file.assert_not_awaited()
 
 
-async def test_source_upload_bytes_accepts_exact_cap_boundary(mock_client) -> None:
+async def test_source_add_bytes_accepts_exact_cap_boundary(mock_client) -> None:
     # The cap is `> _MAX_UPLOAD_B64_CHARS` — a payload of EXACTLY that length is
     # accepted (7500 bytes → 10000 base64 chars, no padding). Guards the >/>= boundary.
     seen: dict[str, Any] = {}
@@ -435,13 +613,13 @@ async def test_source_upload_bytes_accepts_exact_cap_boundary(mock_client) -> No
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
-        {"notebook": NB_ID, "bytes_base64": payload, "filename": "b.bin"},
+        "source_add",
+        {"notebook": NB_ID, "source_type": "file", "bytes_base64": payload, "filename": "b.bin"},
     )
     assert seen.get("ok")
 
 
-async def test_source_upload_bytes_passes_title_through(mock_client) -> None:
+async def test_source_add_bytes_passes_title_through(mock_client) -> None:
     # An explicit title reaches the add path (vs the filename-derived default).
     seen: dict[str, Any] = {}
 
@@ -453,9 +631,10 @@ async def test_source_upload_bytes_passes_title_through(mock_client) -> None:
     await _call(
         mock_client,
         None,
-        "source_upload_bytes",
+        "source_add",
         {
             "notebook": NB_ID,
+            "source_type": "file",
             "bytes_base64": base64.b64encode(b"x").decode(),
             "filename": "x.bin",
             "title": "My Title",
@@ -464,7 +643,7 @@ async def test_source_upload_bytes_passes_title_through(mock_client) -> None:
     assert seen["title"] == "My Title"
 
 
-async def test_source_upload_bytes_cleans_up_temp_on_add_error(mock_client) -> None:
+async def test_source_add_bytes_cleans_up_temp_on_add_error(mock_client) -> None:
     # The finally rmtree is this tool's core safety guarantee — the docstring promises
     # removal "on success, a rejected add, or an error". Capture the spool path, then
     # make the add itself raise, and assert both the file and its mkdtemp parent are gone.
@@ -480,9 +659,10 @@ async def test_source_upload_bytes_cleans_up_temp_on_add_error(mock_client) -> N
         await _call(
             mock_client,
             None,
-            "source_upload_bytes",
+            "source_add",
             {
                 "notebook": NB_ID,
+                "source_type": "file",
                 "bytes_base64": base64.b64encode(b"data").decode(),
                 "filename": "x.bin",
             },
@@ -490,6 +670,63 @@ async def test_source_upload_bytes_cleans_up_temp_on_add_error(mock_client) -> N
     assert "path" in captured  # the add was actually reached
     assert not os.path.exists(captured["path"])
     assert not os.path.exists(os.path.dirname(captured["path"]))
+
+
+async def test_source_add_bytes_rejects_non_file_source_type(mock_client) -> None:
+    # bytes_base64 is a `file` input mode only; pairing it with another source_type
+    # is a VALIDATION error raised before any notebook I/O (#1890).
+    mock_client.sources.add_url = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            None,
+            "source_add",
+            {
+                "notebook": NB_ID,
+                "source_type": "url",
+                "bytes_base64": base64.b64encode(b"x").decode(),
+            },
+        )
+    msg = str(excinfo.value)
+    assert "VALIDATION" in msg
+    assert "bytes_base64" in msg
+    mock_client.sources.add_url.assert_not_called()
+
+
+async def test_source_add_bytes_and_path_are_mutually_exclusive(mock_client) -> None:
+    # path and bytes_base64 are two ways to supply the SAME file input — reject both.
+    mock_client.sources.add_file = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            None,
+            "source_add",
+            {
+                "notebook": NB_ID,
+                "source_type": "file",
+                "path": "/tmp/doc.pdf",
+                "bytes_base64": base64.b64encode(b"x").decode(),
+            },
+        )
+    assert "VALIDATION" in str(excinfo.value)
+    mock_client.sources.add_file.assert_not_called()
+
+
+async def test_source_add_filename_without_bytes_is_rejected(mock_client) -> None:
+    # filename only seeds the byte spool's title/extension — meaningless without
+    # bytes_base64 (a stdio path's basename comes from `path`).
+    mock_client.sources.add_file = AsyncMock()
+    with pytest.raises(ToolError) as excinfo:
+        await _call(
+            mock_client,
+            None,
+            "source_add",
+            {"notebook": NB_ID, "source_type": "file", "filename": "x.bin"},
+        )
+    msg = str(excinfo.value)
+    assert "VALIDATION" in msg
+    assert "filename" in msg
+    mock_client.sources.add_file.assert_not_called()
 
 
 # --------------------------------------------------------------------------- #
@@ -842,3 +1079,241 @@ async def test_artifact_download_remote_ref_path_not_double_validated(mock_clien
     assert result.structured_content["artifact_id"] == _AID_A
     # No list call carried the pre-validation's distinctive type-scoped positional.
     assert all(len(call.args) < 2 for call in mock_client.artifacts.list.await_args_list)
+
+
+async def test_artifact_download_remote_audio_has_no_inline_content(mock_client, config) -> None:
+    # A binary/non-text kind (audio) must NOT gain the inline body fields — the link
+    # remains the only affordance, and no extra download RPC is issued for it (#1907).
+    mock_client.artifacts.list = AsyncMock(return_value=[_audio_artifact(_AID_A)])
+    mock_client.artifacts.download_audio = AsyncMock()
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "audio", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert "content" not in sc and "char_count" not in sc and "truncated" not in sc
+    assert not any(getattr(block, "type", None) == "text" for block in result.content)
+    mock_client.artifacts.download_audio.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# studio_download — inline text for report / data-table (#1907)
+# --------------------------------------------------------------------------- #
+def _report_artifact(art_id: str, title: str = "Q3 Report", *, completed: bool = True) -> Artifact:
+    return Artifact(
+        id=art_id,
+        title=title,
+        _artifact_type=ArtifactTypeCode.REPORT.value,
+        status=int(ArtifactStatus.COMPLETED if completed else ArtifactStatus.PROCESSING),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def _data_table_artifact(art_id: str, title: str = "Table") -> Artifact:
+    return Artifact(
+        id=art_id,
+        title=title,
+        _artifact_type=ArtifactTypeCode.DATA_TABLE.value,
+        status=int(ArtifactStatus.COMPLETED),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def _writing_download(body: str, *, encoding: str = "utf-8") -> AsyncMock:
+    """An ``AsyncMock`` for a ``download_<x>`` that writes ``body`` to the given path
+    (mirroring the real download methods) so ``execute_download`` yields a real file
+    for the inline reader to read back."""
+
+    async def _dl(notebook_id: str, output_path: str, artifact_id: str | None = None, **_: Any):
+        # newline="" disables platform newline translation so the on-disk bytes are
+        # identical on POSIX and Windows (a text-mode write would turn "\r\n" into
+        # "\r\r\n" on Windows and break the reader assertions).
+        with open(output_path, "w", encoding=encoding, newline="") as fh:
+            fh.write(body)
+        return output_path
+
+    return AsyncMock(side_effect=_dl)
+
+
+async def test_artifact_download_remote_report_returns_inline_text(mock_client, config) -> None:
+    # The reporter's exact failure (#1907): a completed report over the remote connector
+    # must return the body INLINE alongside the resource_link, so a link-incapable host
+    # can still read it.
+    body = "# Q3 Report\n\nThe numbers are up."
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
+    mock_client.artifacts.download_report = _writing_download(body)
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    # The link is still present (full file for link-capable hosts)...
+    assert any(getattr(b, "type", None) == "resource_link" for b in result.content)
+    # ...and the body rides inline, bounded, with the full char_count + truncated flag.
+    assert sc["content"] == body
+    assert sc["char_count"] == len(body)
+    assert sc["truncated"] is False
+    # A TextContent block carries the body for a host that renders content, not links.
+    text_blocks = [b for b in result.content if getattr(b, "type", None) == "text"]
+    assert len(text_blocks) == 1
+    assert text_blocks[0].text == body
+
+
+async def test_artifact_download_remote_report_truncates_long_body(mock_client, config) -> None:
+    # A body over the cap is truncated: content is the bounded prefix, char_count stays
+    # the FULL length, truncated is True, and the inline block ends with a marker that
+    # points at the link for the full file.
+    body = "x" * (art_mod.INLINE_TEXT_MAX_CHARS + 500)
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
+    mock_client.artifacts.download_report = _writing_download(body)
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["content"] == body[: art_mod.INLINE_TEXT_MAX_CHARS]
+    assert len(sc["content"]) == art_mod.INLINE_TEXT_MAX_CHARS
+    assert sc["char_count"] == len(body)
+    assert sc["truncated"] is True
+    block = next(b for b in result.content if getattr(b, "type", None) == "text")
+    assert block.text.startswith(body[: art_mod.INLINE_TEXT_MAX_CHARS])
+    assert "truncated" in block.text.lower()
+
+
+async def test_artifact_download_remote_report_latest_pins_link_to_selected_id(
+    mock_client, config
+) -> None:
+    # The "latest" path (no artifact_id) inlines the concrete latest report AND pins the
+    # signed link to that same artifact's id — so the inline body and the file the link
+    # serves can't drift to different artifacts if a newer one completes in between.
+    body = "# Latest\n\nbody"
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A, "Latest")])
+    mock_client.artifacts.download_report = _writing_download(body)
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report"},  # no artifact_id → latest
+    )
+    sc = result.structured_content
+    assert sc["content"] == body
+    # The link is pinned: structured payload echoes the resolved id and the token
+    # carries it as `aid` (not a moving latest link).
+    assert sc["artifact_id"] == _AID_A
+    token = sc["url"].rsplit("/", 1)[1]
+    assert config.signer.verify(token, op="dl")["aid"] == _AID_A
+    # Filename adopts the resolved artifact's title.
+    assert sc["filename"] == "Latest.md"
+
+
+async def test_artifact_download_remote_report_no_artifact_is_link_only(
+    mock_client, config
+) -> None:
+    # The latest path with no completed report: the inline read yields nothing (the
+    # execute_download returns NO_ARTIFACTS), so the result is link-only — no inline
+    # fields — and the link still stands (opening it surfaces the same state).
+    mock_client.artifacts.list = AsyncMock(return_value=[])
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report"},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    assert "content" not in sc
+    assert not any(getattr(b, "type", None) == "text" for b in result.content)
+
+
+async def test_artifact_download_remote_report_inline_failure_is_link_only(
+    mock_client, config
+) -> None:
+    # Inline text is best-effort: an upstream listing/RPC failure during the inline read
+    # must NOT fail the whole download — the link (the guaranteed deliverable) is still
+    # returned, just without the inline body.
+    from notebooklm.exceptions import ServerError
+
+    mock_client.artifacts.list = AsyncMock(side_effect=ServerError("upstream 500"))
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report"},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    assert "content" not in sc
+    assert any(getattr(b, "type", None) == "resource_link" for b in result.content)
+    assert not any(getattr(b, "type", None) == "text" for b in result.content)
+
+
+async def test_artifact_download_remote_inline_skipped_when_cap_exceeded(
+    mock_client, config, monkeypatch
+) -> None:
+    # When too many inline reads are already in flight, the (best-effort) inline body is
+    # skipped WITHOUT spooling — the tool still returns the link, and no download RPC is
+    # issued for the body. Simulated by setting the cap to 0.
+    monkeypatch.setattr(art_mod, "_MAX_CONCURRENT_INLINE_READS", 0)
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
+    mock_client.artifacts.download_report = _writing_download("# Body")
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    assert "content" not in sc
+    mock_client.artifacts.download_report.assert_not_called()
+
+
+async def test_artifact_download_remote_report_read_error_is_link_only(
+    mock_client, config, monkeypatch
+) -> None:
+    # A local read/decode failure of the spooled file must stay within the best-effort
+    # contract: degrade to link-only rather than failing the whole download (the
+    # guaranteed resource_link is still returned).
+    mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
+    mock_client.artifacts.download_report = _writing_download("# Body")
+
+    def _boom(_path: str):
+        raise UnicodeDecodeError("utf-8", b"", 0, 1, "bad byte")
+
+    monkeypatch.setattr(art_mod, "_read_bounded_text", _boom)
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "report", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["status"] == "download_ready"
+    assert "content" not in sc
+    assert any(getattr(b, "type", None) == "resource_link" for b in result.content)
+
+
+async def test_artifact_download_remote_data_table_inline_strips_bom(mock_client, config) -> None:
+    # A data-table is inlined too; the real writer uses utf-8-sig (BOM), so the inline
+    # reader must strip the BOM — the returned content is clean CSV without a leading
+    # BOM (newlines are normalized to \n on read; the link keeps the file's CRLF).
+    csv_body = "col_a,col_b\r\n1,2\r\n"
+    mock_client.artifacts.list = AsyncMock(return_value=[_data_table_artifact(_AID_A)])
+    mock_client.artifacts.download_data_table = _writing_download(csv_body, encoding="utf-8-sig")
+    result = await _call(
+        mock_client,
+        config,
+        "studio_download",
+        {"notebook": NB_ID, "artifact_type": "data-table", "artifact_id": _AID_A},
+    )
+    sc = result.structured_content
+    assert sc["content"] == "col_a,col_b\n1,2\n"
+    assert not sc["content"].startswith("﻿")  # BOM stripped by utf-8-sig read
+    assert sc["truncated"] is False
