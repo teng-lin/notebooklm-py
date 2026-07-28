@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host after the Gemini Notebook rebrand, preventing successful browser sign-ins from
   timing out after five minutes. Enterprise and RPC base-host validation remain
   unchanged. (#2013)
+- Cookie extraction now requests `notebook.google.com` (the Gemini Notebook rebrand
+  host) and the runtime loader ranks its per-product binding cookies
+  (`OSID` / `__Secure-OSID`) at the same priority tier as the legacy
+  `notebooklm.google.com` host. Before this fix, `notebooklm login --browser-cookies`
+  never asked the browser for `notebook.google.com` cookies, and a user whose browser
+  only populated `OSID` on the rebrand host could fail the Tier-2 secondary-binding
+  check. (#2013)
 - `server_info(include_account=True)` (MCP tool and the REST `GET /v1/server/info`
   route) now adds an `output_language_is_default` boolean to the account block. When
   the account has never set an explicit output language, `output_language` is `null`

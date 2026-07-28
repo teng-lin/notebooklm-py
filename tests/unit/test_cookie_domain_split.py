@@ -105,6 +105,8 @@ class TestRequiredVsOptional:
             "google.com",
             ".notebooklm.google.com",
             "notebooklm.google.com",
+            ".notebook.google.com",
+            "notebook.google.com",
             ".googleusercontent.com",
             "accounts.google.com",
             ".accounts.google.com",
@@ -240,6 +242,101 @@ class TestBuildGoogleCookieDomains:
         domains = set(_build_google_cookie_domains(include_domains={"all"}))
         for optional_set in OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values():
             assert optional_set.issubset(domains)
+
+
+class TestGeminiNotebookRebrandHost:
+    """``notebook.google.com`` (the July 2026 Gemini Notebook rebrand host) is
+    treated as a REQUIRED auth domain so ``--browser-cookies`` extraction
+    requests it and the runtime loader keeps its binding cookies.
+
+    Background (issue #2013): Google rebranded NotebookLM to Gemini Notebook
+    on 2026-07-16 and now also serves the app from ``notebook.google.com``.
+    The per-product binding cookies (``OSID`` / ``__Secure-OSID``) are set on
+    this host in addition to the legacy ``notebooklm.google.com``. Before this
+    fix the host was absent from :data:`REQUIRED_COOKIE_DOMAINS`, so
+    ``notebooklm login --browser-cookies`` never asked rookiepy for it and a
+    user whose browser only populated ``OSID`` on the rebrand host would fail
+    the Tier-2 secondary-binding check (or silently keep a stale jar).
+    """
+
+    def test_rebrand_host_in_required_set(self):
+        """Both dotted and bare rebrand host variants are REQUIRED."""
+        assert "notebook.google.com" in REQUIRED_COOKIE_DOMAINS
+        assert ".notebook.google.com" in REQUIRED_COOKIE_DOMAINS
+
+    def test_rebrand_host_requested_by_default_extraction(self):
+        """Default ``_build_google_cookie_domains`` asks for the rebrand host."""
+        domains = set(_build_google_cookie_domains())
+        assert "notebook.google.com" in domains
+        assert ".notebook.google.com" in domains
+
+    def test_rebrand_host_passes_runtime_gate(self):
+        """The rebrand host is accepted by the runtime cookie-domain gate."""
+        assert _is_allowed_cookie_domain("notebook.google.com") is True
+        assert _is_allowed_cookie_domain(".notebook.google.com") is True
+
+    def test_rebrand_host_osid_survives_extraction(self):
+        """A storage_state with ``OSID`` only on ``notebook.google.com`` is
+        kept by ``extract_cookies_with_domains`` (the load-time loader)."""
+        from notebooklm._auth.cookies import extract_cookies_with_domains
+
+        storage = {
+            "cookies": [
+                {"name": "SID", "value": "sid", "domain": ".google.com", "path": "/"},
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "psidts",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
+                {
+                    "name": "OSID",
+                    "value": "rebrand_osid",
+                    "domain": "notebook.google.com",
+                    "path": "/",
+                },
+            ],
+            "origins": [],
+        }
+        cookie_map = extract_cookies_with_domains(storage)
+        assert cookie_map[("OSID", "notebook.google.com", "/")] == "rebrand_osid"
+
+    def test_legacy_app_host_osid_outranks_rebrand_host_when_both_present(self):
+        """When ``OSID`` is set on both the legacy and rebrand hosts, the
+        legacy ``notebooklm.google.com`` (Tier 2) wins over
+        ``notebook.google.com`` (Tier 2) only via first-occurrence within the
+        same tier — but the dotted ``.notebooklm.google.com`` (Tier 3)
+        strictly outranks both. This guards against the rebrand host silently
+        shadowing the canonical app host."""
+        from notebooklm._auth.cookies import extract_cookies_from_storage
+
+        storage = {
+            "cookies": [
+                {"name": "SID", "value": "sid", "domain": ".google.com", "path": "/"},
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "psidts",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
+                {
+                    "name": "OSID",
+                    "value": "rebrand",
+                    "domain": "notebook.google.com",
+                    "path": "/",
+                },
+                {
+                    "name": "OSID",
+                    "value": "legacy",
+                    "domain": ".notebooklm.google.com",
+                    "path": "/",
+                },
+            ],
+            "origins": [],
+        }
+        cookies = extract_cookies_from_storage(storage)
+        # Tier 3 (.notebooklm.google.com) outranks Tier 2 (notebook.google.com).
+        assert cookies["OSID"] == "legacy"
 
 
 class TestParseIncludeDomains:

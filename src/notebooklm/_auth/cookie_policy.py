@@ -215,6 +215,8 @@ def missing_cookies_hint(
 # following domains are actually exercised during login + token refresh +
 # source-add + chat-ask flows:
 #   - ``notebooklm.google.com`` (the API host — all CLI RPCs land here)
+#   - ``notebook.google.com`` (the Gemini Notebook rebrand host; Google sets
+#     the per-product ``OSID`` / ``__Secure-OSID`` binding cookies here too)
 #   - ``.google.com`` (carries ``SID``/``HSID``/``SSID``/etc.)
 #   - ``accounts.google.com`` (token refresh + ``RotateCookies`` endpoint at
 #     :data:`KEEPALIVE_ROTATE_URL`)
@@ -246,6 +248,14 @@ REQUIRED_COOKIE_DOMAINS: frozenset[str] = frozenset(
         # Playwright storage_state may preserve the leading dot for NotebookLM cookies.
         ".notebooklm.google.com",
         "notebooklm.google.com",
+        # Gemini Notebook rebrand (July 2026, issue #2013): Google now also serves
+        # the app from ``notebook.google.com`` and sets the per-product binding
+        # cookies (``OSID`` / ``__Secure-OSID``) on this host. Both dotted and
+        # non-dotted variants are listed (same defensive pattern as
+        # ``notebooklm.google.com`` above) so http.cookiejar normalization does
+        # not drop them at extraction / load time.
+        ".notebook.google.com",
+        "notebook.google.com",
         ".notebooklm.cloud.google.com",
         "notebooklm.cloud.google.com",
         ".googleusercontent.com",
@@ -530,6 +540,16 @@ def _auth_domain_priority(domain: str) -> int:
     if domain == ".notebooklm.google.com":
         return 3
     if domain == "notebooklm.google.com":
+        return 2
+    # Gemini Notebook rebrand host (issue #2013): same tier as the legacy
+    # ``notebooklm.google.com`` host so a same-name cookie set on either is
+    # resolved deterministically. The dotted variant outranks the bare host
+    # (mirroring the notebooklm.google.com tier split), and both sit below
+    # ``.notebooklm.google.com`` so a cookie on the canonical app host still
+    # wins when both hosts carry it.
+    if domain == ".notebook.google.com":
+        return 3
+    if domain == "notebook.google.com":
         return 2
     if domain == ".notebooklm.cloud.google.com":
         return 3

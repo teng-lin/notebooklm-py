@@ -348,8 +348,10 @@ class TestAuthDomainPriority:
             (".google.com", 4),
             (".notebooklm.google.com", 3),
             (".notebooklm.cloud.google.com", 3),
+            (".notebook.google.com", 3),
             ("notebooklm.google.com", 2),
             ("notebooklm.cloud.google.com", 2),
+            ("notebook.google.com", 2),
             (".google.de", 1),
             (".google.com.sg", 1),
             (".google.co.uk", 1),
@@ -376,6 +378,27 @@ class TestAuthDomainPriority:
         ]
         assert priorities == sorted(priorities, reverse=True)
         assert len(set(priorities)) == len(priorities)
+
+    def test_gemini_notebook_rebrand_host_matches_app_host_tiers(self):
+        """The Gemini Notebook rebrand host ``notebook.google.com`` shares the
+        same priority tiers as the legacy ``notebooklm.google.com`` host so a
+        same-name cookie (e.g. ``OSID``) set on either resolves consistently.
+
+        See issue #2013 / the July 2026 NotebookLM -> Gemini Notebook rebrand:
+        Google now sets the per-product binding cookies (``OSID``,
+        ``__Secure-OSID``) on ``notebook.google.com`` in addition to
+        ``notebooklm.google.com``. The dotted and bare variants must mirror
+        the legacy host's tier split (3 / 2) so neither host silently
+        starves the other at load time.
+        """
+        from notebooklm.auth import _auth_domain_priority
+
+        assert _auth_domain_priority(".notebook.google.com") == _auth_domain_priority(
+            ".notebooklm.google.com"
+        )
+        assert _auth_domain_priority("notebook.google.com") == _auth_domain_priority(
+            "notebooklm.google.com"
+        )
 
 
 class TestIsAllowedCookieDomainRegional:
