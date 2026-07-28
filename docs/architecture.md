@@ -1075,7 +1075,7 @@ src/notebooklm/
 │   ├── serialize.py             # to_jsonable(obj) recursive JSON-able conversion (enum-before-primitive)
 │   ├── session.py               # Click-free session-context core: `use` verify_and_set_notebook (injected resolve_notebook_id) + `status` read_status(StatusInputs) read+project -> StatusReport + `auth logout` execute_logout(LogoutInputs) filesystem-teardown -> typed LogoutOutcome (path/context/clear_context helpers injected via bundles; CLI owns Rich render + exit codes)
 │   ├── sharing.py               # Click-free sharing core: status/set_public/set_view_level/add_user/update_user/remove_user (injected resolve_notebook_id; permission/view-level display + str→enum parse stay in cli/share_cmd.py)
-│   ├── skill.py                 # Click-free skill-install core: TARGETS/SCOPES catalog + path/version helpers + classify_target (create/up_to_date/overwrite) + report_mixed_no_clobber_up_to_date (CLI owns the atomic write + packaged-source loader)
+│   ├── skill.py                 # Click-free skill-install core: TARGETS/SCOPES catalog of install-dir paths + path/version helpers + stamp_skill_files (version-comments SKILL.md across the packaged file tree) + classify_target (create/up_to_date/overwrite, byte-comparing a whole stamped-file dict against an installed dir) + report_mixed_no_clobber_up_to_date (CLI owns the atomic per-file write + packaged-source-tree loader)
 │   ├── source_add.py            # Click-free `source add` core: input detection + URL SSRF/upload-path validation + add workflow (SourceAddPlan/Result; CLI builds the --json source-summary from the typed result via the neutral serialize.source_summary helper)
 │   ├── source_batch.py          # Transport-neutral batch-add policy shared by the MCP tool + REST route (#1871): MAX_BATCH_URLS cap + batch_item_is_fatal (fatal auth/rate-limit/5xx classification via _app.errors.classify → abort the batch; per-URL 4xx-input failures isolate). Neutral frozenset, not server's CATEGORY_STATUS (the _app boundary forbids fastapi); parity pinned by tests/server/test_source_batch_parity.py
 │   ├── source_clean.py          # Click-free `source clean` core: junk-source classification + batched-deletion orchestration (SourceCleanResult; injected list/delete/confirm callables)
@@ -1269,7 +1269,7 @@ src/notebooklm/
     ├── runtime.py               # CLI runtime primitives
     ├── session_cmd.py           # login, use, status, clear
     ├── share_cmd.py             # Sharing management CLI commands
-    ├── skill_cmd.py             # Skill management commands
+    ├── skill_cmd.py             # Skill management commands over the directory tree (SKILL.md + references/ + scripts/): install/uninstall via get_skill_source_tree + shutil.rmtree + atomic per-file write (scripts/ chmod 0755), status file-count
     ├── source_cmd.py            # source add, list, delete
     └── services/                # CLI-specific service layer (ADR-0008 Click-to-service extraction)
         ├── __init__.py

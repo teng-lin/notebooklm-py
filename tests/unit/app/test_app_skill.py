@@ -26,6 +26,7 @@ from notebooklm._app.skill import (
     SCOPES,
     SKILL_ARCHIVE_DIRNAME,
     SKILL_ARCHIVE_ENTRY,
+    SKILL_ENTRY,
     TARGET_CREATE,
     TARGET_OVERWRITE,
     TARGET_UP_TO_DATE,
@@ -33,35 +34,53 @@ from notebooklm._app.skill import (
     add_version_comment,
     build_skill_archive_bytes,
     classify_target,
+    get_installed_content,
     get_scope_root,
     get_skill_path,
     get_skill_version,
     iter_targets,
     remove_empty_parents,
     report_mixed_no_clobber_up_to_date,
+    stamp_skill_files,
 )
 
 # ---------------------------------------------------------------------------
 # get_skill_version (MOVED from TestSkillVersionExtraction)
+#
+# ``get_skill_version`` takes the target's install *directory* and reads its
+# ``SKILL_ENTRY`` (``SKILL.md``) file internally.
 # ---------------------------------------------------------------------------
 
 
 def test_get_skill_version_extracts_version(tmp_path: Path) -> None:
-    skill_file = tmp_path / "SKILL.md"
-    skill_file.write_text("---\nname: test\n---\n<!-- notebooklm-py v1.2.3 -->\n# Test")
+    skill_dir = tmp_path / "notebooklm"
+    skill_dir.mkdir()
+    (skill_dir / SKILL_ENTRY).write_text(
+        "---\nname: test\n---\n<!-- notebooklm-py v1.2.3 -->\n# Test"
+    )
 
-    assert get_skill_version(skill_file) == "1.2.3"
+    assert get_skill_version(skill_dir) == "1.2.3"
 
 
 def test_get_skill_version_no_version(tmp_path: Path) -> None:
-    skill_file = tmp_path / "SKILL.md"
-    skill_file.write_text("# Test\nNo version here")
+    skill_dir = tmp_path / "notebooklm"
+    skill_dir.mkdir()
+    (skill_dir / SKILL_ENTRY).write_text("# Test\nNo version here")
 
-    assert get_skill_version(skill_file) is None
+    assert get_skill_version(skill_dir) is None
 
 
 def test_get_skill_version_file_not_exists(tmp_path: Path) -> None:
-    assert get_skill_version(tmp_path / "nonexistent.md") is None
+    assert get_skill_version(tmp_path / "nonexistent") is None
+
+
+def test_get_skill_version_dir_exists_but_entry_missing(tmp_path: Path) -> None:
+    """An installed directory with no ``SKILL.md`` inside reports no version."""
+    skill_dir = tmp_path / "notebooklm"
+    skill_dir.mkdir()
+    (skill_dir / "references").mkdir()
+
+    assert get_skill_version(skill_dir) is None
 
 
 # ---------------------------------------------------------------------------
@@ -88,11 +107,72 @@ def test_add_version_comment_prepends_with_incomplete_frontmatter() -> None:
 
 
 def test_add_version_comment_roundtrips_with_get_skill_version(tmp_path: Path) -> None:
-    """A stamped file is readable back by ``get_skill_version`` (paired contract)."""
+    """A stamped entry file is readable back by ``get_skill_version`` (paired contract)."""
     stamped = add_version_comment("---\nname: nb\n---\n# Body", "3.4.5")
-    skill_file = tmp_path / "SKILL.md"
-    skill_file.write_text(stamped, encoding="utf-8")
-    assert get_skill_version(skill_file) == "3.4.5"
+    skill_dir = tmp_path / "notebooklm"
+    skill_dir.mkdir()
+    (skill_dir / SKILL_ENTRY).write_text(stamped, encoding="utf-8")
+    assert get_skill_version(skill_dir) == "3.4.5"
+
+
+# ---------------------------------------------------------------------------
+# stamp_skill_files (net-new direct coverage)
+# ---------------------------------------------------------------------------
+
+
+def test_stamp_skill_files_stamps_only_the_entry_file() -> None:
+    """Only ``SKILL_ENTRY`` gets the version comment; other files pass through."""
+    files = {
+        "SKILL.md": "---\nname: nb\n---\n# Body",
+        "references/setup.md": "setup body",
+        "scripts/nlm": "#!/bin/sh\n",
+    }
+
+    stamped = stamp_skill_files(files, "1.2.3")
+
+    assert stamped["SKILL.md"] == add_version_comment(files["SKILL.md"], "1.2.3")
+    assert "<!-- notebooklm-py v1.2.3 -->" in stamped["SKILL.md"]
+    assert stamped["references/setup.md"] == "setup body"
+    assert stamped["scripts/nlm"] == "#!/bin/sh\n"
+
+
+def test_stamp_skill_files_preserves_the_key_set() -> None:
+    """Stamping never adds or drops files from the tree."""
+    files = {"SKILL.md": "body", "scripts/nlm": "launcher", "references/a.md": "a"}
+
+    assert set(stamp_skill_files(files, "9.9.9")) == set(files)
+
+
+def test_stamp_skill_files_empty_tree_stays_empty() -> None:
+    assert stamp_skill_files({}, "1.0.0") == {}
+
+
+# ---------------------------------------------------------------------------
+# get_installed_content (net-new direct coverage)
+# ---------------------------------------------------------------------------
+
+
+def test_get_installed_content_reads_entry_file(tmp_path: Path) -> None:
+    with patch.object(Path, "home", return_value=tmp_path):
+        skill_dir = get_skill_path("claude", "user")
+        skill_dir.mkdir(parents=True)
+        (skill_dir / SKILL_ENTRY).write_text("# Installed body", encoding="utf-8")
+
+        assert get_installed_content("claude", "user") == "# Installed body"
+
+
+def test_get_installed_content_missing_directory_returns_none(tmp_path: Path) -> None:
+    with patch.object(Path, "home", return_value=tmp_path):
+        assert get_installed_content("claude", "user") is None
+
+
+def test_get_installed_content_directory_without_entry_returns_none(tmp_path: Path) -> None:
+    """The directory exists (e.g. only references/ was written) but SKILL.md is absent."""
+    with patch.object(Path, "home", return_value=tmp_path):
+        skill_dir = get_skill_path("agents", "user")
+        skill_dir.mkdir(parents=True)
+
+        assert get_installed_content("agents", "user") is None
 
 
 # ---------------------------------------------------------------------------
@@ -177,12 +257,17 @@ def test_reporting_counts_all_up_to_date_targets() -> None:
 
 # ---------------------------------------------------------------------------
 # classify_target (net-new direct coverage)
+#
+# ``classify_target``'s third argument is now the full stamped file tree
+# (``{relative_posix_path: content}``), and the target path it classifies is
+# a *directory* -- ``TARGET_UP_TO_DATE`` requires every stamped file to exist
+# with byte-identical content AND no extra installed files.
 # ---------------------------------------------------------------------------
 
 
 def test_classify_target_create_when_missing(tmp_path: Path) -> None:
     with patch.object(Path, "cwd", return_value=tmp_path):
-        status, path = classify_target("agents", "project", "stamped body")
+        status, path = classify_target("agents", "project", {"SKILL.md": "stamped body"})
     assert status == TARGET_CREATE
     assert path == tmp_path / TARGETS["agents"].relative_path
     assert not path.exists()
@@ -190,11 +275,14 @@ def test_classify_target_create_when_missing(tmp_path: Path) -> None:
 
 def test_classify_target_up_to_date_when_identical(tmp_path: Path) -> None:
     path = tmp_path / TARGETS["claude"].relative_path
-    path.parent.mkdir(parents=True)
-    path.write_text("stamped body", encoding="utf-8")
+    path.mkdir(parents=True)
+    (path / "SKILL.md").write_text("stamped body", encoding="utf-8")
+    (path / "references").mkdir()
+    (path / "references" / "setup.md").write_text("setup body", encoding="utf-8")
+    stamped_files = {"SKILL.md": "stamped body", "references/setup.md": "setup body"}
 
     with patch.object(Path, "cwd", return_value=tmp_path):
-        status, resolved = classify_target("claude", "project", "stamped body")
+        status, resolved = classify_target("claude", "project", stamped_files)
 
     assert status == TARGET_UP_TO_DATE
     assert resolved == path
@@ -202,13 +290,70 @@ def test_classify_target_up_to_date_when_identical(tmp_path: Path) -> None:
 
 def test_classify_target_overwrite_when_differing(tmp_path: Path) -> None:
     path = tmp_path / TARGETS["claude"].relative_path
-    path.parent.mkdir(parents=True)
-    path.write_text("old body", encoding="utf-8")
+    path.mkdir(parents=True)
+    (path / "SKILL.md").write_text("old body", encoding="utf-8")
 
     with patch.object(Path, "cwd", return_value=tmp_path):
-        status, resolved = classify_target("claude", "project", "stamped body")
+        status, resolved = classify_target("claude", "project", {"SKILL.md": "stamped body"})
 
     assert status == TARGET_OVERWRITE
+    assert resolved == path
+
+
+def test_classify_target_overwrite_when_extra_file_present(tmp_path: Path) -> None:
+    """A stale leftover file outside the stamped set forces OVERWRITE."""
+    path = tmp_path / TARGETS["claude"].relative_path
+    path.mkdir(parents=True)
+    (path / "SKILL.md").write_text("stamped body", encoding="utf-8")
+    (path / "stale.md").write_text("leftover from an old skill version", encoding="utf-8")
+
+    with patch.object(Path, "cwd", return_value=tmp_path):
+        status, resolved = classify_target("claude", "project", {"SKILL.md": "stamped body"})
+
+    assert status == TARGET_OVERWRITE
+    assert resolved == path
+
+
+def test_classify_target_overwrite_when_expected_file_missing(tmp_path: Path) -> None:
+    """A stamped file that has not been written yet also forces OVERWRITE."""
+    path = tmp_path / TARGETS["claude"].relative_path
+    path.mkdir(parents=True)
+    (path / "SKILL.md").write_text("stamped body", encoding="utf-8")
+    stamped_files = {"SKILL.md": "stamped body", "references/setup.md": "setup body"}
+
+    with patch.object(Path, "cwd", return_value=tmp_path):
+        status, resolved = classify_target("claude", "project", stamped_files)
+
+    assert status == TARGET_OVERWRITE
+    assert resolved == path
+
+
+def test_classify_target_overwrite_when_path_is_a_file(tmp_path: Path) -> None:
+    """A stray file occupying the target directory's path can't be diffed -- OVERWRITE.
+
+    Mirrors an old single-file skill install colliding with the new
+    directory-shaped target path.
+    """
+    path = tmp_path / TARGETS["claude"].relative_path
+    path.parent.mkdir(parents=True)
+    path.write_text("blocker", encoding="utf-8")
+
+    with patch.object(Path, "cwd", return_value=tmp_path):
+        status, resolved = classify_target("claude", "project", {"SKILL.md": "stamped body"})
+
+    assert status == TARGET_OVERWRITE
+    assert resolved == path
+
+
+def test_classify_target_up_to_date_with_empty_stamped_tree(tmp_path: Path) -> None:
+    """An existing empty target directory matches an (edge-case) empty stamped tree."""
+    path = tmp_path / TARGETS["claude"].relative_path
+    path.mkdir(parents=True)
+
+    with patch.object(Path, "cwd", return_value=tmp_path):
+        status, resolved = classify_target("claude", "project", {})
+
+    assert status == TARGET_UP_TO_DATE
     assert resolved == path
 
 
@@ -291,41 +436,56 @@ def test_remove_empty_parents_never_removes_scope_root(tmp_path: Path) -> None:
 # build_skill_archive_bytes (Claude-uploadable skill archive)
 # ---------------------------------------------------------------------------
 
-_STAMPED = "---\nname: notebooklm\ndescription: test\n---\n<!-- notebooklm-py v1.2.3 -->\n# Body\n"
+_STAMPED_FILES = {
+    "SKILL.md": "---\nname: notebooklm\ndescription: test\n---\n<!-- notebooklm-py v1.2.3 -->\n# Body\n",
+    "references/setup.md": "# Setup\n",
+    "scripts/nlm": "#!/usr/bin/env bash\necho hi\n",
+}
 
 
-def test_build_skill_archive_bytes_single_entry_roundtrip() -> None:
-    data = build_skill_archive_bytes(_STAMPED)
+def test_build_skill_archive_bytes_roundtrip() -> None:
+    data = build_skill_archive_bytes(_STAMPED_FILES)
 
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        assert archive.namelist() == [SKILL_ARCHIVE_ENTRY]
+        assert set(archive.namelist()) == {
+            f"{SKILL_ARCHIVE_DIRNAME}/{rel_path}" for rel_path in _STAMPED_FILES
+        }
         extracted = archive.read(SKILL_ARCHIVE_ENTRY).decode("utf-8")
-    assert extracted == _STAMPED
+    assert extracted == _STAMPED_FILES[SKILL_ENTRY]
     # Frontmatter must stay the first bytes for upload validation.
     assert extracted.startswith("---\n")
 
 
 def test_build_skill_archive_bytes_is_deterministic() -> None:
-    assert build_skill_archive_bytes(_STAMPED) == build_skill_archive_bytes(_STAMPED)
+    assert build_skill_archive_bytes(_STAMPED_FILES) == build_skill_archive_bytes(_STAMPED_FILES)
 
 
-def test_build_skill_archive_bytes_entry_is_deflated() -> None:
+def test_build_skill_archive_bytes_entries_are_deflated() -> None:
     # ZipFile's archive-level compression default does NOT apply to an
     # explicit ZipInfo; guard against a silent ZIP_STORED regression.
-    data = build_skill_archive_bytes(_STAMPED)
+    data = build_skill_archive_bytes(_STAMPED_FILES)
 
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        assert archive.getinfo(SKILL_ARCHIVE_ENTRY).compress_type == zipfile.ZIP_DEFLATED
+        for info in archive.infolist():
+            assert info.compress_type == zipfile.ZIP_DEFLATED
 
 
 def test_build_skill_archive_bytes_pins_entry_metadata() -> None:
-    data = build_skill_archive_bytes(_STAMPED)
+    data = build_skill_archive_bytes(_STAMPED_FILES)
 
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         info = archive.getinfo(SKILL_ARCHIVE_ENTRY)
     assert info.date_time == (2020, 1, 1, 0, 0, 0)
     assert info.create_system == 3
     assert info.external_attr == 0o100644 << 16
+
+
+def test_build_skill_archive_bytes_marks_scripts_executable() -> None:
+    data = build_skill_archive_bytes(_STAMPED_FILES)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        info = archive.getinfo(f"{SKILL_ARCHIVE_DIRNAME}/scripts/nlm")
+    assert info.external_attr == 0o100755 << 16
 
 
 def test_skill_archive_entry_lives_in_archive_dirname() -> None:
@@ -335,7 +495,7 @@ def test_skill_archive_entry_lives_in_archive_dirname() -> None:
 def test_skill_archive_dirname_matches_repo_frontmatter_name() -> None:
     # Upload validation requires the zip-root folder name to equal the
     # SKILL.md frontmatter ``name`` (R3 tripwire).
-    skill_md = Path(__file__).resolve().parents[3] / "SKILL.md"
+    skill_md = Path(__file__).resolve().parents[3] / "plugin" / "skills" / "notebooklm" / "SKILL.md"
     frontmatter = skill_md.read_text(encoding="utf-8").split("---", 2)[1]
     match = re.search(r"^name:\s*(.*)$", frontmatter, flags=re.MULTILINE)
     assert match is not None

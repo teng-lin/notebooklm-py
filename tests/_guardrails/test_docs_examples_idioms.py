@@ -23,6 +23,7 @@ pytestmark = pytest.mark.repo_lint
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README_MD = REPO_ROOT / "README.md"
 EXAMPLES_DIR = REPO_ROOT / "examples"
+SKILL_SCRIPTS_DIR = REPO_ROOT / "plugin" / "skills" / "notebooklm" / "scripts"
 # Prose docs that carry copy-paste quickstarts and were corrected to the
 # canonical idiom — guarded so they can't regress. (``docs/python-api.md``
 # deliberately keeps the deprecated form as a *labeled* example, and
@@ -37,7 +38,7 @@ DEPRECATED_AWAIT_IDIOM = "async with await NotebookLMClient.from_storage"
 
 
 def _copy_paste_docs() -> list[Path]:
-    """README + guarded prose docs + every runnable example.
+    """README + guarded prose docs + every runnable example + skill scripts.
 
     These are the snippets users copy first; all must use the canonical
     no-``await`` ``from_storage`` idiom.
@@ -46,6 +47,7 @@ def _copy_paste_docs() -> list[Path]:
         README_MD,
         *(p for p in GUARDED_PROSE_DOCS if p.exists()),
         *sorted(EXAMPLES_DIR.glob("*.py")),
+        *sorted(SKILL_SCRIPTS_DIR.glob("*.py")),
     ]
 
 

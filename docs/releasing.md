@@ -83,7 +83,7 @@ Proceed with release preparation?
 | Doc | Update when... |
 |-----|----------------|
 | [README.md](../README.md) | New features, changed capabilities, Beyond the Web UI section |
-| [SKILL.md](../SKILL.md) | New CLI commands, changed flags, new workflows |
+| [SKILL.md](../plugin/skills/notebooklm/SKILL.md) | New CLI commands, changed flags, new workflows |
 | [cli-reference.md](cli-reference.md) | Any CLI changes |
 | [python-api.md](python-api.md) | New/changed Python API |
 | [troubleshooting.md](troubleshooting.md) | New known issues, fixed issues to remove |

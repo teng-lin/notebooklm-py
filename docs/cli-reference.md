@@ -325,25 +325,30 @@ notebooklm metadata -n abc123 --json
 
 ### Skill Commands (`notebooklm skill <cmd>`)
 
-Manage NotebookLM agent skill integration.
+Manage NotebookLM agent skill integration. The skill is a *directory*
+(`SKILL.md` + `references/*.md` + `scripts/*`), not a single file —
+`install`/`uninstall`/`status` operate on the whole tree.
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `install` | Install/update the skill for `claude`, `.agents`, or both | `skill install --target all` |
-| `status` | Check installed targets and version info | `skill status --scope project` |
-| `uninstall` | Remove one or more installed targets | `skill uninstall --target agents` |
-| `show` | Display the packaged skill or an installed target | `skill show --target source` |
-| `package` | Build a Claude-uploadable skill archive (chat/Cowork) | `skill package -o dist/` |
+| `install` | Install/update the skill directory for `claude`, `.agents`, or both | `skill install --target all` |
+| `status` | Check installed targets, version info, and file count | `skill status --scope project` |
+| `uninstall` | Remove one or more installed skill directories | `skill uninstall --target agents` |
+| `show` | Display the packaged `SKILL.md` or an installed target's `SKILL.md` | `skill show --target source` |
+| `package` | Build a Claude-uploadable skill archive of the whole skill directory (chat/Cowork) | `skill package -o dist/` |
 
 Defaults:
 
 - `skill install` uses `--scope user --target all`
-- `claude` maps to `.claude/skills/notebooklm/SKILL.md`
-- `agents` maps to `.agents/skills/notebooklm/SKILL.md`
-- `show --target source` prints the canonical packaged skill file
+- `claude` maps to the `.claude/skills/notebooklm/` directory (Claude Code)
+- `agents` maps to the `.agents/skills/notebooklm/` directory (universal agent skill dir)
+- `install` writes every packaged file and chmods `scripts/*` entries `0755`; `uninstall` removes the entire target directory, not just `SKILL.md`
+- `status --json` reports a `"files"` count per target (`Files: N` in plain output); a target counts as installed once its `SKILL.md` exists
+- `show --target source` prints only the canonical packaged `SKILL.md` (not `references/`/`scripts/`)
+- `package` zips the whole packaged skill directory (`SKILL.md` + `references/` + `scripts/`, with `scripts/*` kept executable), not just the entry file — see `entries` in `--json` output for the full archived-file list
 - Project-scope installs support `--dry-run`, `--no-clobber`, and `--force`; these flags are rejected for user-scope installs.
 
-The packaged wheel includes the repo-root `SKILL.md`, so the same skill content powers `notebooklm skill install`, GitHub discovery, and `npx skills add teng-lin/notebooklm-py`.
+The packaged wheel includes the whole `plugin/skills/notebooklm/` directory (as `notebooklm/data/skill/`), so the same skill content powers `notebooklm skill install`, GitHub discovery, and `npx skills add teng-lin/notebooklm-py`.
 
 Codex does not use the `skill` subcommand. In this repository it reads the root [`AGENTS.md`](../AGENTS.md) file and invokes the `notebooklm` CLI or Python API directly.
 
@@ -1480,9 +1485,9 @@ notebooklm profile delete old-account --yes
 
 ### Skill: `install`, `status`, `uninstall`, `show`, `package`
 
-Manage the bundled NotebookLM agent-skill template. The skill lives in `SKILL.md` at the repository root; installing it materializes a copy under one of:
-- `.claude/skills/notebooklm/SKILL.md` (Claude Code, `--target claude`)
-- `.agents/skills/notebooklm/SKILL.md` (universal agent skill directory, `--target agents`)
+Manage the bundled NotebookLM agent-skill directory (`SKILL.md` + `references/*.md` + `scripts/*`; source at [`plugin/skills/notebooklm/`](../plugin/skills/notebooklm/)). `install`/`uninstall`/`status` operate on the whole tree; installing materializes a copy under one of:
+- `.claude/skills/notebooklm/` (Claude Code, `--target claude`)
+- `.agents/skills/notebooklm/` (universal agent skill directory, `--target agents`)
 
 `--scope` selects whether to write into the **user's** home (`~/.claude/skills/...`, `~/.agents/skills/...`) or the **current project** (`./.claude/skills/...`, `./.agents/skills/...`).
 
@@ -1502,7 +1507,9 @@ notebooklm skill <install|status|uninstall|show|package> [OPTIONS]
 | `show` | `user`, `project` | `source`, `claude`, `agents` | `source` | — |
 | `package` | — | — | — | `-o/--output PATH` (default `./notebooklm-skill.zip`; an existing directory — or a PATH ending in a separator — gets the default filename inside it), `--force`, `--json` |
 
-`skill show --target source` prints the packaged `SKILL.md` straight out of the wheel (the canonical content); the other `show` targets read the materialized copy from disk.
+`install` writes every packaged file (`SKILL.md`, `references/*.md`, `scripts/*`) and chmods `scripts/*` to `0755`; `uninstall` removes the entire target directory, not just `SKILL.md`; `status` reports a `files` count per target (`Files: N` in plain output, `"files"` in `--json`) alongside `installed`/`skill_version`.
+
+`skill show --target source` prints only the packaged `SKILL.md` straight out of the wheel (the canonical content, not the full tree); the other `show` targets read the installed copy's `SKILL.md` from disk.
 
 Project-scope install hardening:
 

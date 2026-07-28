@@ -1,0 +1,15 @@
+{
+  "name": "notebooklm-py",
+  "owner": {
+    "name": "Teng Lin",
+    "email": "teng.lin@gmail.com"
+  },
+  "description": "Unofficial async Python client for Google NotebookLM — MCP server plugin for notebook, source, chat, and studio-artifact automation.",
+  "plugins": [
+    {
+      "name": "notebooklm-mcp",
+      "source": "./plugin",
+      "description": "Connect Claude to Google NotebookLM: manage notebooks and sources, chat over your notebooks, and generate podcasts/videos/quizzes/mind maps."
+    }
+  ]
+}

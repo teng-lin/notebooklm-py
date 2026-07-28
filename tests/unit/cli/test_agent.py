@@ -118,3 +118,70 @@ class TestAgentTemplates:
         (tmp_path / "data").mkdir()
         with patch.object(agent_templates_module.resources, "files", return_value=tmp_path):
             assert agent_templates_module._read_package_data("does-not-exist.md") is None
+
+
+class TestSkillSourceFiles:
+    """Tests for ``get_skill_source_files`` (the whole-tree install seam)."""
+
+    def test_reads_checkout_tree(self):
+        """The full plugin/skills/notebooklm/ checkout is read into a flat rel-path dict."""
+        files = agent_templates_module.get_skill_source_files()
+
+        assert files is not None
+        assert "NotebookLM Automation" in files["SKILL.md"]
+        assert "references/setup.md" in files
+        assert "references/command-reference.md" in files
+        assert "references/workflows.md" in files
+        assert "references/troubleshooting.md" in files
+        assert "scripts/nlm" in files
+        assert "scripts/research_to_podcast.py" in files
+        assert "scripts/bulk_import.py" in files
+        assert "scripts/generate_artifact.py" in files
+
+    def test_falls_back_to_package_data_tree(self, tmp_path):
+        """Outside a checkout, the packaged ``data/skill/`` tree is walked instead."""
+        skill_dir = tmp_path / "data" / "skill"
+        (skill_dir / "references").mkdir(parents=True)
+        (skill_dir / "scripts").mkdir()
+        (skill_dir / "SKILL.md").write_text("---\nname: notebooklm\n---\nbody", encoding="utf-8")
+        (skill_dir / "references" / "setup.md").write_text("setup body", encoding="utf-8")
+        (skill_dir / "scripts" / "nlm").write_text("#!/bin/sh\n", encoding="utf-8")
+
+        with (
+            patch.object(
+                agent_templates_module, "REPO_ROOT_SKILL_DIR", tmp_path / "does-not-exist"
+            ),
+            patch.object(agent_templates_module.resources, "files", return_value=tmp_path),
+        ):
+            files = agent_templates_module.get_skill_source_files()
+
+        assert files == {
+            "SKILL.md": "---\nname: notebooklm\n---\nbody",
+            "references/setup.md": "setup body",
+            "scripts/nlm": "#!/bin/sh\n",
+        }
+
+    def test_missing_everywhere_returns_none(self, tmp_path):
+        """Neither the checkout dir nor the packaged ``data/skill/`` dir exist -> None."""
+        (tmp_path / "data").mkdir()
+        with (
+            patch.object(
+                agent_templates_module, "REPO_ROOT_SKILL_DIR", tmp_path / "does-not-exist"
+            ),
+            patch.object(agent_templates_module.resources, "files", return_value=tmp_path),
+        ):
+            assert agent_templates_module.get_skill_source_files() is None
+
+    def test_missing_notebooklm_package_returns_none(self, tmp_path):
+        """A ``ModuleNotFoundError`` while resolving package data is swallowed."""
+
+        def _raise(_name: str):
+            raise ModuleNotFoundError("notebooklm")
+
+        with (
+            patch.object(
+                agent_templates_module, "REPO_ROOT_SKILL_DIR", tmp_path / "does-not-exist"
+            ),
+            patch.object(agent_templates_module.resources, "files", side_effect=_raise),
+        ):
+            assert agent_templates_module.get_skill_source_files() is None

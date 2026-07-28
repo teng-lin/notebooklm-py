@@ -1,0 +1,23 @@
+#!/bin/sh
+# nlm - self-bootstrapping launcher for the `notebooklm` CLI.
+#
+# Usage: sh <skill-dir>/scripts/nlm <notebooklm-args...>
+#   e.g. sh <skill-dir>/scripts/nlm list --json
+#
+# Resolution order:
+#   1. `notebooklm` already on PATH        -> exec it directly.
+#   2. `uvx` available (no notebooklm)     -> exec via `uvx --from "notebooklm-py[browser]"`.
+#   3. Neither available                   -> print install instructions and exit 1.
+set -eu
+
+if command -v notebooklm >/dev/null 2>&1; then
+    exec notebooklm "$@"
+elif command -v uvx >/dev/null 2>&1; then
+    exec uvx --from "notebooklm-py[browser]" notebooklm "$@"
+else
+    echo "Error: neither 'notebooklm' nor 'uvx' was found on PATH." >&2
+    echo "Install one of the following, then re-run this command:" >&2
+    echo "  pip install \"notebooklm-py[browser]\"" >&2
+    echo "  # or install uv (https://docs.astral.sh/uv/) to use uvx without a manual install" >&2
+    exit 1
+fi

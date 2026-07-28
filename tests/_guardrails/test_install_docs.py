@@ -27,7 +27,7 @@ INSTALLATION_MD = REPO_ROOT / "docs" / "installation.md"
 PYPROJECT_TOML = REPO_ROOT / "pyproject.toml"
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 AGENTS_MD = REPO_ROOT / "AGENTS.md"
-SKILL_MD = REPO_ROOT / "SKILL.md"
+SKILL_MD = REPO_ROOT / "plugin" / "skills" / "notebooklm" / "SKILL.md"
 TROUBLESHOOTING_MD = REPO_ROOT / "docs" / "troubleshooting.md"
 CHANGELOG_MD = REPO_ROOT / "CHANGELOG.md"
 

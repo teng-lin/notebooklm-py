@@ -123,8 +123,8 @@ pattern = '\]\(LICENSE\)'
 replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/LICENSE)'
 
 [[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
-pattern = '\]\(SKILL\.md\)'
-replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/SKILL.md)'
+pattern = '\]\(plugin/skills/notebooklm/SKILL\.md\)'
+replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/plugin/skills/notebooklm/SKILL.md)'
 
 [[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
 pattern = '\]\(AGENTS\.md\)'
@@ -144,7 +144,7 @@ path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/notebooklm"]
-force-include = {"SKILL.md" = "notebooklm/data/SKILL.md", "AGENTS.md" = "notebooklm/data/CODEX.md"}
+force-include = {"plugin/skills/notebooklm" = "notebooklm/data/skill", "AGENTS.md" = "notebooklm/data/CODEX.md"}
 # Re-include the gitignored _commit.py when the wheel is built from a
 # carried-forward sdist (the hook only runs from a checkout with .git).
 artifacts = ["src/notebooklm/_commit.py"]

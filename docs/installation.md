@@ -65,9 +65,9 @@ This is the canonical installation guide for `notebooklm-py`. The README has a q
 
 For Claude Code, Codex, and similar agent harnesses.
 
-The project ships `notebooklm skill install`, [SKILL.md](../SKILL.md), and [AGENTS.md](../AGENTS.md). Agents run install on the user's behalf in the user's existing environment — no new venv. They typically can't *interact* with a browser, but most agent harnesses (Claude Code, Codex) *can* shell out to Playwright when a user is present, and `[cookies]` is a preferred optimization for reusing the user's already-logged-in browser cookies.
+The project ships `notebooklm skill install`, the [plugin/skills/notebooklm/](../plugin/skills/notebooklm/SKILL.md) skill directory, and [AGENTS.md](../AGENTS.md). Agents run install on the user's behalf in the user's existing environment — no new venv. They typically can't *interact* with a browser, but most agent harnesses (Claude Code, Codex) *can* shell out to Playwright when a user is present, and `[cookies]` is a preferred optimization for reusing the user's already-logged-in browser cookies.
 
-> **Note on agent harness coverage:** `notebooklm skill install` empirically writes to `~/.claude/skills/notebooklm/SKILL.md` and `~/.agents/skills/notebooklm/SKILL.md`. Cursor and other harnesses with bespoke skill formats are not auto-targeted; they fall back to `pip install` + manual skill registration.
+> **Note on agent harness coverage:** `notebooklm skill install` empirically writes the skill directory (`SKILL.md` + `references/` + `scripts/`) to `~/.claude/skills/notebooklm/` and `~/.agents/skills/notebooklm/`. Cursor and other harnesses with bespoke skill formats are not auto-targeted; they fall back to `pip install` + manual skill registration.
 
 **Recommended install (Python-version-aware; surfaces real errors instead of swallowing them):**
 
@@ -93,12 +93,14 @@ fi
 
 <!-- not mirrored: agent skill registration; not part of the contributor install flow -->
 ```bash
-notebooklm skill install              # writes to ~/.claude/skills/, ~/.agents/skills/
-# OR (alternative ecosystem):
+notebooklm skill install              # writes the skill dir to ~/.claude/skills/notebooklm/, ~/.agents/skills/notebooklm/
+# OR (alternative ecosystem — discovers plugin/skills/notebooklm/ in this repo):
 npx skills add teng-lin/notebooklm-py
 ```
 
-If the agent is reading `SKILL.md` from inside an already-installed location (e.g. `~/.claude/skills/notebooklm/SKILL.md`), the skill is already present — you only need the Python package install + auth.
+If your `npx skills` CLI doesn't find the nested `plugin/skills/notebooklm/` path, fall back to `notebooklm skill install`.
+
+If the agent is already reading `SKILL.md` from inside an installed skill directory (e.g. `~/.claude/skills/notebooklm/SKILL.md`, alongside its `references/` and `scripts/` siblings), the skill is already present — you only need the Python package install + auth. **Claude Code plugin users already have this skill bundled** (see [docs/mcp-guide.md](mcp-guide.md)) — don't also run `notebooklm skill install` for Claude Code.
 
 **Authentication — `notebooklm login` is the primary path:**
 

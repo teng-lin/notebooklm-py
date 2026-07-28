@@ -20,17 +20,22 @@ def runner():
 
 
 class TestSkillInstall:
-    """Tests for skill install command."""
+    """Tests for skill install command.
+
+    ``install`` reads the whole packaged skill tree through
+    ``get_skill_source_tree`` (``{relative_posix_path: content}``), not the
+    single-file ``get_skill_source_content`` (that seam stays reserved for
+    ``skill show``) -- so these tests patch the tree seam with a small dict
+    fixture instead of a single source string.
+    """
 
     def test_skill_install_creates_all_default_targets(self, runner, tmp_path):
         """Test that install writes both supported user targets by default."""
         home = tmp_path / "home"
-        mock_source_content = "---\nname: notebooklm\n---\n# Test"
+        mock_files = {"SKILL.md": "---\nname: notebooklm\n---\n# Test"}
 
         with (
-            patch.object(
-                skill_module, "get_skill_source_content", return_value=mock_source_content
-            ),
+            patch.object(skill_module, "get_skill_source_tree", return_value=mock_files),
             patch.object(skill_module.Path, "home", return_value=home),
         ):
             result = runner.invoke(cli, ["skill", "install"])
@@ -44,12 +49,10 @@ class TestSkillInstall:
         """Test project-scope installs into the universal .agents path only."""
         home = tmp_path / "home"
         project = tmp_path / "project"
-        mock_source_content = "---\nname: notebooklm\n---\n# Test"
+        mock_files = {"SKILL.md": "---\nname: notebooklm\n---\n# Test"}
 
         with (
-            patch.object(
-                skill_module, "get_skill_source_content", return_value=mock_source_content
-            ),
+            patch.object(skill_module, "get_skill_source_tree", return_value=mock_files),
             patch.object(skill_module.Path, "home", return_value=home),
             patch.object(skill_module.Path, "cwd", return_value=project),
         ):
@@ -64,12 +67,10 @@ class TestSkillInstall:
     def test_skill_install_project_scope_all_targets(self, runner, tmp_path):
         """Test project-scope installs both targets under cwd when target=all."""
         project = tmp_path / "project"
-        mock_source_content = "---\nname: notebooklm\n---\n# Test"
+        mock_files = {"SKILL.md": "---\nname: notebooklm\n---\n# Test"}
 
         with (
-            patch.object(
-                skill_module, "get_skill_source_content", return_value=mock_source_content
-            ),
+            patch.object(skill_module, "get_skill_source_tree", return_value=mock_files),
             patch.object(skill_module.Path, "cwd", return_value=project),
         ):
             result = runner.invoke(cli, ["skill", "install", "--scope", "project"])
@@ -79,8 +80,8 @@ class TestSkillInstall:
         assert (project / ".agents" / "skills" / "notebooklm" / "SKILL.md").exists()
 
     def test_skill_install_source_not_found(self, runner, tmp_path):
-        """Test error when source file doesn't exist."""
-        with patch.object(skill_module, "get_skill_source_content", return_value=None):
+        """Test error when the packaged skill tree isn't found."""
+        with patch.object(skill_module, "get_skill_source_tree", return_value=None):
             result = runner.invoke(cli, ["skill", "install"])
 
         assert result.exit_code == 1
@@ -89,17 +90,18 @@ class TestSkillInstall:
     def test_skill_install_partial_failure_reports_both(self, runner, tmp_path):
         """Test that a per-target write failure is reported but other targets still install."""
         home = tmp_path / "home"
-        mock_source_content = "---\nname: notebooklm\n---\n# Test"
+        mock_files = {"SKILL.md": "---\nname: notebooklm\n---\n# Test"}
 
-        # Make the claude target path a file so mkdir(parents=True) raises NotADirectoryError
+        # Make the claude target's install *directory* a plain file, so it
+        # can't be diffed (classify_target -> OVERWRITE) and the write loop's
+        # rmtree(ignore_errors=True) leaves it in place, so the first
+        # atomic_write_text's mkdir(parents=True) raises FileExistsError.
         claude_dir = home / ".claude" / "skills" / "notebooklm"
         claude_dir.parent.mkdir(parents=True)
         claude_dir.write_text("blocker")
 
         with (
-            patch.object(
-                skill_module, "get_skill_source_content", return_value=mock_source_content
-            ),
+            patch.object(skill_module, "get_skill_source_tree", return_value=mock_files),
             patch.object(skill_module.Path, "home", return_value=home),
         ):
             result = runner.invoke(cli, ["skill", "install"])
@@ -108,6 +110,31 @@ class TestSkillInstall:
         assert "failed" in result.output.lower()
         # agents target should still have succeeded
         assert (home / ".agents" / "skills" / "notebooklm" / "SKILL.md").exists()
+
+    def test_skill_install_chmods_scripts_executable(self, runner, tmp_path):
+        """Files under scripts/ land 0o755 (executable) after install."""
+        home = tmp_path / "home"
+        mock_files = {
+            "SKILL.md": "---\nname: notebooklm\n---\n# Test",
+            "references/setup.md": "setup body",
+            "scripts/nlm": "#!/bin/sh\necho nlm\n",
+            "scripts/helper.py": "#!/usr/bin/env python3\n",
+        }
+
+        with (
+            patch.object(skill_module, "get_skill_source_tree", return_value=mock_files),
+            patch.object(skill_module.Path, "home", return_value=home),
+        ):
+            result = runner.invoke(cli, ["skill", "install", "--target", "claude"])
+
+        assert result.exit_code == 0, result.output
+        claude_dir = home / ".claude" / "skills" / "notebooklm"
+        assert (claude_dir / "references" / "setup.md").read_text(encoding="utf-8") == (
+            "setup body"
+        )
+        for script_name in ("nlm", "helper.py"):
+            mode = (claude_dir / "scripts" / script_name).stat().st_mode & 0o777
+            assert mode == 0o755, f"{script_name} mode was {oct(mode)}"
 
 
 class TestSkillInstallProjectHardening:
@@ -137,7 +164,9 @@ class TestSkillInstallProjectHardening:
         """Run ``skill install --scope project`` with the patched cwd."""
         with (
             patch.object(
-                skill_module, "get_skill_source_content", return_value=self.SOURCE_CONTENT
+                skill_module,
+                "get_skill_source_tree",
+                return_value={"SKILL.md": self.SOURCE_CONTENT},
             ),
             patch.object(skill_module, "get_package_version", return_value="1.0.0"),
             patch.object(skill_module.Path, "cwd", return_value=project),
@@ -389,6 +418,31 @@ class TestSkillInstallProjectHardening:
         # Differing target overwritten.
         assert agents.read_text(encoding="utf-8") == self._stamped()
 
+    # --- stale extra file (directory-tree classification) --------------------
+
+    def test_stale_extra_file_forces_overwrite_and_force_cleans_it_up(self, runner, tmp_path):
+        """A leftover file not in the packaged tree (e.g. from an old skill
+        version, or an old single-file install occupying the same directory)
+        makes the target 'differing' even though SKILL.md itself matches --
+        refused by default, cleaned up by --force."""
+        project = tmp_path / "project"
+        claude_dir = project / ".claude" / "skills" / "notebooklm"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / "SKILL.md").write_text(self._stamped(), encoding="utf-8")
+        stale = claude_dir / "old-reference.md"
+        stale.write_text("leftover from a previous skill version", encoding="utf-8")
+
+        # Default: refuses because of the stale extra file.
+        result = self._invoke(runner, project)
+        assert result.exit_code == 1, result.output
+        assert stale.exists()
+
+        # --force: overwrites the whole tree, so the stale leftover is gone.
+        result = self._invoke(runner, project, "--force")
+        assert result.exit_code == 0, result.output
+        assert not stale.exists()
+        assert (claude_dir / "SKILL.md").read_text(encoding="utf-8") == self._stamped()
+
     # --- flag validation -----------------------------------------------------
 
     def test_user_scope_rejects_dry_run(self, runner, tmp_path):
@@ -542,6 +596,42 @@ class TestSkillStatus:
         assert agents["installed"] is True
         assert agents["skill_version"] == version
         assert agents["version_mismatch"] is False
+        assert agents["files"] == 1  # only SKILL.md was written by this fixture
+
+    def test_skill_status_json_files_counts_the_whole_tree(self, runner, tmp_path):
+        """``files`` counts every installed file, not just the entry file."""
+        home = tmp_path / "home"
+        version = "1.2.3"
+        skill_dir = home / ".agents" / "skills" / "notebooklm"
+        (skill_dir / "references").mkdir(parents=True)
+        (skill_dir / "scripts").mkdir()
+        (skill_dir / "SKILL.md").write_text(f"<!-- notebooklm-py v{version} -->\n# Test")
+        (skill_dir / "references" / "setup.md").write_text("setup body")
+        (skill_dir / "scripts" / "nlm").write_text("#!/bin/sh\n")
+
+        with (
+            patch.object(skill_module.Path, "home", return_value=home),
+            patch.object(skill_module, "get_package_version", return_value=version),
+        ):
+            result = runner.invoke(cli, ["skill", "status", "--target", "agents", "--json"])
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        agents = next(t for t in payload["targets"] if t["target"] == "agents")
+        assert agents["files"] == 3
+
+    def test_skill_status_json_files_zero_when_not_installed(self, runner, tmp_path):
+        """An uninstalled target reports ``files: 0``."""
+        home = tmp_path / "home"
+
+        with patch.object(skill_module.Path, "home", return_value=home):
+            result = runner.invoke(cli, ["skill", "status", "--target", "claude", "--json"])
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        claude = next(t for t in payload["targets"] if t["target"] == "claude")
+        assert claude["installed"] is False
+        assert claude["files"] == 0
 
 
 class TestSkillUninstall:
@@ -563,6 +653,23 @@ class TestSkillUninstall:
         assert result.exit_code == 0
         assert not skill_dest.exists()
         assert other_dest.exists()
+
+    def test_skill_uninstall_removes_entire_directory_tree(self, runner, tmp_path):
+        """Uninstall removes the whole installed tree (references/, scripts/), not
+        just the entry file -- it's ``shutil.rmtree``, not a single ``unlink``."""
+        home = tmp_path / "home"
+        skill_dir = home / ".claude" / "skills" / "notebooklm"
+        (skill_dir / "references").mkdir(parents=True)
+        (skill_dir / "scripts").mkdir()
+        (skill_dir / "SKILL.md").write_text("# Test", encoding="utf-8")
+        (skill_dir / "references" / "setup.md").write_text("setup", encoding="utf-8")
+        (skill_dir / "scripts" / "nlm").write_text("#!/bin/sh\n", encoding="utf-8")
+
+        with patch.object(skill_module.Path, "home", return_value=home):
+            result = runner.invoke(cli, ["skill", "uninstall", "--target", "claude"])
+
+        assert result.exit_code == 0, result.output
+        assert not skill_dir.exists()
 
     def test_skill_uninstall_all_targets_removes_both(self, runner, tmp_path):
         """Test that uninstall --target all removes both targets and cleans empty dirs."""
@@ -665,31 +772,49 @@ class TestSkillSourceFallback:
 
 
 class TestSkillPackage:
-    """Tests for skill package (Claude-uploadable archive for chat/Cowork)."""
+    """Tests for skill package (Claude-uploadable archive for chat/Cowork).
 
-    SOURCE_CONTENT = "---\nname: notebooklm\ndescription: test skill\n---\n# Source body v1"
+    ``package`` reads the whole packaged skill tree through
+    ``get_skill_source_tree`` (``{relative_posix_path: content}``), same as
+    ``install`` -- so these tests patch the tree seam with a small dict
+    fixture instead of a single source string (mirrors ``TestSkillInstall``).
+    """
 
-    def _stamped(self, source: str | None = None, version: str = "1.0.0") -> str:
-        return skill_module.add_version_comment(source or self.SOURCE_CONTENT, version)
+    SOURCE_TREE = {
+        "SKILL.md": "---\nname: notebooklm\ndescription: test skill\n---\n# Source body v1",
+        "references/setup.md": "# Setup",
+        "scripts/nlm": "#!/usr/bin/env bash\necho hi\n",
+    }
 
-    def _invoke(self, runner, *extra_args: str, source: str | None = None):
+    def _stamped(
+        self, source: dict[str, str] | None = None, version: str = "1.0.0"
+    ) -> dict[str, str]:
+        return skill_module.stamp_skill_files(source or self.SOURCE_TREE, version)
+
+    def _invoke(self, runner, *extra_args: str, source: dict[str, str] | None = None):
         with (
             patch.object(
                 skill_module,
-                "get_skill_source_content",
-                return_value=source or self.SOURCE_CONTENT,
+                "get_skill_source_tree",
+                return_value=source or self.SOURCE_TREE,
             ),
             patch.object(skill_module, "get_package_version", return_value="1.0.0"),
         ):
             return runner.invoke(cli, ["skill", "package", *extra_args])
 
-    def _read_entry(self, archive_path: Path) -> str:
+    def _read_archive(self, archive_path: Path) -> dict[str, str]:
         import io
         import zipfile
 
         with zipfile.ZipFile(io.BytesIO(archive_path.read_bytes())) as archive:
-            assert archive.namelist() == [skill_module.SKILL_ARCHIVE_ENTRY]
-            return archive.read(skill_module.SKILL_ARCHIVE_ENTRY).decode("utf-8")
+            prefix = f"{skill_module.SKILL_ARCHIVE_DIRNAME}/"
+            return {
+                name.removeprefix(prefix): archive.read(name).decode("utf-8")
+                for name in archive.namelist()
+            }
+
+    def _read_entry(self, archive_path: Path) -> str:
+        return self._read_archive(archive_path)[skill_module.SKILL_ENTRY]
 
     def test_package_default_output_in_cwd(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -698,7 +823,7 @@ class TestSkillPackage:
             assert result.exit_code == 0, result.output
             archive = Path(skill_module.DEFAULT_ARCHIVE_FILENAME)
             assert archive.exists()
-            assert self._read_entry(archive) == self._stamped()
+            assert self._read_archive(archive) == self._stamped()
             assert "Packaged" in result.output
             assert "Capabilities" in result.output
 
@@ -707,7 +832,7 @@ class TestSkillPackage:
         result = self._invoke(runner, "--output", str(target))
 
         assert result.exit_code == 0, result.output
-        assert self._read_entry(target) == self._stamped()
+        assert self._read_archive(target) == self._stamped()
 
     def test_package_output_directory_uses_default_filename(self, runner, tmp_path):
         result = self._invoke(runner, "--output", str(tmp_path))
@@ -736,11 +861,11 @@ class TestSkillPackage:
         result = self._invoke(runner, "--output", str(target), "--force")
 
         assert result.exit_code == 0, result.output
-        assert self._read_entry(target) == self._stamped()
+        assert self._read_archive(target) == self._stamped()
 
     def test_package_missing_source_errors(self, runner, tmp_path):
         with (
-            patch.object(skill_module, "get_skill_source_content", return_value=None),
+            patch.object(skill_module, "get_skill_source_tree", return_value=None),
             patch.object(skill_module, "get_package_version", return_value="1.0.0"),
         ):
             result = runner.invoke(
@@ -758,7 +883,9 @@ class TestSkillPackage:
         payload = json.loads(result.output)
         assert payload["path"] == str(target)
         assert payload["version"] == "1.0.0"
-        assert payload["entries"] == [skill_module.SKILL_ARCHIVE_ENTRY]
+        assert payload["entries"] == sorted(
+            f"{skill_module.SKILL_ARCHIVE_DIRNAME}/{rel_path}" for rel_path in self.SOURCE_TREE
+        )
         assert payload["size_bytes"] == len(target.read_bytes())
 
     def test_package_json_failure_output_exists_envelope(self, runner, tmp_path):
@@ -774,7 +901,7 @@ class TestSkillPackage:
 
     def test_package_json_failure_missing_source_envelope(self, runner, tmp_path):
         with (
-            patch.object(skill_module, "get_skill_source_content", return_value=None),
+            patch.object(skill_module, "get_skill_source_tree", return_value=None),
             patch.object(skill_module, "get_package_version", return_value="1.0.0"),
         ):
             result = runner.invoke(
@@ -795,9 +922,12 @@ class TestSkillPackage:
         assert first.read_bytes() == second.read_bytes()
 
     def test_package_long_description_warns_on_stderr_in_json_mode(self, runner, tmp_path):
-        long_source = f"---\nname: notebooklm\ndescription: {'x' * 1100}\n---\n# Body"
+        long_tree = {
+            **self.SOURCE_TREE,
+            "SKILL.md": f"---\nname: notebooklm\ndescription: {'x' * 1100}\n---\n# Body",
+        }
         target = tmp_path / "skill.zip"
-        result = self._invoke(runner, "--output", str(target), "--json", source=long_source)
+        result = self._invoke(runner, "--output", str(target), "--json", source=long_tree)
 
         assert result.exit_code == 0, result.output
         json.loads(result.stdout)  # stdout stays pure JSON
