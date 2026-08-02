@@ -61,11 +61,11 @@ jobs:
           # so the bundle matches exactly what was released.
           ref: ${{ github.event.release.tag_name }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
