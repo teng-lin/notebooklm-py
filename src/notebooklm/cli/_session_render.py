@@ -162,7 +162,15 @@ def _render_logout_outcome(outcome: LogoutOutcome, *, json_output: bool = False)
             json_error_response(
                 f"logout_{failure.kind}_failed",
                 failure.error_message,
-                {"path": str(failure.path), "env_auth_remains": outcome.env_auth_remains},
+                {
+                    "path": str(failure.path),
+                    "env_auth_remains": outcome.env_auth_remains,
+                    "browser_profile_preserved": (
+                        str(outcome.browser_profile_preserved)
+                        if outcome.browser_profile_preserved is not None
+                        else None
+                    ),
+                },
             )
         else:
             json_output_response(
@@ -170,6 +178,11 @@ def _render_logout_outcome(outcome: LogoutOutcome, *, json_output: bool = False)
                     "status": "logged_out" if outcome.removed_any else "already_logged_out",
                     "removed": outcome.removed_any,
                     "env_auth_remains": outcome.env_auth_remains,
+                    "browser_profile_preserved": (
+                        str(outcome.browser_profile_preserved)
+                        if outcome.browser_profile_preserved is not None
+                        else None
+                    ),
                 }
             )
         return
@@ -178,6 +191,12 @@ def _render_logout_outcome(outcome: LogoutOutcome, *, json_output: bool = False)
         console.print(
             f"[yellow]Note: {AUTH_JSON_ENV_NAME} is set — env-based auth will "
             "remain active after logout. Unset it to fully log out.[/yellow]"
+        )
+
+    if outcome.browser_profile_preserved is not None:
+        console.print(
+            "[yellow]Note: Unowned browser profile preserved:[/yellow]\n"
+            f"{outcome.browser_profile_preserved}"
         )
 
     failure = outcome.failure

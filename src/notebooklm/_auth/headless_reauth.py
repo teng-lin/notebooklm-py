@@ -327,11 +327,14 @@ def _resolve_reusable_profile(
     # session. An absent or non-directory path has no session to harvest.
     if not candidate.is_dir():
         return None
-    # An empty dir (e.g. created by a path-prep step but never logged into) has
-    # no Chrome session state. ``next(iterdir)`` is cheap and avoids treating a
-    # freshly-mkdir'd profile as reusable.
+    # An empty or ownership-marker-only dir (created by path prep but never
+    # logged into) has no Chrome session state.
+    from ..paths import BROWSER_PROFILE_OWNERSHIP_MARKER
+
     try:
-        next(candidate.iterdir())
+        next(
+            entry for entry in candidate.iterdir() if entry.name != BROWSER_PROFILE_OWNERSHIP_MARKER
+        )
     except StopIteration:
         return None
     except OSError as exc:  # unreadable dir — treat as no reusable profile

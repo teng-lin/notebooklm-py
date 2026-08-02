@@ -349,13 +349,94 @@ def test_prepare_login_paths_isolates_custom_storage_profiles(tmp_path) -> None:
     assert outcome_b.browser_profile == tmp_path / "B.json.browser_profile"
 
 
+def test_prepare_login_paths_marks_new_custom_profile_as_owned(tmp_path) -> None:
+    """A browser directory created for explicit storage carries an ownership marker."""
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(tmp_path / "A.json"),
+        fresh=False,
+    )
+
+    assert isinstance(outcome, PreparedPaths)
+    assert (outcome.browser_profile / ".notebooklm-owned").is_file()
+
+
+def test_prepare_login_paths_fresh_refuses_unmarked_custom_profile(tmp_path) -> None:
+    """--fresh never recursively deletes a pre-existing unowned sidecar."""
+    browser_profile = tmp_path / "A.json.browser_profile"
+    browser_profile.mkdir()
+    payload = browser_profile / "keep-me"
+    payload.write_text("external")
+
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(tmp_path / "A.json"),
+        fresh=True,
+    )
+
+    assert isinstance(outcome, PathError)
+    assert "Refusing to delete" in outcome.message
+    assert payload.read_text() == "external"
+
+
+def test_prepare_login_paths_fresh_refuses_arbitrary_conventional_profile(
+    tmp_path, monkeypatch
+) -> None:
+    """A conventional filename outside NOTEBOOKLM_HOME is still unowned."""
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path / "home"))
+    external = tmp_path / "external"
+    external.mkdir()
+    browser_profile = external / "browser_profile"
+    browser_profile.mkdir()
+    payload = browser_profile / "keep-me"
+    payload.write_text("external")
+
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(external / "storage_state.json"),
+        fresh=True,
+    )
+
+    assert isinstance(outcome, PathError)
+    assert payload.read_text() == "external"
+
+
+def test_prepare_login_paths_fresh_accepts_explicit_named_profile_without_marker(
+    tmp_path, monkeypatch
+) -> None:
+    """An explicit path to a managed profile has the same ownership as ``-p``."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(home))
+    profile_dir = home / "profiles" / "work"
+    profile_dir.mkdir(parents=True)
+    storage = profile_dir / "storage_state.json"
+    storage.write_text("{}")
+    browser_profile = profile_dir / "browser_profile"
+    browser_profile.mkdir()
+    payload = browser_profile / "stale"
+    payload.write_text("session")
+
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(storage),
+        fresh=True,
+    )
+
+    assert isinstance(outcome, PreparedPaths)
+    assert outcome.fresh_cleared is True
+    assert not payload.exists()
+
+
 def test_prepare_login_paths_fresh_clears_only_matching_custom_profile(tmp_path) -> None:
     """--fresh resets only the browser profile bound to the selected storage file."""
     browser_a = tmp_path / "A.json.browser_profile"
     browser_b = tmp_path / "B.json.browser_profile"
     browser_a.mkdir()
     browser_b.mkdir()
-    (browser_a / "marker").write_text("A")
+    ownership_a = browser_a / ".notebooklm-owned"
+    ownership_a.touch()
+    payload_a = browser_a / "payload"
+    payload_a.write_text("A")
     marker_b = browser_b / "marker"
     marker_b.write_text("B")
 
@@ -368,7 +449,8 @@ def test_prepare_login_paths_fresh_clears_only_matching_custom_profile(tmp_path)
     assert isinstance(outcome, PreparedPaths)
     assert outcome.fresh_cleared is True
     assert browser_a.is_dir()
-    assert not any(browser_a.iterdir())
+    assert ownership_a.is_file()
+    assert not payload_a.exists()
     assert marker_b.read_text() == "B"
 
 

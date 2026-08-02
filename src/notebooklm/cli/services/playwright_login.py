@@ -60,7 +60,12 @@ from ..._auth.browser_capture import (
     url_matches_base_host,
     windows_playwright_event_loop,
 )
-from ...paths import get_browser_profile_dir, get_storage_path
+from ...paths import (
+    BROWSER_PROFILE_OWNERSHIP_MARKER,
+    browser_profile_is_owned,
+    get_browser_profile_dir,
+    get_storage_path,
+)
 from .playwright_redaction import redact_subprocess_output
 
 logger = logging.getLogger(__name__)
@@ -355,7 +360,9 @@ def prepare_login_paths(
 
     Clears the cached browser profile on ``--fresh`` (returning
     :class:`PathError` on OSError so the command layer exits 1), then creates
-    both parent dirs with platform-aware permissions. Returns
+    both parent dirs with platform-aware permissions. Explicit-storage browser
+    dirs created here receive an ownership marker; ``--fresh`` refuses to
+    delete an existing unowned sidecar. Returns
     :class:`PreparedPaths` on success (``fresh_cleared`` flags whether the
     wipe ran, so the wrapper emits the cleared-session line).
     """
@@ -371,6 +378,13 @@ def prepare_login_paths(
 
     fresh_cleared = False
     if fresh and browser_profile.exists():
+        if storage and not browser_profile_is_owned(storage_path, browser_profile):
+            return PathError(
+                "[red]Refusing to delete an unowned browser profile.[/red]\n"
+                "The directory is not recognized as NotebookLM-managed:\n"
+                f"{browser_profile}\n"
+                "Move it aside, or remove it manually only if you know it is safe."
+            )
         try:
             shutil.rmtree(browser_profile)
             fresh_cleared = True
@@ -382,6 +396,7 @@ def prepare_login_paths(
                 f"If the problem persists, manually delete: {browser_profile}"
             )
 
+    browser_profile_existed = browser_profile.exists()
     if sys.platform == "win32":
         # On Windows < Python 3.13, mode= is ignored by mkdir(). On
         # Python 3.13+, mode= applies Windows ACLs that can be overly
@@ -394,6 +409,9 @@ def prepare_login_paths(
         storage_path.parent.chmod(0o700)
         browser_profile.mkdir(parents=True, exist_ok=True, mode=0o700)
         browser_profile.chmod(0o700)
+
+    if storage and not browser_profile_existed:
+        (browser_profile / BROWSER_PROFILE_OWNERSHIP_MARKER).touch()
 
     return PreparedPaths(
         storage_path=storage_path,

@@ -10,10 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `notebooklm login --storage <path>` now gives each custom storage file an
-  isolated persistent browser profile, with login, logout, `status --paths`, and
-  L3 headless re-auth resolving the same storage-specific path. Existing
-  custom-storage browser sessions are not auto-migrated because the old shared
-  profile cannot be safely attributed to a storage file or account. (#2026)
+  isolated persistent browser profile, with login, logout, `status --paths`,
+  doctor's L3 readiness row, and L3 headless re-auth resolving the same
+  storage-specific path. New explicit-storage browser directories carry an
+  ownership marker: `login --fresh` refuses to recursively delete unowned
+  sidecars and logout leaves them intact (and reports the preserved path).
+  Canonical legacy and named-profile layouts remain managed even when selected
+  through `--storage`. Very long storage filenames use a stable canonical-path hash to
+  stay within filesystem component limits. Existing custom-storage browser
+  sessions are not auto-migrated because the old shared profile cannot be safely
+  attributed to a storage file or account. (#2026)
 - `notebooklm login --master-token` now starts Playwright with the required Windows
   event-loop policy, avoiding a pre-browser `NotImplementedError` (#2011).
 - `notebooklm login` now recognizes `notebook.google.com` as the personal app landing

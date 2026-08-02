@@ -411,7 +411,7 @@ By default, opens a Chromium browser with a persistent profile. Complete the Goo
 - `--account EMAIL` - Pick a signed-in Google account by email when several are present in the browser. Saves to the active profile by default; use `--profile-name` for a separate named profile or `--storage` for an exact path. Only valid with `--browser-cookies`.
 - `--all-accounts` - Extract every Google account signed in to the browser into separate profiles named from each account email. Only valid with `--browser-cookies`.
 - `--profile-name NAME` - Write a targeted `--account` import to this named profile instead of the active profile. Only valid with `--browser-cookies`.
-- `--fresh` - Start with a clean browser session (deletes the cached browser profile). Use to switch Google accounts. Has no effect with `--browser-cookies`.
+- `--fresh` - Start with a clean browser session (deletes the cached browser profile). Use to switch Google accounts. With explicit `--storage`, a pre-existing browser sidecar is deleted only when it carries NotebookLM's ownership marker or is the canonical legacy/named-profile layout; arbitrary unowned directories are refused. Has no effect with `--browser-cookies`.
 - `--include-domains LABEL[,LABEL...]` - Opt in to extracting sibling-product cookies (default: required Google auth/Drive cookies only). Supported labels: `youtube`, `docs`, `myaccount`, `mail`, `all`. Pass labels comma-separated or repeat the flag.
 
 **Master-token (headless) options** — mint/refresh web cookies from a durable Google master token, no per-session browser. Requires `pip install "notebooklm-py[headless]"`. Full guide: [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).
@@ -814,7 +814,7 @@ notebooklm auth inspect --browser firefox --json
 
 ### Authentication: `auth logout`
 
-Log out by clearing saved authentication. Removes both the saved cookie file (`storage_state.json`) and the cached browser profile. After logout, run `notebooklm login` to authenticate with a different Google account.
+Log out by clearing saved authentication. Removes both the saved cookie file (`storage_state.json`) and the cached browser profile. With explicit `--storage`, an arbitrary unowned browser sidecar is left intact; canonical managed profile layouts are still removed. After logout, run `notebooklm login` to authenticate with a different Google account.
 
 ```bash
 notebooklm auth logout
