@@ -332,7 +332,44 @@ def test_prepare_login_paths_explicit_storage(tmp_path, monkeypatch) -> None:
     assert outcome.fresh_cleared is False
     # Explicit ``--storage`` short-circuits the path resolver entirely.
     fake_storage_path.assert_not_called()
-    fake_browser_profile_dir.assert_called_once_with()
+    fake_browser_profile_dir.assert_called_once_with(storage_path=tmp_path / "explicit.json")
+
+
+def test_prepare_login_paths_isolates_custom_storage_profiles(tmp_path) -> None:
+    """Different custom storage files use different persistent browser profiles."""
+    storage_a = tmp_path / "A.json"
+    storage_b = tmp_path / "B.json"
+
+    outcome_a = prepare_login_paths(profile="work", storage=str(storage_a), fresh=False)
+    outcome_b = prepare_login_paths(profile="work", storage=str(storage_b), fresh=False)
+
+    assert isinstance(outcome_a, PreparedPaths)
+    assert isinstance(outcome_b, PreparedPaths)
+    assert outcome_a.browser_profile == tmp_path / "A.json.browser_profile"
+    assert outcome_b.browser_profile == tmp_path / "B.json.browser_profile"
+
+
+def test_prepare_login_paths_fresh_clears_only_matching_custom_profile(tmp_path) -> None:
+    """--fresh resets only the browser profile bound to the selected storage file."""
+    browser_a = tmp_path / "A.json.browser_profile"
+    browser_b = tmp_path / "B.json.browser_profile"
+    browser_a.mkdir()
+    browser_b.mkdir()
+    (browser_a / "marker").write_text("A")
+    marker_b = browser_b / "marker"
+    marker_b.write_text("B")
+
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(tmp_path / "A.json"),
+        fresh=True,
+    )
+
+    assert isinstance(outcome, PreparedPaths)
+    assert outcome.fresh_cleared is True
+    assert browser_a.is_dir()
+    assert not any(browser_a.iterdir())
+    assert marker_b.read_text() == "B"
 
 
 def test_prepare_login_paths_with_profile(tmp_path, monkeypatch) -> None:
@@ -351,7 +388,7 @@ def test_prepare_login_paths_with_profile(tmp_path, monkeypatch) -> None:
     assert outcome.browser_profile == browser_profile
     # The profile branch forwards the profile name to the storage resolver.
     fake_storage_path.assert_called_once_with(profile="work")
-    fake_browser_profile_dir.assert_called_once_with()
+    fake_browser_profile_dir.assert_called_once_with(profile="work")
 
 
 # ---------------------------------------------------------------------------

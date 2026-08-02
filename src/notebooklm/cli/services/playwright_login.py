@@ -361,11 +361,13 @@ def prepare_login_paths(
     """
     if storage:
         storage_path = Path(storage)
+        browser_profile = get_browser_profile_dir(storage_path=storage_path)
     elif profile:
         storage_path = get_storage_path(profile=profile)
+        browser_profile = get_browser_profile_dir(profile=profile)
     else:
         storage_path = get_storage_path()
-    browser_profile = get_browser_profile_dir()
+        browser_profile = get_browser_profile_dir()
 
     fresh_cleared = False
     if fresh and browser_profile.exists():

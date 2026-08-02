@@ -1602,6 +1602,36 @@ class TestLoginBrowserCookies:
 
 
 class TestAuthLogoutCommand:
+    def test_auth_logout_storage_override_removes_only_matching_state(self, runner, tmp_path):
+        """Custom-storage logout leaves other and ambient browser profiles intact."""
+        storage_a = tmp_path / "A.json"
+        storage_a.write_text('{"cookies": []}')
+        context_a = tmp_path / "A.json.context.json"
+        context_a.write_text('{"notebook_id": "A"}')
+        browser_a = tmp_path / "A.json.browser_profile"
+        browser_a.mkdir()
+
+        storage_b = tmp_path / "B.json"
+        storage_b.write_text('{"cookies": []}')
+        context_b = tmp_path / "B.json.context.json"
+        context_b.write_text('{"notebook_id": "B"}')
+        browser_b = tmp_path / "B.json.browser_profile"
+        browser_b.mkdir()
+
+        ambient_browser = _sc.get_browser_profile_dir()
+        ambient_browser.mkdir(parents=True)
+
+        result = runner.invoke(cli, ["--storage", str(storage_a), "auth", "logout"])
+
+        assert result.exit_code == 0, result.output
+        assert not storage_a.exists()
+        assert not context_a.exists()
+        assert not browser_a.exists()
+        assert storage_b.exists()
+        assert context_b.exists()
+        assert browser_b.exists()
+        assert ambient_browser.exists()
+
     def test_auth_logout_deletes_storage_and_browser_profile(
         self, runner, tmp_path, mock_context_file, monkeypatch
     ):

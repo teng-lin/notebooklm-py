@@ -147,8 +147,8 @@ async def _try_headless_reauth(
     :func:`notebooklm._auth.psidts_recovery._resolve_recovery_path`.
 
     Profile binding (CRITICAL): the headless browser is driven against the
-    persistent profile that is a sibling of THIS client's ``storage_state.json``
-    (``<storage_path>/../browser_profile``), NOT the ambient/default profile.
+    storage-specific persistent profile for THIS client's auth file, NOT the
+    ambient/default profile.
     A ``from_storage(profile="work")`` or ``--storage <path>`` client therefore
     re-mints from and into ITS OWN profile, never silently harvesting another
     account's session or overwriting the wrong storage file. When no such
@@ -172,17 +172,11 @@ async def _try_headless_reauth(
         logger.debug("Headless re-auth skipped: env-var auth has no writeable storage path.")
         return False
 
+    from ..paths import get_browser_profile_dir
     from .cookies import _replace_cookie_jar, build_httpx_cookies_from_storage
     from .headless_reauth import HeadlessReauthStatus, attempt_headless_reauth
 
-    # Bind the browser profile to the SAME profile as this storage file: the
-    # persistent profile dir is the ``browser_profile`` sibling of
-    # ``storage_state.json`` (see ``notebooklm.paths`` layout). Resolving it
-    # explicitly here — rather than letting ``attempt_headless_reauth`` fall
-    # back to the active/default profile — keeps a non-default client (custom
-    # ``--storage`` or ``profile="work"``) from re-minting against the wrong
-    # account's session.
-    browser_profile = storage_path.parent / "browser_profile"
+    browser_profile = get_browser_profile_dir(storage_path=storage_path)
 
     result = await asyncio.to_thread(
         attempt_headless_reauth,

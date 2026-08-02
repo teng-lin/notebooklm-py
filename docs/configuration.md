@@ -119,6 +119,15 @@ A persistent Chromium user data directory used during `notebooklm login`.
 
 **To reset:** Delete the `browser_profile/` directory and run `notebooklm login` again.
 
+With `--storage <path>`, the browser profile is isolated with that storage file.
+The conventional `storage_state.json` uses a `browser_profile/` directory beside
+it; any other filename uses `<path>.browser_profile`. For example, `A.json` and
+`B.json` use `A.json.browser_profile/` and `B.json.browser_profile/` respectively.
+
+> **Upgrading:** Existing custom-storage browser sessions are not migrated. You
+> may need one interactive sign-in per storage file. Do not copy or delete the
+> old shared browser profile unless its account/profile ownership is known.
+
 ### Master Token (`master_token.json`)
 
 Written only by `notebooklm login --master-token` (the `[headless]` extra). Holds
@@ -557,9 +566,13 @@ they are NOT the same file:
   index and optional `email`) lives in-band inside the selected
   `storage_state.json`. This keeps copied files and `NOTEBOOKLM_AUTH_JSON`
   secrets bound to the same Google account route as the original profile.
+- **Persistent browser state** lives beside the selected storage file. A path
+  named `storage_state.json` uses `browser_profile/`; other filenames append
+  `.browser_profile` to the full filename. Login, headless re-auth,
+  `status --paths`, and logout all resolve the same storage-specific directory.
 
 Run `notebooklm --storage <path> status --paths` to see exactly which
-context file is being used for notebook selection.
+storage, context, and browser-profile paths are in use.
 
 ## CI/CD Configuration
 

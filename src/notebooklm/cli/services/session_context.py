@@ -194,15 +194,18 @@ def execute_logout(ctx: click.Context | None) -> LogoutOutcome:
     and the OSError→:class:`LogoutFailure` mapping; the caller owns presentation
     and exit-code policy.
     """
+    auth = AuthSource.from_click_context(ctx)
 
     def _context_path() -> Path:
-        storage_override = AuthSource.from_click_context(ctx).storage_override
-        return get_context_path(storage_path=storage_override)
+        return get_context_path(storage_path=auth.storage_override)
 
     return _execute_logout_core(
         LogoutInputs(
             storage_path=resolve_logout_storage_path(ctx),
-            browser_profile_dir=get_browser_profile_dir(),
+            browser_profile_dir=get_browser_profile_dir(
+                profile=auth.profile,
+                storage_path=auth.storage_override,
+            ),
             clear_context=lambda: clear_context(clear_account=True),
             context_path=_context_path,
             env_auth_remains=warn_env_auth_remains_after_logout(),

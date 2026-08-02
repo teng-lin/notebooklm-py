@@ -348,18 +348,34 @@ def get_context_path(
     return _legacy_fallback(profile_path, "context.json", resolved)
 
 
-def get_browser_profile_dir(profile: str | None = None) -> Path:
-    """Get browser profile directory for a profile.
+def get_browser_profile_dir(
+    profile: str | None = None,
+    *,
+    storage_path: Path | None = None,
+) -> Path:
+    """Get browser profile directory for a profile or storage file.
 
-    Falls back to legacy home-root path for the "default" profile if the
-    profile-based path doesn't exist (pre-migration compatibility).
+    An explicit storage path gets its own sibling browser profile. The
+    conventional ``storage_state.json`` name keeps the existing
+    ``browser_profile`` sibling name; other filenames preserve their full
+    name and append ``.browser_profile``. Without an explicit storage path,
+    this falls back to the existing profile and legacy-path behavior.
+    Keeping the conventional name preserves the established profile layout;
+    suffixing custom names prevents same-directory storage files from sharing
+    a browser session.
 
     Args:
         profile: Profile name. If None, uses the active profile.
+        storage_path: Explicit storage path from ``--storage``. When set, it
+            takes precedence over profile resolution.
 
     Returns:
         Path to browser_profile/ directory.
     """
+    if storage_path is not None:
+        if storage_path.name == "storage_state.json":
+            return storage_path.parent / "browser_profile"
+        return storage_path.with_suffix(storage_path.suffix + ".browser_profile")
     resolved = resolve_profile(profile)
     profile_path = get_profile_dir(resolved) / "browser_profile"
     return _legacy_fallback(profile_path, "browser_profile", resolved)
@@ -385,9 +401,10 @@ def get_path_info(
 
     Args:
         profile: Profile name. If None, uses the active profile.
-        storage_path: Explicit ``--storage`` override. When set, ``storage_path``
-            and ``context_path`` in the result reflect the sibling-context
-            layout rather than the profile path.
+        storage_path: Explicit ``--storage`` override. When set, the
+            ``storage_path``, ``context_path``, and ``browser_profile_dir`` in
+            the result reflect the storage-specific sibling layout rather than
+            profile paths.
 
     Returns:
         Dict with path information and sources.
@@ -395,11 +412,8 @@ def get_path_info(
     home_from_env = os.environ.get("NOTEBOOKLM_HOME")
     resolved = resolve_profile(profile)
 
-    # Determine profile source. When --storage is set, profile resolution is
-    # effectively bypassed for the auth + context paths — but we still resolve
-    # ``profile`` because consumers may want to know what profile *would* be
-    # active otherwise. Make the override clear in the label so ``status
-    # --paths`` doesn't claim "CLI flag (--storage)" set the profile.
+    # --storage bypasses the profile for auth, context, and browser paths. Resolve
+    # it anyway so diagnostics can show which profile would otherwise be active.
     other_profile_set = (
         profile
         or _active_profile
@@ -435,5 +449,5 @@ def get_path_info(
         "storage_path": resolved_storage,
         "context_path": resolved_context,
         "config_path": str(get_config_path()),
-        "browser_profile_dir": str(get_browser_profile_dir(resolved)),
+        "browser_profile_dir": str(get_browser_profile_dir(resolved, storage_path=storage_path)),
     }

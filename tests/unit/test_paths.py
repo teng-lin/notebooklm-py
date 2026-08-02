@@ -328,6 +328,32 @@ class TestGetContextPath:
 
 
 class TestGetBrowserProfileDir:
+    def test_custom_storage_files_get_distinct_sibling_profiles(self, tmp_path):
+        """Custom storage filenames retain their full name for isolation."""
+        storage_a = tmp_path / "A.json"
+        storage_b = tmp_path / "B.json"
+
+        assert get_browser_profile_dir(storage_path=storage_a) == (
+            tmp_path / "A.json.browser_profile"
+        )
+        assert get_browser_profile_dir(storage_path=storage_b) == (
+            tmp_path / "B.json.browser_profile"
+        )
+
+    def test_conventional_storage_filename_uses_browser_profile_sibling(self, tmp_path):
+        """The standard storage filename preserves the established directory name."""
+        storage = tmp_path / "storage_state.json"
+
+        assert get_browser_profile_dir(storage_path=storage) == tmp_path / "browser_profile"
+
+    def test_storage_path_takes_precedence_over_profile(self, tmp_path):
+        """An explicit storage path wins over profile resolution."""
+        storage = tmp_path / "account.json"
+
+        assert get_browser_profile_dir(profile="work", storage_path=storage) == (
+            tmp_path / "account.json.browser_profile"
+        )
+
     def test_profile_based_path(self, tmp_path):
         """Returns profile-based browser_profile path."""
         home = tmp_path / "home"
