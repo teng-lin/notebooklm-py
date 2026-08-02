@@ -1654,7 +1654,7 @@ class TestAuthLogoutCommand:
         assert not context.exists()
         assert payload.read_text() == "external"
         assert "preserved" in result.output.lower()
-        assert str(browser_profile) in result.output
+        assert browser_profile.name in result.output
 
     def test_auth_logout_json_reports_preserved_unowned_browser_profile(self, runner, tmp_path):
         storage = tmp_path / "A.json"
