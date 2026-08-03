@@ -183,7 +183,20 @@ jobs:
         if [ -n "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
           printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
           chmod 600 ~/.notebooklm/profiles/default/master_token.json
-          echo "Auth profile materialized (cookies + master token; layer-4 re-mint enabled)."
+          # Pre-mint fresh cookies NOW: consumers that fetch tokens eagerly
+          # (AuthTokens.from_storage in the e2e session fixture) raise on a
+          # dead cookie snapshot BEFORE any client exists, so the in-client
+          # layer-4 hook alone cannot rescue a stale secret at startup. The
+          # explicit re-mint overwrites storage_state.json with a fresh
+          # session; layer-4 then covers mid-run expiry. Non-fatal: if the
+          # mint fails but the cookie snapshot is still live, the run can
+          # proceed on cookies alone.
+          source .venv/bin/activate
+          if notebooklm login --master-token-refresh; then
+            echo "Auth profile materialized (master token; fresh cookies minted)."
+          else
+            echo "::warning::master-token re-mint failed — proceeding with the cookie snapshot only."
+          fi
         else
           echo "::warning::NOTEBOOKLM_MASTER_TOKEN_JSON secret is empty/absent — cookie-only profile (no rotation immunity)."
         fi

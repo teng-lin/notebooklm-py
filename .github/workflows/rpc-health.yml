@@ -146,7 +146,18 @@ jobs:
         if [ -n "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
           printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
           chmod 600 ~/.notebooklm/profiles/default/master_token.json
-          echo "Auth profile materialized (cookies + master token; layer-4 re-mint enabled)."
+          # Pre-mint fresh cookies NOW: the health/drift scripts fetch tokens
+          # eagerly (load_auth / direct homepage read) and fail on a dead
+          # cookie snapshot before any client-side recovery can run, so the
+          # sibling master_token.json alone cannot rescue a stale secret at
+          # startup. The explicit re-mint overwrites storage_state.json with
+          # a fresh session. Non-fatal: if the mint fails but the cookie
+          # snapshot is still live, the run can proceed on cookies alone.
+          if uv run notebooklm login --master-token-refresh; then
+            echo "Auth profile materialized (master token; fresh cookies minted)."
+          else
+            echo "::warning::master-token re-mint failed — proceeding with the cookie snapshot only."
+          fi
         else
           echo "::warning::NOTEBOOKLM_MASTER_TOKEN_JSON secret is empty/absent — cookie-only profile (no rotation immunity)."
         fi
