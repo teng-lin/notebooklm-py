@@ -874,6 +874,20 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 2. Add GitHub secrets:
    - `NOTEBOOKLM_AUTH_JSON`: Storage state JSON
    - `NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID`: Your test notebook ID
+   - `NOTEBOOKLM_MASTER_TOKEN_JSON` (optional but recommended): contents of
+     `~/.notebooklm/profiles/default/master_token.json`, produced by a one-time
+     `notebooklm login --master-token` bootstrap (see
+     [installation.md → master-token auth](installation.md#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry)).
+
+The live-E2E workflows (`verify-package.yml`, `nightly.yml`, `rpc-health.yml`)
+do not hand pytest an inline `NOTEBOOKLM_AUTH_JSON` env var. Their
+"Materialize auth profile" step writes the secrets to a real on-disk profile
+(`~/.notebooklm/profiles/default/storage_state.json` + `master_token.json`,
+mode `0600`) because the layer-4 master-token re-mint only engages when
+`master_token.json` sits beside the profile's `storage_state.json` — env-var
+auth bypasses it entirely. With the master-token secret set, a cookie secret
+that Google has rotated no longer fails the run: expired cookies are re-minted
+in-process. Without it, behavior degrades to the old cookie-only mode.
 
 Scheduled canaries target `main` only. Release canaries are manual: dispatch
 `nightly.yml` or `rpc-health.yml` with `custom_branch=release/vX.Y.Z`.
@@ -882,7 +896,7 @@ Scheduled canaries target `main` only. Release canaries are manual: dispatch
 
 | Task | Frequency |
 |------|-----------|
-| Refresh credentials | Every 1-2 weeks |
+| Refresh credentials | Every 1-2 weeks (cookie-only); rarely needed once `NOTEBOOKLM_MASTER_TOKEN_JSON` is set — the master token survives cookie rotation until revoked |
 | Check nightly results | Daily |
 
 ### Workflow secret gates
@@ -918,9 +932,10 @@ secrets that live only in environments resolve to empty under that branch.
 Binding the environment unconditionally is the single source of truth.
 
 Additionally, **every job that consumes `NOTEBOOKLM_AUTH_JSON` runs a
-fail-fast preflight step** (`if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then exit 1`)
-before the test/script step. Without the preflight, an empty secret would
-let pytest skip every auth-requiring test silently and the job would land
+fail-fast preflight** (`if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then exit 1`)
+before the test/script step — in the live-E2E workflows this lives at the top
+of the "Materialize auth profile" step. Without the preflight, an empty secret
+would let pytest skip every auth-requiring test silently and the job would land
 green with 0 tests run (issue #1009). The preflight surfaces an `::error::`
 annotation linked to the secret-config misconfig so the failure is visible
 in the GitHub UI rather than hidden behind "0 passed".
