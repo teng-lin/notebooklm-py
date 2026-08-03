@@ -889,9 +889,12 @@ auth bypasses it entirely. With the master-token secret set, the step then
 runs `notebooklm login --master-token-refresh` to pre-mint fresh cookies
 before any test touches them (eager token fetches like
 `AuthTokens.from_storage` would otherwise fail on a dead snapshot before the
-in-client layer-4 hook could fire); layer-4 covers mid-run expiry. So a
-cookie secret that Google has rotated no longer fails the run. Without the
-master-token secret, behavior degrades to the old cookie-only mode.
+in-client layer-4 hook could fire); layer-4 covers mid-run expiry. So as long
+as the pre-mint succeeds, a cookie secret that Google has rotated no longer
+fails the run. The pre-mint is non-fatal: on failure (e.g. a revoked master
+token) the step logs a `::warning::` and falls back to the cookie snapshot,
+which then must still be live for the run to pass. Without the master-token
+secret, behavior degrades to the old cookie-only mode.
 
 Scheduled canaries target `main` only. Release canaries are manual: dispatch
 `nightly.yml` or `rpc-health.yml` with `custom_branch=release/vX.Y.Z`.
@@ -1071,10 +1074,13 @@ When introducing a workflow that touches `secrets.*`:
 2. Copy the contents of `~/.notebooklm/profiles/default/storage_state.json`
 3. Update your GitHub secret
 
-**Solution (file-based profile with `NOTEBOOKLM_MASTER_TOKEN_JSON`):** none needed —
-the materialize step pre-mints fresh cookies from the master token each run, and the
-client's layer-4 re-mint covers mid-run expiry. Only a revoked master token requires
-re-running the `notebooklm login --master-token` bootstrap and updating the secret.
+**Solution (file-based profile with `NOTEBOOKLM_MASTER_TOKEN_JSON`):** usually none
+needed — the materialize step pre-mints fresh cookies from the master token each run,
+and the client's layer-4 re-mint covers mid-run expiry. If the run still fails on auth,
+check the materialize step's log: a `::warning::` about a failed re-mint means the
+master token is revoked or invalid and the run fell back to the (possibly expired)
+cookie snapshot. Recover by re-running the `notebooklm login --master-token` bootstrap
+and updating both secrets.
 
 #### Multiple accounts in CI/CD
 
