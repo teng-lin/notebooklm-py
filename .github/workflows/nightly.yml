@@ -259,6 +259,10 @@ jobs:
           # session; layer-4 then covers mid-run expiry. Non-fatal: if the
           # mint fails but the cookie snapshot is still live, the run can
           # proceed on cookies alone.
+          # unset is load-bearing: `login` refuses to run while
+          # NOTEBOOKLM_AUTH_JSON is set (env-var auth conflicts with
+          # file-writing login), and both secrets are already on disk.
+          unset NOTEBOOKLM_AUTH_JSON NOTEBOOKLM_MASTER_TOKEN_JSON
           if uv run notebooklm login --master-token-refresh; then
             echo "Auth profile materialized (master token; fresh cookies minted)."
           else
