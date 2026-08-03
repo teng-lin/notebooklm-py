@@ -1077,10 +1077,11 @@ When introducing a workflow that touches `secrets.*`:
 **Solution (file-based profile with `NOTEBOOKLM_MASTER_TOKEN_JSON`):** usually none
 needed — the materialize step pre-mints fresh cookies from the master token each run,
 and the client's layer-4 re-mint covers mid-run expiry. If the run still fails on auth,
-check the materialize step's log: a `::warning::` about a failed re-mint means the
-master token is revoked or invalid and the run fell back to the (possibly expired)
-cookie snapshot. Recover by re-running the `notebooklm login --master-token` bootstrap
-and updating both secrets.
+check the materialize step's log: a `::warning::` about a failed re-mint means the run
+fell back to the (possibly expired) cookie snapshot — it does not by itself identify
+the cause. Inspect the login error above the warning: a transient network/gpsoauth
+blip just needs a re-run, while an invalid or revoked master token requires re-running
+the `notebooklm login --master-token` bootstrap and updating both secrets.
 
 #### Multiple accounts in CI/CD
 
