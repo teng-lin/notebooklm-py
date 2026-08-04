@@ -127,12 +127,13 @@ expiry, and no `storage_state.json` to keep re-shipping.
 3. Ship the bootstrapped profile — **both** `master_token.json` and the
    `storage_state.json` the bootstrap just minted (each `0600`) — to the server.
    (A clean server with *only* `master_token.json` and no `storage_state.json`
-   needs one `notebooklm -p <profile> login --master-token-refresh` to mint the
-   initial cookies first; shipping both skips that step.)
+   needs one `notebooklm -p <profile> auth refresh` to mint and passively
+   validate the initial cookies; shipping both skips that step.)
 4. Run commands normally. Cookies are minted on bootstrap and **re-minted
    automatically** when the session dies (L4, [§4.4](#44-l4--master-token-re-mint));
    request conditional recovery with `notebooklm -p <profile> auth refresh`, or
-   force one by hand with `notebooklm -p <profile> login --master-token-refresh`.
+   use the legacy forced route
+   `notebooklm -p <profile> login --master-token-refresh` when specifically needed.
 
 Caveats: the master token is a full-account, infostealer-grade credential — use a
 dedicated account, keep the file `0600`, never log or commit it. One account is
