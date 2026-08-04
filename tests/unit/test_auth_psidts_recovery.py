@@ -1290,6 +1290,40 @@ class TestInMemoryRecovery:
         assert cookie.get_nonstandard_attr("HttpOnly") == ""
 
     @pytest.mark.no_default_keepalive_mock
+    def test_withheld_rotation_is_detected_despite_a_pre_existing_psidts(
+        self, httpx_mock: HTTPXMock
+    ):
+        """A pre-existing non-routing PSIDTS must not fake a successful mint.
+
+        Routing the gate made this path newly reachable: an app-host-only PSIDTS
+        now fires the POST, and the request jar still carries that cookie. A
+        name-only "did the response include PSIDTS?" check would therefore see
+        the caller's own pre-existing cookie and report success even when Google
+        withheld the rotation — defeating the very detection the surrounding code
+        exists for. The check asks whether a PSIDTS now ROUTES to the rotate URL,
+        which is also proof of newness: the gate only fired because nothing
+        routable was there to begin with.
+        """
+        cookies = _rookiepy_recoverable() + [
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "app_host_only",
+                "domain": ".notebooklm.google.com",
+                "path": "/",
+                "secure": True,
+                "http_only": True,
+            }
+        ]
+        # 2xx, but no Set-Cookie for PSIDTS — Google withholding the rotation.
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response(include_psidts=False))
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        # The POST did fire — the heal was genuinely needed — but it is correctly
+        # reported as failed, and no bogus row was appended.
+        assert len([r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]) == 1
+        assert [c for c in cookies if c["name"] == "__Secure-1PSIDTS"] == [cookies[-1]]
+
+    @pytest.mark.no_default_keepalive_mock
     def test_app_host_only_psidts_still_fires_the_post(self, httpx_mock: HTTPXMock):
         """A PSIDTS that never reaches ``accounts.google.com`` does not block the heal.
 

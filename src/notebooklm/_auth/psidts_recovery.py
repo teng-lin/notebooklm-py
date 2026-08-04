@@ -37,7 +37,7 @@ import json
 import logging
 import math
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -389,15 +389,32 @@ def _psidts_routes_to_rotate(
     fresh, and a test asserting "fresh at now=200" would silently fail against
     the real wall clock. The probes exist only to answer the DOMAIN question.
     """
-    probes = [
-        copy.copy(c) for c in _iter_routable_psidts_cookies(entries, to_cookie=to_cookie, now=now)
-    ]
-    if not probes:
-        return False
-    jar = httpx.Cookies()
-    for probe in probes:
+    probes = []
+    for cookie in _iter_routable_psidts_cookies(entries, to_cookie=to_cookie, now=now):
+        probe = copy.copy(cookie)
         probe.expires = None
-        jar.jar.set_cookie(probe)
+        probes.append(probe)
+    return _cookies_route_psidts(probes)
+
+
+def _cookies_route_psidts(cookies: Iterable[http.cookiejar.Cookie]) -> bool:
+    """Would a jar holding ``cookies`` send ``__Secure-1PSIDTS`` to the rotate URL?
+
+    The shared jar probe behind both the pre-POST gate
+    (:func:`_psidts_routes_to_rotate`, which hands it expiry-stripped copies) and
+    the post-POST mint check in :func:`_attempt_rotation` /
+    :func:`recover_psidts_in_memory` (which hand it the live response jar, expiry
+    intact, so a rotation that somehow arrives already-expired does not count).
+    """
+    jar = httpx.Cookies()
+    found = False
+    for cookie in cookies:
+        if cookie.name != _PSIDTS_COOKIE or not cookie.value:
+            continue
+        jar.jar.set_cookie(cookie)
+        found = True
+    if not found:
+        return False
     request = httpx.Request("POST", _keepalive.KEEPALIVE_ROTATE_URL)
     jar.set_cookie_header(request)
     return _PSIDTS_COOKIE in _cookie_header_names(request.headers.get("cookie", ""))
@@ -683,16 +700,24 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
             )
             response.raise_for_status()
             rotated_jar = client.cookies
-            psidts_present = any(c.name == _PSIDTS_COOKIE for c in rotated_jar.jar)
+            # ROUTABLE, not merely present-by-name. The request jar still holds
+            # whatever PSIDTS was already on disk, so a name-only check would see
+            # that pre-existing cookie and report a mint that never happened —
+            # defeating the withheld-rotation detection below. Asking whether a
+            # PSIDTS now routes to the rotate URL is also proof of NEWNESS here:
+            # we only reach this line because the gate found nothing routable, so
+            # anything routable now must have arrived in the response.
+            psidts_minted = _cookies_route_psidts(rotated_jar.jar)
     except httpx.HTTPError as exc:
         logger.debug("Inline PSIDTS recovery POST failed (non-fatal): %s", exc)
         return False
 
-    if not psidts_present:
+    if not psidts_minted:
         logger.debug(
             "Inline PSIDTS recovery: RotateCookies returned 2xx but did not "
-            "include %s — Google may be withholding the rotation",
+            "mint a %s that routes to %s — Google may be withholding the rotation",
             _PSIDTS_COOKIE,
+            _keepalive.KEEPALIVE_ROTATE_URL,
         )
         return False
 
@@ -834,12 +859,15 @@ def recover_psidts_in_memory(rookiepy_cookies: list[dict[str, Any]]) -> bool:
         logger.debug("In-memory PSIDTS recovery POST failed (non-fatal): %s", exc)
         return False
 
-    psidts_present = any(c.name == _PSIDTS_COOKIE for c in rotated_cookies)
-    if not psidts_present:
+    # ROUTABLE, not merely present-by-name — see the matching check in
+    # :func:`_attempt_rotation`. The request jar carries any PSIDTS the caller
+    # already had, so a name-only test would accept a withheld rotation.
+    if not _cookies_route_psidts(rotated_cookies):
         logger.debug(
             "In-memory PSIDTS recovery: RotateCookies returned 2xx but did not "
-            "include %s — Google may be withholding the rotation",
+            "mint a %s that routes to %s — Google may be withholding the rotation",
             _PSIDTS_COOKIE,
+            _keepalive.KEEPALIVE_ROTATE_URL,
         )
         return False
 
