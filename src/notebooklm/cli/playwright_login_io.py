@@ -36,6 +36,7 @@ import click
 from .error_handler import exit_with_code
 from .rendering import console, json_error_response
 from .runtime import run_async
+from .services.auth_refresh import bootstrap_missing_storage_from_master_token
 from .services.login.io_seam import set_default_login_io_factory
 from .services.playwright_login import (
     PathError,
@@ -185,7 +186,17 @@ def refresh_stored_session(
     fetch_tokens: Callable[..., Awaitable[Any]],
 ) -> None:
     """Run the stored-session keepalive, metadata repair, and optional verification."""
-    run_async(fetch_tokens(storage_path, profile, allow_headless=allow_headless))
+    bootstrapped = run_async(bootstrap_missing_storage_from_master_token(storage_path))
+    if bootstrapped:
+        # Validate a newly minted jar once without entering any recovery layer.
+        _verify_token_fetch_after_refresh(
+            storage_path,
+            profile,
+            quiet=True,
+            json_output=json_output,
+        )
+    else:
+        run_async(fetch_tokens(storage_path, profile, allow_headless=allow_headless))
 
     from ..auth import read_account_metadata
 
@@ -201,6 +212,7 @@ def refresh_stored_session(
             profile,
             quiet=quiet,
             json_output=json_output,
+            already_validated=bootstrapped,
         )
 
 
@@ -210,14 +222,14 @@ def _verify_token_fetch_after_refresh(
     *,
     quiet: bool,
     json_output: bool = False,
+    already_validated: bool = False,
 ) -> None:
     """Confirm a token fetch actually succeeds after ``auth refresh``.
 
     Runs the strictly read-only passive probe (no NOTEBOOKLM_REFRESH_CMD, no
-    cookie rotation, no write). A successful ``auth refresh`` — especially the
-    ``--browser-cookies`` rewrite — does not by itself prove the resulting
-    cookies authenticate; ``--verify`` makes that an explicit, fail-loud gate
-    so unattended schedulers can rely on the exit code (issue #1569).
+    cookie rotation, no write). This is mandatory after a missing-file
+    master-token bootstrap. ``already_validated=True`` lets ``--verify`` render
+    that prior success without making a second request.
 
     With ``json_output`` a verify failure is emitted as the error envelope on
     stdout (exit 1); otherwise the human ``Error: …`` line goes to stderr. The
@@ -226,15 +238,15 @@ def _verify_token_fetch_after_refresh(
     """
     from ..auth import fetch_tokens_passive
 
-    try:
-        run_async(fetch_tokens_passive(storage_path, profile))
-    except Exception as exc:  # noqa: BLE001 — surface any failure as a clean exit 1
-        message = f"refresh completed but the post-refresh token fetch failed: {exc}"
-        if json_output:
-            json_error_response("post_refresh_token_fetch_failed", message)  # NoReturn
-        # Non-json path only (the json branch above exits): human error on stderr.
-        click.echo(f"Error: {message}", err=True)
-        exit_with_code(1)
+    if not already_validated:
+        try:
+            run_async(fetch_tokens_passive(storage_path, profile))
+        except Exception as exc:  # noqa: BLE001 — surface any failure as a clean exit 1
+            message = f"refresh completed but the post-refresh token fetch failed: {exc}"
+            if json_output:
+                json_error_response("post_refresh_token_fetch_failed", message)  # NoReturn
+            click.echo(f"Error: {message}", err=True)
+            exit_with_code(1)
     # Suppress the human success line in --json mode too (not just --quiet), so the
     # caller's single JSON document is the only thing on stdout.
     if not quiet and not json_output:
