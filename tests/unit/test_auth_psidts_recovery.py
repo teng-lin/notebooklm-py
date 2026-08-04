@@ -12,6 +12,7 @@ integration so the loop stays broken.
 from __future__ import annotations
 
 import json
+import random
 import re
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ from pytest_httpx import HTTPXMock
 
 import notebooklm.paths as _nb_paths
 from notebooklm import auth as auth_module
+from notebooklm._auth import cookies as auth_cookies
 from notebooklm._auth import psidts_recovery
 
 _ROTATE_URL_RE = re.compile(r"^https://accounts\.google\.com/RotateCookies$")
@@ -149,14 +151,25 @@ class TestRecoveryPreconditions:
 
 
 class TestPsidtsExpiryGate:
-    """The precondition gate must treat a present-but-EXPIRED PSIDTS as absent.
+    """The precondition gate: RFC 6265 routing, not a domain-priority ranking.
 
-    Tier-0 cold-start fix: ``_recover_psidts_inline`` originally keyed purely on
-    name presence, so an idle Chrome session whose ``__Secure-1PSIDTS`` row is
-    still on disk but past its ``expires`` epoch silently skipped the one
-    ``RotateCookies`` POST that would heal it (cold-start then failed at the
-    first authed GET). A ``-1``/``None`` (session-cookie) expiry stays
-    not-expired, matching ``_storage_entry_to_cookie``.
+    Two questions, two predicates (issue #2057):
+
+    - ``_psidts_routes_to_rotate`` — *should we fire?* Answered against the URL
+      the decision is about, so an absent, expired, or non-routing
+      ``__Secure-1PSIDTS`` all mean "fire".
+    - ``_psidts_is_live`` — *did the heal land?* Deliberately domain-blind,
+      because it must predict the caller's retried preflight, which is
+      name-presence over the allowlist.
+
+    The predecessor gate ranked one global winner by ``_auth_domain_priority``
+    and read that winner's expiry. The tiers are not distinct, so the winner
+    depended on ``storage_state`` ordering; and the ranking was inverted
+    relative to the action it gated, since ``accounts.google.com`` — the host
+    the POST targets — sits in the lowest tier.
+
+    A ``-1``/``None`` (session-cookie) expiry stays not-expired, matching
+    ``_storage_entry_to_cookie``.
     """
 
     _PAST = 1_000_000_000  # 2001-09-09, comfortably in the past
@@ -174,50 +187,66 @@ class TestPsidtsExpiryGate:
             }
         ]
 
-    # --- direct unit tests of the helper with an injectable ``now`` ---------
+    @staticmethod
+    def _psidts(domain=".google.com", *, expires, value="v", path="/") -> dict:
+        return {
+            "name": "__Secure-1PSIDTS",
+            "value": value,
+            "domain": domain,
+            "path": path,
+            "expires": expires,
+            "secure": True,
+        }
 
-    def test_helper_expired_needs_recovery(self):
-        """Present + expires strictly before ``now`` → recovery proceeds."""
-        assert (
-            psidts_recovery._psidts_needs_recovery(
-                {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": 100.0}, now=200.0
-            )
-            is True
+    @staticmethod
+    def _routes(entries, *, now=None) -> bool:
+        return psidts_recovery._psidts_routes_to_rotate(
+            entries, to_cookie=psidts_recovery._storage_entry_to_cookie, now=now
         )
 
-    def test_helper_fresh_is_skipped(self):
-        """Present + expires at/after ``now`` → recovery is a no-op."""
-        assert (
-            psidts_recovery._psidts_needs_recovery(
-                {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": 300.0}, now=200.0
-            )
-            is False
+    @staticmethod
+    def _live(entries, *, now=None) -> bool:
+        return psidts_recovery._psidts_is_live(
+            entries, to_cookie=psidts_recovery._storage_entry_to_cookie, now=now
         )
 
-    def test_helper_session_cookie_is_skipped(self):
+    # --- expiry, via the injectable ``now`` seam ----------------------------
+
+    def test_expired_does_not_route_so_recovery_proceeds(self):
+        """Expired against ``now`` → nothing routes → recovery fires."""
+        assert self._routes([self._psidts(expires=100.0)], now=200.0) is False
+
+    def test_fresh_routes_so_recovery_is_skipped(self):
+        """Fresh against ``now`` → routes to the rotate URL → recovery is a no-op.
+
+        Pins the fix for the seam that ``CookieJar.add_cookie_header`` would
+        otherwise destroy: it resets its own clock from ``time.time()``, so an
+        injected ``now`` in the past could only ever mark cookies expired. The
+        probe copies carry no expiry, leaving ``now`` the sole authority.
+        """
+        assert self._routes([self._psidts(expires=300.0)], now=200.0) is True
+
+    def test_session_cookie_routes(self):
         """``expires`` of -1 / None is a session cookie → never expired."""
         for sentinel in (-1, None):
-            assert (
-                psidts_recovery._psidts_needs_recovery(
-                    {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": sentinel}, now=200.0
-                )
-                is False
-            ), sentinel
+            assert self._routes([self._psidts(expires=sentinel)], now=200.0) is True, sentinel
 
-    def test_helper_missing_needs_recovery(self):
-        """Absent PSIDTS → recovery proceeds (current behavior, preserved)."""
-        assert psidts_recovery._psidts_needs_recovery(set(), {}, now=200.0) is True
+    def test_missing_psidts_does_not_route(self):
+        """Absent PSIDTS → recovery proceeds (original behavior, preserved)."""
+        assert self._routes(_RECOVERABLE_COOKIES, now=200.0) is False
 
-    def test_helper_expires_exactly_now_is_skipped(self):
-        """Boundary: ``expires == now`` is fresh (``expires < now`` is strict)."""
-        assert (
-            psidts_recovery._psidts_needs_recovery(
-                {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": 200.0}, now=200.0
-            )
-            is False
-        )
+    def test_expires_exactly_now_is_expired(self):
+        """Boundary: ``expires == now`` is EXPIRED.
 
-    # --- domain-filtered / priority-resolved index gate --------------------
+        Deliberate change. The predecessor gate compared ``expires < now``;
+        ``http.cookiejar.Cookie.is_expired`` compares ``expires <= now``, and it
+        is now the single expiry authority. One second, intentionally moved.
+        """
+        assert self._routes([self._psidts(expires=200.0)], now=200.0) is False
+        assert self._live([self._psidts(expires=200.0)], now=200.0) is False
+        assert self._routes([self._psidts(expires=201.0)], now=200.0) is True
+
+    # --- RFC 6265 routing, not domain ranking (issue #2057) ----------------
 
     def test_psidts_on_unallowed_domain_does_not_skip_recovery(self):
         """A PSIDTS on a non-Google domain must NOT satisfy the precondition.
@@ -225,43 +254,192 @@ class TestPsidtsExpiryGate:
         Otherwise a stray ``__Secure-1PSIDTS`` cookie left by an unrelated site
         would falsely mark the Google session healthy and skip the heal.
         """
-        entries = _RECOVERABLE_COOKIES + [
-            {
-                "name": "__Secure-1PSIDTS",
-                "value": "evil",
-                "domain": ".evil.example",
-                "path": "/",
-                "expires": self._FUTURE,
-            }
-        ]
-        names, expiry = psidts_recovery._index_recovery_cookies(entries)
-        assert "__Secure-1PSIDTS" not in names
-        assert psidts_recovery._psidts_needs_recovery(names, expiry) is True
+        entries = _RECOVERABLE_COOKIES + [self._psidts(".evil.example", expires=self._FUTURE)]
+        assert self._routes(entries) is False
+        assert self._live(entries) is False
 
-    def test_index_prefers_base_google_domain_for_duplicates(self):
-        """Duplicate names resolve by ``_auth_domain_priority`` (``.google.com`` wins).
+    @pytest.mark.parametrize(
+        "domain, routes",
+        [
+            (".google.com", True),
+            ("google.com", True),  # no leading dot still routes (cookiejar v0)
+            ("accounts.google.com", True),  # host cookie on the POST's own host
+            (".accounts.google.com", True),
+            (".notebooklm.google.com", False),  # app host never reaches accounts.
+            ("notebooklm.google.com", False),
+            (".notebook.google.com", False),  # Gemini Notebook rebrand host
+            (".google.com.sg", False),  # regional ccTLD
+            (".googleusercontent.com", False),
+        ],
+    )
+    def test_routing_follows_rfc6265_not_domain_tier(self, domain, routes):
+        """Whether recovery fires is decided by routing, not by priority tier.
 
-        Regardless of list order, the ``.google.com`` PSIDTS expiry must win
-        over a regional-domain duplicate so the gate is order-independent.
+        ``accounts.google.com`` — the exact host ``KEEPALIVE_ROTATE_URL``
+        targets — sits in the LOWEST priority tier, while the app hosts that
+        outrank it never reach that host at all. The ranked gate had the
+        ordering exactly inverted relative to the action it gated.
         """
-        fresh_base = {
-            "name": "__Secure-1PSIDTS",
-            "value": "base",
+        entries = [self._psidts(domain, expires=self._FUTURE)]
+        assert self._routes(entries) is routes
+        # Every one of these is live: "did it land?" is domain-blind by design.
+        assert self._live(entries) is True
+
+    def test_path_scoped_psidts_does_not_route(self):
+        """RFC 6265 §5.4 path matching applies — the ranked gate ignored ``path``."""
+        entries = [self._psidts(expires=self._FUTURE, path="/elsewhere")]
+        assert self._routes(entries) is False
+        assert self._live(entries) is True
+
+    def test_divergent_case_stale_ranked_winner_fresh_sibling(self):
+        """The case the ranked gate got wrong (issue #2057).
+
+        ``.google.com`` is tier 4 and outranks everything, so a stale row there
+        made the ranked gate report "needs recovery" / "not persisted" even
+        though a fresh ``accounts.google.com`` sibling both routes to the POST
+        and satisfies the preflight.
+        """
+        entries = [
+            self._psidts(".google.com", expires=self._PAST),
+            self._psidts("accounts.google.com", expires=self._FUTURE),
+        ]
+        assert self._routes(entries) is True
+        assert self._live(entries) is True
+
+    def test_inverse_divergence_app_host_only(self):
+        """Fresh on the app host only: the heal IS needed, and the preflight WILL pass.
+
+        The two predicates must disagree here — that disagreement is the whole
+        point of splitting them.
+        """
+        entries = [self._psidts(".notebooklm.google.com", expires=self._FUTURE)]
+        assert self._routes(entries) is False
+        assert self._live(entries) is True
+
+    @pytest.mark.parametrize(
+        "entries_factory",
+        [
+            lambda s: [s._psidts(".google.com", expires=s._FUTURE)],
+            lambda s: [
+                s._psidts(".google.com", expires=s._PAST),
+                s._psidts("accounts.google.com", expires=s._FUTURE),
+            ],
+            lambda s: [
+                s._psidts(".notebooklm.google.com", expires=s._FUTURE),
+                s._psidts(".google.com.sg", expires=s._PAST),
+            ],
+        ],
+    )
+    def test_reordering_storage_state_cannot_change_the_answer(self, entries_factory):
+        """Order-independence is the property the ranked gate could not offer.
+
+        Within a shared priority tier the old index resolved duplicates by
+        "first occurrence wins", so reordering the file changed the gate's
+        answer. This is the ratchet that replaces that surface.
+        """
+        entries = _RECOVERABLE_COOKIES + entries_factory(self)
+        expected = (self._routes(entries), self._live(entries))
+        for _ in range(8):
+            shuffled = entries[:]
+            random.shuffle(shuffled)
+            assert (self._routes(shuffled), self._live(shuffled)) == expected, shuffled
+
+    def test_routed_implies_live(self):
+        """``routed ⇒ live`` — the invariant that makes the flock-skip return True safe.
+
+        ``_recover_psidts_inline`` reports "healed by another process" purely
+        from the routed predicate. That is only sound because anything routing
+        to ``accounts.google.com`` is necessarily unexpired and on an allowed
+        domain, i.e. also live.
+        """
+        domains = [".google.com", "accounts.google.com", ".notebooklm.google.com", ".evil.example"]
+        expiries = [self._FUTURE, self._PAST, -1, None, "abc", True]
+        for domain in domains:
+            for expires in expiries:
+                for value in ("v", ""):
+                    entries = [self._psidts(domain, expires=expires, value=value)]
+                    if self._routes(entries):
+                        assert self._live(entries), entries
+
+    def test_live_implies_preflight_passes_on_the_psidts_half(self):
+        """``live ⇒ the retried preflight passes`` — pins the §"did it land?" alignment.
+
+        ``_is_psidts_persisted`` exists to predict the caller's preflight. If it
+        were ever stricter in a way the preflight is not, a healthy session
+        would be reported as unhealed and the caller would re-raise.
+        """
+        for domain in (".google.com", "accounts.google.com", ".notebooklm.google.com"):
+            entries = _RECOVERABLE_COOKIES + [self._psidts(domain, expires=self._FUTURE)]
+            assert self._live(entries) is True
+            # The preflight is domain-blind name presence; it must not raise.
+            auth_cookies.extract_cookies_from_storage({"cookies": entries, "origins": []})
+
+    # --- duplicate identities and malformed rows ---------------------------
+
+    def test_duplicate_identity_with_an_expired_row_is_not_live(self):
+        """A dead row poisons its ``(name, domain, path)`` identity, in EITHER order.
+
+        ``http.cookiejar`` keeps one cookie per identity and lets a later row
+        replace an earlier one, so a jar built from a duplicated identity
+        depends on entry order. Resolving conservatively keeps the answer
+        order-independent and never over-optimistic: the cost is one needless
+        POST, versus silently skipping a heal the session needs.
+        """
+        fresh = self._psidts(expires=self._FUTURE, value="fresh")
+        stale = self._psidts(expires=self._PAST, value="stale")
+        for ordering in ([fresh, stale], [stale, fresh]):
+            assert self._routes(ordering) is False, ordering
+            assert self._live(ordering) is False, ordering
+
+    def test_duplicate_name_on_distinct_identities_is_unaffected(self):
+        """Same name, different domain → different identity → no poisoning."""
+        entries = [
+            self._psidts(".google.com", expires=self._FUTURE),
+            self._psidts(".notebooklm.google.com", expires=self._PAST),
+        ]
+        assert self._routes(entries) is True
+        assert self._live(entries) is True
+
+    @pytest.mark.parametrize("expires", ["", "never", float("nan"), float("inf"), [], {}])
+    def test_malformed_expires_is_treated_as_absent_not_raised(self, expires):
+        """``Cookie.__init__`` coerces eagerly; a bad ``expires`` must not escape.
+
+        Both predicates run inside the callers' ``except ValueError:`` handlers,
+        so a coercion error would replace the actionable "Missing required
+        cookies" diagnostic with a converter traceback. Unconvertible rows are
+        dropped, which makes recovery FIRE — the safe direction.
+        """
+        entries = _RECOVERABLE_COOKIES + [self._psidts(expires=expires)]
+        assert self._routes(entries) is False
+        assert self._live(entries) is False
+
+    def test_numeric_string_expires_is_honoured(self):
+        """A numeric string coerces to a real timestamp rather than being skipped."""
+        assert self._routes([self._psidts(expires=str(self._FUTURE))]) is True
+        assert self._routes([self._psidts(expires=str(self._PAST))]) is False
+
+    def test_header_name_match_is_exact_not_substring(self):
+        """A lookalike name, or a value embedding the literal, must not satisfy the gate.
+
+        Cookie values on allowlisted domains come from Chrome and are not
+        shape-controlled by us. A substring test would let one skip a real heal.
+        """
+        lookalike = {
+            "name": "X__Secure-1PSIDTSY",
+            "value": "v",
             "domain": ".google.com",
             "path": "/",
             "expires": self._FUTURE,
         }
-        expired_regional = {
-            "name": "__Secure-1PSIDTS",
-            "value": "regional",
-            "domain": ".google.com.sg",
+        value_embeds = {
+            "name": "NID",
+            "value": "__Secure-1PSIDTS=oops",
+            "domain": ".google.com",
             "path": "/",
-            "expires": self._PAST,
+            "expires": self._FUTURE,
         }
-        for ordering in ([fresh_base, expired_regional], [expired_regional, fresh_base]):
-            names, expiry = psidts_recovery._index_recovery_cookies(_RECOVERABLE_COOKIES + ordering)
-            assert expiry["__Secure-1PSIDTS"] == self._FUTURE, ordering
-            assert psidts_recovery._psidts_needs_recovery(names, expiry) is False, ordering
+        assert self._routes([lookalike, value_embeds]) is False
+        assert self._live([lookalike, value_embeds]) is False
 
     # --- file-based recovery end-to-end ------------------------------------
 
@@ -755,6 +933,38 @@ class TestLoadAuthFromStorageIntegration:
             auth_module.load_auth_from_storage(storage_path)
 
     @pytest.mark.no_default_keepalive_mock
+    def test_malformed_expires_on_a_sibling_row_keeps_the_actionable_error(
+        self, tmp_path, httpx_mock: HTTPXMock
+    ):
+        """A corrupt ``expires`` must not turn an auth diagnostic into a traceback.
+
+        Regression for a crash reachable on the pre-#2057 code: the jar builder
+        in ``_attempt_rotation`` converted every allowed-domain entry with no
+        guard, and ``http.cookiejar.Cookie.__init__`` coerces via
+        ``int(float(expires))``. One malformed sibling row — not even the PSIDTS
+        row — raised ``ValueError: could not convert string to float`` from
+        inside ``load_auth_from_storage``'s own ``except ValueError:`` handler,
+        replacing "Missing required cookies … Run 'notebooklm login'" with a
+        converter internal, after the rotation throttle slot had been claimed.
+        """
+        cookies = _RECOVERABLE_COOKIES + [
+            {
+                "name": "NID",
+                "value": "junk",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": "not-a-timestamp",
+            }
+        ]
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, cookies)
+        httpx_mock.add_response(url=_ROTATE_URL_RE, status_code=500)
+
+        with pytest.raises(ValueError, match="Missing required cookies") as excinfo:
+            auth_module.load_auth_from_storage(storage_path)
+        assert "could not convert string to float" not in str(excinfo.value)
+
+    @pytest.mark.no_default_keepalive_mock
     def test_propagates_value_error_when_recovery_post_fails(self, tmp_path, httpx_mock: HTTPXMock):
         """Recovery attempts but fails at the POST → original ValueError."""
         storage_path = tmp_path / "storage_state.json"
@@ -783,6 +993,31 @@ class TestLoadAuthFromStorageIntegration:
 
         # Crucially: no RotateCookies POST must have fired for env-var auth.
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_empty_env_var_does_not_fall_back_to_the_default_profile(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """An EMPTY ``NOTEBOOKLM_AUTH_JSON`` must not redirect recovery to a profile file.
+
+        The loader tests env-var *presence* and raises "set but empty" without
+        inspecting a cookie; ``_resolve_recovery_path`` used to test
+        *truthiness*, so an empty string fell through to the default profile.
+        Recovery would then POST and persist rotated cookies to a profile the
+        caller had explicitly bypassed by setting the variable at all.
+        """
+        default_path = tmp_path / "default_storage_state.json"
+        _write_storage(default_path, _RECOVERABLE_COOKIES)
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "")
+        monkeypatch.setattr(_nb_paths, "get_storage_path", Mock(return_value=default_path))
+
+        assert psidts_recovery._resolve_recovery_path(None) is None
+        assert psidts_recovery._recover_psidts_inline(None) is False
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        # The bypassed profile is untouched.
+        assert json.loads(default_path.read_text(encoding="utf-8"))["cookies"] == (
+            _RECOVERABLE_COOKIES
+        )
 
     @pytest.mark.no_default_keepalive_mock
     def test_recovers_when_path_is_none_with_no_env_var(
@@ -954,6 +1189,60 @@ class TestInMemoryRecovery:
         ]
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_gate_reads_rookiepy_rows_directly_not_via_conversion(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """Site 4 selects the rookiepy converter; it does not convert the list first.
+
+        ``_rookiepy_entry_to_cookie`` reads snake_case ``http_only`` (the
+        storage_state mirror reads camelCase ``httpOnly``), and a rookiepy
+        ``expires`` of ``None`` is a session cookie that is NOT pre-mapped to
+        ``-1`` the way ``convert_rookiepy_cookies_to_storage_state`` would. Both
+        shapes must be honoured on the raw rows.
+        """
+        session_psidts = {
+            "name": "__Secure-1PSIDTS",
+            "value": "session_value",
+            "domain": ".google.com",
+            "path": "/",
+            "secure": True,
+            "http_only": True,
+            "expires": None,
+        }
+        cookies = self._rookiepy_recoverable() + [session_psidts]
+
+        # Session expiry -> live -> routes -> no POST.
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+        cookie = psidts_recovery._rookiepy_entry_to_cookie(session_psidts)
+        assert cookie.expires is None
+        assert cookie.get_nonstandard_attr("HttpOnly") == ""
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_app_host_only_psidts_still_fires_the_post(self, httpx_mock: HTTPXMock):
+        """A PSIDTS that never reaches ``accounts.google.com`` does not block the heal.
+
+        The ranked gate treated ``.notebooklm.google.com`` as a high-priority
+        satisfying row and skipped. It does not route to the POST's host, so the
+        session still needs the mint.
+        """
+        cookies = self._rookiepy_recoverable() + [
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "app_host_only",
+                "domain": ".notebooklm.google.com",
+                "path": "/",
+                "secure": True,
+                "http_only": True,
+            }
+        ]
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is True
+        assert len([r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]) == 1
 
     @pytest.mark.no_default_keepalive_mock
     def test_missing_secondary_binding_returns_false_without_post(self, httpx_mock: HTTPXMock):
@@ -1288,4 +1577,43 @@ class TestEdgeCases:
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         # No POST — recheck saw the broken state and aborted before firing.
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_post_flock_recheck_healed_branch_returns_before_sid_is_rechecked(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """The "healed by another process" branch returns BEFORE the SID recheck.
+
+        Pins a deliberate asymmetry. The PSIDTS check precedes the ``SID`` and
+        secondary-binding rechecks, so a concurrent write that lands a routable
+        PSIDTS *and* drops ``SID`` takes the early ``return True`` without
+        revalidating the rest. That is sound rather than a hole: the caller
+        simply retries its preflight, which then fails honestly on the missing
+        ``SID`` — no POST is fired and nothing is written. Firing here instead
+        would send a request Google is guaranteed to reject.
+        """
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, _RECOVERABLE_COOKIES)
+
+        healed_but_sid_lost = [c for c in _RECOVERABLE_COOKIES if c["name"] != "SID"] + [
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "healed_by_sibling",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": 99_999_999_999,
+            }
+        ]
+        call_counter = {"n": 0}
+
+        def staged_load(_p):
+            call_counter["n"] += 1
+            if call_counter["n"] == 1:
+                return {"cookies": _RECOVERABLE_COOKIES}
+            return {"cookies": healed_but_sid_lost}
+
+        monkeypatch.setattr(psidts_recovery, "_load_storage_state", staged_load)
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is True
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []

@@ -534,8 +534,24 @@ def _is_allowed_auth_domain(domain: str) -> bool:
 def _auth_domain_priority(domain: str) -> int:
     """Return duplicate-cookie priority for allowed auth domains.
 
-    Higher value wins. Tiers are distinct so the resolved cookie is fully
-    deterministic regardless of storage_state ordering.
+    Higher value wins. Tiers are **not** distinct: several domains share a tier,
+    so the resolved cookie is NOT fully determined by the ranking alone. Where a
+    tier is shared, the first occurrence in ``storage_state`` iteration order
+    wins, and reordering the file changes the result. The collisions are:
+
+    - **tier 3** — ``.notebooklm.google.com``, ``.notebook.google.com``
+      (the Gemini Notebook rebrand host), ``.notebooklm.cloud.google.com``
+    - **tier 2** — the three bare (no leading dot) variants of the above
+    - **tier 0** — every allowlisted domain that is not a Google ccTLD:
+      ``accounts.google.com``, ``drive.google.com``, ``.googleusercontent.com``,
+      ``lh3.google.com``, bare ``google.com``, …
+
+    Tier 0 is worth calling out: it holds ``accounts.google.com``, the host the
+    ``RotateCookies`` POST targets. A host-scoped cookie there — which *does*
+    route to that POST — is outranked by app-host cookies that do not. Ranking
+    by tier is therefore not a substitute for RFC 6265 routing when the question
+    is "would this cookie be sent to URL X"; use a cookie jar for that
+    (issue #2057).
     """
     if domain == ".google.com":
         return 4

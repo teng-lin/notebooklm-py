@@ -84,11 +84,13 @@ def flatten_cookie_map(cookies: CookieInput | None) -> FlatCookieMap:
     Duplicate-name resolution mirrors :func:`extract_cookies_from_storage`:
     domains are ranked by :func:`_auth_domain_priority` (``.google.com`` >
     ``.notebooklm.google.com`` > ``notebooklm.google.com`` > regional > other).
-    Named tiers are strictly distinct, so the cross-tier case from #375 (e.g.
-    ``OSID`` on ``myaccount.google.com`` (tier 0) vs ``notebooklm.google.com``
-    (tier 2)) resolves the same way regardless of input order. Within a single
-    tier, first occurrence in iteration order wins — matching
-    :func:`extract_cookies_from_storage`'s within-tier semantics.
+    The cross-tier case from #375 (e.g. ``OSID`` on ``myaccount.google.com``
+    (tier 0) vs ``notebooklm.google.com`` (tier 2)) resolves the same way
+    regardless of input order. But tiers are **not** all distinct — several
+    domains share tier 3, tier 2, and tier 0 — so for a name duplicated *within*
+    one tier the winner is the first occurrence in iteration order and depends
+    on input ordering (issue #2057). Within-tier semantics match
+    :func:`extract_cookies_from_storage`.
 
     Path is intentionally collapsed here (#369): the legacy ``Cookie:`` header
     that consumes the flat shape carries only ``name=value`` pairs, with no slot
@@ -180,9 +182,13 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
         5. Other allowlisted domains (e.g. .googleusercontent.com)
 
         Within a single priority tier, the first occurrence in the list wins;
-        later duplicates at the same tier are ignored. Tiers are distinct so the
-        outcome is deterministic regardless of storage_state ordering. See PR #34
-        for the bug this fixes.
+        later duplicates at the same tier are ignored. Tiers are **not** all
+        distinct — several domains share tier 3, tier 2, and tier 0 (see
+        :func:`notebooklm._auth.cookie_policy._auth_domain_priority`) — so for a
+        name duplicated *within* one tier the outcome depends on storage_state
+        ordering. Across distinct tiers it is deterministic. See PR #34 for the
+        bug this fixes, and issue #2057 for why this ranking must not be used to
+        decide whether a cookie would be sent to a particular URL.
 
     Args:
         storage_state: Parsed JSON from Playwright's storage state file.

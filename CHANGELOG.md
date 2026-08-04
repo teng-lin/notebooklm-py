@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The `__Secure-1PSIDTS` recovery gate now decides by RFC 6265 routing instead
+  of a domain-priority ranking.** Whether to fire the healing `RotateCookies`
+  POST was decided from a domain-blind "global winner" projection that ranked
+  duplicate cookie names by domain tier and read that one winner's `expires` —
+  while the POST it gates is routed per RFC 6265. The two could therefore answer
+  different questions about the same cookie set. The ranking was also inverted
+  relative to the action: `accounts.google.com`, the exact host the POST targets,
+  sat in the *lowest* tier, so a host-scoped `__Secure-1PSIDTS` that does route
+  was outranked by app-host cookies that do not. And because the tiers are not
+  all distinct, the winner within a shared tier depended on `storage_state`
+  ordering. The gate now asks whether the `Cookie:` header this jar would send to
+  the rotate URL actually carries `__Secure-1PSIDTS`; the separate "did the heal
+  land?" check stays domain-blind, because it must predict the retrying
+  preflight. No divergence had been observed on measured profiles — this was a
+  latent defect whose failure mode is a silent wrong gate decision surfacing as a
+  spurious missing-cookie error
+  ([#2057](https://github.com/teng-lin/notebooklm-py/issues/2057)).
+
+  Also fixed while in the same code path: a cookie row with a malformed
+  `expires` (`""`, `"never"`, `nan`, `inf`, a list) crashed recovery with
+  `ValueError: could not convert string to float` raised from *inside* the
+  caller's own `except ValueError:` handler — replacing the actionable
+  "Missing required cookies … Run `notebooklm login`" message with a converter
+  traceback, after the rotation throttle slot had already been claimed. One
+  malformed sibling row was enough; it did not have to be the PSIDTS row.
+
+  And an empty `NOTEBOOKLM_AUTH_JSON` no longer redirects recovery at a profile
+  file. The cookie loader tests the variable's *presence* and fails fast with
+  "set but empty", but the recovery path tested its *truthiness* — so an empty
+  value fell through to the default profile, where recovery could fire a
+  `RotateCookies` POST and persist rotated cookies to a profile the caller had
+  deliberately bypassed by setting the variable at all. Both now test presence.
+
 - **`doctor` no longer warns Windows users about permissions the client
   deliberately never sets.** `notebooklm doctor` compared the profile
   directory's POSIX mode against `0o700` on every platform, but the writer

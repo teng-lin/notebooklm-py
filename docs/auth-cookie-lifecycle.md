@@ -636,8 +636,16 @@ reclaimed on GC.
 When a profile has the persistent `__Secure-1PSID` but no transient
 `__Secure-1PSIDTS` (a common cold-start snapshot), `_recover_psidts_inline`
 (`_auth/psidts_recovery.py`) makes a preflight `RotateCookies` POST during client
-startup to mint the missing cookie before the first RPC. It fires only when
-`__Secure-1PSID` is present and `__Secure-1PSIDTS` is missing, honors
+startup to mint the missing cookie before the first RPC. It fires only when `SID`
+is present, a secondary binding is intact (`OSID`, or `APISID` + `SAPISID`), and
+no live `__Secure-1PSIDTS` would be **sent to** `accounts.google.com` — that is,
+the cookie is absent, expired, or scoped to a domain that does not route to the
+rotate URL. That last condition is RFC 6265 selection against the URL the
+decision is about, not a domain-priority ranking: a `__Secure-1PSIDTS` scoped to
+`.notebooklm.google.com` (or, post-rebrand, `.notebook.google.com`) never reaches
+`accounts.google.com`, while a host-scoped one on `accounts.google.com` does
+(issue #2057). The separate "did the heal land?" check is deliberately
+domain-blind instead, because it must predict the retrying preflight. It honors
 `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1`, and uses a cross-process flock
 (`psidts_recovery.lock`) so concurrent cold-start processes don't fan out identical
 recovery calls. This is what lets the L4 re-mint (which produces `SID` +
