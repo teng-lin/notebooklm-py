@@ -58,6 +58,11 @@ The ADR Index table utilizes five eras of Status notation to reflect the lifecyc
 | [0021](0021-transport-neutral-app-layer.md) | Transport-neutral application layer (`_app/`) | Accepted |
 | [0022](0022-regenerable-baselines.md) | Regenerable test baselines (derive / store / compare / regen) | Accepted |
 | [0023](0023-master-token-headless-auth.md) | Master-token headless auth (Option A) | Accepted |
+| [0024](0024-mcp-remote-file-transfer.md) | MCP remote file transfer (signed-URL side-channel) | Proposed |
+| [0025](0025-mcp-tool-granularity.md) | MCP tool granularity — mega-tools vs. discrete verbs | Accepted |
+| [0026](0026-mcp-studio-surface.md) | MCP Studio surface — notes + artifacts unified | Accepted |
+| [0027](0027-mcp-app-upload-widget.md) | In-app MCP-App upload widget (opt-in) | Accepted (experimental / opt-in) |
+| [0028](0028-gemini-notebook-rename.md) | Renaming the package for Google's "Gemini Notebook" rebrand | Proposed — v3, single-release 0.9.0 flip |
 
 ADR-0007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_guardrails/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
 

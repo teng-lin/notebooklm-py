@@ -241,6 +241,7 @@ print(notebooklm.__version__)
    > - `storage_state.json` is typically 4–15 KB — well under GitHub Actions' 48 KB single-secret cap.
    > - Watch for trailing newlines: pipe with `tr -d '\n'` if your secret-set tool adds one (`cat ... | tr -d '\n' | gh secret set NOTEBOOKLM_AUTH_JSON`).
    > - For **ephemeral runners** (GitHub Actions, GitLab CI — no persistent disk between runs), the layer-5 in-process refresh from [troubleshooting.md](troubleshooting.md#authentication-errors) cannot persist rotated cookies. Run `notebooklm auth refresh` periodically on a workstation cron and push the refreshed file with `gh secret set NOTEBOOKLM_AUTH_JSON < ~/.notebooklm/profiles/default/storage_state.json`.
+   > - **Rotation immunity:** inline env-var auth never engages the layer-4 master-token re-mint below. To make CI survive Google's cookie rotations, write the secrets to real files on the runner instead (`~/.notebooklm/profiles/default/storage_state.json` plus `master_token.json`, both mode `0600`), pre-mint at job start with `notebooklm login --master-token-refresh` (a fully-expired snapshot fails eager token fetches before the in-client re-mint can fire), and run without `NOTEBOOKLM_AUTH_JSON` set — see [master-token auth](#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry). This repo's own live-E2E workflows do exactly this via a `NOTEBOOKLM_MASTER_TOKEN_JSON` secret ([development.md](development.md#setting-up-nightly-e2e-tests)).
 3. **On the server**, run any non-`login` command:
    <!-- not mirrored: headless-server smoke test; not part of contributor flow -->
    ```bash
@@ -441,7 +442,7 @@ curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
      -d '{"type":"quiz"}' $BASE/v1/notebooks/<id>/artifacts        # → {"task_id": ...}
 curl -H "Authorization: Bearer $TOKEN" $BASE/v1/notebooks/<id>/artifacts/<task_id>  # poll
 curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-     -d '{"type":"audio"}' $BASE/v1/notebooks/<id>/artifacts/download -o out.mp3     # download
+     -d '{"type":"audio"}' $BASE/v1/notebooks/<id>/artifacts/download -o out.m4a     # download
 # File upload is multipart (the original filename + content-type are preserved):
 curl -H "Authorization: Bearer $TOKEN" -F 'file=@./notes.pdf' \
      $BASE/v1/notebooks/<id>/sources/file

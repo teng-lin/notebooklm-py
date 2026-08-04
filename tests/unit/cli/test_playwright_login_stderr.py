@@ -30,6 +30,8 @@ import pytest
 
 from notebooklm.cli.playwright_login_io import make_login_io
 from notebooklm.cli.services.playwright_login import (
+    CHROMIUM_MISSING_MARKER,
+    CHROMIUM_PRESENT_MARKER,
     ensure_chromium_installed,
     redact_subprocess_output,
 )
@@ -290,8 +292,8 @@ def test_install_failure_prints_sanitised_stderr(
     secret = "install_path_secret_value_xyz"
     monkeypatch.setenv("REDACT_INSTALL_TEST", secret)
 
-    dry_run = _StubCompletedProcess(
-        stdout="chromium will download to /tmp/...",
+    probe = _StubCompletedProcess(
+        stdout=CHROMIUM_MISSING_MARKER,
         stderr="",
         returncode=0,
     )
@@ -307,9 +309,9 @@ def test_install_failure_prints_sanitised_stderr(
 
     def fake_run(cmd: list[str], **_: Any) -> _StubCompletedProcess:
         call_log.append(cmd)
-        if "--dry-run" in cmd:
-            return dry_run
-        return install_fail
+        if "install" in cmd:
+            return install_fail
+        return probe
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -318,7 +320,7 @@ def test_install_failure_prints_sanitised_stderr(
         ensure_chromium_installed(make_login_io())
 
     assert exc_info.value.code == 1
-    assert len(call_log) == 2  # dry-run probe + install attempt
+    assert len(call_log) == 2  # executable-path probe + install attempt
 
     captured = capsys.readouterr().out
     # Secret env value must NOT appear in cleartext.
@@ -341,8 +343,8 @@ def test_install_failure_falls_back_to_stdout_when_stderr_is_only_whitespace(
     so a stderr that contained only ANSI progress noise would shadow a
     stdout line carrying the actual failure message.
     """
-    dry_run = _StubCompletedProcess(
-        stdout="chromium will download to /tmp/...",
+    probe = _StubCompletedProcess(
+        stdout=CHROMIUM_MISSING_MARKER,
         stderr="",
         returncode=0,
     )
@@ -354,9 +356,9 @@ def test_install_failure_falls_back_to_stdout_when_stderr_is_only_whitespace(
     )
 
     def fake_run(cmd: list[str], **_: Any) -> _StubCompletedProcess:
-        if "--dry-run" in cmd:
-            return dry_run
-        return install_fail
+        if "install" in cmd:
+            return install_fail
+        return probe
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -368,24 +370,24 @@ def test_install_failure_falls_back_to_stdout_when_stderr_is_only_whitespace(
     assert "Subprocess output (sanitised)" in captured
 
 
-def test_dry_run_unexpected_stderr_routed_through_redactor(
+def test_probe_unexpected_stderr_routed_through_redactor(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Dry-run stderr (debug log path) also goes through the redactor."""
+    """Probe stderr (debug log path) also goes through the redactor."""
     import logging as _logging
 
-    secret = "dry_run_secret_value_abc"
-    monkeypatch.setenv("REDACT_DRY_RUN_TEST", secret)
+    secret = "probe_secret_value_abc"
+    monkeypatch.setenv("REDACT_PROBE_TEST", secret)
 
-    dry_run = _StubCompletedProcess(
-        # "will download" marker absent → take the early-return branch.
-        stdout="chromium is already installed",
+    probe = _StubCompletedProcess(
+        # Browser present → take the early-return branch.
+        stdout=CHROMIUM_PRESENT_MARKER,
         stderr=f"warning: TOKEN={secret}\n",
         returncode=0,
     )
 
     def fake_run(cmd: list[str], **_: Any) -> _StubCompletedProcess:
-        return dry_run
+        return probe
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -396,8 +398,8 @@ def test_dry_run_unexpected_stderr_routed_through_redactor(
     matching = [
         record.getMessage()
         for record in caplog.records
-        if "playwright install --dry-run stderr" in record.getMessage()
+        if "chromium pre-flight probe stderr" in record.getMessage()
     ]
-    assert matching, "expected a debug log line for dry-run stderr"
+    assert matching, "expected a debug log line for probe stderr"
     assert all(secret not in msg for msg in matching)
     assert any("<redacted>" in msg for msg in matching)

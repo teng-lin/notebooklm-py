@@ -252,7 +252,7 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 | Check artifact status | `notebooklm artifact list` |
 | Wait for completion | `notebooklm artifact wait <artifact_id>` |
 | Delete artifact | `notebooklm artifact delete <artifact_id> --yes` |
-| Download audio | `notebooklm download audio ./output.mp3` |
+| Download audio | `notebooklm download audio ./output.m4a` |
 | Download video | `notebooklm download video ./output.mp4` |
 | Download cinematic video | `notebooklm download cinematic-video ./cinematic.mp4` (alias for `download video`) |
 | Download infographic | `notebooklm download infographic ./infographic.png` |
@@ -346,7 +346,7 @@ Common generate options vary by subcommand:
 
 | Type | Command | Options | Download |
 |------|---------|---------|----------|
-| Podcast | `generate audio` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | .mp3 |
+| Podcast | `generate audio` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | .m4a |
 | Video | `generate video` | `--format [explainer\|brief\|cinematic\|short]` (⁴), `--style [auto\|custom\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]`, `--style-prompt` with `--style custom` | .mp4 |
 | Slide Deck | `generate slide-deck` | `--format [detailed\|presenter]`, `--length [default\|short]` (²) | .pdf / .pptx |
 | Slide Revision | `generate revise-slide "prompt" --artifact <id> --slide N` | `--wait`, `--notebook` | *(re-downloads parent deck)* |
@@ -402,7 +402,7 @@ These capabilities are available via CLI but not in NotebookLM's web interface:
 4. `notebooklm generate audio "Focus on [specific angle]"` (confirm when asked) — *if rate limited: wait 5 min, retry once*
 5. Note the artifact ID returned
 6. Check `notebooklm artifact list` later for status
-7. `notebooklm download audio ./podcast.mp3` when complete (confirm when asked)
+7. `notebooklm download audio ./podcast.m4a` when complete (confirm when asked)
 
 ### Research to Podcast (Automated with Subagent)
 **Time:** 5-10 minutes, but continues in background
@@ -417,7 +417,7 @@ When user wants full automation (generate and download when ready):
    Task(
      prompt="Wait for artifact {task_id} in notebook {notebook_id} to complete, then download.
              Use: notebooklm artifact wait {task_id} -n {notebook_id} --timeout 1200
-             Then: notebooklm download audio ./podcast.mp3 -a {task_id} -n {notebook_id}",
+             Then: notebooklm download audio ./podcast.m4a -a {task_id} -n {notebook_id}",
      subagent_type="general-purpose"
    )
    ```

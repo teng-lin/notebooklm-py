@@ -20,6 +20,14 @@ ENTERPRISE_BASE_HOST = "notebooklm.cloud.google.com"
 
 _ALLOWED_BASE_HOSTS = frozenset({PERSONAL_BASE_HOST, ENTERPRISE_BASE_HOST})
 
+# Alias host the personal app is also served from after Google's "Gemini
+# Notebook" rebrand. It is deliberately NOT in ``_ALLOWED_BASE_HOSTS``: that set
+# validates ``NOTEBOOKLM_BASE_URL`` (what we may *send credentials to*), whereas
+# this constant answers "did a response come from the app?" — a strictly wider,
+# read-only question. ``_auth/browser_capture.url_matches_base_host`` recognises
+# the same alias.
+PERSONAL_APP_ALIAS_HOST = "notebook.google.com"
+
 
 def get_base_url() -> str:
     """Return the configured NotebookLM base URL.

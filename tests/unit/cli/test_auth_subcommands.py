@@ -1602,6 +1602,95 @@ class TestLoginBrowserCookies:
 
 
 class TestAuthLogoutCommand:
+    def test_auth_logout_storage_override_removes_only_matching_state(self, runner, tmp_path):
+        """Custom-storage logout leaves other and ambient browser profiles intact."""
+        storage_a = tmp_path / "A.json"
+        storage_a.write_text('{"cookies": []}')
+        context_a = tmp_path / "A.json.context.json"
+        context_a.write_text('{"notebook_id": "A"}')
+        browser_a = tmp_path / "A.json.browser_profile"
+        browser_a.mkdir()
+        (browser_a / ".notebooklm-owned").touch()
+
+        storage_b = tmp_path / "B.json"
+        storage_b.write_text('{"cookies": []}')
+        context_b = tmp_path / "B.json.context.json"
+        context_b.write_text('{"notebook_id": "B"}')
+        browser_b = tmp_path / "B.json.browser_profile"
+        browser_b.mkdir()
+        (browser_b / ".notebooklm-owned").touch()
+
+        ambient_browser = _sc.get_browser_profile_dir()
+        ambient_browser.mkdir(parents=True)
+
+        result = runner.invoke(cli, ["--storage", str(storage_a), "auth", "logout"])
+
+        assert result.exit_code == 0, result.output
+        assert not storage_a.exists()
+        assert not context_a.exists()
+        assert not browser_a.exists()
+        assert storage_b.exists()
+        assert context_b.exists()
+        assert browser_b.exists()
+        assert ambient_browser.exists()
+
+    def test_auth_logout_storage_override_preserves_unmarked_browser_profile(
+        self, runner, tmp_path
+    ):
+        """Custom-storage logout never deletes a pre-existing unowned sidecar."""
+        storage = tmp_path / "A.json"
+        storage.write_text('{"cookies": []}')
+        context = tmp_path / "A.json.context.json"
+        context.write_text('{"notebook_id": "A"}')
+        browser_profile = tmp_path / "A.json.browser_profile"
+        browser_profile.mkdir()
+        payload = browser_profile / "keep-me"
+        payload.write_text("external")
+
+        result = runner.invoke(cli, ["--storage", str(storage), "auth", "logout"])
+
+        assert result.exit_code == 0, result.output
+        assert not storage.exists()
+        assert not context.exists()
+        assert payload.read_text() == "external"
+        assert "preserved" in result.output.lower()
+        assert browser_profile.name in result.output
+
+    def test_auth_logout_json_reports_preserved_unowned_browser_profile(self, runner, tmp_path):
+        storage = tmp_path / "A.json"
+        storage.write_text('{"cookies": []}')
+        browser_profile = tmp_path / "A.json.browser_profile"
+        browser_profile.mkdir()
+
+        result = runner.invoke(
+            cli,
+            ["--storage", str(storage), "auth", "logout", "--json"],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["browser_profile_preserved"] == str(browser_profile)
+        assert browser_profile.is_dir()
+
+    def test_auth_logout_explicit_named_profile_removes_unmarked_browser_profile(
+        self, runner, tmp_path, monkeypatch
+    ):
+        home = tmp_path / "home"
+        monkeypatch.setenv("NOTEBOOKLM_HOME", str(home))
+        profile_dir = home / "profiles" / "work"
+        profile_dir.mkdir(parents=True)
+        storage = profile_dir / "storage_state.json"
+        storage.write_text('{"cookies": []}')
+        browser_profile = profile_dir / "browser_profile"
+        browser_profile.mkdir()
+        (browser_profile / "session").write_text("managed")
+
+        result = runner.invoke(cli, ["--storage", str(storage), "auth", "logout"])
+
+        assert result.exit_code == 0, result.output
+        assert not browser_profile.exists()
+        assert "preserved" not in result.output.lower()
+
     def test_auth_logout_deletes_storage_and_browser_profile(
         self, runner, tmp_path, mock_context_file, monkeypatch
     ):

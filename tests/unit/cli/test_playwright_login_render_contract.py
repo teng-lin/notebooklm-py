@@ -394,17 +394,17 @@ class TestPreflightPrepareFresh:
 # Reached through the real ``login`` command's chromium pre-flight by patching
 # ``subprocess.run`` rather than stubbing out the helper.
 # ---------------------------------------------------------------------------
-def _dry_run_says_missing(stdout="chromium will download to ...") -> SimpleNamespace:
-    return SimpleNamespace(stdout=stdout, stderr="", returncode=0)
+def _probe_says_missing() -> SimpleNamespace:
+    return SimpleNamespace(stdout=_pl.CHROMIUM_MISSING_MARKER, stderr="", returncode=0)
 
 
 class TestEnsureChromiumInstalled:
     @pytest.mark.requires_playwright
     def test_install_success_banner_then_login(self, runner):
         def fake_run(cmd, **_):
-            if "--dry-run" in cmd:
-                return _dry_run_says_missing()
-            return SimpleNamespace(stdout="", stderr="", returncode=0)
+            if "install" in cmd:
+                return SimpleNamespace(stdout="", stderr="", returncode=0)
+            return _probe_says_missing()
 
         result, _ = _drive_login(runner, subprocess_run=fake_run, patch_ensure=False)
         assert result.exit_code == 0
@@ -429,9 +429,9 @@ class TestEnsureChromiumInstalled:
         """
 
         def fake_run(cmd, **_):
-            if "--dry-run" in cmd:
-                return _dry_run_says_missing()
-            return SimpleNamespace(stdout="", stderr="install boom [err]", returncode=1)
+            if "install" in cmd:
+                return SimpleNamespace(stdout="", stderr="install boom [err]", returncode=1)
+            return _probe_says_missing()
 
         result, _ = _drive_login(
             runner, subprocess_run=fake_run, patch_ensure=False, python_executable="/py"

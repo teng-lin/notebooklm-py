@@ -47,6 +47,7 @@ from ..._app.session import verify_and_set_notebook as _verify_and_set_notebook_
 # injected-bundle builders below read them through the module globals at call
 # time, never close over them at import.
 from ...paths import (
+    browser_profile_is_owned,
     get_browser_profile_dir,
     get_context_path,
     get_path_info,
@@ -194,18 +195,27 @@ def execute_logout(ctx: click.Context | None) -> LogoutOutcome:
     and the OSError→:class:`LogoutFailure` mapping; the caller owns presentation
     and exit-code policy.
     """
+    auth = AuthSource.from_click_context(ctx)
+    browser_profile = get_browser_profile_dir(
+        profile=auth.profile,
+        storage_path=auth.storage_override,
+    )
+    storage_path = resolve_logout_storage_path(ctx)
+    remove_browser_profile = auth.storage_override is None or browser_profile_is_owned(
+        storage_path, browser_profile
+    )
 
     def _context_path() -> Path:
-        storage_override = AuthSource.from_click_context(ctx).storage_override
-        return get_context_path(storage_path=storage_override)
+        return get_context_path(storage_path=auth.storage_override)
 
     return _execute_logout_core(
         LogoutInputs(
-            storage_path=resolve_logout_storage_path(ctx),
-            browser_profile_dir=get_browser_profile_dir(),
+            storage_path=storage_path,
+            browser_profile_dir=browser_profile,
             clear_context=lambda: clear_context(clear_account=True),
             context_path=_context_path,
             env_auth_remains=warn_env_auth_remains_after_logout(),
             rmtree=shutil.rmtree,
+            remove_browser_profile=remove_browser_profile,
         )
     )

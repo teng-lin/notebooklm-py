@@ -53,6 +53,25 @@ def _required_cookie_state() -> dict:
     }
 
 
+def _invoke_login_with_launch_failure(runner, tmp_path, launch_error, *cli_args):
+    """Run ``notebooklm login <cli_args>`` with the browser launch raising ``launch_error``.
+
+    ``launch_persistent_context`` is the only failure point that matters here:
+    it raises before a context exists, which is what routes the error into the
+    friendly launch-failure branch instead of the generic bug-report handler.
+    """
+    with (
+        patch.object(_pl, "ensure_chromium_installed"),
+        patch("playwright.sync_api.sync_playwright") as mock_pw,
+        patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
+        patch.object(_pl, "get_browser_profile_dir", return_value=tmp_path / "profile"),
+    ):
+        mock_launch = mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
+        mock_launch.side_effect = Exception(launch_error)
+
+        return runner.invoke(cli, ["login", *cli_args])
+
+
 def _storage_account(storage_file):
     data = json.loads(storage_file.read_text())
     return data.get("notebooklm", {}).get("account")
@@ -252,28 +271,68 @@ class TestLoginCommand:
         self, runner, tmp_path, browser, expected_label, expected_install_url_fragment
     ):
         """--browser msedge|chrome shows helpful error when the browser is not installed."""
-        with (
-            patch.object(_pl, "ensure_chromium_installed"),
-            patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
-            patch.object(
-                _pl,
-                "get_browser_profile_dir",
-                return_value=tmp_path / "profile",
-            ),
-        ):
-            mock_launch = (
-                mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
-            )
-            mock_launch.side_effect = Exception(
-                f"Executable doesn't exist at /{browser}\nFailed to launch"
-            )
-
-            result = runner.invoke(cli, ["login", "--browser", browser])
+        result = _invoke_login_with_launch_failure(
+            runner,
+            tmp_path,
+            f"Executable doesn't exist at /{browser}\nFailed to launch",
+            "--browser",
+            browser,
+        )
 
         assert result.exit_code == 1
         assert f"{expected_label} not found" in result.output
         assert expected_install_url_fragment in result.output
+
+    @pytest.mark.parametrize(
+        ("launch_error", "expected_fragment"),
+        [
+            # Issue #2004: a Windows execution veto (AppLocker / WDAC / Defender)
+            # reaching the Node driver as libuv's UV_UNKNOWN.
+            (
+                "BrowserType.launch_persistent_context: spawn UNKNOWN",
+                "refused to start the browser",
+            ),
+            # Safety net for a missing `playwright install chromium`.
+            (
+                "Executable doesn't exist at /root/.cache/ms-playwright/chromium-1/chrome",
+                "playwright install chromium",
+            ),
+        ],
+    )
+    @pytest.mark.requires_playwright
+    def test_login_bundled_chromium_launch_failure_is_actionable(
+        self, runner, tmp_path, launch_error, expected_fragment
+    ):
+        """A bundled-Chromium launch failure must not surface as "please report a bug".
+
+        Before #2004 the friendly launch branch was gated on CHANNEL_BROWSERS,
+        which excludes the *default* browser — so every bundled launch failure
+        fell through to a bare ``raise`` and exited 2 with the bug-report hint.
+        """
+        result = _invoke_login_with_launch_failure(runner, tmp_path, launch_error)
+
+        assert result.exit_code == 1
+        assert expected_fragment in result.output
+        assert "This may be a bug" not in result.output
+
+    @pytest.mark.requires_playwright
+    def test_login_unclassified_launch_failure_still_reaches_the_bug_report_path(
+        self, runner, tmp_path
+    ):
+        """Un-gating must not over-swallow: an unrecognized failure still propagates.
+
+        ``classify_launch_failure`` returns ``None`` for anything it has no
+        specific advice for, and that must keep falling through to the bare
+        ``raise`` → ``handle_errors`` → exit 2. Pinning this stops a future
+        broadening of the markers from silently converting real bugs into a
+        confident, wrong hint.
+        """
+        result = _invoke_login_with_launch_failure(
+            runner, tmp_path, "Timeout 30000ms exceeded while starting the browser"
+        )
+
+        assert result.exit_code == 2
+        assert "This may be a bug" in result.output
 
     @pytest.fixture
     def mock_login_browser_with_storage(self, tmp_path):

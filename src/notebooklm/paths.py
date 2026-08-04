@@ -35,6 +35,7 @@ Usage:
     set_active_profile("work")
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -42,6 +43,11 @@ import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Explicit-storage browser dirs created by login carry this marker. Profile and
+# legacy layouts are owned by their enclosing profile and do not need it.
+BROWSER_PROFILE_OWNERSHIP_MARKER = ".notebooklm-owned"
+_MAX_PATH_COMPONENT_BYTES = 255
 
 # Public surface (ADR-0012). Underscore-prefixed helpers like
 # ``_read_default_profile`` and ``_reset_config_cache`` remain importable for
@@ -348,21 +354,81 @@ def get_context_path(
     return _legacy_fallback(profile_path, "context.json", resolved)
 
 
-def get_browser_profile_dir(profile: str | None = None) -> Path:
-    """Get browser profile directory for a profile.
+def get_browser_profile_dir(
+    profile: str | None = None,
+    *,
+    storage_path: Path | None = None,
+) -> Path:
+    """Get browser profile directory for a profile or storage file.
 
-    Falls back to legacy home-root path for the "default" profile if the
-    profile-based path doesn't exist (pre-migration compatibility).
+    An explicit storage path gets its own sibling browser profile. The
+    conventional ``storage_state.json`` name keeps the existing
+    ``browser_profile`` sibling name; other filenames preserve their full
+    name and append ``.browser_profile``. If that component would exceed 255
+    bytes, a stable hash of the canonical storage path keeps it filesystem-safe
+    and makes relative/absolute aliases converge. Without an explicit storage
+    path, this falls back to the existing profile and legacy-path behavior.
+    Keeping the conventional name preserves the established profile layout;
+    suffixing custom names prevents same-directory storage files from sharing
+    a browser session.
 
     Args:
         profile: Profile name. If None, uses the active profile.
+        storage_path: Explicit storage path from ``--storage``. When set, it
+            takes precedence over profile resolution.
 
     Returns:
         Path to browser_profile/ directory.
     """
+    if storage_path is not None:
+        if storage_path.name == "storage_state.json":
+            return storage_path.parent / "browser_profile"
+        candidate = storage_path.with_suffix(storage_path.suffix + ".browser_profile")
+        if len(os.fsencode(candidate.name)) <= _MAX_PATH_COMPONENT_BYTES:
+            return candidate
+        canonical_storage = storage_path.expanduser().resolve()
+        digest = hashlib.sha256(os.fsencode(canonical_storage)).hexdigest()[:16]
+        return canonical_storage.parent / f"storage-{digest}.browser_profile"
     resolved = resolve_profile(profile)
     profile_path = get_profile_dir(resolved) / "browser_profile"
     return _legacy_fallback(profile_path, "browser_profile", resolved)
+
+
+def browser_profile_is_owned(storage_path: Path, browser_profile: Path) -> bool:
+    """Return whether a browser-profile directory is safe for NotebookLM to remove.
+
+    A marker explicitly owns any storage-specific sidecar created by NotebookLM.
+    Unmarked directories are owned only when their canonical paths match the
+    legacy layout or one direct child of ``NOTEBOOKLM_HOME/profiles``. Resolving
+    paths before comparison prevents a symlinked profile entry from claiming a
+    directory outside the NotebookLM home.
+    """
+    if (browser_profile / BROWSER_PROFILE_OWNERSHIP_MARKER).is_file():
+        return True
+
+    try:
+        home = get_home_dir().resolve()
+        canonical_storage = storage_path.expanduser().resolve()
+        canonical_browser = browser_profile.expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+    if (
+        canonical_storage == home / "storage_state.json"
+        and canonical_browser == home / "browser_profile"
+    ):
+        return True
+
+    profiles_dir = home / "profiles"
+    try:
+        relative_storage = canonical_storage.relative_to(profiles_dir)
+    except ValueError:
+        return False
+    return (
+        len(relative_storage.parts) == 2
+        and relative_storage.name == "storage_state.json"
+        and canonical_browser == canonical_storage.parent / "browser_profile"
+    )
 
 
 def get_config_path() -> Path:
@@ -385,9 +451,10 @@ def get_path_info(
 
     Args:
         profile: Profile name. If None, uses the active profile.
-        storage_path: Explicit ``--storage`` override. When set, ``storage_path``
-            and ``context_path`` in the result reflect the sibling-context
-            layout rather than the profile path.
+        storage_path: Explicit ``--storage`` override. When set, the
+            ``storage_path``, ``context_path``, and ``browser_profile_dir`` in
+            the result reflect the storage-specific sibling layout rather than
+            profile paths.
 
     Returns:
         Dict with path information and sources.
@@ -395,11 +462,8 @@ def get_path_info(
     home_from_env = os.environ.get("NOTEBOOKLM_HOME")
     resolved = resolve_profile(profile)
 
-    # Determine profile source. When --storage is set, profile resolution is
-    # effectively bypassed for the auth + context paths — but we still resolve
-    # ``profile`` because consumers may want to know what profile *would* be
-    # active otherwise. Make the override clear in the label so ``status
-    # --paths`` doesn't claim "CLI flag (--storage)" set the profile.
+    # --storage bypasses the profile for auth, context, and browser paths. Resolve
+    # it anyway so diagnostics can show which profile would otherwise be active.
     other_profile_set = (
         profile
         or _active_profile
@@ -435,5 +499,5 @@ def get_path_info(
         "storage_path": resolved_storage,
         "context_path": resolved_context,
         "config_path": str(get_config_path()),
-        "browser_profile_dir": str(get_browser_profile_dir(resolved)),
+        "browser_profile_dir": str(get_browser_profile_dir(resolved, storage_path=storage_path)),
     }

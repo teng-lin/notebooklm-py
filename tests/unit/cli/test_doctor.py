@@ -70,12 +70,66 @@ def test_doctor_reports_clean_profile_layout(runner, isolated_notebooklm_home):
         "status": "pass",
         "detail": "valid (default_profile: default)",
     }
+    # Windows passes with an ACL-explaining detail rather than warning about
+    # POSIX bits ``paths._ensure_dir`` deliberately never sets (#2046).
+    assert data["checks"]["profile_dir"]["status"] == "pass"
+    assert str(profile_dir) in data["checks"]["profile_dir"]["detail"]
+    assert "permissions:" not in data["checks"]["profile_dir"]["detail"]
     if sys.platform == "win32":
-        assert data["checks"]["profile_dir"]["status"] == "warn"
-        assert str(profile_dir) in data["checks"]["profile_dir"]["detail"]
-        assert "permissions:" in data["checks"]["profile_dir"]["detail"]
+        assert "ACL" in data["checks"]["profile_dir"]["detail"]
     else:
-        assert data["checks"]["profile_dir"] == {"status": "pass", "detail": str(profile_dir)}
+        assert data["checks"]["profile_dir"]["detail"] == str(profile_dir)
+
+
+def test_doctor_json_renders_the_windows_profile_dir_detail(
+    runner, isolated_notebooklm_home, monkeypatch
+):
+    """The Windows ``--json`` envelope, exercised on every runner (#2046).
+
+    The sibling assertions above can only describe Windows behaviour when the
+    tests happen to run on Windows — which is precisely why the original defect
+    reached a release. Faking ``sys.platform`` (read at call time by
+    ``_app.doctor._is_windows``) puts the Windows row in front of the Linux and
+    macOS jobs too.
+    """
+    home = isolated_notebooklm_home
+    profile_dir = home / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    if sys.platform != "win32":
+        # The wide mode a Windows-created directory reports, which the old
+        # unconditional check turned into a permanent, unfixable warn.
+        profile_dir.chmod(0o777)
+    _write_json(profile_dir / "storage_state.json", _storage([]))
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    data = _invoke_json(runner, [], exit_code=1)
+
+    assert data["checks"]["profile_dir"]["status"] == "pass"
+    detail = data["checks"]["profile_dir"]["detail"]
+    assert str(profile_dir) in detail
+    assert "ACL" in detail
+    assert "permissions:" not in detail
+    assert "0o700" not in detail
+
+
+def test_doctor_explicit_storage_drives_path_info_and_auth(runner, isolated_notebooklm_home):
+    home = isolated_notebooklm_home
+    profile_dir = _make_profile(home, "work")
+    _write_json(profile_dir / "storage_state.json", _storage([]))
+    storage = home / "custom.json"
+    _write_json(
+        storage,
+        _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
+    )
+
+    data = _invoke_json(runner, ["--profile", "work", "--storage", str(storage)])
+
+    assert data["profile"] == "work"
+    assert data["profile_source"] == "CLI flag (--storage, profile ignored)"
+    assert data["checks"]["auth"] == {
+        "status": "pass",
+        "detail": "local auth cookies present (2 cookies)",
+    }
 
 
 def test_doctor_reports_legacy_layout_without_startup_migration(runner, isolated_notebooklm_home):
@@ -85,7 +139,7 @@ def test_doctor_reports_legacy_layout_without_startup_migration(runner, isolated
         _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
     )
 
-    data = _invoke_json(runner, ["--storage", str(home / "unused.json")], exit_code=1)
+    data = _invoke_json(runner, ["--storage", str(home / "storage_state.json")], exit_code=1)
 
     assert data["checks"]["migration"] == {
         "status": "fail",
@@ -231,9 +285,11 @@ def test_doctor_fix_creates_missing_profile_dir(runner, isolated_notebooklm_home
     data = json.loads(result.output)
     profile_dir = home / "profiles" / "default"
     assert profile_dir.is_dir()
+    assert data["checks"]["profile_dir"]["status"] == "pass"
+    assert str(profile_dir) in data["checks"]["profile_dir"]["detail"]
     if sys.platform != "win32":
         assert profile_dir.stat().st_mode & 0o777 == 0o700
-    assert data["checks"]["profile_dir"] == {"status": "pass", "detail": str(profile_dir)}
+        assert data["checks"]["profile_dir"]["detail"] == str(profile_dir)
     assert data["checks"]["auth"]["status"] == "fail"
     assert data["fixes_applied"] == [f"Created profile directory: {profile_dir}"]
 
@@ -247,7 +303,7 @@ def test_doctor_fix_migrates_legacy_layout(runner, isolated_notebooklm_home):
 
     result = runner.invoke(
         cli,
-        ["--storage", str(home / "unused.json"), "doctor", "--fix", "--json"],
+        ["--storage", str(home / "storage_state.json"), "doctor", "--fix", "--json"],
     )
 
     assert result.exit_code == 0, result.output
@@ -304,14 +360,15 @@ def test_doctor_json_wraps_unexpected_filesystem_error(runner, isolated_notebook
     assert result.stderr == ""
 
 
+@pytest.mark.parametrize("error_type", [ValueError, OSError, RuntimeError])
 def test_doctor_headless_reauth_degrades_to_warn_on_profile_resolution_error(
-    runner, isolated_notebooklm_home, monkeypatch
+    runner, isolated_notebooklm_home, monkeypatch, error_type
 ):
     """A read-only diagnostic must not crash if the profile dir cannot resolve.
 
-    ``get_browser_profile_dir`` can raise ``ValueError`` (malformed profile
-    config) / ``OSError`` (permissions); the headless-reauth check degrades to
-    a ``warn`` row instead of bubbling up. ``monkeypatch.setattr`` on the public
+    Path resolution can raise ``ValueError`` / ``OSError`` and readiness probes
+    can raise ``RuntimeError``; the headless-reauth check degrades each to a
+    ``warn`` row instead of bubbling up. ``monkeypatch.setattr`` on the public
     helper avoids growing the string-patch ratchet for this file.
     """
     from notebooklm.cli import doctor_cmd
@@ -323,7 +380,7 @@ def test_doctor_headless_reauth_degrades_to_warn_on_profile_resolution_error(
     )
 
     def _boom(*_a, **_k):
-        raise ValueError("malformed profile name")
+        raise error_type("malformed profile name")
 
     monkeypatch.setattr(doctor_cmd, "get_browser_profile_dir", _boom)
 
@@ -332,7 +389,31 @@ def test_doctor_headless_reauth_degrades_to_warn_on_profile_resolution_error(
     assert data["checks"]["headless_reauth"]["status"] == "warn"
     assert "could not resolve the browser profile" in data["checks"]["headless_reauth"]["detail"]
     # The error type is surfaced, never a raw path / value.
-    assert "ValueError" in data["checks"]["headless_reauth"]["detail"]
+    assert error_type.__name__ in data["checks"]["headless_reauth"]["detail"]
+
+
+def test_doctor_headless_reauth_uses_live_storage_and_profile(runner, isolated_notebooklm_home):
+    """The L3 readiness row resolves the root command's auth identity."""
+    browser_profile = isolated_notebooklm_home / "custom-browser"
+    (browser_profile / "Default").mkdir(parents=True)
+    storage = isolated_notebooklm_home / "custom.json"
+
+    with patch.object(
+        doctor_cmd_module,
+        "get_browser_profile_dir",
+        return_value=browser_profile,
+    ) as resolve_browser_profile:
+        data = _invoke_json(
+            runner,
+            ["--profile", "work", "--storage", str(storage)],
+            exit_code=1,
+        )
+
+    resolve_browser_profile.assert_called_once_with(
+        profile="work",
+        storage_path=storage.resolve(),
+    )
+    assert data["checks"]["headless_reauth"]["status"] in {"pass", "warn"}
 
 
 def test_doctor_text_mode_exits_nonzero_on_failure(runner, isolated_notebooklm_home):
@@ -383,7 +464,11 @@ def test_doctor_warn_only_keeps_exit_zero(runner, isolated_notebooklm_home):
     # otherwise sweep this file into the profile before the checks run.
     _write_json(home / "context.json", {"current_notebook": "nb_123"})
 
-    data = _invoke_json(runner, ["--storage", str(home / "unused.json")], exit_code=0)
+    data = _invoke_json(
+        runner,
+        ["--storage", str(profile_dir / "storage_state.json")],
+        exit_code=0,
+    )
 
     assert data["checks"]["migration"]["status"] == "warn"
     assert not any(c["status"] == "fail" for c in data["checks"].values())

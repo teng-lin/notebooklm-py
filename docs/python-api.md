@@ -36,7 +36,7 @@ async def main():
         # Generate a podcast
         status = await client.artifacts.generate_audio(nb.id)
         await client.artifacts.wait_for_completion(nb.id, status.task_id)
-        output_path = await client.artifacts.download_audio(nb.id, "podcast.mp3")
+        output_path = await client.artifacts.download_audio(nb.id, "podcast.m4a")
         print(f"Audio saved to: {output_path}")
 
 asyncio.run(main())
@@ -815,6 +815,7 @@ class NotebookLMClient:
     settings: SettingsAPI      # User settings (language, etc.)
     sharing: SharingAPI        # Notebook sharing
     labels: LabelsAPI          # Source labels (topic grouping)
+    collections: CollectionsAPI # Account-level notebook collections
     auth: AuthTokens           # Current authentication tokens
     is_connected: bool         # Connection state
 
@@ -1393,7 +1394,7 @@ except ArtifactTimeoutError as exc:
     raise
 
 if final.is_complete:
-    path = await client.artifacts.download_audio(nb_id, "podcast.mp3")
+    path = await client.artifacts.download_audio(nb_id, "podcast.m4a")
     print(f"Saved to: {path}")
 else:
     print(f"Failed or timed out: {final.status}")
@@ -1930,6 +1931,59 @@ await client.labels.delete(nb_id, papers.id)
 > the label only (it is **not** deleted from the notebook, and stays in any other
 > label it belongs to). Both issue one `UPDATE_LABEL` per id (the wire honours
 > only the first id per call) and are not atomic across ids.
+
+### CollectionsAPI (`client.collections`)
+
+**CLI equivalent:** [Collection Commands](cli-reference.md#collection-commands-notebooklm-collection-cmd) — `notebooklm collection list`, `notebooks`, `create`, `rename`, `add`, `remove`, `delete`.
+
+Collections group whole **notebooks** into named, account-level buckets
+(playlist-style) — the account-level sibling of `LabelsAPI` (which groups
+sources *within* a notebook). Membership is many-to-many (a notebook can belong
+to multiple collections), and a collection owns a list of notebook IDs — the
+notebook carries no back-reference. The dataclass is `Collection` (importable as
+`from notebooklm import Collection`). On the wire a collection is a type-3 source
+label with a null notebook parent, so the same four label RPCs back it.
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `list()` | - | `list[Collection]` | List all collections in the account (with notebook membership) |
+| `get(collection_id)` | `str` | `Collection` | Get a collection by id; raises `CollectionNotFoundError` on a miss |
+| `get_or_none(collection_id)` | `str` | `Collection \| None` | Get a collection by id, returning `None` when absent |
+| `notebooks(collection_id)` | `str` | `list[Notebook]` | Expand a collection to its `Notebook` objects; raises `CollectionNotFoundError` if absent |
+| `create(name)` | `str` | `Collection` | Create an empty, named collection. Locates the new collection by id-diff; raises `CollectionError` on an ambiguous concurrent create |
+| `rename(collection_id, name, *, return_object=True)` | `str, str, *, bool` | `Collection \| None` | Rename a collection (preserves the existing emoji). Raises `CollectionNotFoundError` if missing |
+| `add_notebooks(collection_id, notebook_ids, *, return_object=True)` | `str, list[str], *, bool` | `Collection \| None` | Add notebook(s) to a collection. **Appends** — existing members survive and a notebook may belong to multiple collections. One RPC per id (deduped); not atomic across ids. Raises `ValueError` on an empty list |
+| `remove_notebooks(collection_id, notebook_ids, *, return_object=True)` | `str, list[str], *, bool` | `Collection \| None` | Un-assign notebook(s) from a collection only — the notebooks are not deleted and stay in any other collection. One RPC per id (deduped). Raises `ValueError` on an empty list |
+| `delete(collection_ids)` | `str \| list[str]` | `None` | Delete one or more collections (batch). Idempotent — an absent target is a no-op returning `None`. Deleting a collection does not delete its member notebooks |
+
+Collections carry no emoji at creation (the wire has no emoji slot); an emoji set
+in the web UI is preserved by `rename`. `return_object=False` always returns `None`
+without re-hydrating the collection, but the two mutating families differ on
+*when* a missing target is caught: `rename` preflights with `get_or_none` and
+raises `CollectionNotFoundError` before issuing the RPC, skipping its post-write
+fetch entirely when `return_object=False`; `add_notebooks`/`remove_notebooks`
+have no preflight — they issue every membership RPC first, then always call
+`get_or_none` afterward (regardless of `return_object`) and raise
+`CollectionNotFoundError` there if the collection is gone. So `return_object=False`
+never turns into a cheaper existence-only check for `add_notebooks`/`remove_notebooks`.
+
+**Example:**
+```python
+from notebooklm import Collection
+
+# Create an account-level collection and group notebooks into it
+research = await client.collections.create("Research Q3")
+await client.collections.add_notebooks(research.id, [nb_id])
+
+# List collections and expand one to its member notebooks
+for coll in await client.collections.list():
+    print(f"{coll.id}: {coll.emoji or ''}{coll.name} ({len(coll.notebook_ids)} notebooks)")
+members = await client.collections.notebooks(research.id)
+
+# Un-assign a notebook (it is NOT deleted) then delete the collection
+await client.collections.remove_notebooks(research.id, [nb_id])
+await client.collections.delete(research.id)  # notebooks survive
+```
 
 ---
 

@@ -117,11 +117,41 @@ Workarounds, most reliable first:
 
 2. **Set up a master token (best for unattended / long-lived use).** `notebooklm login --master-token` (needs the `[headless]` extra: `pip install "notebooklm-py[headless]"`) stores a durable `master_token.json` beside your profile. When cookies are missing or fully expired, the client re-mints a complete, fresh cookie jar — including `__Secure-1PSIDTS` — from the master token in-process, so it does not depend on what the browser login happened to hand back. If Google blocks sign-in inside the automated capture window ("This browser or app may not be secure"), use the CDP-attach or manual `oauth_token` variants described in the [master-token troubleshooting note](#cookie-freshness-for-long-running--unattended-use) above. See also [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).
 
+   > ⚠️ **The one-time bootstrap is not browser-free.** Plain `notebooklm login --master-token` launches a headed Playwright browser to capture the single-use `oauth_token`, so on a machine where the browser cannot start at all (see [`spawn UNKNOWN`](#windows-browser-fails-to-start-with-spawn-unknown) below) it fails the same way. Only the two manual variants avoid spawning a browser: `--master-token --oauth-token <value>` (paste the cookie yourself) and `--master-token --cdp-url <url>` (attach to a Chrome you started). What *is* browser-free is everything *after* bootstrap — the layer-4 re-mint from the stored `master_token.json`.
+
 3. **Retry the Playwright login on a fresh profile.** Sometimes a stale persistent profile is the culprit rather than automation detection:
    ```bash
    notebooklm login --fresh
    ```
    If three attempts (normal, `--fresh` + password, `--fresh` + passkey) all reproduce the missing cookie, treat it as the automation-detection case and switch to Firefox or a master token above.
+
+#### Windows: browser fails to start with `spawn UNKNOWN`
+
+```text
+BrowserType.launch_persistent_context: spawn UNKNOWN
+Failed to launch: Error: spawn UNKNOWN
+```
+
+**Cause: something on the machine vetoed *executing* the browser** — this is not a missing install and not a `notebooklm-py` bug (issue [#2004](https://github.com/teng-lin/notebooklm-py/issues/2004)). `UNKNOWN` is libuv's `UV_UNKNOWN`: `CreateProcessW` returned a Win32 error that has no entry in libuv's translation table. A missing binary would surface as `ENOENT` and an ordinary ACL denial as `EACCES`, so what actually reaches `UNKNOWN` is policy- or antivirus-shaped:
+
+- `ERROR_ACCESS_DISABLED_BY_POLICY` — AppLocker, Software Restriction Policies, or WDAC blocking execution from `%LOCALAPPDATA%\ms-playwright`.
+- `ERROR_VIRUS_INFECTED` / `ERROR_VIRUS_DELETED` — Microsoft Defender or another endpoint-security agent quarantining the Chromium build.
+
+Upstream Playwright reports ([microsoft/playwright#35363](https://github.com/microsoft/playwright/issues/35363), [#28307](https://github.com/microsoft/playwright/issues/28307), [#28858](https://github.com/microsoft/playwright/issues/28858)) all resolve to group policy or endpoint security, most often on managed corporate machines.
+
+**`--headless` does not help.** It launches the identical binary through the identical spawn; the veto happens at process creation, before any window would exist.
+
+Workarounds, most reliable first:
+
+1. **Use a system browser.** Chrome and Edge install under `Program Files`, a different path — so a rule scoped to Playwright's directory does not cover them:
+   ```bash
+   notebooklm login --browser chrome
+   notebooklm login --browser msedge
+   ```
+2. **Sign in elsewhere and ship the credentials in.** This is the right answer for a non-interactive or locked-down Windows host, and needs no browser on that host at all: run `notebooklm login` on a machine with a display, then copy `storage_state.json` over (or set `NOTEBOOKLM_AUTH_JSON`) — see [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).
+3. **Have IT allow-list the directory.** Permit execution from `%LOCALAPPDATA%\ms-playwright` (or wherever `PLAYWRIGHT_BROWSERS_PATH` points), and exclude it from real-time antivirus scanning.
+
+Note that `--browser-cookies chrome` is *not* a workaround on Windows: it runs into App-Bound Encryption instead (see [the section above](#windows-missing-required-cookies-__secure-1psidts-after-login-and---browser-cookies-could-not-decrypt)). Use `--browser-cookies firefox` if you want the cookie-extraction route.
 
 #### "Unauthorized" or redirect to login page
 
@@ -139,10 +169,29 @@ notebooklm login
 **Cause:** The CSRF token (`SNlM0e`) couldn't be extracted from the NotebookLM page response. The exact wording depends on which code path raised it:
 
 - `Failed to extract CSRF token (SNlM0e). Page structure may have changed or authentication expired. Preview: '...'` — raised by `refresh_auth()` when the WIZ_global_data extraction fails ([`client.py`](../src/notebooklm/client.py)).
-- `CSRF token not found in HTML. Final URL: <url> This may indicate the page structure has changed.` — raised by the lower-level extractor when no auth redirect was detected ([`auth.py`](../src/notebooklm/auth.py)).
+- `CSRF token not found in HTML. Final URL: <url> This may indicate the page structure has changed.` — raised by the lower-level extractor when the response *did* come from a NotebookLM app host but carried no token ([`auth.py`](../src/notebooklm/auth.py)). This is the genuine "file a bug" case.
+- `CSRF token not found in HTML. Final URL: <url> The response did not come from a NotebookLM app host, so the request never reached the app …` — same extractor, but the chain landed somewhere else entirely. **The final URL is the diagnosis**: follow it to see where the request actually went. Nothing is wrong with your login.
 - `Failed to extract 'SNlM0e' from NotebookLM HTML response. This usually means Google changed the page structure. Preview: '...'` — raised as `AuthExtractionError` directly (rare; usually wrapped by one of the messages above) ([`exceptions.py`](../src/notebooklm/exceptions.py)).
 
-A related auth-redirect message — `Authentication expired. Run 'notebooklm login' to re-authenticate.` (or `Authentication expired or invalid. ...`) — surfaces the same root cause when the page redirected to Google's login flow.
+A related auth-redirect message — `Authentication expired. Run 'notebooklm login' to re-authenticate.` (or `Authentication expired or invalid. Final URL: …` / `… Redirected to: …`) — surfaces the same root cause when the page redirected to Google's login flow. Every one of these messages carries the final URL; if it does not name `accounts.google.com`, the session did not expire.
+
+> **Note:** the "did not come from a NotebookLM app host" wording exists because these two conditions used to be indistinguishable. A page-body scan for `accounts.google.com` links reported *any* Google-served page (help articles, the region gate, the app itself) as an expired login — see [#2038](https://github.com/teng-lin/notebooklm-py/issues/2038) and the six-day false alarm in [#2019](https://github.com/teng-lin/notebooklm-py/issues/2019). If you are reading an older error that says "Authentication expired" with **no URL at all**, it came from that removed code path and should not be trusted.
+
+#### "Google's CookieMismatch page was reached during this request"
+
+**Cause:** the request's redirect chain passed through `accounts.google.com/CookieMismatch` (which then forwards to a `support.google.com` help article). Google rejected the cookies as not matching the host they were sent to. This is a cookie **scoping** problem, not necessarily an expired session — the credentials themselves may be perfectly valid.
+
+Common causes:
+
+- a `storage_state.json` whose per-cookie `domain` values were flattened to a single host, so cookies scoped to `.google.com` get sent to hosts they were never issued for,
+- cookies belonging to a different Google account or session than the one being addressed,
+- a stale `__Secure-1PSIDTS` that Google could not reconcile.
+
+**Solution:**
+```bash
+notebooklm login   # re-extract cookies with their original domains
+```
+If it recurs, inspect `storage_state.json` and confirm each cookie kept its own `domain` field rather than being rewritten to one host. See [`docs/auth-cookie-lifecycle.md`](auth-cookie-lifecycle.md) for the cookie-domain model.
 
 **Note:** These errors should rarely surface, since the client automatically retries with a fresh CSRF token on auth failures (see *Automatic Token Refresh* above). When one does reach you, the automatic refresh also failed.
 
@@ -692,6 +741,8 @@ playwright install chromium
 - Allow in System Preferences → Security & Privacy
 
 ### Windows
+
+> **Login problems?** Two Windows-specific login failures are covered under Authentication Errors above: [`spawn UNKNOWN` when the browser will not start](#windows-browser-fails-to-start-with-spawn-unknown), and [`Could not decrypt` / missing `__Secure-1PSIDTS`](#windows-missing-required-cookies-__secure-1psidts-after-login-and---browser-cookies-could-not-decrypt).
 
 **CLI hangs indefinitely (issue #75):**
 

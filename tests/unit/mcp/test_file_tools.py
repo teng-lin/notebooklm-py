@@ -746,8 +746,8 @@ async def test_artifact_download_with_config_returns_resource_link(mock_client, 
     # Presentation metadata enriches the payload (#1826): a latest-by-type download
     # has no known title, so the filename falls back to the type name + extension,
     # the mime comes from the central table, and size is unknown up front.
-    assert sc["filename"] == "audio.mp3"
-    assert sc["mime_type"] == "audio/mpeg"
+    assert sc["filename"] == "audio.m4a"
+    assert sc["mime_type"] == "audio/mp4"
     assert sc["size_bytes"] is None
     # A clickable resource_link content item is included for claude.ai.
     assert any(getattr(block, "type", None) == "resource_link" for block in result.content)
@@ -924,8 +924,8 @@ async def test_artifact_download_remote_tool_encodes_aid(mock_client, config) ->
     assert sc["artifact_id"] == _AID_A
     # An explicit id resolves the artifact's title cheaply from the same list, so the
     # advertised filename is derived from it (not the type-name fallback) (#1826).
-    assert sc["filename"] == "Podcast.mp3"
-    assert sc["mime_type"] == "audio/mpeg"
+    assert sc["filename"] == "Podcast.m4a"
+    assert sc["mime_type"] == "audio/mp4"
     url = sc["url"]
     token = url.split("/")[-1]
     payload = config.signer.verify(token, op="dl")

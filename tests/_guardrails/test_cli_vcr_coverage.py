@@ -97,6 +97,10 @@ COVERAGE_EXEMPT: dict[str, str] = {
     "agent": _REASON_LOCAL_ONLY,
     "skill": _REASON_LOCAL_ONLY,
     "mcp": _REASON_LOCAL_ONLY,
+    # Collections reuse the label RPCs but the live "Collections" feature was not
+    # available to record cli_vcr cassettes against; add GROUP_COVERAGE once the
+    # lifecycle can be captured (tests/e2e/test_collections.py is the live harness).
+    "collection": _REASON_NEEDS_RECORDING,
 }
 
 _VALID_REASONS = frozenset({_REASON_NEEDS_RECORDING, _REASON_LOCAL_ONLY})

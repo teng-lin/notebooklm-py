@@ -57,6 +57,7 @@ from ._client_assembly import _assemble_client
 from ._client_composed import ClientComposed
 from ._client_seams import ClientSeams
 from ._client_seams import resolve_client_seams as resolve_client_seams  # noqa: F401
+from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
 from ._labels import LabelsAPI
@@ -105,6 +106,7 @@ class NotebookLMClient:
     - settings: Manage user settings (output language, etc.)
     - sharing: Manage notebook sharing and permissions
     - labels: AI-group sources into topic labels (auto-label / reorganize)
+    - collections: Group notebooks into account-level collections
 
     Usage:
         # Create from saved authentication (canonical idiom)
@@ -127,6 +129,7 @@ class NotebookLMClient:
         settings: SettingsAPI for user settings
         sharing: SharingAPI for notebook sharing
         labels: LabelsAPI for source labels (topic grouping)
+        collections: CollectionsAPI for account-level notebook collections
         auth: The AuthTokens used for authentication
     """
 
@@ -153,6 +156,7 @@ class NotebookLMClient:
     settings: SettingsAPI
     sharing: SharingAPI
     labels: LabelsAPI
+    collections: CollectionsAPI
 
     def __init__(
         self,

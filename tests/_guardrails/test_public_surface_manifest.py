@@ -323,6 +323,7 @@ _TOP_LEVEL_TYPE_EXPORTS = [
     "ChatResponseLength",
     "CitedSourceSelection",
     "ClientMetricsSnapshot",
+    "Collection",
     "ConnectionLimits",
     "ConversationTurn",
     "DriveMimeType",
@@ -383,6 +384,8 @@ _TYPES_EXCEPTION_REEXPORTS = [
     "ArtifactInProgressTimeoutError",
     "LabelError",
     "LabelNotFoundError",
+    "CollectionError",
+    "CollectionNotFoundError",
 ]
 
 _TOP_LEVEL_EXCEPTION_EXPORTS = [
@@ -401,6 +404,8 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "ChatError",
     "ChatResponseParseError",
     "ClientError",
+    "CollectionError",
+    "CollectionNotFoundError",
     "ConfigurationError",
     "DecodingError",
     "LabelError",

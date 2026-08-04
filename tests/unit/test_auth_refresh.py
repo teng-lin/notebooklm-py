@@ -90,6 +90,143 @@ class TestFetchTokens:
             await fetch_tokens(cookies)
 
     @pytest.mark.asyncio
+    async def test_fetch_tokens_cookie_mismatch_chain_is_not_reported_as_expiry(
+        self, httpx_mock: HTTPXMock
+    ):
+        """End-to-end replay of the #2019 chain: it must not say "expired" (#2038).
+
+        The real rpc-health failure went
+        ``notebooklm.google.com`` -> ``accounts.google.com/CookieMismatch`` ->
+        ``support.google.com/...`` (HTTP 200 help article). The mismatch hop is
+        mid-chain, so ``response.url`` alone cannot see it — this test is what
+        proves the redirect *history* is actually threaded from the transport
+        down into the classifier, not merely accepted as a parameter.
+        """
+        httpx_mock.add_response(
+            url="https://notebooklm.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/CookieMismatch"},
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/CookieMismatch",
+            status_code=302,
+            headers={"Location": "https://support.google.com/accounts/answer/32050"},
+        )
+        httpx_mock.add_response(
+            url="https://support.google.com/accounts/answer/32050",
+            content=b'<html><a href="https://accounts.google.com/signin">Sign in</a></html>',
+        )
+
+        cookies = {"SID": "valid_sid", "__Secure-1PSIDTS": "test_1psidts"}
+        with pytest.raises(ValueError) as exc:
+            await fetch_tokens(cookies)
+
+        message = str(exc.value)
+        assert "CookieMismatch" in message
+        assert "Authentication expired" not in message
+
+    @pytest.mark.asyncio
+    async def test_fetch_tokens_gate_wins_over_mismatch_hop(self, httpx_mock: HTTPXMock):
+        """The #1630 region gate must outrank a cookie-mismatch hop HERE too.
+
+        ``_extraction_failure`` gets this precedence right, and
+        ``TestExtractionFailureTaxonomy::test_gate_still_wins_over_cookie_mismatch_ordering``
+        pins it — but that test calls the extractor directly, so it cannot see
+        the production ``_fetch_tokens_with_jar`` path, which classifies before
+        the body is ever parsed. An earlier revision hand-rolled the checks
+        there and got the order wrong; both paths now share one classifier.
+        """
+        httpx_mock.add_response(
+            url="https://notebooklm.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/CookieMismatch"},
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/CookieMismatch",
+            status_code=302,
+            headers={"Location": "https://notebooklm.google/?location=unsupported"},
+        )
+        httpx_mock.add_response(
+            url="https://notebooklm.google/?location=unsupported",
+            content=b"<html>NotebookLM</html>",
+        )
+
+        cookies = {"SID": "valid_sid", "__Secure-1PSIDTS": "test_1psidts"}
+        with pytest.raises(ValueError) as exc:
+            await fetch_tokens(cookies)
+
+        message = str(exc.value)
+        assert "region / anti-abuse access gate" in message
+        assert "CookieMismatch" not in message
+
+    @pytest.mark.asyncio
+    async def test_fetch_tokens_never_accepts_the_sign_in_pages_own_token(
+        self, httpx_mock: HTTPXMock
+    ):
+        """Never return tokens harvested from Google's own sign-in page.
+
+        The extractors key purely on the presence of ``SNlM0e``/``FdrFJe`` and
+        never check which host answered, so *any* page carrying those fields
+        parses "successfully". Google's sign-in page is such a page — verified
+        against a live anonymous capture on 2026-08-03::
+
+            GET accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fnotebooklm.google.com%2F
+            -> 200 accounts.google.com/v3/signin/identifier?...&flowName=GlifWebSignIn
+               WIZ_global_data = {...,"SNlM0e":"ALX_...:1785760591977","FdrFJe":"84070..."}
+
+        and `extract_csrf_from_html(that_html)` returned the token instead of
+        raising. (A *bare* ``/ServiceLogin`` with no ``continue=`` serves a
+        different page with neither field, so the parameter matters when
+        reproducing.)
+
+        The token values below are placeholders standing in for that shape — the
+        real capture is not committed because it contains live session values.
+        This test therefore pins **our** invariant (an auth-redirected response
+        never yields tokens), which holds regardless of what Google happens to
+        serve on any given day; the capture is why the invariant is worth having
+        rather than what the test asserts.
+        """
+        httpx_mock.add_response(
+            url="https://notebooklm.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/ServiceLogin"},
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/ServiceLogin",
+            content=(
+                b'<html><script>window.WIZ_global_data = {"S06Grb":"",'
+                b'"SNlM0e":"ALX_PLACEHOLDER_SIGNIN_TOKEN:1785760591977",'
+                b'"FdrFJe":"8407000850280974490"};</script></html>'
+            ),
+        )
+
+        cookies = {"SID": "expired_sid", "__Secure-1PSIDTS": "test_1psidts"}
+        with pytest.raises(ValueError) as exc:
+            await fetch_tokens(cookies)
+
+        message = str(exc.value)
+        assert "Authentication expired" in message
+        assert "ALX_PLACEHOLDER_SIGNIN_TOKEN" not in message
+
+    def test_extractors_alone_would_accept_a_sign_in_page(self):
+        """Pin the hazard the pre-check exists to prevent.
+
+        If this ever starts raising, the extractors have gained host awareness
+        of their own and the URL-only pre-check in ``_fetch_tokens_with_jar``
+        could be reconsidered. Until then, deleting that pre-check would let
+        Google's sign-in-page tokens through — which is precisely the refactor
+        two reviewers proposed on #2045.
+        """
+        from notebooklm._auth.extraction import extract_csrf_from_html
+
+        signin_html = (
+            '<html><script>window.WIZ_global_data = {"S06Grb":"",'
+            '"SNlM0e":"ALX_PLACEHOLDER_SIGNIN_TOKEN:1785760591977"};</script></html>'
+        )
+        # No final_url -> classification cannot help; the body alone decides.
+        assert extract_csrf_from_html(signin_html) == "ALX_PLACEHOLDER_SIGNIN_TOKEN:1785760591977"
+
+    @pytest.mark.asyncio
     async def test_fetch_tokens_redirect_to_login_strips_query_and_fragment(self, monkeypatch):
         """Redirect error must not expose query params or fragments from final_url."""
 

@@ -204,7 +204,9 @@ def _download_specs() -> dict[str, download_core.DownloadTypeSpec]:
         "audio": spec(
             name="audio",
             kind=ArtifactType.AUDIO,
-            extension=".mp3",
+            # ``.m4a`` (AAC in an MP4 container), not ``.mp3`` — see the note on
+            # the CLI's matching row in ``cli/_download_specs.py`` (#2034).
+            extension=".m4a",
             default_dir="./audio",
             download_attr="download_audio",
             help_summary="",
@@ -591,17 +593,25 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
     # ``finally`` below.
     success = False
     try:
-        temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
+        if body.output_format is not None and not spec.format_choices:
+            raise ValidationError(f"type {body.type!r} does not support an output_format option")
+        # Name the spool file for the extension the REQUESTED format resolves to, not
+        # the spec default: this route serves ``os.path.basename(served)`` as the
+        # download name and derives Content-Type from its suffix, so ``spec.extension``
+        # would hand a ``--format pptx`` deck out as ``artifact.pdf`` /
+        # ``application/pdf`` and a markdown quiz as ``artifact.json``. (The MCP
+        # ``/files/dl`` route already resolves both format-aware; this brings the REST
+        # surface in line.)
+        temp_path = os.path.join(
+            temp_dir,
+            f"artifact{download_core.resolve_extension(spec, body.output_format)}",
+        )
         args: dict[str, Any] = {
             "notebook_id": notebook_id,
             "output_path": temp_path,
             "latest": True,
         }
         if body.output_format is not None:
-            if not spec.format_choices:
-                raise ValidationError(
-                    f"type {body.type!r} does not support an output_format option"
-                )
             args[spec.format_param_name] = body.output_format
         plan = download_core.build_download_plan(spec, args, cwd=Path.cwd())
         result = await download_core.execute_download(
@@ -627,8 +637,20 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
         served = result.output_path or temp_path
         if Path(temp_dir).resolve() not in Path(served).resolve().parents:
             raise ValidationError("Download produced an unexpected output path")
+        # ``media_type`` comes EXPLICITLY from the shared ``_app`` table — the same
+        # one the MCP surfaces read, so the two servers stay in lockstep. Left to
+        # guess, ``FileResponse`` falls back to
+        # ``guess_type(...)[0] or "application/octet-stream"``, and ``.m4a`` is NOT in
+        # ``mimetypes``' builtin table (``.mp3`` is) — it resolves only when the host
+        # ships a mime database such as ``/etc/mime.types``. So on a slim container an
+        # audio download would be served as ``application/octet-stream``, which defeats
+        # inline playback and any client that dispatches on MIME. Passing it explicitly
+        # also makes the header independent of the runner's mime database (#2034).
         response = _CleanupFileResponse(
-            served, filename=os.path.basename(served), temp_dir=temp_dir
+            served,
+            filename=os.path.basename(served),
+            media_type=download_core.mime_type_for_extension(Path(served).suffix),
+            temp_dir=temp_dir,
         )
         success = True
         return response

@@ -150,6 +150,40 @@ async def test_dead_cookies_optin_but_unavailable_raises(monkeypatch, tmp_path: 
             await refresh_auth_session(allow_headless=True, **b)
 
 
+@pytest.mark.asyncio
+async def test_headless_reauth_uses_storage_specific_browser_profile(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Custom storage files do not share an ambient L3 browser profile."""
+    import notebooklm._auth.headless_reauth as hr
+    import notebooklm._auth.session as session_mod
+
+    browser_profiles: list[Path] = []
+
+    def _record_attempt(**kwargs):
+        browser_profiles.append(kwargs["browser_profile"])
+        return HeadlessReauthResult(HeadlessReauthStatus.UNAVAILABLE, "no profile")
+
+    monkeypatch.setattr(hr, "attempt_headless_reauth", _record_attempt)
+
+    for storage_path in (
+        tmp_path / "A.json",
+        tmp_path / "B.json",
+        tmp_path / "work" / "storage_state.json",
+    ):
+        await session_mod._try_headless_reauth(
+            auth=_auth(storage_path=storage_path),
+            kernel=object(),
+            allow_headless=True,
+        )
+
+    assert browser_profiles == [
+        tmp_path / "A.json.browser_profile",
+        tmp_path / "B.json.browser_profile",
+        tmp_path / "work" / "browser_profile",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Opt-in success: re-mint heals, retry yields fresh tokens
 # ---------------------------------------------------------------------------

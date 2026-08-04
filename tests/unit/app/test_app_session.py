@@ -247,6 +247,7 @@ def _logout_inputs(
     context_path: Callable[[], Path],
     env_auth_remains: bool = False,
     rmtree: Callable[[Path], Any],
+    remove_browser_profile: bool = True,
 ) -> LogoutInputs:
     return LogoutInputs(
         storage_path=storage_path,
@@ -255,6 +256,7 @@ def _logout_inputs(
         context_path=context_path,
         env_auth_remains=env_auth_remains,
         rmtree=rmtree,
+        remove_browser_profile=remove_browser_profile,
     )
 
 
@@ -314,6 +316,27 @@ def test_logout_no_artifacts_removed_any_false(tmp_path: Path) -> None:
     assert outcome.env_auth_remains is True
     # rmtree never runs when the browser dir is absent.
     inputs.rmtree.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_logout_reports_existing_browser_profile_preserved_by_policy(tmp_path: Path) -> None:
+    """A skipped unowned browser dir is carried through the typed outcome."""
+    browser_dir = tmp_path / "browser"
+    browser_dir.mkdir()
+    rmtree = MagicMock()
+    inputs = _logout_inputs(
+        storage_path=tmp_path / "missing_storage.json",
+        browser_profile_dir=browser_dir,
+        clear_context=lambda: False,
+        context_path=lambda: tmp_path / "ctx.json",
+        rmtree=rmtree,
+        remove_browser_profile=False,
+    )
+
+    outcome = execute_logout(inputs)
+
+    assert outcome.browser_profile_preserved == browser_dir
+    assert outcome.removed_any is False
+    rmtree.assert_not_called()
 
 
 def test_logout_storage_unlink_oserror_short_circuits(tmp_path: Path) -> None:

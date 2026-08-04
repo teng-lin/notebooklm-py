@@ -410,12 +410,12 @@ def fetch_bundle() -> str:
     import httpx
 
     from notebooklm._env import get_base_url
-    from notebooklm.auth import authuser_query, load_auth_from_storage
+    from notebooklm.auth import authuser_query, build_httpx_cookies_from_storage
 
     def _fetch(
         url: str,
         *,
-        cookies: dict[str, str] | None = None,
+        cookies: httpx.Cookies | None = None,
         follow_redirects: bool = False,
         timeout: float = 60.0,
     ) -> httpx.Response:
@@ -429,7 +429,13 @@ def fetch_bundle() -> str:
         response.raise_for_status()
         return response
 
-    cookies = load_auth_from_storage()
+    # Domain-preserving jar, NOT the flat ``load_auth_from_storage()`` mapping:
+    # a plain ``dict`` handed to ``httpx.get(cookies=...)`` carries no domain, so
+    # every cookie is sent to every host in the redirect chain. Host-scoped
+    # cookies (``OSID`` on the NotebookLM host, ``LSID`` on
+    # ``accounts.google.com``) leaking across hosts dead-ends the post-cutover
+    # sign-in chain on ``accounts.google.com/CookieMismatch`` — see issue #2019.
+    cookies = build_httpx_cookies_from_storage()
     html = _fetch(
         f"{get_base_url()}/?{authuser_query(0)}",
         cookies=cookies,

@@ -396,10 +396,10 @@ and the `_THIN_SOURCE_CHAR_THRESHOLD` boundary test).
 ```text
 task = studio_generate(notebook="Quantum Computing", artifact_type="audio")
 studio_status(notebook="Quantum Computing", task_id="<task_id from above>")   # poll until complete
-studio_download(notebook="Quantum Computing", artifact_type="audio", path="podcast.mp3")
+studio_download(notebook="Quantum Computing", artifact_type="audio", path="podcast.m4a")
 
 # Target a specific/older artifact instead of the latest-by-type (full ID or unique prefix):
-studio_download(notebook="Quantum Computing", artifact_type="audio", path="old_podcast.mp3", artifact_id="aaaaaaaa-aaaa")
+studio_download(notebook="Quantum Computing", artifact_type="audio", path="old_podcast.m4a", artifact_id="aaaaaaaa-aaaa")
 
 # Per-kind styling options are agent-settable, e.g. a custom-styled video:
 studio_generate(notebook="Quantum Computing", artifact_type="video",

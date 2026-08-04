@@ -170,3 +170,80 @@ def test_headless_redirected_to_login_raises_loudly(tmp_path: Path) -> None:
     page.wait_for_url.assert_not_called()
     # Nothing was persisted on the dead-session path.
     assert not storage.exists()
+
+
+# ---------------------------------------------------------------------------
+# Launch failure on the unattended arm → propagate, never hijack the reason
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "launch_error",
+    [
+        # Classifiable failures — the interactive arm turns these into
+        # remediation prose; the unattended arm must not.
+        "Failed to launch: Error: spawn UNKNOWN",
+        "Executable doesn't exist at /root/.cache/ms-playwright/chromium-1/chrome",
+    ],
+)
+def test_headless_launch_failure_propagates_instead_of_calling_io_fail(
+    tmp_path: Path, launch_error: str
+) -> None:
+    """The unattended L3 arm must not be hijacked by the friendly launch branch.
+
+    ``io.fail`` here maps to :class:`HeadlessLoginRequiredError`, which
+    ``attempt_headless_reauth`` reports as "the persisted browser profile's
+    Google session is also expired" — a confidently wrong diagnosis for a
+    browser that never started, on the PUBLIC ``HeadlessReauthResult.reason``.
+    Letting the original exception propagate instead lands it in that caller's
+    generic arm as an honest "headless capture failed: <Type>". See #2043.
+    """
+    storage = tmp_path / "storage_state.json"
+    profile = tmp_path / "browser_profile"
+    profile.mkdir()
+
+    playwright = MagicMock()
+    playwright.chromium.launch_persistent_context.side_effect = RuntimeError(launch_error)
+    io = _RaisingCaptureIO()
+
+    # The ORIGINAL exception, not HeadlessLoginRequiredError from io.fail.
+    with pytest.raises(RuntimeError, match="spawn UNKNOWN|Executable doesn't exist") as excinfo:
+        _run_headless(
+            BrowserCapturePlan(browser="chromium", browser_profile=profile, storage_path=storage),
+            io,
+            playwright,
+        )
+    assert not isinstance(excinfo.value, HeadlessLoginRequiredError)
+
+    # Remediation prose is for a human; this arm has none and emits nothing.
+    assert io.emitted == []
+    assert not storage.exists()
+
+
+def test_interactive_arm_still_gets_the_friendly_launch_help(tmp_path: Path) -> None:
+    """Counterpart to the above: the gate must not disable the interactive path."""
+    storage = tmp_path / "storage_state.json"
+    profile = tmp_path / "browser_profile"
+    profile.mkdir()
+
+    playwright = MagicMock()
+    playwright.chromium.launch_persistent_context.side_effect = RuntimeError(
+        "Failed to launch: Error: spawn UNKNOWN"
+    )
+    io = _RaisingCaptureIO()
+
+    with (
+        patch(
+            "playwright.sync_api.sync_playwright",
+            side_effect=lambda: _FakeSyncPlaywright(playwright),
+        ),
+        pytest.raises(HeadlessLoginRequiredError),  # _RaisingCaptureIO.fail
+    ):
+        run_browser_capture(
+            BrowserCapturePlan(browser="chromium", browser_profile=profile, storage_path=storage),
+            io,
+            headless=False,
+            interactive=True,
+        )
+
+    assert any("refused to start the browser" in str(args) for args in io.emitted)

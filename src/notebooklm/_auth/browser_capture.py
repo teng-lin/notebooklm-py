@@ -52,7 +52,21 @@ from urllib.parse import urlparse
 from .._atomic_io import atomic_write_json
 from ..config import PERSONAL_BASE_HOST, get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError
+
+# ``CHANNEL_BROWSERS`` and the launch-failure triage live in the
+# ``browser_launch_errors`` leaf (ADR-0008). ``CHANNEL_BROWSERS`` is re-exported
+# below because this module has always been its import site for the CLI adapter
+# (``cli/services/playwright_login.py``) and the launch banner.
+from .browser_launch_errors import CHANNEL_BROWSERS, classify_launch_failure
 from .cookie_policy import build_cookie_domain_allowlist
+
+# DEBUG tracing for the login wait lives in its own leaf (ADR-0008) and is
+# re-exported here because ``browser_capture`` is the only ``_auth`` module the
+# CLI-boundary guardrail sanctions as an import site. Both helpers are
+# credential-safe: every URL they log is reduced to scheme + host, dropping the
+# path, query, fragment, and userinfo — any of which can carry auth material
+# mid-SSO, including on a third-party identity provider.
+from .login_wait_trace import log_observed_navigations, safe_page_url
 
 if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext, Page
@@ -105,15 +119,6 @@ BROWSER_CLOSED_HELP = (
     "  1. Run: notebooklm login --fresh\n"
     "  2. Or run: notebooklm auth logout && notebooklm login"
 )
-
-# Browsers launched via Playwright's ``channel`` parameter (system-installed,
-# not the bundled Chromium). Maps channel name -> (display label, install URL).
-# Used for the --browser option, the launch banner, and the not-installed
-# error path. The bundled "chromium" choice is intentionally absent.
-CHANNEL_BROWSERS: dict[str, tuple[str, str]] = {
-    "msedge": ("Microsoft Edge", "https://www.microsoft.com/edge"),
-    "chrome": ("Google Chrome", "https://www.google.com/chrome"),
-}
 
 
 # ---------------------------------------------------------------------------
@@ -348,13 +353,24 @@ def is_navigation_interrupted_error(error: str | Exception) -> bool:
     return any(marker in error_str for marker in _NAVIGATION_INTERRUPTED_MARKERS)
 
 
+def accepted_login_hosts() -> tuple[str, ...]:
+    """Return the lowercased hostnames :func:`url_matches_base_host` accepts.
+
+    Single source of truth for the accept set so the login-wait DEBUG line
+    ("waiting for host X") can never drift from the predicate that actually
+    ends the wait — the drift that made the ``notebook.google.com`` rebrand
+    (#2017 / #2025 and friends) so expensive to triage.
+    """
+    base_host = get_base_host().lower()
+    if base_host == PERSONAL_BASE_HOST:
+        return (base_host, "notebook.google.com")
+    return (base_host,)
+
+
 def url_matches_base_host(url: str) -> bool:
     """Return True when ``url`` is on the configured NotebookLM host or personal-app alias."""
     current_host = (urlparse(url).hostname or "").lower()
-    base_host = get_base_host().lower()
-    return current_host == base_host or (
-        base_host == PERSONAL_BASE_HOST and current_host == "notebook.google.com"
-    )
+    return current_host in accepted_login_hosts()
 
 
 def connection_error_help() -> str:
@@ -622,6 +638,18 @@ def run_browser_capture(
                 io.emit("1. Complete the Google login in the browser window")
                 io.emit("2. Authentication will be saved automatically once login is detected\n")
                 io.emit("[dim]Waiting for login (up to 5 minutes)...[/dim]")
+                # Name the accept set and the starting point BEFORE blocking:
+                # with these two lines plus the per-navigation trace below, a
+                # ``-vv`` paste from a stuck login is self-diagnosing (#2046).
+                # Explicitly level-gated: ``logger.debug``'s %-args are built
+                # eagerly, and this diagnostic must do NO work when logging is
+                # off — the wait has to stay byte-for-byte what it was.
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "Login wait: accepting any of %s (currently on %s); timeout 300s",
+                        ", ".join(accepted_login_hosts()),
+                        safe_page_url(page),
+                    )
                 try:
                     # wait_until="commit", not the default "load": the SPA never
                     # fires "load", so a load-gated wait hangs the full 5 min even
@@ -630,8 +658,13 @@ def run_browser_capture(
                     # host. Cookies are read later at storage_state() (after the
                     # cookie-forcing round-trips), so resolving early is safe;
                     # page.content() at capture time is best-effort/None-tolerant.
-                    page.wait_for_url(url_matches_base_host, wait_until="commit", timeout=300_000)
+                    with log_observed_navigations(page):
+                        page.wait_for_url(
+                            url_matches_base_host, wait_until="commit", timeout=300_000
+                        )
                 except PlaywrightTimeout:
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug("Login wait: timed out after 300s on %s", safe_page_url(page))
                     io.emit(
                         "[red]Login not detected within 5 minutes.[/red]\n"
                         "Try again with: notebooklm login\n"
@@ -707,26 +740,30 @@ def run_browser_capture(
             captured_page_html = active_page_html
 
         except Exception as e:
-            # Handle browser launch errors specially (context will be None if launch failed)
-            if context is None and browser in CHANNEL_BROWSERS:
-                err = str(e).lower()
-                is_not_found = any(
-                    marker in err
-                    for marker in (
-                        "executable doesn't exist",
-                        "is not found at",
-                        "no such file",
-                        "failed to launch",
+            # Handle browser launch errors specially (context will be None if
+            # launch failed). This covers the bundled Chromium too, not just the
+            # system channels: before #2004 a bundled-launch failure had no
+            # friendly branch at all and fell through to the bare ``raise``
+            # below, surfacing as "Unexpected error: ... please report a bug".
+            if context is None:
+                launch_help = classify_launch_failure(browser, str(e))
+                # Remediation prose is for a human, and only the interactive arm
+                # has one. Short-circuiting the unattended L3 arm via ``io.fail``
+                # would be actively harmful: its sink maps every ``io.fail`` to
+                # ``HeadlessLoginRequiredError``, which ``attempt_headless_reauth``
+                # reports as "the persisted browser profile's Google session is
+                # also expired" — a confidently wrong diagnosis for a browser
+                # that never started, on a PUBLIC ``HeadlessReauthResult.reason``.
+                # Letting the original exception propagate instead lands it in
+                # that caller's generic arm as an honest "headless capture
+                # failed: <Type>" (it logs there; the fall-through ``logger.debug``
+                # below keeps the traceback either way). See #2043.
+                if launch_help is not None and interactive:
+                    # ``exc_info`` because this branch never re-raises ``e``.
+                    logger.error(
+                        "Browser launch failed (browser=%s): %s", browser, e, exc_info=True
                     )
-                )
-                if is_not_found:
-                    label, install_url = CHANNEL_BROWSERS[browser]
-                    logger.error("%s not found: %s", label, e)
-                    io.emit(
-                        f"[red]{label} not found.[/red]\n"
-                        f"Install from: {install_url}\n"
-                        "Or use the default Chromium browser: notebooklm login"
-                    )
+                    io.emit(launch_help)
                     io.fail(1)
             # Last-resort TargetClosed mapping for anything that escapes the
             # in-flow guards (recover_page, the navigation retry loop,
@@ -735,7 +772,7 @@ def run_browser_capture(
             # map TargetClosed to BROWSER_CLOSED_HELP + exit 1; mirror them
             # here so the user gets the same friendly help instead of the
             # exit-2 bug-report hint. (The launch branch above never falls
-            # through for handled not-found errors — it io.fail(1)s — and
+            # through for a classified launch failure — it io.fail(1)s — and
             # launch failures are not TargetClosed.)
             if isinstance(e, PlaywrightError) and TARGET_CLOSED_ERROR in str(e):
                 io.emit(BROWSER_CLOSED_HELP)
@@ -913,13 +950,20 @@ __all__ = [
     "BrowserCaptureIO",
     "BrowserCapturePlan",
     "CaptureResult",
+    "accepted_login_hosts",
+    # Re-exported from the browser_launch_errors leaf: browser_capture is the
+    # only _auth module the CLI-boundary guardrail sanctions, so CLI-side
+    # callers (the --master-token bootstrap) must reach it through here.
+    "classify_launch_failure",
     "connection_error_help",
     "ensure_playwright_available",
     "filter_storage_state_cookies_by_domain_policy",
     "is_navigation_interrupted_error",
+    "log_observed_navigations",
     "recover_page",
     "run_browser_capture",
     "run_cdp_capture",
+    "safe_page_url",
     "sync_playwright_context",
     "url_matches_base_host",
     "windows_playwright_event_loop",

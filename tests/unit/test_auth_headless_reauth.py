@@ -120,6 +120,17 @@ def test_optin_on_empty_profile_dir_is_unavailable(tmp_path: Path, monkeypatch) 
     assert result.status is HeadlessReauthStatus.UNAVAILABLE
 
 
+def test_ownership_marker_only_profile_is_not_reusable(tmp_path: Path) -> None:
+    """A freshly prepared marker-only directory holds no reusable Google session."""
+    profile = tmp_path / "A.json.browser_profile"
+    profile.mkdir()
+    (profile / ".notebooklm-owned").touch()
+
+    readiness = hr.headless_reauth_readiness(browser_profile=profile)
+
+    assert readiness.profile_present is False
+
+
 # ---------------------------------------------------------------------------
 # Decision matrix: opt-in ON + profile present → drives the browser
 # ---------------------------------------------------------------------------

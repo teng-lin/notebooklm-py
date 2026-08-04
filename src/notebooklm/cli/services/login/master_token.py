@@ -10,7 +10,13 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from ...._auth.browser_capture import sync_playwright_context  # noqa: TID252
+# Both via ``browser_capture``, the single ``_auth`` module the CLI-boundary
+# guardrail sanctions; ``classify_launch_failure`` lives in its
+# ``browser_launch_errors`` leaf and is re-exported there.
+from ...._auth.browser_capture import (  # noqa: TID252
+    classify_launch_failure,
+    sync_playwright_context,
+)
 from ....auth import (  # noqa: TID252 (package-relative; public boundary, not _auth.*)
     MasterTokenError,
     exchange_master_token,
@@ -155,12 +161,24 @@ def capture_oauth_token(
             # navigator.webdriver is false. This is the minimal de-automation, not
             # a stealth library (rejected — see auth-cookie-lifecycle.md §7); if
             # Google still blocks, use --cdp-url (your own Chrome) or --oauth-token.
-            browser_obj = p.chromium.launch(
-                headless=False,
-                channel=channel,
-                args=["--disable-blink-features=AutomationControlled"],
-                ignore_default_args=["--enable-automation"],
-            )
+            try:
+                browser_obj = p.chromium.launch(
+                    headless=False,
+                    channel=channel,
+                    args=["--disable-blink-features=AutomationControlled"],
+                    ignore_default_args=["--enable-automation"],
+                )
+            except Exception as exc:
+                # This bootstrap is NOT browser-free — it spawns a headed
+                # browser exactly like ``notebooklm login`` — so it hits the
+                # same launch vetoes (#2004). Reuse the shared classifier and
+                # surface a MasterTokenError (red message, exit 1) instead of
+                # letting a raw Playwright error reach the "This may be a bug"
+                # handler. Unclassified failures re-raise unchanged.
+                launch_help = classify_launch_failure(browser, str(exc))
+                if launch_help is None:
+                    raise
+                raise MasterTokenError(launch_help) from exc
             owns_browser = True
             context = browser_obj.new_context()
             owns_context = True

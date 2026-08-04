@@ -127,8 +127,8 @@ async def test_execute_download_all_dry_run_applies_name_filter_and_duplicate_fi
         "count": 2,
         "output_dir": str(tmp_path / "downloads"),
         "artifacts": [
-            {"id": "a1", "title": "Episode", "filename": "Episode.mp3"},
-            {"id": "a2", "title": "Episode", "filename": "Episode (2).mp3"},
+            {"id": "a1", "title": "Episode", "filename": "Episode.m4a"},
+            {"id": "a2", "title": "Episode", "filename": "Episode (2).m4a"},
         ],
     }
     artifacts.download_audio.assert_not_called()
@@ -145,7 +145,7 @@ async def test_execute_download_all_reports_partial_failure_and_progress(tmp_pat
             ]
         ),
         download_audio=AsyncMock(
-            side_effect=[str(tmp_path / "Episode 1.mp3"), RuntimeError("boom")]
+            side_effect=[str(tmp_path / "Episode 1.m4a"), RuntimeError("boom")]
         ),
     )
     facade = SimpleNamespace(artifacts=artifacts)
@@ -202,3 +202,54 @@ async def test_execute_download_single_forwards_format_kwarg(tmp_path: Path) -> 
         artifact_id="quiz_1",
         output_format="markdown",
     )
+
+
+def _audio_facade(download_audio: AsyncMock) -> SimpleNamespace:
+    """A facade serving one completed audio artifact, downloaded by ``download_audio``."""
+    audio = _artifact("a1", "Deep Dive", 1)
+    return SimpleNamespace(
+        artifacts=SimpleNamespace(
+            list=AsyncMock(return_value=[audio]),
+            _list_for_download=AsyncMock(return_value=([audio], [], [])),
+            download_audio=download_audio,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_audio_derived_filename_is_m4a(tmp_path: Path) -> None:
+    """With no ``--output`` path, an audio download derives a ``.m4a`` name (#2034).
+
+    The Audio Overview bytes are AAC in an MP4 container (the artifact row itself
+    advertises ``audio/mp4``), so ``.mp3`` mislabelled every default-named
+    download.
+    """
+    spec = DOWNLOAD_SPECS_BY_NAME["audio"]
+    download_audio = AsyncMock(return_value=None)
+    facade = _audio_facade(download_audio)
+
+    plan = build_download_plan(spec, _args(latest=True), tmp_path)
+    result = await execute_download(plan, facade)
+
+    assert result["status"] == "downloaded"
+    assert result["output_path"] == str(tmp_path / "Deep Dive.m4a")
+    assert download_audio.await_args.args[1] == str(tmp_path / "Deep Dive.m4a")
+
+
+@pytest.mark.asyncio
+async def test_explicit_output_path_extension_is_still_honoured(tmp_path: Path) -> None:
+    """An explicit ``.mp3`` path is written verbatim — the #2034 fix is not a rename.
+
+    Only the DERIVED filename changed, so a script that already passes its own
+    output path keeps working unchanged (the bytes were always AAC either way).
+    """
+    spec = DOWNLOAD_SPECS_BY_NAME["audio"]
+    chosen = str(tmp_path / "legacy-name.mp3")
+    download_audio = AsyncMock(return_value=chosen)
+    facade = _audio_facade(download_audio)
+
+    plan = build_download_plan(spec, _args(latest=True, output_path=chosen), tmp_path)
+    result = await execute_download(plan, facade)
+
+    assert result["output_path"] == chosen
+    assert download_audio.await_args.args[1] == chosen

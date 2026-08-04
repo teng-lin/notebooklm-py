@@ -12,15 +12,17 @@ These tests pin down the new policy:
     * All OK                     -> exit 0
 
 Priority when statuses collide: MISMATCH (1) > non-transient ERROR (3) > OK (0).
-AUTH (2) is signalled earlier via ``sys.exit(2)`` and is exercised in the
-auth-failure test by invoking ``main()`` with a missing storage env var.
+AUTH (2) is signalled earlier via ``sys.exit(2)``; every failure class
+``load_auth`` maps to it — missing storage, ``ValueError``, ``httpx.HTTPError``
+— is exercised in the auth-failure section near the end of this file.
+
+Cookie-domain scoping of the same ``load_auth`` path is a separate concern and
+lives in ``tests/unit/test_scripts_auth_cookie_domains.py`` (issue #2019).
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -29,18 +31,14 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
-# Load scripts/check_rpc_health.py as a module. The ``scripts`` directory
-# is not a package, so we go through importlib rather than a normal import.
-# Registering the module in ``sys.modules`` before executing it is required
-# so that ``@dataclass`` can resolve forward references back to this module
-# during class construction.
-_SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "check_rpc_health.py"
-_spec = importlib.util.spec_from_file_location("check_rpc_health", _SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-check_rpc_health = importlib.util.module_from_spec(_spec)
-sys.modules["check_rpc_health"] = check_rpc_health
-_spec.loader.exec_module(check_rpc_health)
-
+# ``scripts`` is importable as a namespace package (``pythonpath = ["."]`` in
+# pyproject), so a plain import is enough — and it yields the SAME module object
+# as ``tests/unit/test_capture_rpc_registry.py`` and
+# ``tests/unit/test_scripts_auth_cookie_domains.py`` use. The previous
+# ``importlib.util.spec_from_file_location`` preamble registered a second,
+# independent module under the bare name ``check_rpc_health``; patching one
+# copy left the other untouched.
+from scripts import check_rpc_health
 
 CheckStatus = check_rpc_health.CheckStatus
 CheckResult = check_rpc_health.CheckResult
@@ -701,28 +699,84 @@ async def test_chat_probe_surfaces_class_name_for_empty_message_errors() -> None
 
 
 # ---------------------------------------------------------------------------
-# main() auth-failure path -> exit 2
+# auth-failure paths -> exit 2
+#
+# Every failure class ``load_auth`` maps to the AUTH exit code gets a test.
+# Before #2019 only the missing-file arm was covered, so the ``ValueError`` and
+# ``httpx.HTTPError`` arms — including the ``scrub_secrets`` call that keeps
+# ``f.sid=<session_id>`` out of the CI log — shipped unverified.
 # ---------------------------------------------------------------------------
 
 
-def test_main_exits_two_when_auth_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Missing ``NOTEBOOKLM_AUTH_JSON`` must surface as exit code 2.
+def test_main_exits_two_when_auth_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A genuinely absent storage file must surface as exit code 2.
 
-    Even if the developer running the test happens to have a local
-    ``~/.notebooklm/storage_state.json``, we patch the loader to simulate
-    a fresh CI environment with no credentials available.
+    Nothing is patched: ``NOTEBOOKLM_HOME`` is pointed at an empty directory so
+    the real loader resolves a real (nonexistent) path and raises
+    ``FileNotFoundError`` for itself. That also insulates the test from the
+    developer's own ``~/.notebooklm/storage_state.json``.
     """
     monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     monkeypatch.setattr("sys.argv", ["check_rpc_health.py"])
-
-    def _missing() -> dict[str, str]:
-        raise FileNotFoundError("simulated missing storage_state.json")
-
-    monkeypatch.setattr(check_rpc_health, "load_auth_from_storage", _missing)
 
     with pytest.raises(SystemExit) as excinfo:
         check_rpc_health.main()
     assert excinfo.value.code == 2
+
+
+async def _load_auth_raising(monkeypatch: pytest.MonkeyPatch, error: BaseException) -> None:
+    """Run ``load_auth`` with ``AuthTokens.from_storage`` raising ``error``."""
+
+    class _RaisingAuthTokens:
+        @staticmethod
+        async def from_storage(path: Path | None) -> Any:
+            raise error
+
+    monkeypatch.setattr(check_rpc_health, "AuthTokens", _RaisingAuthTokens)
+    await check_rpc_health.load_auth(None)
+
+
+async def test_load_auth_exits_two_and_names_the_source_on_value_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ``ValueError`` exits 2 and says which auth source produced it.
+
+    The file branch of ``_load_storage_state`` re-raises a bare ``json`` error
+    with no context, so without the source line a corrupt storage_state.json
+    prints only ``Expecting value: line 1 column 1 (char 0)``.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        await _load_auth_raising(monkeypatch, ValueError("Expecting value: line 1 column 1"))
+    assert excinfo.value.code == 2
+
+    stderr = capsys.readouterr().err
+    assert "Expecting value: line 1 column 1" in stderr
+    assert "Auth source: NOTEBOOKLM_AUTH_JSON env var" in stderr
+
+
+async def test_load_auth_exits_two_and_scrubs_secrets_on_http_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A transport failure exits 2 with the session id redacted.
+
+    ``httpx`` exception strings echo the full request URL, which carries
+    ``f.sid=<session_id>``. This report is printed straight into the Actions log
+    and into the auto-filed issue body, so the redaction is load-bearing.
+    """
+    leaky = httpx.ConnectError(
+        "All connection attempts failed for "
+        "https://notebooklm.google.com/batchexecute?f.sid=-8891234567890123456"
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        await _load_auth_raising(monkeypatch, leaky)
+    assert excinfo.value.code == 2
+
+    stderr = capsys.readouterr().err
+    assert "Network error while fetching auth tokens" in stderr
+    assert "-8891234567890123456" not in stderr, (
+        "the session id must not reach the CI log or the auto-filed issue body"
+    )
 
 
 # ---------------------------------------------------------------------------

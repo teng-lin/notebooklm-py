@@ -101,6 +101,27 @@ def test_download_completed_artifact_streams_bytes(
     assert resp.content == fake_client.download_bytes
 
 
+def test_download_audio_advertises_m4a_and_audio_mp4(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    """Audio streams as ``.m4a`` / ``audio/mp4``, never ``.mp3`` / ``audio/mpeg`` (#2034).
+
+    ``media_type`` is asserted because the route sets it EXPLICITLY from the shared
+    ``_app.download`` table: the stdlib ``mimetypes`` map that ``FileResponse``
+    would otherwise consult has no builtin ``.m4a`` row (``.mp3`` it does have), so
+    a guessed type would degrade to ``FileResponse``'s
+    ``"application/octet-stream"`` fallback on a host without ``/etc/mime.types``.
+    Asserting the exact header therefore also pins this test to be independent of
+    whichever mime database the CI runner happens to ship (#2034).
+    """
+    fake_client.artifacts_store["nb-1"] = {"a1": make_artifact("a1", "audio")}
+    resp = authed_client.post("/v1/notebooks/nb-1/artifacts/download", json={"type": "audio"})
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "audio/mp4"
+    assert ".m4a" in resp.headers["content-disposition"]
+    assert ".mp3" not in resp.headers["content-disposition"]
+
+
 def test_download_not_ready_is_409(authed_client: TestClient) -> None:
     # No artifacts exist → NO_ARTIFACTS → 409, not 500.
     resp = authed_client.post("/v1/notebooks/nb-1/artifacts/download", json={"type": "audio"})
@@ -205,6 +226,31 @@ def test_download_with_output_format_streams(
     )
     assert resp.status_code == 200
     assert resp.content == fake_client.download_bytes
+
+
+def test_download_pptx_is_not_served_as_pdf(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    """A ``--format pptx`` deck streams as ``.pptx``, not the spec-default ``.pdf``.
+
+    The route spools to ``artifact<ext>`` and then serves that basename as the
+    download name + derives Content-Type from its suffix. Naming the spool file
+    from ``spec.extension`` mislabelled every non-default format — a PPTX deck was
+    handed out as ``artifact.pdf`` / ``application/pdf``. Same defect class as the
+    ``.mp3``/AAC mislabel in #2034, on the format axis instead of the type axis.
+    """
+    fake_client.artifacts_store["nb-1"] = {"d1": make_artifact("d1", "slide-deck")}
+    resp = authed_client.post(
+        "/v1/notebooks/nb-1/artifacts/download",
+        json={"type": "slide-deck", "output_format": "pptx"},
+    )
+    assert resp.status_code == 200
+    assert ".pptx" in resp.headers["content-disposition"]
+    assert ".pdf" not in resp.headers["content-disposition"]
+    assert (
+        resp.headers["content-type"]
+        == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
 
 
 def test_download_unexpected_output_path_is_rejected(

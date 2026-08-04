@@ -43,6 +43,7 @@ from ._artifacts import ArtifactsAPI
 from ._chat import ChatAPI
 from ._client_composed import ClientComposed
 from ._client_seams import resolve_client_seams
+from ._collections import CollectionsAPI
 from ._labels import LabelsAPI
 from ._mind_map import NoteBackedMindMapService
 from ._mind_maps_api import MindMapsAPI
@@ -395,3 +396,7 @@ def _assemble_client(
     # SourcesAPI) for the membership->Source join in ``labels.sources()``;
     # wired after ``client.sources`` exists. Same client/bound loop (ADR-0004).
     client.labels = LabelsAPI(internals.executor, list_sources=client.sources.list)
+    # Collections (account-level notebook groups). Takes a narrow ``list_notebooks``
+    # callable for the membership->Notebook join in ``collections.notebooks()``;
+    # wired after ``client.notebooks`` exists. Same client/bound loop (ADR-0004).
+    client.collections = CollectionsAPI(internals.executor, list_notebooks=client.notebooks.list)

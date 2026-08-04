@@ -870,10 +870,31 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 
 ### Setting Up Nightly E2E Tests
 
-1. Get storage state: `cat ~/.notebooklm/storage_state.json`
+1. Get storage state: `cat ~/.notebooklm/profiles/default/storage_state.json`
 2. Add GitHub secrets:
    - `NOTEBOOKLM_AUTH_JSON`: Storage state JSON
    - `NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID`: Your test notebook ID
+   - `NOTEBOOKLM_MASTER_TOKEN_JSON` (optional but recommended): contents of
+     `~/.notebooklm/profiles/default/master_token.json`, produced by a one-time
+     `notebooklm login --master-token` bootstrap (see
+     [installation.md → master-token auth](installation.md#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry)).
+
+The live-E2E workflows (`verify-package.yml`, `nightly.yml`, `rpc-health.yml`)
+do not hand pytest an inline `NOTEBOOKLM_AUTH_JSON` env var. Their
+"Materialize auth profile" step writes the secrets to a real on-disk profile
+(`~/.notebooklm/profiles/default/storage_state.json` + `master_token.json`,
+mode `0600`) because the layer-4 master-token re-mint only engages when
+`master_token.json` sits beside the profile's `storage_state.json` — env-var
+auth bypasses it entirely. With the master-token secret set, the step then
+runs `notebooklm login --master-token-refresh` to pre-mint fresh cookies
+before any test touches them (eager token fetches like
+`AuthTokens.from_storage` would otherwise fail on a dead snapshot before the
+in-client layer-4 hook could fire); layer-4 covers mid-run expiry. So as long
+as the pre-mint succeeds, a cookie secret that Google has rotated no longer
+fails the run. The pre-mint is non-fatal: on failure (e.g. a revoked master
+token) the step logs a `::warning::` and falls back to the cookie snapshot,
+which then must still be live for the run to pass. Without the master-token
+secret, behavior degrades to the old cookie-only mode.
 
 Scheduled canaries target `main` only. Release canaries are manual: dispatch
 `nightly.yml` or `rpc-health.yml` with `custom_branch=release/vX.Y.Z`.
@@ -882,7 +903,7 @@ Scheduled canaries target `main` only. Release canaries are manual: dispatch
 
 | Task | Frequency |
 |------|-----------|
-| Refresh credentials | Every 1-2 weeks |
+| Refresh credentials | Every 1-2 weeks (cookie-only); rarely needed once `NOTEBOOKLM_MASTER_TOKEN_JSON` is set — the master token survives cookie rotation until revoked |
 | Check nightly results | Daily |
 
 ### Workflow secret gates
@@ -918,9 +939,10 @@ secrets that live only in environments resolve to empty under that branch.
 Binding the environment unconditionally is the single source of truth.
 
 Additionally, **every job that consumes `NOTEBOOKLM_AUTH_JSON` runs a
-fail-fast preflight step** (`if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then exit 1`)
-before the test/script step. Without the preflight, an empty secret would
-let pytest skip every auth-requiring test silently and the job would land
+fail-fast preflight** (`if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then exit 1`)
+before the test/script step — in the live-E2E workflows this lives at the top
+of the "Materialize auth profile" step. Without the preflight, an empty secret
+would let pytest skip every auth-requiring test silently and the job would land
 green with 0 tests run (issue #1009). The preflight surfaces an `::error::`
 annotation linked to the secret-config misconfig so the failure is visible
 in the GitHub UI rather than hidden behind "0 passed".
@@ -1040,17 +1062,26 @@ When introducing a workflow that touches `secrets.*`:
 **Why:** The `login` command saves to a file, which conflicts with environment-based auth.
 
 **Solution:**
-- Don't run `login` in CI/CD - use the env var for auth instead
-- If you need to refresh auth, do it locally and update the secret
+- With inline env-var auth, don't run browser `login` in CI/CD — use the env var for auth instead, and refresh it locally when needed
+- With a materialized file-based profile (this repo's live-E2E workflows), the env var is not set, so `notebooklm login --master-token-refresh` is fine — the workflows run it to pre-mint fresh cookies
 
 #### Session expired in CI/CD
 
 **Cause:** Google sessions expire periodically (typically every 1-2 weeks).
 
-**Solution:**
+**Solution (cookie-only auth):**
 1. Re-run `notebooklm login` locally
-2. Copy the contents of `~/.notebooklm/storage_state.json`
+2. Copy the contents of `~/.notebooklm/profiles/default/storage_state.json`
 3. Update your GitHub secret
+
+**Solution (file-based profile with `NOTEBOOKLM_MASTER_TOKEN_JSON`):** usually none
+needed — the materialize step pre-mints fresh cookies from the master token each run,
+and the client's layer-4 re-mint covers mid-run expiry. If the run still fails on auth,
+check the materialize step's log: a `::warning::` about a failed re-mint means the run
+fell back to the (possibly expired) cookie snapshot — it does not by itself identify
+the cause. Inspect the login error above the warning: a transient network/gpsoauth
+blip just needs a re-run, while an invalid or revoked master token requires re-running
+the `notebooklm login --master-token` bootstrap and updating both secrets.
 
 #### Multiple accounts in CI/CD
 

@@ -72,11 +72,14 @@ DOWNLOAD_SPECS: list[DownloadTypeSpec] = [
     DownloadTypeSpec(
         name="audio",
         kind=ArtifactType.AUDIO,
-        extension=".mp3",
+        # ``.m4a``, NOT ``.mp3`` (#2034): the Audio Overview bytes are AAC in an
+        # ISO-BMFF/MP4 container, which is what the artifact row itself advertises
+        # (``ArtifactRow.audio_url`` explicitly *prefers* the ``audio/mp4`` entry).
+        extension=".m4a",
         default_dir="./audio",
         download_attr="download_audio",
         help_summary="Download audio overview(s) to file.",
-        help_examples=_stock_examples("audio", ".mp3", "./audio"),
+        help_examples=_stock_examples("audio", ".m4a", "./audio"),
     ),
     DownloadTypeSpec(
         name="video",

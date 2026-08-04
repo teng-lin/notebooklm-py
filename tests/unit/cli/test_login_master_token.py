@@ -71,6 +71,53 @@ def test_master_token_bootstrap_browser_capture_when_no_oauth(tmp_path, monkeypa
     assert boot.call_args.kwargs["oauth_token"] == "CAPTOK"
 
 
+@pytest.mark.parametrize(
+    ("browser", "expected_fragment"),
+    [
+        # Playwright's REAL spawn-veto text (utils/processLauncher.js builds
+        # `new Error("Failed to launch: " + error)`), on both the bundled build
+        # and a system channel.
+        ("chromium", "refused to start the browser"),
+        ("chrome", "refused to start the browser"),
+    ],
+)
+@pytest.mark.requires_playwright
+def test_master_token_bootstrap_explains_a_launch_veto(
+    tmp_path, monkeypatch, browser, expected_fragment
+):
+    """`login --master-token` spawns a headed browser, so it hits the same veto.
+
+    docs/troubleshooting.md routes #2004 readers here as a workaround, so this
+    path must not answer with the raw "This may be a bug" handler either.
+    """
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    with patch("playwright.sync_api.sync_playwright") as mock_pw:
+        mock_pw.return_value.__enter__.return_value.chromium.launch.side_effect = Exception(
+            "Failed to launch: Error: spawn UNKNOWN"
+        )
+        result = CliRunner().invoke(
+            cli, ["login", "--master-token", "--account", "e@x.com", "--browser", browser]
+        )
+
+    assert result.exit_code == 1
+    assert expected_fragment in result.output
+    assert "This may be a bug" not in result.output
+
+
+@pytest.mark.requires_playwright
+def test_master_token_bootstrap_reraises_an_unclassified_launch_failure(tmp_path, monkeypatch):
+    """Unrecognized failures must keep propagating rather than get a wrong hint."""
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    with patch("playwright.sync_api.sync_playwright") as mock_pw:
+        mock_pw.return_value.__enter__.return_value.chromium.launch.side_effect = Exception(
+            "Timeout 30000ms exceeded"
+        )
+        result = CliRunner().invoke(cli, ["login", "--master-token", "--account", "e@x.com"])
+
+    assert result.exit_code == 2
+    assert "This may be a bug" in result.output
+
+
 class _ReachedPlaywright(RuntimeError):
     pass
 

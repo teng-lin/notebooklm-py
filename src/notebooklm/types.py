@@ -26,6 +26,7 @@ from ._types.chat import (
     ChatSettings,
     ConversationTurn,
 )
+from ._types.collections import Collection
 from ._types.common import (
     AccountLimits,
     CitedSourceSelection,
@@ -73,6 +74,8 @@ from .exceptions import (
     ArtifactParseError,
     ArtifactPendingTimeoutError,
     ArtifactTimeoutError,
+    CollectionError,
+    CollectionNotFoundError,
     LabelError,
     LabelNotFoundError,
     SourceAddError,
@@ -159,6 +162,7 @@ __all__ = [
     "ReportSuggestion",
     "Note",
     "Label",
+    "Collection",
     "ConversationTurn",
     "ChatReference",
     "AskResult",
@@ -193,6 +197,8 @@ __all__ = [
     "ArtifactInProgressTimeoutError",
     "LabelError",
     "LabelNotFoundError",
+    "CollectionError",
+    "CollectionNotFoundError",
     # Warnings
     "UnknownTypeWarning",
     # User-facing type enums (str enums for .kind property)
@@ -247,6 +253,7 @@ for _public_moved_type in (
     ChatMode,
     ChatReference,
     ChatSettings,
+    Collection,
     ConversationTurn,
     GenerationState,
     GenerationStatus,

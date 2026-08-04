@@ -498,9 +498,15 @@ When the homepage GET 302s to the Google login page, the first-party cookies are
 fully dead and neither L1 nor L2 can help. `refresh_auth(allow_headless=True)` (or
 `NOTEBOOKLM_HEADLESS_REAUTH=1` for automatic mid-RPC opt-in) drives an unattended
 headless browser against the **persisted profile that is a sibling of this client's
-`storage_state.json`** (`<storage_path>/../browser_profile`) — never the ambient
-profile — to silently re-mint cookies, then reloads them and retries the homepage
-GET once. Set `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL=http://127.0.0.1:9222` to attach
+storage file** — `browser_profile/` beside a conventional `storage_state.json`,
+or `<storage_path>.browser_profile/` for a normal-length custom filename; names
+that would exceed the filesystem component limit use a stable hash of the
+canonical storage path — never the ambient profile. This lets two custom storage
+files in the same directory retain separate Google sessions. The ownership marker
+written during path preparation is ignored when deciding whether the directory
+contains reusable Chrome state. L3 silently re-mints cookies, reloads them, and
+retries the homepage GET once. Set
+`NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL=http://127.0.0.1:9222` to attach
 to an already-running local Chrome instead; non-loopback hosts are refused because
 a CDP endpoint is account-equivalent. If the profile is missing, Playwright is
 unavailable, env-var auth has no writeable file, or the browser session is also

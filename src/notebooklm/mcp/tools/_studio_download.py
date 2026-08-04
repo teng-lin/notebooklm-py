@@ -143,7 +143,9 @@ _DOWNLOAD_SPECS: dict[str, download_core.DownloadTypeSpec] = {
     "audio": download_core.DownloadTypeSpec(
         name="audio",
         kind=ArtifactType.AUDIO,
-        extension=".mp3",
+        # ``.m4a`` (AAC in an MP4 container), not ``.mp3`` — see the note on the
+        # CLI's matching row in ``cli/_download_specs.py`` (#2034).
+        extension=".m4a",
         default_dir="./audio",
         download_attr="download_audio",
         help_summary="",
@@ -243,40 +245,16 @@ _KIND_TO_DOWNLOAD_KEY: dict[Any, DownloadType] = {
     spec.kind: cast(DownloadType, key) for key, spec in _DOWNLOAD_SPECS.items()
 }
 
-#: The ONE file-extension → MIME-type table. Both the ``studio_download`` tool
-#: payload (:func:`_broker_download`) and the ``/files/dl`` route derive their
-#: Content-Type from this via :func:`download_mime_type`, so the advertised
-#: ``mime_type`` and the byte stream's ``Content-Type`` can never drift. Keyed by
-#: the extension the spec+format already resolve to, so a new download type only
-#: needs its extension mapped here.
-_EXTENSION_MIME_TYPES: dict[str, str] = {
-    ".mp3": "audio/mpeg",
-    ".mp4": "video/mp4",
-    ".pdf": "application/pdf",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".png": "image/png",
-    ".md": "text/markdown",
-    ".json": "application/json",
-    ".csv": "text/csv",
-    ".html": "text/html",
-}
-
-#: Fallback when an extension isn't in the table (unreachable for minted tokens —
-#: every spec extension is mapped — but keeps the helpers total).
-_DEFAULT_MIME = "application/octet-stream"
-
 
 def download_extension(spec: download_core.DownloadTypeSpec, output_format: str | None) -> str:
     """The file extension a download of ``spec`` in ``output_format`` will carry.
 
-    ``output_format`` selects the extension for the format-bearing types
-    (slide-deck pdf/pptx; quiz/flashcards json/markdown/html) via the spec's
-    ``format_extension_map``; ``None`` (or a leaf with no format axis) yields the
-    spec's default ``extension`` (which is already the default format's extension).
+    Thin alias for :func:`~notebooklm._app.download.resolve_extension`, kept for
+    this module's established name (it is in ``__all__`` and read by
+    ``_fileroutes``); the rule itself lives in the neutral core so the REST
+    ``/download`` route resolves extensions identically.
     """
-    if output_format:
-        return spec.format_extension_map.get(output_format, spec.extension)
-    return spec.extension
+    return download_core.resolve_extension(spec, output_format)
 
 
 def download_filename(
@@ -294,8 +272,14 @@ def download_filename(
 
 
 def download_mime_type(spec: download_core.DownloadTypeSpec, output_format: str | None) -> str:
-    """The MIME type for a download of ``spec`` in ``output_format`` (central table)."""
-    return _EXTENSION_MIME_TYPES.get(download_extension(spec, output_format), _DEFAULT_MIME)
+    """The MIME type for a download of ``spec`` in ``output_format``.
+
+    Both the ``studio_download`` tool payload (:func:`_broker_download`) and the
+    ``/files/dl`` route derive their Content-Type from here, so they read the one
+    :data:`~notebooklm._app.download.EXTENSION_MIME_TYPES` table the REST
+    ``/download`` response uses and can never drift from it.
+    """
+    return download_core.mime_type_for_extension(download_extension(spec, output_format))
 
 
 async def _passthrough_download_notebook(notebook_id: str) -> str:
@@ -416,7 +400,12 @@ async def _do_read_inline_artifact_text(
     # before the result is assigned, orphaning it past the ``finally`` cleanup.
     temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-inline-")
     try:
-        temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
+        # Format-resolved like every other spool site, so the invariant "a spooled
+        # download is named by ``resolve_extension``" holds everywhere and greps
+        # clean. Today's inline kinds (report / data-table) have no format axis, so
+        # this is identical to ``spec.extension`` — it is the future format-bearing
+        # text type that would otherwise reintroduce the #2034 mislabel here.
+        temp_path = os.path.join(temp_dir, f"artifact{download_extension(spec, output_format)}")
         args: dict[str, Any] = {
             "notebook_id": notebook_id,
             "output_path": temp_path,

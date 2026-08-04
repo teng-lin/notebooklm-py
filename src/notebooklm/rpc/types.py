@@ -91,7 +91,10 @@ class RPCMethod(str, Enum):
     CHECK_SOURCE_FRESHNESS = "yR9Yof"  # -> CheckSourceFreshness
     UPDATE_SOURCE = "b7Wfje"  # -> MutateSource
 
-    # Source label operations (AI topic grouping)
+    # Source label operations (AI topic grouping).
+    # NOTE: account-level *collections* (notebook grouping) reuse these four
+    # methods verbatim — a collection is a type-3 label with a null notebook
+    # parent. See notebooklm._collection.params for the collection wire shapes.
     # -> CreateLabel. Multi-mode: AI auto-group (generate) AND manual create
     CREATE_LABEL = "agX4Bc"
     LIST_LABELS = "I3xc3c"  # -> GetLabels

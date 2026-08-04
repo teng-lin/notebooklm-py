@@ -96,13 +96,15 @@ jobs:
       # `uv sync --frozen` reproduces the lockfile-pinned dep tree. The RPC
       # health script (`scripts/check_rpc_health.py`) only needs the core
       # runtime deps — no `[browser]`/`[dev]`/`[markdown]` extras required.
+      # `--extra headless` = gpsoauth, required for the layer-4 master-token
+      # re-mint that the materialized auth profile below relies on.
       # Retried to ride out transient registry/network blips: a real lockfile
       # problem fails all 3 attempts identically, so this only absorbs flakes
       # — it never masks a genuine resolution error.
       shell: bash
       run: |
         attempt=1; max=3
-        until uv sync --frozen; do
+        until uv sync --frozen --extra headless; do
           if [ "$attempt" -ge "$max" ]; then
             echo "::error::uv sync failed after $max attempts" >&2
             exit 1
@@ -112,14 +114,20 @@ jobs:
           attempt=$((attempt + 1))
         done
 
-    # Fail-fast preflight. The script itself rejects empty
-    # NOTEBOOKLM_AUTH_JSON downstream, but checking at the workflow layer
-    # surfaces ``::error::`` annotations linked to the secret-config
-    # misconfig before the ``continue-on-error`` step swallows the exit
-    # code (issue #1009).
-    - name: Verify auth secret is present
+    # Fail-fast preflight + profile materialization. The empty-secret check
+    # surfaces ``::error::`` annotations linked to the secret-config misconfig
+    # before the ``continue-on-error`` step swallows the exit code (issue
+    # #1009). The write-to-disk part replaces the old inline-env auth: env-var
+    # auth never engages the layer-4 master-token re-mint (it only fires when
+    # master_token.json sits BESIDE the profile's storage_state.json —
+    # src/notebooklm/_auth/session.py), so a rotated cookie secret used to
+    # hard-fail the run. With a file-based profile plus the optional
+    # NOTEBOOKLM_MASTER_TOKEN_JSON secret, expired cookies are re-minted
+    # in-process and the job survives rotation.
+    - name: Materialize auth profile
       env:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
       shell: bash
       run: |
@@ -131,13 +139,40 @@ jobs:
           echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID resolved to empty."
           exit 1
         fi
+        umask 077
+        mkdir -p ~/.notebooklm/profiles/default
+        printf '%s' "$NOTEBOOKLM_AUTH_JSON" > ~/.notebooklm/profiles/default/storage_state.json
+        chmod 600 ~/.notebooklm/profiles/default/storage_state.json
+        if [ -n "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
+          printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
+          chmod 600 ~/.notebooklm/profiles/default/master_token.json
+          # Pre-mint fresh cookies NOW: the health/drift scripts fetch tokens
+          # eagerly (load_auth / direct homepage read) and fail on a dead
+          # cookie snapshot before any client-side recovery can run, so the
+          # sibling master_token.json alone cannot rescue a stale secret at
+          # startup. The explicit re-mint overwrites storage_state.json with
+          # a fresh session. Non-fatal: if the mint fails but the cookie
+          # snapshot is still live, the run can proceed on cookies alone.
+          # unset is load-bearing: `login` refuses to run while
+          # NOTEBOOKLM_AUTH_JSON is set (env-var auth conflicts with
+          # file-writing login), and both secrets are already on disk.
+          unset NOTEBOOKLM_AUTH_JSON NOTEBOOKLM_MASTER_TOKEN_JSON
+          if uv run notebooklm login --master-token-refresh; then
+            echo "Auth profile materialized (master token; fresh cookies minted)."
+          else
+            echo "::warning::master-token re-mint failed — proceeding with the cookie snapshot only."
+          fi
+        else
+          echo "::warning::NOTEBOOKLM_MASTER_TOKEN_JSON secret is empty/absent — cookie-only profile (no rotation immunity)."
+        fi
 
     - name: Run RPC Health Check
       id: health
+      # Auth comes from the profile materialized above (NOT an inline
+      # NOTEBOOKLM_AUTH_JSON env var) so the layer-4 re-mint can engage.
       continue-on-error: true
       shell: bash
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
         TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
@@ -200,10 +235,14 @@ jobs:
     # so a drift hit files an issue rather than red-failing the canary outright.
     - name: Run bundle drift monitor
       id: bundle
+      # Reads auth from the profile materialized above
+      # (build_httpx_cookies_from_storage falls back to the storage_state.json
+      # file when the env var is absent). It must stay the DOMAIN-PRESERVING
+      # loader: a flat name->value mapping handed to httpx.get(cookies=...)
+      # carries no domain, so every cookie is sent to every host in the
+      # redirect chain regardless of which auth source fed it — issue #2019.
       continue-on-error: true
       shell: bash
-      env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
       run: |
         set +e
         uv run python scripts/capture_rpc_registry.py --check --check-enums 2>&1 \

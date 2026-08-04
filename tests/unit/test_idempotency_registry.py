@@ -154,6 +154,7 @@ def test_retry_disabled_entries_are_intentional_and_documented() -> None:
         (RPCMethod.CREATE_LABEL, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         (RPCMethod.DELETE_LABEL, None): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         (RPCMethod.UPDATE_LABEL, "add_sources"): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        (RPCMethod.UPDATE_LABEL, "add_notebooks"): IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
     }
     actual = {
         (method, variant): entry.policy
@@ -201,6 +202,31 @@ def test_update_label_remove_sources_variant_is_idempotent_set_op() -> None:
             RPCMethod.UPDATE_LABEL,
             caller_disable_internal_retries=False,
             operation_variant="remove_sources",
+        )
+        is False
+    )
+
+
+def test_update_label_remove_notebooks_variant_is_idempotent_set_op() -> None:
+    """The ``remove_notebooks`` UPDATE_LABEL variant is a retry-safe set-op.
+
+    Live-verified (PR #2009): removing an already-absent notebook member is a
+    confirmed silent no-op, so a blind transport retry that lands twice leaves
+    the same final state — same conclusion as ``remove_sources`` above, once
+    the previously-inferred (and wrong) wire shape was corrected and reverified
+    live.
+    """
+    entry = IDEMPOTENCY_REGISTRY.get_entry(
+        RPCMethod.UPDATE_LABEL, operation_variant="remove_notebooks"
+    )
+    assert entry.policy is IdempotencyPolicy.IDEMPOTENT_SET_OP
+    assert entry.notes.strip()
+    assert (
+        resolve_effective_disable_internal_retries(
+            IDEMPOTENCY_REGISTRY,
+            RPCMethod.UPDATE_LABEL,
+            caller_disable_internal_retries=False,
+            operation_variant="remove_notebooks",
         )
         is False
     )

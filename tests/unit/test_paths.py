@@ -9,8 +9,10 @@ from unittest.mock import patch
 import pytest
 
 from notebooklm.paths import (
+    BROWSER_PROFILE_OWNERSHIP_MARKER,
     _read_default_profile,
     _reset_config_cache,
+    browser_profile_is_owned,
     get_browser_profile_dir,
     get_context_path,
     get_home_dir,
@@ -328,6 +330,49 @@ class TestGetContextPath:
 
 
 class TestGetBrowserProfileDir:
+    def test_custom_storage_files_get_distinct_sibling_profiles(self, tmp_path):
+        """Custom storage filenames retain their full name for isolation."""
+        storage_a = tmp_path / "A.json"
+        storage_b = tmp_path / "B.json"
+
+        assert get_browser_profile_dir(storage_path=storage_a) == (
+            tmp_path / "A.json.browser_profile"
+        )
+        assert get_browser_profile_dir(storage_path=storage_b) == (
+            tmp_path / "B.json.browser_profile"
+        )
+
+    def test_conventional_storage_filename_uses_browser_profile_sibling(self, tmp_path):
+        """The standard storage filename preserves the established directory name."""
+        storage = tmp_path / "storage_state.json"
+
+        assert get_browser_profile_dir(storage_path=storage) == tmp_path / "browser_profile"
+
+    def test_storage_path_takes_precedence_over_profile(self, tmp_path):
+        """An explicit storage path wins over profile resolution."""
+        storage = tmp_path / "account.json"
+
+        assert get_browser_profile_dir(profile="work", storage_path=storage) == (
+            tmp_path / "account.json.browser_profile"
+        )
+
+    def test_long_custom_storage_name_uses_stable_canonical_hash(self, tmp_path, monkeypatch):
+        """Long relative and absolute aliases resolve to one safe short component."""
+        accounts = tmp_path / "accounts"
+        accounts.mkdir()
+        monkeypatch.chdir(tmp_path)
+        relative_storage = Path("accounts") / ("x" * 240 + ".json")
+        canonical_storage = relative_storage.resolve()
+
+        relative_result = get_browser_profile_dir(storage_path=relative_storage)
+        canonical_result = get_browser_profile_dir(storage_path=canonical_storage)
+
+        assert relative_result == canonical_result
+        assert relative_result.parent == accounts.resolve()
+        assert relative_result.name.endswith(".browser_profile")
+        assert len(os.fsencode(relative_result.name)) <= 255
+        assert relative_result.name != relative_storage.name + ".browser_profile"
+
     def test_profile_based_path(self, tmp_path):
         """Returns profile-based browser_profile path."""
         home = tmp_path / "home"
@@ -356,6 +401,55 @@ class TestGetBrowserProfileDir:
             result = get_browser_profile_dir()
             assert "browser_profile" in str(result)
             assert str(custom_path.resolve()) in str(result)
+
+
+class TestBrowserProfileIsOwned:
+    def test_marker_owns_arbitrary_browser_profile(self, tmp_path):
+        browser_profile = tmp_path / "external" / "browser_profile"
+        browser_profile.mkdir(parents=True)
+        (browser_profile / BROWSER_PROFILE_OWNERSHIP_MARKER).touch()
+
+        assert browser_profile_is_owned(tmp_path / "external" / "storage.json", browser_profile)
+
+    def test_recognizes_legacy_and_named_profile_layouts(self, tmp_path):
+        home = tmp_path / "home"
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+            assert browser_profile_is_owned(
+                home / "storage_state.json",
+                home / "browser_profile",
+            )
+            assert browser_profile_is_owned(
+                home / "profiles" / "work" / "storage_state.json",
+                home / "profiles" / "work" / "browser_profile",
+            )
+
+    def test_rejects_arbitrary_conventional_layout(self, tmp_path):
+        home = tmp_path / "home"
+        external = tmp_path / "external"
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+            assert not browser_profile_is_owned(
+                external / "storage_state.json",
+                external / "browser_profile",
+            )
+
+    def test_rejects_named_profile_symlink_that_escapes_home(self, tmp_path):
+        home = tmp_path / "home"
+        profiles = home / "profiles"
+        profiles.mkdir(parents=True)
+        external = tmp_path / "external"
+        external.mkdir()
+        try:
+            (profiles / "work").symlink_to(external, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"directory symlinks unavailable: {exc}")
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+            assert not browser_profile_is_owned(
+                profiles / "work" / "storage_state.json",
+                profiles / "work" / "browser_profile",
+            )
 
 
 class TestListProfiles:

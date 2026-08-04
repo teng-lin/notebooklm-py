@@ -21,11 +21,13 @@ import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
 from notebooklm import paths
-from notebooklm._app.doctor import DoctorPaths, DoctorReport, run_checks
+from notebooklm._app.doctor import DoctorPaths, DoctorReport, _apply_fixes, run_checks
 
 
 @pytest.fixture
@@ -68,8 +70,8 @@ def _headless_reauth_check() -> dict[str, str]:
     }
 
 
-def _run(*, fix: bool = False) -> DoctorReport:
-    return run_checks(fix=fix, paths=_doctor_paths())
+def _run(*, fix: bool = False, platform: str | None = None) -> DoctorReport:
+    return run_checks(fix=fix, paths=_doctor_paths(), platform=platform)
 
 
 def _write_json(path: Path, data: object) -> None:
@@ -87,6 +89,36 @@ def _make_profile(home: Path, name: str = "default") -> Path:
 
 def _storage(cookies: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
     return {"cookies": cookies}
+
+
+def _mkdir_kwargs_for_missing_profile_dir(platform: str) -> dict[str, Any]:
+    """Return the ``mkdir`` kwargs ``_apply_fixes`` uses to create a missing dir.
+
+    Driven against a mock ``profile_dir`` rather than a real one: on a POSIX
+    runner the resulting directory looks identical whether or not ``mode=`` was
+    passed, and a global ``Path.mkdir`` spy cannot tell the doctor's own call
+    apart from the one ``paths._ensure_dir`` makes for the same path.
+    """
+    profile_dir = MagicMock()
+    profile_dir.__str__.return_value = "/fake/profiles/default"  # type: ignore[attr-defined]
+    # The create branch is guarded on the path being absent (a plain file there
+    # is a different failure that --fix must not try to mkdir over).
+    profile_dir.exists.return_value = False
+    checks = {
+        "migration": {"status": "pass", "detail": "clean (no legacy files)"},
+        "profile_dir": {"status": "fail", "detail": "not found"},
+    }
+
+    _apply_fixes(
+        checks,
+        Path("/fake"),
+        profile_dir,
+        lambda: False,
+        platform=platform,
+    )
+
+    profile_dir.mkdir.assert_called_once()
+    return profile_dir.mkdir.call_args.kwargs
 
 
 # ---------------------------------------------------------------------------
@@ -116,10 +148,9 @@ def test_reports_clean_profile_layout(home: Path) -> None:
         "detail": "valid (default_profile: default)",
     }
     assert not report.has_failures
-    if sys.platform == "win32":
-        assert report.checks["profile_dir"]["status"] == "warn"
-    else:
-        assert report.checks["profile_dir"] == {"status": "pass", "detail": str(profile_dir)}
+    assert report.checks["profile_dir"]["status"] == "pass"
+    if sys.platform != "win32":
+        assert report.checks["profile_dir"]["detail"] == str(profile_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +186,213 @@ def test_reports_missing_profile_dir(home: Path) -> None:
     }
     assert report.checks["auth"] == {"status": "fail", "detail": "not authenticated"}
     assert report.has_failures
+
+
+# ---------------------------------------------------------------------------
+# profile-dir permissions: the Windows carve-out (#2046)
+#
+# ``platform`` is injected rather than skipped so the Windows branch is covered
+# on the Linux CI runners too — the whole defect was that nobody ran the
+# Windows path locally.
+# ---------------------------------------------------------------------------
+
+
+def test_windows_profile_dir_passes_with_non_posix_mode(home: Path) -> None:
+    """Windows must not be warned about POSIX bits ``paths.py`` never sets.
+
+    The reporter in #2025 saw a permanent ``warn`` reading
+    ``(permissions: 0o777, expected: 0o700)`` — describing exactly the
+    ACL-inherited state ``paths._ensure_dir`` creates on purpose on Windows.
+    """
+    profile_dir = home / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    if sys.platform != "win32":
+        # The wide mode a Windows-created dir reports; on POSIX it would warn.
+        profile_dir.chmod(0o777)
+
+    report = _run(platform="win32")
+
+    assert report.checks["profile_dir"]["status"] == "pass"
+    detail = report.checks["profile_dir"]["detail"]
+    assert str(profile_dir) in detail
+    # Reported as "evaluated, not applicable" — never silently hidden.
+    assert "ACL" in detail
+    assert "0o700" not in detail
+    assert "permissions:" not in detail
+
+
+def test_windows_profile_dir_still_fails_when_absent(home: Path) -> None:
+    """The carve-out is permissions-only: a missing dir is still a hard fail."""
+    report = _run(platform="win32")
+
+    assert report.checks["profile_dir"] == {
+        "status": "fail",
+        "detail": f"{home / 'profiles' / 'default'} not found",
+    }
+    assert report.has_failures
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="chmod cannot set POSIX mode bits on Windows (setup, not SUT)"
+)
+def test_posix_profile_dir_still_warns_on_wide_mode(home: Path) -> None:
+    """POSIX behaviour is unchanged — the wide-mode warn must survive."""
+    profile_dir = home / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    profile_dir.chmod(0o777)
+
+    report = _run(platform="linux")
+
+    assert report.checks["profile_dir"] == {
+        "status": "warn",
+        "detail": f"{profile_dir} (permissions: 0o777, expected: 0o700)",
+    }
+
+
+def test_windows_fix_creates_dir_without_claiming_a_permission_change(home: Path) -> None:
+    """``--fix`` must not promise a mode it cannot apply on Windows.
+
+    Pre-fix the directory is missing, so ``--fix`` creates it (no ``mode=``
+    on Windows, mirroring ``paths._ensure_dir``) and reports only the
+    creation — never a "Fixed permissions on …" line.
+    """
+    profile_dir = home / "profiles" / "default"
+
+    report = _run(fix=True, platform="win32")
+
+    assert profile_dir.is_dir()
+    assert report.fixes_applied == [f"Created profile directory: {profile_dir}"]
+    assert report.checks["profile_dir"]["status"] == "pass"
+    assert "ACL" in report.checks["profile_dir"]["detail"]
+
+
+def test_windows_fix_creates_the_dir_without_a_posix_mode() -> None:
+    """Pin the actual ``mkdir`` call, not just its outcome.
+
+    Asserting only "the directory now exists" cannot tell a Windows-correct
+    ``mkdir()`` from the old ``mkdir(mode=0o700)`` — on a POSIX runner both
+    produce a directory. Passing ``mode=`` on Windows is the defect: pre-3.13
+    silently ignores it, 3.13+ turns it into an over-restrictive ACL. This is
+    also the assertion that catches ``platform`` being dropped on the way into
+    ``_apply_fixes``.
+    """
+    kwargs = _mkdir_kwargs_for_missing_profile_dir("win32")
+
+    assert "mode" not in kwargs
+    assert kwargs == {"parents": True, "exist_ok": True}
+
+
+def test_posix_fix_creates_the_dir_with_mode_0o700() -> None:
+    """The mirror assertion: POSIX must still get the restrictive mode."""
+    assert _mkdir_kwargs_for_missing_profile_dir("linux") == {
+        "parents": True,
+        "exist_ok": True,
+        "mode": 0o700,
+    }
+
+
+def test_windows_fix_never_reports_a_permission_repair(home: Path) -> None:
+    """A wide-mode dir on Windows is already ``pass``, so nothing to "fix"."""
+    profile_dir = home / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    if sys.platform != "win32":
+        profile_dir.chmod(0o777)
+
+    report = _run(fix=True, platform="win32")
+
+    assert not any("permission" in fix.lower() for fix in report.fixes_applied)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="chmod cannot set POSIX mode bits on Windows (setup, not SUT)"
+)
+def test_posix_fix_still_repairs_wide_mode(home: Path) -> None:
+    """POSIX ``--fix`` behaviour is unchanged by the Windows carve-out."""
+    profile_dir = home / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    profile_dir.chmod(0o777)
+
+    report = _run(fix=True, platform="linux")
+
+    assert report.fixes_applied == [f"Fixed permissions on {profile_dir}"]
+    assert report.checks["profile_dir"] == {"status": "pass", "detail": str(profile_dir)}
+    assert profile_dir.stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="chmod cannot set POSIX mode bits on Windows (setup, not SUT)"
+)
+def test_fix_no_longer_greenlights_a_wide_mode_dir_after_migration(home: Path) -> None:
+    """Migration + a pre-existing wide-mode profile dir now repairs BOTH.
+
+    Deliberate POSIX behaviour change. ``_apply_fixes`` used to hard-code
+    ``profile_dir`` to ``pass`` after a successful migration, which reported a
+    green permissions row for a directory that was actually ``0o777`` — a false
+    green on the very check ``doctor`` exists to run. Re-running the check
+    instead means the permissions branch sees the warn and repairs it, so the
+    run reports two fixes and ends in a genuinely correct state.
+    """
+    profile_dir = home / "profiles" / "default"
+    profile_dir.mkdir(parents=True)
+    profile_dir.chmod(0o777)
+    # A legacy file alongside profiles/ puts migration into its "warn" state.
+    _write_json(home / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
+
+    report = _run(fix=True, platform="linux")
+
+    assert f"Fixed permissions on {profile_dir}" in report.fixes_applied
+    assert report.checks["profile_dir"] == {"status": "pass", "detail": str(profile_dir)}
+    assert profile_dir.stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux"])
+def test_a_file_at_the_profile_path_fails_on_every_platform(home: Path, platform: str) -> None:
+    """Existence is not enough — a plain file there makes the profile unusable.
+
+    The Windows carve-out short-circuits before the mode check, so without an
+    explicit directory test it would have reported ``pass`` for a path nothing
+    can ever write ``storage_state.json`` beneath.
+    """
+    profile_path = home / "profiles" / "default"
+    profile_path.parent.mkdir(parents=True)
+    profile_path.write_text("not a directory", encoding="utf-8")
+
+    report = _run(platform=platform)
+
+    assert report.checks["profile_dir"] == {
+        "status": "fail",
+        "detail": f"{profile_path} exists but is not a directory",
+    }
+    assert report.has_failures
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux"])
+def test_fix_leaves_a_file_at_the_profile_path_alone(home: Path, platform: str) -> None:
+    """``--fix`` must not ``mkdir`` over a file, nor claim it repaired one.
+
+    ``mkdir(exist_ok=True)`` only tolerates an existing *directory*, so an
+    unguarded repair would raise ``FileExistsError`` out of ``doctor --fix``.
+    Clearing the path means deleting a user file, which doctor will not do.
+    """
+    profile_path = home / "profiles" / "default"
+    profile_path.parent.mkdir(parents=True)
+    profile_path.write_text("not a directory", encoding="utf-8")
+
+    report = _run(fix=True, platform=platform)
+
+    assert profile_path.is_file()
+    assert profile_path.read_text(encoding="utf-8") == "not a directory"
+    # The whole list, not a substring probe: a stray "Fixed permissions on …"
+    # would be just as wrong as a stray "Created profile directory: …".
+    assert report.fixes_applied == []
+    assert report.checks["profile_dir"]["status"] == "fail"
+
+
+def test_platform_defaults_to_sys_platform(home: Path) -> None:
+    """Omitting ``platform`` must behave exactly like passing the host's own."""
+    _make_profile(home)
+
+    assert _run().checks["profile_dir"] == _run(platform=sys.platform).checks["profile_dir"]
 
 
 def test_warn_only_layout_has_no_failures(home: Path) -> None:
@@ -287,9 +525,10 @@ def test_fix_creates_missing_profile_dir(home: Path) -> None:
 
     profile_dir = home / "profiles" / "default"
     assert profile_dir.is_dir()
+    assert report.checks["profile_dir"]["status"] == "pass"
     if sys.platform != "win32":
         assert profile_dir.stat().st_mode & 0o777 == 0o700
-    assert report.checks["profile_dir"] == {"status": "pass", "detail": str(profile_dir)}
+        assert report.checks["profile_dir"]["detail"] == str(profile_dir)
     # No auth was set up, so the auth check still fails after the fix.
     assert report.checks["auth"]["status"] == "fail"
     assert report.fixes_applied == [f"Created profile directory: {profile_dir}"]
