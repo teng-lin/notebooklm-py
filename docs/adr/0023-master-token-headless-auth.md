@@ -34,9 +34,8 @@ Implement **Option A**; defer Option B.
 - A new `[headless]` extra (`gpsoauth`) and `_auth/master_token.py` mint cookies
   from the master token. `notebooklm login --master-token` bootstraps (one
   browser sign-in to capture the single-use `oauth_token`, then durable),
-  and the legacy `--master-token-refresh` route forcibly re-mints. Conditional
-  operator recovery uses `notebooklm auth refresh`; when storage is absent it
-  mints from the sibling token and passively validates once. The token is stored `0600` at
+  and `--master-token-refresh` forcibly re-mints. Conditional operator recovery
+  uses `notebooklm auth refresh`. The token is stored `0600` at
   `master_token.json` beside the profile's `storage_state.json`.
 - Minted cookies are written into the normal `storage_state.json`; the existing
   loader, inline `__Secure-1PSIDTS` recovery, keepalive, and persistence run

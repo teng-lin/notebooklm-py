@@ -7794,7 +7794,7 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Legacy forced re-mint; prefer 'notebooklm auth refresh'.",
+          "help": "Re-mint web cookies from the stored master token (no prompt). For recovery / cron.",
           "is_flag": true,
           "kind": "option",
           "multiple": false,

@@ -146,9 +146,7 @@ Written only by `notebooklm login --master-token` (the `[headless]` extra). Hold
 a durable Google master token (mode `0600`) that mints/refreshes the profile's
 `storage_state.json` cookies with no per-session browser. When present beside a
 profile's `storage_state.json`, an expired session re-mints from it
-automatically. If storage is absent, `notebooklm auth refresh` mints it from the
-exact sibling token and passively validates once. The legacy login refresh flag
-remains an unconditional forced re-mint.
+automatically.
 
 ```json
 {"version": 1, "email": "...", "android_id": "<hex>", "master_token": "aas_et/..."}
