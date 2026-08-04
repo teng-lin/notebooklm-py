@@ -74,6 +74,7 @@ _REASON_LOCAL_ONLY = "local-only, no RPC path"
 GROUP_COVERAGE: dict[str, str] = {
     "artifact": "test_artifacts.py",
     "auth": "test_auth.py",  # `auth check`/`refresh` token-fetch paths over reused cassettes
+    "collection": "test_collection.py",
     "download": "test_downloads.py",
     "generate": "test_generate.py",
     "label": "test_label.py",
@@ -97,10 +98,8 @@ COVERAGE_EXEMPT: dict[str, str] = {
     "agent": _REASON_LOCAL_ONLY,
     "skill": _REASON_LOCAL_ONLY,
     "mcp": _REASON_LOCAL_ONLY,
-    # Collections reuse the label RPCs but the live "Collections" feature was not
-    # available to record cli_vcr cassettes against; add GROUP_COVERAGE once the
-    # lifecycle can be captured (tests/e2e/test_collections.py is the live harness).
-    "collection": _REASON_NEEDS_RECORDING,
+    # (`collection` left this map once its cassettes were recorded against a
+    # live account with Collections enabled; see GROUP_COVERAGE above.)
 }
 
 _VALID_REASONS = frozenset({_REASON_NEEDS_RECORDING, _REASON_LOCAL_ONLY})

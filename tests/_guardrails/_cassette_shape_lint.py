@@ -34,15 +34,21 @@ DISPLAY_NAME_FALSE_POSITIVES = frozenset(
         # Google Sans family (font-family CSS in HTML responses).
         '\\"Google Sans\\"',
         '\\"Google Sans Text\\"',
+        '\\"Google Sans Flex\\"',
         '\\"Google Sans Arabic\\"',
         '\\"Google Sans Japanese\\"',
         '\\"Google Sans Korean\\"',
         '\\"Google Sans Simplified Chinese\\"',
         '\\"Google Sans Traditional Chinese\\"',
+        # Icon font-family CSS in HTML responses (mat-icon.luminous-icon rule) —
+        # not a notebook title despite the two-Capitalized-word shape.
+        '\\"Luminous Symbols\\"',
         # Browser user-agent brand surfaced in Sec-CH-UA HTML responses.
         '\\"Microsoft Edge\\"',
         # Account UI page title (not a person's name).
         '\\"Account Information\\"',
+        # Product branding in the page shell (post-rebrand; see ADR/#1973 notes).
+        '\\"Gemini Notebook\\"',
         # Artifact / notebook titles produced by the test corpus.
         '\\"Agent Development Tutorials\\"',
         '\\"Agent Flashcards\\"',

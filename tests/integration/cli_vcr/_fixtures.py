@@ -43,6 +43,27 @@ PLACEHOLDER_SOURCE_ID = "fdfc8ac4-3237-4f2a-8a79-3e24297a7040"
 CHAT_NOTEBOOK_ID = "f59447f4-2a13-4d64-9df8-bc89c615c7bd"
 ARTIFACT_NOTEBOOK_ID = "f7d1e2b6-2334-4016-b81d-aded7b3fa9b6"
 
+# --- Collection placeholders ------------------------------------------------
+# Unlike PLACEHOLDER_NOTEBOOK_ID/PLACEHOLDER_SOURCE_ID above,
+# ``resolve_collection_id`` disables full-id passthrough (a UUID-shaped *name*
+# must not be blindly accepted as an id), so these are NOT decorative — each
+# is the REAL id of a persistent live collection the cassettes were recorded
+# against (mirrors PLACEHOLDER_SOURCE_ID's "VCR Test Label", which is also a
+# real recorded id, not an arbitrary one). Replay only works because the
+# recorded LIST_LABELS response actually contains an entry with this id.
+COLLECTION_ID = "9ba445d4-bc1e-45e8-a0ea-cc88da68f84c"
+# Real member notebook added to the persistent collection above before
+# recording; passed to add/remove so those cassettes exercise a real
+# UPDATE_LABEL membership mutation (notebook-ref resolution *does* have
+# full-id passthrough, so this value's realness is a recording-safety choice,
+# not a replay requirement).
+COLLECTION_MEMBER_NOTEBOOK_ID = "6b9229e9-973d-4ac6-91b7-4628a0a53c60"
+# Two separate throwaway collections recorded ONLY for the delete cassette's
+# two test methods (human + --json) — delete is destructive, so it can't
+# reuse COLLECTION_ID like the other collection commands do.
+COLLECTION_DELETE_ID = "dbfada4d-1473-48ff-9d87-55b58bf5c977"
+COLLECTION_DELETE_ID_JSON = "ca84688c-c0b2-4a3b-b32d-005dac1cad84"
+
 # --- Generate / mind-map placeholders -------------------------------------
 GENERATE_NOTEBOOK_ID = "bb00c9e3-656c-4fd2-b890-2b71e1cf3814"
 GENERATE_SOURCE_ID = "466b9ee3-c1ce-45ef-861c-1d4bfcd939ad"
@@ -71,6 +92,10 @@ VCR_SHARE_NOTEBOOK_ID = MUTATION_NOTEBOOK_ID
 __all__ = [
     "ARTIFACT_NOTEBOOK_ID",
     "CHAT_NOTEBOOK_ID",
+    "COLLECTION_DELETE_ID",
+    "COLLECTION_DELETE_ID_JSON",
+    "COLLECTION_ID",
+    "COLLECTION_MEMBER_NOTEBOOK_ID",
     "DELETE_NOTEBOOK_ID",
     "DELETE_SOURCE_ID",
     "GENERATE_NOTEBOOK_ID",
