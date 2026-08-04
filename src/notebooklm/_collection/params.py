@@ -37,7 +37,9 @@ def _opts() -> list[Any]:
 def build_list_collections_params() -> list[Any]:
     """LIST_LABELS (``I3xc3c``) for collections: ``[opts, None, 3]``.
 
-    Response echoes ``[None, [ [name, [[nb_id], ...], collection_id, emoji], ... ]]``.
+    Response echoes ``[None, [ [name, [nb_id, ...], collection_id, emoji], ... ]]``
+    — populated members are bare id strings, not label-style wrapped singletons
+    (live-captured, PR #2009; see :class:`notebooklm._types.collections.Collection`).
     """
     return [_opts(), None, _COLLECTION_TYPE]
 
@@ -69,10 +71,11 @@ def build_rename_collection_params(
     """UPDATE_LABEL (``le8sX``) rename for collections.
 
     Fieldmask slot ``[3]`` = ``[[[name]]]`` (name-only, matching the captured UI
-    rename) or ``[[[name, emoji]]]`` when ``emoji`` is supplied. Whether a
-    length-1 ``name_emoji`` PRESERVES an existing emoji or clears it is
-    unverified on the wire (same open question as labels), so the API layer
-    passes the current emoji explicitly to preserve it.
+    rename) or ``[[[name, emoji]]]`` when ``emoji`` is supplied. CONFIRMED on the
+    wire (live-captured, PR #2009): a length-1 ``name_emoji`` PRESERVES an
+    existing emoji rather than clearing it (settles the same open question for
+    labels). The API layer still passes the current emoji explicitly — belt and
+    suspenders, and it means ``rename()`` doesn't depend on this confirmation.
     """
     name_emoji: list[Any] = [name] if emoji is None else [name, emoji]
     return [_opts(), None, collection_id, [[name_emoji]], _COLLECTION_TYPE]

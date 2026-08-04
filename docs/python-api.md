@@ -1957,9 +1957,15 @@ label with a null notebook parent, so the same four label RPCs back it.
 | `delete(collection_ids)` | `str \| list[str]` | `None` | Delete one or more collections (batch). Idempotent — an absent target is a no-op returning `None`. Deleting a collection does not delete its member notebooks |
 
 Collections carry no emoji at creation (the wire has no emoji slot); an emoji set
-in the web UI is preserved by `rename`. For `rename`/`add_notebooks`/`remove_notebooks`,
-`return_object=False` returns `None` without re-hydrating, but the existence
-preflight still runs and raises `CollectionNotFoundError` on a missing target.
+in the web UI is preserved by `rename`. `return_object=False` always returns `None`
+without re-hydrating the collection, but the two mutating families differ on
+*when* a missing target is caught: `rename` preflights with `get_or_none` and
+raises `CollectionNotFoundError` before issuing the RPC, skipping its post-write
+fetch entirely when `return_object=False`; `add_notebooks`/`remove_notebooks`
+have no preflight — they issue every membership RPC first, then always call
+`get_or_none` afterward (regardless of `return_object`) and raise
+`CollectionNotFoundError` there if the collection is gone. So `return_object=False`
+never turns into a cheaper existence-only check for `add_notebooks`/`remove_notebooks`.
 
 **Example:**
 ```python

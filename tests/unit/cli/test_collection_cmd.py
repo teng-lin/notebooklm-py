@@ -199,6 +199,29 @@ def test_collection_delete_yes_json(runner, mock_auth, mock_fetch_tokens) -> Non
     client.collections.delete.assert_awaited_once_with(["colaaa111"])
 
 
+def test_collection_delete_multi_ref_resolves_with_one_list(
+    runner, mock_auth, mock_fetch_tokens
+) -> None:
+    # Mirrors test_collection_add_multi_notebook_resolves_with_one_list: N refs
+    # -> ONE collections.list(), not one resolve_collection_id() call each.
+    collections = [
+        Collection(id="colaaa111", name="Research"),
+        Collection(id="colbbb222", name="Archive"),
+    ]
+    client = _client_with_collections(collections=collections)
+    client.collections.delete = AsyncMock(return_value=None)
+
+    result = _run(
+        runner, ["collection", "delete", "colaaa111", "colbbb222", "--yes", "--json"], client
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["collection_ids"] == ["colaaa111", "colbbb222"]
+    client.collections.list.assert_awaited_once()  # not once-per-ref
+    client.collections.delete.assert_awaited_once_with(["colaaa111", "colbbb222"])
+
+
 def test_collection_delete_json_without_yes_is_confirm_required(
     runner, mock_auth, mock_fetch_tokens
 ) -> None:

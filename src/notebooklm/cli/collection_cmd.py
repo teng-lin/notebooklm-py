@@ -343,8 +343,11 @@ def collection_delete(ctx, collection_refs, yes, json_output, client_auth):
 
             async def resolve_delete(client):
                 try:
+                    collections = await client.collections.list()
                     collection_ids = [
-                        await resolve_collection_id(client, ref, json_output=json_output)
+                        await resolve_collection_id(
+                            client, ref, json_output=json_output, collections=collections
+                        )
                         for ref in collection_refs
                     ]
                 except CollectionResolutionError as exc:

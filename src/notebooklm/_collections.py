@@ -195,8 +195,9 @@ class CollectionsAPI:
 
         The existence preflight raises ``CollectionNotFoundError`` on a missing
         target (ADR-0019) and supplies the current emoji so the rename never
-        clobbers a UI-set emoji (owner's recommended-safe approach — whether a
-        name-only rename preserves the emoji is unverified on the wire).
+        clobbers a UI-set emoji. A name-only rename is CONFIRMED to preserve
+        the existing emoji server-side (live-captured, PR #2009), so this is
+        belt-and-suspenders rather than a hedge against unverified behavior.
         """
         current = await self.get_or_none(collection_id)
         if current is None:

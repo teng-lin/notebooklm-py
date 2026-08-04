@@ -102,6 +102,7 @@ async def resolve_collection_id(
     token: str,
     *,
     json_output: bool = False,
+    collections: Sequence[Collection] | None = None,
 ) -> str:
     """Resolve a collection ``<id|name>`` token to a full collection id.
 
@@ -111,9 +112,15 @@ async def resolve_collection_id(
     code ``AMBIGUOUS_ID`` BEFORE the name fallback; an ambiguous *name* (>1 match)
     raises ``AMBIGUOUS_NAME``. Mirrors :func:`resolve_label_id` but account-level
     (no notebook scope).
+
+    Pass a pre-fetched ``collections`` snapshot to resolve multiple refs against
+    one shared ``list()`` call (mirrors ``cli/collection_cmd.py``'s
+    ``_resolve_notebook_ids``) instead of the default one-``list()``-per-call
+    behaviour, used by every single-ref call site.
     """
     token = validate_id(token, "collection")
-    collections = await client.collections.list()
+    if collections is None:
+        collections = await client.collections.list()
 
     # Pass 1: id / unambiguous-prefix (full-id passthrough disabled). Exact id
     # wins over prefix so a short-but-complete id is not reported ambiguous.
