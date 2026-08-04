@@ -17,8 +17,12 @@ from notebooklm._auth import refresh as refresh_mod
 from notebooklm._auth import session as session_mod
 from notebooklm._auth.extraction import _LoginRedirectError
 from notebooklm._auth.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
+from notebooklm._env import PERSONAL_APP_HOSTS
 from notebooklm.auth import AuthTokens, fetch_tokens_with_domains
 from notebooklm.client import NotebookLMClient
+
+_PERSONAL_HOST_PATTERN = "|".join(re.escape(host) for host in sorted(PERSONAL_APP_HOSTS))
+_PERSONAL_HOMEPAGE_PATTERN = re.compile(rf"^https://(?:{_PERSONAL_HOST_PATTERN})/(?:\?.*)?$")
 
 
 def _write_storage(path, *, sid: str) -> None:
@@ -58,7 +62,7 @@ def _stub_dead_then_fresh(
 
     httpx_mock.add_callback(
         homepage,
-        url=re.compile(r"^https://notebooklm\.google\.com/(?:\?.*)?$"),
+        url=_PERSONAL_HOMEPAGE_PATTERN,
         is_reusable=True,
     )
     httpx_mock.add_response(
@@ -242,7 +246,7 @@ async def test_concurrent_cold_start_coalesces_one_master_token_mint(
 
     httpx_mock.add_callback(
         homepage,
-        url=re.compile(r"^https://notebooklm\.google\.com/(?:\?.*)?$"),
+        url=_PERSONAL_HOMEPAGE_PATTERN,
         is_reusable=True,
     )
     httpx_mock.add_response(
@@ -593,7 +597,7 @@ async def test_same_path_callers_keep_their_explicit_account_routes(
 
     httpx_mock.add_callback(
         homepage,
-        url=re.compile(r"^https://notebooklm\.google\.com/(?:\?.*)?$"),
+        url=_PERSONAL_HOMEPAGE_PATTERN,
         is_reusable=True,
     )
     httpx_mock.add_response(
