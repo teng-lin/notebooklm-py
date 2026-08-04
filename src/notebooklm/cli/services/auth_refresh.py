@@ -11,18 +11,16 @@ from .login import master_token
 
 
 def _bootstrap_lock_path(storage_path: Path) -> Path:
-    """Return the sibling lock that serializes first-time session minting."""
-    return storage_path.with_name(f".{storage_path.name}.bootstrap.lock")
+    """Return the canonical lock that serializes first-time session minting."""
+    canonical_path = storage_path.expanduser().resolve()
+    return canonical_path.with_name(f".{canonical_path.name}.lock.bootstrap")
 
 
 async def _acquire_bootstrap_lock(lock: FileLock) -> None:
-    """Acquire without parking the event loop or leaking a lock on cancellation."""
+    """Acquire without blocking the event loop, including on filelock 3.13."""
     while True:
         try:
-            # The zero timeout makes this a single non-blocking filesystem
-            # attempt. Keeping it synchronous leaves no worker that could
-            # acquire the lock after this coroutine has been cancelled.
-            lock.acquire(timeout=0)
+            lock.acquire(blocking=False)
         except Timeout:
             await asyncio.sleep(0.05)
         else:
@@ -57,24 +55,28 @@ async def _run_refresh_to_settlement(*, storage_path: Path, master_token_path: P
 
 async def bootstrap_missing_storage_from_master_token(storage_path: Path) -> bool:
     """Mint initial storage when only the sibling master token exists."""
-    storage_path = storage_path.expanduser().resolve()
+    # Preserve the healthy-storage fast path: profiles that already have a jar
+    # should not pay for a lock merely because they also retain a master token.
+    if storage_path.exists():
+        return False
     master_token_path = storage_path.parent / "master_token.json"
     if not master_token_path.exists():
         return False
 
-    # This must be distinct from the canonical storage-writer lock: refresh()
-    # acquires that writer lock while persisting the minted jar. Holding the
-    # same sentinel around the whole mint would self-deadlock. The dedicated
-    # bootstrap lock instead serializes the check-mint sequence across CLI
-    # processes, while refresh() continues to serialize its final write with
-    # every other storage-state writer.
-    lock = FileLock(str(_bootstrap_lock_path(storage_path)), thread_local=False)
+    # A dedicated bootstrap lock is intentionally distinct from the shared
+    # storage-write lock: master_token.refresh() acquires that write lock while
+    # persisting, so holding it here would self-deadlock. Recheck both inputs
+    # after waiting because another process may have completed the bootstrap or
+    # removed the durable token in the meantime.
+    lock = FileLock(str(_bootstrap_lock_path(storage_path)))
     await _acquire_bootstrap_lock(lock)
     try:
-        # A process that waited for another bootstrap must observe its completed
-        # write and continue through the ordinary validation path without
-        # minting a second session.
+        # A leader may have created storage while this caller waited. Report
+        # bootstrap-ready in that case so the waiter takes the same mandatory
+        # passive-validation path instead of entering ordinary recovery.
         if storage_path.exists():
+            return True
+        if not master_token_path.exists():
             return False
         await _run_refresh_to_settlement(
             storage_path=storage_path,

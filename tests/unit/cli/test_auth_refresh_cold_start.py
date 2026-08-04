@@ -17,6 +17,7 @@ from filelock import FileLock
 
 import notebooklm.auth as auth_module
 import notebooklm.cli.services.auth_refresh as auth_refresh_service
+from notebooklm._auth.paths import _storage_state_lock_path
 from notebooklm.auth import MasterTokenError
 from notebooklm.notebooklm_cli import cli
 
@@ -112,11 +113,22 @@ def test_missing_storage_json_verify_reuses_one_passive_probe(tmp_path):
     ordinary.assert_not_awaited()
 
 
-def test_concurrent_processes_serialize_missing_storage_bootstrap(tmp_path):
+def test_concurrent_processes_serialize_bootstrap_across_path_aliases(tmp_path):
     storage, _ = _cold_profile(tmp_path)
+    alias_storage = tmp_path / "alias-profile" / "storage_state.json.bootstrap"
+    alias_storage.parent.mkdir()
+    alias_storage.symlink_to(storage)
+    (alias_storage.parent / "master_token.json").write_text("{}", encoding="utf-8")
+    assert auth_refresh_service._bootstrap_lock_path(alias_storage) == (
+        auth_refresh_service._bootstrap_lock_path(storage)
+    )
+    assert auth_refresh_service._bootstrap_lock_path(alias_storage) != (
+        _storage_state_lock_path(alias_storage)
+    )
     start = tmp_path / "start"
     ready_paths = [tmp_path / f"ready-{index}" for index in range(2)]
     marker_paths = [tmp_path / f"mint-{index}" for index in range(2)]
+    worker_storage_paths = [storage, alias_storage]
     script = textwrap.dedent(
         """
         import asyncio
@@ -125,7 +137,9 @@ def test_concurrent_processes_serialize_missing_storage_bootstrap(tmp_path):
         import time
         from pathlib import Path
 
+        from filelock import FileLock
         import notebooklm.cli.services.auth_refresh as service
+        from notebooklm._auth.paths import _storage_state_lock_path
 
         storage, ready, start, marker = map(Path, sys.argv[1:])
 
@@ -133,7 +147,8 @@ def test_concurrent_processes_serialize_missing_storage_bootstrap(tmp_path):
             assert master_token_path == storage.parent / "master_token.json"
             marker.write_text("minted", encoding="utf-8")
             await asyncio.sleep(0.25)
-            storage_path.write_text(json.dumps({"cookies": []}), encoding="utf-8")
+            with FileLock(str(_storage_state_lock_path(storage_path)), timeout=2):
+                storage_path.write_text(json.dumps({"cookies": []}), encoding="utf-8")
 
         service.master_token.refresh = mint
         ready.write_text("ready", encoding="utf-8")
@@ -148,7 +163,7 @@ def test_concurrent_processes_serialize_missing_storage_bootstrap(tmp_path):
                 sys.executable,
                 "-c",
                 script,
-                str(storage),
+                str(worker_storage),
                 str(ready),
                 str(start),
                 str(marker),
@@ -157,7 +172,9 @@ def test_concurrent_processes_serialize_missing_storage_bootstrap(tmp_path):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        for ready, marker in zip(ready_paths, marker_paths, strict=True)
+        for ready, marker, worker_storage in zip(
+            ready_paths, marker_paths, worker_storage_paths, strict=True
+        )
     ]
 
     try:
@@ -178,7 +195,7 @@ def test_concurrent_processes_serialize_missing_storage_bootstrap(tmp_path):
 
     for process, (_stdout, stderr) in zip(processes, completed, strict=True):
         assert process.returncode == 0, stderr
-    assert sorted(json.loads(stdout) for stdout, _ in completed) == [False, True]
+    assert [json.loads(stdout) for stdout, _ in completed] == [True, True]
     assert sum(path.exists() for path in marker_paths) == 1
 
 
@@ -214,14 +231,14 @@ async def test_cancelled_bootstrap_settles_persistence_before_unlocking(tmp_path
         persist_release.set()
         with pytest.raises(asyncio.CancelledError):
             await leader
-        assert await follower is False
+        assert await follower is True
 
     mint_mock.assert_awaited_once()
 
 
 async def test_cancelled_bootstrap_lock_waiter_does_not_leak_lock(tmp_path):
     storage, _ = _cold_profile(tmp_path)
-    lock_path = auth_refresh_service._bootstrap_lock_path(storage.resolve())
+    lock_path = auth_refresh_service._bootstrap_lock_path(storage)
     holder = FileLock(str(lock_path))
     holder.acquire()
     waiter = asyncio.create_task(
@@ -266,6 +283,40 @@ def test_missing_storage_quiet_success_is_empty(tmp_path):
     assert result.output == ""
     ordinary.assert_not_awaited()
     passive.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_missing_storage_bootstrap_mints_once(tmp_path):
+    storage, token = _cold_profile(tmp_path)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def mint(*, storage_path, master_token_path):
+        assert storage_path == storage
+        assert master_token_path == token
+        started.set()
+        await release.wait()
+        storage.write_text('{"cookies": []}', encoding="utf-8")
+
+    with patch.object(
+        auth_refresh_service.master_token,
+        "refresh",
+        new=AsyncMock(side_effect=mint),
+    ) as mint_mock:
+        first = asyncio.create_task(
+            auth_refresh_service.bootstrap_missing_storage_from_master_token(storage)
+        )
+        await started.wait()
+        follower = asyncio.create_task(
+            auth_refresh_service.bootstrap_missing_storage_from_master_token(storage)
+        )
+        await asyncio.sleep(0)
+        assert not follower.done()
+        release.set()
+
+        assert await asyncio.gather(first, follower) == [True, True]
+
+    mint_mock.assert_awaited_once()
 
 
 @pytest.mark.parametrize("json_output", [False, True])
