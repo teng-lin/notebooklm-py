@@ -110,6 +110,7 @@ FORBIDDEN_ABSOLUTE_TARGETS = frozenset(
 # Click ``BadParameter`` translation and optional-domain warning rendering.
 GUARDED_PATHS = {
     "cli/services/auth_diagnostics.py": SERVICES_ROOT / "auth_diagnostics.py",
+    "cli/services/auth_refresh.py": SERVICES_ROOT / "auth_refresh.py",
     "cli/services/auth_source.py": SERVICES_ROOT / "auth_source.py",
     "cli/services/confirming_mutation.py": SERVICES_ROOT / "confirming_mutation.py",
     "cli/services/download.py": SERVICES_ROOT / "download.py",
