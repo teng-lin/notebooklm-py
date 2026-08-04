@@ -15,23 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NOTEBOOKLM_BASE_URL` selects between them. A wrong-host session previously
   surfaced as `Client error 404 calling LIST_NOTEBOOKS: Not Found`, which is
   indistinguishable from "this account cannot see that notebook", so the one
-  recovery lever available was one the user could not tell they needed. 4xx,
-  5xx and 429 messages now read `… calling LIST_NOTEBOOKS on
-  notebooklm.google.com: …`
-  ([#2067](https://github.com/teng-lin/notebooklm-py/issues/2067)).
-
-### Added
-
-- **Host-contract tests for the RPC path.** `get_batchexecute_url()` /
-  `get_query_url()` / `get_upload_url()` are now asserted against a bare host
-  literal under the *default* environment — previously covered only under the
-  enterprise override, so a change to the default was invisible — and the
-  streamed-chat builder is pinned to send no origin-bound header. The latter
-  matters because such headers are host-bound and appear in no VCR `match_on`,
-  so one naming the wrong host would pass every offline test and fail every
-  live call ([#2067](https://github.com/teng-lin/notebooklm-py/issues/2067)).
-
-### Fixed
+  recovery lever available was one the user could not tell they needed. Every
+  HTTP-status message now reads `… calling LIST_NOTEBOOKS on
+  notebooklm.google.com: …` — 4xx (including the 401/403 fallback), 5xx, and
+  429 on both the mapper and the retry-exhausted transport path, which is the
+  one a real 429 actually reaches. The host is read from the request that
+  failed rather than re-read from `NOTEBOOKLM_BASE_URL`, so a re-point while an
+  RPC is in flight cannot make the message name a host that failure never
+  touched ([#2067](https://github.com/teng-lin/notebooklm-py/issues/2067)).
 
 - **Corrected the last cookie-domain tier claim that still said the ranking is
   decisive.** #2057 rewrote the `_auth_domain_priority` docstring and its two
@@ -47,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change ([#2054](https://github.com/teng-lin/notebooklm-py/issues/2054)).
 
 ### Added
+
+- **Host-contract tests for the RPC path.** `get_batchexecute_url()` /
+  `get_query_url()` / `get_upload_url()` are now asserted against a bare host
+  literal under the *default* environment — previously covered only under the
+  enterprise override, so a change to the default was invisible — and the
+  streamed-chat builder is pinned to send no origin-bound header. The latter
+  matters because such headers are host-bound and appear in no VCR `match_on`,
+  so one naming the wrong host would pass every offline test and fail every
+  live call ([#2067](https://github.com/teng-lin/notebooklm-py/issues/2067)).
 
 - **`notebook.google.com` is now an accepted `NOTEBOOKLM_BASE_URL` value.**
   Google serves the personal app from this host after the "Gemini Notebook"
