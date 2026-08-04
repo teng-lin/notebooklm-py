@@ -35,6 +35,7 @@ import copy
 import http.cookiejar
 import json
 import logging
+import math
 import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -125,6 +126,34 @@ def _safe_to_cookie(
         return None
 
 
+def _allowed_cookie_name(entry: Any) -> str | None:
+    """Return a row's cookie NAME if the row is usable for recovery, else ``None``.
+
+    The single row filter every recovery path shares — the two precondition
+    predicates (:func:`_recovery_cookie_names`, :func:`_iter_routable_psidts_cookies`)
+    and the request-jar builder (:func:`_build_recovery_jar`). Keeping them on one
+    predicate is what makes "the gate reasons about the rows the POST will
+    actually send" true by construction rather than by convention.
+
+    A row qualifies when it is a dict carrying a non-empty string ``name``, a
+    non-empty ``value``, and a domain on the auth allowlist. Cookie rows come
+    from Chrome via rookiepy or from a hand-editable JSON file, so none of that
+    is ours to guarantee: a nameless or valueless cookie isn't meaningfully
+    present on any path, and the domain filter stops a stray ``SID`` from an
+    unrelated site satisfying a precondition. ``or ""`` normalizes a ``null``
+    domain, which :func:`_is_allowed_auth_domain` would otherwise reject with an
+    ``AttributeError`` from inside the caller's ``except ValueError:`` handler.
+    """
+    if not isinstance(entry, dict):
+        return None
+    name = entry.get("name")
+    if not isinstance(name, str) or not name or not entry.get("value"):
+        return None
+    if not _is_allowed_auth_domain(entry.get("domain", "") or ""):
+        return None
+    return name
+
+
 def _recovery_cookie_names(entries: list[dict[str, Any]]) -> set[str]:
     """Return the cookie NAMES present on an allowed auth domain.
 
@@ -133,44 +162,43 @@ def _recovery_cookie_names(entries: list[dict[str, Any]]) -> set[str]:
     and expiry-blind, because that is exactly what the preflight they front
     (:func:`notebooklm._auth.cookie_policy._validate_required_cookies`) checks.
 
-    Only entries on an allowed auth domain are counted, matching the jar-building
-    filter in :func:`_attempt_rotation` / :func:`recover_psidts_in_memory`, so a
-    stray ``SID`` on an unrelated domain can't falsely satisfy the precondition.
-    An entry must carry a non-empty ``name`` *and* ``value``: a nameless or
-    valueless cookie isn't meaningfully present on either recovery path.
-
     No domain ranking is applied. The predecessor of this function
     (``_index_recovery_cookies``) ranked duplicate names by
-    ``_auth_domain_priority`` — but that ranking only ever selected which
-    duplicate's ``expires`` landed in a parallel expiry map, never which name
-    was recorded (``add`` on a set is idempotent). Expiry now lives in
-    :func:`_iter_live_psidts_cookies`, which resolves it per RFC 6265 instead of
+    ``_auth_domain_priority``, but that ranking only ever selected which
+    duplicate's ``expires`` landed in a parallel expiry map, never which name was
+    recorded (``add`` on a set is idempotent). Expiry now lives in
+    :func:`_iter_routable_psidts_cookies`, which resolves it per RFC 6265 instead of
     by tier, so the ranking has no remaining consumer here (issue #2057).
     """
-    names: set[str] = set()
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        name = entry.get("name")
-        if not isinstance(name, str) or not name or not entry.get("value"):
-            continue
-        if not _is_allowed_auth_domain(entry.get("domain", "") or ""):
-            continue
-        names.add(name)
-    return names
+    return {name for entry in entries if (name := _allowed_cookie_name(entry)) is not None}
 
 
-def _iter_live_psidts_cookies(
+def _is_expired(cookie: http.cookiejar.Cookie, now: float | None) -> bool:
+    """``Cookie.is_expired`` against an optional injected clock.
+
+    ``Cookie.expires`` is always an ``int`` after the constructor's
+    ``int(float(...))`` coercion, and ``is_expired`` compares ``expires <= now``.
+    For integer ``e``, ``e <= now`` iff ``e <= floor(now)`` — so flooring is
+    exact, not lossy, and it satisfies the stub's ``int | None`` signature while
+    letting callers pass the float seconds every other clock here uses.
+    ``math.floor`` rather than ``int``: the latter truncates toward zero and
+    would disagree for a negative ``now``.
+    """
+    return cookie.is_expired(None if now is None else math.floor(now))
+
+
+def _iter_routable_psidts_cookies(
     entries: list[dict[str, Any]],
     *,
     to_cookie: _CookieConverter,
     now: float | None = None,
 ) -> Iterator[http.cookiejar.Cookie]:
-    """Yield the LIVE ``__Secure-1PSIDTS`` cookies among ``entries``.
+    """Yield the ``__Secure-1PSIDTS`` cookies a request jar would actually carry.
 
-    "Live" means: on an allowed auth domain, non-empty value, convertible, and
-    not expired. Both recovery predicates are built on this one iterator so a
-    single place decides what freshness means.
+    Feeds :func:`_psidts_routes_to_rotate` ONLY. This models the jar, so its
+    rules are the jar's rules — which is exactly why :func:`_psidts_is_live` must
+    NOT reuse it: that predicate models the caller's preflight instead, and the
+    two disagree in ways that matter (see its docstring).
 
     Only ``__Secure-1PSIDTS`` rows are converted. Restricting by name *before*
     conversion is not just an optimization: ``http.cookiejar.Cookie.__init__``
@@ -182,57 +210,86 @@ def _iter_live_psidts_cookies(
     ``http.cookiejar`` evaluates each cookie independently.
 
     A row whose ``expires`` cannot be coerced (``""``, ``"never"``, ``nan``,
-    ``inf``, a list) is skipped rather than raised on. This is a deliberate
-    change from the predecessor gate, which treated an unparseable expiry as
-    *present → skip recovery*; an unconvertible row now simply does not count,
-    so recovery fires. Firing is the safe direction: the cost is one throttled
-    POST, whereas skipping leaves the session unhealed (issue #2057).
+    ``inf``, a list) is skipped: an unconvertible row cannot be put in a jar, so
+    it cannot be sent, so it must not hold the heal back. Recovery then fires,
+    which is the safe direction — one throttled POST versus an unhealed session.
 
     Duplicate ``(name, domain, path)`` identities are resolved CONSERVATIVELY:
-    an identity is live only when *every* row carrying it is live. ``http.cookiejar``
-    keeps one cookie per identity and lets a later row replace an earlier one, so
-    a jar built from a duplicated identity depends on entry order — precisely the
-    order-sensitivity this gate exists to remove. Poisoning the identity from any
-    dead row is order-independent *and* never over-optimistic, at the cost of a
-    needless POST in the exotic case where a stale duplicate shadows a fresh one.
-    A row that fails conversion has no identity and therefore cannot poison one.
+    an identity routes only when *every* row carrying it is unexpired.
+    ``http.cookiejar`` keeps one cookie per identity — ``set_cookie`` assigns
+    ``_cookies[domain][path][name]`` against the LITERAL domain string, with no
+    leading-dot normalization — and lets a later row replace an earlier one, so a
+    jar built from a duplicated identity depends on entry order, precisely the
+    order-sensitivity this gate exists to remove. Poisoning from any dead row is
+    order-independent *and* never over-optimistic, at the cost of a needless POST
+    when a stale duplicate shadows a fresh one. A row that fails conversion has
+    no identity and therefore cannot poison one.
+
+    Note the identity tuple is deliberately NOT the leading-dot-equivalent key
+    from :func:`notebooklm._auth.cookies._cookie_key_variants`. That equivalence
+    exists for the disk CAS/merge stage; here it would manufacture a false
+    negative, because ``.google.com`` and ``google.com`` both route yet the jar
+    keeps them as two independent cookies, so a stale one would poison a fresh
+    one the jar still sends.
 
     Args:
         entries: Raw cookie dicts (storage_state entries or rookiepy rows).
         to_cookie: Converter matching ``entries``' shape.
         now: Injectable wall-clock seconds for deterministic tests; defaults to
             the current time via :meth:`http.cookiejar.Cookie.is_expired`.
+
+    Yields:
+        One cookie per surviving identity, in first-seen identity order. The
+        SET is order-independent; the sequence is not, so a future consumer
+        that takes only the first element would reintroduce order-sensitivity.
     """
     live: dict[_CookieIdentity, http.cookiejar.Cookie] = {}
     dead: set[_CookieIdentity] = set()
     for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("name") != _PSIDTS_COOKIE or not entry.get("value"):
-            continue
-        # Allowlist BEFORE jar-building. An empty domain is NOT allowlisted, but
-        # http.cookiejar would happily treat it as a host cookie for whatever URL
-        # it is asked about — including the rotate URL. Dropping this filter, or
-        # moving it after the jar is built, silently makes such a row route.
-        if not _is_allowed_auth_domain(entry.get("domain", "") or ""):
+        if _allowed_cookie_name(entry) != _PSIDTS_COOKIE:
             continue
         cookie = _safe_to_cookie(entry, to_cookie)
         if cookie is None:
             continue
         identity = (cookie.name, cookie.domain, cookie.path)
-        # ``Cookie.expires`` is always an ``int`` after the constructor's
-        # ``int(float(...))`` coercion, and ``is_expired`` compares
-        # ``expires <= now``. For integer ``e`` and non-negative ``now``,
-        # ``e <= now`` iff ``e <= floor(now)`` — so truncating is exact, not
-        # lossy, and it satisfies the stub's ``int | None`` signature while
-        # letting callers pass the float seconds every other clock here uses.
-        if cookie.is_expired(None if now is None else int(now)):
+        if _is_expired(cookie, now):
             dead.add(identity)
         else:
-            live.setdefault(identity, cookie)
+            # Last-write-wins, matching ``CookieJar.set_cookie``. The boolean the
+            # predicates read is unaffected either way, but retaining the same
+            # occurrence the jar would retain keeps this function an honest model
+            # of the thing it stands in for.
+            live[identity] = cookie
     for identity, cookie in live.items():
         if identity not in dead:
             yield cookie
+
+
+def _build_recovery_jar(
+    entries: list[dict[str, Any]], to_cookie: _CookieConverter
+) -> httpx.Cookies:
+    """Build the ``RotateCookies`` request jar from raw cookie rows.
+
+    Built manually so the validator is bypassed — this mirrors
+    ``build_httpx_cookies_from_storage`` without its
+    ``_validate_required_cookies`` call, which would raise, and which recovery
+    runs precisely because it already failed.
+
+    Unlike :func:`_iter_routable_psidts_cookies` this keeps ALL usable rows, not just
+    ``__Secure-1PSIDTS``: Google rejects a ``RotateCookies`` POST that does not
+    carry ``SID`` plus the secondary binding. Expiry is not filtered here either
+    — ``http.cookiejar`` drops expired cookies when it builds the header. Rows
+    that fail conversion are skipped rather than raised on
+    (see :func:`_safe_to_cookie`).
+    """
+    jar = httpx.Cookies()
+    for entry in entries:
+        if _allowed_cookie_name(entry) is None:
+            continue
+        cookie = _safe_to_cookie(entry, to_cookie)
+        if cookie is not None:
+            jar.jar.set_cookie(cookie)
+    return jar
 
 
 def _psidts_is_live(
@@ -241,25 +298,51 @@ def _psidts_is_live(
     to_cookie: _CookieConverter,
     now: float | None = None,
 ) -> bool:
-    """Is ANY live ``__Secure-1PSIDTS`` present on an allowed auth domain?
+    """Is ANY ``__Secure-1PSIDTS`` present and not known-expired on an allowed domain?
 
-    This is the "did the heal land?" question. It deliberately does NOT ask
-    about routing to ``accounts.google.com``: its job is to predict whether the
-    caller's retried preflight will pass, and that preflight
+    This is the "did the heal land?" question, and it models the caller's
+    RETRIED PREFLIGHT — not the request jar. That preflight
     (:func:`notebooklm._auth.cookie_policy._validate_required_cookies`) is
     domain-blind name presence. Asking the rotate-URL question here would report
     "not healed" for a PSIDTS persisted only on the app host, re-raising an
     authentication error over a session that actually works — a false negative
     in the direction that hurts (issue #2057).
 
-    It is, however, deliberately STRICTER than the preflight on expiry: the
-    preflight ignores ``expires`` entirely, while this requires an unexpired
-    row. Dropping that would regress issue #1273 — a no-op save over a stale
-    on-disk row would report success and fake a heal. The invariant to hold is
-    an implication, not an equality: live ⇒ the preflight passes on the PSIDTS
-    half (it says nothing about ``SID``).
+    Deliberately a plain existential, NOT the jar model in
+    :func:`_iter_routable_psidts_cookies`. Two rules from there are wrong here,
+    and both cause the same harmful false negative:
+
+    - **No duplicate-identity poisoning.** A stale twin sharing a row's
+      ``(name, domain, path)`` does not stop a name-presence preflight from
+      passing. Poisoning here is not merely pessimistic, it is a PERMANENT
+      failure loop: ``save_cookies_to_storage`` CAS-matches the first stored row
+      and leaves the stale twin on disk, so every subsequent load would fire a
+      POST, write to disk, then re-raise "Missing required cookies" for a
+      session whose preflight passes. The twin is issue #1523's data shape;
+      #1523 fixed the producer, and nothing on the load/save path removes an
+      existing one.
+    - **An unparseable ``expires`` counts as PRESENT.** The row is on disk and
+      the preflight will see it. This mirrors the predecessor gate, which
+      treated an uninterpretable expiry as present rather than guessing.
+
+    It IS deliberately stricter than the preflight in one respect: a row known
+    to be expired does not count, though the preflight ignores ``expires``
+    entirely. Dropping that would regress issue #1273 — a no-op save over a
+    stale on-disk row would report success and fake a heal.
+
+    The invariant to hold is an implication, not an equality: live ⇒ the
+    preflight passes on the PSIDTS half (it says nothing about ``SID``). Note
+    routable ⇒ live still holds, since a routable row is unexpired, allowlisted
+    and non-empty — which is what makes the fused "healed by another process"
+    return in :func:`_recover_psidts_inline` sound.
     """
-    return any(True for _ in _iter_live_psidts_cookies(entries, to_cookie=to_cookie, now=now))
+    for entry in entries:
+        if _allowed_cookie_name(entry) != _PSIDTS_COOKIE:
+            continue
+        cookie = _safe_to_cookie(entry, to_cookie)
+        if cookie is None or not _is_expired(cookie, now):
+            return True
+    return False
 
 
 def _psidts_routes_to_rotate(
@@ -280,7 +363,7 @@ def _psidts_routes_to_rotate(
     host-scoped one on ``accounts.google.com`` — which does route — sat in the
     *lowest* priority tier (issue #2057).
 
-    Expiry is decided by :func:`_iter_live_psidts_cookies` against ``now``, then
+    Expiry is decided by :func:`_iter_routable_psidts_cookies` against ``now``, then
     stripped from the probe copies. ``CookieJar.add_cookie_header`` resets its
     own clock from ``time.time()`` and re-applies its expiry policy on top of
     whatever it is given, so an injected ``now`` would otherwise be a
@@ -288,15 +371,15 @@ def _psidts_routes_to_rotate(
     fresh, and a test asserting "fresh at now=200" would silently fail against
     the real wall clock. The probes exist only to answer the DOMAIN question.
     """
+    probes = [
+        copy.copy(c) for c in _iter_routable_psidts_cookies(entries, to_cookie=to_cookie, now=now)
+    ]
+    if not probes:
+        return False
     jar = httpx.Cookies()
-    found = False
-    for cookie in _iter_live_psidts_cookies(entries, to_cookie=to_cookie, now=now):
-        probe = copy.copy(cookie)
+    for probe in probes:
         probe.expires = None
         jar.jar.set_cookie(probe)
-        found = True
-    if not found:
-        return False
     request = httpx.Request("POST", _keepalive.KEEPALIVE_ROTATE_URL)
     jar.set_cookie_header(request)
     return _PSIDTS_COOKIE in _cookie_header_names(request.headers.get("cookie", ""))
@@ -530,19 +613,13 @@ def _psidts_save_succeeded(
       the expired on-disk row lingers in the request jar, the delta is empty,
       and the save reports success while disk is still unhealed.
 
-    So disk — not the save bool — is the sole arbiter. Re-read it and accept the
+    So disk — not the save bool — is the sole arbiter. Re-read it via
+    :func:`_is_psidts_persisted` (the domain-blind "did it land?" question, NOT
+    the routed precondition gate — see :func:`_psidts_is_live`) and accept the
     heal iff a live PSIDTS is stored, so a stale or expired row (ours or a
     sibling's) doesn't masquerade as a heal. On a decline, the coarse ``result``
     is folded into a diagnostic warning here (the only thing it is used for) so
     callers stay a single boolean branch.
-
-    :func:`_is_psidts_persisted` deliberately does NOT mirror the routed
-    precondition gate (:func:`_psidts_routes_to_rotate`). This is the "did it
-    land?" question, and it must track what the caller's retried preflight
-    validates — domain-blind name presence — not what routes to
-    ``accounts.google.com``. Asking the routed question here would report a
-    PSIDTS persisted only on the app host as unhealed and re-raise over a
-    working session (issue #2057).
     """
     if _is_psidts_persisted(storage_path):
         return True
@@ -568,19 +645,7 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
         )
         return False
 
-    # Build the cookie jar manually so the validator (which would raise) is
-    # bypassed. Mirrors ``build_httpx_cookies_from_storage`` without the
-    # ``_validate_required_cookies`` call.
-    jar = httpx.Cookies()
-    for entry in cookie_entries:
-        if not entry.get("name") or not entry.get("value"):
-            continue
-        if not _is_allowed_auth_domain(entry.get("domain", "")):
-            continue
-        cookie = _safe_to_cookie(entry, _storage_entry_to_cookie)
-        if cookie is None:
-            continue
-        jar.jar.set_cookie(cookie)
+    jar = _build_recovery_jar(cookie_entries, _storage_entry_to_cookie)
 
     # ``httpx.Client(cookies=jar)`` copies the source jar into a private client
     # jar; Set-Cookie responses land in ``client.cookies``, not in ``jar``. So
@@ -732,18 +797,7 @@ def recover_psidts_in_memory(rookiepy_cookies: list[dict[str, Any]]) -> bool:
         )
         return False
 
-    jar = httpx.Cookies()
-    for entry in rookiepy_cookies:
-        if not isinstance(entry, dict):
-            continue
-        if not entry.get("name") or not entry.get("value"):
-            continue
-        if not _is_allowed_auth_domain(entry.get("domain", "")):
-            continue
-        cookie = _safe_to_cookie(entry, _rookiepy_entry_to_cookie)
-        if cookie is None:
-            continue
-        jar.jar.set_cookie(cookie)
+    jar = _build_recovery_jar(rookiepy_cookies, _rookiepy_entry_to_cookie)
 
     try:
         with httpx.Client(
@@ -771,15 +825,13 @@ def recover_psidts_in_memory(rookiepy_cookies: list[dict[str, Any]]) -> bool:
         )
         return False
 
-    # Index the source jar by RFC 6265 identity so a rotated cookie that
-    # already has a same-(name, domain, path) row REPLACES it in place rather
-    # than appending a second occurrence. Split-state recovery (#1523) hits
-    # this: __Secure-1PSIDTS is missing/expired (so recovery fires) while a
-    # fresh __Secure-3PSIDTS is already present — RotateCookies rotates BOTH,
+    # Index the source rows by RFC 6265 identity so the replace-in-place
+    # contract above can be honoured. Split-state recovery (#1523) is what makes
+    # it necessary: __Secure-1PSIDTS is missing/expired (so recovery fires) while
+    # a fresh __Secure-3PSIDTS is already present — RotateCookies rotates BOTH,
     # and a blind append leaves a duplicate __Secure-3PSIDTS (and a stale
-    # __Secure-1PSIDTS twin) row with no analog in any real browser jar. The
-    # rotation is the value we want to persist, so the rotated occurrence wins
-    # — mirroring the last-occurrence-wins dedup in
+    # __Secure-1PSIDTS twin) row with no analog in any real browser jar. Letting
+    # the rotated occurrence win mirrors the last-occurrence-wins dedup in
     # ``filter_storage_state_cookies_by_domain_policy`` (#1513). ``path or "/"``
     # matches the normalization the loaders and save_cookies_to_storage use.
     index_by_identity: dict[tuple[str, str, str], int] = {}
