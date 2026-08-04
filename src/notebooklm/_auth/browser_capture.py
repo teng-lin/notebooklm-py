@@ -80,7 +80,7 @@ from .browser_launch_errors import CHANNEL_BROWSERS, classify_launch_failure
 # sanctions as an import site, and the CLI's own cookie-refresh advice
 # (``cli/services/login/cookie_jar.py``) must not grow a second, drifting copy
 # of that caveat.
-from .cookie_policy import app_host_scope_note, build_cookie_domain_allowlist
+from .cookie_policy import app_host_scope_note
 
 # DEBUG tracing for the login wait lives in its own leaf (ADR-0008) and is
 # re-exported here because ``browser_capture`` is the only ``_auth`` module the

@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **RPC errors now name the host, not just the method.** Google serves the
+  personal app from two hosts — `notebooklm.google.com` and, since the Gemini
+  Notebook rebrand, `notebook.google.com` (ADR-0028) — and
+  `NOTEBOOKLM_BASE_URL` selects between them. A wrong-host session previously
+  surfaced as `Client error 404 calling LIST_NOTEBOOKS: Not Found`, which is
+  indistinguishable from "this account cannot see that notebook", so the one
+  recovery lever available was one the user could not tell they needed. 4xx,
+  5xx and 429 messages now read `… calling LIST_NOTEBOOKS on
+  notebooklm.google.com: …`
+  ([#2067](https://github.com/teng-lin/notebooklm-py/issues/2067)).
+
+### Added
+
+- **Host-contract tests for the RPC path.** `get_batchexecute_url()` /
+  `get_query_url()` / `get_upload_url()` are now asserted against a bare host
+  literal under the *default* environment — previously covered only under the
+  enterprise override, so a change to the default was invisible — and the
+  streamed-chat builder is pinned to send no origin-bound header. The latter
+  matters because such headers are host-bound and appear in no VCR `match_on`,
+  so one naming the wrong host would pass every offline test and fail every
+  live call ([#2067](https://github.com/teng-lin/notebooklm-py/issues/2067)).
+
+### Fixed
+
 - **Corrected the last cookie-domain tier claim that still said the ranking is
   decisive.** #2057 rewrote the `_auth_domain_priority` docstring and its two
   consumers, but the tier comment added by

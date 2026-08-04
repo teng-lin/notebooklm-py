@@ -17,7 +17,7 @@ import httpx
 from ._auth.account import format_authuser_value
 from ._auth_refresh_retry import RefreshBudget, refresh_and_count
 from ._deadline import RuntimeDeadline
-from ._env import get_default_language
+from ._env import get_base_url, get_default_language
 from ._idempotency import (
     IDEMPOTENCY_REGISTRY,
     resolve_effective_disable_internal_retries,
@@ -429,26 +429,38 @@ class RpcExecutor:
         exc: httpx.HTTPStatusError,
         method: RPCMethod,
     ) -> NoReturn:
-        """Map an HTTP-status failure onto the RPC error hierarchy."""
+        """Map an HTTP-status failure onto the RPC error hierarchy.
+
+        4xx/5xx messages name the **host** as well as the method. Google serves
+        the personal app from two hosts (``notebooklm.google.com`` and, since the
+        Gemini Notebook rebrand, ``notebook.google.com`` -- see ADR-0028), and
+        ``NOTEBOOKLM_BASE_URL`` selects between them. Without the host in the
+        message, "talking to the wrong host" and "this account cannot see that
+        notebook" are the same 404 to a user, and the only recovery lever is one
+        they cannot tell they need.
+        """
         status = exc.response.status_code
+        host = httpx.URL(get_base_url()).host
 
         if status == 429:
             retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
-            msg = f"API rate limit exceeded calling {method.name}"
+            msg = f"API rate limit exceeded calling {method.name} on {host}"
             if retry_after:
                 msg += f". Retry after {retry_after} seconds"
             raise RateLimitError(msg, method_id=method.value, retry_after=retry_after) from exc
 
         if 500 <= status < 600:
             raise ServerError(
-                f"Server error {status} calling {method.name}: {exc.response.reason_phrase}",
+                f"Server error {status} calling {method.name} on {host}: "
+                f"{exc.response.reason_phrase}",
                 method_id=method.value,
                 status_code=status,
             ) from exc
 
         if 400 <= status < 500 and status not in (401, 403):
             raise ClientError(
-                f"Client error {status} calling {method.name}: {exc.response.reason_phrase}",
+                f"Client error {status} calling {method.name} on {host}: "
+                f"{exc.response.reason_phrase}",
                 method_id=method.value,
                 status_code=status,
             ) from exc
