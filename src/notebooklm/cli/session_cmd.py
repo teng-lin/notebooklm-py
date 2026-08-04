@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING, Any, NoReturn
 import click
 import httpx
 
-from ..auth import MasterTokenError as _MasterTokenError
 from ..exceptions import AuthError, NotebookNotFoundError
 from ..paths import get_storage_path
 
@@ -279,7 +278,7 @@ def register_session_commands(cli):
         "master_token_refresh",
         is_flag=True,
         default=False,
-        help="Legacy forced re-mint; prefer 'notebooklm auth refresh'.",
+        help="Re-mint web cookies from the stored master token (no prompt). For recovery / cron.",
     )
     @click.option(
         "--oauth-token",
@@ -974,18 +973,15 @@ def register_session_commands(cli):
                     include_domains=include_domains,
                 )
             else:
-                try:
-                    refresh_stored_session(
-                        storage_path,
-                        profile,
-                        allow_headless=allow_headless,
-                        quiet=quiet,
-                        verify=verify,
-                        json_output=json_output,
-                        fetch_tokens=fetch_tokens_with_domains,
-                    )
-                except _MasterTokenError as exc:
-                    _fail("master_token_refresh_failed", str(exc))
+                refresh_stored_session(
+                    storage_path,
+                    profile,
+                    allow_headless=allow_headless,
+                    quiet=quiet,
+                    verify=verify,
+                    json_output=json_output,
+                    fetch_tokens=fetch_tokens_with_domains,
+                )
             if verify and browser_cookies is not None:
                 _verify_token_fetch_after_refresh(
                     storage_path, profile, quiet=quiet, json_output=json_output

@@ -30,10 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with same-loop recovery coalescing and post-recovery cookie/account reloads.
   `AuthTokens.from_storage()` and `NotebookLMClient.from_storage()` gain the
   keyword-only `allow_headless=False` opt-in. `notebooklm auth refresh` gains
-  `--allow-headless`, honors root `--storage`, and can mint missing storage from
-  a sibling master token before one passive validation. The forced
-  `login --master-token-refresh` route remains compatible but is labeled legacy
-  in favor of conditional `auth refresh`
+  `--allow-headless` and honors root `--storage`
   ([#2068](https://github.com/teng-lin/notebooklm-py/issues/2068)).
 
 - **Corrected the last cookie-domain tier claim that still said the ranking is
