@@ -12,7 +12,7 @@ from click.testing import CliRunner
 import notebooklm.cli.services.login.master_token as mt_service
 from notebooklm._auth import browser_capture
 from notebooklm.notebooklm_cli import cli
-from notebooklm.paths import get_storage_path
+from notebooklm.paths import get_master_token_path, get_storage_path
 
 
 def _seed_profile_account(monkeypatch, tmp_path, email):
@@ -32,11 +32,26 @@ def _seed_profile_account(monkeypatch, tmp_path, email):
 
 def test_master_token_refresh_calls_service(tmp_path, monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    storage = get_storage_path()
+    storage.parent.mkdir(parents=True, exist_ok=True)
+    storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
     with patch.object(mt_service, "refresh", new=AsyncMock()) as ref:
         result = CliRunner().invoke(cli, ["login", "--master-token-refresh"])
     assert result.exit_code == 0, result.output
-    assert ref.called
-    assert "Re-minted" in result.output
+    ref.assert_awaited_once_with(
+        storage_path=storage,
+        master_token_path=get_master_token_path(),
+    )
+    assert result.output.strip() == f"Re-minted cookies -> {storage}"
+
+
+def test_master_token_refresh_help_marks_forced_route_legacy():
+    result = CliRunner().invoke(cli, ["login", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "Legacy forced re-mint; prefer 'notebooklm auth refresh'." in " ".join(
+        result.output.split()
+    )
 
 
 def test_master_token_requires_account(tmp_path, monkeypatch):

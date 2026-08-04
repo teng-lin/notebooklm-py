@@ -432,7 +432,7 @@ By default, opens a Chromium browser with a persistent profile. Complete the Goo
 
 **Master-token (headless) options** — mint/refresh web cookies from a durable Google master token, no per-session browser. Requires `pip install "notebooklm-py[headless]"`. Full guide: [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).
 - `--master-token` - Bootstrap headless auth. Requires `--account EMAIL`. A visible browser opens Google's EmbeddedSetup to capture the single-use `oauth_token` (needs `[browser]`), or pass it with `--oauth-token`. Exchanges it for a durable master token (saved `0600` at `master_token.json`), mints cookies into `storage_state.json`, and verifies by listing notebooks.
-- `--master-token-refresh` - Re-mint cookies from the stored master token, no prompt (for recovery / cron). Replaces `storage_state.json` cookies, preserving CLI context.
+- `--master-token-refresh` - Legacy forced re-mint; prefer `notebooklm auth refresh`. It still unconditionally replaces `storage_state.json` from the stored master token and preserves CLI context.
 - `--oauth-token VALUE` - Provide the single-use EmbeddedSetup `oauth_token` manually (headless boxes without `[browser]`).
 - `--cdp-url URL` - Capture `oauth_token` by attaching to a running Chrome over CDP (e.g. `http://localhost:9222`) instead of launching a browser.
 - `--android-id HEX` - Override the per-install Android id (default: generated and persisted with the token). ⚠️ The master token is a **full-account, durable** credential — use a dedicated/throwaway account only.
@@ -472,7 +472,7 @@ notebooklm login --fresh
 # Headless master-token auth (one browser sign-in, then no per-session browser)
 notebooklm login --master-token --account you@gmail.com
 notebooklm login --master-token --account you@gmail.com --oauth-token "$OAUTH_TOKEN"  # headless box
-notebooklm login --master-token-refresh   # re-mint cookies from the stored token
+notebooklm login --master-token-refresh   # legacy: force a re-mint unconditionally
 ```
 
 **Notes on `--browser-cookies`:**
@@ -766,7 +766,7 @@ table). To gate readiness on a real token fetch, run `notebooklm auth check
 
 ### Authentication: `auth refresh`
 
-One-shot keepalive and recovery: open a file-backed session, trigger the layer-1 SIDTS rotation poke against `accounts.google.com`, persist rotated cookies, and exit. If the cookies redirect to Google sign-in, it automatically tries a sibling master-token re-mint; `--allow-headless` permits layer-3 browser recovery first. When a Playwright storage state lacks in-band `notebooklm.account` metadata, `auth refresh` also repairs it if account discovery is unambiguous. It does not replace existing metadata; use `login --browser-cookies <browser> --account EMAIL` to re-bind a profile that already points at the wrong account. Designed for direct use or OS scheduling (launchd / systemd / cron / Task Scheduler / k8s CronJob).
+One-shot keepalive and recovery: open a file-backed session, trigger the layer-1 SIDTS rotation poke against `accounts.google.com`, persist rotated cookies, and exit. If storage is absent but the exact sibling `master_token.json` exists, it mints the initial file and passively validates it once; `--verify` reuses that result. Existing cookies that redirect to Google sign-in automatically try a sibling master-token re-mint; `--allow-headless` permits layer-3 browser recovery first. Healthy storage stays on the cheap path. When a Playwright storage state lacks in-band `notebooklm.account` metadata, `auth refresh` also repairs it if account discovery is unambiguous. It does not replace existing metadata; use `login --browser-cookies <browser> --account EMAIL` to re-bind a profile that already points at the wrong account. Designed for direct use or OS scheduling (launchd / systemd / cron / Task Scheduler / k8s CronJob).
 
 ```bash
 notebooklm auth refresh [OPTIONS]
@@ -776,7 +776,7 @@ notebooklm auth refresh [OPTIONS]
 - `--browser-cookies <browser>`, `--browser-cookie <browser>` - Re-extract cookies from an installed browser and match the current profile's account from `context.json`. This repairs account routing when browser account order changes after another account logs out. Accepts the same scoped syntax as `login`: `chrome::<profile-name-or-directory>` for one Chromium profile, and `firefox::<container-name>` or `firefox::none` for one Firefox container.
 - `--include-domains LABEL[,LABEL...]` - Forward to the browser-cookie reader (only meaningful with `--browser-cookies`). Same syntax as `notebooklm login --include-domains`.
 - `--quiet`, `-q` - Suppress success output; print only on error (cron-friendly)
-- `--verify` - After refreshing, run a read-only passive token fetch to confirm the resulting cookies actually authenticate; exit non-zero if they still fail. A successful refresh command alone does not prove the post-refresh cookies work — they may still redirect to sign-in. Especially valuable with `--browser-cookies`, which rewrites the cookie jar but does not otherwise verify it.
+- `--verify` - After refreshing, run a read-only passive token fetch to confirm the resulting cookies actually authenticate; exit non-zero if they still fail. A missing-storage master-token bootstrap always performs this validation and `--verify` reuses its result. Especially valuable with `--browser-cookies`, which rewrites the cookie jar but does not otherwise verify it.
 - `--allow-headless` - Permit layer-3 browser recovery for this invocation when stored cookies are fully expired. Uses the storage-bound persisted browser profile or loopback `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL`, and does not launch or attach unless the ordinary refresh fails. Incompatible with `--browser-cookies`.
 - `--json` - Emit one structured success or error document. On success the keys are `status`, `storage_path`, and `verified`.
 
@@ -786,7 +786,8 @@ notebooklm auth refresh [OPTIONS]
 
 **Exit codes:**
 - `0` - the auth path completed without raising. The rotation POST is **best-effort**: exit 0 also covers (a) the 60 s mtime guard skipping the POST, (b) `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1` being set, (c) another process holding the cross-process rotate lock, and (d) a transient `httpx` error during the POST being caught and logged at DEBUG. Treat exit 0 as "no error" rather than "rotation occurred." For verification, enable `NOTEBOOKLM_LOG_LEVEL=DEBUG` and check for the `RotateCookies` log line.
-- `1` - a fatal error reached the CLI layer (e.g. `NOTEBOOKLM_AUTH_JSON` set, missing `storage_state.json`, invalid profile, `httpx.RequestError` not swallowed by the rotate guard), **or** `--verify` was passed and the post-refresh passive token fetch failed. The OS scheduler's next firing is the retry mechanism; this command does not retry in-process.
+- `1` - a typed command failure occurred (for example, an incompatible option, a failed master-token mint, or a failed post-refresh passive token fetch). The OS scheduler's next firing is the retry mechanism; this command does not retry in-process.
+- `2` - an unexpected error occurred. Missing storage without a sibling token and malformed existing storage retain this existing contract; neither bootstraps.
 
 **Examples:**
 ```bash
