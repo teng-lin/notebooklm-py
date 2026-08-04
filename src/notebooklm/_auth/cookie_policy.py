@@ -6,6 +6,8 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from notebooklm._env import PERSONAL_APP_ALIAS_HOST
+
 logger = logging.getLogger("notebooklm.auth")
 
 
@@ -254,8 +256,8 @@ REQUIRED_COOKIE_DOMAINS: frozenset[str] = frozenset(
         # non-dotted variants are listed (same defensive pattern as
         # ``notebooklm.google.com`` above) so http.cookiejar normalization does
         # not drop them at extraction / load time.
-        ".notebook.google.com",
-        "notebook.google.com",
+        f".{PERSONAL_APP_ALIAS_HOST}",
+        PERSONAL_APP_ALIAS_HOST,
         ".notebooklm.cloud.google.com",
         "notebooklm.cloud.google.com",
         ".googleusercontent.com",
@@ -547,9 +549,9 @@ def _auth_domain_priority(domain: str) -> int:
     # (mirroring the notebooklm.google.com tier split), and both sit below
     # ``.notebooklm.google.com`` so a cookie on the canonical app host still
     # wins when both hosts carry it.
-    if domain == ".notebook.google.com":
+    if domain == f".{PERSONAL_APP_ALIAS_HOST}":
         return 3
-    if domain == "notebook.google.com":
+    if domain == PERSONAL_APP_ALIAS_HOST:
         return 2
     if domain == ".notebooklm.cloud.google.com":
         return 3
