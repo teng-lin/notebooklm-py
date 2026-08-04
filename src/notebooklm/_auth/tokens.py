@@ -101,12 +101,99 @@ class AuthTokens:
             ")"
         )
 
-    @property
-    def cookie_header(self) -> str:
-        """Generate Cookie header value for HTTP requests.
+    def cookie_header_for(self, url: str) -> str:
+        """Return the ``Cookie:`` header this session would send to ``url``.
+
+        This is the domain-correct way to build a raw header. Cookie selection
+        follows RFC 6265 §5.4 via :attr:`cookie_jar`, so a cookie scoped to one
+        host is not sent to another — unlike :attr:`cookie_header`, which
+        collapses every domain into one name→value slot and therefore has to
+        pick an arbitrary winner when the same name exists on two hosts
+        (issue #2054).
+
+        ``url`` is required and deliberately has no default: a default would
+        reintroduce the fabricated target that this method exists to remove.
+
+        .. important::
+           Routing is only as good as the jar. An ``AuthTokens`` built from a
+           bare ``name -> value`` mapping has no domains to preserve, so
+           ``__post_init__`` widens every entry to ``.google.com`` and this
+           method returns the **same broadcast header for every host** — the
+           behaviour it exists to replace, without an error to say so. Build
+           from ``storage_state`` (``AuthTokens.from_storage``, or pass
+           ``storage_path``) to get real per-host selection.
+
+        Args:
+            url: Absolute URL the header is being built for. Must be ``https``:
+                selection is ``Secure``-aware, so an ``http`` URL either drops
+                the ``Secure`` cookies without saying so or — for a jar built
+                from a bare cookie map, where nothing is marked ``Secure`` —
+                hands back credentials for a cleartext request. Both are wrong
+                for auth, so the scheme is rejected instead.
 
         Returns:
-            Semicolon-separated cookie string (e.g., "SID=abc; HSID=def")
+            Semicolon-separated ``name=value`` pairs, or ``""`` when no stored
+            cookie matches ``url``.
+
+        Raises:
+            ValueError: If ``url`` is not an absolute ``https`` URL with a host,
+                or if this session has no cookie jar. Every failure here is
+                raised rather than returned as ``""``: an empty header is
+                indistinguishable from "no cookie matched", which is a legitimate
+                answer, so a silent empty string would hide a malformed URL
+                (``https:/typo`` parses fine and matches nothing) behind a
+                plausible-looking result.
+
+        .. note::
+           Not a pure query: ``http.cookiejar.add_cookie_header`` ends by calling
+           ``clear_expired_cookies()``, so reading a header can prune expired
+           entries from :attr:`cookie_jar`. Harmless today — pruning changes what
+           the jar *holds*, never what a request *sends*, and Playwright writes
+           session cookies as ``expires: -1`` (mapped to ``None``, never expired),
+           so the eligible population is normally empty.
+
+           **Revisit if this method ever gains a caller inside**
+           ``AuthTokens.from_storage``: between ``snapshot_cookie_jar`` and
+           ``save_cookies_to_storage`` a prune would be persisted to disk as a
+           deletion. Correct in itself, but it would make a read-shaped call a
+           write.
+        """
+        parsed = httpx.URL(url)
+        if parsed.scheme != "https":
+            raise ValueError(
+                f"cookie_header_for() requires an https URL (got {parsed.scheme!r}). "
+                "Auth cookies are Secure-scoped and must not be built for cleartext."
+            )
+        if not parsed.host:
+            raise ValueError(
+                f"cookie_header_for() requires an absolute URL with a host (got {url!r}). "
+                "A hostless URL matches no cookie and would return an empty header."
+            )
+        if self.cookie_jar is None:
+            raise ValueError(
+                "cookie_header_for() requires a cookie jar; this AuthTokens has none. "
+                "Cookie selection is per-host, and the flat `cookies` mapping cannot "
+                "answer a per-host question."
+            )
+        request = httpx.Request("GET", parsed)
+        self.cookie_jar.set_cookie_header(request)
+        return request.headers.get("cookie", "")
+
+    @property
+    def cookie_header(self) -> str:
+        """Generate a domain-blind Cookie header value.
+
+        .. warning::
+           **Not correct for building a request.** This is :attr:`flat_cookies`
+           joined into header syntax, so it inherits that projection's one slot
+           per cookie name: when the same name exists on more than one domain —
+           ``OSID`` on both the app host and ``accounts.google.com``, for
+           instance — all but one value is discarded, arbitrarily (issue
+           #2054). Use :meth:`cookie_header_for` instead, which selects cookies
+           per RFC 6265 for a specific URL.
+
+        Returns:
+            Semicolon-separated cookie string (e.g., "SID=abc; HSID=def").
         """
         return "; ".join(f"{k}={v}" for k, v in self.flat_cookies.items())
 
@@ -119,10 +206,19 @@ class AuthTokens:
     def flat_cookies(self) -> FlatCookieMap:
         """Return a legacy name→value cookie mapping.
 
-        Duplicate-name resolution follows :func:`_auth_domain_priority` so the
-        result matches what :func:`load_auth_from_storage` produces for the same
-        storage state (see issue #375). Domain-aware HTTP operations should use
-        ``cookie_jar`` or ``cookies`` directly instead.
+        .. warning::
+           **Lossy, and not correct for building a request.** One slot per
+           cookie name means duplicates across domains are discarded. Ranking
+           is by :func:`notebooklm._auth.cookie_policy._auth_domain_priority`,
+           whose named tiers are **not** all distinct — ``.notebooklm.google.com`` and
+           ``.notebook.google.com`` share a tier, as do their bare variants,
+           and tiers 0 and 1 hold many domains each. Within a tier the first
+           entry in iteration order wins, so the survivor is arbitrary and
+           changes if ``storage_state`` is reordered (issue #2054).
+
+           Kept for backward compatibility — see the migration note in the
+           v0.4.0 CHANGELOG entry that recommended it. For HTTP use
+           :meth:`cookie_header_for`, :attr:`cookie_jar`, or :attr:`cookies`.
         """
         return _auth_cookies.flatten_cookie_map(self.cookies)
 

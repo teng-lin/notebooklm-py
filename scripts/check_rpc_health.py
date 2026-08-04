@@ -311,6 +311,26 @@ def resolve_storage_path() -> Path | None:
     return get_storage_path()
 
 
+def build_probe_client(auth: AuthTokens) -> httpx.AsyncClient:
+    """Build the HTTP client every probe shares, with domain-scoped cookies.
+
+    Extracted as a named seam so a test can assert that the *shipped* client
+    carries the jar. Each probe used to hand-build a ``Cookie:`` header from
+    ``auth.cookie_header``, which collapses every domain into one name→value
+    slot: the accounts-scoped ``LSID`` reached the app host on every request,
+    and when a name existed on two hosts the survivor was arbitrary (issue
+    #2054). Letting httpx select per RFC 6265 from ``auth.cookie_jar`` fixes
+    both.
+
+    Note ``httpx`` **copies** the jar rather than sharing it, so cookies the
+    service rotates during a run (``SIDCC``, ``__Secure-1PSIDCC``, …) land on
+    the client's private copy and are discarded at exit. Not a regression — the
+    script previously sent a fixed header and kept no jar at all — but it does
+    mean a probe run cannot persist a rotation.
+    """
+    return httpx.AsyncClient(timeout=30.0, cookies=auth.cookie_jar)
+
+
 async def make_rpc_request(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -343,10 +363,7 @@ async def make_rpc_request(
     rpc_request = encode_rpc_request(method, params)
     body = build_request_body(rpc_request, auth.csrf_token)
 
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": auth.cookie_header,
-    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
     try:
         response = await client.post(url, content=body, headers=headers)
@@ -840,7 +857,6 @@ async def check_chat_query(
     )
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": auth.cookie_header,
         **extra_headers,
     }
 
@@ -956,10 +972,7 @@ async def make_raw_rpc_request(
     # actually lands in the body, kept identical to the ``rpcids=`` query param.
     rpc_request = encode_rpc_request(RPCMethod.LIST_NOTEBOOKS, params, rpc_id_override=rpc_id)
     body = build_request_body(rpc_request, auth.csrf_token)
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": auth.cookie_header,
-    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
     try:
         response = await client.post(url, content=body, headers=headers)
         response.raise_for_status()
@@ -1343,7 +1356,7 @@ async def run_health_check(full_mode: bool = False) -> tuple[list[CheckResult], 
     print(f"  cookie scopes: {describe_cookie_scopes(auth)}")
     print()
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with build_probe_client(auth) as client:
         try:
             if full_mode:
                 print("Creating temp resources for full testing...")

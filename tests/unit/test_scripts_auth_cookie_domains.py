@@ -34,6 +34,7 @@ be satisfied by accident:
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,7 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
+from notebooklm._auth.tokens import AuthTokens
 from notebooklm._env import get_base_url
 from scripts import capture_rpc_registry, check_rpc_health
 
@@ -324,3 +326,129 @@ def test_capture_rpc_registry_sends_domain_scoped_cookie_jar(
     cdn_requests = [r for r in httpx_mock.get_requests() if r.url.host == "www.gstatic.com"]
     assert cdn_requests
     assert all("cookie" not in r.headers for r in cdn_requests)
+
+
+def _auth_tokens_with_collision() -> AuthTokens:
+    """AuthTokens built from the module's own collision fixture.
+
+    Reuses ``_storage_state()`` so the probe assertions cannot drift from the
+    auth-path assertions above -- both see the same ``OSID`` on two hosts with
+    two values, which is what makes an absence assertion meaningful.
+    """
+    cookies = {
+        (entry["name"], entry["domain"], entry.get("path", "/")): entry["value"]
+        for entry in _storage_state()["cookies"]
+    }
+    return AuthTokens(cookies=cookies, csrf_token="csrf", session_id="session")
+
+
+# ---------------------------------------------------------------------------
+# The probe POSTs themselves (#2054)
+#
+# Everything above pins the *auth* path. The three probe request paths -- two
+# batchexecute calls and the streamed-chat call, which posts to a hardcoded v1
+# path rather than a method id -- were a separate leak: each hand-built
+# ``{"Cookie": auth.cookie_header}``, the flat projection, so the
+# accounts-scoped ``LSID`` was sent to the app host on every request and one of
+# several same-name cookies survived arbitrarily.
+#
+# These assert on the header of the POST itself, driven through the *shipped*
+# ``build_probe_client``. That indirection is the point: httpx lets an explicit
+# ``Cookie`` header silently override the client jar, with no merge and no
+# error, so a test that supplied its own client would still pass if the fix
+# were reverted at the construction site.
+# ---------------------------------------------------------------------------
+
+
+def test_probe_client_is_the_seam_that_carries_the_jar() -> None:
+    """``build_probe_client`` must attach the domain-scoped jar itself."""
+    auth = _auth_tokens_with_collision()
+    client = check_rpc_health.build_probe_client(auth)
+    request = httpx.Request("POST", f"https://{_notebook_host()}/probe")
+    client.cookies.set_cookie_header(request)
+    sent = _cookie_pairs(request.headers.get("cookie", ""))
+
+    assert ("OSID", "v-osid-app") in sent, "the app host must receive its own OSID"
+    assert ("LSID", "v-lsid") not in sent, "the accounts-scoped LSID must not leak"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("probe", ["rpc", "raw_rpc"])
+async def test_probe_post_carries_domain_scoped_cookies(httpx_mock: HTTPXMock, probe: str) -> None:
+    """The batchexecute POST itself must not carry another host's cookies.
+
+    Asserted on the recorded request rather than on the client, because that is
+    the only view that would notice a re-added manual ``Cookie`` header.
+    """
+    auth = _auth_tokens_with_collision()
+    httpx_mock.add_response(method="POST", text=")]}'\n[]")
+
+    async with check_rpc_health.build_probe_client(auth) as client:
+        if probe == "rpc":
+            await check_rpc_health.make_rpc_request(
+                client, auth, check_rpc_health.RPCMethod.LIST_NOTEBOOKS, []
+            )
+        else:
+            # A second entry point that also POSTs batchexecute. Parametrised
+            # because each probe used to hand-build its own header, so fixing
+            # one and leaving another would be invisible: httpx prefers an
+            # explicit Cookie header over the jar, silently.
+            await check_rpc_health.make_raw_rpc_request(
+                client, auth, check_rpc_health.RPCMethod.LIST_NOTEBOOKS.value, []
+            )
+
+    posts = [r for r in httpx_mock.get_requests() if r.method == "POST"]
+    assert posts, "the probe must have issued a POST"
+    for request in posts:
+        sent = _cookie_pairs(request.headers.get("cookie", ""))
+        assert ("OSID", "v-osid-app") in sent
+        assert ("OSID", "v-osid-accounts") not in sent
+        assert ("LSID", "v-lsid") not in sent
+
+
+def test_probe_client_construction_has_exactly_one_home() -> None:
+    """``build_probe_client`` must be the *only* place a probe client is built.
+
+    The seam makes the jar assertable, but a test that calls
+    ``build_probe_client`` directly proves only that the helper is correct --
+    it cannot notice ``main()`` quietly going back to a bare
+    ``httpx.AsyncClient(timeout=30.0)``. That mutation is silent and total: the
+    manual ``Cookie`` headers are gone, so the probes would send **no** cookies
+    at all and every other test here would still pass.
+
+    So this pins the structure instead: exactly one ``AsyncClient`` construction
+    in the module, and it lives inside the helper that attaches the jar.
+    """
+    source = Path(check_rpc_health.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    constructions = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "AsyncClient"
+    ]
+    assert len(constructions) == 1, (
+        "expected exactly one httpx.AsyncClient construction; a second one would "
+        "bypass the jar that build_probe_client attaches"
+    )
+
+    builder = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "build_probe_client"
+    )
+    builder_lines = range(builder.lineno, (builder.end_lineno or builder.lineno) + 1)
+    assert constructions[0].lineno in builder_lines, (
+        "the AsyncClient construction moved out of build_probe_client -- the probes "
+        "would no longer carry the domain-scoped jar"
+    )
+
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "build_probe_client"
+        and node.lineno not in builder_lines
+        for node in ast.walk(tree)
+    ), "build_probe_client is defined but never called"

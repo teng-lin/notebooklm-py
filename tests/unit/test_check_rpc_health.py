@@ -176,7 +176,16 @@ def test_partition_errors_separates_transient_from_real() -> None:
 
 
 @pytest.mark.asyncio
-async def test_make_rpc_request_uses_flat_cookie_header_and_auth_route() -> None:
+async def test_make_rpc_request_builds_the_url_and_auth_route() -> None:
+    """Query shape and CSRF body for a probe request.
+
+    Cookies are deliberately *not* asserted here. They no longer travel in a
+    hand-built header — the probes share one client carrying the
+    domain-scoped jar (#2054) — so a ``FakeClient`` cannot observe them.
+    Cookie coverage lives in ``test_scripts_auth_cookie_domains.py``, which
+    drives the real ``build_probe_client`` and asserts on the recorded
+    request, the only view that would notice a re-added manual header.
+    """
     captured: dict[str, Any] = {}
 
     class FakeClient:
@@ -219,10 +228,9 @@ async def test_make_rpc_request_uses_flat_cookie_header_and_auth_route() -> None
 
     assert response_text == ")]}'\n\n[]"
     assert error is None
-    cookie_header = captured["headers"]["Cookie"]
-    assert "SID=sid" in cookie_header
-    assert "__Secure-1PSIDTS=ts" in cookie_header
-    assert "('SID'," not in cookie_header
+    assert "Cookie" not in captured["headers"], (
+        "the probe must not hand-build a Cookie header; the client jar carries them"
+    )
     query = parse_qs(urlparse(captured["url"]).query)
     assert query["rpcids"] == [check_rpc_health.RPCMethod.CREATE_NOTEBOOK.value]
     assert query["source-path"] == ["/notebook/nb_123"]

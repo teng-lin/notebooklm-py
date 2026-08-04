@@ -7,7 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`AuthTokens.cookie_header_for(url)` — a domain-correct `Cookie:` header.**
+  Selects cookies per RFC 6265 for a specific URL via the session's
+  `cookie_jar`, so a cookie scoped to one host is never sent to another. Use it
+  instead of `AuthTokens.cookie_header`, which collapses every domain into one
+  `name -> value` slot and therefore has to pick an arbitrary winner when the
+  same name exists on two hosts. `url` is required — a default would
+  reintroduce the fabricated target the method exists to remove — and a
+  non-`https` URL raises rather than returning a quietly truncated header
+  ([#2054](https://github.com/teng-lin/notebooklm-py/issues/2054)).
+
 ### Fixed
+
+- **The nightly RPC-health probes no longer send one host's cookies to
+  another.** All three authenticated probes in `scripts/check_rpc_health.py`
+  — two `batchexecute` calls and one streamed-chat call —
+  hand-built their `Cookie:` header from the flat `AuthTokens.cookie_header`
+  projection, so the `accounts.google.com`-scoped `LSID` was sent to the app
+  host on **every** request, and where a name existed on more than one host
+  (`OSID` and `__Secure-OSID` legitimately do, post-rebrand, with different
+  values per host) the surviving value was arbitrary — decided by
+  `storage_state` iteration order, because the domain-priority tiers are not
+  all distinct. The probes now share one client carrying the domain-scoped jar.
+  This is the same defect class as [#2019](https://github.com/teng-lin/notebooklm-py/issues/2019)
+  / [#2018](https://github.com/teng-lin/notebooklm-py/issues/2018), which fixed
+  the script's *auth* path and left its *request* path untouched
+  ([#2054](https://github.com/teng-lin/notebooklm-py/issues/2054)).
+
+- **`scripts/diagnose_get_notebook.py` can authenticate again, and honours
+  `NOTEBOOKLM_BASE_URL`.** Two independent defects in the same ~40 lines: it
+  built its `Cookie:` header by joining `AuthTokens.cookies`, whose keys became
+  `(name, domain, path)` tuples in #369 — emitting a syntactically malformed
+  `('SID', '.google.com', '/')=…` header, so the script has been unable to
+  authenticate for anyone since [#369](https://github.com/teng-lin/notebooklm-py/issues/369) —
+  and it read the eager module-level
+  `BATCHEXECUTE_URL` constant, ignoring `NOTEBOOKLM_BASE_URL` and so pointing
+  enterprise users at the consumer host. Both are fixed together, and the
+  script now loads auth domain-preserving (`extract_cookies_with_domains`)
+  rather than through the flat map, so its jar routes per host instead of
+  broadcasting
+  ([#2054](https://github.com/teng-lin/notebooklm-py/issues/2054)).
 
 - **The `__Secure-1PSIDTS` recovery gate now decides by RFC 6265 routing instead
   of a domain-priority ranking.** Whether to fire the healing `RotateCookies`
@@ -27,20 +68,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spurious missing-cookie error
   ([#2057](https://github.com/teng-lin/notebooklm-py/issues/2057)).
 
-  Also fixed while in the same code path: a cookie row with a malformed
-  `expires` (`""`, `"never"`, `nan`, `inf`, a list) crashed recovery with
-  `ValueError: could not convert string to float` raised from *inside* the
-  caller's own `except ValueError:` handler — replacing the actionable
-  "Missing required cookies … Run `notebooklm login`" message with a converter
-  traceback, after the rotation throttle slot had already been claimed. One
-  malformed sibling row was enough; it did not have to be the PSIDTS row.
-
-  And an empty `NOTEBOOKLM_AUTH_JSON` no longer redirects recovery at a profile
-  file. The cookie loader tests the variable's *presence* and fails fast with
+- **An empty `NOTEBOOKLM_AUTH_JSON` no longer redirects recovery at a profile
+  file.** The cookie loader tests the variable's *presence* and fails fast with
   "set but empty", but the recovery path tested its *truthiness* — so an empty
   value fell through to the default profile, where recovery could fire a
   `RotateCookies` POST and persist rotated cookies to a profile the caller had
-  deliberately bypassed by setting the variable at all. Both now test presence.
+  deliberately bypassed by setting the variable at all. Both now test presence
+  ([#2057](https://github.com/teng-lin/notebooklm-py/issues/2057)).
+
+- **A cookie row with an uncoercible `expires` no longer takes a whole profile
+  down.** `http.cookiejar.Cookie.__init__` coerces via `int(float(expires))`, so
+  a row whose `expires` is `""`, `"never"`, `nan`, `inf`, or a list raised
+  `ValueError: could not convert string to float` out of every cookie loader —
+  and on the recovery paths it was raised from *inside* the caller's own
+  `except ValueError:` handler, replacing the actionable "Missing required
+  cookies … Run `notebooklm login`" message with a converter traceback. One
+  malformed sibling row was enough; it did not have to be the PSIDTS row. Rows
+  that cannot be converted are now skipped in `build_httpx_cookies_from_storage`,
+  `load_httpx_cookies` and the recovery jars alike — a row we cannot convert is
+  a row we could never have sent, so dropping it lets the loaders' own
+  validation produce the actionable message instead
+  ([#2057](https://github.com/teng-lin/notebooklm-py/issues/2057)).
 
 - **`doctor` no longer warns Windows users about permissions the client
   deliberately never sets.** `notebooklm doctor` compared the profile
