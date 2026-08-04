@@ -70,6 +70,7 @@ _KEEPALIVE_ROTATE_HEADERS = _keepalive._KEEPALIVE_ROTATE_HEADERS
 _KEEPALIVE_ROTATE_BODY = _keepalive._KEEPALIVE_ROTATE_BODY
 _load_storage_state = _auth_cookies._load_storage_state
 _storage_entry_to_cookie = _auth_cookies._storage_entry_to_cookie
+_safe_to_cookie = _auth_cookies._safe_to_cookie
 
 logger = logging.getLogger("notebooklm.auth")
 
@@ -101,31 +102,6 @@ def _cookie_header_names(header: str) -> set[str]:
     return {part.split("=", 1)[0].strip() for part in header.split(";") if "=" in part}
 
 
-def _safe_to_cookie(
-    entry: dict[str, Any], to_cookie: _CookieConverter
-) -> http.cookiejar.Cookie | None:
-    """Convert one raw entry, returning ``None`` instead of raising on bad input.
-
-    ``http.cookiejar.Cookie.__init__`` coerces the expiry eagerly with
-    ``int(float(expires))``, so a row whose ``expires`` is ``""``, ``"never"``,
-    ``nan`` (``ValueError``), ``inf`` (``OverflowError``), or a list/dict
-    (``TypeError``) blows up at *construction*. Cookie rows come from Chrome via
-    rookiepy or from a hand-editable JSON file, so their shape is not ours to
-    guarantee.
-
-    Recovery runs from inside an ``except ValueError:`` handler in both file-path
-    callers (``_auth/cookies.py`` and ``_auth/tokens.py``), so an escaping
-    coercion error replaces the actionable "Missing required cookies …
-    Run 'notebooklm login'" diagnostic with a converter traceback. One malformed
-    sibling row was enough to trigger that on the pre-#2057 code, after the
-    rotation throttle slot had already been claimed.
-    """
-    try:
-        return to_cookie(entry)
-    except (ValueError, TypeError, OverflowError):
-        return None
-
-
 def _allowed_cookie_name(entry: Any) -> str | None:
     """Return a row's cookie NAME if the row is usable for recovery, else ``None``.
 
@@ -140,16 +116,24 @@ def _allowed_cookie_name(entry: Any) -> str | None:
     from Chrome via rookiepy or from a hand-editable JSON file, so none of that
     is ours to guarantee: a nameless or valueless cookie isn't meaningfully
     present on any path, and the domain filter stops a stray ``SID`` from an
-    unrelated site satisfying a precondition. ``or ""`` normalizes a ``null``
-    domain, which :func:`_is_allowed_auth_domain` would otherwise reject with an
-    ``AttributeError`` from inside the caller's ``except ValueError:`` handler.
+    unrelated site satisfying a precondition.
+
+    ``name`` and ``domain`` are both type-checked, not merely truthiness-checked.
+    :func:`_is_allowed_auth_domain` does string work, so a non-string domain
+    (``123``, a dict) raises ``AttributeError``/``TypeError`` — and it would do so
+    from inside the caller's ``except ValueError:`` handler, where it escapes as a
+    bare traceback instead of an auth diagnostic. A missing or ``null`` domain
+    normalizes to ``""``, which is simply not allowlisted.
     """
     if not isinstance(entry, dict):
         return None
     name = entry.get("name")
     if not isinstance(name, str) or not name or not entry.get("value"):
         return None
-    if not _is_allowed_auth_domain(entry.get("domain", "") or ""):
+    domain = entry.get("domain")
+    if domain is None:
+        domain = ""
+    if not isinstance(domain, str) or not _is_allowed_auth_domain(domain):
         return None
     return name
 
@@ -166,9 +150,9 @@ def _recovery_cookie_names(entries: list[dict[str, Any]]) -> set[str]:
     (``_index_recovery_cookies``) ranked duplicate names by
     ``_auth_domain_priority``, but that ranking only ever selected which
     duplicate's ``expires`` landed in a parallel expiry map, never which name was
-    recorded (``add`` on a set is idempotent). Expiry now lives in
-    :func:`_iter_routable_psidts_cookies`, which resolves it per RFC 6265 instead of
-    by tier, so the ranking has no remaining consumer here (issue #2057).
+    recorded (``add`` on a set is idempotent). Expiry now lives in :func:`_is_expired` and is
+    consumed by the two PSIDTS predicates, which resolve domain per RFC 6265
+    instead of by tier, so the ranking has no remaining consumer here (#2057).
     """
     return {name for entry in entries if (name := _allowed_cookie_name(entry)) is not None}
 
@@ -456,7 +440,7 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
     Pre-conditions (all must hold; otherwise return ``False`` without firing):
 
     1. ``SID`` present in ``storage_path``.
-    2. No live ``__Secure-1PSIDTS`` in ``storage_path`` ROUTES to
+    2. No ``__Secure-1PSIDTS`` in ``storage_path`` ROUTES to
        ``KEEPALIVE_ROTATE_URL`` — absent, expired, or scoped to a domain that
        never reaches ``accounts.google.com`` (a ``-1``/``None`` session-cookie
        expiry counts as present, not expired — see
@@ -587,8 +571,8 @@ def _read_storage_for_recovery(
     ``cookie_names`` is the domain-filtered name view used by the ``SID`` and
     secondary-binding preconditions (see :func:`_recovery_cookie_names`).
     ``cookie_entries`` is the unfiltered list — both the PSIDTS predicates
-    (:func:`_psidts_routes_to_rotate`, :func:`_psidts_is_live`) and the jar
-    builder in :func:`_attempt_rotation` apply their own domain filter, and the
+    (:func:`_psidts_routes_to_rotate`, :func:`_psidts_is_live`) and the request-jar
+    builder :func:`_build_recovery_jar` apply their own row filter, and the
     predicates need the raw ``expires`` that a name-only view cannot carry.
 
     The narrow exception scope catches the documented raise sites of
@@ -800,7 +784,7 @@ def recover_psidts_in_memory(rookiepy_cookies: list[dict[str, Any]]) -> bool:
     :func:`_recover_psidts_inline`):
 
     1. ``SID`` present.
-    2. No live ``__Secure-1PSIDTS`` ROUTES to ``KEEPALIVE_ROTATE_URL`` — absent,
+    2. No ``__Secure-1PSIDTS`` ROUTES to ``KEEPALIVE_ROTATE_URL`` — absent,
        expired, or scoped to a domain that never reaches
        ``accounts.google.com`` (a ``-1``/``None`` session-cookie expiry counts
        as present, not expired — see :func:`_psidts_routes_to_rotate`).
@@ -934,7 +918,7 @@ def validate_with_recovery(
     Wraps :func:`notebooklm._auth.cookies.convert_rookiepy_cookies_to_storage_state`
     plus :func:`notebooklm._auth.cookies.extract_cookies_from_storage` with one
     retry through :func:`recover_psidts_in_memory` (issue #990). When the
-    recovery preconditions hold (SID present, no live PSIDTS routing to the
+    recovery preconditions hold (SID present, no PSIDTS routing to the
     rotate URL, secondary binding intact — see
     :func:`_psidts_routes_to_rotate`), the
     rotated cookies are merged into ``rookiepy_cookies`` in place by

@@ -11,8 +11,8 @@ integration so the loop stays broken.
 
 from __future__ import annotations
 
+import itertools
 import json
-import random
 import re
 import time
 from pathlib import Path
@@ -375,6 +375,13 @@ class TestPsidtsExpiryGate:
                 s._psidts(".notebooklm.google.com", expires=s._FUTURE),
                 s._psidts(".google.com.sg", expires=s._PAST),
             ],
+            # Duplicate identity + a malformed row: the two cases where an
+            # order-sensitive implementation is most likely to slip through.
+            lambda s: [
+                s._psidts(".google.com", expires=s._FUTURE, value="a"),
+                s._psidts(".google.com", expires=s._PAST, value="b"),
+                s._psidts(".google.com", expires="nonsense", value="c"),
+            ],
         ],
     )
     def test_reordering_storage_state_cannot_change_the_answer(self, entries_factory):
@@ -383,13 +390,20 @@ class TestPsidtsExpiryGate:
         Within a shared priority tier the old index resolved duplicates by
         "first occurrence wins", so reordering the file changed the gate's
         answer. This is the ratchet that replaces that surface.
+
+        Exhaustive over permutations rather than sampled: the PSIDTS rows are
+        few enough that `itertools.permutations` is both cheap and strictly
+        stronger than N random shuffles, and a failure reproduces exactly
+        instead of depending on an unseeded RNG.
         """
-        entries = _RECOVERABLE_COOKIES + entries_factory(self)
-        expected = (self._routes(entries), self._live(entries))
-        for _ in range(8):
-            shuffled = entries[:]
-            random.shuffle(shuffled)
-            assert (self._routes(shuffled), self._live(shuffled)) == expected, shuffled
+        psidts_rows = entries_factory(self)
+        expected = None
+        for ordering in itertools.permutations(psidts_rows):
+            entries = _RECOVERABLE_COOKIES + list(ordering)
+            answer = (self._routes(entries), self._live(entries))
+            if expected is None:
+                expected = answer
+            assert answer == expected, ordering
 
     def test_routed_implies_live(self):
         """``routed ⇒ live`` — the invariant that makes the flock-skip return True safe.
@@ -669,7 +683,8 @@ class TestPsidtsExpiryGate:
 
     # --- flock-held re-read (``_is_psidts_persisted``) ---------------------
 
-    def test_stale_twin_row_does_not_block_the_heal(self, tmp_path):
+    @pytest.mark.no_default_keepalive_mock
+    def test_stale_twin_row_does_not_block_the_heal(self, tmp_path, httpx_mock: HTTPXMock):
         """A stale same-identity twin must not make a completed heal report failure.
 
         End-to-end pin for a permanent failure loop. ``save_cookies_to_storage``
@@ -703,6 +718,17 @@ class TestPsidtsExpiryGate:
             ],
         )
         assert psidts_recovery._is_psidts_persisted(storage_path) is True
+
+        # And the whole recovery agrees. Asserting only `_is_psidts_persisted`
+        # would leave a regression in `_psidts_save_succeeded` or the
+        # `_recover_psidts_inline` wiring green, and that wiring is the thing
+        # that used to loop. Note the POST DOES fire: the routing predicate
+        # poisons the duplicated identity, which is the safe direction. What
+        # must not happen is the heal being reported as a FAILURE afterwards —
+        # that is what made it re-raise on every load, forever.
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+        assert psidts_recovery._recover_psidts_inline(storage_path) is True
+        assert len([r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]) == 1
 
     def test_is_psidts_persisted_false_for_expired_on_disk_row(self, tmp_path):
         """The held-flock re-read must NOT mistake a stale PSIDTS for a heal.
@@ -1427,6 +1453,74 @@ class TestInMemoryRecovery:
         assert _rotate_requests(httpx_mock) == []
         # storage_state still reflects the (incomplete) extraction attempt.
         assert isinstance(storage_state, dict)
+
+
+class TestMalformedExpiresAcrossLoaders:
+    """A row with an uncoercible ``expires`` must not take a whole profile down.
+
+    ``http.cookiejar.Cookie.__init__`` coerces via ``int(float(expires))``, so a
+    single corrupt row raised ``ValueError: could not convert string to float``
+    out of every loader — including from *inside* the recovery paths'
+    ``except ValueError:`` handlers, where it replaced the actionable
+    "Missing required cookies … Run 'notebooklm login'" with a converter
+    traceback. Guarding only the recovery module left
+    ``NotebookLMClient.from_storage`` still broken, and made it worse: recovery
+    would now complete, fire a POST and rewrite the file, while the strict
+    loader kept raising the same error on every load, forever.
+    """
+
+    @staticmethod
+    def _storage_with_bad_row(tmp_path: Path, *, include_psidts: bool) -> Path:
+        rows = list(_RECOVERABLE_COOKIES)
+        if include_psidts:
+            rows.append(
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "fresh",
+                    "domain": ".google.com",
+                    "path": "/",
+                    "expires": 99_999_999_999,
+                }
+            )
+        rows.append(
+            {
+                "name": "NID",
+                "value": "junk",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": "not-a-timestamp",
+            }
+        )
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, rows)
+        return storage_path
+
+    def test_strict_loader_skips_the_bad_row_and_loads(self, tmp_path):
+        """The `NotebookLMClient.from_storage` path: a healthy profile still loads."""
+        storage_path = self._storage_with_bad_row(tmp_path, include_psidts=True)
+        jar = auth_cookies.build_httpx_cookies_from_storage(storage_path)
+        names = {c.name for c in jar.jar}
+        assert "__Secure-1PSIDTS" in names and "SID" in names
+        assert "NID" not in names  # unusable row dropped, not fatal
+
+    def test_download_loader_skips_the_bad_row_and_loads(self, tmp_path):
+        storage_path = self._storage_with_bad_row(tmp_path, include_psidts=True)
+        jar = auth_cookies.load_httpx_cookies(storage_path)
+        names = {c.name for c in jar.jar}
+        assert "__Secure-1PSIDTS" in names
+        assert "NID" not in names
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_bad_row_yields_the_actionable_error_not_a_coercion_traceback(
+        self, tmp_path, httpx_mock: HTTPXMock
+    ):
+        """When the dropped row mattered, the loaders' own validation speaks."""
+        storage_path = self._storage_with_bad_row(tmp_path, include_psidts=False)
+        httpx_mock.add_response(url=_ROTATE_URL_RE, status_code=500)
+
+        with pytest.raises(ValueError, match="Missing required cookies") as excinfo:
+            auth_cookies.build_httpx_cookies_from_storage(storage_path)
+        assert "could not convert string to float" not in str(excinfo.value)
 
 
 class TestMissingCookiesHint:

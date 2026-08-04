@@ -11,6 +11,7 @@ import http.cookiejar
 import json
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypeAlias
 
@@ -360,7 +361,10 @@ def load_httpx_cookies(path: Path | None = None) -> httpx.Cookies:
         value = entry.get("value", "")
 
         if _is_allowed_cookie_domain(domain) and name and value:
-            cookies.jar.set_cookie(_storage_entry_to_cookie(entry))
+            cookie = _safe_to_cookie(entry)
+            if cookie is None:
+                continue
+            cookies.jar.set_cookie(cookie)
             cookie_names.add(name)
 
     _validate_required_cookies(cookie_names, context=" for downloads")
@@ -454,9 +458,12 @@ def _build_httpx_cookies_from_storage_strict(path: Path | None) -> httpx.Cookies
         key = (name, domain, entry.get("path") or "/")
         if key in seen_keys:
             continue
+        cookie = _safe_to_cookie(entry)
+        if cookie is None:
+            continue
         seen_keys.add(key)
         seen_names.add(name)
-        cookies.jar.set_cookie(_storage_entry_to_cookie(entry))
+        cookies.jar.set_cookie(cookie)
 
     _validate_required_cookies(seen_names)
     return cookies
@@ -552,6 +559,44 @@ def _storage_entry_to_cookie(entry: dict[str, Any]) -> http.cookiejar.Cookie:
         comment_url=None,
         rest=rest,
     )
+
+
+def _safe_to_cookie(
+    entry: dict[str, Any],
+    to_cookie: Callable[[dict[str, Any]], http.cookiejar.Cookie] | None = None,
+) -> http.cookiejar.Cookie | None:
+    """Convert one storage/rookiepy row, returning ``None`` instead of raising.
+
+    ``http.cookiejar.Cookie.__init__`` coerces the expiry eagerly with
+    ``int(float(expires))``, so a row whose ``expires`` is ``""``, ``"never"``,
+    ``nan`` (``ValueError``), ``inf`` (``OverflowError``), or a list/dict
+    (``TypeError``) blows up at *construction*. Cookie rows reach us from Chrome
+    via rookiepy or from a hand-editable JSON file, so their shape is not ours to
+    guarantee, and one unusable row must not take a whole profile down.
+
+    A row we cannot convert is a row we could never have sent, so dropping it
+    leaves the loaders' own validation to speak: the caller gets the actionable
+    "Missing required cookies … Run 'notebooklm login'" when the dropped row
+    mattered, instead of a raw ``could not convert string to float`` surfacing
+    from deep inside the cookie machinery — which, on the recovery paths, was
+    raised from *inside* an ``except ValueError:`` handler and replaced the
+    diagnostic entirely (issue #2057).
+
+    ``to_cookie`` defaults to :func:`_storage_entry_to_cookie`; the recovery
+    module passes :func:`~notebooklm._auth.psidts_recovery._rookiepy_entry_to_cookie`
+    for snake_case rookiepy rows.
+    """
+    converter = to_cookie or _storage_entry_to_cookie
+    try:
+        return converter(entry)
+    except (ValueError, TypeError, OverflowError) as exc:
+        logger.debug(
+            "Skipping unusable cookie row %r on %r: %s",
+            entry.get("name"),
+            entry.get("domain"),
+            exc,
+        )
+        return None
 
 
 def _cookie_key_variants(key: CookieKey) -> set[CookieKey]:
