@@ -276,11 +276,14 @@ notebooklm login --master-token --account you@gmail.com
 scp ~/.notebooklm/profiles/default/master_token.json \
     user@server:~/.notebooklm/profiles/default/master_token.json
 
-# On the server, just run commands — cookies are refreshed as needed:
+# If you did not also copy storage_state.json, create its cookie jar once:
+notebooklm login --master-token-refresh
+
+# Then run commands — cookies are refreshed as needed:
 notebooklm list
 # Refresh cheaply while healthy:
 notebooklm auth refresh
-# Force a re-mint unconditionally:
+# Force another re-mint unconditionally if needed:
 notebooklm login --master-token-refresh
 ```
 

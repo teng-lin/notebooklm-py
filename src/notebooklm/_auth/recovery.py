@@ -8,7 +8,7 @@ import weakref
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 import httpx
 
@@ -37,12 +37,35 @@ _COLD_INFLIGHT_BY_LOOP: weakref.WeakKeyDictionary[
 _COLD_SUCCESS_GENERATIONS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[Path, int]] = (
     weakref.WeakKeyDictionary()
 )
+_MASTER_INFLIGHT_BY_LOOP: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop,
+    dict[Path, asyncio.Task[httpx.Cookies | None]],
+] = weakref.WeakKeyDictionary()
+
+_SharedResult = TypeVar("_SharedResult")
 
 
 def _cold_path_lock(path: Path) -> asyncio.Lock:
     loop = asyncio.get_running_loop()
     per_loop = _COLD_LOCKS_BY_LOOP.setdefault(loop, {})
     return per_loop.setdefault(path, asyncio.Lock())
+
+
+async def _await_shared_task(task: asyncio.Task[_SharedResult]) -> _SharedResult:
+    """Shield a shared recovery task and settle it before propagating cancellation."""
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except BaseException:  # noqa: BLE001 - settle before propagating cancellation
+                break
+        if task.done() and not task.cancelled():
+            task.exception()
+        raise
 
 
 async def _run_cold_recovery(
@@ -124,19 +147,7 @@ async def coalesced_cold_recovery(
 
         task.add_done_callback(settle)
 
-    try:
-        return await asyncio.shield(task)
-    except asyncio.CancelledError:
-        while not task.done():
-            try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError:
-                continue
-            except BaseException:  # noqa: BLE001 - settle before propagating cancellation
-                break
-        if task.done() and not task.cancelled():
-            task.exception()
-        raise
+    return await _await_shared_task(task)
 
 
 async def try_headless_reauth(
@@ -180,25 +191,21 @@ async def try_headless_reauth(
     return True
 
 
-async def try_master_token_reauth(*, storage_path: Path | None, cookie_jar: httpx.Cookies) -> bool:
-    """Re-mint stored cookies from a sibling durable master token."""
-    if storage_path is None:
-        return False
-    master_token_path = storage_path.parent / "master_token.json"
-    if not master_token_path.exists():
-        return False
-
-    from .cookies import _replace_cookie_jar, build_httpx_cookies_from_storage
+async def _run_master_token_reauth(
+    *, storage_path: Path, master_token_path: Path
+) -> httpx.Cookies | None:
+    """Mint, persist, and reload one master-token session for shared callers."""
+    from .cookies import build_httpx_cookies_from_storage
     from .master_token import MasterTokenError, mint_cookies, persist_minted_jar, read_master_token
 
     try:
         record = await asyncio.to_thread(read_master_token, master_token_path)
         if record is None:
-            return False
+            return None
         jar = await mint_cookies(record["email"], record["master_token"], record["android_id"])
     except MasterTokenError as exc:
         logger.warning("Master-token re-mint failed (%s); authentication error stands.", exc)
-        return False
+        return None
 
     try:
         await asyncio.to_thread(persist_minted_jar, storage_path, jar, email=record.get("email"))
@@ -209,7 +216,44 @@ async def try_master_token_reauth(*, storage_path: Path | None, cookie_jar: http
             "authentication error stands.",
             type(exc).__name__,
         )
+        return None
+    return fresh_jar
+
+
+async def try_master_token_reauth(*, storage_path: Path | None, cookie_jar: httpx.Cookies) -> bool:
+    """Share one L4 re-mint across overlapping cold and live same-loop callers."""
+    if storage_path is None:
         return False
+
+    canonical_path = storage_path.expanduser().resolve()
+    master_token_path = canonical_path.parent / "master_token.json"
+    if not master_token_path.exists():
+        return False
+
+    loop = asyncio.get_running_loop()
+    registry = _MASTER_INFLIGHT_BY_LOOP.setdefault(loop, {})
+    task = registry.get(canonical_path)
+    if task is None or task.done():
+        task = asyncio.create_task(
+            _run_master_token_reauth(
+                storage_path=canonical_path,
+                master_token_path=master_token_path,
+            )
+        )
+        registry[canonical_path] = task
+
+        def settle(done: asyncio.Task[httpx.Cookies | None]) -> None:
+            if registry.get(canonical_path) is done:
+                registry.pop(canonical_path, None)
+
+        task.add_done_callback(settle)
+
+    fresh_jar = await _await_shared_task(task)
+    if fresh_jar is None:
+        return False
+
+    from .cookies import _replace_cookie_jar
+
     _replace_cookie_jar(cookie_jar, fresh_jar)
     logger.info("Master-token re-mint succeeded; reloaded fresh cookies for retry.")
     return True

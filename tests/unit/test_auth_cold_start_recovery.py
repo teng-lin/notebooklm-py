@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -14,6 +14,7 @@ from pytest_httpx import HTTPXMock
 from notebooklm._auth import master_token as mt
 from notebooklm._auth import recovery as recovery_mod
 from notebooklm._auth import refresh as refresh_mod
+from notebooklm._auth import session as session_mod
 from notebooklm._auth.extraction import _LoginRedirectError
 from notebooklm._auth.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 from notebooklm.auth import AuthTokens, fetch_tokens_with_domains
@@ -301,6 +302,67 @@ async def test_cancelled_waiter_does_not_cancel_shared_master_token_mint(
 
     assert mint_count == 1
     assert tokens.flat_cookies["SID"] == "fresh"
+
+
+@pytest.mark.asyncio
+async def test_cold_and_live_l4_recovery_share_one_master_token_mint(tmp_path) -> None:
+    """Overlapping cold and live recovery for one path join the same L4 task."""
+    storage = tmp_path / "storage_state.json"
+    _write_storage(storage, sid="stale")
+    mt.write_master_token(
+        tmp_path / "master_token.json",
+        email="agent@example.com",
+        master_token="aas_et/test",
+        android_id="abc123",
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def mint(*args):
+        started.set()
+        await release.wait()
+        jar = httpx.Cookies()
+        jar.set("SID", "fresh", domain=".google.com")
+        jar.set("__Secure-1PSIDTS", "fresh-ts", domain=".google.com")
+        return jar
+
+    live_jar = httpx.Cookies()
+    live_auth = AuthTokens(
+        cookies={},
+        csrf_token="stale-csrf",
+        session_id="stale-session",
+        storage_path=storage,
+    )
+    kernel = MagicMock()
+    kernel.get_http_client.return_value.cookies = live_jar
+    redirect = _LoginRedirectError("Authentication expired")
+    validate = AsyncMock(return_value=None)
+
+    with (
+        patch.object(recovery_mod, "try_headless_reauth", new=AsyncMock(return_value=False)),
+        patch.object(mt, "mint_cookies", new=AsyncMock(side_effect=mint)) as mint_mock,
+    ):
+        cold = asyncio.create_task(
+            recovery_mod.coalesced_cold_recovery(
+                storage_path=storage,
+                allow_headless=False,
+                validate=validate,
+                initial_error=redirect,
+            )
+        )
+        await started.wait()
+        live = asyncio.create_task(
+            session_mod._try_master_token_reauth(auth=live_auth, kernel=kernel)
+        )
+        await asyncio.sleep(0)
+        assert not live.done()
+        release.set()
+        cold_result, live_result = await asyncio.gather(cold, live)
+
+    mint_mock.assert_awaited_once()
+    assert live_result is True
+    assert cold_result.cookie_jar.get("SID", domain=".google.com") == "fresh"
+    assert live_jar.get("SID", domain=".google.com") == "fresh"
 
 
 @pytest.mark.asyncio

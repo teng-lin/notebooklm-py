@@ -180,6 +180,24 @@ class TestWrapperShape:
             path=str(tmp_path / "nonexistent.json"),
         )
         assert isinstance(wrapper, _FromStorageContext)
+        with pytest.raises(TypeError):
+            NotebookLMClient.from_storage(
+                str(tmp_path / "nonexistent.json"),
+                30.0,
+                None,
+                None,
+                60.0,
+                3,
+                3,
+                None,
+                4,
+                16,
+                None,
+                None,
+                None,
+                None,
+                True,  # type: ignore[misc]
+            )
         # No coroutine, so nothing to await — and importantly, the missing
         # storage file has NOT been read yet (no FileNotFoundError).
 

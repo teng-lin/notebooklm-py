@@ -131,7 +131,8 @@ client = NotebookLMClient(auth)
 
 # AuthTokens also supports profiles (AuthTokens.from_storage is async)
 auth = await AuthTokens.from_storage(profile="work")
-auth = await AuthTokens.from_storage(profile="work", allow_headless=True)
+# Or permit one cold-start L3 browser recovery as an alternative:
+# auth = await AuthTokens.from_storage(profile="work", allow_headless=True)
 ```
 
 **Building a storage state from existing browser cookies (`[cookies]` extra):**
