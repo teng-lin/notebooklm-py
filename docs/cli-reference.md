@@ -218,8 +218,6 @@ Collections group whole **notebooks** into named, account-level buckets (playlis
 
 Collections are account-level, so — unlike `label` — the `collection` commands take **no** `-n/--notebook` option; their membership arguments *are* notebooks. `collection add` appends notebooks (existing members survive; a notebook may belong to multiple collections) and `collection remove` un-assigns a notebook from that collection only — the notebook is not deleted and stays in any other collection. `collection delete` (destructive, requires `-y/--yes`) removes the collection only, never its member notebooks. `notebook_id` arguments to `collection add`/`collection remove` accept partial-prefix matching like every other notebook-id command.
 
-> **Note:** `collection remove`'s un-assign wire payload is an inferred (not-yet-live-confirmed) variant of the confirmed add payload; it is expected to behave as a safe, reversible no-op when off.
-
 ### Research Commands (`notebooklm research <cmd>`)
 
 | Command | Arguments | Options | Example |

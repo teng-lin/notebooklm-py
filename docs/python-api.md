@@ -1953,7 +1953,7 @@ label with a null notebook parent, so the same four label RPCs back it.
 | `create(name)` | `str` | `Collection` | Create an empty, named collection. Locates the new collection by id-diff; raises `CollectionError` on an ambiguous concurrent create |
 | `rename(collection_id, name, *, return_object=True)` | `str, str, *, bool` | `Collection \| None` | Rename a collection (preserves the existing emoji). Raises `CollectionNotFoundError` if missing |
 | `add_notebooks(collection_id, notebook_ids, *, return_object=True)` | `str, list[str], *, bool` | `Collection \| None` | Add notebook(s) to a collection. **Appends** — existing members survive and a notebook may belong to multiple collections. One RPC per id (deduped); not atomic across ids. Raises `ValueError` on an empty list |
-| `remove_notebooks(collection_id, notebook_ids, *, return_object=True)` | `str, list[str], *, bool` | `Collection \| None` | Un-assign notebook(s) from a collection only — the notebooks are not deleted and stay in any other collection. One RPC per id (deduped). Raises `ValueError` on an empty list. *(The un-assign wire shape is inferred, not yet live-confirmed.)* |
+| `remove_notebooks(collection_id, notebook_ids, *, return_object=True)` | `str, list[str], *, bool` | `Collection \| None` | Un-assign notebook(s) from a collection only — the notebooks are not deleted and stay in any other collection. One RPC per id (deduped). Raises `ValueError` on an empty list |
 | `delete(collection_ids)` | `str \| list[str]` | `None` | Delete one or more collections (batch). Idempotent — an absent target is a no-op returning `None`. Deleting a collection does not delete its member notebooks |
 
 Collections carry no emoji at creation (the wire has no emoji slot); an emoji set

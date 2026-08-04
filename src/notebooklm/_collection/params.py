@@ -42,14 +42,25 @@ def build_list_collections_params() -> list[Any]:
     return [_opts(), None, _COLLECTION_TYPE]
 
 
+def _opts_create() -> list[Any]:
+    """Fresh request-options wrapper for CREATE only.
+
+    Same as :func:`_opts` except slot ``[2]`` is ``[1]`` instead of ``None`` —
+    the original slot-``[7]``/``opts[2] is None`` shape reproducibly left
+    nothing server-side (confirmed live on three independent accounts, PR
+    #2009); this is the shape a live UI create actually sends.
+    """
+    return [2, None, [1], [1, None, None, None, None, None, None, None, None, None, [1, 3]]]
+
+
 def build_create_collection_params(name: str) -> list[Any]:
     """CREATE_LABEL (``agX4Bc``) for collections — manual create.
 
-    ``[opts, None, None, None, None, None, None, [[name]], 3]``. Unlike a source
-    label, the create wire carries the name at slot ``[7]`` and has **no emoji
-    slot** (collections get an emoji via a later update, if at all).
+    ``[opts, None, None, None, None, [[name]], 3]``. Unlike a source label, the
+    create wire carries the name at slot ``[5]`` and has **no emoji slot**
+    (collections get an emoji via a later update, if at all).
     """
-    return [_opts(), None, None, None, None, None, None, [[name]], _COLLECTION_TYPE]
+    return [_opts_create(), None, None, None, None, [[name]], _COLLECTION_TYPE]
 
 
 def build_rename_collection_params(
@@ -75,31 +86,27 @@ def build_update_collection_notebooks_params(
 ) -> list[Any]:
     """UPDATE_LABEL (``le8sX``) notebook membership for collections.
 
-    Fieldmask slot ``[3]`` is a **two-group** list ``[add_group, remove_group]``
-    where each group is ``[None, None, None, [[notebook_id]]]`` (the notebook id
-    rides group-slot ``[3]``) or ``[]`` when that operation is unused:
+    Fieldmask slot ``[3]`` is a two-element list ``[group0, group1]`` where
+    ``group1`` is always empty and both add and remove ride in **group0**
+    (wire-captured, PR #2009): add puts the id at group-slot ``[3]``, remove at
+    group-slot ``[4]`` — it does *not* move to a second group as originally
+    (incorrectly) inferred, which made the original ``remove_notebooks`` a
+    silent wire no-op.
 
     * **add** (wire-captured): ``[[None, None, None, [[nb_id]]], []]``.
-    * **remove** (INFERRED, unverified on the wire): ``[[], [None, None, None,
-      [[nb_id]]]]``. The empty second group of the captured *add* payload is
-      almost certainly the un-assign list — this mirrors the confirmed label
-      ``sources_add`` / ``sources_remove`` two-slot fieldmask (``le8sX``, same
-      obfuscated method id), where removing an absent member is a silent no-op.
-      Contributor ``tomihe0720`` offered to capture the real un-assign flow;
-      until then this shape is a high-confidence symmetric inference, and its
-      worst case is a reversible membership no-op (never data loss).
+    * **remove** (wire-captured): ``[[None, None, None, None, [[nb_id]]], []]``.
 
-    The wire honours only the FIRST id per group per call, so the builder is
+    The wire honours only the FIRST id per call, so the builder is
     **singular** — pass at most one ``add_notebook_id`` and one
     ``remove_notebook_id`` (the API layer loops one call per id).
     """
-    add_group: list[Any] = (
-        [None, None, None, [[add_notebook_id]]] if add_notebook_id is not None else []
-    )
-    remove_group: list[Any] = (
-        [None, None, None, [[remove_notebook_id]]] if remove_notebook_id is not None else []
-    )
-    return [_opts(), None, collection_id, [add_group, remove_group], _COLLECTION_TYPE]
+    if add_notebook_id is not None:
+        group0: list[Any] = [None, None, None, [[add_notebook_id]]]
+    elif remove_notebook_id is not None:
+        group0 = [None, None, None, None, [[remove_notebook_id]]]
+    else:
+        group0 = []
+    return [_opts(), None, collection_id, [group0, []], _COLLECTION_TYPE]
 
 
 def build_delete_collections_params(collection_ids: list[str]) -> list[Any]:

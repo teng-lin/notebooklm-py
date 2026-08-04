@@ -21,7 +21,9 @@ from notebooklm.rpc import RPCMethod
 def _collection_tuple(
     name: str, collection_id: str, *, emoji: str = "", nbs: list[str] | None = None
 ) -> list[Any]:
-    notebook_ids = [[n] for n in nbs] if nbs else None
+    # Populated member ids are BARE strings on the wire (PR #2009), not the
+    # label-style [[id], ...] wrapped singletons.
+    notebook_ids = list(nbs) if nbs else None
     return [name, notebook_ids, collection_id, emoji]
 
 
@@ -145,7 +147,7 @@ async def test_create_returns_the_new_id_via_relist() -> None:
     assert rpc.methods() == [RPCMethod.LIST_LABELS, RPCMethod.CREATE_LABEL, RPCMethod.LIST_LABELS]
     create_call = next(c for c in rpc.calls if c.method == RPCMethod.CREATE_LABEL)
     assert create_call.source_path == "/"
-    assert create_call.params[7] == [["New"]]  # name at slot 7, no emoji
+    assert create_call.params[5] == [["New"]]  # name at slot 5, no emoji
     assert create_call.params[-1] == 3
 
 
@@ -236,7 +238,7 @@ async def test_add_notebooks_multi_issues_one_update_per_id() -> None:
     assert rpc.methods()[-1] == RPCMethod.LIST_LABELS  # one re-fetch after the loop
 
 
-async def test_remove_notebooks_single_uses_inferred_second_group() -> None:
+async def test_remove_notebooks_single_uses_wire_captured_group() -> None:
     api, rpc, _ = _api(
         {
             RPCMethod.LIST_LABELS: _list_env(_collection_tuple("A", "c1", nbs=["n1", "n2"])),
@@ -247,8 +249,9 @@ async def test_remove_notebooks_single_uses_inferred_second_group() -> None:
     assert rpc.methods() == [RPCMethod.UPDATE_LABEL, RPCMethod.LIST_LABELS]
     upd = rpc.calls[0]
     assert upd.operation_variant == "remove_notebooks"
-    # INFERRED (unverified): empty add group, notebook in the second/remove group.
-    assert upd.params[3] == [[], [None, None, None, [["n2"]]]]
+    # Live-captured (PR #2009): the id stays in group0, shifted to slot [4]; it
+    # does NOT move to a second group as originally (incorrectly) inferred.
+    assert upd.params[3] == [[None, None, None, None, [["n2"]]], []]
 
 
 async def test_add_and_remove_dedupe_preserving_order() -> None:

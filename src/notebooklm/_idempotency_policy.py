@@ -530,16 +530,15 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     )
     registry.register(
         RPCMethod.UPDATE_LABEL,
-        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        IdempotencyPolicy.IDEMPOTENT_SET_OP,
         variant="remove_notebooks",
         notes=(
             "remove_notebooks UN-ASSIGNS a notebook from a collection via the "
-            "(inferred, wire-unverified) remove fieldmask group; classified as a "
-            "conservative NON_IDEMPOTENT_NO_RETRY until the shape is proven on the "
-            "wire (mirrors the DELETE_LABEL precedent — an unconfirmed replay effect "
-            "must surface the first failure, not blind-retry an unknown side effect). "
-            "Downgrade to IDEMPOTENT_SET_OP by analogy to the confirmed remove_sources "
-            "only once tests/e2e/test_collections.py confirms a committed-then-retried "
-            "removal is a silent no-op"
+            "wire-captured remove fieldmask group (PR #2009, live-confirmed on "
+            "four independent accounts, thanks to tomihe0720 and "
+            "erricklong85-tech); removing an already-absent member is a "
+            "confirmed silent no-op (live-verified), so a blind transport retry "
+            "that lands twice leaves the same final state — retry-safe set-op "
+            "semantics like remove_sources"
         ),
     )

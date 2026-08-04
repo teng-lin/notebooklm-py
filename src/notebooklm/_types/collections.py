@@ -1,16 +1,24 @@
 """Pure-value type for a NotebookLM collection (account-level notebook group).
 
 Re-exported from ``notebooklm.types``. A ``Collection`` groups whole notebooks
-(account-level, playlist-style) — the wire tuple ``[name, member_notebook_ids,
-collection_id, emoji]`` is structurally identical to a source ``Label``
-(``[name, sources, id, emoji]``), so decoding reuses :class:`LabelRow`; only the
-second slot's meaning differs (member *notebook* ids, not source ids).
+(account-level, playlist-style) — the wire tuple is ``[name, member_notebook_ids,
+collection_id, emoji]``, shaped like a source ``Label`` (``[name, sources, id,
+emoji]``) only while **empty**. Once populated the member slot carries *bare*
+notebook-id strings (``["nb_id", ...]``), not the label's wrapped singletons
+(``[["src_id"], ...]``) — confirmed live on PR #2009 — so decoding is positional
+here rather than reusing :class:`LabelRow`, whose strict decoder rejects the
+bare form.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+
+from ..exceptions import UnknownRPCMethodError
+from ..rpc import safe_index
+
+_SRC = "_types.collections"
 
 
 @dataclass
@@ -34,16 +42,48 @@ class Collection:
     def from_api_response(cls, data: list[Any], *, method_id: str | None = None) -> Collection:
         """Parse one collection 4-tuple ``[name, notebook_ids, collection_id, emoji]``.
 
-        Reuses :class:`LabelRow` — the wire tuple is byte-for-byte the same shape
-        as a source label — mapping the (strictly-decoded) member ids into
-        :attr:`notebook_ids`.
+        Decoded positionally rather than via :class:`LabelRow` because the
+        member slot's shape differs from a label's once populated: bare
+        notebook-id strings, not ``[[source_id], ...]`` wrapped singletons.
+        Strict per ADR-0019/0011 — ``safe_index`` raises on descent failure,
+        and any type drift (non-string name/id, a member that isn't a string,
+        a non-string emoji) raises too; there is no degrade-to-sentinel path.
         """
-        from .._row_adapters.labels import LabelRow
-
-        row = LabelRow.from_label_tuple(data, method_id=method_id)
+        name = safe_index(data, 0, method_id=method_id, source=_SRC)
+        members = safe_index(data, 1, method_id=method_id, source=_SRC)  # list OR None
+        collection_id = safe_index(data, 2, method_id=method_id, source=_SRC)
+        emoji = safe_index(data, 3, method_id=method_id, source=_SRC)
+        if not isinstance(name, str) or not isinstance(collection_id, str):
+            raise UnknownRPCMethodError(
+                message="collection tuple name/id not strings",
+                method_id=method_id,
+                source=_SRC,
+            )
+        if members is None:
+            notebook_ids: list[str] = []  # legitimate empty collection
+        elif isinstance(members, list):
+            if not all(isinstance(m, str) for m in members):
+                raise UnknownRPCMethodError(
+                    message="malformed collection member row",
+                    method_id=method_id,
+                    source=_SRC,
+                )
+            notebook_ids = list(members)
+        else:
+            raise UnknownRPCMethodError(
+                message="collection notebook_ids slot is neither None nor list",
+                method_id=method_id,
+                source=_SRC,
+            )
+        if not isinstance(emoji, str):
+            raise UnknownRPCMethodError(
+                message="collection emoji slot is not a string",
+                method_id=method_id,
+                source=_SRC,
+            )
         return cls(
-            id=row.id,
-            name=row.name,
-            emoji=row.emoji or None,
-            notebook_ids=list(row.source_ids),
+            id=collection_id,
+            name=name,
+            emoji=emoji or None,
+            notebook_ids=notebook_ids,
         )

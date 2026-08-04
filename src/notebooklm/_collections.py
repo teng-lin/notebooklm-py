@@ -272,19 +272,16 @@ class CollectionsAPI:
         Issues **one ``le8sX`` call per notebook id** and re-fetches once for the
         ADR-0019 return/not-found contract, mirroring ``add_notebooks``.
 
-        **Wire-shape caveat:** the un-assign fieldmask is an INFERRED symmetric
-        variant of the captured add payload (see
-        :func:`~notebooklm._collection.params.build_update_collection_notebooks_params`),
-        not yet confirmed on the wire. The collection membership fieldmask has its
-        own two-group ``[add_group, remove_group]`` shape — structurally DIFFERENT
-        from the label single combined group (``name_emoji, sources_add,
-        sources_remove``). Because the shape is unverified, it is conservatively
-        classified ``NON_IDEMPOTENT_NO_RETRY`` (mirroring the ``DELETE_LABEL``
-        precedent for an unconfirmed replay effect) — a mid-loop failure surfaces
-        rather than blind-retrying an unknown side effect; re-issue with the
-        remaining ids. Downgrade to the retry-safe ``IDEMPOTENT_SET_OP`` (by analogy
-        to the confirmed label ``remove_sources``) only once
-        ``tests/e2e/test_collections.py`` confirms the wire shape.
+        **Wire shape (live-captured, PR #2009):** the un-assign fieldmask keeps
+        the notebook id in the SAME group as add, shifted one slot (``[3]`` ->
+        ``[4]``) — see
+        :func:`~notebooklm._collection.params.build_update_collection_notebooks_params`.
+        An earlier inferred shape (id moved to a second group) was a silent wire
+        no-op; independently confirmed broken and then fixed on four accounts
+        (thanks to contributors tomihe0720 and erricklong85-tech). Removing an
+        already-absent member is a confirmed silent no-op (live-verified), so
+        it is classified ``IDEMPOTENT_SET_OP`` — retry-safe like the label
+        ``remove_sources`` precedent.
         """
         if not notebook_ids:
             raise ValueError("remove_notebooks requires at least one notebook id")

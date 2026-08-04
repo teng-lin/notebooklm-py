@@ -3,13 +3,16 @@
 These literals are the wire-shape anchor for collections. Collections reuse the
 label RPC ids, so they cannot own ``rpc_golden`` fixtures (those are keyed by
 ``RPCMethod`` name, one per method); this module is the regression contract
-instead, transcribing the owner's live capture (issue #2006).
+instead. The ``create``/remove-membership shapes were corrected against a live
+capture (PR #2009, independently confirmed on four accounts) — the original
+issue #2006 capture for those two shapes reproducibly failed on the wire.
 """
 
 from __future__ import annotations
 
 from notebooklm._collection.params import (
     _opts,
+    _opts_create,
     build_create_collection_params,
     build_delete_collections_params,
     build_list_collections_params,
@@ -19,6 +22,8 @@ from notebooklm._collection.params import (
 
 # The collection options wrapper — label wrapper but trailing context [1, 3].
 OPTS = [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1, 3]]]
+# CREATE-only variant: slot [2] is [1] instead of None (live-captured, PR #2009).
+OPTS_CREATE = [2, None, [1], [1, None, None, None, None, None, None, None, None, None, [1, 3]]]
 CID = "coll_1"
 NBID = "nb_1"
 
@@ -40,11 +45,20 @@ def test_list_collections() -> None:
     assert build_list_collections_params() == [OPTS, None, 3]
 
 
-def test_create_collection_name_at_slot_seven_no_emoji() -> None:
+def test_create_opts_is_fresh_each_call() -> None:
+    a = _opts_create()
+    b = _opts_create()
+    assert a == b == OPTS_CREATE
+    assert a is not b
+    assert a[3] is not b[3]
+
+
+def test_create_collection_name_at_slot_five_no_emoji() -> None:
+    # Live-captured (PR #2009): name at slot [5] with OPTS_CREATE, not slot [7]
+    # with the plain OPTS — the original issue #2006 capture reproducibly left
+    # nothing server-side.
     assert build_create_collection_params("Research Q3") == [
-        OPTS,
-        None,
-        None,
+        OPTS_CREATE,
         None,
         None,
         None,
@@ -86,14 +100,16 @@ def test_add_notebook_wire_captured_shape() -> None:
     ]
 
 
-def test_remove_notebook_inferred_symmetric_shape() -> None:
-    # INFERRED (unverified): add group empty, notebook rides the second/remove
-    # group — symmetric to the captured add payload.
+def test_remove_notebook_wire_captured_shape() -> None:
+    # Live-captured (PR #2009): the un-assign id stays in group0 and shifts
+    # slot [3] -> [4]; it does NOT move to a second group as originally
+    # (incorrectly) inferred from issue #2006 — that inference was a silent
+    # wire no-op.
     assert build_update_collection_notebooks_params(CID, remove_notebook_id=NBID) == [
         OPTS,
         None,
         CID,
-        [[], [None, None, None, [[NBID]]]],
+        [[None, None, None, None, [[NBID]]], []],
         3,
     ]
 

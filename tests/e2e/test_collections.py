@@ -10,9 +10,12 @@ notebook), collections are *account-level* and are NOT removed by the
 ``finally`` block (``collections.delete`` is idempotent) so a failing test never
 leaves orphan collections on the account.
 
-The ``remove_notebooks`` wire shape is an INFERRED symmetric variant of the
-captured add payload (unverified on the wire as of this writing) — this module
-is the harness that verifies it live: run ``pytest tests/e2e/test_collections.py
+This module is the live-verification harness for the collection wire shapes.
+An earlier ``remove_notebooks`` shape (inferred, not captured) and an earlier
+``create`` shape both turned out to be silent no-ops on the wire; both were
+corrected and independently reverified on four separate accounts, with
+credit to contributors tomihe0720 and erricklong85-tech for the captures that
+made the fix possible (PR #2009). Run ``pytest tests/e2e/test_collections.py
 -m e2e`` against an account with Collections enabled.
 """
 
@@ -70,12 +73,7 @@ class TestCollectionMembership:
     @pytest.mark.asyncio
     @pytest.mark.e2e
     async def test_add_expand_remove(self, client, temp_notebook):
-        """``add_notebooks`` → ``notebooks`` → ``remove_notebooks`` round-trip.
-
-        The ``remove_notebooks`` leg exercises the INFERRED un-assign wire shape;
-        the final membership assertion is what confirms (or refutes) the
-        inference against the live service.
-        """
+        """``add_notebooks`` → ``notebooks`` → ``remove_notebooks`` round-trip."""
         collection = await client.collections.create("nbpy-e2e Members")
         try:
             updated = await client.collections.add_notebooks(collection.id, [temp_notebook.id])
@@ -86,8 +84,8 @@ class TestCollectionMembership:
             members = await client.collections.notebooks(collection.id)
             assert temp_notebook.id in {nb.id for nb in members}
 
-            # Un-assign (inferred wire shape) — the notebook must leave the
-            # collection but must NOT be deleted from the account.
+            # Un-assign — the notebook must leave the collection but must NOT
+            # be deleted from the account.
             await client.collections.remove_notebooks(collection.id, [temp_notebook.id])
             after = await client.collections.get(collection.id)
             assert temp_notebook.id not in after.notebook_ids
