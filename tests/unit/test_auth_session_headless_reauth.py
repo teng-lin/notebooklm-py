@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -173,7 +174,7 @@ async def test_headless_reauth_uses_storage_specific_browser_profile(
     ):
         await session_mod._try_headless_reauth(
             auth=_auth(storage_path=storage_path),
-            kernel=object(),
+            kernel=MagicMock(),
             allow_headless=True,
         )
 

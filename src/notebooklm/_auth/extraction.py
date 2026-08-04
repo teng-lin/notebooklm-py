@@ -285,6 +285,10 @@ def _token_not_found_message(what: str, final_url: str) -> str:
     return f"{what} not found in HTML. Final URL: {_safe_url(final_url)}\n{detail}"
 
 
+class _LoginRedirectError(ValueError):
+    """Private typed signal for a confirmed Google login redirect."""
+
+
 def _url_only_extraction_failure(final_url: str, redirect_urls: Sequence[str]) -> ValueError | None:
     """Classify the failures that are decidable from the URLs alone, else ``None``.
 
@@ -321,7 +325,7 @@ def _url_only_extraction_failure(final_url: str, redirect_urls: Sequence[str]) -
     if hop is not None:
         return ValueError(_cookie_mismatch_message(hop, final_url))
     if is_google_auth_redirect(final_url):
-        return ValueError(
+        return _LoginRedirectError(
             f"Authentication expired or invalid. Final URL: {_safe_url(final_url)}\n"
             "Run 'notebooklm login' to re-authenticate."
         )

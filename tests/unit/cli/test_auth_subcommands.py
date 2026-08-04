@@ -1989,6 +1989,78 @@ class TestAuthRefreshCommand:
         assert "ok" in result.output.lower()
         mock_fetch.assert_awaited_once()
 
+    def test_auth_refresh_allow_headless_is_lazy_opt_in(self, runner, mock_storage_path):
+        """The command forwards the one-invocation L3 permission to auth recovery."""
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf_ok", "session_ok")
+            result = runner.invoke(cli, ["auth", "refresh", "--allow-headless"])
+
+        assert result.exit_code == 0, result.output
+        assert mock_fetch.await_args.kwargs == {"allow_headless": True}
+
+    def test_auth_refresh_omitted_headless_flag_forwards_false(self, runner, mock_storage_path):
+        with patch.object(
+            auth_module,
+            "fetch_tokens_with_domains",
+            new_callable=AsyncMock,
+            return_value=("csrf_ok", "session_ok"),
+        ) as mock_fetch:
+            result = runner.invoke(cli, ["auth", "refresh"])
+
+        assert result.exit_code == 0, result.output
+        assert mock_fetch.await_args.kwargs == {"allow_headless": False}
+
+    def test_auth_refresh_allow_headless_conflicts_with_browser_cookies(
+        self, runner, mock_storage_path
+    ):
+        result = runner.invoke(
+            cli, ["auth", "refresh", "--allow-headless", "--browser-cookies", "chrome"]
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert result.stderr.strip() == (
+            "Error: --allow-headless only applies to the stored-session refresh path; "
+            "omit --browser-cookies."
+        )
+
+    def test_auth_refresh_json_browser_conflict_wins_over_allow_headless(
+        self, runner, mock_storage_path
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "auth",
+                "refresh",
+                "--allow-headless",
+                "--browser-cookies",
+                "chrome",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stderr == ""
+        assert json.loads(result.stdout) == {
+            "error": True,
+            "code": "json_unsupported_with_browser_cookies",
+            "message": (
+                "--json is not supported with --browser-cookies; use the default "
+                "keepalive refresh with --json instead."
+            ),
+        }
+
+    def test_auth_refresh_help_describes_lazy_headless_recovery(self, runner):
+        result = runner.invoke(cli, ["auth", "refresh", "--help"])
+
+        assert result.exit_code == 0, result.output
+        assert "--allow-headless" in result.output
+        assert "Does not launch or attach to a browser unless ordinary refresh fails." in " ".join(
+            result.output.split()
+        )
+
     def test_auth_refresh_json_success(self, runner, mock_storage_path):
         """--json emits a single structured keepalive result on stdout."""
         with patch.object(
@@ -2197,6 +2269,26 @@ class TestAuthRefreshCommand:
         # Critical: no token fetch should run when the env var is set —
         # otherwise we'd be doing a server-side rotation that gets lost.
         mock_fetch.assert_not_awaited()
+
+    def test_auth_refresh_storage_override_beats_env_auth(self, runner, monkeypatch, tmp_path):
+        storage = tmp_path / "explicit.json"
+        storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies":[]}')
+
+        with patch.object(
+            auth_module,
+            "fetch_tokens_with_domains",
+            new_callable=AsyncMock,
+            return_value=("csrf_ok", "session_ok"),
+        ) as mock_fetch:
+            result = runner.invoke(
+                cli,
+                ["--storage", str(storage), "auth", "refresh", "--allow-headless"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert mock_fetch.await_args.args[0] == storage.resolve()
+        assert mock_fetch.await_args.kwargs == {"allow_headless": True}
 
     def test_auth_refresh_propagates_global_profile_flag(self, runner, tmp_path):
         """`notebooklm --profile work auth refresh` resolves the work profile.

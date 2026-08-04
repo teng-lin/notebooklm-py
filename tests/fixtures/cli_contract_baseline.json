@@ -1468,6 +1468,24 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
+          "help": "Permit layer-3 browser recovery when stored cookies are fully expired. Uses the persisted browser profile (or NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL). Does not launch or attach to a browser unless ordinary refresh fails.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "allow_headless",
+          "opts": [
+            "--allow-headless"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
           "help": "Output as JSON",
           "is_flag": true,
           "kind": "option",

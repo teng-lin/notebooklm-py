@@ -100,6 +100,11 @@ async with NotebookLMClient.from_storage("/path/to/storage_state.json") as clien
 async with NotebookLMClient.from_storage(profile="work") as client:
     ...
 
+# Permit one cold-start L3 browser recovery if cookies are fully expired.
+# A sibling master_token.json can recover automatically without this flag.
+async with NotebookLMClient.from_storage(profile="work", allow_headless=True) as client:
+    ...
+
 # Headless: mint cookies from a durable master token (the [headless] extra),
 # then drive the normal client. No per-session browser; expired sessions
 # re-mint automatically when master_token.json sits beside storage_state.json.
@@ -126,6 +131,7 @@ client = NotebookLMClient(auth)
 
 # AuthTokens also supports profiles (AuthTokens.from_storage is async)
 auth = await AuthTokens.from_storage(profile="work")
+auth = await AuthTokens.from_storage(profile="work", allow_headless=True)
 ```
 
 **Building a storage state from existing browser cookies (`[cookies]` extra):**

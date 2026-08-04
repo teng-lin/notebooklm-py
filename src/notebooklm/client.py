@@ -611,6 +611,8 @@ class NotebookLMClient:
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
         chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
+        *,
+        allow_headless: bool = False,
     ) -> _FromStorageContext:
         """Create a client from Playwright storage state file.
 
@@ -673,6 +675,9 @@ class NotebookLMClient:
                 full semantics.
             on_rpc_event: Optional sync or async callback invoked after each
                 logical RPC succeeds or fails.
+            allow_headless: Permit one cold-start layer-3 browser recovery when
+                stored cookies are fully expired. A sibling master token can
+                recover automatically without enabling browser recovery.
 
         Returns:
             ``_FromStorageContext`` — an awaitable async-context-manager
@@ -712,6 +717,7 @@ class NotebookLMClient:
             chat_response_max_bytes=chat_response_max_bytes,
             upload_timeout=upload_timeout,
             on_rpc_event=on_rpc_event,
+            allow_headless=allow_headless,
         )
 
     async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:
@@ -889,7 +895,10 @@ class _FromStorageContext:
         path = kwargs["path"]
         profile = kwargs["profile"]
 
-        auth = await AuthTokens.from_storage(Path(path) if path else None, profile=profile)
+        auth_kwargs = {"allow_headless": True} if kwargs["allow_headless"] else {}
+        auth = await AuthTokens.from_storage(
+            Path(path) if path else None, profile=profile, **auth_kwargs
+        )
         storage_path = auth.storage_path
 
         self._client = self._cls(

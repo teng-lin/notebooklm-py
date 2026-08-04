@@ -34,21 +34,19 @@ Implement **Option A**; defer Option B.
 - A new `[headless]` extra (`gpsoauth`) and `_auth/master_token.py` mint cookies
   from the master token. `notebooklm login --master-token` bootstraps (one
   browser sign-in to capture the single-use `oauth_token`, then durable),
-  `--master-token-refresh` re-mints. The token is stored `0600` at
+  and `--master-token-refresh` forcibly re-mints. Conditional operator recovery
+  uses `notebooklm auth refresh`. The token is stored `0600` at
   `master_token.json` beside the profile's `storage_state.json`.
 - Minted cookies are written into the normal `storage_state.json`; the existing
   loader, inline `__Secure-1PSIDTS` recovery, keepalive, and persistence run
   **unchanged** (the minted jar carries `SID`+`APISID`+`SAPISID`, so recovery
   mints PSIDTS on first load).
-- **Recovery (the one library touch-point):** when a `master_token.json` is
-  present, an expired session re-mints in-process as **layer-4** of
-  `refresh_auth_session`, after the existing homepage / `RotateCookies` /
-  headless-browser ladder is exhausted — exactly where the client previously
-  raised "run 'notebooklm login'". It reaches the code via the
-  `AuthRefreshCoordinator` single-flight, so concurrent RPCs coalesce one
-  re-mint. This is the "PSIDTS recovery is different for master-token profiles"
-  decision: re-mint replaces the hard-fail; routine `RotateCookies` keepalive is
-  unchanged.
+- **Recovery:** when a `master_token.json` is present, an expired file-backed
+  session re-mints in-process as layer 4 after the homepage / `RotateCookies` /
+  headless-browser ladder is exhausted. A neutral adapter is shared by cold
+  token construction and `refresh_auth_session`; equivalent same-loop cold
+  callers coalesce, while live RPCs retain `AuthRefreshCoordinator`
+  single-flight.
 - The CI env-var path (`NOTEBOOKLM_MASTER_TOKEN`) is **deferred** — shipping the
   `master_token.json` file (like `storage_state.json`) covers CI today, and an
   inline token would still need cookies written to disk for recovery to work.
@@ -72,8 +70,9 @@ Implement **Option A**; defer Option B.
   (re-mint is the mitigation while it isn't enforced); `gpsoauth.exchange_token`
   is the fragile call (pinned `>=1.1.0`, no `<2` cap so the 2.0.0 `ServiceDisabled`
   fix installs); master-token durability over weeks is unverified (a durability
-  cron is the follow-up). Cold-dead cookies at process start are recovered by
-  `notebooklm login --master-token-refresh`.
+  cron is the follow-up). Cold-dead file-backed sessions now recover through the
+  normal token loader; the explicit login flag remains an unconditional manual
+  route.
 - **Option B (a full Android gRPC backend) is deferred** as a DBSC hedge; the
   master token already solves headless auth for the web client, so building a
   second RPC surface is not justified now.

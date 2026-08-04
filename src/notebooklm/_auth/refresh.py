@@ -34,6 +34,7 @@ from . import extraction as _auth_extraction
 from . import headers as _auth_headers
 from . import keepalive as _keepalive
 from . import paths as _auth_paths
+from . import recovery as _auth_recovery
 from . import storage as _auth_storage
 from .account import authuser_query
 
@@ -453,9 +454,10 @@ async def _fetch_tokens_with_refresh(
     storage_path: Path | None = None,
     profile: str | None = None,
     *,
-    authuser: int = 0,
+    authuser: int | None = None,
     account_email: str | None = None,
     force_authuser_query: bool = False,
+    allow_headless: bool = False,
 ) -> tuple[str, str, bool, _auth_storage.CookieSnapshot | None]:
     """Fetch tokens, optionally running NOTEBOOKLM_REFRESH_CMD on auth expiry.
 
@@ -472,15 +474,52 @@ async def _fetch_tokens_with_refresh(
     When ``refreshed`` is ``False`` the snapshot is ``None`` (no refresh
     happened; caller's pre-fetch snapshot is still the right baseline).
     """
+    explicit_authuser = (
+        authuser if authuser is not None and (authuser != 0 or force_authuser_query) else None
+    )
+
+    def resolve_route(path: Path | None) -> dict[str, Any]:
+        return _resolve_token_route_kwargs(
+            path,
+            authuser=explicit_authuser,
+            account_email=account_email,
+        )
+
     try:
-        route_kwargs: dict[str, Any] = {"authuser": authuser}
-        if account_email is not None:
-            route_kwargs["account_email"] = account_email
-        if force_authuser_query:
-            route_kwargs["force_authuser_query"] = True
+        route_kwargs = resolve_route(storage_path)
         csrf, session_id = await _fetch_tokens_with_jar(cookie_jar, storage_path, **route_kwargs)
         return csrf, session_id, False, None
     except ValueError as err:
+        if isinstance(err, _auth_extraction._LoginRedirectError) and storage_path is not None:
+
+            async def validate_recovered_jar(recovered_jar: httpx.Cookies) -> None:
+                await _fetch_tokens_with_jar(
+                    recovered_jar,
+                    storage_path,
+                    **_resolve_token_route_kwargs(storage_path, authuser=None, account_email=None),
+                )
+
+            try:
+                recovery = await _auth_recovery.coalesced_cold_recovery(
+                    storage_path=storage_path,
+                    allow_headless=allow_headless,
+                    validate=validate_recovered_jar,
+                    initial_error=err,
+                )
+            except _auth_extraction._LoginRedirectError as retry_err:
+                err = retry_err
+            else:
+                _replace_cookie_jar(cookie_jar, recovery.cookie_jar)
+                try:
+                    csrf, session_id = await _fetch_tokens_with_jar(
+                        cookie_jar,
+                        storage_path,
+                        **resolve_route(storage_path),
+                    )
+                except _auth_extraction._LoginRedirectError as retry_err:
+                    err = retry_err
+                else:
+                    return csrf, session_id, True, recovery.snapshot
         if not _should_try_refresh(err):
             raise
         logger.warning(
@@ -674,11 +713,7 @@ async def _fetch_tokens_with_refresh(
                 # Capture the baseline NOW — after the wholesale replacement
                 # but before the retry fetch can mutate the jar.
                 post_refresh_snapshot = snapshot_cookie_jar(cookie_jar)
-            route_kwargs = {"authuser": authuser}
-            if account_email is not None:
-                route_kwargs["account_email"] = account_email
-            if force_authuser_query:
-                route_kwargs["force_authuser_query"] = True
+            route_kwargs = resolve_route(refresh_storage_path)
             csrf, session_id = await _fetch_tokens_with_jar(
                 cookie_jar, refresh_storage_path, **route_kwargs
             )
@@ -821,13 +856,13 @@ async def fetch_tokens(
         RuntimeError: If ``NOTEBOOKLM_REFRESH_CMD`` is set but fails
     """
     jar = build_cookie_jar(cookies=cookies, storage_path=storage_path)
-    route_kwargs = _resolve_token_route_kwargs(
+    csrf, session_id, refreshed, _post_refresh_snapshot = await _fetch_tokens_with_refresh(
+        jar,
         storage_path,
+        profile,
         authuser=authuser,
         account_email=account_email,
-    )
-    csrf, session_id, refreshed, _post_refresh_snapshot = await _fetch_tokens_with_refresh(
-        jar, storage_path, profile, **route_kwargs
+        force_authuser_query=authuser is not None,
     )
     if refreshed:
         fresh = _cookie_map_from_jar(jar)
@@ -841,6 +876,7 @@ async def fetch_tokens_with_domains(
     *,
     authuser: int | None = None,
     account_email: str | None = None,
+    allow_headless: bool = False,
 ) -> tuple[str, str]:
     """Fetch tokens with domain-preserving cookies from storage.
 
@@ -855,6 +891,8 @@ async def fetch_tokens_with_domains(
             persisted profile value, or 0 when none exists.
         account_email: Optional explicit Google account email. When provided,
             it is used as the auth routing value instead of the integer index.
+        allow_headless: Permit layer-3 browser recovery after a confirmed login
+            redirect. The environment opt-in remains effective when this is false.
 
     Returns:
         Tuple of (csrf_token, session_id)
@@ -868,13 +906,19 @@ async def fetch_tokens_with_domains(
     if path is None and (profile is not None or "NOTEBOOKLM_AUTH_JSON" not in os.environ):
         path = get_storage_path(profile=profile)
     jar = build_httpx_cookies_from_storage(path)
-    route_kwargs = _resolve_token_route_kwargs(path, authuser=authuser, account_email=account_email)
     # Capture the open-time snapshot before any rotation could fire. The
     # snapshot is the input to the dirty-flag/delta merge that closes the
     # stale-overwrite-fresh race (docs/auth-cookie-lifecycle.md §3.4.1).
     snapshot = snapshot_cookie_jar(jar)
+    refresh_options: dict[str, Any] = {}
+    if authuser is not None:
+        refresh_options.update(authuser=authuser, force_authuser_query=True)
+    if account_email is not None:
+        refresh_options["account_email"] = account_email
+    if allow_headless:
+        refresh_options["allow_headless"] = True
     csrf, session_id, refreshed, post_refresh_snapshot = await _fetch_tokens_with_refresh(
-        jar, path, profile, **route_kwargs
+        jar, path, profile, **refresh_options
     )
     if refreshed and post_refresh_snapshot is not None:
         # NOTEBOOKLM_REFRESH_CMD replaced the jar wholesale. Use the snapshot

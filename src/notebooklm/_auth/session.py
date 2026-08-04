@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import logging
 from typing import TYPE_CHECKING
 
 from .._env import get_base_url
@@ -11,6 +9,7 @@ from .._url_utils import is_google_auth_redirect
 from ..exceptions import AuthExtractionError
 from .account import authuser_query
 from .extraction import extract_wiz_field
+from .recovery import try_headless_reauth, try_master_token_reauth
 from .tokens import AuthTokens
 
 if TYPE_CHECKING:
@@ -18,8 +17,6 @@ if TYPE_CHECKING:
     from .._kernel import Kernel
     from .._runtime.auth import AuthRefreshCoordinator
     from .._runtime.lifecycle import ClientLifecycle
-
-logger = logging.getLogger("notebooklm.auth")
 
 
 async def refresh_auth_session(
@@ -127,154 +124,17 @@ async def _try_headless_reauth(
     kernel: Kernel,
     allow_headless: bool,
 ) -> bool:
-    """Drive layer-3 headless re-auth and reload cookies on success.
-
-    Returns ``True`` only when the headless re-auth succeeded AND the freshly
-    persisted ``storage_state.json`` cookies were reloaded into the live HTTP
-    client (so the caller's retry GET uses them). Returns ``False`` for every
-    honest non-success outcome (unavailable / failed), leaving the original
-    dead-cookie error to stand.
-
-    The browser drive in
-    :func:`notebooklm._auth.headless_reauth.attempt_headless_reauth` is a
-    blocking, ``playwright``-sync call, so it is offloaded to a worker thread
-    via :func:`asyncio.to_thread` and never stalls the event loop. The import
-    is function-local so the ``browser`` extra stays optional.
-
-    L3 requires a writeable on-disk storage path to (re)mint into. Env-var auth
-    (``NOTEBOOKLM_AUTH_JSON``, ``auth.storage_path is None``) has no backing
-    file, so L3 declines there — symmetric with the PSIDTS-recovery decline in
-    :func:`notebooklm._auth.psidts_recovery._resolve_recovery_path`.
-
-    Profile binding (CRITICAL): the headless browser is driven against the
-    storage-specific persistent profile for THIS client's auth file, NOT the
-    ambient/default profile.
-    A ``from_storage(profile="work")`` or ``--storage <path>`` client therefore
-    re-mints from and into ITS OWN profile, never silently harvesting another
-    account's session or overwriting the wrong storage file. When no such
-    sibling profile exists, ``attempt_headless_reauth`` returns UNAVAILABLE.
-
-    Cookie-domain policy (LIMITATION): the re-mint captures only the DEFAULT
-    cookie-domain set (required Google cookies + regional ccTLDs). The optional
-    ``--include-domains`` labels a user may have passed at ``notebooklm login``
-    time are NOT persisted anywhere, so an L3 re-mint cannot reproduce them: a
-    profile originally logged in with ``--include-domains=mail`` will, after a
-    headless re-auth, hold a ``storage_state.json`` WITHOUT those optional
-    sibling-product cookies. The re-auth still SUCCEEDS for NotebookLM itself
-    (the required cookies are present); only opt-in extras are dropped.
-    Operators relying on optional domains should re-run ``notebooklm login
-    --include-domains=...`` after an L3 re-mint, or inspect their cookie domains.
-    Persisting the login-time domain set (a small sidecar metadata file)
-    remains a tracked follow-up.
-    """
-    storage_path = auth.storage_path
-    if storage_path is None:
-        logger.debug("Headless re-auth skipped: env-var auth has no writeable storage path.")
-        return False
-
-    from ..paths import get_browser_profile_dir
-    from .cookies import _replace_cookie_jar, build_httpx_cookies_from_storage
-    from .headless_reauth import HeadlessReauthStatus, attempt_headless_reauth
-
-    browser_profile = get_browser_profile_dir(storage_path=storage_path)
-
-    result = await asyncio.to_thread(
-        attempt_headless_reauth,
-        storage_path=storage_path,
+    """Compatibility wrapper over the client-neutral L3 adapter."""
+    return await try_headless_reauth(
+        storage_path=auth.storage_path,
+        cookie_jar=kernel.get_http_client().cookies,
         allow_headless=allow_headless,
-        browser_profile=browser_profile,
     )
-    if result.status is not HeadlessReauthStatus.SUCCESS:
-        # UNAVAILABLE / FAILED — honest non-success; the dead-cookie error
-        # stands. ``reason`` is credential-free and safe to log at debug.
-        logger.debug(
-            "Headless re-auth did not succeed (%s): %s", result.status.value, result.reason
-        )
-        return False
-
-    # Re-mint succeeded: reload the freshly-persisted cookies into the live
-    # HTTP client's jar so the caller's retry GET authenticates with them. If
-    # the reload/validation fails — e.g. the domain filter dropped a required
-    # cookie, or the capture wrote a degenerate state the landing classifier
-    # didn't catch — treat it as a NON-success: do NOT claim a heal we can't
-    # back up. The caller's dead-cookie ``ValueError`` then stands honestly
-    # rather than being replaced by a lower-level cookie-load error.
-    try:
-        fresh_jar = await asyncio.to_thread(build_httpx_cookies_from_storage, storage_path)
-    except (ValueError, OSError) as exc:
-        logger.warning(
-            "Headless re-auth wrote storage but the re-minted cookies failed to "
-            "load/validate (%s); treating as a non-success.",
-            type(exc).__name__,
-        )
-        return False
-    _replace_cookie_jar(kernel.get_http_client().cookies, fresh_jar)
-    logger.info("Headless re-auth succeeded; reloaded re-minted cookies for retry.")
-    return True
 
 
 async def _try_master_token_reauth(*, auth: AuthTokens, kernel: Kernel) -> bool:
-    """Layer-4 recovery: re-mint a fresh session from a durable master token.
-
-    When ``master_token.json`` sits beside this profile's ``storage_state.json``,
-    mint a brand-new cookie session from the master token, persist it, and reload
-    it into the live HTTP client so the caller's homepage GET retries with fresh
-    cookies. This is the headless-auth recovery that the standard
-    ``RotateCookies``/headless-browser ladder can't provide off-device — it fires
-    only after L1/L2/L3 are exhausted (directive A; #1638).
-
-    Returns ``True`` only on a successful re-mint + reload. Every honest failure
-    (no token file, revoked token, reload failure) returns ``False`` so the
-    original dead-cookie ``ValueError`` stands. No secrets are logged.
-
-    Env-var auth (``auth.storage_path is None``) has no backing file to re-mint
-    into, so this declines there — symmetric with L2/L3.
-    """
-    storage_path = auth.storage_path
-    if storage_path is None:
-        return False
-    master_token_path = storage_path.parent / "master_token.json"
-    if not master_token_path.exists():
-        return False
-
-    from .cookies import _replace_cookie_jar, build_httpx_cookies_from_storage
-    from .master_token import MasterTokenError, mint_cookies, persist_minted_jar, read_master_token
-
-    try:
-        rec = await asyncio.to_thread(read_master_token, master_token_path)
-        if rec is None:
-            return False
-        jar = await mint_cookies(rec["email"], rec["master_token"], rec["android_id"])
-    except MasterTokenError as exc:
-        # MasterTokenError messages are credential-free by construction (see the
-        # module docstring), so log the full message — it carries the actionable
-        # reason (revoked / missing cookies / re-bootstrap).
-        logger.warning("Master-token re-mint failed (%s); 'Authentication expired' stands.", exc)
-        return False
-
-    # persist_minted_jar takes the storage filelock (blocking, up to 10s) — keep
-    # it off the live client's event loop. A persist failure (I/O / lock timeout)
-    # must surface as a non-success, not a low-level error replacing the intended
-    # "Authentication expired".
-    try:
-        await asyncio.to_thread(persist_minted_jar, storage_path, jar, email=rec.get("email"))
-    except OSError as exc:
-        logger.warning(
-            "Master-token re-mint persisted storage failed (%s); 'Authentication expired' stands.",
-            exc,
-        )
-        return False
-    # Reload through the recovery-aware loader so inline PSIDTS recovery mints
-    # __Secure-1PSIDTS from the fresh SID + secondary binding.
-    try:
-        fresh_jar = await asyncio.to_thread(build_httpx_cookies_from_storage, storage_path)
-    except (ValueError, OSError) as exc:
-        logger.warning(
-            "Master-token re-mint wrote storage but the cookies failed to load (%s); "
-            "treating as a non-success.",
-            type(exc).__name__,
-        )
-        return False
-    _replace_cookie_jar(kernel.get_http_client().cookies, fresh_jar)
-    logger.info("Master-token re-mint succeeded; reloaded fresh cookies for retry.")
-    return True
+    """Compatibility wrapper over the client-neutral L4 adapter."""
+    return await try_master_token_reauth(
+        storage_path=auth.storage_path,
+        cookie_jar=kernel.get_http_client().cookies,
+    )

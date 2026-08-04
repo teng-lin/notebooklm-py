@@ -131,6 +131,7 @@ expiry, and no `storage_state.json` to keep re-shipping.
    initial cookies first; shipping both skips that step.)
 4. Run commands normally. Cookies are minted on bootstrap and **re-minted
    automatically** when the session dies (L4, [§4.4](#44-l4--master-token-re-mint));
+   request conditional recovery with `notebooklm -p <profile> auth refresh`, or
    force one by hand with `notebooklm -p <profile> login --master-token-refresh`.
 
 Caveats: the master token is a full-account, infostealer-grade credential — use a
@@ -495,8 +496,9 @@ MCP servers, and long-running workers.
 ### 4.3 L3 — headless re-auth / CDP attach
 
 When the homepage GET 302s to the Google login page, the first-party cookies are
-fully dead and neither L1 nor L2 can help. `refresh_auth(allow_headless=True)` (or
-`NOTEBOOKLM_HEADLESS_REAUTH=1` for automatic mid-RPC opt-in) drives an unattended
+fully dead and neither L1 nor L2 can help. `from_storage(allow_headless=True)`,
+`refresh_auth(allow_headless=True)`, `auth refresh --allow-headless`, or
+`NOTEBOOKLM_HEADLESS_REAUTH=1` drives an unattended
 headless browser against the **persisted profile that is a sibling of this client's
 storage file** — `browser_profile/` beside a conventional `storage_state.json`,
 or `<storage_path>.browser_profile/` for a normal-length custom filename; names
@@ -511,8 +513,8 @@ to an already-running local Chrome instead; non-loopback hosts are refused becau
 a CDP endpoint is account-equivalent. If the profile is missing, Playwright is
 unavailable, env-var auth has no writeable file, or the browser session is also
 dead, the original auth-expiry error stands. Owner:
-`_auth/headless_reauth.py`; integration point:
-`_auth/session.py::refresh_auth_session`.
+`_auth/headless_reauth.py`; shared cold/mid-session adapters and cold
+single-flight coordination live in `_auth/recovery.py`.
 
 ### 4.4 L4 — master-token re-mint
 
@@ -526,16 +528,16 @@ headless-browser ladder can't provide off-device.
   on demand (`perform_oauth → OAuthLogin?issueuberauth=1 → MergeSession`) and
   survives password changes until explicitly revoked. It also bootstraps the initial
   `storage_state.json`.
-- **Where it fires.** `_auth/session.py::_try_master_token_reauth`, as **layer 4 of
-  `refresh_auth_session`** — only after L1 (homepage), L2 (`RotateCookies`), and L3
-  (headless browser) are exhausted. It mints a new session, persists it (replacing
-  the dead cookies under the storage lock), reloads the jar into the live HTTP
-  client, and retries the homepage GET once. Reached through the
-  `AuthRefreshCoordinator` single-flight, so concurrent RPCs coalesce **one**
-  re-mint.
-- **Cold start.** A session already dead at process start is recovered by
-  `notebooklm login --master-token-refresh` (or the next bootstrap); the in-process
-  layer-4 covers the mid-session case long-lived workers hit.
+- **Where it fires.** `_auth/recovery.py::try_master_token_reauth`, as layer 4
+  after L1 (homepage), L2 (`RotateCookies`), and L3 (headless browser) are
+  exhausted. Both cold token loading and mid-session `refresh_auth_session`
+  delegate to this adapter. It mints a new session, persists it under the
+  storage lock, reloads the jar, and retries the homepage GET once. Equivalent
+  same-loop cold callers share one complete recovery task; live-client RPCs
+  retain their `AuthRefreshCoordinator` single-flight.
+- **Cold start.** The normal file-backed token loader invokes the same L4 adapter
+  after a confirmed login redirect, so a session already dead at process start
+  recovers without a forced pre-mint.
 - **PSIDTS interaction.** A re-mint yields `SID`+`APISID`+`SAPISID` but not
   `__Secure-1PSIDTS`; the mint itself fires one best-effort `RotateCookies` POST to
   add it, and the inline PSIDTS recovery

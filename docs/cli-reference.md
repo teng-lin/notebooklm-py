@@ -766,7 +766,7 @@ table). To gate readiness on a real token fetch, run `notebooklm auth check
 
 ### Authentication: `auth refresh`
 
-One-shot keepalive: open a session, trigger the layer-1 SIDTS rotation poke against `accounts.google.com`, persist the rotated cookies to `storage_state.json`, and exit. When a file-backed Playwright storage state has cookies but lacks in-band `notebooklm.account` metadata, `auth refresh` also repairs that metadata if account discovery is unambiguous. It does not replace existing metadata; use `login --browser-cookies <browser> --account EMAIL` to re-bind a profile that already points at the wrong account. Designed to be invoked by the OS scheduler (launchd / systemd / cron / Task Scheduler / k8s CronJob) so an otherwise-idle profile does not stale out between user-driven calls.
+One-shot keepalive and recovery: open a file-backed session, trigger the layer-1 SIDTS rotation poke against `accounts.google.com`, persist rotated cookies, and exit. If the cookies redirect to Google sign-in, it automatically tries a sibling master-token re-mint; `--allow-headless` permits layer-3 browser recovery first. When a Playwright storage state lacks in-band `notebooklm.account` metadata, `auth refresh` also repairs it if account discovery is unambiguous. It does not replace existing metadata; use `login --browser-cookies <browser> --account EMAIL` to re-bind a profile that already points at the wrong account. Designed for direct use or OS scheduling (launchd / systemd / cron / Task Scheduler / k8s CronJob).
 
 ```bash
 notebooklm auth refresh [OPTIONS]
@@ -777,10 +777,12 @@ notebooklm auth refresh [OPTIONS]
 - `--include-domains LABEL[,LABEL...]` - Forward to the browser-cookie reader (only meaningful with `--browser-cookies`). Same syntax as `notebooklm login --include-domains`.
 - `--quiet`, `-q` - Suppress success output; print only on error (cron-friendly)
 - `--verify` - After refreshing, run a read-only passive token fetch to confirm the resulting cookies actually authenticate; exit non-zero if they still fail. A successful refresh command alone does not prove the post-refresh cookies work — they may still redirect to sign-in. Especially valuable with `--browser-cookies`, which rewrites the cookie jar but does not otherwise verify it.
+- `--allow-headless` - Permit layer-3 browser recovery for this invocation when stored cookies are fully expired. Uses the storage-bound persisted browser profile or loopback `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL`, and does not launch or attach unless the ordinary refresh fails. Incompatible with `--browser-cookies`.
+- `--json` - Emit one structured success or error document. On success the keys are `status`, `storage_path`, and `verified`.
 
 **Cadence:** 15-20 minutes is the recommended interval. Tighter is wasteful (the 60 s mtime guard would skip it anyway); significantly looser may cross the `__Secure-1PSIDTS` server-side validity window for your account/region.
 
-**Requires file-backed authentication.** `auth refresh` refuses to run when `NOTEBOOKLM_AUTH_JSON` is set, because the inline-JSON auth mode has no writable backing store to persist rotated cookies into. Use a profile-backed `storage_state.json` (the default) or set `NOTEBOOKLM_HOME` / `--profile` to point at one.
+**Requires file-backed authentication.** `auth refresh` refuses `NOTEBOOKLM_AUTH_JSON` because inline JSON has no writable backing store. A root `--storage PATH` is an explicit file-backed override and wins over that environment variable for the invocation.
 
 **Exit codes:**
 - `0` - the auth path completed without raising. The rotation POST is **best-effort**: exit 0 also covers (a) the 60 s mtime guard skipping the POST, (b) `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1` being set, (c) another process holding the cross-process rotate lock, and (d) a transient `httpx` error during the POST being caught and logged at DEBUG. Treat exit 0 as "no error" rather than "rotation occurred." For verification, enable `NOTEBOOKLM_LOG_LEVEL=DEBUG` and check for the `RotateCookies` log line.
@@ -793,6 +795,9 @@ notebooklm auth refresh
 
 # Refresh a named profile (works with --profile / NOTEBOOKLM_PROFILE)
 notebooklm --profile work auth refresh
+
+# Permit browser-backed L3 only if ordinary recovery reaches a login redirect
+notebooklm --profile work auth refresh --allow-headless
 
 # Re-extract from Chrome and repair account routing if browser account order changed
 notebooklm --profile work auth refresh --browser-cookies chrome

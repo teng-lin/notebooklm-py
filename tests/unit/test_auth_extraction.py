@@ -950,6 +950,20 @@ class TestExtractionFailureTaxonomy:
         message = self._messages()["mismatch"].lower()
         assert any(signal in message for signal in _AUTH_ERROR_SIGNALS)
 
+    def test_only_confirmed_login_redirect_has_private_recovery_type(self):
+        """L3/L4 can key on type without widening the public ValueError API."""
+        from notebooklm._auth import extraction
+
+        login = extraction._url_only_extraction_failure(self._LOGIN_URL, ())
+        mismatch = extraction._url_only_extraction_failure(
+            "https://accounts.google.com/CookieMismatch", ()
+        )
+
+        assert isinstance(login, ValueError)
+        assert isinstance(login, extraction._LoginRedirectError)
+        assert isinstance(mismatch, ValueError)
+        assert not isinstance(mismatch, extraction._LoginRedirectError)
+
     def test_gate_still_wins_over_cookie_mismatch_ordering(self):
         """#1630 must not regress: the region gate is classified first."""
         with pytest.raises(ValueError) as exc:

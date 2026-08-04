@@ -887,11 +887,11 @@ mode `0600`) because the layer-4 master-token re-mint only engages when
 `master_token.json` sits beside the profile's `storage_state.json` — env-var
 auth bypasses it entirely. With the master-token secret set, the step then
 runs `notebooklm login --master-token-refresh` to pre-mint fresh cookies
-before any test touches them (eager token fetches like
-`AuthTokens.from_storage` would otherwise fail on a dead snapshot before the
-in-client layer-4 hook could fire); layer-4 covers mid-run expiry. So as long
-as the pre-mint succeeds, a cookie secret that Google has rotated no longer
-fails the run. The pre-mint is non-fatal: on failure (e.g. a revoked master
+before any test touches them, preserving a deterministic fresh-jar CI setup;
+ordinary file-backed cold loading now also reaches layer 4 after a confirmed
+login redirect, and layer 4 continues to cover mid-run expiry. So as long as
+the pre-mint succeeds, a cookie secret that Google has rotated no longer fails
+the run. The pre-mint is non-fatal: on failure (e.g. a revoked master
 token) the step logs a `::warning::` and falls back to the cookie snapshot,
 which then must still be live for the run to pass. Without the master-token
 secret, behavior degrades to the old cookie-only mode.

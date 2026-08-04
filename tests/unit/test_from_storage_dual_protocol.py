@@ -183,6 +183,14 @@ class TestWrapperShape:
         # No coroutine, so nothing to await — and importantly, the missing
         # storage file has NOT been read yet (no FileNotFoundError).
 
+    def test_allow_headless_is_a_lazy_keyword_only_factory_option(self, tmp_path: Path) -> None:
+        """Cold browser permission can be selected without triggering I/O."""
+        wrapper = NotebookLMClient.from_storage(
+            path=str(tmp_path / "nonexistent.json"),
+            allow_headless=True,
+        )
+        assert isinstance(wrapper, _FromStorageContext)
+
     @pytest.mark.asyncio
     async def test_yielded_value_is_notebooklmclient(
         self, tmp_path: Path, httpx_mock: HTTPXMock

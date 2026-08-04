@@ -17,8 +17,8 @@ the service from ``session_cmd``:
   ``PreparedPaths | PathError``); preserves the legacy
   ``(storage_path, browser_profile)`` 2-tuple contract.
 * :func:`run_login` — drives ``run_playwright_login`` with the concrete sink.
-* :func:`repair_after_refresh` — drives ``repair_playwright_account_metadata``
-  with the concrete sink (used by the file-backed ``auth refresh`` keepalive).
+* :func:`refresh_stored_session` — orchestrates the file-backed ``auth refresh``
+  keepalive and optional passive verification.
 
 Keeping the sink + wrappers here (not in ``session_cmd``) lets the command
 module collapse its five Playwright import blocks into one and keeps the
@@ -47,7 +47,7 @@ from .services.playwright_login import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable
+    from collections.abc import Awaitable, Callable
 
     from .services.playwright_login import LoginIO
 
@@ -166,8 +166,50 @@ def repair_after_refresh(
     )
 
 
+def _is_valid_account_metadata(metadata: dict[str, Any]) -> bool:
+    raw_authuser = metadata.get("authuser")
+    if type(raw_authuser) is not int or raw_authuser < 0:
+        return False
+    raw_email = metadata.get("email")
+    return raw_email is None or isinstance(raw_email, str) and bool(raw_email.strip())
+
+
+def refresh_stored_session(
+    storage_path: Path,
+    profile: str | None,
+    *,
+    allow_headless: bool,
+    quiet: bool,
+    verify: bool,
+    json_output: bool,
+    fetch_tokens: Callable[..., Awaitable[Any]],
+) -> None:
+    """Run the stored-session keepalive, metadata repair, and optional verification."""
+    run_async(fetch_tokens(storage_path, profile, allow_headless=allow_headless))
+
+    from ..auth import read_account_metadata
+
+    if storage_path.exists() and not _is_valid_account_metadata(
+        read_account_metadata(storage_path)
+    ):
+        repair_after_refresh(storage_path, quiet=quiet)
+    if not quiet:
+        console.print(f"[green]ok[/green] refreshed: {storage_path}")
+    if verify:
+        _verify_token_fetch_after_refresh(
+            storage_path,
+            profile,
+            quiet=quiet,
+            json_output=json_output,
+        )
+
+
 def _verify_token_fetch_after_refresh(
-    storage_path: Path, profile: str | None, *, quiet: bool, json_output: bool = False
+    storage_path: Path,
+    profile: str | None,
+    *,
+    quiet: bool,
+    json_output: bool = False,
 ) -> None:
     """Confirm a token fetch actually succeeds after ``auth refresh``.
 
@@ -204,6 +246,7 @@ __all__ = [
     "_verify_token_fetch_after_refresh",
     "make_login_io",
     "prepare_paths_or_exit",
+    "refresh_stored_session",
     "repair_after_refresh",
     "run_login",
     "validate_flags_or_exit",
