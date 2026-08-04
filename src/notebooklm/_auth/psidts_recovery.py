@@ -240,8 +240,12 @@ def _iter_routable_psidts_cookies(
 
     Yields:
         One cookie per surviving identity, in first-seen identity order. The
-        SET is order-independent; the sequence is not, so a future consumer
-        that takes only the first element would reintroduce order-sensitivity.
+        IDENTITY SET is order-independent; both the sequence and *which*
+        duplicate occurrence is yielded are not — last-write-wins means
+        ``[fresh_a, fresh_b]`` yields ``fresh_b`` and the reverse yields
+        ``fresh_a``. Harmless while the only consumer reads a boolean, but a
+        future consumer that takes the first element, or reads a cookie's
+        VALUE, would reintroduce order-sensitivity.
     """
     live: dict[_CookieIdentity, http.cookiejar.Cookie] = {}
     dead: set[_CookieIdentity] = set()
@@ -325,16 +329,30 @@ def _psidts_is_live(
       the preflight will see it. This mirrors the predecessor gate, which
       treated an uninterpretable expiry as present rather than guessing.
 
-    It IS deliberately stricter than the preflight in one respect: a row known
-    to be expired does not count, though the preflight ignores ``expires``
-    entirely. Dropping that would regress issue #1273 — a no-op save over a
-    stale on-disk row would report success and fake a heal.
+    It IS deliberately stricter than the preflight in two respects, both in the
+    safe direction:
+
+    - a row known to be expired does not count, though the preflight ignores
+      ``expires`` entirely. Dropping that would regress issue #1273 — a no-op
+      save over a stale on-disk row would report success and fake a heal.
+    - a row with an empty ``value`` does not count, though
+      :func:`~notebooklm._auth.cookies.extract_cookies_from_storage` gates on
+      name alone. Unreachable in practice: the POST writes a real value, and
+      :func:`_build_recovery_jar` skips valueless rows anyway.
 
     The invariant to hold is an implication, not an equality: live ⇒ the
-    preflight passes on the PSIDTS half (it says nothing about ``SID``). Note
-    routable ⇒ live still holds, since a routable row is unexpired, allowlisted
-    and non-empty — which is what makes the fused "healed by another process"
-    return in :func:`_recover_psidts_inline` sound.
+    preflight passes on the PSIDTS half (it says nothing about ``SID``). "The
+    preflight" here means
+    :func:`~notebooklm._auth.cookies.extract_cookies_from_storage`, the
+    name-presence loader. The sibling loader
+    ``_build_httpx_cookies_from_storage_strict`` converts every row and can
+    still reject a state this accepts, because a row whose ``expires`` will not
+    coerce raises there — a pre-existing gap in the shared loader, tracked
+    separately, not something this predicate can close.
+
+    Note routable ⇒ live still holds, since a routable row is unexpired,
+    allowlisted and non-empty — which is what makes the fused "healed by another
+    process" return in :func:`_recover_psidts_inline` sound.
     """
     for entry in entries:
         if _allowed_cookie_name(entry) != _PSIDTS_COOKIE:
