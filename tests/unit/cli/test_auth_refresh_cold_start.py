@@ -296,7 +296,7 @@ async def test_concurrent_missing_storage_bootstrap_mints_once(tmp_path):
         assert master_token_path == token
         started.set()
         await release.wait()
-        storage.write_text('{"cookies": []}', encoding="utf-8")
+        storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
 
     with patch.object(
         auth_refresh_service.master_token,
