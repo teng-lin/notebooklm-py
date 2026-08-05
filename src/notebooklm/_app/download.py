@@ -12,7 +12,7 @@ vocabulary; the CLI adapter rebuilds its historical ``--json`` envelope in
 Public API: :class:`DownloadTypeSpec` (per-leaf metadata), :class:`DownloadPlan`
 (one validated invocation), :class:`DownloadResult` (the typed outcome),
 :func:`build_download_plan` (sync validation + assembly), :func:`execute_download`
-(the download coroutine), the :data:`FORMAT_EXTENSIONS` and
+(the download coroutine), the registry-derived :data:`FORMAT_EXTENSIONS` and
 :data:`EXTENSION_MIME_TYPES` tables with :func:`mime_type_for_extension`, and the
 pure :func:`select_artifact` / :func:`artifact_title_to_filename` helpers
 re-exported by ``cli/download_helpers.py`` for its established import seam.
@@ -39,40 +39,12 @@ from typing import Any, Protocol, TypedDict
 
 from ..exceptions import ValidationError
 from ..types import Artifact, ArtifactType
+from .download_specs import EXTENSION_MIME_TYPES, DownloadTypeSpec
+from .download_specs import FORMAT_EXTENSIONS as FORMAT_EXTENSIONS
 from .events import ProgressEvent, ProgressSink
 
 # Reserve space for " (999)" suffix when handling duplicate filenames.
 DUPLICATE_SUFFIX_RESERVE = 7
-
-# Format → extension map shared with the runtime extension-override path
-# and the registry layer. Quiz/flashcards expose all three formats;
-# slide-deck only swaps the extension between pdf and pptx via a dedicated
-# mapping defined inline in its spec row.
-FORMAT_EXTENSIONS: dict[str, str] = {
-    "json": ".json",
-    "markdown": ".md",
-    "html": ".html",
-}
-
-#: The ONE file-extension → MIME-type table, keyed by the extensions the download
-#: specs resolve to. Lives in this neutral core rather than in any adapter so the
-#: MCP ``studio_download`` payload, the MCP ``/files/dl`` route and the REST
-#: ``/download`` response all advertise the SAME Content-Type.
-#:
-#: ``.m4a`` → ``audio/mp4``: an Audio Overview is AAC in an ISO-BMFF/MP4 container,
-#: which is what the artifact row itself advertises (#2034). There is deliberately
-#: no ``.mp3`` row — no spec resolves to it.
-EXTENSION_MIME_TYPES: dict[str, str] = {
-    ".m4a": "audio/mp4",
-    ".mp4": "video/mp4",
-    ".pdf": "application/pdf",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".png": "image/png",
-    ".md": "text/markdown",
-    ".json": "application/json",
-    ".csv": "text/csv",
-    ".html": "text/html",
-}
 
 #: Fallback when an extension isn't in :data:`EXTENSION_MIME_TYPES` (unreachable for
 #: the registered specs — every spec extension is mapped — but keeps callers total).
@@ -96,39 +68,6 @@ class ArtifactDict(TypedDict):
     id: str
     title: str
     created_at: int  # Unix timestamp
-
-
-@dataclass(frozen=True)
-class DownloadTypeSpec:
-    """Static metadata for one ``download <name>`` leaf command.
-
-    The only axes of variation across the 9 leaf commands: ``name`` /
-    ``kind`` / default ``extension`` / ``default_dir`` / the
-    ``client.artifacts`` ``download_attr`` to bind, ``--help`` text, and the
-    optional ``--format`` wiring (``format_choices`` / ``format_default`` /
-    ``format_help`` / ``format_extension_map`` extension override /
-    ``format_kwarg`` to forward / ``format_param_name`` adapter flag name /
-    ``forward_format_only_if_set`` slide-deck "pptx-only" forwarding).
-
-    ``frozen=True`` freezes only the *reference*; the ``format_extension_map``
-    contents stay mutable — the registry rows are module constants treated as
-    read-only by convention.
-    """
-
-    name: str
-    kind: ArtifactType
-    extension: str
-    default_dir: str
-    download_attr: str
-    help_summary: str
-    help_examples: str
-    format_choices: tuple[str, ...] = ()
-    format_default: str = ""
-    format_help: str = ""
-    format_extension_map: dict[str, str] = field(default_factory=dict)
-    format_kwarg: str = ""
-    format_param_name: str = "output_format"
-    forward_format_only_if_set: bool = False
 
 
 def resolve_extension(spec: DownloadTypeSpec, output_format: str | None = None) -> str:

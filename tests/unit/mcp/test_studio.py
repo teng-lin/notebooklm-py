@@ -1362,7 +1362,7 @@ async def test_artifact_download_quiz_with_format(mcp_call, mock_client, tmp_pat
 
 
 async def test_artifact_download_unknown_type_is_validation_error(mcp_call, mock_client) -> None:
-    """An unknown download artifact_type is rejected at the Literal schema boundary."""
+    """An unknown type is rejected by the registry-derived schema validator."""
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
             "studio_download", {"notebook": NB_ID, "artifact_type": "bogus", "path": "/tmp/x"}
@@ -1373,7 +1373,7 @@ async def test_artifact_download_unknown_type_is_validation_error(mcp_call, mock
 async def test_artifact_download_bad_format_for_supported_type_is_validation(
     mcp_call, mock_client, tmp_path
 ) -> None:
-    """A bad ``format`` for a type that DOES support format projects a Literal schema boundary error."""
+    """A bad format is rejected by the registry-derived schema validator."""
     out = str(tmp_path / "quiz.json")
     mock_client.artifacts.list = AsyncMock(return_value=[_QUIZ_ARTIFACT])
     with pytest.raises(ToolError) as excinfo:

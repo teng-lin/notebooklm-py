@@ -17,7 +17,11 @@ Lives under ``tests/unit/mcp/`` so it is auto-skipped without the ``mcp`` extra
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
+
+from notebooklm._app.download_specs import DOWNLOAD_FORMAT_NAMES, DOWNLOAD_SPECS_BY_NAME
 
 # Skip cleanly when the `mcp` extra (fastmcp) is absent; see conftest.py.
 pytest.importorskip("fastmcp")
@@ -236,6 +240,19 @@ async def test_studio_retry_is_plain_mutating_tool(tools_by_name) -> None:
     assert "confirm" not in tool.inputSchema.get("properties", {})
 
 
+def _schema_enum_values(schema: Any) -> set[str]:
+    """Collect string enum values from a possibly nullable nested schema."""
+    values: set[str] = set()
+    if isinstance(schema, dict):
+        values.update(value for value in schema.get("enum", ()) if isinstance(value, str))
+        for child in schema.values():
+            values.update(_schema_enum_values(child))
+    elif isinstance(schema, list):
+        for child in schema:
+            values.update(_schema_enum_values(child))
+    return values
+
+
 async def test_studio_download_advertises_artifact_id_and_format_enum(tools_by_name) -> None:
     """``studio_download`` advertises the ``artifact_id`` param and an enumerated
     ``output_format`` so an agent's tool schema can target a specific artifact and
@@ -247,13 +264,13 @@ async def test_studio_download_advertises_artifact_id_and_format_enum(tools_by_n
     assert "artifact_id" in properties, "studio_download must expose 'artifact_id'"
     assert "artifact" in properties, "studio_download must expose the 'artifact' name-or-id ref"
     assert "output_format" in properties, "studio_download must expose 'output_format'"
-    # output_format is a Literal union → the schema (possibly under anyOf for the
-    # optional ``| None``) must enumerate every supported format value.
-    fmt_schema = json.dumps(properties["output_format"])
-    for value in ("pdf", "pptx", "json", "markdown", "html"):
-        assert value in fmt_schema, f"output_format schema missing {value!r}: {fmt_schema}"
+    # The registry-derived alias (possibly under anyOf for optional ``| None``)
+    # must enumerate exactly every supported format value.
+    format_schema = properties["output_format"]
+    assert _schema_enum_values(format_schema) == set(DOWNLOAD_FORMAT_NAMES), json.dumps(
+        format_schema
+    )
     # ``artifact_type`` is now optional (target by ``artifact`` ref instead) but must
     # still advertise its full type enum so the by-type path stays schema-guided.
-    type_schema = json.dumps(properties["artifact_type"])
-    for value in ("audio", "video", "slide-deck", "quiz", "flashcards"):
-        assert value in type_schema, f"artifact_type schema missing {value!r}: {type_schema}"
+    type_schema = properties["artifact_type"]
+    assert _schema_enum_values(type_schema) == set(DOWNLOAD_SPECS_BY_NAME), json.dumps(type_schema)

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CLI, MCP, and REST downloads now derive from one artifact-format registry.**
+  `_app.download_specs` owns each type's client binding and each representation's
+  extension/MIME pair; adapter registries, MCP schema enums, and the MIME lookup
+  are projections of that table. Adding a type or format no longer requires
+  updating three copies, while the CLI keeps its help prose and public legacy
+  `slide_format` parameter as explicit adapter-local residue
+  ([#2056](https://github.com/teng-lin/notebooklm-py/issues/2056)).
+
 - **The default base host is now `notebook.google.com`.** Google rebranded
   NotebookLM to Gemini Notebook and serves the personal app from both
   `notebooklm.google.com` and `notebook.google.com`; `batchexecute` is

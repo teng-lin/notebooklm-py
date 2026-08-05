@@ -1075,7 +1075,8 @@ src/notebooklm/
 │   ├── auth_check.py            # Click-free `auth check` diagnostics core: run_auth_check(plan, read_env_auth_json=…) -> AuthCheckResult (storage-exists/json-valid/cookies-present/SID + optional token-fetch); AuthCheckPlan carries pre-resolved values + the auth_source display label; inline-auth read injected (CLI owns the AuthSource plan-build + Rich table + exit code)
 │   ├── chat.py                  # Click-free chat core: conversation-id selection ladder + configure mode/goal/length dispatch + history fetch/format-as-data + ask save-as-note workflow (raises public ValidationError; status emitted into injected ProgressSink)
 │   ├── doctor.py                # Click-free doctor core: run_checks(*, fix, paths) -> DoctorReport (five checks incl. headless-reauth readiness + fixes + has_failures; DoctorPaths injects the path helpers; CLI owns rendering/exit codes)
-│   ├── download.py              # Click-free download core: DownloadPlan/Result/TypeSpec + build_download_plan/execute_download (injected resolvers; CLI builds the --json envelope from the typed DownloadResult)
+│   ├── download.py              # Click-free download core: DownloadPlan/Result + build_download_plan/execute_download (injected resolvers; CLI builds the --json envelope from the typed DownloadResult)
+│   ├── download_specs.py        # Canonical artifact-download registry: type/binding + per-format extension/MIME descriptors; derives DownloadTypeSpec projections, MIME lookup, and adapter schema enums
 │   ├── errors.py                # classify(exc) -> ClassifiedError (category + retriable); class-sensitive
 │   ├── events.py                # ProgressEvent + ProgressSink Protocol (neutral progress seam)
 │   ├── generate.py              # Click-free `generate` executor: execute_generation (injected notebook/source resolvers preserve the RPC fast paths) + GenerationExecutionResult; re-exports the plan/retry surface so `_app.generate` is the single import point
@@ -1241,7 +1242,7 @@ src/notebooklm/
 │       ├── _passthrough.py      # Shared pass-through resolvers (passthrough_notebook_id/passthrough_child_id) for the CLI-shaped _app executors
 │       ├── _preview.py          # title_for_id() — shared id→title lookup for the delete tools' needs_confirmation previews
 │       ├── _studio_items.py     # cross-type Studio plumbing: studio_items (merge notes+artifacts into one items list) + resolve_studio_item (cross-type ref → StudioResolvedItem) for studio_list/studio_rename/studio_delete (split from studio.py for the ADR-0008 size budget)
-│       ├── _studio_download.py  # download plumbing shared by studio.py + _fileroutes.py: _DOWNLOAD_SPECS registry (rebuilt from _app.download) + DownloadType + _resolve_artifact_id / _broker_download / _is_http_transport / _passthrough_download_notebook (split from studio.py for the ADR-0008 size budget)
+│       ├── _studio_download.py  # download plumbing shared by studio.py + _fileroutes.py: consumes _app.download_specs directly; registry-derived DownloadType/DownloadFormat schema aliases + _resolve_artifact_id / _broker_download / transport helpers (split from studio.py for the ADR-0008 size budget)
 │       ├── _studio_payloads.py  # wire-shape projection helpers for the Studio generate/rename tools: _generation_payload (GenerationExecutionResult → response dict; mind-map → bare node tree + mind_map_id via _mind_map_tree/_mind_map_id) + _artifact_rename_payload (split from studio.py for the ADR-0008 size budget)
 │       ├── _waitagg.py          # source-wait outcome aggregation shared by source_wait + source_add(wait=True): _wait_all_sources (concurrent per-source wait) + _aggregate_wait_outcomes (typed SourceWaitOutcome → {ok, ready, timed_out, failed, not_found} + thin-warning annotation) (split from sources.py for the ADR-0008 size budget)
 │       ├── notebooks.py         # notebook_list/create/describe/rename/delete over _app.notebooks
@@ -1263,7 +1264,7 @@ src/notebooklm/
     ├── __init__.py              # Re-exports click groups under historical names from *_cmd modules
     ├── _chromium_profiles.py    # Multi-user-data-profile cookie extraction for Chromium browsers
     ├── _cookie_import.py        # `auth import-cookies` helpers: parse/normalize/validate cookie JSON + backup-then-atomic-write storage_state
-    ├── _download_specs.py       # Registry data for `download <type>` leaf commands
+    ├── _download_specs.py       # Click projection of the shared download registry: help/examples + legacy slide_format parameter only
     ├── _encoding.py             # Encoding-safe CLI output helpers
     ├── _firefox_containers.py   # Container-aware Firefox cookie extraction
     ├── _session_render.py       # Session-command render helpers (status/auth tables)
@@ -1309,7 +1310,7 @@ src/notebooklm/
         ├── auth_refresh.py      # Missing-storage bootstrap from the exact sibling master token
         ├── auth_source.py       # Single source of truth for the active CLI auth source (Click-context precedence resolver; stays in cli/ — reads ctx.obj + NOTEBOOKLM_AUTH_JSON)
         ├── confirming_mutation.py # Shared confirmed-mutation pipeline for CLI resources
-        ├── download.py          # CLI adapter over _app/download.py: re-exports plan types, injects cli.resolve resolvers (keeps resolve_notebook_id patch seam), projects DownloadResult → envelope dict
+        ├── download.py          # CLI adapter over _app/download.py: re-exports plan/spec types, injects cli.resolve resolvers (keeps resolve_notebook_id patch seam), projects DownloadResult → envelope dict
         ├── generate.py          # `generate` CLI adapter over `_app/generate.py` — re-exports plan/result/error + build_generation_plan; injects cli.resolve resolve_notebook_id/resolve_source_ids (read at call time, preserving the resolve_module monkeypatch seam) into the neutral execute_generation; re-exports _INFOGRAPHIC_STYLE_MAP from `_app/generate_plans.py` for generate_cmd
         ├── label_listing.py     # `label list` members→titles join service; re-exports resolve_label_id + LabelResolutionError from _app/labels.py
         ├── listing.py           # Shared list-command pipeline for CLI resources
