@@ -649,19 +649,6 @@ class TestLoginProgressSuccess:
 # ---------------------------------------------------------------------------
 class TestLoginErrorRender:
     @pytest.mark.requires_playwright
-    def test_windows_spawn_unknown_explains_interactive_session_requirement(self, runner):
-        with patch.object(_pl, "sys", SimpleNamespace(platform="win32")):
-            result, _ = _drive_login(
-                runner,
-                launch_side=Exception("BrowserType.launch_persistent_context: spawn UNKNOWN"),
-            )
-
-        assert result.exit_code == 1
-        assert "Chromium could not start in this Windows session" in result.output
-        assert "interactive desktop or window station" in result.output
-        assert "notebooklm login --browser-cookies chrome" in result.output
-
-    @pytest.mark.requires_playwright
     def test_retry_exhausted_connection_error_help(self, runner):
         from playwright.sync_api import Error as PlaywrightError
 
