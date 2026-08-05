@@ -12,11 +12,22 @@ Example::
       --profile teng-lin-9420 \
       --browser 'chromium::Profile 3' \
       --account teng.lin.9420@gmail.com \
+      --base-url https://notebooklm.google.com \
+      --output live-matrix.json
 
-The report is JSON and is suitable for attaching to a release checklist.
-Interactive Playwright login, CDP capture, Workspace accounts, and regional
-accounts remain separate/manual cells; this runner covers the repeatable
-non-interactive matrix.
+The JSON report is suitable for attaching to a release checklist. All writes
+go to a disposable ``NOTEBOOKLM_HOME`` and the temporary credential copies are
+removed when the run finishes. Covered cells include baseline/live token
+checks, browser-cookie login, master-token re-mint, cookie import filtering,
+both NotebookLM hosts, concurrent refresh, true mid-session recovery,
+transient-fault recovery (503, connection failure, and read timeout), and
+crash-safe canonical writes.
+
+The browser cookie extractor is host-sensitive: use the host where the browser
+profile currently has its NotebookLM binding. Interactive Playwright login,
+initial master-token bootstrap, CDP capture, Workspace/SSO, regional-account,
+long-duration expiry, and MCP transport checks remain separate/manual cells.
+MCP file-route coverage is available from ``scripts/mcp_live_smoke.py``.
 """
 
 from __future__ import annotations
