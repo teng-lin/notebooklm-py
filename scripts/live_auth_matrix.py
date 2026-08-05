@@ -33,8 +33,10 @@ MCP file-route coverage is available from ``scripts/mcp_live_smoke.py``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -60,6 +62,7 @@ class Matrix:
                 "NOTEBOOKLM_REFRESH_BROWSER": args.browser,
             }
         )
+        self.base_env.pop("NOTEBOOKLM_AUTH_JSON", None)
 
     def env(self, home: Path, **extra: str) -> dict[str, str]:
         env = self.base_env.copy()
@@ -74,15 +77,23 @@ class Matrix:
         if profile:
             command.extend(["--profile", profile])
         command.extend(args)
-        return subprocess.run(
-            command,
-            cwd=ROOT,
-            env=self.env(home, **extra),
-            text=True,
-            capture_output=True,
-            timeout=self.args.timeout,
-            check=False,
-        )
+        try:
+            return subprocess.run(
+                command,
+                cwd=ROOT,
+                env=self.env(home, **extra),
+                text=True,
+                capture_output=True,
+                timeout=self.args.timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            return subprocess.CompletedProcess(
+                command,
+                124,
+                exc.stdout or "",
+                f"timed out after {self.args.timeout}s",
+            )
 
     def record(
         self, name: str, proc: subprocess.CompletedProcess[str], *, expect_json: bool = False
@@ -129,7 +140,8 @@ class Matrix:
             self.phase_import_filter()
             self.phase_hosts()
             self.phase_concurrency()
-            self.phase_mid_session()
+            if not self.args.skip_browser:
+                self.phase_mid_session()
             self.phase_fault_injection()
             self.phase_crash_safety()
         finally:
@@ -140,6 +152,7 @@ class Matrix:
                 "browser": self.args.browser,
                 "base_url": self.args.base_url,
                 "browser_cells": "skipped" if self.args.skip_browser else "executed",
+                **self.worktree_info(),
                 "results": self.results,
                 "temporary_home": str(self.temp),
             }
@@ -150,6 +163,26 @@ class Matrix:
             shutil.rmtree(self.temp, ignore_errors=True)
         return 0 if all(item["status"] == "pass" for item in self.results) else 1
 
+    def worktree_info(self) -> dict[str, Any]:
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        ).stdout
+        diff = subprocess.run(
+            ["git", "diff", "HEAD"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        ).stdout
+        return {
+            "worktree_dirty": bool(status),
+            "worktree_diff_hash": hashlib.sha256(diff.encode()).hexdigest(),
+        }
+
     def revision(self) -> str:
         proc = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, capture_output=True, check=False
@@ -157,17 +190,19 @@ class Matrix:
         return proc.stdout.strip()
 
     def phase_baseline(self) -> None:
+        home = self.temp / "baseline"
+        self.copy_profile(self.args.profile, home, "baseline")
         proc = self.cli(
-            DEFAULT_HOME,
+            home,
             "auth",
             "check",
             "--test",
             "--passive",
             "--json",
-            profile=self.args.profile,
+            profile="baseline",
         )
         self.record("baseline-auth", proc, expect_json=True)
-        proc = self.cli(DEFAULT_HOME, "--quiet", "list", "--json", profile=self.args.profile)
+        proc = self.cli(home, "--quiet", "list", "--json", profile="baseline")
         self.record("baseline-list", proc, expect_json=True)
 
     def phase_browser_discovery(self) -> None:
@@ -301,25 +336,42 @@ class Matrix:
             "        print(f'{len(before)} {len(after)} {len(c._collaborators.kernel.get_http_client().cookies)}')\n"
             "asyncio.run(main())\n"
         )
-        proc = subprocess.run(
-            [sys.executable, "-c", script],
-            cwd=ROOT,
-            env=self.env(
-                home,
-                NOTEBOOKLM_REFRESH_CMD=f"{sys.executable} {ROOT / 'examples' / 'refresh_browser_cookies.py'}",
-                NOTEBOOKLM_REFRESH_CMD_MIDSESSION="1",
-            ),
-            text=True,
-            capture_output=True,
-            timeout=self.args.timeout,
-            check=False,
-        )
+        command = [sys.executable, "-c", script]
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=self.env(
+                    home,
+                    NOTEBOOKLM_REFRESH_CMD=(
+                        f"{shlex.quote(sys.executable)} "
+                        f"{shlex.quote(str(ROOT / 'examples' / 'refresh_browser_cookies.py'))}"
+                    ),
+                    NOTEBOOKLM_REFRESH_CMD_MIDSESSION="1",
+                ),
+                text=True,
+                capture_output=True,
+                timeout=self.args.timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            proc = subprocess.CompletedProcess(
+                command,
+                124,
+                exc.stdout or "",
+                f"timed out after {self.args.timeout}s",
+            )
         self.record("true-mid-session-recovery", proc)
 
     def phase_crash_safety(self) -> None:
         home = self.temp / "crash"
         home.mkdir(parents=True)
         source = DEFAULT_HOME / "profiles" / self.args.profile / "storage_state.json"
+        expected = json.loads(source.read_text(encoding="utf-8"))
+        expected_names = {
+            cookie.get("name") for cookie in expected.get("cookies", []) if cookie.get("name")
+        }
+        required_names = {"SID", "APISID", "SAPISID", "LSID"}
         target = home / "storage_state.json"
         shutil.copy2(source, target)
         script = (
@@ -343,7 +395,11 @@ class Matrix:
                 pass
             proc.wait(timeout=self.args.timeout)
             try:
-                json.loads(target.read_text(encoding="utf-8"))
+                state = json.loads(target.read_text(encoding="utf-8"))
+                names = {
+                    cookie.get("name") for cookie in state.get("cookies", []) if cookie.get("name")
+                }
+                passed = passed and required_names.issubset(names & expected_names)
             except json.JSONDecodeError:
                 passed = False
         self.results.append(
@@ -364,15 +420,23 @@ class Matrix:
             "tests/unit/test_retry_middleware.py",
             "tests/unit/test_auth_refresh_middleware.py",
         ]
-        proc = subprocess.run(
-            command,
-            cwd=ROOT,
-            env=self.base_env,
-            text=True,
-            capture_output=True,
-            timeout=self.args.timeout,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=self.base_env,
+                text=True,
+                capture_output=True,
+                timeout=self.args.timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            proc = subprocess.CompletedProcess(
+                command,
+                124,
+                exc.stdout or "",
+                f"timed out after {self.args.timeout}s",
+            )
         self.record("transient-fault-injection-tests", proc)
 
 
