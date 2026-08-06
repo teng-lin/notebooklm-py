@@ -269,6 +269,35 @@ class TestGetStoragePath:
             result = get_storage_path()
             assert result == home / "storage_state.json"
 
+    def test_legacy_fallback_warns_deprecated(self, tmp_path):
+        """#2103: the home-root fallback is deprecated (scheduled removal v0.9.0),
+        routed through ``_deprecation.warn_deprecated`` per ADR-0018 (never an
+        inline ``warnings.warn``, which the guardrail
+        ``test_no_inline_deprecation_warnings.py`` forbids outside that module)."""
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "storage_state.json").write_text("{}")
+
+        with (
+            patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True),
+            pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"),
+        ):
+            get_storage_path()
+
+    def test_legacy_fallback_quiet_env_suppresses_warning(self, tmp_path, recwarn):
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "storage_state.json").write_text("{}")
+
+        with patch.dict(
+            os.environ,
+            {"NOTEBOOKLM_HOME": str(home), "NOTEBOOKLM_QUIET_DEPRECATIONS": "1"},
+            clear=True,
+        ):
+            get_storage_path()
+
+        assert not any(issubclass(w.category, DeprecationWarning) for w in recwarn.list)
+
     def test_no_fallback_for_named_profile(self, tmp_path):
         """No legacy fallback for non-default profiles."""
         home = tmp_path / "home"

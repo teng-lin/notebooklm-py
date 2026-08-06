@@ -34,7 +34,6 @@ from ....auth import (
     CLEAR_ACCOUNT,
     AccountRecord,
     cookie_names_from_storage,
-    drop_legacy_account_key,
     fetch_tokens_with_domains,
     missing_cookies_hint,
     read_account_metadata,
@@ -475,10 +474,8 @@ def _login_with_browser_cookies(
         )
         io.fail(1)
 
-    # The writer embedded (or cleared) the in-band account binding atomically;
-    # drop the legacy sibling ``context.json[account]`` key so a default-account
-    # login can't keep routing to a stale legacy account (best-effort, own lock).
-    drop_legacy_account_key(storage_path)
+    # replace_from_login already scrubbed the legacy sibling context.json[account]
+    # key as part of its own atomic write (storage_writer.py).
 
     saved_msg = f"\n[green]Authentication saved to:[/green] {storage_path}"
     if email:

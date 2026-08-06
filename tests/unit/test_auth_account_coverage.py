@@ -31,6 +31,7 @@ from notebooklm._auth.account import (
     enumerate_accounts,
     format_authuser_value,
     get_account_email_for_storage,
+    promote_legacy_account,
     read_account_metadata_from_storage_state,
     write_account_metadata,
 )
@@ -144,6 +145,89 @@ class TestReadLegacyAccount:
             json.dumps({"account": {"authuser": 4}}), encoding="utf-8"
         )
         assert _read_legacy_account(storage) == {"authuser": 4}
+
+
+class TestPromoteLegacyAccount:
+    """``promote_legacy_account`` — the one-shot in-band migration (#2103 PR-0).
+
+    ``test_profile_atomic_write.py::test_legacy_two_file_fixture_reads_cleanly``
+    already pins the acceptance-critical success path (embed + scrub + preserve
+    non-account context keys). This class covers the branches that test does
+    not: no legacy record, in-band-already-present residue cleanup (the privacy
+    case — a stale legacy email must not survive a promotion no-op), and
+    sanitization of a malformed legacy record.
+    """
+
+    def test_no_legacy_record_is_a_noop(self, tmp_path):
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+        assert promote_legacy_account(storage) is False
+
+    def test_in_band_already_present_scrubs_legacy_residue_without_promoting(self, tmp_path):
+        """Both records exist: promotion returns False (nothing NEW promoted),
+        but the stale legacy email must still be scrubbed — leaving it at rest
+        after a promotion no-op is the exact privacy hazard #2103's PR-0 closes
+        on the write side."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(
+            json.dumps(
+                {
+                    "cookies": [],
+                    "origins": [],
+                    "notebooklm": {"version": 1, "account": {"authuser": 7}},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": 1, "email": "stale@example.com"}}),
+            encoding="utf-8",
+        )
+
+        assert promote_legacy_account(storage) is False
+
+        assert _read_legacy_account(storage) == {}
+        in_band = json.loads(storage.read_text(encoding="utf-8"))["notebooklm"]["account"]
+        assert in_band == {"authuser": 7}  # untouched — in-band already won
+
+    def test_sanitizes_malformed_legacy_authuser_and_blank_email(self, tmp_path):
+        """Same sanitization ``get_authuser_for_storage`` applies on read: a
+        non-int/negative ``authuser`` falls back to 0, a blank email is dropped."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": -1, "email": "   "}}), encoding="utf-8"
+        )
+
+        assert promote_legacy_account(storage) is True
+
+        in_band = json.loads(storage.read_text(encoding="utf-8"))["notebooklm"]["account"]
+        assert in_band == {"authuser": 0}
+        assert _read_legacy_account(storage) == {}
+
+    def test_promotion_failure_leaves_legacy_record_intact(self, tmp_path, monkeypatch):
+        """Best-effort by design: if the in-band embed raises, the legacy record
+        is NOT scrubbed — a failed promotion must not lose the only copy of the
+        user's account binding."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": 4, "email": "dana@example.com"}}),
+            encoding="utf-8",
+        )
+
+        def _boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        # ``promote_legacy_account`` does ``from . import storage_writer`` (binds
+        # the MODULE), so patching the module's function attribute — not a
+        # from-import binding in account.py — is what actually takes effect.
+        import notebooklm._auth.storage_writer as _storage_writer
+
+        monkeypatch.setattr(_storage_writer, "update_account_metadata", _boom)
+
+        assert promote_legacy_account(storage) is False
+        assert _read_legacy_account(storage) == {"authuser": 4, "email": "dana@example.com"}
 
 
 class TestDropLegacyAccountKey:

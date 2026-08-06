@@ -146,6 +146,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     logged in" and re-mint nothing, because the login accept-set matches either
     personal host.
 
+### Removed
+
+- **The pre-v0.5.0 legacy account-metadata read fallback.** `read_account_metadata`
+  no longer returns a raw pass-through of the sibling `context.json[account]`
+  key when `storage_state.json` has no in-band record. That standing fallback was
+  a silent wrong-account hazard: a profile whose `authuser` lived only in the
+  legacy sibling would keep being re-derived from that file forever — a missed
+  or stale value routes requests to a *different* signed-in Google account (an
+  issue-#2103-class bug) with no failure to notice. In its place,
+  `read_account_metadata` calls a one-shot `promote_legacy_account` migration on
+  every read where in-band is absent, embedding the legacy record in-band
+  (durably, once) and scrubbing the legacy key — so no existing user loses their
+  account binding, and the result is always genuinely in-band truth rather than
+  a value re-derived from an unmigrated file each call. The startup profiles
+  migration promotes proactively too, as a completeness nicety.
+  `drop_legacy_account_key` (whose two remaining call sites in the CLI login
+  writers are gone — the scrub now lives inside `replace_from_login` itself) is
+  de-blessed rather than removed: still importable from `notebooklm.auth` for
+  back-compat.
+
+### Deprecated
+
+- **The pre-profiles home-root layout** (`~/.notebooklm/storage_state.json` /
+  `context.json` / `browser_profile/` read directly, outside `profiles/<name>/`)
+  now emits a `DeprecationWarning` on each read. It is reached only when the
+  profile-dir path doesn't exist and the resolved profile is `"default"`; running
+  any `notebooklm` command once triggers the existing crash-safe migration and
+  the fallback is never hit again. Scheduled for removal in v1.0. Suppress with
+  `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. See [docs/deprecations.md](docs/deprecations.md).
+
 ### Fixed
 
 - **`login --master-token` now honors `--storage` for `master_token.json` too

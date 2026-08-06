@@ -749,6 +749,14 @@ def replace_from_login(
             backup_path = candidate
 
         atomic_write_json(path, filtered)
+    # Outside the storage lock (its own sibling ``.lock``, matching
+    # ``write_account_metadata``'s ordering): the in-band write just committed
+    # the account binding (or cleared it), so scrub any stale legacy sibling
+    # ``context.json[account]`` key now — best-effort, never a login failure.
+    # Without this, a login via KEEP_ACCOUNT/CLEAR_ACCOUNT/AccountRecord would
+    # leave a pre-v0.5.0 account record at rest with no reader (removed) and no
+    # writer left to clean it up (privacy: the old email must not survive).
+    _account._drop_legacy_account_key(path)
     return LoginWriteOutcome(LoginWriteStatus.OK, backup_path=backup_path)
 
 

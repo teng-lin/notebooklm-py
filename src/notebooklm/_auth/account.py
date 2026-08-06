@@ -250,7 +250,11 @@ def read_account_metadata_from_storage_state(storage_state: Any) -> dict[str, An
 
 
 def _read_legacy_account(storage_path: Path) -> dict[str, Any]:
-    """Read account metadata from the legacy sibling ``context.json``."""
+    """Read the pre-v0.5.0 sibling ``context.json`` account record.
+
+    Consumed ONLY by :func:`promote_legacy_account` (the one-shot in-band
+    migration). Never a standing read path — see ``read_account_metadata``.
+    """
     context_path = _account_context_path(storage_path)
     if not context_path.exists():
         return {}
@@ -266,12 +270,24 @@ def _read_legacy_account(storage_path: Path) -> dict[str, Any]:
 
 
 def read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
-    """Read profile account metadata, preferring the unified in-band record.
+    """Read profile account metadata, self-healing a legacy two-file profile.
 
     Unified layout: account metadata lives inside ``storage_state.json``
-    under the ``notebooklm`` namespace key. Legacy two-file installs are
-    still supported via fallback to sibling ``context.json``; the next write
-    will migrate them in-band.
+    under the ``notebooklm`` namespace key. This reader never returns a raw
+    pass-through of the pre-v0.5.0 sibling ``context.json`` record — a
+    standing read fallback that silently trusted an unmigrated legacy value
+    was the wrong-account hazard #2103's PR-0 closes (a legacy ``authuser``
+    the fallback missed, or a stale one it kept trusting forever, could
+    silently route requests to a different signed-in Google account).
+
+    Instead, every call is the single chokepoint for
+    :func:`promote_legacy_account`: the fast path (in-band already present —
+    the overwhelming majority of calls, once any profile has been read once)
+    costs one dict lookup; only a not-yet-migrated legacy profile pays for the
+    one-shot promotion (a context.json read, and — the FIRST time only — an
+    atomic in-band write). This is strictly safer than the pre-PR-0 behavior:
+    the result is always genuinely in-band truth, migrated once and durably,
+    rather than a value re-derived from an unmigrated file on every call.
 
     The ``account`` object records the Google ``authuser`` index used when
     the profile was authenticated. Profiles from before account-binding
@@ -280,7 +296,8 @@ def read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
 
     Args:
         storage_path: Path to ``storage_state.json``. ``None`` means the
-            profile is loaded from ``NOTEBOOKLM_AUTH_JSON``.
+            profile is loaded from ``NOTEBOOKLM_AUTH_JSON`` (no sibling to
+            promote from — env-auth profiles skip promotion entirely).
 
     Returns:
         Parsed metadata dict, or ``{}`` if no record is present.
@@ -290,7 +307,58 @@ def read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
     in_band = _read_in_band_account(storage_path)
     if in_band:
         return in_band
-    return _read_legacy_account(storage_path)
+    if promote_legacy_account(storage_path):
+        return _read_in_band_account(storage_path)
+    return {}
+
+
+def promote_legacy_account(storage_path: Path) -> bool:
+    """One-shot migration: move a legacy sibling ``account`` record in-band.
+
+    The pre-v0.5.0 two-file layout stored account metadata (``authuser`` /
+    ``email``) in the sibling ``context.json``. This helper promotes that
+    record into ``storage_state.json`` via the canonical storage writer and
+    strips the legacy key, so :func:`read_account_metadata` (in-band-only)
+    never loses a user's account binding.
+
+    Ordering is crash-safe: the in-band embed commits first (atomic, under
+    the canonical storage lock), the legacy strip second (atomic, under the
+    context lock). A crash in between leaves both records present; the next
+    call takes the strip-only branch. When the in-band record already
+    exists, any stale legacy key is stripped as residue cleanup (privacy:
+    the old account email must not live on at rest after a re-login).
+
+    Best-effort by design — called from :func:`read_account_metadata` (the
+    account chokepoint) on every read where in-band is absent, so a promotion
+    failure must degrade to the pre-promotion state, never break the read.
+    Returns ``True`` only when a legacy record was embedded.
+
+    Args:
+        storage_path: Path to ``storage_state.json`` (must be a real file
+            path — env-auth profiles have no sibling and are skipped by the
+            caller).
+    """
+    legacy = _read_legacy_account(storage_path)
+    if not legacy:
+        return False
+    promoted = False
+    if not _read_in_band_account(storage_path):
+        raw_authuser = legacy.get("authuser")
+        authuser = raw_authuser if type(raw_authuser) is int and raw_authuser >= 0 else 0
+        raw_email = legacy.get("email")
+        email = raw_email.strip() if isinstance(raw_email, str) and raw_email.strip() else None
+        try:
+            from . import storage_writer  # local import: avoid the account<->writer cycle
+
+            storage_writer.update_account_metadata(storage_path, authuser=authuser, email=email)
+            promoted = True
+        except Exception as e:  # noqa: BLE001 — load path must not fail on promotion
+            logger.debug("legacy account promotion failed at %s: %s", storage_path, e)
+            return False
+    _drop_legacy_account_key(storage_path)
+    if promoted:
+        logger.info("Promoted legacy account metadata in-band for %s", storage_path)
+    return promoted
 
 
 def get_authuser_for_storage(storage_path: Path | None) -> int:
@@ -339,12 +407,17 @@ def authuser_query(authuser: int = 0, account_email: str | None = None) -> str:
 
 
 def _drop_legacy_account_key(storage_path: Path) -> None:
-    """Migration helper: remove ``account`` from sibling ``context.json``.
+    """Scrub the legacy ``account`` key from the sibling ``context.json``.
 
     Preserves all other CLI context state (``notebook_id``,
     ``conversation_id``, …). Best-effort: a failure here does not abort the
-    in-band write because the reader prefers the in-band record (legacy
-    fallback only kicks in when in-band is absent).
+    in-band write. Since the legacy READ path was removed (the reader is
+    in-band-only; :func:`promote_legacy_account` owns the migration), this
+    survives purely as a privacy scrub — a stale legacy key would leave the
+    account email at rest forever with no reader and no writer to remove it.
+    Called by ``write_account_metadata`` / ``clear_account_metadata`` /
+    ``promote_legacy_account`` (this module) and ``storage_writer.replace_from_login``
+    (the CLI login writer, after its own atomic write).
     """
     context_path = _account_context_path(storage_path)
     if not context_path.exists():
