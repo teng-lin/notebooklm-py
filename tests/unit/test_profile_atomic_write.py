@@ -47,6 +47,7 @@ from notebooklm._auth.account import (
     clear_account_metadata,
     get_account_email_for_storage,
     get_authuser_for_storage,
+    promote_legacy_account,
     read_account_metadata,
     write_account_metadata,
 )
@@ -98,11 +99,27 @@ def test_read_account_metadata_prefers_in_band_record(tmp_path: Path) -> None:
 
 
 def test_legacy_two_file_fixture_reads_cleanly(tmp_path: Path) -> None:
-    """ACCEPTANCE-CRITICAL: existing two-file profile loads under new reader.
+    """ACCEPTANCE-CRITICAL: existing two-file profile reads correctly, no caller
+    action required.
 
-    If this migration test breaks for any existing user, they will lose their
-    account binding (authuser/email) on the next CLI run — Tier-9 P1-20 PR
-    body must surface this.
+    Since the master-token-relocation PR-0 (issue #2103), ``read_account_metadata``
+    never returns a raw pass-through of the sibling ``context.json[account]``
+    record — a standing legacy-sibling fallback on every read meant a missed
+    ``authuser`` could silently route requests to a *different* signed-in Google
+    account (a #2103-class hazard), so the fallback was removed rather than
+    patched at each call site.
+
+    In its place, ``read_account_metadata`` itself calls the one-shot
+    ``promote_legacy_account`` migration whenever in-band is absent — so THIS
+    call, the very first read of any kind (``get_authuser_for_storage``,
+    ``get_account_email_for_storage``, ``read_account_metadata`` directly, or
+    any future caller), embeds the record in-band and returns the correct
+    value immediately. No caller anywhere has to remember an extra promotion
+    step; that is the point of putting it at the chokepoint instead of at each
+    of the read helpers built on it.
+
+    If this breaks, an existing user loses their account binding
+    (authuser/email) on the next CLI run.
     """
     storage_path = tmp_path / "storage_state.json"
     _write_storage_state(
@@ -123,8 +140,20 @@ def test_legacy_two_file_fixture_reads_cleanly(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
+    # The very first read already self-heals — no separate promotion call.
     assert get_authuser_for_storage(storage_path) == 3
     assert get_account_email_for_storage(storage_path) == "charlie@example.com"
+    assert read_account_metadata(storage_path) == {
+        "authuser": 3,
+        "email": "charlie@example.com",
+    }
+    # Non-account legacy context state (notebook_id) survives the promotion.
+    legacy_after = json.loads(_context_path(storage_path).read_text(encoding="utf-8"))
+    assert "account" not in legacy_after
+    assert legacy_after.get("notebook_id") == "nb-123"
+
+    # Idempotent: nothing left to promote, and the migrated values are stable.
+    assert promote_legacy_account(storage_path) is False
     assert read_account_metadata(storage_path) == {
         "authuser": 3,
         "email": "charlie@example.com",
@@ -164,7 +193,12 @@ def test_migration_on_write_removes_legacy_account_key_only(tmp_path: Path) -> N
 
 
 def test_in_band_account_overrides_legacy_account(tmp_path: Path) -> None:
-    """When both forms exist, in-band wins."""
+    """When both forms exist, in-band wins — because legacy is never consulted.
+
+    Since #2103's PR-0, ``read_account_metadata`` has no legacy-fallback read at
+    all, so this isn't a precedence contest the in-band record wins; the stale
+    legacy record is simply invisible to the reader.
+    """
     storage_path = tmp_path / "storage_state.json"
     _write_storage_state(
         storage_path,

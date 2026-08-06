@@ -92,7 +92,6 @@ AUTH_CROSS_BOUNDARY_NAMES: list[str] = [
     "CLEAR_ACCOUNT",
     "clear_account_metadata",
     "cookie_names_from_storage",
-    "drop_legacy_account_key",
     "enumerate_accounts",
     "exchange_master_token",
     "extract_cookies_from_storage",
@@ -125,8 +124,12 @@ AUTH_CROSS_BOUNDARY_NAMES: list[str] = [
 # 23 entries came from PR-1 (#1592). ``KEEP_ACCOUNT`` and ``LoginWriteOutcome`` were
 # added when ``__all__`` was pinned to the documented surface: they were blessed
 # additively alongside the storage-writer refactor but no caller — first-party or
-# test — ever imported them, so they are covered here rather than in
-# ``AUTH_CROSS_BOUNDARY_NAMES`` (which requires a live first-party importer).
+# test — ever imported them. ``drop_legacy_account_key`` joined here when the
+# master-token-relocation PR-0 removed its last two ``src/`` call sites — the CLI
+# login writers now rely on ``replace_from_login`` scrubbing the legacy key
+# internally instead of calling this facade helper afterward. All three are
+# covered here rather than in ``AUTH_CROSS_BOUNDARY_NAMES`` (which requires a live
+# first-party importer).
 _AUTH_DEBLESSED_KEEP_IMPORTABLE: list[str] = [
     "advance_cookie_snapshot_after_save",
     "ALLOWED_COOKIE_DOMAINS",
@@ -135,6 +138,7 @@ _AUTH_DEBLESSED_KEEP_IMPORTABLE: list[str] = [
     "CookieSnapshot",
     "CookieSnapshotKey",
     "CookieSnapshotValue",
+    "drop_legacy_account_key",
     "extract_csrf_from_html",
     "extract_session_id_from_html",
     "extract_wiz_field",
@@ -445,9 +449,11 @@ def test_auth_deblessed_names_stay_importable_but_unblessed() -> None:
     ``__all__`` — the rpc-tranche freeze guard, applied to auth.
 
     23 from PR-1 (#1592), plus ``KEEP_ACCOUNT`` / ``LoginWriteOutcome``, which had
-    no importer at all when ``__all__`` was pinned to the documented surface.
+    no importer at all when ``__all__`` was pinned to the documented surface, plus
+    ``drop_legacy_account_key``, whose last ``src/`` importers were removed by the
+    master-token-relocation PR-0 (issue #2103).
     """
-    assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == 25
+    assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == 26
     assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == len(set(_AUTH_DEBLESSED_KEEP_IMPORTABLE)), (
         "_AUTH_DEBLESSED_KEEP_IMPORTABLE must not contain duplicates"
     )

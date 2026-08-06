@@ -269,6 +269,35 @@ class TestGetStoragePath:
             result = get_storage_path()
             assert result == home / "storage_state.json"
 
+    def test_legacy_fallback_warns_deprecated(self, tmp_path):
+        """#2103: the home-root fallback is deprecated (scheduled removal v1.0),
+        routed through ``_deprecation.warn_deprecated`` per ADR-0018 (never an
+        inline ``warnings.warn``, which the guardrail
+        ``test_no_inline_deprecation_warnings.py`` forbids outside that module)."""
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "storage_state.json").write_text("{}")
+
+        with (
+            patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True),
+            pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"),
+        ):
+            get_storage_path()
+
+    def test_legacy_fallback_quiet_env_suppresses_warning(self, tmp_path, recwarn):
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "storage_state.json").write_text("{}")
+
+        with patch.dict(
+            os.environ,
+            {"NOTEBOOKLM_HOME": str(home), "NOTEBOOKLM_QUIET_DEPRECATIONS": "1"},
+            clear=True,
+        ):
+            get_storage_path()
+
+        assert not any(issubclass(w.category, DeprecationWarning) for w in recwarn.list)
+
     def test_no_fallback_for_named_profile(self, tmp_path):
         """No legacy fallback for non-default profiles."""
         home = tmp_path / "home"
@@ -319,6 +348,34 @@ class TestGetContextPath:
         with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
             result = get_context_path()
             assert result == home / "context.json"
+
+    def test_legacy_fallback_warns_deprecated(self, tmp_path):
+        """#2103: same deprecation contract as ``TestGetStoragePath`` — pinned
+        per call site, since each ``get_*_path`` function reaches the shared
+        ``_legacy_fallback`` helper independently."""
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "context.json").write_text("{}")
+
+        with (
+            patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True),
+            pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"),
+        ):
+            get_context_path()
+
+    def test_legacy_fallback_quiet_env_suppresses_warning(self, tmp_path, recwarn):
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "context.json").write_text("{}")
+
+        with patch.dict(
+            os.environ,
+            {"NOTEBOOKLM_HOME": str(home), "NOTEBOOKLM_QUIET_DEPRECATIONS": "1"},
+            clear=True,
+        ):
+            get_context_path()
+
+        assert not any(issubclass(w.category, DeprecationWarning) for w in recwarn.list)
 
     def test_respects_home_env_var(self, tmp_path):
         """Context path follows NOTEBOOKLM_HOME."""
@@ -393,6 +450,32 @@ class TestGetBrowserProfileDir:
         with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
             result = get_browser_profile_dir()
             assert result == home / "browser_profile"
+
+    def test_legacy_fallback_warns_deprecated(self, tmp_path):
+        """#2103: same deprecation contract as ``TestGetStoragePath`` — pinned
+        per call site, since each ``get_*_path`` function reaches the shared
+        ``_legacy_fallback`` helper independently."""
+        home = tmp_path / "home"
+        (home / "browser_profile").mkdir(parents=True)
+
+        with (
+            patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True),
+            pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"),
+        ):
+            get_browser_profile_dir()
+
+    def test_legacy_fallback_quiet_env_suppresses_warning(self, tmp_path, recwarn):
+        home = tmp_path / "home"
+        (home / "browser_profile").mkdir(parents=True)
+
+        with patch.dict(
+            os.environ,
+            {"NOTEBOOKLM_HOME": str(home), "NOTEBOOKLM_QUIET_DEPRECATIONS": "1"},
+            clear=True,
+        ):
+            get_browser_profile_dir()
+
+        assert not any(issubclass(w.category, DeprecationWarning) for w in recwarn.list)
 
     def test_respects_home_env_var(self, tmp_path):
         """Browser profile follows NOTEBOOKLM_HOME."""

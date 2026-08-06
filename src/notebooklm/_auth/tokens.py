@@ -37,9 +37,12 @@ class AuthTokens:
             for HTTP operations as it retains original cookie domains (e.g.,
             .googleusercontent.com vs .google.com).
         authuser: Google ``authuser`` index this profile authenticates as.
-            ``0`` (the default account) is used when no account metadata is
-            present in ``storage_state.json`` (or legacy sibling
-            ``context.json``), matching pre-multi-account behavior.
+            ``0`` (the default account) is used when no in-band account
+            metadata is present in ``storage_state.json``, matching
+            pre-multi-account behavior. A pre-v0.5.0 profile's account
+            metadata in the legacy sibling ``context.json`` is promoted
+            in-band by ``promote_legacy_account`` on load — see
+            ``notebooklm._auth.account`` — rather than read from here.
         account_email: Stable Google account identity for routing. When set,
             NotebookLM requests use it as the ``authuser`` value instead of the
             integer index, because Google account indices can change when other

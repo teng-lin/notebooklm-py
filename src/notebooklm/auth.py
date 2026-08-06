@@ -221,7 +221,9 @@ _resolve_token_route_kwargs = _auth_headers._resolve_token_route_kwargs
 Account = _auth_account.Account
 MAX_AUTHUSER_PROBE = _auth_account.MAX_AUTHUSER_PROBE
 _ACCOUNT_CONTEXT_KEY = _auth_account._ACCOUNT_CONTEXT_KEY
-_account_context_path = _auth_account._account_context_path
+# ``_account_context_path`` is no longer aliased here: it survives in
+# ``_auth.account`` solely as the private site of the legacy-key scrub and the
+# one-shot promotion (whitebox tests patch the canonical home directly).
 extract_email_from_html = _auth_account.extract_email_from_html
 _probe_authuser = _auth_account._probe_authuser
 read_account_metadata = _auth_account.read_account_metadata
@@ -232,14 +234,14 @@ format_authuser_value = _auth_account.format_authuser_value
 authuser_query = _auth_account.authuser_query
 write_account_metadata = _auth_account.write_account_metadata
 clear_account_metadata = _auth_account.clear_account_metadata
-# The sibling ``context.json`` legacy-account cleanup. ``replace_from_login`` now
-# embeds/clears the in-band ``notebooklm.account`` record in the same atomic
-# storage-state write, but the legacy sibling ``context.json[account]`` key lives
-# in a DIFFERENT file under a DIFFERENT lock and is deliberately NOT relocated
-# into the storage writer (plan §b.1). The CLI login writers call this facade
-# helper after a successful write so a default-account (cleared) login can't keep
-# routing to a stale legacy account, matching the pre-refactor
-# ``write_account_metadata`` / ``clear_account_metadata`` migration side effect.
+# The legacy sibling ``context.json[account]`` READ path was removed (the reader
+# is in-band-only); ``promote_legacy_account`` in ``_auth.account`` owns the
+# one-shot in-band migration, invoked from the standard cookie-load path and the
+# startup layout migration. The legacy-key scrub survives INSIDE
+# ``write_account_metadata`` / ``clear_account_metadata`` (privacy: a stale key
+# must not leave the account email at rest), so the CLI login writers no longer
+# call a facade helper after their writes — ``drop_legacy_account_key`` remains
+# importable here for back-compat only (de-blessed; no first-party importer).
 drop_legacy_account_key = _auth_account._drop_legacy_account_key
 
 

@@ -50,6 +50,25 @@ class Account:
 # session; ten covers every realistic case and bounds the worst-case probe.
 MAX_AUTHUSER_PROBE = 10
 
+# Bound on how long promote_legacy_account's write will contend for the
+# storage lock (#2103 PR-0 review). Deliberately short, unlike the usual 90s
+# full-file-RMW deadline: promote_legacy_account now runs inside
+# read_account_metadata, called from many `async` code paths that assume a
+# fast, lock-free read (client.get_account_email, token-route resolution).
+# Promotion is best-effort by design — a failed/timed-out promotion falls
+# back to the legacy record, never breaks the read — so giving up fast under
+# contention and taking that fallback is strictly the right trade-off.
+_PROMOTION_LOCK_DEADLINE_SECONDS = 2.0
+
+# Per-process log-spam throttle for promotion failures (#2103 PR-0 review):
+# read_account_metadata (and transitively this) is now on the request path
+# (token-route resolution reads it per RPC call), so a persistently failing
+# promotion must not warn twice per request forever. Values are canonical
+# storage_path strings that have already logged one WARNING; unbounded
+# growth is not a concern — real deployments have a handful of profiles, not
+# an unbounded set of distinct paths.
+_PROMOTION_WARNED_PATHS: set[str] = set()
+
 # Local-parts of well-known non-user emails that NotebookLM may embed in page
 # chrome (footer links, support contacts) and must not be misread as the
 # active account. Combined with ``_NON_USER_EMAIL_DOMAINS`` so we only drop
@@ -250,7 +269,11 @@ def read_account_metadata_from_storage_state(storage_state: Any) -> dict[str, An
 
 
 def _read_legacy_account(storage_path: Path) -> dict[str, Any]:
-    """Read account metadata from the legacy sibling ``context.json``."""
+    """Read the pre-v0.5.0 sibling ``context.json`` account record.
+
+    Consumed ONLY by :func:`promote_legacy_account` (the one-shot in-band
+    migration). Never a standing read path — see ``read_account_metadata``.
+    """
     context_path = _account_context_path(storage_path)
     if not context_path.exists():
         return {}
@@ -266,31 +289,229 @@ def _read_legacy_account(storage_path: Path) -> dict[str, Any]:
 
 
 def read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
-    """Read profile account metadata, preferring the unified in-band record.
+    """Read profile account metadata, self-healing a legacy two-file profile.
 
     Unified layout: account metadata lives inside ``storage_state.json``
-    under the ``notebooklm`` namespace key. Legacy two-file installs are
-    still supported via fallback to sibling ``context.json``; the next write
-    will migrate them in-band.
+    under the ``notebooklm`` namespace key. This reader never returns a raw
+    pass-through of the pre-v0.5.0 sibling ``context.json`` record — a
+    standing read fallback that silently trusted an unmigrated legacy value
+    was the wrong-account hazard #2103's PR-0 closes (a legacy ``authuser``
+    the fallback missed, or a stale one it kept trusting forever, could
+    silently route requests to a different signed-in Google account).
+
+    Instead, every call is the single chokepoint for
+    :func:`promote_legacy_account`: the fast path (in-band already present —
+    the overwhelming majority of calls, once any profile has been read once)
+    costs one dict lookup; only a not-yet-migrated legacy profile pays for the
+    one-shot promotion (a context.json read, and — the FIRST time only — an
+    atomic in-band write). This is strictly safer than the pre-PR-0 behavior:
+    the result is always genuinely in-band truth, migrated once and durably,
+    rather than a value re-derived from an unmigrated file on every call.
 
     The ``account`` object records the Google ``authuser`` index used when
     the profile was authenticated. Profiles from before account-binding
     shipped (and profiles for users with a single Google account) have no
     account metadata and use ``authuser=0``.
 
+    A transient promotion failure (disk full, permission error, lock
+    timeout) does NOT collapse to ``{}`` — this reader falls back to the
+    legacy record it already read successfully, sanitized identically to
+    what promotion would have embedded (see
+    :func:`_sanitize_legacy_account_record`). Returning ``{}`` on a write
+    failure would reintroduce, via a different trigger, the exact
+    wrong-account-routing hazard this migration exists to close.
+
     Args:
         storage_path: Path to ``storage_state.json``. ``None`` means the
-            profile is loaded from ``NOTEBOOKLM_AUTH_JSON``.
+            profile is loaded from ``NOTEBOOKLM_AUTH_JSON`` (no sibling to
+            promote from — env-auth profiles skip promotion entirely).
 
     Returns:
-        Parsed metadata dict, or ``{}`` if no record is present.
+        Parsed metadata dict, or ``{}`` only when no legacy OR in-band
+        record exists at all.
     """
     if storage_path is None:
         return {}
     in_band = _read_in_band_account(storage_path)
     if in_band:
         return in_band
-    return _read_legacy_account(storage_path)
+    legacy = _read_legacy_account(storage_path)
+    if not legacy:
+        return {}
+    promote_legacy_account(storage_path)
+    # Re-check in-band regardless of promote_legacy_account's return value —
+    # another caller may have promoted+scrubbed this same profile concurrently
+    # even when OUR call found "nothing to do" (a benign race, not a failure).
+    # Only fall back to the legacy record already in hand when in-band is
+    # STILL absent after that recheck: promotion for THIS profile genuinely
+    # did not land (a transient write/lock error — logged inside
+    # promote_legacy_account). Returning {} here instead of the record we
+    # already read successfully would collapse a transient infra failure into
+    # "no account", silently causing exactly the wrong-account-routing hazard
+    # this migration exists to close.
+    in_band_after = _read_in_band_account(storage_path)
+    if in_band_after:
+        return in_band_after
+    return _sanitize_legacy_account_record(legacy)
+
+
+def _sanitize_legacy_account_record(legacy: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a raw legacy ``context.json[account]`` dict identically to how
+    :func:`promote_legacy_account` sanitizes it before embedding in-band, so a
+    caller sees the same values whether promotion succeeded or (on a
+    transient write failure) the caller fell back to the legacy record
+    directly. Mirrors ``get_authuser_for_storage`` / ``get_account_email_for_storage``'s
+    own sanitization rules."""
+    raw_authuser = legacy.get("authuser")
+    result: dict[str, Any] = {
+        "authuser": raw_authuser if type(raw_authuser) is int and raw_authuser >= 0 else 0
+    }
+    raw_email = legacy.get("email")
+    if isinstance(raw_email, str) and raw_email.strip():
+        result["email"] = raw_email.strip()
+    return result
+
+
+def promote_legacy_account(storage_path: Path) -> bool:
+    """One-shot migration: move a legacy sibling ``account`` record in-band.
+
+    The pre-v0.5.0 two-file layout stored account metadata (``authuser`` /
+    ``email``) in the sibling ``context.json``. This helper promotes that
+    record into ``storage_state.json`` via the canonical storage writer and
+    strips the legacy key, so :func:`read_account_metadata` never loses a
+    user's account binding — it prefers the promoted in-band record but
+    falls back to the (still-present-on-failure) legacy record if this
+    function returns ``False`` because a write attempt failed rather than
+    because there was nothing to promote.
+
+    Ordering is crash-safe for the BINDING (never lost), not for the RESIDUE
+    (not guaranteed promptly cleaned up): the in-band embed commits first
+    (atomic, under the canonical storage lock), the legacy strip second
+    (atomic, under the context lock). A crash in between leaves both records
+    present — the account binding is never lost either way, which is the
+    correctness property this function exists for. But the NEXT call does
+    NOT reliably take a strip-only branch: :func:`read_account_metadata`'s
+    fast path (``if in_band: return in_band``) returns as soon as in-band is
+    present and never calls this function again, so a crash-mid-flight
+    residue can survive indefinitely rather than being cleaned up on the very
+    next read. This is a privacy nicety, not a correctness gap (the
+    authoritative binding is the in-band record, already committed) — it is
+    NOT worth a ``context.json`` existence probe on every read's fast path to
+    close eagerly. A subsequent ``write_account_metadata`` /
+    ``clear_account_metadata`` call for the same profile does still strip it
+    (both call ``_drop_legacy_account_key`` unconditionally).
+
+    When the in-band record already exists for another reason — including a
+    CONCURRENT fresh login/account-switch that won a race against THIS call
+    (see ``only_if_absent`` below) — any stale legacy key IS stripped
+    immediately as residue cleanup (privacy: the old account email must not
+    live on at rest after a re-login); that path runs through this function,
+    not through the fast path above.
+
+    Race-safe: the write is issued with ``only_if_absent=True``, so the
+    decision "is in-band still empty" is made under the SAME lock as the
+    write, not by a separate unlocked check beforehand. Without that, a
+    concurrent fresh login could commit its new record in the gap between
+    this function's own (now-removed) unlocked check and its locked write,
+    and this call would silently overwrite it with the stale legacy values
+    it had already captured — reintroducing the wrong-account hazard this
+    whole migration exists to close, via a race instead of a stale read.
+
+    Best-effort by design — called from :func:`read_account_metadata` (the
+    account chokepoint) on every read where in-band is absent, so a promotion
+    failure must degrade to the pre-promotion state, never break the read.
+    Returns ``True`` only when a legacy record was embedded by THIS call
+    (``False`` both when there was nothing to promote and when a concurrent
+    writer won the race — either way no action was needed from this call).
+
+    Never creates ``storage_state.json``: if it doesn't exist yet, promotion
+    is skipped (returning ``False``) rather than synthesizing a cookie-less
+    file to embed into. Without this guard, a plain READ (``profile list``,
+    ``auth check``) on a legacy profile whose cookies had never been captured
+    (or had been removed, e.g. by the ``COOKIE_VALIDATION_FAILED`` not-exists
+    contract) would itself CREATE a persistent ``storage_state.json`` with no
+    cookies at all — and ``_app/profile.py``'s ``authenticated=storage.exists()``
+    check runs immediately after calling this (transitively, via
+    ``read_account_metadata``), so it would flip from correctly reporting "not
+    authenticated" to incorrectly reporting "authenticated" for a profile with
+    zero cookies, purely as a side effect of having been looked at.
+
+    Args:
+        storage_path: Path to ``storage_state.json`` (must be a real file
+            path — env-auth profiles have no sibling and are skipped by the
+            caller).
+    """
+    if not storage_path.exists():
+        return False
+    legacy = _read_legacy_account(storage_path)
+    if not legacy:
+        return False
+    sanitized = _sanitize_legacy_account_record(legacy)
+    try:
+        from . import storage_writer  # local import: avoid the account<->writer cycle
+
+        # only_if_absent=True: the decision "should this write happen" is made
+        # HERE, under the writer's own lock, not by a separate unlocked
+        # _read_in_band_account check beforehand — a check-then-act split
+        # would let a concurrent fresh login/account-switch land in the gap
+        # and then be silently overwritten by these stale legacy values.
+        #
+        # deadline_seconds is short (NOT the usual 90s full-file-RMW deadline):
+        # this call now runs inside read_account_metadata, which many `async`
+        # callers (client.get_account_email, token-route resolution) treat as
+        # a fast, lock-free read. On contention, give up quickly and take the
+        # legacy-record fallback rather than freeze an event loop for up to
+        # 90s over a best-effort migration.
+        promoted = storage_writer.update_account_metadata(
+            storage_path,
+            authuser=sanitized["authuser"],
+            email=sanitized.get("email"),
+            only_if_absent=True,
+            deadline_seconds=_PROMOTION_LOCK_DEADLINE_SECONDS,
+        )
+    except Exception as e:  # noqa: BLE001 — load path must not fail on promotion
+        # WARNING (once per path per process), not debug: a persistent cause
+        # (read-only profile dir, full disk) means every read of this profile
+        # falls back to the legacy record (read_account_metadata) — an
+        # operator needs a default-visible signal that migration is stuck
+        # failing, not one gated behind -v/--debug. But this now runs on the
+        # request path (token-route resolution reads it per RPC call, via
+        # get_authuser_for_storage / get_account_email_for_storage), so an
+        # UNTHROTTLED warning on a persistently failing profile would log
+        # twice per request forever — throttled to the first occurrence per
+        # path per process; every subsequent failure for the same path still
+        # logs, at debug, so -v/--debug retains full detail.
+        canonical = str(storage_path)
+        if canonical not in _PROMOTION_WARNED_PATHS:
+            _PROMOTION_WARNED_PATHS.add(canonical)
+            logger.warning(
+                "Legacy account promotion failed for %s: %s (further failures for this "
+                "profile are logged at debug level)",
+                storage_path,
+                e,
+            )
+        else:
+            logger.debug("Legacy account promotion failed for %s: %s", storage_path, e)
+        return False
+    # Reached whether we promoted or lost a race to a concurrent writer —
+    # either way in-band now holds a real record, so the legacy residue is
+    # safe (and, for privacy, necessary) to scrub. _drop_legacy_account_key
+    # already swallows every realistic failure internally (OSError family,
+    # including filelock.Timeout — a TimeoutError/OSError subclass — and
+    # JSONDecodeError), but this call is NOT inside the try/except above, and
+    # read_account_metadata calls this function with no try/except of its
+    # own, trusting it never to raise. Wrap defensively anyway: an embed that
+    # already committed must not be erased by an unexpected exception in an
+    # unrelated cosmetic cleanup step — that would violate this function's
+    # own "never break the read" contract for a reason that has nothing to do
+    # with the embed's success.
+    try:
+        _drop_legacy_account_key(storage_path)
+    except Exception as e:  # noqa: BLE001 — cosmetic cleanup must not undo a committed embed
+        logger.warning("Legacy account context cleanup failed for %s: %s", storage_path, e)
+    if promoted:
+        logger.info("Promoted legacy account metadata in-band for %s", storage_path)
+    return promoted
 
 
 def get_authuser_for_storage(storage_path: Path | None) -> int:
@@ -339,12 +560,17 @@ def authuser_query(authuser: int = 0, account_email: str | None = None) -> str:
 
 
 def _drop_legacy_account_key(storage_path: Path) -> None:
-    """Migration helper: remove ``account`` from sibling ``context.json``.
+    """Scrub the legacy ``account`` key from the sibling ``context.json``.
 
     Preserves all other CLI context state (``notebook_id``,
     ``conversation_id``, …). Best-effort: a failure here does not abort the
-    in-band write because the reader prefers the in-band record (legacy
-    fallback only kicks in when in-band is absent).
+    in-band write. Since the legacy READ path was removed (the reader is
+    in-band-only; :func:`promote_legacy_account` owns the migration), this
+    survives purely as a privacy scrub — a stale legacy key would leave the
+    account email at rest forever with no reader and no writer to remove it.
+    Called by ``write_account_metadata`` / ``clear_account_metadata`` /
+    ``promote_legacy_account`` (this module) and ``storage_writer.replace_from_login``
+    (the CLI login writer, after its own atomic write).
     """
     context_path = _account_context_path(storage_path)
     if not context_path.exists():

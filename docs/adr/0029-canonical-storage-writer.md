@@ -151,13 +151,31 @@ to #2086's `CookieValidationFailure(COOKIE_VALIDATION_FAILED)` / `io.fail(1)` /
 not-exists contract), embeds/clears the in-band `notebooklm.account` binding via
 an `account` sentinel (`KEEP_ACCOUNT` | `CLEAR_ACCOUNT` | `AccountRecord`),
 records the `include_domains` opt-in set in the namespace, and (import flavour)
-takes the pre-overwrite `.bak` backup INSIDE the lock. The legacy sibling
-`context.json[account]` cleanup (`_drop_legacy_account_key`) stays a separate,
-CLI-triggered concern (different file, different lock) exposed as the additive
-facade helper `drop_legacy_account_key`. `replace_from_login` /
-`LoginWriteOutcome` / `AccountRecord` / `KEEP_ACCOUNT` / `CLEAR_ACCOUNT` /
-`drop_legacy_account_key` are additive `notebooklm.auth` re-exports so the CLI
-reaches them without importing private `_auth` modules.
+takes the pre-overwrite `.bak` backup INSIDE the lock.
+
+*Amended (master-token relocation, #2103 PR-0):* the legacy sibling
+`context.json[account]` cleanup (`_drop_legacy_account_key`, a different file
+under a different lock) is now called by `replace_from_login` itself, at the
+end of its own write, rather than by the CLI after `replace_from_login`
+returns — the two remaining call sites (`cookie_writes.py`, `refresh.py`)
+duplicated a scrub the writer can just as well own, and a scrub living outside
+the writer is a scrub a future writer path can forget. The public read
+fallback this scrub complemented is gone too: `read_account_metadata` is now
+in-band-only (a standing legacy read on every call was a silent
+wrong-account hazard — a missed `authuser` routes requests to a *different*
+signed-in Google account) — but the reader still *heals* a legacy profile
+rather than ignoring it: `read_account_metadata` calls a one-shot
+`promote_legacy_account` migration whenever in-band is absent, so the result
+is always genuinely in-band, migrated durably on first read rather than
+re-derived from an unmigrated file every call. The startup profiles migration
+also promotes proactively, as a completeness nicety (not a correctness
+requirement — the reader retries regardless). `drop_legacy_account_key` is
+consequently no longer imported by any
+first-party caller; it remains importable from `notebooklm.auth` for
+back-compat (de-blessed, not removed). `replace_from_login` / `LoginWriteOutcome`
+/ `AccountRecord` / `KEEP_ACCOUNT` / `CLEAR_ACCOUNT` are additive
+`notebooklm.auth` re-exports so the CLI reaches them without importing private
+`_auth` modules.
 
 ## Consequences
 

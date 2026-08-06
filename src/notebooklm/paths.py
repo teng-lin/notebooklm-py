@@ -270,6 +270,14 @@ def _legacy_fallback(profile_path: Path, legacy_name: str, resolved_profile: str
     if not profile_path.exists() and resolved_profile == "default":
         legacy_path = get_home_dir() / legacy_name
         if legacy_path.exists():
+            from ._deprecation import warn_deprecated  # local: paths is a low-level leaf
+
+            warn_deprecated(
+                f"Reading {legacy_name} from the pre-profiles home-root layout "
+                f"({legacy_path}) is deprecated; run any `notebooklm` command to "
+                "migrate it into profiles/default/, or move the file there manually.",
+                removal="1.0",
+            )
             logger.debug(
                 "Using legacy path %s (profile path %s not found)",
                 legacy_path,

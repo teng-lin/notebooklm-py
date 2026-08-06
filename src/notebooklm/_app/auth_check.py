@@ -191,8 +191,12 @@ def _psidts_status(storage_state: dict[str, Any]) -> dict[str, Any]:
 def _account_info(plan: AuthCheckPlan, storage_state: dict[str, Any]) -> dict[str, Any]:
     """Resolve the persisted account ``{email, authuser}`` for this profile.
 
-    For env-var auth the in-band record lives in the parsed inline JSON; for a
-    file profile, the on-disk reader also consults the legacy sibling record.
+    For env-var auth the in-band record lives in the parsed inline JSON. For a
+    file profile, ``read_account_metadata`` (via ``get_authuser_for_storage`` /
+    ``get_account_email_for_storage``) self-heals a pre-v0.5.0 legacy
+    ``context.json[account]`` record in-band on first read — a write side
+    effect, not a "consult" — rather than returning a raw pass-through of it
+    (see ``_auth.account.promote_legacy_account``, #2103 PR-0).
     """
     from ..auth import (
         get_account_email_for_storage,

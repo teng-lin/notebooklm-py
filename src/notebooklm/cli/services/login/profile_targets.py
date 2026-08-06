@@ -73,10 +73,14 @@ def email_to_profile_name(email: str, *, fallback: str = "account") -> str:
 def _profiles_by_account_email(profile_names: list[str]) -> dict[str, str]:
     """Return existing profiles keyed by *casefolded* account metadata email.
 
-    Keys are casefolded so that mixed-casing in stored ``context.json``
-    metadata (``Alice@Gmail.com`` vs. an incoming ``alice@gmail.com``)
-    doesn't cause us to miss the match and wrongly allocate a suffixed
-    profile. Lookup callers must casefold their email key likewise.
+    Keys are casefolded so that mixed-casing in stored account metadata
+    (``Alice@Gmail.com`` vs. an incoming ``alice@gmail.com``) doesn't cause us
+    to miss the match and wrongly allocate a suffixed profile. Lookup callers
+    must casefold their email key likewise. ``read_account_metadata`` reads
+    the unified in-band ``storage_state.json`` record, self-healing a
+    pre-v0.5.0 legacy ``context.json`` record in-band on first read rather
+    than reading it standingly (#2103 PR-0) — ``context.json`` is only the
+    pre-migration source, not where a promoted profile's email lives.
     """
     profiles_by_email: dict[str, str] = {}
     for profile in profile_names:
@@ -90,7 +94,7 @@ def _profiles_by_account_email(profile_names: list[str]) -> dict[str, str]:
 
 
 def _profile_account_email(profile: str) -> str | None:
-    """Return the account email recorded in ``profile``'s ``context.json``.
+    """Return ``profile``'s recorded account email (unified in-band record).
 
     ``None`` when the profile has no account metadata at all (hand-created
     via plain ``notebooklm login --profile NAME``, or pre-dating the

@@ -36,7 +36,6 @@ import httpx
 from ....auth import (
     AccountRecord,
     cookie_names_from_storage,
-    drop_legacy_account_key,
     fetch_tokens_with_domains,
     missing_cookies_hint,
     replace_from_login,
@@ -270,10 +269,8 @@ def _write_extracted_cookies(
             ),
         )
 
-    # The writer embedded the in-band account binding atomically; drop the
-    # legacy sibling ``context.json[account]`` key so a reader never sees the
-    # same routing data in two places (best-effort migration, own lock).
-    drop_legacy_account_key(storage_path)
+    # replace_from_login already scrubbed the legacy sibling context.json[account]
+    # key as part of its own atomic write (storage_writer.py).
 
     # Success-path confirmation print is the caller's job. We log a
     # debug breadcrumb so operators can correlate the write without
