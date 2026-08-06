@@ -276,7 +276,7 @@ def _legacy_fallback(profile_path: Path, legacy_name: str, resolved_profile: str
                 f"Reading {legacy_name} from the pre-profiles home-root layout "
                 f"({legacy_path}) is deprecated; run any `notebooklm` command to "
                 "migrate it into profiles/default/, or move the file there manually.",
-                removal="0.9.0",
+                removal="1.0",
             )
             logger.debug(
                 "Using legacy path %s (profile path %s not found)",

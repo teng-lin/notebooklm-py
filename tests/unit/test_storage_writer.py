@@ -60,6 +60,45 @@ def test_update_account_metadata_writes_in_band(tmp_path: Path) -> None:
     }
 
 
+def test_update_account_metadata_only_if_absent_skips_when_already_present(
+    tmp_path: Path,
+) -> None:
+    """#2103 PR-0 review: ``only_if_absent`` re-checks under the SAME lock as
+    the write, closing the check-then-act race where an unlocked caller
+    (``account.promote_legacy_account``) decided to write stale legacy values
+    before a concurrent fresh login/account-switch committed a different
+    record in the gap. Simulates the race deterministically: the "winner"
+    write completes fully, THEN the "loser" (stale, ``only_if_absent=True``)
+    write is attempted — it must be a no-op, never overwriting the winner."""
+    path = tmp_path / "storage_state.json"
+    path.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+
+    # The concurrent fresh write that "wins" the race.
+    sw.update_account_metadata(path, authuser=0, email="new@example.com")
+
+    # The belated stale write a slow promoter attempts — must be rejected.
+    wrote = sw.update_account_metadata(
+        path, authuser=2, email="old@example.com", only_if_absent=True
+    )
+    assert wrote is False
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["notebooklm"]["account"] == {"authuser": 0, "email": "new@example.com"}
+
+
+def test_update_account_metadata_only_if_absent_writes_when_empty(tmp_path: Path) -> None:
+    """The other half: ``only_if_absent`` still writes when nothing raced in —
+    the normal (non-contended) promotion path."""
+    path = tmp_path / "storage_state.json"
+    path.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+
+    wrote = sw.update_account_metadata(path, authuser=3, email="x@example.com", only_if_absent=True)
+
+    assert wrote is True
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["notebooklm"]["account"] == {"authuser": 3, "email": "x@example.com"}
+
+
 def test_update_account_metadata_fails_closed_on_lock_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -291,6 +330,66 @@ def test_replace_from_login_keep_account_carries_input_namespace(tmp_path: Path)
     assert outcome.ok
     data = json.loads(path.read_text(encoding="utf-8"))
     assert "notebooklm" not in data  # KEEP + no opt-ins + input had no namespace
+
+
+def test_replace_from_login_keep_account_promotes_legacy_instead_of_destroying_it(
+    tmp_path: Path,
+) -> None:
+    """BLOCKING regression (#2103 PR-0 review): KEEP_ACCOUNT with nothing to
+    carry is NOT an intentional "no account" decision (unlike CLEAR_ACCOUNT) —
+    it means the caller (a fresh browser/import jar) never considered the
+    account question. Before this fix, ``replace_from_login`` scrubbed the
+    legacy sibling ``context.json[account]`` unconditionally after every
+    write, so ``notebooklm auth import-cookies`` on a pre-v0.5.0 profile
+    PERMANENTLY DESTROYED its only copy of the account binding: nothing was
+    embedded in-band (KEEP_ACCOUNT carried the import jar's empty namespace),
+    and the legacy record was gone from disk afterward — irrecoverable, not
+    even by the ``read_account_metadata`` self-heal (there is nothing left to
+    heal from). Must promote the legacy record in-band instead of scrubbing
+    it blind."""
+    path = tmp_path / "storage_state.json"
+    context_path = path.with_name("context.json")
+    context_path.write_text(
+        json.dumps(
+            {
+                "account": {"authuser": 3, "email": "legacy@example.com"},
+                "notebook_id": "nb-preserved",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    outcome = sw.replace_from_login(path, _login_state(), include_domains=None)  # default KEEP
+
+    assert outcome.ok
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["notebooklm"]["account"] == {"authuser": 3, "email": "legacy@example.com"}
+    # Legacy account key scrubbed (promoted, not merely destroyed); other
+    # legacy context state preserved.
+    context_data = json.loads(context_path.read_text(encoding="utf-8"))
+    assert "account" not in context_data
+    assert context_data.get("notebook_id") == "nb-preserved"
+
+
+def test_replace_from_login_clear_account_does_not_resurrect_legacy_binding(
+    tmp_path: Path,
+) -> None:
+    """CLEAR_ACCOUNT is the one intentional "no account" decision — unlike
+    KEEP_ACCOUNT-with-nothing-to-carry, promoting the legacy record here would
+    resurrect a binding the caller just deliberately cleared."""
+    path = tmp_path / "storage_state.json"
+    path.with_name("context.json").write_text(
+        json.dumps({"account": {"authuser": 3, "email": "legacy@example.com"}}),
+        encoding="utf-8",
+    )
+
+    outcome = sw.replace_from_login(
+        path, _login_state(), include_domains=None, account=sw.CLEAR_ACCOUNT
+    )
+
+    assert outcome.ok
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert "notebooklm" not in data or "account" not in data.get("notebooklm", {})
 
 
 def test_replace_from_login_import_backup_inside_lock(tmp_path: Path) -> None:

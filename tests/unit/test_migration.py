@@ -66,6 +66,57 @@ class TestMigrateToProfiles:
         assert not (tmp_path / "context.json").exists()
         assert not (tmp_path / "browser_profile").exists()
 
+    def test_promotes_legacy_account_metadata_in_band(self, tmp_path):
+        """#2103 PR-0: the startup layout migration also promotes a legacy
+        ``context.json[account]`` record in-band — a completeness nicety (the
+        ``read_account_metadata`` chokepoint retries promotion on every call
+        regardless, so this isn't load-bearing for correctness), but new
+        production code on the upgrade path that shipped with zero test
+        coverage otherwise. Deliberately does NOT call ``read_account_metadata``
+        afterward — that would mask a broken migration-side promotion behind
+        the reactive chokepoint healing it a moment later."""
+        (tmp_path / "storage_state.json").write_text(
+            json.dumps({"cookies": [{"name": "SID", "value": "v"}]})
+        )
+        (tmp_path / "context.json").write_text(
+            json.dumps(
+                {
+                    "account": {"authuser": 3, "email": "legacy@example.com"},
+                    "notebook_id": "nb-123",
+                }
+            )
+        )
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            migrate_to_profiles()
+
+        default_dir = tmp_path / "profiles" / "default"
+        storage_data = json.loads((default_dir / "storage_state.json").read_text())
+        assert storage_data["notebooklm"]["account"] == {
+            "authuser": 3,
+            "email": "legacy@example.com",
+        }
+        # Legacy key scrubbed; non-account context state (notebook_id) survives.
+        context_data = json.loads((default_dir / "context.json").read_text())
+        assert "account" not in context_data
+        assert context_data.get("notebook_id") == "nb-123"
+
+    def test_migration_without_legacy_account_metadata_is_unaffected(self, tmp_path):
+        """A profile with no legacy account record migrates exactly as before —
+        the new promotion hook must be a true no-op when there's nothing to
+        promote, not just when it happens to succeed."""
+        (tmp_path / "storage_state.json").write_text(json.dumps({"cookies": []}))
+        (tmp_path / "context.json").write_text(json.dumps({"notebook_id": "nb-456"}))
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            assert migrate_to_profiles() is True
+
+        default_dir = tmp_path / "profiles" / "default"
+        storage_data = json.loads((default_dir / "storage_state.json").read_text())
+        assert "notebooklm" not in storage_data
+        context_data = json.loads((default_dir / "context.json").read_text())
+        assert context_data == {"notebook_id": "nb-456"}
+
     def test_updates_config(self, tmp_path):
         """Sets default_profile in config.json."""
         (tmp_path / "storage_state.json").write_text('{"cookies":[]}')

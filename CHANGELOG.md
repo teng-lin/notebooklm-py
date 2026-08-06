@@ -159,7 +159,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every read where in-band is absent, embedding the legacy record in-band
   (durably, once) and scrubbing the legacy key — so no existing user loses their
   account binding, and the result is always genuinely in-band truth rather than
-  a value re-derived from an unmigrated file each call. The startup profiles
+  a value re-derived from an unmigrated file each call. A transient promotion
+  failure (disk full, permission error, lock timeout) falls back to the legacy
+  record already read rather than to "no account" — the failure is logged at
+  WARNING (default-visible), since a persistent cause would otherwise silently
+  reintroduce the same hazard via a different trigger. The startup profiles
   migration promotes proactively too, as a completeness nicety.
   `drop_legacy_account_key` (whose two remaining call sites in the CLI login
   writers are gone — the scrub now lives inside `replace_from_login` itself) is

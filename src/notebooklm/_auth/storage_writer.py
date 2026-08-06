@@ -427,13 +427,53 @@ def merge_cookie_delta(
 # ---------------------------------------------------------------------------
 
 
-def update_account_metadata(storage_path: Path, *, authuser: int, email: str | None = None) -> None:
+def update_account_metadata(
+    storage_path: Path,
+    *,
+    authuser: int,
+    email: str | None = None,
+    only_if_absent: bool = False,
+    deadline_seconds: float = _LOCK_ACQUIRE_DEADLINE_SECONDS,
+) -> bool:
     """Persist account metadata atomically inside ``storage_state.json``.
 
     Relocated from ``account.write_account_metadata`` (the in-band write only —
     the sibling ``context.json`` cleanup ``_drop_legacy_account_key`` stays in
     ``account.py``). Full-file RMW intent: **fails closed**, raising
     :class:`LockUnavailableError` on lock unavailability.
+
+    ``only_if_absent`` closes a check-then-act race in
+    :func:`account.promote_legacy_account`: that caller reads the legacy
+    record and checks whether an in-band record is already present — both
+    OUTSIDE this function's lock — before deciding to call this function at
+    all. Without a re-check taken under the SAME lock as the write, a
+    concurrent fresh login/account-switch (``write_account_metadata``,
+    ``replace_from_login``) landing in that unlocked gap would commit its new
+    record first, and this call would then unconditionally overwrite it with
+    the stale legacy values the caller captured before the gap — silently
+    re-clobbering a just-completed account switch with a promotion nobody
+    asked to happen. ``write_account_metadata`` (an intentional overwrite —
+    the whole point of a real login) always passes ``only_if_absent=False``
+    (the default); only the promotion caller opts in.
+
+    ``deadline_seconds`` lets an opportunistic caller bound how long it will
+    contend for the lock. The default (90s, matching every other full-file
+    RMW intent) is right for an intentional login. It is WRONG for
+    :func:`account.promote_legacy_account`: that function now runs inside
+    :func:`account.read_account_metadata`, which many callers — including
+    ``async`` code paths (``client.get_account_email``, token-route
+    resolution) — call assuming a fast, lock-free read. Blocking one of those
+    for up to 90s on lock contention would freeze the event loop for far
+    longer than the "read" it thinks it's doing. Promotion is best-effort by
+    design (a failed promotion falls back to the legacy record, never breaks
+    the read — see ``promote_legacy_account``), so a short deadline that gives
+    up fast and takes that fallback is strictly the right trade-off; only the
+    promotion caller passes a short one.
+
+    Returns:
+        ``True`` if a write happened; ``False`` if ``only_if_absent`` was set
+        and an in-band record was already present under the lock (no-op —
+        the caller's stale values were correctly discarded).
     """
     from . import account as _account  # lazy: avoid the account<->writer cycle
 
@@ -443,7 +483,9 @@ def update_account_metadata(storage_path: Path, *, authuser: int, email: str | N
 
     lock_path = _storage_state_lock_path(storage_path)
     _ensure_secure_parent_dir(storage_path)
-    with _acquire_storage_lock(lock_path, log_prefix="write_account_metadata") as state:
+    with _acquire_storage_lock(
+        lock_path, log_prefix="write_account_metadata", deadline_seconds=deadline_seconds
+    ) as state:
         if state != "held":
             raise LockUnavailableError(
                 f"write_account_metadata: storage lock unavailable at {lock_path}"
@@ -452,10 +494,13 @@ def update_account_metadata(storage_path: Path, *, authuser: int, email: str | N
         namespace = data.get(_account._STORAGE_NAMESPACE_KEY)
         if not isinstance(namespace, dict):
             namespace = {}
+        elif only_if_absent and isinstance(namespace.get(_account._ACCOUNT_CONTEXT_KEY), dict):
+            return False
         namespace["version"] = _account._STORAGE_NAMESPACE_VERSION
         namespace[_account._ACCOUNT_CONTEXT_KEY] = account_payload
         data[_account._STORAGE_NAMESPACE_KEY] = namespace
         atomic_write_json(storage_path, data)
+        return True
 
 
 def clear_in_band_account(storage_path: Path) -> None:
@@ -751,12 +796,27 @@ def replace_from_login(
         atomic_write_json(path, filtered)
     # Outside the storage lock (its own sibling ``.lock``, matching
     # ``write_account_metadata``'s ordering): the in-band write just committed
-    # the account binding (or cleared it), so scrub any stale legacy sibling
-    # ``context.json[account]`` key now — best-effort, never a login failure.
-    # Without this, a login via KEEP_ACCOUNT/CLEAR_ACCOUNT/AccountRecord would
-    # leave a pre-v0.5.0 account record at rest with no reader (removed) and no
-    # writer left to clean it up (privacy: the old email must not survive).
-    _account._drop_legacy_account_key(path)
+    # (or explicitly cleared) the account binding.
+    #
+    # KEEP_ACCOUNT (the import-cookies default) with NO existing in-band record
+    # to carry is NOT an intentional "no account" decision — it means the caller
+    # (typically a fresh browser/import jar with no ``notebooklm`` namespace of
+    # its own) never considered the account question at all. Scrubbing the
+    # legacy sibling unconditionally in that case PERMANENTLY DESTROYS a
+    # pre-v0.5.0 profile's only copy of its account binding: nothing was
+    # embedded in-band, and the legacy record is gone from disk with no reader
+    # left to find it (verified: `auth import-cookies` on such a profile drops
+    # authuser 3 -> 0 irrecoverably). Promote instead — it embeds a legacy
+    # record if one exists (then scrubs it) and is a safe no-op otherwise.
+    #
+    # An EXPLICIT decision — CLEAR_ACCOUNT, or an AccountRecord that did embed —
+    # must still scrub directly: CLEAR_ACCOUNT means the caller deliberately
+    # wants no account bound, and promoting there would resurrect a binding
+    # that was just intentionally cleared.
+    if account is KEEP_ACCOUNT and _account._ACCOUNT_CONTEXT_KEY not in namespace:
+        _account.promote_legacy_account(path)
+    else:
+        _account._drop_legacy_account_key(path)
     return LoginWriteOutcome(LoginWriteStatus.OK, backup_path=backup_path)
 
 

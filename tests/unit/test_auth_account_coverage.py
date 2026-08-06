@@ -13,6 +13,7 @@ than editing the existing concern-aligned test file.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import httpx
@@ -32,6 +33,7 @@ from notebooklm._auth.account import (
     format_authuser_value,
     get_account_email_for_storage,
     promote_legacy_account,
+    read_account_metadata,
     read_account_metadata_from_storage_state,
     write_account_metadata,
 )
@@ -158,6 +160,31 @@ class TestPromoteLegacyAccount:
     sanitization of a malformed legacy record.
     """
 
+    def test_missing_storage_file_is_a_noop_never_creates_it(self, tmp_path):
+        """MAJOR (#2103 PR-0 review): a plain read must never CREATE
+        ``storage_state.json``. Without this guard, promoting into a
+        nonexistent storage file synthesizes a cookie-less document
+        (``_load_storage_state_for_write``'s missing-file fallback) — and
+        ``_app/profile.py``'s ``authenticated=storage.exists()`` check runs
+        immediately after calling ``read_account_metadata`` transitively, so
+        it would flip from correctly reporting "not authenticated" to
+        incorrectly reporting "authenticated" for a profile with zero
+        cookies, purely as a side effect of having been looked at (e.g. by
+        ``profile list`` or ``auth check``)."""
+        storage = tmp_path / "storage_state.json"
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": 3, "email": "x@example.com"}}),
+            encoding="utf-8",
+        )
+
+        assert promote_legacy_account(storage) is False
+        assert not storage.exists()
+        # The legacy fallback still works — read_account_metadata's own
+        # existence check happens independently, so the account binding
+        # remains visible even though nothing was (or should be) written.
+        assert read_account_metadata(storage) == {"authuser": 3, "email": "x@example.com"}
+        assert not storage.exists()  # still not created, even by the read
+
     def test_no_legacy_record_is_a_noop(self, tmp_path):
         storage = tmp_path / "storage_state.json"
         storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
@@ -190,6 +217,101 @@ class TestPromoteLegacyAccount:
         in_band = json.loads(storage.read_text(encoding="utf-8"))["notebooklm"]["account"]
         assert in_band == {"authuser": 7}  # untouched — in-band already won
 
+    def test_promotion_write_uses_a_short_lock_deadline_not_the_90s_default(
+        self, tmp_path, monkeypatch
+    ):
+        """#2103 PR-0 review (MAJOR): promotion now runs inside
+        ``read_account_metadata``, which many ``async`` callers
+        (``client.get_account_email``, token-route resolution) treat as a
+        fast, lock-free read. Blocking one of those for up to the usual 90s
+        full-file-RMW deadline on lock contention would freeze an event loop.
+        Pins that the write is issued with the short promotion-specific
+        deadline, not the default, by capturing what
+        ``update_account_metadata`` actually receives."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": 1, "email": "x@example.com"}}),
+            encoding="utf-8",
+        )
+
+        import notebooklm._auth.storage_writer as _storage_writer
+
+        real_update = _storage_writer.update_account_metadata
+        captured: dict[str, object] = {}
+
+        def _capture_deadline(*args, **kwargs):
+            captured["deadline_seconds"] = kwargs.get("deadline_seconds")
+            return real_update(*args, **kwargs)
+
+        monkeypatch.setattr(_storage_writer, "update_account_metadata", _capture_deadline)
+
+        assert promote_legacy_account(storage) is True
+        assert captured["deadline_seconds"] == _auth_account._PROMOTION_LOCK_DEADLINE_SECONDS
+        assert captured["deadline_seconds"] < 90.0  # strictly short, not the full-RMW default
+
+    def test_strip_failure_after_successful_embed_still_returns_true(self, tmp_path, monkeypatch):
+        """The embed's success is independent of the strip's outcome: a
+        (hypothetical — ``_drop_legacy_account_key`` already swallows every
+        realistic OSError/JSONDecodeError internally) exception during the
+        cosmetic legacy-key cleanup must not erase a promotion that already
+        durably committed, nor propagate up through ``read_account_metadata``
+        (which calls this function with no try/except of its own, trusting it
+        never to raise)."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": 6, "email": "frank@example.com"}}),
+            encoding="utf-8",
+        )
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("simulated unexpected failure during cleanup")
+
+        monkeypatch.setattr(_auth_account, "_drop_legacy_account_key", _boom)
+
+        assert promote_legacy_account(storage) is True
+        in_band = json.loads(storage.read_text(encoding="utf-8"))["notebooklm"]["account"]
+        assert in_band == {"authuser": 6, "email": "frank@example.com"}
+        # Also exercise the actual caller contract: read_account_metadata must
+        # not raise either, and must see the successfully-embedded record.
+        assert read_account_metadata(storage) == {"authuser": 6, "email": "frank@example.com"}
+
+    def test_concurrent_fresh_write_during_promotion_is_not_clobbered(self, tmp_path):
+        """The genuine RACE (not just a pre-existing state): a concurrent fresh
+        login/account-switch commits its new record in the window AFTER this
+        call has already read the stale legacy record but BEFORE it writes.
+        The stale write must not win — closes the check-then-act race a prior
+        review round found (unlocked pre-check + unconditional overwrite).
+
+        Simulated deterministically via a monkeypatch on ``_read_legacy_account``
+        (the first thing ``promote_legacy_account`` calls) that performs the
+        "concurrent" fresh write as a side effect before returning — so by the
+        time ``promote_legacy_account`` reaches its own write, a different
+        record is already committed, exactly reproducing the race's timing
+        without needing real thread synchronization."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": 2, "email": "stale@example.com"}}),
+            encoding="utf-8",
+        )
+        real_read_legacy = _auth_account._read_legacy_account
+
+        def _read_legacy_then_race_a_fresh_write(path):
+            legacy = real_read_legacy(path)
+            from notebooklm._auth import storage_writer as _sw
+
+            _sw.update_account_metadata(path, authuser=0, email="fresh@example.com")
+            return legacy
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(_auth_account, "_read_legacy_account", _read_legacy_then_race_a_fresh_write)
+            assert promote_legacy_account(storage) is False  # lost the race, not "nothing to do"
+
+        in_band = json.loads(storage.read_text(encoding="utf-8"))["notebooklm"]["account"]
+        assert in_band == {"authuser": 0, "email": "fresh@example.com"}  # winner's data, intact
+
     def test_sanitizes_malformed_legacy_authuser_and_blank_email(self, tmp_path):
         """Same sanitization ``get_authuser_for_storage`` applies on read: a
         non-int/negative ``authuser`` falls back to 0, a blank email is dropped."""
@@ -205,10 +327,13 @@ class TestPromoteLegacyAccount:
         assert in_band == {"authuser": 0}
         assert _read_legacy_account(storage) == {}
 
-    def test_promotion_failure_leaves_legacy_record_intact(self, tmp_path, monkeypatch):
+    def test_promotion_failure_leaves_legacy_record_intact(self, tmp_path, monkeypatch, caplog):
         """Best-effort by design: if the in-band embed raises, the legacy record
         is NOT scrubbed — a failed promotion must not lose the only copy of the
-        user's account binding."""
+        user's account binding. Also pins that the failure is logged at
+        WARNING (not DEBUG): a persistent cause means every subsequent read of
+        this profile silently falls back to the legacy record, so an operator
+        needs a default-visible signal, not one gated behind -v/--debug."""
         storage = tmp_path / "storage_state.json"
         storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
         (tmp_path / "context.json").write_text(
@@ -226,8 +351,71 @@ class TestPromoteLegacyAccount:
 
         monkeypatch.setattr(_storage_writer, "update_account_metadata", _boom)
 
-        assert promote_legacy_account(storage) is False
+        with caplog.at_level(logging.WARNING, logger="notebooklm.auth"):
+            assert promote_legacy_account(storage) is False
         assert _read_legacy_account(storage) == {"authuser": 4, "email": "dana@example.com"}
+        assert any(
+            r.levelno == logging.WARNING and "disk full" in r.message for r in caplog.records
+        )
+
+    def test_promotion_failure_logs_warning_once_then_debug(self, tmp_path, monkeypatch, caplog):
+        """#2103 PR-0 review (MINOR): ``read_account_metadata`` (and this
+        function transitively) is on the request path — token-route
+        resolution reads it per RPC call via ``get_authuser_for_storage`` /
+        ``get_account_email_for_storage``. A persistently failing promotion
+        must not warn on every single request forever; only the first
+        failure per storage path per process logs at WARNING, subsequent
+        ones at DEBUG (so ``-v``/``--debug`` still shows every occurrence)."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": 4, "email": "dana@example.com"}}),
+            encoding="utf-8",
+        )
+        import notebooklm._auth.storage_writer as _storage_writer
+
+        def _boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(_storage_writer, "update_account_metadata", _boom)
+
+        with caplog.at_level(logging.DEBUG, logger="notebooklm.auth"):
+            promote_legacy_account(storage)  # 1st failure -> WARNING
+            caplog.clear()
+            promote_legacy_account(storage)  # 2nd failure, same path -> DEBUG only
+
+        assert not any(r.levelno == logging.WARNING for r in caplog.records)
+        assert any(r.levelno == logging.DEBUG and "disk full" in r.message for r in caplog.records)
+
+    def test_read_account_metadata_falls_back_to_legacy_on_promotion_failure(
+        self, tmp_path, monkeypatch
+    ):
+        """#2103 PR-0 follow-up: a transient write failure must not collapse
+        ``read_account_metadata`` to ``{}`` — that would silently reintroduce
+        the wrong-account-routing hazard this migration exists to close, just
+        via a different trigger (a failed promotion instead of a missed
+        fallback). It must fall back to the legacy record it already read,
+        sanitized identically to what a successful promotion would embed."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps({"cookies": [], "origins": []}), encoding="utf-8")
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": -1, "email": "  "}}),
+            encoding="utf-8",
+        )
+
+        import notebooklm._auth.storage_writer as _storage_writer
+
+        def _boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(_storage_writer, "update_account_metadata", _boom)
+
+        result = read_account_metadata(storage)
+        # Never {} — and sanitized (malformed authuser -> 0, blank email dropped)
+        # exactly as ``_sanitize_legacy_account_record`` would embed it.
+        assert result == {"authuser": 0}
+        # The legacy record is untouched — nothing was scrubbed on a failure.
+        assert _read_legacy_account(storage) == {"authuser": -1, "email": "  "}
 
 
 class TestDropLegacyAccountKey:

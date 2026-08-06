@@ -775,7 +775,7 @@ notebooklm auth refresh [OPTIONS]
 ```
 
 **Options:**
-- `--browser-cookies <browser>`, `--browser-cookie <browser>` - Re-extract cookies from an installed browser and match the current profile's account from `context.json`. This repairs account routing when browser account order changes after another account logs out. Accepts the same scoped syntax as `login`: `chrome::<profile-name-or-directory>` for one Chromium profile, and `firefox::<container-name>` or `firefox::none` for one Firefox container.
+- `--browser-cookies <browser>`, `--browser-cookie <browser>` - Re-extract cookies from an installed browser and match the current profile's account (the unified in-band `storage_state.json` record — a pre-v0.5.0 profile's account, if it's still only in the legacy sibling `context.json`, is promoted in-band automatically on read). This repairs account routing when browser account order changes after another account logs out. Accepts the same scoped syntax as `login`: `chrome::<profile-name-or-directory>` for one Chromium profile, and `firefox::<container-name>` or `firefox::none` for one Firefox container.
 - `--include-domains LABEL[,LABEL...]` - Forward to the browser-cookie reader (only meaningful with `--browser-cookies`). Same syntax as `notebooklm login --include-domains`.
 - `--quiet`, `-q` - Suppress success output; print only on error (cron-friendly)
 - `--verify` - After refreshing, run a read-only passive token fetch to confirm the resulting cookies actually authenticate; exit non-zero if they still fail. A missing-storage master-token bootstrap always performs this validation and `--verify` reuses its result. Especially valuable with `--browser-cookies`, which rewrites the cookie jar but does not otherwise verify it.
