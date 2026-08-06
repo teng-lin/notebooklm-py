@@ -32,7 +32,14 @@ def run_master_token_login(
 ):
     """Bootstrap or refresh headless master-token auth (see ``login --master-token``)."""
     profile = ctx.obj.get("profile") if ctx.obj else None
-    storage_path = Path(storage) if storage else get_storage_path(profile=profile)
+    # Canonicalize an explicit ``--storage`` exactly like the auth-source resolver
+    # does (``cli/services/auth_source.py``): a symlinked/relative alias must select
+    # the same profile as its target, or the token would be written beside the alias
+    # while the L4 recovery rung (which resolves via ``canonical_storage_key``) looks
+    # beside the real file. Profile-derived paths are already absolute.
+    storage_path = (
+        Path(storage).expanduser().resolve() if storage else get_storage_path(profile=profile)
+    )
     # Sibling invariant (#2103): master_token.json lives beside storage_state.json.
     # Every reader derives it from the storage path (_auth/recovery.py L4 rung,
     # _app/auth_check.py, cli/services/auth_refresh.py), so the writer must too —

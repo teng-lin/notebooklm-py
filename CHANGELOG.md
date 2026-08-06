@@ -162,6 +162,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   account-ownership guard now checks the token that actually sits beside the
   target storage instead of the active profile's.
 
+- **A symlinked or relative `--storage` alias now selects the same
+  `master_token.json` the recovery ladder reads (#2104 review).** `--storage`
+  was used verbatim when deriving the token sibling, so an alias — a relative
+  path, a `~` prefix, or a symlinked directory — wrote the token beside the
+  *alias* while the L4 master-token recovery rung, which canonicalizes through
+  `canonical_storage_key` (`expanduser().resolve()`) before taking the parent
+  directory, looked beside the resolved target and found nothing. The login
+  driver now canonicalizes an explicit `--storage` the same way the
+  `cli.services.auth_source` resolver already does, so every syntactic spelling
+  of one storage file collapses to one token location. Profile-derived paths
+  were already absolute and are unaffected.
+
 - **`NOTEBOOKLM_AUTH_JSON` now beats a profile everywhere, as documented.** The
   precedence `--storage` > `NOTEBOOKLM_AUTH_JSON` > profile file is stated in
   `docs/configuration.md`, drawn in `docs/architecture.md`, and implemented by
