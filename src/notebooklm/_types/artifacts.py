@@ -47,6 +47,7 @@ class ArtifactType(str, Enum):
     INFOGRAPHIC = "infographic"
     SLIDE_DECK = "slide_deck"
     DATA_TABLE = "data_table"
+    CUSTOM = "custom"
     UNKNOWN = "unknown"
 
 
@@ -61,6 +62,7 @@ _ARTIFACT_TYPE_CODE_MAP: dict[int, ArtifactType] = {
     7: ArtifactType.INFOGRAPHIC,
     8: ArtifactType.SLIDE_DECK,
     9: ArtifactType.DATA_TABLE,
+    10: ArtifactType.CUSTOM,
 }
 
 

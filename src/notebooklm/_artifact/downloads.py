@@ -533,6 +533,57 @@ class ArtifactDownloadService:
                 cause=e,
             ) from e
 
+    async def download_custom(
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+        *,
+        artifacts_data: list[Any] | None = None,
+    ) -> str:
+        """Download a custom artifact as binary to output_path."""
+        if artifacts_data is None:
+            artifacts_data = await self._list_raw(notebook_id)
+
+        custom_art = self._select_artifact(
+            artifacts_data,
+            artifact_id,
+            "Custom artifact",
+            "custom",
+            type_code=ArtifactTypeCode.CUSTOM,
+        )
+
+        try:
+            url = custom_art.artifact_url(ArtifactTypeCode.CUSTOM.value, suppress_drift=True)
+            if url:
+                return await self.download_url(url, output_path)
+
+            markdown_content = custom_art.report_markdown
+
+            if isinstance(markdown_content, str):
+                output = Path(output_path)
+                output.parent.mkdir(parents=True, exist_ok=True)
+
+                def _write_binary() -> None:
+                    output.write_bytes(markdown_content.encode("utf-8"))
+
+                await asyncio.to_thread(_write_binary)
+                return str(output)
+
+            raise ArtifactParseError(
+                "custom_content",
+                artifact_id=artifact_id,
+                details="Could not extract download URL or content from custom artifact",
+            )
+
+        except (IndexError, TypeError, UnknownRPCMethodError) as e:
+            raise ArtifactParseError(
+                "custom",
+                artifact_id=artifact_id,
+                details=f"Failed to parse structure: {e}",
+                cause=e,
+            ) from e
+
     async def download_mind_map(
         self,
         notebook_id: str,

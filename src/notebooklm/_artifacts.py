@@ -580,6 +580,19 @@ class ArtifactsAPI:
             notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
         )
 
+    async def download_custom(
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+        *,
+        artifacts_data: builtins.list[Any] | None = None,
+    ) -> str:
+        """Download a custom artifact as a binary file."""
+        return await self._downloads.download_custom(
+            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+        )
+
     async def download_mind_map(
         self,
         notebook_id: str,

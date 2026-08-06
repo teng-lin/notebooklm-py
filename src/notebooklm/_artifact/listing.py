@@ -36,6 +36,7 @@ _ARTIFACT_TYPE_CODES_BY_KIND = {
     ArtifactType.INFOGRAPHIC: ArtifactTypeCode.INFOGRAPHIC.value,
     ArtifactType.SLIDE_DECK: ArtifactTypeCode.SLIDE_DECK.value,
     ArtifactType.DATA_TABLE: ArtifactTypeCode.DATA_TABLE.value,
+    ArtifactType.CUSTOM: ArtifactTypeCode.CUSTOM.value,
 }
 _KNOWN_ARTIFACT_TYPE_CODES = frozenset(_ARTIFACT_TYPE_CODES_BY_KIND.values())
 

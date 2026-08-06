@@ -190,6 +190,8 @@ class ArtifactTypeCode(int, Enum):
     INFOGRAPHIC = 7
     SLIDE_DECK = 8
     DATA_TABLE = 9
+    CUSTOM = 10
+
 
 
 # Variant codes at artifact_data[9][1][0], distinguishing sub-kinds within the

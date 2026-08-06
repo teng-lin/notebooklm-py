@@ -179,6 +179,7 @@ class ArtifactRow:
     _TIMESTAMP_POS: ClassVar[int] = 15
     _SLIDE_DECK_METADATA_POS: ClassVar[int] = 16
     _DATA_TABLE_PAYLOAD_POS: ClassVar[int] = 18
+    _CUSTOM_METADATA_POS: ClassVar[int] = 24
 
     # Per-type location of the user's generation prompt: the top-level block
     # index that holds the artifact's content, followed by the sub-path to the
@@ -194,6 +195,7 @@ class ArtifactRow:
         ArtifactTypeCode.INFOGRAPHIC.value: (_INFOGRAPHIC_METADATA_POS, 0, 0),
         ArtifactTypeCode.SLIDE_DECK.value: (_SLIDE_DECK_METADATA_POS, 0, 0),
         ArtifactTypeCode.DATA_TABLE.value: (_DATA_TABLE_PAYLOAD_POS, 1, 0),
+        ArtifactTypeCode.CUSTOM.value: (_REPORT_MARKDOWN_POS, 1, 5),
     }
 
     _AUDIO_MEDIA_LIST_POS: ClassVar[int] = 5
@@ -490,6 +492,20 @@ class ArtifactRow:
         return url if self._is_valid_artifact_url(url) else None
 
     @property
+    def custom_url(self) -> str | None:
+        """Download URL for a custom artifact."""
+        metadata = self._list_at_top_level(self._CUSTOM_METADATA_POS)
+        if metadata is None or len(metadata) <= 3:
+            return None
+        url = safe_index(
+            metadata,
+            3,
+            method_id=self.method_id,
+            source="ArtifactRow.custom_url",
+        )
+        return url if self._is_valid_artifact_url(url) else None
+
+    @property
     def report_markdown(self) -> str | None:
         """Report markdown, accepting the direct-string and one-element wrapper shapes."""
         if len(self._raw) <= self._REPORT_MARKDOWN_POS:
@@ -588,6 +604,14 @@ class ArtifactRow:
                 return self.infographic_url
             if type_code == ArtifactTypeCode.SLIDE_DECK.value:
                 return self.slide_deck_pdf_url
+            if type_code == ArtifactTypeCode.CUSTOM.value:
+                return (
+                    self.custom_url
+                    or self.infographic_url
+                    or self.slide_deck_pdf_url
+                    or self.audio_url
+                    or self.video_url
+                )
             return None
         except UnknownRPCMethodError:
             if suppress_drift:

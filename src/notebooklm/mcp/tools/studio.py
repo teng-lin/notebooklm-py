@@ -203,6 +203,7 @@ def register(mcp: Any) -> None:
         # pins the schema enum equal to ``STUDIO_KINDS`` so the two can't drift.
         kind: Literal[
             "audio",
+            "custom",
             "data-table",
             "flashcards",
             "infographic",

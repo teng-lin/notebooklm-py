@@ -202,6 +202,13 @@ DOWNLOAD_REGISTRY: tuple[DownloadRegistryEntry, ...] = (
         download_attr="download_report",
     ),
     DownloadRegistryEntry(
+        name="custom",
+        kind=ArtifactType.CUSTOM,
+        default_output=DownloadFormatSpec(".bin", "application/octet-stream"),
+        default_dir="./custom",
+        download_attr="download_custom",
+    ),
+    DownloadRegistryEntry(
         name="mind-map",
         kind=ArtifactType.MIND_MAP,
         default_output=DownloadFormatSpec(".json", "application/json"),
