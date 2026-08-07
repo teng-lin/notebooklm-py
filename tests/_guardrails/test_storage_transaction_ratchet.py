@@ -205,21 +205,22 @@ def test_report_policy_is_pinned_until_its_writers_convert() -> None:
     tautology. It read as proof that all three policies were live, and that
     reading was wrong — one of them never had a caller at all.
     """
-    pending = _REPORT_POLICY_WRITERS & _UNCONVERTED
+    converted = _REPORT_POLICY_WRITERS - _UNCONVERTED
     callers = _policy_call_counts()["report_on_lock_unavailable"]
-    if pending:
-        assert callers == 0, (
-            "report_on_lock_unavailable gained a caller while its intended "
-            f"writers are still unconverted: {sorted(pending)}. It exists for "
-            "writers returning a rich outcome enum; a writer returning None or "
-            "bool must use raise_on_lock_unavailable instead — reporting into a "
-            "channel that cannot express it drops the failure silently."
-        )
-    else:
-        assert callers >= 1, (
-            f"{sorted(_REPORT_POLICY_WRITERS)} converted but "
-            "report_on_lock_unavailable still has no callers. Either they were "
-            "converted to the wrong policy (changing fail-closed-by-return into "
-            "fail-closed-by-raise, a breaking change for their callers), or the "
-            "helper is dead and should be deleted."
-        )
+    # Each CONVERTED designated writer must call the report policy exactly once;
+    # unconverted ones contribute zero. Pinning to the converted count (rather
+    # than branching all-or-nothing on ``pending``) is what permits a correct
+    # one-writer-at-a-time migration: with one of the two converted, the
+    # expectation is 1, not the impossible "zero callers while a converted
+    # writer must call it" (CodeRabbit finding on #2152).
+    assert callers == len(converted), (
+        "report_on_lock_unavailable caller count drifted from its converted "
+        f"writers.\n  converted report-policy writers: {sorted(converted) or '(none)'}\n"
+        f"  expected callers: {len(converted)}  actual: {callers}\n"
+        "If a caller appeared from a writer NOT in the designated set, that "
+        "writer's return channel cannot express the report — use "
+        "raise_on_lock_unavailable. If a designated writer converted without a "
+        "caller appearing, it was converted to the wrong policy (changing "
+        "fail-closed-by-return into fail-closed-by-raise, a breaking change "
+        "for its callers)."
+    )
