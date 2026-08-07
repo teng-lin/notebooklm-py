@@ -6,16 +6,18 @@ are intercepted with pytest-httpx's httpx_mock.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import sys
 import types
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
 from notebooklm._auth import master_token as mt
-from notebooklm._auth.master_token import MasterTokenError
+from notebooklm._auth.master_token import BootstrapOutcome, MasterTokenError
 
 _OAUTHLOGIN_RE = re.compile(r"^https://accounts\.google\.com/OAuthLogin")
 _MERGESESSION_RE = re.compile(r"^https://accounts\.google\.com/MergeSession")
@@ -206,6 +208,74 @@ async def test_remint_from_stored_token_wraps_reload_failure_when_psidts_withhel
     # subsequent normal load's inline PSIDTS recovery to complete.
     data = json.loads(storage.read_text(encoding="utf-8"))
     assert {c["name"] for c in data["cookies"]} == {"SID", "APISID", "SAPISID"}
+
+
+# --- bootstrap_storage_from_master_token / BootstrapOutcome (#2103 PR-2 D7) -
+
+
+def test_bootstrap_storage_from_master_token_returns_present_on_entry(tmp_path):
+    """#2103 PR-2 review (pr2-reviewer-test-coverage): the 4 BootstrapOutcome
+    states must each be asserted directly, not only through the CLI's
+    boolean collapse (which would not catch two states being swapped)."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
+
+    outcome = asyncio.run(mt.bootstrap_storage_from_master_token(storage))
+
+    assert outcome is BootstrapOutcome.PRESENT_ON_ENTRY
+
+
+def test_bootstrap_storage_from_master_token_returns_no_token(tmp_path):
+    storage = tmp_path / "storage_state.json"  # absent, and no sibling token either
+
+    outcome = asyncio.run(mt.bootstrap_storage_from_master_token(storage))
+
+    assert outcome is BootstrapOutcome.NO_TOKEN
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_storage_from_master_token_returns_minted(tmp_path):
+    storage = tmp_path / "storage_state.json"
+    (tmp_path / "master_token.json").write_text("{}", encoding="utf-8")
+
+    async def mint(storage_path):
+        storage_path.write_text(json.dumps({"cookies": []}), encoding="utf-8")
+
+    with patch.object(mt, "remint_from_stored_token", new=AsyncMock(side_effect=mint)):
+        outcome = await mt.bootstrap_storage_from_master_token(storage)
+
+    assert outcome is BootstrapOutcome.MINTED
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_storage_from_master_token_returns_present_after_wait(tmp_path):
+    """The leader gets MINTED; a concurrent waiter that finds storage already
+    written when it re-checks after acquiring the lock must get
+    PRESENT_AFTER_WAIT specifically, not just a truthy/generic result --
+    these two states are meant to be distinguishable (that's the whole point
+    of BootstrapOutcome over a bool)."""
+    storage = tmp_path / "storage_state.json"
+    (tmp_path / "master_token.json").write_text("{}", encoding="utf-8")
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def mint(storage_path):
+        started.set()
+        await release.wait()
+        storage_path.write_text(json.dumps({"cookies": []}), encoding="utf-8")
+
+    with patch.object(mt, "remint_from_stored_token", new=AsyncMock(side_effect=mint)):
+        leader = asyncio.create_task(mt.bootstrap_storage_from_master_token(storage))
+        await started.wait()
+        follower = asyncio.create_task(mt.bootstrap_storage_from_master_token(storage))
+        await asyncio.sleep(0)
+        assert not follower.done()
+        release.set()
+
+        leader_outcome, follower_outcome = await asyncio.gather(leader, follower)
+
+    assert leader_outcome is BootstrapOutcome.MINTED
+    assert follower_outcome is BootstrapOutcome.PRESENT_AFTER_WAIT
 
 
 # --- bootstrap_from_oauth_token (#2103 PR-2) --------------------------------
