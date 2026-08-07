@@ -2,8 +2,8 @@
 
 ## Status
 
-Proposed (Stage 0 — the single RotateCookies wire contract — landed with this
-ADR; Stages 1–5 are sequenced follow-up work, each independently shippable).
+Proposed — Stage 0 (the single RotateCookies wire contract) landed with this
+ADR; Stages 1–5 are sequenced follow-up work, each independently shippable.
 
 Companion to [ADR-0029](0029-canonical-storage-writer.md) (write side) and
 [ADR-0030](0030-one-recovery-ladder.md) (recovery/refresh side). Where those
@@ -47,7 +47,7 @@ describe. Concretely:
 
 The model the docstrings already describe is a **credential tier system**:
 
-```
+```text
 Tier 0: DURABLE   master_token.json | persistent browser profile | refresh_cmd
         (~years)        │ mint
                         ▼
@@ -126,7 +126,7 @@ vocabulary — types and named tier operations — never a mode's internals.
   manifest) need same-PR bookkeeping; Stage 4 is a real public-API change
   and must not ship as a side effect of an internal stage.
 - Stages are ordered by risk-to-value: each is independently green,
-  independently revertable, and none blocks the others except 4-after-1.
+  independently reversible, and none blocks the others except 4-after-1.
 
 ## Alternatives considered
 

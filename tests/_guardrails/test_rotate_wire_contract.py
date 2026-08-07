@@ -19,9 +19,12 @@ entry points. This gate keeps a fifth bespoke assembly from creeping back:
 1. the URL literal may appear in exactly one ``src/`` module (keepalive);
 2. the request-body sentinel literal likewise;
 3. no ``.post(...)`` call outside keepalive may take ``KEEPALIVE_ROTATE_URL``
-   as its target (constructing a *non-sending* ``httpx.Request`` for the
-   routability computation in ``psidts_recovery._psidts_routes_to_rotate``
-   remains allowed — the gate matches ``.post`` calls, not the constant).
+   as its target — whether passed positionally (``client.post(URL, ...)``) or
+   by keyword (``client.post(url=URL, ...)``, which httpx also accepts.
+   Checking only the positional form would leave a one-keyword bypass).
+   Constructing a *non-sending* ``httpx.Request`` for the routability
+   computation in ``psidts_recovery._psidts_routes_to_rotate`` remains allowed
+   — the gate matches ``.post`` calls, not every use of the constant.
 """
 
 from __future__ import annotations
@@ -81,6 +84,27 @@ def _references_rotate_url(node: ast.expr) -> bool:
     return False
 
 
+def _is_bespoke_rotate_post(node: ast.AST) -> bool:
+    """True for a ``.post(...)`` call whose target is the rotate URL constant.
+
+    THE detector — the repo scan and the shape self-tests below both call this,
+    so the property the self-tests assert is the property the scan enforces. A
+    second copy of this logic could drift out of sync with the gate it claims
+    to cover, which is the same failure mode this whole module exists to stop.
+
+    httpx accepts the target as ``post(url)`` or ``post(url=url)``; matching
+    only the positional form would leave a one-keyword bypass.
+    """
+    if not (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "post"
+    ):
+        return False
+    targets = list(node.args[:1]) + [kw.value for kw in node.keywords if kw.arg == "url"]
+    return any(_references_rotate_url(target) for target in targets)
+
+
 def test_no_bespoke_rotate_post_outside_wire_owner() -> None:
     """No ``.post(KEEPALIVE_ROTATE_URL, ...)`` call outside keepalive.
 
@@ -94,16 +118,53 @@ def test_no_bespoke_rotate_post_outside_wire_owner() -> None:
         if path == _WIRE_OWNER:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "post"
-                and node.args
-                and _references_rotate_url(node.args[0])
-            ):
-                violations.append(f"{path.relative_to(_SRC_ROOT.parent.parent)}:{node.lineno}")
+        violations.extend(
+            f"{path.relative_to(_SRC_ROOT.parent.parent)}:{node.lineno}"
+            for node in ast.walk(tree)
+            if _is_bespoke_rotate_post(node)
+        )
     assert not violations, (
         "Bespoke RotateCookies POST outside _auth/keepalive.py — route through "
         f"_rotate_post/_rotate_post_sync instead: {violations}"
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "client.post(KEEPALIVE_ROTATE_URL, headers=h, content=b)",
+        "client.post(url=KEEPALIVE_ROTATE_URL, headers=h, content=b)",
+        "await client.post(_keepalive.KEEPALIVE_ROTATE_URL)",
+        "await client.post(url=_keepalive.KEEPALIVE_ROTATE_URL)",
+        "self._client.post(mod.KEEPALIVE_ROTATE_URL)",
+    ],
+)
+def test_gate_detects_every_bespoke_post_shape(source: str) -> None:
+    """The detector must catch positional AND keyword target forms.
+
+    A gate that only matched ``post(URL)`` would wave through the one-keyword
+    ``post(url=URL)`` rewrite — the AST-bypass failure mode that bit the
+    master-token minting denylist twice (#2108). Pinned here so the detector's
+    coverage is asserted rather than assumed.
+    """
+    assert any(_is_bespoke_rotate_post(node) for node in ast.walk(ast.parse(source))), (
+        f"detector missed a bespoke-POST shape: {source!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # The routability probe: builds a Request to ask httpx which cookies
+        # WOULD be sent. Never goes on the wire — flagging it would leave
+        # deleting a correct check as the only way to green the gate.
+        'httpx.Request("POST", KEEPALIVE_ROTATE_URL)',
+        # An unrelated POST to some other endpoint.
+        "client.post(SOME_OTHER_URL, content=b)",
+        # The sanctioned indirection every caller is supposed to use.
+        "await _rotate_post(client)",
+    ],
+)
+def test_gate_ignores_legitimate_shapes(source: str) -> None:
+    """No false positives on the non-sending probe or unrelated POSTs."""
+    assert not any(_is_bespoke_rotate_post(node) for node in ast.walk(ast.parse(source)))
