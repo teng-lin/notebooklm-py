@@ -66,9 +66,12 @@ _is_allowed_auth_domain = _cookie_policy._is_allowed_auth_domain
 _rotation_lock_path = _keepalive._rotation_lock_path
 _file_lock_try_exclusive = _keepalive._file_lock_try_exclusive
 _try_claim_rotation = _keepalive._try_claim_rotation
-_KEEPALIVE_POKE_TIMEOUT = _keepalive._KEEPALIVE_POKE_TIMEOUT
-_KEEPALIVE_ROTATE_HEADERS = _keepalive._KEEPALIVE_ROTATE_HEADERS
-_KEEPALIVE_ROTATE_BODY = _keepalive._KEEPALIVE_ROTATE_BODY
+# The RotateCookies POST itself is _keepalive's single wire contract (see the
+# ``_ROTATE_POST_KWARGS`` block there); this module composes recovery policy
+# around it and never re-assembles the request from the raw
+# headers/body/timeout constants.
+_rotate_post_sync = _keepalive._rotate_post_sync
+_rotation_http_client = _keepalive._rotation_http_client
 _load_storage_state = _auth_cookies._load_storage_state
 _storage_entry_to_cookie = _auth_cookies._storage_entry_to_cookie
 _safe_to_cookie = _auth_cookies._safe_to_cookie
@@ -745,18 +748,9 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
     # keepalive in ``_runtime.lifecycle.save_cookies`` reads ``client.cookies``.
     observation = _recovery_observation(cookie_entries)
     try:
-        with httpx.Client(
-            cookies=jar,
-            follow_redirects=True,
-            timeout=_KEEPALIVE_POKE_TIMEOUT,
-        ) as client:
+        with _rotation_http_client(jar) as client:
             snapshot = _auth_storage.snapshot_cookie_jar(client.cookies)
-            response = client.post(
-                _keepalive.KEEPALIVE_ROTATE_URL,
-                headers=_KEEPALIVE_ROTATE_HEADERS,
-                content=_KEEPALIVE_ROTATE_BODY,
-            )
-            response.raise_for_status()
+            _rotate_post_sync(client)
             rotated_jar = client.cookies
             # ROUTABLE, not merely present-by-name. The request jar still holds
             # whatever PSIDTS was already on disk, so a name-only check would see
@@ -891,17 +885,8 @@ def recover_psidts_in_memory(rookiepy_cookies: list[dict[str, Any]]) -> bool:
     jar = _build_recovery_jar(rookiepy_cookies, _rookiepy_entry_to_cookie)
 
     try:
-        with httpx.Client(
-            cookies=jar,
-            follow_redirects=True,
-            timeout=_KEEPALIVE_POKE_TIMEOUT,
-        ) as client:
-            response = client.post(
-                _keepalive.KEEPALIVE_ROTATE_URL,
-                headers=_KEEPALIVE_ROTATE_HEADERS,
-                content=_KEEPALIVE_ROTATE_BODY,
-            )
-            response.raise_for_status()
+        with _rotation_http_client(jar) as client:
+            _rotate_post_sync(client)
             rotated_cookies = list(client.cookies.jar)
     except httpx.HTTPError as exc:
         logger.debug(

@@ -75,6 +75,57 @@ _KEEPALIVE_PRECISION_TOLERANCE = 2.0
 # keepalive bodies can reference it without an extra module hop.
 NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV = _auth_paths.NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV
 
+# --- The single RotateCookies wire contract ----------------------------------
+# Every rotation path — the layer-1/layer-2 keepalive pokes (async, live
+# client), the file-based inline PSIDTS recovery, the in-memory
+# browser-extraction recovery, and the master-token mint's completing leg —
+# sends exactly this request through :func:`_rotate_post` /
+# :func:`_rotate_post_sync` below. There is ONE contract; the sync/async pair
+# exists only because httpx splits ``Client``/``AsyncClient``. A change to
+# Google's RotateCookies protocol is made here and nowhere else (enforced by
+# ``tests/_guardrails/test_rotate_wire_contract.py``).
+#
+# ``follow_redirects=True`` is defensive: empirically RotateCookies answers 200
+# directly with the rotated Set-Cookie, but if Google ever routes a 30x through
+# an identity hop we still pick up cookies from the terminal response.
+_ROTATE_POST_KWARGS: dict[str, Any] = {
+    "headers": _KEEPALIVE_ROTATE_HEADERS,
+    "content": _KEEPALIVE_ROTATE_BODY,
+    "follow_redirects": True,
+    "timeout": _KEEPALIVE_POKE_TIMEOUT,
+}
+
+
+async def _rotate_post(client: httpx.AsyncClient) -> httpx.Response:
+    """THE async ``RotateCookies`` POST. Wire only — no guards, no swallowing.
+
+    Raises ``httpx.HTTPError`` on transport failure *and* on a 4xx/5xx status:
+    httpx does not auto-raise on error statuses, and without the explicit
+    ``raise_for_status`` a 429 or 5xx from Google would log nothing while the
+    caller proceeds assuming the rotation happened.
+    """
+    response = await client.post(KEEPALIVE_ROTATE_URL, **_ROTATE_POST_KWARGS)
+    response.raise_for_status()
+    return response
+
+
+def _rotate_post_sync(client: httpx.Client) -> httpx.Response:
+    """Sync twin of :func:`_rotate_post` for the one-shot recovery clients."""
+    response = client.post(KEEPALIVE_ROTATE_URL, **_ROTATE_POST_KWARGS)
+    response.raise_for_status()
+    return response
+
+
+def _rotation_http_client(jar: httpx.Cookies) -> httpx.Client:
+    """Ephemeral sync client for a one-shot rotation against a prepared jar.
+
+    ``httpx.Client(cookies=jar)`` copies the source jar into a private client
+    jar; the rotated ``Set-Cookie`` values land in ``client.cookies``, never in
+    ``jar`` — callers read the client's jar after the POST.
+    """
+    return httpx.Client(cookies=jar, follow_redirects=True, timeout=_KEEPALIVE_POKE_TIMEOUT)
+
+
 # In-process state for rotation throttling, keyed per-profile and per-loop.
 #
 # - Per-profile (``storage_path``) so a rotation against profile A doesn't
@@ -378,20 +429,6 @@ async def _rotate_cookies(client: httpx.AsyncClient, storage_path: Path | None =
         )
         return
     try:
-        # ``follow_redirects=True`` is defensive: empirically RotateCookies
-        # answers 200 directly with the rotated Set-Cookie, but if Google ever
-        # routes a 30x through an identity hop we still pick up cookies from
-        # the terminal response.
-        response = await client.post(
-            KEEPALIVE_ROTATE_URL,
-            headers=_KEEPALIVE_ROTATE_HEADERS,
-            content=_KEEPALIVE_ROTATE_BODY,
-            follow_redirects=True,
-            timeout=_KEEPALIVE_POKE_TIMEOUT,
-        )
-        # httpx does not auto-raise on 4xx/5xx; without this, a 429 or 5xx from
-        # Google would log nothing and the caller would proceed assuming the
-        # rotation happened.
-        response.raise_for_status()
+        await _rotate_post(client)
     except httpx.HTTPError as exc:
         logger.debug("Keepalive RotateCookies POST failed (non-fatal): %s", exc)

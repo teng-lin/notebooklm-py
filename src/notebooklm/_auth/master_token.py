@@ -183,23 +183,16 @@ async def mint_cookies(email: str, master_token: str, android_id: str) -> httpx.
             )
             # Mint __Secure-1PSIDTS now too (the rotating freshness partner of
             # __Secure-1PSID) so the stored jar is complete and valid at rest — no
-            # first-call recovery needed and `auth check` passes immediately. This
-            # is the same RotateCookies POST the keepalive/inline recovery use; it
-            # needs the SID + APISID/SAPISID binding the MergeSession jar already
-            # carries. Best-effort: Google may withhold it, and inline recovery
-            # remains the fallback, so a failure here must not fail the mint.
-            from .keepalive import (  # noqa: PLC0415 (low-level; avoid import cycle)
-                _KEEPALIVE_ROTATE_BODY,
-                _KEEPALIVE_ROTATE_HEADERS,
-                KEEPALIVE_ROTATE_URL,
-            )
+            # first-call recovery needed and `auth check` passes immediately.
+            # ``_rotate_post`` is the same single-wire-contract RotateCookies
+            # POST every other rotation path uses; it needs the SID +
+            # APISID/SAPISID binding the MergeSession jar already carries.
+            # Best-effort: Google may withhold it, and inline recovery remains
+            # the fallback, so a failure here must not fail the mint.
+            from .keepalive import _rotate_post  # noqa: PLC0415 (avoid import cycle)
 
             try:
-                await client.post(
-                    KEEPALIVE_ROTATE_URL,
-                    headers=_KEEPALIVE_ROTATE_HEADERS,
-                    content=_KEEPALIVE_ROTATE_BODY,
-                )
+                await _rotate_post(client)
             except httpx.HTTPError as exc:
                 logger.debug("RotateCookies during mint failed (non-fatal): %s", exc)
             jar = httpx.Cookies()
