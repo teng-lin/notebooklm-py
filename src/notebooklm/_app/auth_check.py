@@ -223,16 +223,21 @@ def _master_token_status(plan: AuthCheckPlan) -> dict[str, Any]:
     """Note a sibling ``master_token.json`` (headless master-token profile).
 
     The record lives beside ``storage_state.json`` (login --master-token writes
-    both into the profile dir), so resolve it relative to the actual storage path
-    — this also honors a ``--storage`` override. Env-var auth carries no profile
-    directory, so master-token is N/A there.
+    both into the profile dir), so resolve it via the sole derivation site
+    (``notebooklm.paths.master_token_path_for``, #2103 PR-1) — this also
+    honors a ``--storage`` override, INCLUDING a symlinked/relative one (this
+    site previously used an unresolved ``with_name``, one of the three
+    canonicalization policies the four call sites disagreed on before the
+    convergence). Env-var auth carries no profile directory, so master-token
+    is N/A there.
     """
     if plan.has_env_auth:
         return {"present": False, "path": None, "account": None}
 
     from ..auth import read_master_token
+    from ..paths import master_token_path_for
 
-    path = plan.storage_path.with_name("master_token.json")
+    path = master_token_path_for(plan.storage_path)
     if not path.exists():
         return {"present": False, "path": str(path), "account": None}
     account: str | None = None

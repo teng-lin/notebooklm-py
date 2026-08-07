@@ -12,7 +12,7 @@ import asyncio
 from pathlib import Path
 
 from ..auth import MasterTokenError, generate_android_id, read_master_token
-from ..paths import get_storage_path
+from ..paths import get_storage_path, master_token_path_for
 from .error_handler import exit_with_code
 from .rendering import console
 from .services.login import master_token as mt_service
@@ -41,12 +41,12 @@ def run_master_token_login(
         Path(storage).expanduser().resolve() if storage else get_storage_path(profile=profile)
     )
     # Sibling invariant (#2103): master_token.json lives beside storage_state.json.
-    # Every reader derives it from the storage path (_auth/recovery.py L4 rung,
-    # _app/auth_check.py, cli/services/auth_refresh.py), so the writer must too —
-    # ``get_master_token_path(profile)`` ignores a ``--storage`` override and would
-    # write the token where no reader ever looks. Identical to the old behavior
-    # when ``--storage`` is absent (both paths then live in the profile dir).
-    master_token_path = storage_path.with_name("master_token.json")
+    # notebooklm.paths.master_token_path_for is the sole derivation site (#2103
+    # PR-1) — every reader (_auth/recovery.py L4 rung, _app/auth_check.py,
+    # cli/services/auth_refresh.py) derives it the same way now, so the writer
+    # must too. ``get_master_token_path(profile)`` ignores a ``--storage``
+    # override and would write the token where no reader ever looks.
+    master_token_path = master_token_path_for(storage_path)
 
     try:
         if refresh:

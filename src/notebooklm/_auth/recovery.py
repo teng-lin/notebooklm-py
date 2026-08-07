@@ -220,7 +220,14 @@ async def try_master_token_reauth(*, storage_path: Path | None, cookie_jar: http
 
     canonical_path = canonical_storage_key(storage_path)
     assert canonical_path is not None  # narrowed non-None above
-    master_token_path = canonical_path.parent / "master_token.json"
+    # Sole derivation site (notebooklm.paths.master_token_path_for, #2103 PR-1):
+    # converges with _app/auth_check.py, cli/services/auth_refresh.py, and
+    # cli/master_token_login.py, which previously each derived this sibling
+    # independently and disagreed on canonicalization for a symlinked/relative
+    # storage path.
+    from ..paths import master_token_path_for
+
+    master_token_path = master_token_path_for(canonical_path)
     if not master_token_path.exists():
         return False
 
