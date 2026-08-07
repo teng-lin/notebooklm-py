@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import sys
 import types
@@ -115,6 +116,41 @@ async def test_mint_cookies_missing_required_cookie(fake_gpsoauth, httpx_mock):
     # answers it, so the required-cookie check is what raises.
     with pytest.raises(MasterTokenError, match="missing required cookies"):
         await mt.mint_cookies("e@x.com", "aas_et/MASTER", "abc")
+
+
+@pytest.mark.no_default_keepalive_mock  # own the RotateCookies response (simulate rejection)
+@pytest.mark.parametrize("status_code", [429, 503])
+@pytest.mark.asyncio
+async def test_mint_cookies_survives_a_rejected_rotation(
+    fake_gpsoauth, httpx_mock, caplog, status_code
+):
+    """The RotateCookies leg is best-effort inside the mint. It now runs through
+    ``keepalive._rotate_post``, which adds the ``raise_for_status`` the old
+    inline POST lacked, so a 429/5xx becomes an ``httpx.HTTPStatusError``
+    instead of a 200-shaped no-op. The contract that pins: it is logged and
+    skipped — neither silently ignored (the pre-existing bug) nor escalated
+    into a failed mint by the *outer* ``except httpx.HTTPError``. The jar comes
+    back without ``__Secure-1PSIDTS``, leaving the standard inline recovery to
+    mint it on first load."""
+    httpx_mock.add_response(url=_OAUTHLOGIN_RE, text="APh-UBERAUTH")
+    httpx_mock.add_response(
+        url=_MERGESESSION_RE,
+        headers=_merge_session_cookies("SID", "APISID", "SAPISID", "HSID"),
+    )
+    httpx_mock.add_response(url=_ROTATE_RE, status_code=status_code)
+
+    with caplog.at_level(logging.DEBUG, logger="notebooklm.auth.master_token"):
+        jar = await mt.mint_cookies("e@x.com", "aas_et/MASTER", "abc")
+
+    names = {c.name for c in jar.jar}
+    assert {"SID", "APISID", "SAPISID"} <= names  # the mint itself still succeeded
+    assert "__Secure-1PSIDTS" not in names  # withheld: inline recovery's job now
+    assert any("RotateCookies during mint failed" in r.getMessage() for r in caplog.records), (
+        "a rejected rotation must be logged, not silently swallowed"
+    )
+    # The rotation really was attempted (and really was the rejected response).
+    rotate_reqs = [r for r in httpx_mock.get_requests() if "RotateCookies" in str(r.url)]
+    assert len(rotate_reqs) == 1 and rotate_reqs[0].method == "POST"
 
 
 # --- remint_from_stored_token (kernel, #2103 PR-2 D1) ----------------------
