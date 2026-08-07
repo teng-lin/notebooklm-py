@@ -99,10 +99,14 @@ introduce its objects and operations in independently shippable stages:
   the footgun into the model meant to retire it, so it stays reachable only
   through the legacy free function, and `to_httpx()` is the path- and
   domain-correct route for cookies on the wire.
-- **Stage 2: `validate` / `heal` split** — `validate(...) → ValidationResult`
-  is pure (no network, no mutation; wraps the closed-enum
-  `RequiredCookieValidationError` #2061 introduced rather than replacing it),
-  and `heal(...)` is the named seam whose only strategy today is the Stage-0
+- **Stage 2: `validate` / `heal` split** —
+  `validate(rows) → tuple[dict[str, Any], ValidationResult]` is pure (no
+  network, no mutation; wraps the closed-enum
+  `RequiredCookieValidationError` #2061 introduced rather than replacing it).
+  It returns the **converted storage state alongside** the result, not the
+  result alone, so a caller that needs the converted form — as every caller of
+  the wrapper does — does not pay for a second conversion. `heal(rows) → bool`
+  is the named seam whose only strategy today is the Stage-0
   rotate. `validate_with_recovery` survives unchanged as the compatibility
   wrapper — it has four first-party callers, a `RefreshDeps` injection seam,
   an entry in the cross-boundary ledger, and an in-place mutation contract
