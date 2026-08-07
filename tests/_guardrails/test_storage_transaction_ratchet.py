@@ -1,11 +1,13 @@
 """Shrink-only ratchet: storage writers take the lock via the transaction template.
 
-ADR-0031 Stage 3. Six writers in ``_auth/storage_writer.py`` each hand-rolled the
-same four-step preamble — secure the parent dir, derive the sentinel lock path,
-take the bounded lock, branch on whether it was held.
-:func:`~notebooklm._auth.storage_writer.in_storage_transaction` now owns those
-four steps, with the fourth (the not-held branch) supplied by the caller because
-it genuinely differs three ways:
+ADR-0031 Stage 3. Six writers in ``_auth/storage_writer.py`` USED TO each
+hand-roll the same four-step preamble — secure the parent dir, derive the
+sentinel lock path, take the bounded lock, branch on whether it was held.
+:func:`~notebooklm._auth.storage_transaction.in_storage_transaction` now owns
+those four steps. **Three of the six route through it today**; the other three
+are pinned in :data:`_UNCONVERTED` below and convert in a later pass. The fourth
+step (the not-held branch) is supplied by the caller because it genuinely
+differs three ways:
 
 * **raise** ``LockUnavailableError`` — fail closed, where proceeding without the
   lock could lose a concurrent writer's commit;
@@ -59,12 +61,49 @@ _UNCONVERTED: frozenset[str] = frozenset(
 )
 
 
+#: The three not-held policies the template exposes.
+_POLICIES: tuple[str, ...] = (
+    "raise_on_lock_unavailable",
+    "skip_on_lock_unavailable",
+    "report_on_lock_unavailable",
+)
+
+#: The writers that will use ``report_on_lock_unavailable`` when they convert —
+#: the only two whose return type (``WriteOutcome`` / ``LoginWriteOutcome``) has
+#: room for a distinct ``LOCK_UNAVAILABLE`` status. Every other writer returns
+#: ``None`` or a ``bool`` already spoken for, so it must raise instead.
+_REPORT_POLICY_WRITERS: frozenset[str] = frozenset({"replace_from_login", "replace_from_remint"})
+
+
+def _policy_call_counts() -> dict[str, int]:
+    """Count real call sites of each policy across ``_auth/``.
+
+    Definitions do not count — only ``<policy>(...)`` calls. Counting by AST
+    rather than substring keeps a mention inside a docstring or an error
+    message (this module puts the policy names in both) from reading as a use.
+    """
+    counts = dict.fromkeys(_POLICIES, 0)
+    for source_file in sorted(_AUTH.glob("*.py")):
+        tree = ast.parse(source_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in counts:
+                    counts[node.func.id] += 1
+    return counts
+
+
 def _functions_calling_directly() -> set[str]:
     """Return writer functions that call ``_acquire_storage_lock`` themselves."""
     tree = ast.parse(_WRITER.read_text(encoding="utf-8"))
     found: set[str] = set()
     for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
+        # ``AsyncFunctionDef`` is NOT a subclass of ``FunctionDef`` — matching
+        # only the latter would leave an ``async def`` writer free to hand-roll
+        # the acquire without ever tripping this gate. Every storage writer is
+        # sync today, so this closes a hole that is empty rather than one that
+        # leaks; a ratchet that only covers the shapes in use when it was
+        # written stops being a ratchet the moment someone adds a new shape.
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             continue
         # The template itself lives in ``storage_transaction.py`` now, so
         # nothing in THIS module should be calling the primitive except the
@@ -117,18 +156,70 @@ def test_merge_cookie_delta_is_not_expected_to_convert() -> None:
     assert "merge_cookie_delta" not in _functions_calling_directly()
 
 
-def test_the_three_lock_policies_are_all_used() -> None:
-    """Each policy has a real caller — none is speculative API.
+def test_the_three_lock_policies_are_all_defined() -> None:
+    """Each policy still exists — deleting one silently is a semantic change."""
+    tree = ast.parse(_TEMPLATE.read_text(encoding="utf-8"))
+    defined = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    missing = set(_POLICIES) - defined
+    assert not missing, f"lock policy/policies disappeared from {_TEMPLATE.name}: {sorted(missing)}"
 
-    If one drops to zero callers it should be deleted, not kept as a
-    just-in-case helper that nothing pins the semantics of.
+
+def test_in_use_policies_have_real_callers() -> None:
+    """``raise_`` and ``skip_`` are load-bearing, not decoration.
+
+    Counts real call sites across ``_auth/`` rather than asserting the
+    definition exists in the file that defines it — the latter is a tautology
+    that cannot fail while the function is present, and would stay green if
+    every caller in the repo were deleted.
     """
-    source = _TEMPLATE.read_text(encoding="utf-8")
-    for policy in (
-        "raise_on_lock_unavailable",
-        "skip_on_lock_unavailable",
-        "report_on_lock_unavailable",
-    ):
-        # One definition plus at least one call site once conversion completes;
-        # while writers remain unconverted, the definition alone is expected.
-        assert f"def {policy}(" in source, f"{policy} disappeared"
+    counts = _policy_call_counts()
+    for policy in ("raise_on_lock_unavailable", "skip_on_lock_unavailable"):
+        assert counts[policy] >= 1, (
+            f"{policy} has no callers left in _auth/. Either a writer regressed "
+            f"to hand-rolling its not-held branch, or the policy is now dead and "
+            f"should be deleted rather than kept as a just-in-case helper."
+        )
+
+
+def test_report_policy_is_pinned_until_its_writers_convert() -> None:
+    """``report_on_lock_unavailable`` is self-retiring, in both directions.
+
+    It has ZERO callers today, which is correct but only *while* the two
+    full-replace writers that will use it are unconverted — they are the only
+    writers with a rich enough outcome type to report into. So the expectation
+    is conditional on :data:`_UNCONVERTED`, not a fixed number:
+
+    * while they are pinned, a caller appearing means someone reached for the
+      report policy from a writer whose return channel cannot express it;
+    * the moment they convert, zero callers means the conversion quietly used a
+      different policy — silently changing fail-closed-by-return into
+      fail-closed-by-raise for callers — or that the helper is now dead and
+      should be deleted.
+
+    This is what the previous version of this gate *claimed* to check and did
+    not: it asserted ``"def <policy>(" in <the file defining it>``, which is a
+    tautology. It read as proof that all three policies were live, and that
+    reading was wrong — one of them never had a caller at all.
+    """
+    pending = _REPORT_POLICY_WRITERS & _UNCONVERTED
+    callers = _policy_call_counts()["report_on_lock_unavailable"]
+    if pending:
+        assert callers == 0, (
+            "report_on_lock_unavailable gained a caller while its intended "
+            f"writers are still unconverted: {sorted(pending)}. It exists for "
+            "writers returning a rich outcome enum; a writer returning None or "
+            "bool must use raise_on_lock_unavailable instead — reporting into a "
+            "channel that cannot express it drops the failure silently."
+        )
+    else:
+        assert callers >= 1, (
+            f"{sorted(_REPORT_POLICY_WRITERS)} converted but "
+            "report_on_lock_unavailable still has no callers. Either they were "
+            "converted to the wrong policy (changing fail-closed-by-return into "
+            "fail-closed-by-raise, a breaking change for their callers), or the "
+            "helper is dead and should be deleted."
+        )

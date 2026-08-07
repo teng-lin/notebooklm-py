@@ -2,10 +2,13 @@
 
 Six writers in :mod:`notebooklm._auth.storage_writer` each hand-rolled the same
 four-step preamble — secure the parent dir, derive the sentinel lock path, take
-the bounded lock, and branch on whether it was held. Only the last step differs,
-and it differs in three genuinely incompatible ways, so the policy is a
-parameter rather than a decision baked into the template: a version that picked
-one behavior would be a silent semantic change in a credential-write path.
+the bounded lock, and branch on whether it was held. **Three of those six route
+through this template today**; the remaining three are pinned in the shrink-only
+ratchet ``tests/_guardrails/test_storage_transaction_ratchet.py`` and convert in
+a later pass. Only the last step differs, and it differs in three genuinely
+incompatible ways, so the policy is a parameter rather than a decision baked
+into the template: a version that picked one behavior would be a silent
+semantic change in a credential-write path.
 
 ``merge_cookie_delta`` deliberately does NOT use this. It takes the BLOCKING
 ``storage._file_lock_exclusive`` rather than the bounded acquire, and skips the
@@ -92,6 +95,14 @@ def report_on_lock_unavailable(outcome: Any) -> _LockUnavailablePolicy:
     because the caller has somewhere unambiguous to put it. The two full-replace
     writers have their OWN outcome types (:class:`WriteOutcome` vs
     :class:`LoginWriteOutcome`), so the value comes from the caller.
+
+    .. note::
+       This has **no caller yet** — ``replace_from_login`` and
+       ``replace_from_remint`` are the only writers whose return type can carry
+       a distinct lock-unavailable status, and both are still unconverted. That
+       is pinned rather than merely noted: the ratchet asserts zero callers
+       while they are unconverted, and at least one once they are, so this
+       helper cannot quietly outlive its reason to exist.
     """
 
     def _policy(lock_path: Path) -> Any:
@@ -102,6 +113,13 @@ def report_on_lock_unavailable(outcome: Any) -> _LockUnavailablePolicy:
 
 def skip_on_lock_unavailable(message: str) -> _LockUnavailablePolicy:
     """TOLERABLE — log at DEBUG and do nothing.
+
+    Args:
+        message: a logging format string with **exactly one** ``%s``, which
+            receives the lock path. A message with no placeholder (or more than
+            one) raises inside ``logging``, which swallows it and prints to
+            stderr instead of logging — an unpleasant failure to trace back,
+            since it surfaces nowhere near this call.
 
     The only genuinely different intent, and it has exactly one user today:
     ``clear_in_band_account``. Its justification is functional — a missed clear
