@@ -395,6 +395,60 @@ class TestMasterTokenPathFor:
         assert result != raw_parent_style
         assert result != with_name_style
 
+    def test_resolve_runtime_error_falls_back_to_expanded_path(self, tmp_path, monkeypatch):
+        """#2103 PR-1 review (pr1-reviewer-data-integrity): verified empirically
+        against real 3.10.20/3.11.15/3.12.13 interpreters (not just this
+        suite's own, since CPython's pathlib changed ELOOP handling in 3.13)
+        that a circular symlink makes ``Path.resolve()`` raise ``RuntimeError``
+        on 3.10-3.12 -- and ``RuntimeError`` is NOT an ``OSError`` subclass, so
+        the ``except OSError`` pattern used elsewhere in this module
+        (``profile_from_storage_path``) would not have caught it. Pinned
+        directly via monkeypatch so this holds on every interpreter this
+        suite happens to run under, not only the ones where a real symlink
+        loop reproduces it."""
+        storage = tmp_path / "storage_state.json"
+
+        def raise_runtime_error(self: Path) -> Path:
+            raise RuntimeError("Symlink loop from '...'")
+
+        monkeypatch.setattr(Path, "resolve", raise_runtime_error)
+
+        result = master_token_path_for(storage)
+
+        assert result == storage.with_name("master_token.json")
+
+    def test_resolve_os_error_falls_back_to_expanded_path(self, tmp_path, monkeypatch):
+        """Symmetric coverage for the ``OSError`` half of the except clause --
+        matching the exception type this module already treats as
+        resolve-can-fail elsewhere, even though no known real-world trigger
+        raises plain ``OSError`` from this call site today."""
+        storage = tmp_path / "storage_state.json"
+
+        def raise_os_error(self: Path) -> Path:
+            raise OSError("simulated resolve failure")
+
+        monkeypatch.setattr(Path, "resolve", raise_os_error)
+
+        result = master_token_path_for(storage)
+
+        assert result == storage.with_name("master_token.json")
+
+    def test_real_symlink_loop_does_not_crash(self, tmp_path):
+        """End-to-end proof alongside the monkeypatched tests above: a
+        genuinely circular symlink must never propagate out of this
+        function, regardless of which of the two behaviors (3.10-3.12 raise,
+        3.13+ silent degrade) the running interpreter has."""
+        loop_dir = tmp_path / "loop"
+        try:
+            loop_dir.symlink_to(loop_dir)
+        except (OSError, NotImplementedError):  # pragma: no cover - platform can't self-link
+            pytest.skip("platform cannot create a self-referential symlink")
+        storage = loop_dir / "sub" / "storage_state.json"
+
+        result = master_token_path_for(storage)  # must not raise
+
+        assert result.name == "master_token.json"
+
 
 class TestGetMasterTokenPath:
     def test_default_profile(self, tmp_path):

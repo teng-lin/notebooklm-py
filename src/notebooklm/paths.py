@@ -367,14 +367,30 @@ def master_token_path_for(storage_path: Path) -> Path:
     their respective boundary guardrails; a public chokepoint needs no
     ledger entry for either caller).
 
+    ``resolve()`` degrades to a best-effort (non-canonicalized) path on a
+    circular symlink rather than raising: on Python 3.13+ this is
+    ``Path.resolve()``'s own non-strict behavior, and on 3.10-3.12 — where a
+    symlink loop instead raises ``RuntimeError`` (not ``OSError``; a CPython
+    pathlib behavior change, fixed in 3.13) — this function catches it
+    itself, so every supported Python version behaves the same way here: a
+    stale or circular profile symlink degrades a lookup, it does not crash
+    ``auth check`` or bootstrap (#2103 PR-1 review).
+
     Args:
         storage_path: Path to ``storage_state.json`` (any form — absolute,
             relative, ``~``-prefixed, or through a symlink).
 
     Returns:
-        The resolved, canonical sibling ``master_token.json`` path.
+        The resolved, canonical sibling ``master_token.json`` path — or a
+        best-effort, non-canonicalized sibling if resolution is impossible
+        (e.g. a circular symlink).
     """
-    return storage_path.expanduser().resolve().with_name("master_token.json")
+    expanded = storage_path.expanduser()
+    try:
+        resolved = expanded.resolve()
+    except (OSError, RuntimeError):
+        resolved = expanded
+    return resolved.with_name("master_token.json")
 
 
 def get_master_token_path(profile: str | None = None) -> Path:
