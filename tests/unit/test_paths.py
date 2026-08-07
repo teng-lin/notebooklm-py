@@ -396,7 +396,7 @@ class TestMasterTokenPathFor:
         assert result != with_name_style
 
     def test_resolve_runtime_error_falls_back_to_expanded_path(self, tmp_path, monkeypatch):
-        """#2103 PR-1 review (pr1-reviewer-data-integrity): verified empirically
+        """#2103 PR-1 review: verified empirically
         against real 3.10.20/3.11.15/3.12.13 interpreters (not just this
         suite's own, since CPython's pathlib changed ELOOP handling in 3.13)
         that a circular symlink makes ``Path.resolve()`` raise ``RuntimeError``

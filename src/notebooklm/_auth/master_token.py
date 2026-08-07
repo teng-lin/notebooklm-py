@@ -348,8 +348,7 @@ def assert_account_writable(*, email: str, storage_path: Path, force: bool = Fal
     if not email:
         # Type says str, but this is a public library boundary (notebooklm.
         # auth.assert_account_writable) — fail with a typed error rather than
-        # a raw AttributeError from `email.casefold()` below (PR-2 review,
-        # pr2-reviewer-security).
+        # a raw AttributeError from `email.casefold()` below (#2103 PR-2 review).
         raise MasterTokenError("assert_account_writable requires a non-empty email.")
     from ..paths import master_token_path_for  # noqa: PLC0415 (avoid import cycle)
     from .account import get_account_email_for_storage  # noqa: PLC0415 (avoid import cycle)
@@ -382,10 +381,10 @@ def _resolve_bootstrap_android_id(master_token_path: Path, *, explicit: str | No
     matters because changing it can re-trip Google's new-device risk signal on
     re-mint.
 
-    Does NOT swallow :class:`MasterTokenError` (PR-2 review, pr2-reviewer-
-    silent-failures): ``read_master_token`` returns ``None`` only when the
-    file is ABSENT, and raises for a present-but-corrupted one. Before this
-    function existed, the pre-PR CLI driver's unwrapped
+    Does NOT swallow :class:`MasterTokenError` (#2103 PR-2 review):
+    ``read_master_token`` returns ``None`` only when the file is ABSENT, and
+    raises for a present-but-corrupted one. Before this function existed,
+    the pre-PR CLI driver's unwrapped
     ``read_master_token(master_token_path)`` call raised the same corruption
     loudly, before any capture or mint. Letting it propagate here (rather
     than silently generating a fresh id and overwriting a possibly-recoverable
@@ -425,8 +424,8 @@ async def bootstrap_from_oauth_token(
 
     Writes ``master_token.json`` (the durable, infostealer-grade credential)
     only AFTER ``persist_minted_jar``'s authoritative ownership check has
-    already succeeded (PR-2 review, pr2-reviewer-security MAJOR): the
-    original ordering wrote the durable token first and gated only
+    already succeeded (#2103 PR-2 review): the original ordering wrote the
+    durable token first and gated only
     ``storage_state.json``, so a profile with no recorded owner on EITHER
     file (``assert_account_writable``'s advisory pre-check sees no conflict
     when nothing is recorded yet) would durably persist a master token for
@@ -589,11 +588,11 @@ async def bootstrap_storage_from_master_token(storage_path: Path) -> BootstrapOu
     distinct from the storage-write lock ``remint_from_stored_token`` acquires
     while persisting, since holding that lock here would self-deadlock.
 
-    Logs the resolved outcome at DEBUG (PR-2 review, pr2-reviewer-silent-
-    failures): the whole point of a 4-state result instead of a bool is to
-    make "I minted it" distinguishable from "a concurrent leader already
-    had" — that distinction is otherwise invisible in logs, same as before
-    this type existed."""
+    Logs the resolved outcome at DEBUG (#2103 PR-2 review): the whole point
+    of a 4-state result instead of a bool is to make "I minted it"
+    distinguishable from "a concurrent leader already had" — that
+    distinction is otherwise invisible in logs, same as before this type
+    existed."""
     outcome = await _resolve_bootstrap_outcome(storage_path)
     logger.debug("bootstrap_storage_from_master_token(%s) -> %s", storage_path, outcome)
     return outcome

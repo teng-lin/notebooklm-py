@@ -214,7 +214,7 @@ async def test_remint_from_stored_token_wraps_reload_failure_when_psidts_withhel
 
 
 def test_bootstrap_storage_from_master_token_returns_present_on_entry(tmp_path):
-    """#2103 PR-2 review (pr2-reviewer-test-coverage): the 4 BootstrapOutcome
+    """#2103 PR-2 review: the 4 BootstrapOutcome
     states must each be asserted directly, not only through the CLI's
     boolean collapse (which would not catch two states being swapped)."""
     storage = tmp_path / "storage_state.json"
@@ -305,7 +305,7 @@ async def test_bootstrap_from_oauth_token_success(fake_gpsoauth, httpx_mock, tmp
 
 @pytest.mark.asyncio
 async def test_bootstrap_from_oauth_token_raises_on_corrupted_stored_token(tmp_path):
-    """#2103 PR-2 review (pr2-reviewer-silent-failures, MAJOR): a corrupted
+    """#2103 PR-2 review (MAJOR finding): a corrupted
     master_token.json must not be silently overwritten with a freshly
     generated android_id. Before the fix, ``_resolve_bootstrap_android_id``
     caught ``MasterTokenError`` from ``read_master_token`` the same way it
@@ -332,7 +332,7 @@ async def test_bootstrap_from_oauth_token_raises_on_corrupted_stored_token(tmp_p
 async def test_bootstrap_from_oauth_token_does_not_write_master_token_when_storage_gate_refuses(
     fake_gpsoauth, httpx_mock, tmp_path
 ):
-    """#2103 PR-2 review (pr2-reviewer-security, MAJOR): ``write_master_token``
+    """#2103 PR-2 review (MAJOR finding): ``write_master_token``
     must not durably persist the new account's token when the LATER,
     authoritative ``persist_minted_jar`` gate refuses. Repro: existing
     storage with no recorded account (unknown owner) and no
@@ -363,7 +363,7 @@ async def test_bootstrap_from_oauth_token_does_not_write_master_token_when_stora
 
 
 def test_assert_account_writable_rejects_empty_email(tmp_path):
-    """#2103 PR-2 review (pr2-reviewer-security, MINOR): a public-boundary
+    """#2103 PR-2 review (MINOR finding): a public-boundary
     function must raise a typed MasterTokenError, not a raw AttributeError
     from ``email.casefold()``, when called with a falsy email."""
     with pytest.raises(MasterTokenError, match="non-empty email"):
