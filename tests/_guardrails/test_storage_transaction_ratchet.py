@@ -50,11 +50,8 @@ _TEMPLATE = _AUTH / "storage_transaction.py"
 #:     domain filter and required-cookie revalidation run inside the lock.
 #:   * ``replace_from_remint`` — the browser-capture re-mint, which carries or
 #:     drops the account namespace under the same lock.
-#: The two account writers are simpler and are next in line.
 _UNCONVERTED: frozenset[str] = frozenset(
     {
-        "update_account_metadata",
-        "clear_in_band_account",
         "replace_from_remint",
         "replace_from_login",
         "persist_minted_jar",
