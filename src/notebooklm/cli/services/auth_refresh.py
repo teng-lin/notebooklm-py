@@ -7,6 +7,7 @@ from pathlib import Path
 
 from filelock import FileLock, Timeout
 
+from ...paths import master_token_path_for
 from .login import master_token
 
 
@@ -59,7 +60,10 @@ async def bootstrap_missing_storage_from_master_token(storage_path: Path) -> boo
     # should not pay for a lock merely because they also retain a master token.
     if storage_path.exists():
         return False
-    master_token_path = storage_path.parent / "master_token.json"
+    # Sole derivation site (#2103 PR-1): this call previously used a raw
+    # ``.parent`` join, one of three canonicalization policies the four
+    # master-token call sites disagreed on for a symlinked/relative path.
+    master_token_path = master_token_path_for(storage_path)
     if not master_token_path.exists():
         return False
 

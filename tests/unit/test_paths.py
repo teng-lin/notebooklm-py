@@ -16,10 +16,12 @@ from notebooklm.paths import (
     get_browser_profile_dir,
     get_context_path,
     get_home_dir,
+    get_master_token_path,
     get_path_info,
     get_profile_dir,
     get_storage_path,
     list_profiles,
+    master_token_path_for,
     profile_from_storage_path,
     resolve_profile,
     set_active_profile,
@@ -325,6 +327,170 @@ class TestGetStoragePath:
             result = get_storage_path()
             assert "storage_state.json" in str(result)
             assert str(custom_path.resolve()) in str(result)
+
+
+class TestMasterTokenPathFor:
+    """Pinned BEFORE the #2103-structural-follow-up PR-1 convergence: the
+    SOLE derivation site four call sites previously duplicated (and
+    disagreed on canonicalization for). Every scenario below must resolve
+    identically regardless of which of the four callers asks."""
+
+    def test_ordinary_profile_path(self, tmp_path):
+        storage = tmp_path / "profiles" / "default" / "storage_state.json"
+        assert master_token_path_for(storage) == storage.with_name("master_token.json")
+
+    def test_relative_path_resolves_to_absolute(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = master_token_path_for(Path("storage_state.json"))
+        assert result == (tmp_path / "master_token.json").resolve()
+        assert result.is_absolute()
+
+    def test_tilde_path_expands(self, monkeypatch):
+        monkeypatch.setenv("HOME", "/tmp/fake-home-for-tilde-test")
+        result = master_token_path_for(Path("~/profiles/default/storage_state.json"))
+        assert "~" not in str(result)
+        assert str(result).startswith("/tmp/fake-home-for-tilde-test")
+
+    def test_symlinked_directory_resolves_to_target(self, tmp_path):
+        real_dir = tmp_path / "real"
+        real_dir.mkdir()
+        (real_dir / "storage_state.json").write_text("{}")
+        alias_dir = tmp_path / "alias"
+        try:
+            alias_dir.symlink_to(real_dir, target_is_directory=True)
+        except (OSError, NotImplementedError):  # pragma: no cover - Windows without privilege
+            pytest.skip("platform cannot create directory symlinks")
+
+        via_alias = master_token_path_for(alias_dir / "storage_state.json")
+        via_real = master_token_path_for(real_dir / "storage_state.json")
+        assert via_alias == via_real  # the whole point: alias and target agree
+
+    def test_legacy_home_root_path(self, tmp_path):
+        """The home-root legacy layout (pre-profiles) is just another concrete
+        path to this function — no special-casing needed, since it derives
+        from whatever ``storage_path`` the caller already resolved."""
+        home = tmp_path / "home"
+        storage = home / "storage_state.json"
+        assert master_token_path_for(storage) == home / "master_token.json"
+
+    def test_all_four_call_site_shapes_agree(self, tmp_path):
+        """The four pre-PR-1 call sites used three different policies
+        (resolved parent, raw parent, unresolved with_name). Prove they now
+        all produce the SAME sibling for a relative/symlinked storage path —
+        the actual invariant this PR restores."""
+        real_dir = tmp_path / "real"
+        real_dir.mkdir()
+        alias_dir = tmp_path / "alias"
+        alias_dir.symlink_to(real_dir, target_is_directory=True)
+        storage = alias_dir / "storage_state.json"
+
+        resolved_parent_style = storage.expanduser().resolve().parent / "master_token.json"
+        raw_parent_style = storage.parent / "master_token.json"  # pre-fix auth_refresh.py
+        with_name_style = storage.with_name("master_token.json")  # pre-fix auth_check.py
+
+        result = master_token_path_for(storage)
+        assert result == resolved_parent_style
+        # The other two pre-existing policies did NOT agree with the resolved
+        # one for a symlinked path — this is the divergence PR-1 closes.
+        assert result != raw_parent_style
+        assert result != with_name_style
+
+    def test_resolve_runtime_error_falls_back_to_expanded_path(self, tmp_path, monkeypatch):
+        """#2103 PR-1 review (pr1-reviewer-data-integrity): verified empirically
+        against real 3.10.20/3.11.15/3.12.13 interpreters (not just this
+        suite's own, since CPython's pathlib changed ELOOP handling in 3.13)
+        that a circular symlink makes ``Path.resolve()`` raise ``RuntimeError``
+        on 3.10-3.12 -- and ``RuntimeError`` is NOT an ``OSError`` subclass, so
+        the ``except OSError`` pattern used elsewhere in this module
+        (``profile_from_storage_path``) would not have caught it. Pinned
+        directly via monkeypatch so this holds on every interpreter this
+        suite happens to run under, not only the ones where a real symlink
+        loop reproduces it."""
+        storage = tmp_path / "storage_state.json"
+
+        def raise_runtime_error(self: Path) -> Path:
+            raise RuntimeError("Symlink loop from '...'")
+
+        monkeypatch.setattr(Path, "resolve", raise_runtime_error)
+
+        result = master_token_path_for(storage)
+
+        assert result == storage.with_name("master_token.json")
+
+    def test_resolve_os_error_falls_back_to_expanded_path(self, tmp_path, monkeypatch):
+        """Symmetric coverage for the ``OSError`` half of the except clause --
+        matching the exception type this module already treats as
+        resolve-can-fail elsewhere, even though no known real-world trigger
+        raises plain ``OSError`` from this call site today."""
+        storage = tmp_path / "storage_state.json"
+
+        def raise_os_error(self: Path) -> Path:
+            raise OSError("simulated resolve failure")
+
+        monkeypatch.setattr(Path, "resolve", raise_os_error)
+
+        result = master_token_path_for(storage)
+
+        assert result == storage.with_name("master_token.json")
+
+    def test_real_symlink_loop_does_not_crash(self, tmp_path):
+        """End-to-end proof alongside the monkeypatched tests above: a
+        genuinely circular symlink must never propagate out of this
+        function, regardless of which of the two behaviors (3.10-3.12 raise,
+        3.13+ silent degrade) the running interpreter has."""
+        loop_dir = tmp_path / "loop"
+        try:
+            loop_dir.symlink_to(loop_dir)
+        except (OSError, NotImplementedError):  # pragma: no cover - platform can't self-link
+            pytest.skip("platform cannot create a self-referential symlink")
+        storage = loop_dir / "sub" / "storage_state.json"
+
+        result = master_token_path_for(storage)  # must not raise
+
+        assert result.name == "master_token.json"
+
+
+class TestGetMasterTokenPath:
+    def test_default_profile(self, tmp_path):
+        home = tmp_path / "home"
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+            result = get_master_token_path()
+            assert result == (home / "profiles" / "default" / "master_token.json").resolve()
+
+    def test_named_profile(self, tmp_path):
+        home = tmp_path / "home"
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+            result = get_master_token_path(profile="work")
+            assert result == (home / "profiles" / "work" / "master_token.json").resolve()
+
+    def test_agrees_with_profile_dir_derivation_for_ordinary_profile(self, tmp_path):
+        """The behavior change (deriving from ``get_storage_path`` instead of
+        ``get_profile_dir``) is purely additive for the common, already-migrated
+        case — explicit, not just incidentally implied by the two tests above
+        happening to compute the same literal path."""
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            assert get_master_token_path("work") == get_profile_dir("work") / "master_token.json"
+
+    def test_agrees_with_legacy_home_root_storage_fallback(self, tmp_path):
+        """Behavior change (#2103 PR-1): previously derived from
+        ``get_profile_dir`` directly, which has NO legacy home-root fallback —
+        for a legacy "default" profile it would have returned
+        ``profiles/default/master_token.json`` even when the real sibling
+        (had one existed pre-profiles) sat at the home root beside the legacy
+        ``storage_state.json``. Now derives from ``get_storage_path``, so it
+        agrees with wherever THAT function says storage actually lives."""
+        home = tmp_path / "home"
+        home.mkdir()
+        (home / "storage_state.json").write_text("{}")  # triggers the legacy fallback
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+            storage = get_storage_path()  # resolves to the legacy home-root file
+            assert storage == home / "storage_state.json"
+            result = get_master_token_path()
+
+        assert result == home / "master_token.json"
+        # The old (pre-PR-1) behavior would have said this instead:
+        assert result != (home / "profiles" / "default" / "master_token.json").resolve()
 
 
 class TestGetContextPath:

@@ -381,6 +381,46 @@ async def test_master_token_present_and_account_read(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_master_token_status_resolves_through_symlinked_storage_dir(tmp_path: Path) -> None:
+    """#2103 PR-1 review: proves the CALL-SITE WIRING in ``_master_token_status``
+    (``_app/auth_check.py``), not just ``master_token_path_for`` in isolation
+    (already covered by ``test_paths.py``). ``AuthCheckPlan.storage_path`` is
+    documented as pre-resolved by ``AuthSource.from_click_context``
+    (``expanduser().resolve()``), so a wiring bug here — passing the wrong
+    field, or a future caller that stops pre-resolving — would be the one
+    place nothing else catches it: a symlinked profile directory must still
+    resolve to the SAME sibling as its real target."""
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    storage = real_dir / "storage_state.json"
+    storage.write_text(json.dumps(_valid_storage_state("APISID", "SAPISID")), encoding="utf-8")
+    auth_module.write_master_token(
+        real_dir / "master_token.json",
+        email="owner@gmail.com",
+        master_token="aas_et/secret",
+        android_id="0123456789abcdef",
+    )
+    alias_dir = tmp_path / "alias"
+    try:
+        alias_dir.symlink_to(real_dir, target_is_directory=True)
+    except (OSError, NotImplementedError):  # pragma: no cover - Windows without privilege
+        pytest.skip("platform cannot create directory symlinks")
+    aliased_storage = alias_dir / "storage_state.json"
+
+    result = await run_auth_check(
+        _plan(storage_path=aliased_storage), read_env_auth_json=_never_read_env
+    )
+
+    mt = result.details["master_token"]
+    assert mt["present"] is True
+    assert mt["account"] == "owner@gmail.com"
+    # The reported path is the RESOLVED sibling (real_dir), not a sibling of
+    # the alias — proving master_token_path_for's resolve is actually applied
+    # through this call site's wiring, not just in the shared helper's tests.
+    assert mt["path"] == str(real_dir / "master_token.json")
+
+
+@pytest.mark.asyncio
 async def test_missing_psidts_with_master_token_uses_corrected_hint(tmp_path: Path) -> None:
     """A master-token profile missing PSIDTS at rest gets master-token guidance,
     not the (wrong) browser-extraction / App-Bound Encryption hint."""

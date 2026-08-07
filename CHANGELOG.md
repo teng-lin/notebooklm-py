@@ -208,6 +208,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of one storage file collapses to one token location. Profile-derived paths
   were already absolute and are unaffected.
 
+- **`_app/auth_check.py`'s `auth check` and `cli/services/auth_refresh.py`'s
+  missing-storage bootstrap now also canonicalize the `master_token.json`
+  sibling for a symlinked or relative `--storage` (#2103 structural
+  follow-up, PR-1).** #2104/#2105 fixed this for the CLI login writer only,
+  one of four sites that each derived the sibling independently: the L4
+  recovery rung resolved via `canonical_storage_key`, `auth check` used an
+  unresolved `with_name`, and the missing-storage bootstrap used a raw
+  `.parent` join — three different policies that could each derive a
+  different sibling for the same alias. All four (plus `get_master_token_path`,
+  previously derived from the profile directory directly rather than from
+  `get_storage_path`, so it disagreed with every other reader for a legacy
+  home-root profile) now call the new
+  `notebooklm.paths.master_token_path_for(storage_path)`, the sole derivation
+  site, guarded by a lint against a second one reappearing. `auth check`
+  reporting `present: false`/`false` account presence for such a profile
+  under `--storage`, and the missing-storage bootstrap failing to find a
+  token beside a symlinked/relative `--storage`, are the two behavior changes
+  this fixes; ordinary absolute-path profiles are unaffected.
+
+- **A stale or circular `--storage`/profile symlink no longer crashes `auth
+  check` or the cold-start bootstrap (#2103 PR-1 review).** The new
+  `master_token_path_for` canonicalizes via `Path.resolve()`, which raises
+  `RuntimeError` (not `OSError`) on a symlink loop on Python 3.10-3.12 — a
+  CPython pathlib behavior fixed upstream in 3.13, where the same call
+  degrades silently instead. `master_token_path_for` now catches both
+  exception types on every supported Python version and falls back to a
+  best-effort, non-canonicalized path rather than propagating.
+
 - **`NOTEBOOKLM_AUTH_JSON` now beats a profile everywhere, as documented.** The
   precedence `--storage` > `NOTEBOOKLM_AUTH_JSON` > profile file is stated in
   `docs/configuration.md`, drawn in `docs/architecture.md`, and implemented by

@@ -144,7 +144,16 @@ def test_concurrent_processes_serialize_bootstrap_across_path_aliases(tmp_path):
         storage, ready, start, marker = map(Path, sys.argv[1:])
 
         async def mint(*, storage_path, master_token_path):
-            assert master_token_path == storage.parent / "master_token.json"
+            # #2103 PR-1: master_token_path_for resolves the storage path
+            # (expanduser().resolve()) before deriving the sibling, so the
+            # ALIAS worker's master_token_path resolves THROUGH the symlink to
+            # the real directory's master_token.json — not a sibling of the
+            # alias path itself (the old raw ``storage_path.parent`` join).
+            # This IS the invariant this PR restores: both workers must agree
+            # on the same real file regardless of which path alias they were
+            # given, exactly like they already agree on the same bootstrap
+            # lock (asserted above).
+            assert master_token_path == storage.resolve().parent / "master_token.json"
             marker.write_text("minted", encoding="utf-8")
             await asyncio.sleep(0.25)
             with FileLock(str(_storage_state_lock_path(storage_path)), timeout=2):

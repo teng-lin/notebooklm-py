@@ -345,11 +345,81 @@ def profile_from_storage_path(storage_path: Path | None) -> str | None:
     return rel.parts[0]
 
 
+def master_token_path_for(storage_path: Path) -> Path:
+    """Return the ``master_token.json`` sibling of a storage path.
+
+    The SOLE derivation site for the master-token sibling invariant
+    (issue #2103 structural follow-up — PR-1 of the master-token relocation).
+    Before this, four sites derived the sibling independently and disagreed on
+    canonicalization: ``_auth/recovery.py``'s L4 rung resolved via
+    ``canonical_storage_key`` (``expanduser().resolve()``), ``_app/auth_check.py``
+    and the (pre-#2104) CLI login writer used unresolved ``with_name``, and
+    ``cli/services/auth_refresh.py`` used a raw ``.parent`` join — so a
+    symlinked or relative ``--storage`` alias could derive a DIFFERENT sibling
+    at each site, silently breaking the invariant #2103/#2104 fixed for one
+    site at a time. All four now call this one function.
+
+    Canonicalizes via ``expanduser().resolve()`` (matching
+    ``_auth.paths.canonical_storage_key``, duplicated inline rather than
+    imported to keep this public, top-level module free of any dependency on
+    the private ``_auth`` package — this module is reachable from both `cli/`
+    and `_app/`, and importing a private sibling from either would violate
+    their respective boundary guardrails; a public chokepoint needs no
+    ledger entry for either caller).
+
+    ``resolve()`` degrades to a best-effort (non-canonicalized) path on a
+    circular symlink rather than raising: on Python 3.13+ this is
+    ``Path.resolve()``'s own non-strict behavior, and on 3.10-3.12 — where a
+    symlink loop instead raises ``RuntimeError`` (not ``OSError``; a CPython
+    pathlib behavior change, fixed in 3.13) — this function catches it
+    itself, so every supported Python version behaves the same way here: a
+    stale or circular profile symlink degrades a lookup, it does not crash
+    ``auth check`` or bootstrap (#2103 PR-1 review).
+
+    Args:
+        storage_path: Path to ``storage_state.json`` (any form — absolute,
+            relative, ``~``-prefixed, or through a symlink).
+
+    Returns:
+        The resolved, canonical sibling ``master_token.json`` path — or a
+        best-effort, non-canonicalized sibling if resolution is impossible
+        (e.g. a circular symlink).
+    """
+    expanded = storage_path.expanduser()
+    try:
+        resolved = expanded.resolve()
+    except (OSError, RuntimeError):
+        resolved = expanded
+    return resolved.with_name("master_token.json")
+
+
 def get_master_token_path(profile: str | None = None) -> Path:
     """Get the master_token.json path for a profile (headless master-token auth).
 
     Sibling of storage_state.json. Holds the durable ``aas_et/`` master token at
     mode 0600; cookies minted from it are written to storage_state.json.
+
+    Thin wrapper over :func:`master_token_path_for` — this derives the sibling
+    from ``get_storage_path(profile=profile)`` rather than
+    ``get_profile_dir(profile)`` directly, so it agrees with the legacy
+    home-root fallback :func:`get_storage_path` applies for the ``"default"``
+    profile (``get_profile_dir`` has no such fallback and would derive a
+    different, profile-dir-only answer).
+
+    This agreement relies on an invariant this function does not itself
+    enforce: a master token is only ever WRITTEN by ``login --master-token``
+    (CLI-only), and every CLI invocation calls ``ensure_profiles_dir()``
+    (idempotent, safe on every run) before any subcommand runs — so by the
+    time a token could be written, a legacy home-root ``storage_state.json``
+    has already been migrated into ``profiles/<name>/``. There is
+    consequently no code path today that leaves a real master token sitting
+    at the OLD ``get_profile_dir``-derived location while storage is still at
+    the home root (neither ``mcp`` nor ``server`` read or write a master
+    token at all, as of this writing). If a future caller ever reaches a
+    master-token path without first going through ``ensure_profiles_dir``,
+    this function would silently fail to find an existing legacy-location
+    token rather than erroring — a reviewed, currently-unreachable case
+    (#2103 PR-1 review).
 
     Args:
         profile: Profile name. If None, uses the active profile.
@@ -357,7 +427,7 @@ def get_master_token_path(profile: str | None = None) -> Path:
     Returns:
         Path to master_token.json (may not exist).
     """
-    return get_profile_dir(resolve_profile(profile)) / "master_token.json"
+    return master_token_path_for(get_storage_path(profile=profile))
 
 
 def get_context_path(
