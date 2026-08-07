@@ -390,6 +390,21 @@ def get_master_token_path(profile: str | None = None) -> Path:
     profile (``get_profile_dir`` has no such fallback and would derive a
     different, profile-dir-only answer).
 
+    This agreement relies on an invariant this function does not itself
+    enforce: a master token is only ever WRITTEN by ``login --master-token``
+    (CLI-only), and every CLI invocation calls ``ensure_profiles_dir()``
+    (idempotent, safe on every run) before any subcommand runs — so by the
+    time a token could be written, a legacy home-root ``storage_state.json``
+    has already been migrated into ``profiles/<name>/``. There is
+    consequently no code path today that leaves a real master token sitting
+    at the OLD ``get_profile_dir``-derived location while storage is still at
+    the home root (neither ``mcp`` nor ``server`` read or write a master
+    token at all, as of this writing). If a future caller ever reaches a
+    master-token path without first going through ``ensure_profiles_dir``,
+    this function would silently fail to find an existing legacy-location
+    token rather than erroring — a reviewed, currently-unreachable case
+    (#2103 PR-1 review).
+
     Args:
         profile: Profile name. If None, uses the active profile.
 

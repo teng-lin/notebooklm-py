@@ -409,6 +409,14 @@ class TestGetMasterTokenPath:
             result = get_master_token_path(profile="work")
             assert result == (home / "profiles" / "work" / "master_token.json").resolve()
 
+    def test_agrees_with_profile_dir_derivation_for_ordinary_profile(self, tmp_path):
+        """The behavior change (deriving from ``get_storage_path`` instead of
+        ``get_profile_dir``) is purely additive for the common, already-migrated
+        case — explicit, not just incidentally implied by the two tests above
+        happening to compute the same literal path."""
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            assert get_master_token_path("work") == get_profile_dir("work") / "master_token.json"
+
     def test_agrees_with_legacy_home_root_storage_fallback(self, tmp_path):
         """Behavior change (#2103 PR-1): previously derived from
         ``get_profile_dir`` directly, which has NO legacy home-root fallback —
