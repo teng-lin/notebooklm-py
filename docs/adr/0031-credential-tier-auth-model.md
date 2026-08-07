@@ -1,0 +1,147 @@
+# ADR-0031: Credential-tier domain model for `_auth`
+
+## Status
+
+Proposed (Stage 0 — the single RotateCookies wire contract — landed with this
+ADR; Stages 1–5 are sequenced follow-up work, each independently shippable).
+
+Companion to [ADR-0029](0029-canonical-storage-writer.md) (write side) and
+[ADR-0030](0030-one-recovery-ladder.md) (recovery/refresh side). Where those
+unified one *flow* each, this ADR names the domain model both flows already
+implement implicitly, so future auth work has types and named operations to
+land on instead of free functions to scatter.
+
+## Context
+
+The auth cross-boundary ledger audit (#2139 and its follow-up review) traced
+every name `cli/`/`_app/` import from the `notebooklm.auth` facade and found
+that the hard-to-classify cases were all symptoms of one gap: `_auth` is
+organized by *topic* (`cookies.py`, `account.py`, `cookie_policy.py`,
+`storage_writer.py`) rather than by the domain model its own docstrings
+describe. Concretely:
+
+- **Noun sprawl.** A cookie exists in six shapes: the raw Playwright
+  storage-state dict, the rookiepy dict, `DomainCookieMap`
+  (`(name, domain, path) → value`), `FlatCookieMap` (`name → value`),
+  `LegacyDomainCookieMap`, and the "sanitized entries" list
+  (`cookies._sanitized_auth_entries`). `AuthTokens` carries cookies **twice**
+  (`cookies: DomainCookieMap` + `cookie_jar: httpx.Cookies`) and reconciles
+  the pair in `__post_init__`.
+- **Verb sprawl.** Ten-plus verbs (mint / bootstrap / exchange / remint /
+  rotate / poke / recover / heal / reauth / refresh / validate) name about six
+  concepts. Worst case: the POST to `accounts.google.com/RotateCookies` was
+  independently assembled at **four** sites (`keepalive._rotate_cookies`,
+  `psidts_recovery._attempt_rotation`, `psidts_recovery.recover_psidts_in_memory`,
+  and the mint leg in `master_token.mint_cookies`), one of which
+  silently omitted `raise_for_status` — protocol drift in the
+  credential-rotation path with nothing keeping the copies in sync.
+- **Coupling with no owner.** Validation helpers
+  (`_validate_required_cookies`, `_has_valid_secondary_binding`,
+  `_validate_routable_entries`) are shared between the core recovery ladder
+  and the CLI browser-cookie import — not because those flows are related,
+  but because "is this cookie set usable" has no type to be a method of, so
+  every flow reaches for the same scattered private functions. This is what
+  made several "move it across the boundary" proposals in the audit unsafe:
+  three names that looked adapter-local turned out core-coupled through
+  hidden private-helper fan-out.
+
+The model the docstrings already describe is a **credential tier system**:
+
+```
+Tier 0: DURABLE   master_token.json | persistent browser profile | refresh_cmd
+        (~years)        │ mint
+                        ▼
+Tier 1: SESSION   cookie jar (SID, PSIDTS, bindings…)
+        (~days)         │ rotate (PSIDTS) · validate/heal · persist/load
+                        ▼ fetch
+Tier 2: REQUEST   csrf_token + session_id            (~minutes, per RPC)
+```
+
+Every operation in the subsystem is one of five things: **mint** (tier N →
+N+1), **rotate/heal** (refresh a component within a tier), **validate**
+(check a tier is usable), **persist/load** (move a tier to/from the profile),
+**identify** (bind credentials to `{email, authuser}`). The ADR-0030 ladder
+is "walk down the tiers until something works, then mint back up": L1
+re-fetches Tier 2, L2 rotates within Tier 1, L3/L4 re-mint Tier 1 from two
+different Tier-0 sources.
+
+## Decision
+
+Adopt the credential-tier model as the organizing principle for `_auth`, and
+introduce its objects and operations in independently shippable stages:
+
+- **Stage 0 (this PR): one RotateCookies wire contract.** The POST lives only
+  in `_auth/keepalive.py` (`_ROTATE_POST_KWARGS` + `_rotate_post` /
+  `_rotate_post_sync` / `_rotation_http_client`); the four former sites are
+  thin policy wrappers. Enforced by
+  `tests/_guardrails/test_rotate_wire_contract.py`.
+- **Stage 1: `CookieJar`** — one canonical cookie type with constructors
+  (`from_storage_state` / `from_rookiepy` / `from_flat`) and converters
+  (`to_httpx` / `to_storage_state`), introduced as a non-breaking wrapper
+  delegating to today's free functions. New code uses jar methods; a ratchet
+  blocks new imports of the legacy conversion functions.
+- **Stage 2: `validate` / `heal` split** — `validate(jar) → ValidationResult`
+  is pure (extends the closed-enum reason
+  `RequiredCookieValidationError` grew in #2061); `heal` is the explicit
+  composition point whose only strategy today is the Stage-0 rotate.
+  `validate_with_recovery` survives as a compatibility wrapper.
+- **Stage 3: `ProfileStore`** — the eight free functions in
+  `storage_writer.py` become transactions on one object owning the
+  lock-acquire → read → mutate → atomic-write template they each hand-roll
+  today. Method names stay initially; `persist_minted_jar`'s #2108
+  ownership-guard and write-ordering semantics are preserved bit-for-bit.
+- **Stage 4: `AuthTokens.cookies: CookieJar`** — the dual
+  `cookies`/`cookie_jar` fields collapse. The only stage touching documented
+  public API; requires a `Mapping`-compatible shim or a deprecation runway
+  per the breaking-change policy.
+- **Stage 5: mode packages** — the acquisition modes (master-token,
+  browser-cookie import, Playwright login) become self-contained packages
+  composing the named operations, mirroring what `browser_capture.py`
+  already is for the Playwright capture half.
+
+**Boundary principle** (resolves the recurring "does this belong in
+`_auth`/`_app`/`cli`" question): a mint strategy that runs **unattended**
+(master-token remint, headless capture, refresh_cmd, rotation) belongs to the
+library and may sit on the automatic ladder; a strategy that needs a
+**human** (interactive Playwright login, browser-cookie extraction, OAuth
+capture) is driven by the CLI. Both produce the same session jar and persist
+through the same writer. What crosses the facade boundary is the shared
+vocabulary — types and named tier operations — never a mode's internals.
+
+## Consequences
+
+- A protocol change to Google's rotation contract now lands in one place;
+  the guardrail makes a fifth bespoke POST a test failure, not a review
+  catch. The mint leg additionally gains the `raise_for_status` the other
+  sites already had (a silent 4xx/5xx becomes a logged, skipped rotation —
+  same control flow, better observability).
+- Each later stage retires a class of scattered helpers by giving them an
+  owner, which is what makes future boundary questions answerable
+  structurally ("does the type cross?") instead of by hand-tracing call
+  graphs.
+- **Costs, honestly:** every stage churns ADR-0007 patch seams (tests patch
+  owning modules at bare-name call sites, so relocating a body moves its
+  seam — this bit #2139's Phase 4 directly); the guardrail ledgers
+  (`AUTH_CROSS_BOUNDARY_NAMES`, de-blessed lists, the public-import
+  manifest) need same-PR bookkeeping; Stage 4 is a real public-API change
+  and must not ship as a side effect of an internal stage.
+- Stages are ordered by risk-to-value: each is independently green,
+  independently revertable, and none blocks the others except 4-after-1.
+
+## Alternatives considered
+
+- **Keep shrinking the cross-boundary ledger case-by-case.** Rejected: the
+  #2139 audit ended with every remaining entry either core-critical, a
+  documented feature, or irreducible without exactly the type/operation
+  consolidation this ADR names. The ledger is a symptom meter, not the
+  disease.
+- **Move adapter-local names into `cli/`/`_app/` wholesale.** Rejected on
+  evidence: three candidates that looked CLI-only (`build_cookie_jar`,
+  `validate_with_recovery`, `extract_cookies_from_storage`) turned out to be
+  load-bearing in the client's own token-construction and recovery chains
+  through internal `_auth` call paths the facade-level audit cannot see.
+  Moving code before the model exists just relocates hidden coupling.
+- **One big rewrite.** Rejected: the same audit produced three separate
+  "obviously safe" changes that were wrong on first pass. Staged, per-stage
+  verification is the only approach that has actually held up in this
+  subsystem.

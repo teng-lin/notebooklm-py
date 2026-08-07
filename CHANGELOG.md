@@ -30,6 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **One RotateCookies wire contract (ADR-0031 Stage 0).** The POST to
+  `accounts.google.com/RotateCookies` was independently assembled at four
+  sites — the keepalive poke, the file-based and in-memory PSIDTS recoveries,
+  and the master-token mint's completing leg — and the mint leg alone omitted
+  `raise_for_status`, so a 429/5xx there passed silently. All four now route
+  through a single wire implementation in `notebooklm._auth.keepalive`
+  (guardrail-enforced). Two observable deltas, both on the mint leg only: a
+  rejected rotation is now logged and skipped instead of silently ignored, and
+  the leg uses the canonical 15 s rotation timeout instead of inheriting the
+  mint client's 30 s. See the new
+  [ADR-0031](docs/adr/0031-credential-tier-auth-model.md) for the
+  credential-tier model this is the first stage of.
+
 - **`notebooklm.auth.__all__` is now exactly the documented public surface (38 →
   6 names).** `__all__` had been doing double duty: the CLI boundary lint forbids
   `cli/` from importing `notebooklm._*`, so every auth helper the CLI needed was
