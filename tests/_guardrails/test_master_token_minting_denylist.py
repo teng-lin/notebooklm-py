@@ -91,42 +91,67 @@ def _forbidden_name_imports(tree: ast.AST) -> list[str]:
     return hits
 
 
-def _auth_module_aliases(tree: ast.AST) -> set[str]:
-    """Local names bound to the ``notebooklm.auth`` MODULE object itself
-    (as opposed to a name imported FROM it) — ``from .. import auth``,
-    ``from .. import auth as auth_helpers``, ``import notebooklm.auth as X``."""
-    aliases: set[str] = set()
+def _auth_module_aliases(tree: ast.AST) -> tuple[set[str], bool]:
+    """Local bindings of the ``notebooklm.auth`` MODULE object itself (as
+    opposed to a name imported FROM it).
+
+    Returns ``(direct_aliases, pkg_qualified)``:
+
+    * ``direct_aliases`` — names that ARE the module (``from .. import auth
+      [as X]``, ``import notebooklm.auth as X``), reached as ``X.<primitive>``.
+    * ``pkg_qualified`` — a plain ``import notebooklm.auth`` (no ``as``) is
+      present, so the module is reached as the dotted chain
+      ``notebooklm.auth.<primitive>`` (mirrors clause (v)'s ``pkg_qualified``
+      in ``test_storage_writer_boundary.py``, which this shape was originally
+      modeled on but had dropped — a real gap, caught in review by testing
+      this exact snippet against the detector)."""
+    direct: set[str] = set()
+    pkg_qualified = False
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.level >= 1 and not node.module:
             # ``from <dots> import auth [as X]`` — the imported NAME is "auth".
-            aliases.update(
+            direct.update(
                 alias.asname or alias.name for alias in node.names if alias.name == "auth"
             )
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == "notebooklm":
-            aliases.update(
+            direct.update(
                 alias.asname or alias.name for alias in node.names if alias.name == "auth"
             )
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "notebooklm.auth" and alias.asname:
-                    aliases.add(alias.asname)
-    return aliases
+                if alias.name == "notebooklm.auth":
+                    if alias.asname:
+                        direct.add(alias.asname)
+                    else:
+                        pkg_qualified = True
+    return direct, pkg_qualified
 
 
 def _forbidden_attribute_accesses(tree: ast.AST) -> list[str]:
     """Shape (b): ``<auth_alias>.<forbidden_primitive>`` attribute access,
     reached via a module-alias binding (shape (a) never sees the primitive
-    NAME appear in an import statement at all)."""
-    aliases = _auth_module_aliases(tree)
-    if not aliases:
+    NAME appear in an import statement at all) — including the fully
+    dotted ``notebooklm.auth.<primitive>`` chain from a package-qualified,
+    non-aliased ``import notebooklm.auth``."""
+    direct, pkg_qualified = _auth_module_aliases(tree)
+    if not direct and not pkg_qualified:
         return []
     hits: list[str] = []
     for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute) or node.attr not in FORBIDDEN_MINTING_PRIMITIVES:
+            continue
+        base = node.value
+        # Direct alias: ``auth_helpers.mint_cookies(...)`` / ``auth.mint_cookies(...)``.
+        if isinstance(base, ast.Name) and base.id in direct:
+            hits.append(node.attr)
+            continue
+        # Package-qualified: ``notebooklm.auth.mint_cookies(...)``.
         if (
-            isinstance(node, ast.Attribute)
-            and node.attr in FORBIDDEN_MINTING_PRIMITIVES
-            and isinstance(node.value, ast.Name)
-            and node.value.id in aliases
+            pkg_qualified
+            and isinstance(base, ast.Attribute)
+            and base.attr == "auth"
+            and isinstance(base.value, ast.Name)
+            and base.value.id == "notebooklm"
         ):
             hits.append(node.attr)
     return hits
@@ -201,6 +226,23 @@ def test_detects_module_alias_attribute_call() -> None:
     assert _hits("from .. import auth\nauth.write_master_token(p, email=e)") == [
         "write_master_token"
     ]
+
+
+def test_detects_package_qualified_attribute_call() -> None:
+    """A plain, non-aliased ``import notebooklm.auth`` followed by the fully
+    dotted ``notebooklm.auth.<primitive>`` attribute chain — the one shape a
+    naive alias-only detector misses (verified missing in review by testing
+    this exact snippet, then fixed alongside this test)."""
+    assert _hits("import notebooklm.auth\nnotebooklm.auth.mint_cookies(a, b, c)") == [
+        "mint_cookies"
+    ]
+
+
+def test_detects_indirection_through_a_local_variable() -> None:
+    """``fn = auth.mint_cookies`` is itself an ``Attribute`` node — caught even
+    though the eventual call site (``fn(...)``) is a bare ``Name``, not an
+    ``Attribute``."""
+    assert _hits("from .. import auth\nfn = auth.mint_cookies\nfn(a, b, c)") == ["mint_cookies"]
 
 
 def test_ignores_unforbidden_auth_names() -> None:
