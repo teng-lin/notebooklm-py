@@ -111,6 +111,10 @@ from .storage import (
     _LOCK_ACQUIRE_DEADLINE_SECONDS,
     _LOCK_ACQUIRE_INITIAL_DELAY_SECONDS,
 )
+from .storage_transaction import (
+    in_storage_transaction,
+    raise_on_lock_unavailable,
+)
 
 if TYPE_CHECKING:
     import httpx
@@ -943,17 +947,22 @@ def write_master_token(path: Path, *, email: str, master_token: str, android_id:
     """
     from . import master_token as _master_token  # lazy: avoid import cycle
 
-    _ensure_secure_parent_dir(path)
     payload = {
         "version": _master_token._MASTER_TOKEN_VERSION,
         "email": email,
         "android_id": android_id,
         "master_token": master_token,
     }
-    # Sibling dotted lock for the credential file (distinct from the profile's
-    # storage-state lock — a different file).
-    lock_path = _storage_state_lock_path(path)
-    with _acquire_storage_lock(lock_path, log_prefix="write_master_token") as state:
-        if state != "held":
-            raise LockUnavailableError(f"write_master_token: lock unavailable at {lock_path}")
+
+    def _write() -> None:
         atomic_write_json(path, payload)
+
+    # The transaction template derives the sibling dotted lock for this
+    # credential file (distinct from the profile's storage-state lock — a
+    # different file) and ensures the parent dir is secure before taking it.
+    in_storage_transaction(
+        path,
+        _write,
+        log_prefix="write_master_token",
+        on_unavailable=raise_on_lock_unavailable("write_master_token"),
+    )

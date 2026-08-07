@@ -526,6 +526,7 @@ the default dependency.
 | [`_auth/paths.py`](../src/notebooklm/_auth/paths.py) | Storage paths and filesystem helpers. |
 | [`_auth/storage.py`](../src/notebooklm/_auth/storage.py) | Profile/state persistence on disk: cookie snapshot/delta CAS math + the file-lock primitive; `save_cookies_to_storage` is the monkeypatchable delegate seam onto `storage_writer`. |
 | [`_auth/storage_writer.py`](../src/notebooklm/_auth/storage_writer.py) | Canonical `storage_state.json` writer (ADR-0029): the only `_auth` module that performs the atomic write; intent-shaped API (CAS merge, account metadata, master-token persist) on the unified bounded storage lock. |
+| [`_auth/storage_transaction.py`](../src/notebooklm/_auth/storage_transaction.py) | The storage-write transaction template (ADR-0031 Stage 3): `in_storage_transaction` owns the secure-parent-dir / lock-path / bounded-acquire / not-held preamble the writers each hand-rolled, with the lock-failure policy (`raise_` / `skip_` / `report_on_lock_unavailable`) supplied by the caller because the six writers genuinely differ there. Split out of `storage_writer.py` for the ADR-0008 size budget; never imports the `_atomic_io` primitives, so the single-writer boundary holds. |
 | [`_auth/extraction.py`](../src/notebooklm/_auth/extraction.py) | Cookie/token extraction from browser sessions. |
 | [`_auth/headers.py`](../src/notebooklm/_auth/headers.py) | HTTP header construction. |
 | [`_auth/cookies.py`](../src/notebooklm/_auth/cookies.py) | Cookie maps + `_update_cookie_input` helper. |
@@ -1198,6 +1199,7 @@ src/notebooklm/
 │   ├── session.py               # Auth-session refresh implementation via `refresh_auth_session()` and explicit collaborators
 │   ├── storage.py               # Profile/state persistence: CAS merge math + file-lock primitive + save_cookies_to_storage delegate seam
 │   ├── storage_writer.py        # Canonical storage_state.json writer (ADR-0029): sole atomic-write owner, unified bounded lock
+│   ├── storage_transaction.py   # Storage-write transaction template + lock-failure policies (ADR-0031 Stage 3)
 │   ├── keepalive.py             # Cookie keepalive + __Secure-1PSIDTS rotation
 │   ├── psidts_recovery.py       # Inline PSIDTS recovery for cold-start (issue #865)
 │   ├── master_token.py          # Headless master-token auth: minting primitives + the audited bootstrap/re-mint transaction (ADR-0023)
