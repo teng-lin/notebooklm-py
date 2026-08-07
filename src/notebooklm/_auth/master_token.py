@@ -345,6 +345,12 @@ def assert_account_writable(*, email: str, storage_path: Path, force: bool = Fal
     (#2103 PR-2 D6) — this function is a courtesy, not the guard."""
     if force:
         return
+    if not email:
+        # Type says str, but this is a public library boundary (notebooklm.
+        # auth.assert_account_writable) — fail with a typed error rather than
+        # a raw AttributeError from `email.casefold()` below (PR-2 review,
+        # pr2-reviewer-security).
+        raise MasterTokenError("assert_account_writable requires a non-empty email.")
     from ..paths import master_token_path_for  # noqa: PLC0415 (avoid import cycle)
     from .account import get_account_email_for_storage  # noqa: PLC0415 (avoid import cycle)
 
@@ -415,7 +421,19 @@ async def bootstrap_from_oauth_token(
     for the authoritative, lock-guarded enforcement.
 
     ``android_id`` defaults to ``None``, resolved explicit -> stored -> fresh
-    (#2103 PR-2 D5); pass it explicitly only to override."""
+    (#2103 PR-2 D5); pass it explicitly only to override.
+
+    Writes ``master_token.json`` (the durable, infostealer-grade credential)
+    only AFTER ``persist_minted_jar``'s authoritative ownership check has
+    already succeeded (PR-2 review, pr2-reviewer-security MAJOR): the
+    original ordering wrote the durable token first and gated only
+    ``storage_state.json``, so a profile with no recorded owner on EITHER
+    file (``assert_account_writable``'s advisory pre-check sees no conflict
+    when nothing is recorded yet) would durably persist a master token for
+    the mint's account, THEN fail at the storage gate — leaving a live
+    credential on disk for an operation the caller was told was refused.
+    ``persist_minted_jar`` needs nothing from ``write_master_token`` (it
+    takes the minted jar directly), so reordering costs nothing."""
     from ..paths import master_token_path_for  # noqa: PLC0415 (avoid import cycle)
 
     master_token_path = master_token_path_for(storage_path)
@@ -425,14 +443,15 @@ async def bootstrap_from_oauth_token(
     await asyncio.to_thread(
         assert_account_writable, email=email, storage_path=storage_path, force=force
     )
-    # exchange/write/persist are sync (network + locked file I/O) — off-thread so
+    # exchange/mint/persist are sync (network + locked file I/O) — off-thread so
     # they don't block the event loop the CLI runs them on.
     token = await asyncio.to_thread(exchange_master_token, email, oauth_token, aid)
+    jar = await mint_cookies(email, token, aid)
+    await asyncio.to_thread(persist_minted_jar, storage_path, jar, email=email, force=force)
+    # Only reached once the authoritative gate above has actually passed.
     await asyncio.to_thread(
         write_master_token, master_token_path, email=email, master_token=token, android_id=aid
     )
-    jar = await mint_cookies(email, token, aid)
-    await asyncio.to_thread(persist_minted_jar, storage_path, jar, email=email, force=force)
     return await _verify_by_listing_notebooks(storage_path) if verify else -1
 
 

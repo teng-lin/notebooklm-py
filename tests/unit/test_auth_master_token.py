@@ -258,6 +258,48 @@ async def test_bootstrap_from_oauth_token_raises_on_corrupted_stored_token(tmp_p
     assert json.loads(token_path.read_text(encoding="utf-8")) == {"version": 99}
 
 
+@pytest.mark.asyncio
+async def test_bootstrap_from_oauth_token_does_not_write_master_token_when_storage_gate_refuses(
+    fake_gpsoauth, httpx_mock, tmp_path
+):
+    """#2103 PR-2 review (pr2-reviewer-security, MAJOR): ``write_master_token``
+    must not durably persist the new account's token when the LATER,
+    authoritative ``persist_minted_jar`` gate refuses. Repro: existing
+    storage with no recorded account (unknown owner) and no
+    ``master_token.json`` yet -- ``assert_account_writable``'s advisory
+    pre-check sees no conflict (nothing recorded on either file), but
+    ``persist_minted_jar``'s default ``refuse_unknown_owner=True`` refuses.
+    Before the fix, ``write_master_token`` ran BEFORE ``persist_minted_jar``,
+    so this exact refused call left a live, full-account master token for
+    the wrong (or at least unintended) account durably on disk despite the
+    caller being told the operation failed."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(json.dumps({"cookies": [{"name": "OLD", "value": "x"}]}), encoding="utf-8")
+    token_path = tmp_path / "master_token.json"
+    httpx_mock.add_response(url=_OAUTHLOGIN_RE, text="APh-X")
+    httpx_mock.add_response(
+        url=_MERGESESSION_RE, headers=_merge_session_cookies("SID", "APISID", "SAPISID")
+    )
+
+    with pytest.raises(MasterTokenError, match="no recorded account owner"):
+        await mt.bootstrap_from_oauth_token(
+            email="someone@else.com", oauth_token="OAUTH", storage_path=storage, verify=False
+        )
+
+    assert not token_path.exists()
+
+
+# --- assert_account_writable ------------------------------------------------
+
+
+def test_assert_account_writable_rejects_empty_email(tmp_path):
+    """#2103 PR-2 review (pr2-reviewer-security, MINOR): a public-boundary
+    function must raise a typed MasterTokenError, not a raw AttributeError
+    from ``email.casefold()``, when called with a falsy email."""
+    with pytest.raises(MasterTokenError, match="non-empty email"):
+        mt.assert_account_writable(email="", storage_path=tmp_path / "storage_state.json")
+
+
 # --- storage_state_from_jar -----------------------------------------------
 
 
