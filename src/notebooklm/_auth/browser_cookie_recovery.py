@@ -49,9 +49,9 @@ class ValidationResult:
     error: _cookie_policy.RequiredCookieValidationError | None = None
 
     @property
-    def reason(self) -> Any:
+    def reason(self) -> _cookie_policy.RequiredCookieReason | None:
         """The closed-enum failure reason, or ``None`` when valid."""
-        return getattr(self.error, "reason", None)
+        return self.error.reason if self.error is not None else None
 
 
 def _check_required_present(storage_state: dict[str, Any]) -> ValidationResult:

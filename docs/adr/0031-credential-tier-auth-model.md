@@ -114,6 +114,16 @@ introduce its objects and operations in independently shippable stages:
   so a successful rotation already established what the preflight would
   re-litigate) but it was previously invisible. It is now documented and pinned
   by a test that fails on the naive "just re-run `validate()`" refactor.
+
+  **Stage 2 does not adopt the Stage-1 `CookieJar` at this seam.** `validate`
+  and `heal` still take the raw rookiepy `list[dict[str, Any]]` rows. The
+  routing preflight deliberately reads those rows rather than the converted
+  state — the two shapes spell the http-only flag differently (`http_only` vs
+  `httpOnly`) — and the in-place mutation contract
+  `cli/services/login/refresh.py` depends on *is* a mutation of the caller's
+  row list. Moving this seam onto `CookieJar` is deferred to a later stage
+  rather than folded in here, so that the "identical behavior" claim this
+  stage rests on stays checkable.
 - **Stage 3: `ProfileStore`** — the eight free functions in
   `storage_writer.py` become transactions on one object owning the
   lock-acquire → read → mutate → atomic-write template they each hand-roll
