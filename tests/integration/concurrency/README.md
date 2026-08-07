@@ -18,8 +18,8 @@ async def test_my_fix(mock_transport_concurrent):
     transport = mock_transport_concurrent
 
     # Configure
-    transport.set_delay(0.05)                 # 50ms artificial delay
-    transport.queue_response((200, "..."))    # FIFO queue of responses
+    transport.set_delay(0.05)  # 50ms artificial delay
+    transport.queue_response((200, "..."))  # FIFO queue of responses
     # (or pass an httpx.Response, or a callable (req) -> Response)
 
     # ... drive the SUT ...
@@ -59,7 +59,7 @@ async def test_two_coroutines_meet(barrier_factory):
 
     async def worker():
         # ... do setup ...
-        await barrier.arrive()    # blocks until 2nd arrival
+        await barrier.arrive()  # blocks until 2nd arrival
         # ... critical section both coroutines hit simultaneously ...
 
     await asyncio.gather(worker(), worker())

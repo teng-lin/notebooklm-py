@@ -104,10 +104,12 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
         # ``_bound_loop`` (the loop-affinity guard consulted by
         # :meth:`await_refresh` before touching the lazy ``_refresh_lock``)
         # and ``set_bound_loop`` are provided by the
-        # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base. This
-        # coordinator only stores the binding, so it uses the default no-op
-        # ``_on_loop_rebind`` (the lazy locks are never held across
-        # ``open()`` and are rebuilt implicitly per ``open()``).
+        # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base. The
+        # coordinator overrides ``_on_loop_rebind`` (and exposes
+        # ``reset_after_open``) to discard both lazy locks on a loop change /
+        # reopen — a lazily-allocated lock is NOT rebuilt implicitly per
+        # ``open()``; once cached it survives close→reopen and would be
+        # reused on the new loop (#2106).
 
     @property
     def has_refresh_callback(self) -> bool:
@@ -120,6 +122,63 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
         ``_refresh_callback`` attribute from outside the coordinator.
         """
         return self._refresh_callback is not None
+
+    def _on_loop_rebind(
+        self,
+        old: asyncio.AbstractEventLoop | None,
+        new: asyncio.AbstractEventLoop | None,
+    ) -> None:
+        """Discard both cached lazy locks when the bound loop changes.
+
+        Fires from :meth:`~notebooklm._loop_bound.LoopBoundPrimitive.set_bound_loop`
+        only on a real loop change (and before ``_bound_loop`` is updated), so
+        ``set_bound_loop`` is self-consistent even if called independently of
+        :meth:`reset_after_open`: a stale lock bound to the old loop must never
+        be reused after a rebind. The production ``open()`` path also calls
+        :meth:`reset_after_open` immediately after, so the discard is
+        idempotent there.
+
+        Currently a latent (not active) hazard (#2106): every critical section
+        under these locks is purely synchronous, and ``asyncio.Lock`` binds its
+        loop only on the *contended* acquire path, so a stale lock cannot
+        actually trip the cross-loop ``RuntimeError`` today. The discard brings
+        the coordinator in line with its clear-on-rebind siblings
+        (:class:`~notebooklm._client_composed.ClientComposed`,
+        ``SourceUploadPipeline``, ``ChatAPI``) so any future ``await`` under
+        one of these locks cannot activate the trap.
+
+        Deliberately does NOT touch ``_refresh_task``: the slot-preservation
+        invariant in :meth:`cancel_inflight_refresh` keeps it intact so
+        sibling waiters can identify the shared single-flight task; after
+        ``close()`` the task is always ``done()`` (``cancel_inflight_refresh``
+        gathers it) and :meth:`await_refresh` replaces done tasks on the next
+        refresh wave.
+        """
+        self._refresh_lock = None
+        self._auth_snapshot_lock = None
+
+    def reset_after_open(self) -> None:
+        """Discard both lazy locks so a reopened client rebinds them.
+
+        Called from :meth:`ClientLifecycle.open` (alongside the
+        per-collaborator ``set_bound_loop`` propagation) so a client that was
+        closed and reopened on a *different* event loop builds fresh
+        ``asyncio.Lock`` instances on the new loop instead of reusing stale
+        ones bound to the old (now-dead) loop. On Python 3.10/3.11 a stale
+        lock raises "bound to a different event loop" on the contended
+        acquire path; today that path is unreachable here (no ``await`` runs
+        under either lock — see :meth:`_on_loop_rebind`), so this is a
+        consistency hardening, not an active-bug fix (#2106).
+
+        Mirrors :meth:`ClientComposed.reset_after_open`. Deliberately narrow:
+        dropping the references is enough because both locks are reallocated
+        lazily by :meth:`get_refresh_lock` / :meth:`get_auth_snapshot_lock`
+        from inside the new loop. ``_refresh_task`` and ``_refresh_callback``
+        are left untouched (see :meth:`_on_loop_rebind` for the task-slot
+        invariant).
+        """
+        self._refresh_lock = None
+        self._auth_snapshot_lock = None
 
     # ------------------------------------------------------------------
     # Lazy lock accessors. Both follow the same race-free check-then-assign

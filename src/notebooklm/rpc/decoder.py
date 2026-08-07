@@ -304,8 +304,11 @@ def parse_chunked_response(response: str) -> list[Any]:
             try:
                 chunk = json.loads(json_str)
                 chunks.append(chunk)
-            except json.JSONDecodeError as e:
-                # Skip malformed chunks but warn
+            except (json.JSONDecodeError, RecursionError) as e:
+                # Skip malformed chunks but warn. RecursionError covers
+                # pathologically deep JSON that overflows the interpreter
+                # stack inside ``json.loads`` — treat it as malformed rather
+                # than letting it escape the decode pipeline raw (#2107).
                 malformed_payload_records += 1
                 logger.warning(
                     "Skipping malformed chunk at line %d: %s. Preview: %s",
@@ -321,8 +324,9 @@ def parse_chunked_response(response: str) -> list[Any]:
             try:
                 chunk = json.loads(line)
                 chunks.append(chunk)
-            except json.JSONDecodeError as e:
-                # Skip non-JSON lines but warn
+            except (json.JSONDecodeError, RecursionError) as e:
+                # Skip non-JSON lines but warn (RecursionError: same
+                # deep-JSON hardening as the byte-count branch above, #2107)
                 malformed_payload_records += 1
                 logger.warning(
                     "Skipping non-JSON line at %d: %s. Preview: %s",
@@ -486,25 +490,40 @@ def _find_wrb_status(chunks: list[Any], rpc_id: str) -> tuple[int, str] | None:
     return None
 
 
-def _contains_user_displayable_error(obj: Any) -> bool:
+def _contains_user_displayable_error(obj: Any, max_depth: int = 20) -> bool:
     """Check if object contains a UserDisplayableError marker.
 
     Google's API embeds error information in index 5 of wrb.fr responses
     when the operation fails due to rate limiting, quota, or other
     user-facing restrictions.
 
+    Recursion is bounded because ``obj`` is server-controlled: a maliciously
+    or accidentally deep payload must not raise ``RecursionError`` (#2107).
+    Real markers live a handful of levels deep, so the cap is generous; at
+    the cap we treat the payload as carrying no marker, which lets
+    :func:`decode_response` fall through to its regular null-result handling
+    (mapped ``RPCError``) instead of a false rate-limit signal.
+
     Args:
         obj: Object to search (typically index 5 of response item)
+        max_depth: Maximum nesting depth to descend before giving up
 
     Returns:
         True if UserDisplayableError pattern is found
     """
+    if max_depth <= 0:
+        return False
     if isinstance(obj, str):
         return "UserDisplayableError" in obj
+    if isinstance(obj, (list, dict)) and max_depth == 1:
+        # Stop at the container itself so a wide list/dict at the boundary
+        # logs a single warning instead of one per child.
+        logger.warning("Max recursion depth reached in UserDisplayableError detection")
+        return False
     if isinstance(obj, list):
-        return any(_contains_user_displayable_error(item) for item in obj)
+        return any(_contains_user_displayable_error(item, max_depth - 1) for item in obj)
     if isinstance(obj, dict):
-        return any(_contains_user_displayable_error(v) for v in obj.values())
+        return any(_contains_user_displayable_error(v, max_depth - 1) for v in obj.values())
     return False
 
 
@@ -611,7 +630,11 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
                 if isinstance(result_data, str):
                     try:
                         parsed: Any = json.loads(result_data)
-                    except json.JSONDecodeError:
+                    except (json.JSONDecodeError, RecursionError):
+                        # RecursionError: pathologically deep JSON inside the
+                        # result_data string — same server-controlled-depth
+                        # hardening as parse_chunked_response (#2107). Fall
+                        # back to the raw string like any unparseable payload.
                         parsed = result_data
                 else:
                     parsed = result_data

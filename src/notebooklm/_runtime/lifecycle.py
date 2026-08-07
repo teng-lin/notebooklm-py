@@ -368,6 +368,28 @@ class ClientLifecycle:
         # ``_get_conversation_lock`` / ``_get_new_conversation_lock`` call from
         # inside the new loop.
         chat.reset_after_open()
+        # Same close→reopen reset for the reqid counter's lazy lock so a
+        # reopened client rebuilds it on the new loop instead of reusing the
+        # stale one bound to the prior (now-dead) loop (#2106). Latent-hazard
+        # hardening rather than an active bug: the critical section under the
+        # lock is purely synchronous, so the stale lock cannot be contended
+        # (and thus cannot trip the 3.10/3.11 cross-loop RuntimeError) today —
+        # this keeps the counter consistent with its clear-on-rebind siblings
+        # above. Narrow by design — the lock is reconstructed lazily on the
+        # next ``next_reqid`` call from inside the new loop; ``_value`` is
+        # untouched so reqid monotonicity survives reopen.
+        reqid.reset_after_open()
+        # Same close→reopen reset for the auth coordinator's two lazy locks
+        # (refresh single-flight + auth snapshot) so a reopened client
+        # rebuilds them on the new loop instead of reusing stale ones bound to
+        # the prior (now-dead) loop (#2106). Same latent-hazard rationale as
+        # the reqid reset above. Narrow by design — both locks are
+        # reconstructed lazily via ``get_refresh_lock`` /
+        # ``get_auth_snapshot_lock`` from inside the new loop;
+        # ``_refresh_task`` and ``_refresh_callback`` are untouched (the task
+        # slot-preservation invariant in ``cancel_inflight_refresh`` still
+        # holds).
+        auth_coord.reset_after_open()
 
         # Delegate HTTP-client construction and open-time cookie baseline
         # capture to the concrete transport kernel. The lifecycle still owns

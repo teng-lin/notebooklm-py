@@ -386,6 +386,131 @@ def test_upload_pipeline_reopen_on_new_loop_rebinds_semaphore(
     asyncio.run(_reopen_and_use_semaphore_under_loop_b())
 
 
+def test_reqid_and_auth_locks_reopen_on_new_loop_rebind(
+    mock_transport_concurrent: ConcurrentMockTransport,
+) -> None:
+    """Issue #2106: close on loop A, reopen on loop B → reqid + auth locks rebind.
+
+    The reqid counter's serialisation lock (``ReqidCounter._lock``) and the
+    auth coordinator's two locks (``AuthRefreshCoordinator._refresh_lock`` /
+    ``_auth_snapshot_lock``) were the last lazily-built loop-bound
+    ``asyncio.Lock``s without the clear-on-rebind half of the owner protocol:
+    ``ClientLifecycle.open`` propagated ``set_bound_loop`` but never reset
+    them, so a client closed on loop A and reopened on loop B kept the locks
+    allocated under loop A.
+
+    IMPORTANT nuance (why this is hardening, not an active bug): every
+    critical section under these three locks is purely synchronous — the
+    library never awaits while holding them — so in real call paths the locks
+    are never *contended*, and ``asyncio.Lock`` binds its loop only on the
+    contended waiter path. The stale locks therefore could not trip the
+    cross-loop RuntimeError through the public API today. This test forces
+    the contention manually (hold the lock across an await, park a second
+    waiter) to bind each lock to loop A — exactly the mechanism any *future*
+    ``await``-under-lock change would trigger for real.
+
+    Post-fix ``ClientLifecycle.open`` calls ``ReqidCounter.reset_after_open``
+    + ``AuthRefreshCoordinator.reset_after_open`` (mirroring the RPC-,
+    upload-semaphore and chat-lock resets), so the stale locks are discarded
+    on reopen and rebuilt fresh on the new loop. Pre-fix this test fails on
+    the ``is None`` post-reopen assertions on every Python version (and the
+    contended reuse of the stale locks additionally raises "bound to a
+    different event loop" on 3.10/3.11).
+
+    Like the semaphore tests above, this is intentionally NOT ``async def``:
+    we own two ``asyncio.run`` calls explicitly so the open and the reopen
+    happen on two genuinely distinct loop objects.
+    """
+    transport = mock_transport_concurrent
+    transport.set_delay(0.0)
+
+    core = build_client_shell_for_tests(auth=_make_auth())
+    reqid = core._collaborators.reqid
+    auth_coord = core._collaborators.auth_coord
+
+    async def _force_contended_acquire(lock: asyncio.Lock) -> None:
+        """Drive the blocked-waiter path so ``lock`` binds to the running loop.
+
+        Hold the lock, start a second ``acquire`` that must block (creating a
+        waiter future via ``_get_loop()`` — the loop-binding step), then
+        release so the waiter proceeds. On a stale cross-loop lock this is
+        where 3.10/3.11 raise "bound to a different event loop".
+        """
+        await lock.acquire()
+        waiter = asyncio.ensure_future(lock.acquire())
+        # Yield so the waiter runs far enough to park on the held lock.
+        await asyncio.sleep(0)
+        assert not waiter.done()
+        lock.release()
+        await waiter
+        lock.release()
+
+    async def _open_force_locks_and_close_under_loop_a() -> None:
+        await core.__aenter__()
+        prior_cookies = core._collaborators.kernel.get_http_client().cookies
+        await core._collaborators.kernel.get_http_client().aclose()
+        install_http_client_for_test(
+            core._collaborators.kernel,
+            httpx.AsyncClient(
+                cookies=prior_cookies,
+                transport=transport,
+                timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+            ),
+        )
+        # Allocate the reqid lock through the real path, then force all three
+        # locks onto the contended waiter path so each binds to loop A — that
+        # is the stale state a naive reopen carries over.
+        await reqid.next_reqid()
+        assert reqid._lock is not None
+        await _force_contended_acquire(reqid._lock)
+        await _force_contended_acquire(auth_coord.get_refresh_lock())
+        await _force_contended_acquire(auth_coord.get_auth_snapshot_lock())
+        await core.close()
+
+    asyncio.run(_open_force_locks_and_close_under_loop_a())
+    # The reset happens on open(), not close(): the stale locks are still
+    # cached here, bound to the now-dead loop A.
+    assert reqid._lock is not None
+    assert auth_coord._refresh_lock is not None
+    assert auth_coord._auth_snapshot_lock is not None
+    value_after_loop_a = reqid.value
+
+    async def _reopen_and_use_locks_under_loop_b() -> None:
+        await core.__aenter__()
+        # reset_after_open() must have discarded the loop-A locks so the next
+        # allocation rebuilds each on loop B — while the reqid VALUE survives
+        # (monotonicity across reopen is part of the chat contract).
+        assert reqid._lock is None
+        assert auth_coord._refresh_lock is None
+        assert auth_coord._auth_snapshot_lock is None
+        assert reqid.value == value_after_loop_a
+        prior_cookies = core._collaborators.kernel.get_http_client().cookies
+        await core._collaborators.kernel.get_http_client().aclose()
+        install_http_client_for_test(
+            core._collaborators.kernel,
+            httpx.AsyncClient(
+                cookies=prior_cookies,
+                transport=transport,
+                timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+            ),
+        )
+        try:
+            # Drive contended acquires on the rebuilt locks under loop B.
+            # Pre-fix this would reuse the stale loop-A locks and (on
+            # 3.10/3.11) raise the cross-loop RuntimeError on the waiter
+            # path; post-fix the locks are fresh and bind cleanly to loop B.
+            new_value = await reqid.next_reqid()
+            assert new_value > value_after_loop_a
+            assert reqid._lock is not None
+            await _force_contended_acquire(reqid._lock)
+            await _force_contended_acquire(auth_coord.get_refresh_lock())
+            await _force_contended_acquire(auth_coord.get_auth_snapshot_lock())
+        finally:
+            await core.close()
+
+    asyncio.run(_reopen_and_use_locks_under_loop_b())
+
+
 def test_chat_locks_reopen_on_new_loop_rebind(
     mock_transport_concurrent: ConcurrentMockTransport,
 ) -> None:

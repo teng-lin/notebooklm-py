@@ -81,9 +81,8 @@ def register(mcp: Any) -> None:
         echoes the ``conversation_id`` it read. Pass neither and the call is
         rejected.
 
-        Returns the ``answer``, server-derived ``turn_number``, and citation
-        ``references`` (when a question is asked). The internal ``raw_response``
-        debugging blob is never included.
+        Returns the ``answer``, ``turn_number``, and citation ``references``
+        (when a question is asked).
         ``references`` controls citation detail: ``lite`` (default) returns
         ``source_id`` / ``citation_number`` / ``cited_text``; ``full`` adds
         chunk-level char offsets and scores.

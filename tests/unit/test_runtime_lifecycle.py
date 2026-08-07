@@ -132,7 +132,9 @@ class _StubHost:
         # directly (the lifecycle itself no longer reads it).
         self._auth_coord._refresh_task = None
         self._auth_coord.cancel_inflight_refresh = AsyncMock()
-        # ``_reqid`` is targeted by ``set_bound_loop`` from open() (P0-2).
+        # ``_reqid`` is targeted by ``set_bound_loop`` from open() (P0-2) and,
+        # like ``_auth_coord``, by ``reset_after_open`` (#2106) so their lazy
+        # loop-bound locks are discarded on close→reopen.
         self._reqid = MagicMock()
         # ``open()`` also propagates the bound loop into the composition
         # holder and resets the lazy RPC semaphore (issue #1169): it calls
@@ -295,6 +297,14 @@ async def test_open_captures_bound_loop_and_resets_drain() -> None:
     # rebind on close→reopen.
     host._chat.set_bound_loop.assert_called_once_with(asyncio.get_running_loop())
     host._chat.reset_after_open.assert_called_once_with()
+    # Issue #2106: the reqid counter and the auth refresh coordinator own
+    # lazily-built loop-bound locks too and must receive the same
+    # set_bound_loop / reset_after_open treatment so those locks rebind on
+    # close→reopen instead of surviving as stale cross-loop primitives.
+    host._reqid.set_bound_loop.assert_called_once_with(asyncio.get_running_loop())
+    host._reqid.reset_after_open.assert_called_once_with()
+    host._auth_coord.set_bound_loop.assert_called_once_with(asyncio.get_running_loop())
+    host._auth_coord.reset_after_open.assert_called_once_with()
 
     await _close(lifecycle, host)
 
