@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -10,6 +11,28 @@ import pytest
 import notebooklm._auth.cookies as cookies_mod
 from notebooklm._auth import master_token as mt
 from notebooklm._auth import session as session_mod
+
+
+def _persist_writes_valid_storage(path, jar, *, email=None, force=False, refuse_unknown_owner=True):
+    """Stand-in for ``persist_minted_jar`` that actually writes a readable
+    file. #2103 PR-2: the kernel's own internal reload
+    (``remint_from_stored_token``'s strict-loader step) now needs a real file
+    at ``path`` to succeed — mocking ``persist_minted_jar`` as a bare no-op
+    (as before this PR) leaves nothing for that reload to find."""
+    path.write_text(
+        json.dumps(
+            {
+                # The kernel's own internal reload validates the Tier-1 minimum
+                # cookie set (MINIMUM_REQUIRED_COOKIES) via the strict loader.
+                "cookies": [
+                    {"name": "SID", "value": "v", "domain": ".google.com"},
+                    {"name": "__Secure-1PSIDTS", "value": "v", "domain": ".google.com"},
+                ],
+                "notebooklm": {"version": 1, "account": {"authuser": 0, "email": email}},
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.asyncio
@@ -36,7 +59,9 @@ async def test_reauth_success_remints_and_reloads(tmp_path):
     # mock jar) — only the network mint + the recovery-aware reload are stubbed.
     with (
         patch.object(mt, "mint_cookies", new=AsyncMock(return_value=jar)),
-        patch.object(mt, "persist_minted_jar") as persist,
+        patch.object(
+            mt, "persist_minted_jar", side_effect=_persist_writes_valid_storage
+        ) as persist,
         patch.object(cookies_mod, "build_httpx_cookies_from_storage", return_value=httpx.Cookies()),
     ):
         ok = await session_mod._try_master_token_reauth(auth=auth, kernel=MagicMock())

@@ -1,4 +1,19 @@
-"""CLI tests for `notebooklm login --master-token[-refresh]` (service mocked)."""
+"""CLI tests for `notebooklm login --master-token[-refresh]` (service mocked).
+
+#2103 PR-2 structural follow-up: the CLI driver now invokes the coarse
+``notebooklm.auth`` transaction ops (``master_token_bootstrap`` /
+``master_token_remint`` / ``assert_account_writable``), imported by name
+(``from ..auth import master_token_bootstrap``) rather than via a qualified
+module reference — this keeps the anti-rot ledger scan
+(``test_auth_cross_boundary_names_have_first_party_importers``) able to see
+the import. Patches therefore target the DRIVER module's own bound name
+(``driver.master_token_bootstrap``), not ``notebooklm.auth``'s — patching the
+source module's attribute would not affect a name already bound by a prior
+``from module import name`` in the importing module. The rest of the old
+``cli.services.login.master_token`` module (``bootstrap``/``refresh``) moved
+into ``notebooklm._auth.master_token``; only ``capture_oauth_token``
+(inherently interactive — launches a real browser) stays CLI-side, so
+``mt_service`` patches are now limited to that one function."""
 
 from __future__ import annotations
 
@@ -9,10 +24,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.cli.master_token_login as driver
 import notebooklm.cli.services.login.master_token as mt_service
 from notebooklm._auth import browser_capture
 from notebooklm.notebooklm_cli import cli
-from notebooklm.paths import get_master_token_path, get_storage_path
+from notebooklm.paths import get_storage_path
 
 
 def _seed_profile_account(monkeypatch, tmp_path, email):
@@ -35,45 +51,43 @@ def test_master_token_refresh_calls_service(tmp_path, monkeypatch):
     storage = get_storage_path()
     storage.parent.mkdir(parents=True, exist_ok=True)
     storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
-    with patch.object(mt_service, "refresh", new=AsyncMock()) as ref:
+    with patch.object(driver, "master_token_remint", new=AsyncMock()) as ref:
         result = CliRunner().invoke(cli, ["login", "--master-token-refresh"])
     assert result.exit_code == 0, result.output
-    ref.assert_awaited_once_with(
-        storage_path=storage,
-        master_token_path=get_master_token_path(),
-    )
+    # #2103 PR-2 D2: one-path signatures — master_token_remint derives the
+    # sibling internally via master_token_path_for, so the CLI passes only
+    # storage_path (positionally); get_master_token_path() is no longer
+    # something this call site needs to compute at all.
+    ref.assert_awaited_once_with(storage)
     assert result.output.strip() == f"Re-minted cookies -> {storage}"
 
 
-def test_master_token_refresh_storage_override_keeps_sibling_token_path(tmp_path, monkeypatch):
-    """#2103: ``--storage`` must relocate master_token.json alongside the storage.
+def test_master_token_refresh_storage_override_canonicalizes_storage_path(tmp_path, monkeypatch):
+    """#2103: an explicit ``--storage`` must reach the transaction canonicalized.
 
-    Every reader (the L4 recovery rung, ``auth check``, the missing-storage
-    bootstrap) derives the token path as a sibling of the storage path; before
-    the fix the login writer resolved it from the profile dir instead, writing
-    the token where no reader ever looks.
+    (PR-2 note: the sibling-derivation invariant this test used to pin
+    end-to-end now lives entirely inside ``master_token_path_for`` — covered
+    by ``tests/unit/test_paths.py`` — since the CLI no longer computes or
+    passes ``master_token_path`` itself. What remains CLI-level behavior is
+    that ``--storage`` gets canonicalized before the transaction call.)
     """
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     override_dir = tmp_path / "elsewhere"
     override_dir.mkdir()
     storage = override_dir / "foo.json"
     storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
-    with patch.object(mt_service, "refresh", new=AsyncMock()) as ref:
+    with patch.object(driver, "master_token_remint", new=AsyncMock()) as ref:
         result = CliRunner().invoke(
             cli, ["login", "--master-token-refresh", "--storage", str(storage)]
         )
     assert result.exit_code == 0, result.output
     # The driver canonicalizes an explicit --storage (matching auth_source), so a
     # symlink/relative alias selects the same sibling the L4 recovery rung derives.
-    resolved = storage.resolve()
-    ref.assert_awaited_once_with(
-        storage_path=resolved,
-        master_token_path=resolved.with_name("master_token.json"),
-    )
+    ref.assert_awaited_once_with(storage.resolve())
 
 
-def test_master_token_refresh_storage_symlink_selects_target_sibling(tmp_path, monkeypatch):
-    """#2104 review: a symlinked ``--storage`` alias selects the target's sibling.
+def test_master_token_refresh_storage_symlink_canonicalizes_to_target(tmp_path, monkeypatch):
+    """#2104 review: a symlinked ``--storage`` alias resolves to the target.
 
     The L4 recovery rung resolves the storage path (``canonical_storage_key``)
     before deriving ``master_token.json``, so the writer must canonicalize too —
@@ -90,24 +104,21 @@ def test_master_token_refresh_storage_symlink_selects_target_sibling(tmp_path, m
         alias_dir.symlink_to(real_dir, target_is_directory=True)
     except (OSError, NotImplementedError):  # pragma: no cover - Windows without privilege
         pytest.skip("platform cannot create directory symlinks")
-    with patch.object(mt_service, "refresh", new=AsyncMock()) as ref:
+    with patch.object(driver, "master_token_remint", new=AsyncMock()) as ref:
         result = CliRunner().invoke(
             cli, ["login", "--master-token-refresh", "--storage", str(alias_dir / "foo.json")]
         )
     assert result.exit_code == 0, result.output
     resolved = storage.resolve()  # tmp_path itself may be a symlink (macOS /tmp)
-    ref.assert_awaited_once_with(
-        storage_path=resolved,
-        master_token_path=resolved.with_name("master_token.json"),
-    )
+    ref.assert_awaited_once_with(resolved)
 
 
-def test_master_token_bootstrap_storage_override_keeps_sibling_token_path(tmp_path, monkeypatch):
-    """#2103: the bootstrap path pair must honor ``--storage`` for both files."""
+def test_master_token_bootstrap_storage_override_canonicalizes_storage_path(tmp_path, monkeypatch):
+    """#2103: the bootstrap call must honor a canonicalized ``--storage``."""
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     storage = tmp_path / "elsewhere" / "foo.json"
     storage.parent.mkdir()
-    with patch.object(mt_service, "bootstrap", new=AsyncMock(return_value=7)) as boot:
+    with patch.object(driver, "master_token_bootstrap", new=AsyncMock(return_value=7)) as boot:
         result = CliRunner().invoke(
             cli,
             [
@@ -124,7 +135,9 @@ def test_master_token_bootstrap_storage_override_keeps_sibling_token_path(tmp_pa
     assert result.exit_code == 0, result.output
     resolved = storage.resolve()
     assert boot.call_args.kwargs["storage_path"] == resolved
-    assert boot.call_args.kwargs["master_token_path"] == resolved.with_name("master_token.json")
+    # #2103 PR-2 D2: master_token_path is no longer a parameter above the
+    # chokepoint — master_token_bootstrap derives it internally.
+    assert "master_token_path" not in boot.call_args.kwargs
 
 
 def test_master_token_refresh_help_marks_forced_route_legacy():
@@ -145,7 +158,7 @@ def test_master_token_requires_account(tmp_path, monkeypatch):
 
 def test_master_token_bootstrap_calls_service(tmp_path, monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
-    with patch.object(mt_service, "bootstrap", new=AsyncMock(return_value=7)) as boot:
+    with patch.object(driver, "master_token_bootstrap", new=AsyncMock(return_value=7)) as boot:
         result = CliRunner().invoke(
             cli,
             ["login", "--master-token", "--account", "e@x.com", "--oauth-token", "TOK"],
@@ -153,6 +166,9 @@ def test_master_token_bootstrap_calls_service(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert boot.called
     assert boot.call_args.kwargs["oauth_token"] == "TOK"
+    # #2103 PR-2 D5: android_id resolution moved inside the transaction — the
+    # CLI passes it through as-is (None here, since --android-id wasn't given).
+    assert boot.call_args.kwargs["android_id"] is None
     assert "7 notebooks" in result.output
 
 
@@ -160,7 +176,7 @@ def test_master_token_bootstrap_browser_capture_when_no_oauth(tmp_path, monkeypa
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     with (
         patch.object(mt_service, "capture_oauth_token", return_value="CAPTOK") as cap,
-        patch.object(mt_service, "bootstrap", new=AsyncMock(return_value=3)) as boot,
+        patch.object(driver, "master_token_bootstrap", new=AsyncMock(return_value=3)) as boot,
     ):
         result = CliRunner().invoke(cli, ["login", "--master-token", "--account", "e@x.com"])
     assert result.exit_code == 0, result.output
@@ -295,7 +311,7 @@ def test_master_token_refuses_clobber_via_token_owner_only(tmp_path, monkeypatch
 
 def test_master_token_force_overwrites_other_account(tmp_path, monkeypatch):
     _seed_profile_account(monkeypatch, tmp_path, "other@x.com")
-    with patch.object(mt_service, "bootstrap", new=AsyncMock(return_value=4)) as boot:
+    with patch.object(driver, "master_token_bootstrap", new=AsyncMock(return_value=4)) as boot:
         result = CliRunner().invoke(
             cli,
             ["login", "--master-token", "--account", "e@x.com", "--oauth-token", "T", "--force"],

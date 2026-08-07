@@ -1,4 +1,18 @@
-"""Cold-start CLI contracts for ``notebooklm auth refresh``."""
+"""Cold-start CLI contracts for ``notebooklm auth refresh``.
+
+#2103 PR-2 structural follow-up: the bootstrap flock/shield/recheck machinery
+relocated from ``cli/services/auth_refresh.py`` into
+``notebooklm._auth.master_token`` (``bootstrap_storage_from_master_token``,
+returning a four-state ``BootstrapOutcome`` rather than a bare bool). The CLI
+module (``auth_refresh_service`` below) is now a thin call that maps the
+outcome back onto the boolean ``cli/playwright_login_io.py`` has always used.
+These tests therefore patch ``notebooklm._auth.master_token.
+remint_from_stored_token`` (the kernel the bootstrap transaction calls to do
+its actual mint) rather than the old CLI-side ``master_token.refresh``, and
+reach into ``_auth.master_token`` directly for the lock-path/outcome
+internals — tests are not bound by the CLI-boundary guardrail that keeps
+``src/notebooklm/cli/`` off of ``notebooklm._*``.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +31,7 @@ from filelock import FileLock
 
 import notebooklm.auth as auth_module
 import notebooklm.cli.services.auth_refresh as auth_refresh_service
+from notebooklm._auth import master_token as mt
 from notebooklm._auth.paths import _storage_state_lock_path
 from notebooklm.auth import MasterTokenError
 from notebooklm.notebooklm_cli import cli
@@ -31,9 +46,8 @@ def _cold_profile(tmp_path):
 
 
 def _minting_mock(storage):
-    def mint(*, storage_path, master_token_path):
+    def mint(storage_path):
         assert storage_path == storage
-        assert master_token_path == storage.parent / "master_token.json"
         storage.write_text(
             json.dumps(
                 {
@@ -57,12 +71,12 @@ def _minting_mock(storage):
 def test_missing_storage_bootstraps_once_without_ordinary_recovery(
     tmp_path, extra_args, verified, expects_verified_line
 ):
-    storage, token = _cold_profile(tmp_path)
+    storage, _token = _cold_profile(tmp_path)
     mint = _minting_mock(storage)
     ordinary = AsyncMock()
     passive = AsyncMock(return_value=("csrf", "session"))
     with (
-        patch.object(auth_refresh_service.master_token, "refresh", new=mint),
+        patch.object(mt, "remint_from_stored_token", new=mint),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
         patch.object(auth_module, "fetch_tokens_passive", new=passive),
     ):
@@ -72,7 +86,7 @@ def test_missing_storage_bootstraps_once_without_ordinary_recovery(
         )
 
     assert result.exit_code == 0, result.output
-    mint.assert_awaited_once_with(storage_path=storage, master_token_path=token)
+    mint.assert_awaited_once_with(storage)
     passive.assert_awaited_once_with(storage, None)
     ordinary.assert_not_awaited()
     if "--json" in extra_args:
@@ -96,7 +110,7 @@ def test_missing_storage_json_verify_reuses_one_passive_probe(tmp_path):
     ordinary = AsyncMock()
     passive = AsyncMock(return_value=("csrf", "session"))
     with (
-        patch.object(auth_refresh_service.master_token, "refresh", new=mint),
+        patch.object(mt, "remint_from_stored_token", new=mint),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
         patch.object(auth_module, "fetch_tokens_passive", new=passive),
     ):
@@ -119,12 +133,8 @@ def test_concurrent_processes_serialize_bootstrap_across_path_aliases(tmp_path):
     alias_storage.parent.mkdir()
     alias_storage.symlink_to(storage)
     (alias_storage.parent / "master_token.json").write_text("{}", encoding="utf-8")
-    assert auth_refresh_service._bootstrap_lock_path(alias_storage) == (
-        auth_refresh_service._bootstrap_lock_path(storage)
-    )
-    assert auth_refresh_service._bootstrap_lock_path(alias_storage) != (
-        _storage_state_lock_path(alias_storage)
-    )
+    assert mt._bootstrap_lock_path(alias_storage) == mt._bootstrap_lock_path(storage)
+    assert mt._bootstrap_lock_path(alias_storage) != _storage_state_lock_path(alias_storage)
     start = tmp_path / "start"
     ready_paths = [tmp_path / f"ready-{index}" for index in range(2)]
     marker_paths = [tmp_path / f"mint-{index}" for index in range(2)]
@@ -139,27 +149,27 @@ def test_concurrent_processes_serialize_bootstrap_across_path_aliases(tmp_path):
 
         from filelock import FileLock
         import notebooklm.cli.services.auth_refresh as service
+        from notebooklm._auth import master_token as mt
         from notebooklm._auth.paths import _storage_state_lock_path
 
         storage, ready, start, marker = map(Path, sys.argv[1:])
 
-        async def mint(*, storage_path, master_token_path):
+        async def mint(storage_path):
             # #2103 PR-1: master_token_path_for resolves the storage path
             # (expanduser().resolve()) before deriving the sibling, so the
-            # ALIAS worker's master_token_path resolves THROUGH the symlink to
-            # the real directory's master_token.json — not a sibling of the
-            # alias path itself (the old raw ``storage_path.parent`` join).
-            # This IS the invariant this PR restores: both workers must agree
-            # on the same real file regardless of which path alias they were
-            # given, exactly like they already agree on the same bootstrap
-            # lock (asserted above).
-            assert master_token_path == storage.resolve().parent / "master_token.json"
+            # ALIAS worker's derived master_token_path resolves THROUGH the
+            # symlink to the real directory's master_token.json — not a
+            # sibling of the alias path itself (the old raw
+            # ``storage_path.parent`` join). This IS the invariant this PR
+            # restores: both workers must agree on the same real file
+            # regardless of which path alias they were given, exactly like
+            # they already agree on the same bootstrap lock (asserted above).
             marker.write_text("minted", encoding="utf-8")
             await asyncio.sleep(0.25)
             with FileLock(str(_storage_state_lock_path(storage_path)), timeout=2):
                 storage_path.write_text(json.dumps({"cookies": []}), encoding="utf-8")
 
-        service.master_token.refresh = mint
+        mt.remint_from_stored_token = mint
         ready.write_text("ready", encoding="utf-8")
         while not start.exists():
             time.sleep(0.01)
@@ -218,13 +228,12 @@ async def test_cancelled_bootstrap_settles_persistence_before_unlocking(tmp_path
         assert persist_release.wait(timeout=5)
         storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
 
-    async def mint(*, storage_path, master_token_path):
+    async def mint(storage_path):
         assert storage_path == storage
-        assert master_token_path == storage.parent / "master_token.json"
         await asyncio.to_thread(persist)
 
     mint_mock = AsyncMock(side_effect=mint)
-    with patch.object(auth_refresh_service.master_token, "refresh", new=mint_mock):
+    with patch.object(mt, "remint_from_stored_token", new=mint_mock):
         leader = asyncio.create_task(
             auth_refresh_service.bootstrap_missing_storage_from_master_token(storage)
         )
@@ -247,7 +256,7 @@ async def test_cancelled_bootstrap_settles_persistence_before_unlocking(tmp_path
 
 async def test_cancelled_bootstrap_lock_waiter_does_not_leak_lock(tmp_path):
     storage, _ = _cold_profile(tmp_path)
-    lock_path = auth_refresh_service._bootstrap_lock_path(storage)
+    lock_path = mt._bootstrap_lock_path(storage)
     holder = FileLock(str(lock_path))
     holder.acquire()
     waiter = asyncio.create_task(
@@ -259,11 +268,7 @@ async def test_cancelled_bootstrap_lock_waiter_does_not_leak_lock(tmp_path):
         await waiter
     holder.release()
 
-    with patch.object(
-        auth_refresh_service.master_token,
-        "refresh",
-        new=_minting_mock(storage),
-    ) as mint:
+    with patch.object(mt, "remint_from_stored_token", new=_minting_mock(storage)) as mint:
         assert await auth_refresh_service.bootstrap_missing_storage_from_master_token(storage)
     mint.assert_awaited_once()
 
@@ -271,11 +276,7 @@ async def test_cancelled_bootstrap_lock_waiter_does_not_leak_lock(tmp_path):
 def test_missing_storage_quiet_success_is_empty(tmp_path):
     storage, _ = _cold_profile(tmp_path)
     with (
-        patch.object(
-            auth_refresh_service.master_token,
-            "refresh",
-            new=_minting_mock(storage),
-        ),
+        patch.object(mt, "remint_from_stored_token", new=_minting_mock(storage)),
         patch.object(auth_module, "fetch_tokens_with_domains", new=AsyncMock()) as ordinary,
         patch.object(
             auth_module,
@@ -296,22 +297,17 @@ def test_missing_storage_quiet_success_is_empty(tmp_path):
 
 @pytest.mark.asyncio
 async def test_concurrent_missing_storage_bootstrap_mints_once(tmp_path):
-    storage, token = _cold_profile(tmp_path)
+    storage, _token = _cold_profile(tmp_path)
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def mint(*, storage_path, master_token_path):
+    async def mint(storage_path):
         assert storage_path == storage
-        assert master_token_path == token
         started.set()
         await release.wait()
         storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
 
-    with patch.object(
-        auth_refresh_service.master_token,
-        "refresh",
-        new=AsyncMock(side_effect=mint),
-    ) as mint_mock:
+    with patch.object(mt, "remint_from_stored_token", new=AsyncMock(side_effect=mint)) as mint_mock:
         first = asyncio.create_task(
             auth_refresh_service.bootstrap_missing_storage_from_master_token(storage)
         )
@@ -338,7 +334,7 @@ def test_missing_storage_mint_failure_is_typed(tmp_path, json_output):
     if json_output:
         args.append("--json")
     with (
-        patch.object(auth_refresh_service.master_token, "refresh", new=mint),
+        patch.object(mt, "remint_from_stored_token", new=mint),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
         patch.object(auth_module, "fetch_tokens_passive", new=passive),
     ):
@@ -369,7 +365,7 @@ def test_post_mint_passive_failure_does_not_enter_recovery(tmp_path, json_output
     if json_output:
         args.extend(["--quiet", "--json"])
     with (
-        patch.object(auth_refresh_service.master_token, "refresh", new=mint),
+        patch.object(mt, "remint_from_stored_token", new=mint),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
         patch.object(auth_module, "fetch_tokens_passive", new=passive),
     ):
@@ -395,11 +391,7 @@ def test_post_mint_passive_failure_does_not_enter_recovery(tmp_path, json_output
 def test_allow_headless_bootstrap_still_skips_ordinary_recovery(tmp_path):
     storage, _ = _cold_profile(tmp_path)
     with (
-        patch.object(
-            auth_refresh_service.master_token,
-            "refresh",
-            new=_minting_mock(storage),
-        ),
+        patch.object(mt, "remint_from_stored_token", new=_minting_mock(storage)),
         patch.object(auth_module, "fetch_tokens_with_domains", new=AsyncMock()) as ordinary,
         patch.object(
             auth_module,
@@ -422,7 +414,7 @@ def test_healthy_storage_with_sibling_token_does_not_mint(tmp_path):
     mint = AsyncMock()
     ordinary = AsyncMock(return_value=("csrf", "session"))
     with (
-        patch.object(auth_refresh_service.master_token, "refresh", new=mint),
+        patch.object(mt, "remint_from_stored_token", new=mint),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
     ):
         result = CliRunner().invoke(cli, ["--storage", str(storage), "auth", "refresh"])
@@ -438,7 +430,7 @@ def test_missing_storage_without_token_preserves_unexpected_error(tmp_path):
     mint = AsyncMock()
     ordinary = AsyncMock(side_effect=FileNotFoundError("storage_state.json not found"))
     with (
-        patch.object(auth_refresh_service.master_token, "refresh", new=mint),
+        patch.object(mt, "remint_from_stored_token", new=mint),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
     ):
         result = CliRunner().invoke(cli, ["--storage", str(storage), "auth", "refresh"])
@@ -455,7 +447,7 @@ def test_malformed_existing_storage_never_bootstraps(tmp_path):
     mint = AsyncMock()
     ordinary = AsyncMock(side_effect=ValueError("malformed storage"))
     with (
-        patch.object(auth_refresh_service.master_token, "refresh", new=mint),
+        patch.object(mt, "remint_from_stored_token", new=mint),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
     ):
         result = CliRunner().invoke(cli, ["--storage", str(storage), "auth", "refresh"])

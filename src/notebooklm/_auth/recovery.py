@@ -184,24 +184,28 @@ async def try_headless_reauth(
     return True
 
 
-async def _run_master_token_reauth(
-    *, storage_path: Path, master_token_path: Path
-) -> httpx.Cookies | None:
-    """Mint, persist, and reload one master-token session for shared callers."""
+async def _run_master_token_reauth(*, storage_path: Path) -> httpx.Cookies | None:
+    """Mint, persist, and reload one master-token session for shared callers.
+
+    Delegates the read -> mint -> persist sequence to the shared kernel
+    (:func:`notebooklm._auth.master_token.remint_from_stored_token`, #2103
+    PR-2 D1) rather than assembling it here — this rung previously duplicated
+    the same sequence the CLI's operator-refresh path also assembled
+    independently. This wrapper keeps its OWN existing reload afterward
+    (:func:`notebooklm._auth.cookies.build_httpx_cookies_from_storage`, with
+    its inline-PSIDTS-recovery semantics) rather than trusting the kernel's
+    internal (strict, side-effect-free) reload — L4's reload behavior is
+    unchanged from before this PR (#2103 PR-2 F11)."""
     from .cookies import build_httpx_cookies_from_storage
-    from .master_token import MasterTokenError, mint_cookies, persist_minted_jar, read_master_token
+    from .master_token import MasterTokenError, remint_from_stored_token
 
     try:
-        record = await asyncio.to_thread(read_master_token, master_token_path)
-        if record is None:
-            return None
-        jar = await mint_cookies(record["email"], record["master_token"], record["android_id"])
+        await remint_from_stored_token(storage_path)
     except MasterTokenError as exc:
         logger.warning("Master-token re-mint failed (%s); authentication error stands.", exc)
         return None
 
     try:
-        await asyncio.to_thread(persist_minted_jar, storage_path, jar, email=record.get("email"))
         fresh_jar = await asyncio.to_thread(build_httpx_cookies_from_storage, storage_path)
     except (OSError, ValueError) as exc:
         logger.warning(
@@ -234,10 +238,7 @@ async def try_master_token_reauth(*, storage_path: Path | None, cookie_jar: http
     flight_key = (str(canonical_path), "master-token")
 
     def _factory() -> Coroutine[Any, Any, httpx.Cookies | None]:
-        return _run_master_token_reauth(
-            storage_path=canonical_path,
-            master_token_path=master_token_path,
-        )
+        return _run_master_token_reauth(storage_path=canonical_path)
 
     _is_leader, flight = _single_flight.claim(flight_key, _factory)
     fresh_jar = await _single_flight.await_flight(flight)

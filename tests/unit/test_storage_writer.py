@@ -15,6 +15,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from notebooklm._auth import master_token as mt_mod
 from notebooklm._auth import storage as storage_mod
 from notebooklm._auth import storage_writer as sw
 
@@ -434,8 +435,19 @@ def _minted_jar() -> httpx.Cookies:
 
 def test_persist_minted_jar_replaces_cookies_and_rebinds_account(tmp_path: Path) -> None:
     path = tmp_path / "storage_state.json"
+    # #2103 PR-2 D6: existing storage must already be bound to the minted
+    # account, else persist_minted_jar refuses (see the dedicated D6 tests
+    # below) — same-account re-mint is the realistic case this test covers.
     path.write_text(
-        json.dumps({"cookies": [{"name": "OLD", "value": "x", "domain": ".google.com"}]}),
+        json.dumps(
+            {
+                "cookies": [{"name": "OLD", "value": "x", "domain": ".google.com"}],
+                "notebooklm": {
+                    "version": 1,
+                    "account": {"authuser": 0, "email": "minted@example.com"},
+                },
+            }
+        ),
         encoding="utf-8",
     )
     sw.persist_minted_jar(path, _minted_jar(), email="minted@example.com")
@@ -450,6 +462,18 @@ def test_persist_minted_jar_filters_unallowlisted_but_keeps_rebind(tmp_path: Pat
     disk (an unallowlisted cookie is dropped, trusted Google subdomains survive),
     while the rebind to the minted account (authuser=0 + minted email) stays."""
     path = tmp_path / "storage_state.json"
+    # #2103 PR-2 D6: same-account re-mint, so the ownership guard is a no-op here.
+    path.write_text(
+        json.dumps(
+            {
+                "notebooklm": {
+                    "version": 1,
+                    "account": {"authuser": 0, "email": "minted@example.com"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     jar = httpx.Cookies()
     for name in ("SID", "APISID", "SAPISID"):
         jar.set(name, "v", domain=".google.com", path="/")
@@ -464,6 +488,102 @@ def test_persist_minted_jar_filters_unallowlisted_but_keeps_rebind(tmp_path: Pat
     assert {"SID", "APISID", "SAPISID", "MEDIA"} <= names  # trusted roots survive
     # Rebind semantics unchanged by the added filter.
     assert data["notebooklm"]["account"] == {"authuser": 0, "email": "minted@example.com"}
+
+
+# --- persist_minted_jar: D6 account-ownership guard (#2103 PR-2) -----------
+
+
+def test_persist_minted_jar_refuses_a_different_recorded_owner(tmp_path: Path) -> None:
+    """The AUTHORITATIVE enforcement: existing storage bound to one account,
+    a mint for another -> refused, even without going through
+    assert_account_writable's pre-check (this is the "documented low-level
+    recipe" bypass D6 closes)."""
+    path = tmp_path / "storage_state.json"
+    path.write_text(
+        json.dumps(
+            {"notebooklm": {"version": 1, "account": {"authuser": 0, "email": "owner@example.com"}}}
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(mt_mod.MasterTokenError, match="owner@example.com"):
+        sw.persist_minted_jar(path, _minted_jar(), email="attacker@example.com")
+    # Refused BEFORE any write: the original owner's cookies are untouched.
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert "cookies" not in data or data.get("cookies") == []
+
+
+def test_persist_minted_jar_refuses_an_unrecorded_owner(tmp_path: Path) -> None:
+    """Existing storage with NO in-band account metadata -> refused unless
+    force (rare after PR-0's promotion, but a fresh cookie-only jar from
+    ``import-cookies`` can still lack it)."""
+    path = tmp_path / "storage_state.json"
+    path.write_text(json.dumps({"cookies": [{"name": "OLD", "value": "x"}]}), encoding="utf-8")
+    with pytest.raises(mt_mod.MasterTokenError, match="no recorded account owner"):
+        sw.persist_minted_jar(path, _minted_jar(), email="minted@example.com")
+
+
+def test_persist_minted_jar_force_overrides_a_different_owner(tmp_path: Path) -> None:
+    path = tmp_path / "storage_state.json"
+    path.write_text(
+        json.dumps(
+            {"notebooklm": {"version": 1, "account": {"authuser": 0, "email": "owner@example.com"}}}
+        ),
+        encoding="utf-8",
+    )
+    sw.persist_minted_jar(path, _minted_jar(), email="new@example.com", force=True)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["notebooklm"]["account"] == {"authuser": 0, "email": "new@example.com"}
+
+
+def test_persist_minted_jar_proceeds_when_no_existing_storage(tmp_path: Path) -> None:
+    """No existing storage: nothing to protect yet, so the guard is a no-op —
+    the first-ever mint into a fresh profile must not require force."""
+    path = tmp_path / "storage_state.json"
+    assert not path.exists()
+    sw.persist_minted_jar(path, _minted_jar(), email="minted@example.com")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["notebooklm"]["account"] == {"authuser": 0, "email": "minted@example.com"}
+
+
+def test_persist_minted_jar_refuse_unknown_owner_false_allows_unrecorded_owner(
+    tmp_path: Path,
+) -> None:
+    """#2103 PR-2 (post-review fix): re-minting from a master token already
+    paired with this exact storage_path (``refuse_unknown_owner=False`` —
+    what ``remint_from_stored_token`` passes) must NOT require pre-existing
+    in-band account metadata. A profile that was never bound to an explicit
+    ``--account`` (e.g. cookie-only ``import-cookies``) is the COMMON case,
+    not the "rare" one originally assumed — requiring it would break L4
+    mid-session self-recovery for exactly that population
+    (tests/unit/test_auth_cold_start_recovery.py's fixtures have no account
+    metadata at all)."""
+    path = tmp_path / "storage_state.json"
+    path.write_text(json.dumps({"cookies": [{"name": "OLD", "value": "x"}]}), encoding="utf-8")
+    sw.persist_minted_jar(
+        path, _minted_jar(), email="minted@example.com", refuse_unknown_owner=False
+    )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["notebooklm"]["account"] == {"authuser": 0, "email": "minted@example.com"}
+
+
+def test_persist_minted_jar_refuse_unknown_owner_false_still_refuses_different_owner(
+    tmp_path: Path,
+) -> None:
+    """``refuse_unknown_owner=False`` only relaxes the "no metadata at all"
+    case — an EXPLICIT different recorded owner is still refused
+    unconditionally (this is the actual cross-account-overwrite protection;
+    relaxing it would defeat D6 entirely)."""
+    path = tmp_path / "storage_state.json"
+    path.write_text(
+        json.dumps(
+            {"notebooklm": {"version": 1, "account": {"authuser": 0, "email": "owner@example.com"}}}
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(mt_mod.MasterTokenError, match="owner@example.com"):
+        sw.persist_minted_jar(
+            path, _minted_jar(), email="attacker@example.com", refuse_unknown_owner=False
+        )
 
 
 def test_persist_minted_jar_fails_closed_on_lock_unavailable(

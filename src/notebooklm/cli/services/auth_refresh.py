@@ -2,95 +2,29 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
-from filelock import FileLock, Timeout
-
-from ...paths import master_token_path_for
-from .login import master_token
-
-
-def _bootstrap_lock_path(storage_path: Path) -> Path:
-    """Return the canonical lock that serializes first-time session minting."""
-    canonical_path = storage_path.expanduser().resolve()
-    return canonical_path.with_name(f".{canonical_path.name}.lock.bootstrap")
-
-
-async def _acquire_bootstrap_lock(lock: FileLock) -> None:
-    """Acquire without blocking the event loop, including on filelock 3.13."""
-    while True:
-        try:
-            lock.acquire(blocking=False)
-        except Timeout:
-            await asyncio.sleep(0.05)
-        else:
-            return
-
-
-async def _run_refresh_to_settlement(*, storage_path: Path, master_token_path: Path) -> None:
-    """Do not release the bootstrap lock while refresh persistence is still running."""
-    task = asyncio.create_task(
-        master_token.refresh(
-            storage_path=storage_path,
-            master_token_path=master_token_path,
-        )
-    )
-    try:
-        await asyncio.shield(task)
-    except asyncio.CancelledError:
-        # ``refresh`` offloads its final write to a thread. Propagating caller
-        # cancellation immediately would release the bootstrap lock while that
-        # write can still be running, allowing a waiting process to mint again.
-        while not task.done():
-            try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError:
-                continue
-            except BaseException:  # noqa: BLE001 - settle before cancellation propagates
-                break
-        if task.done() and not task.cancelled():
-            task.exception()
-        raise
+from ...auth import BootstrapOutcome, master_token_bootstrap_storage
 
 
 async def bootstrap_missing_storage_from_master_token(storage_path: Path) -> bool:
-    """Mint initial storage when only the sibling master token exists."""
-    # Preserve the healthy-storage fast path: profiles that already have a jar
-    # should not pay for a lock merely because they also retain a master token.
-    if storage_path.exists():
-        return False
-    # Sole derivation site (#2103 PR-1): this call previously used a raw
-    # ``.parent`` join, one of three canonicalization policies the four
-    # master-token call sites disagreed on for a symlinked/relative path.
-    master_token_path = master_token_path_for(storage_path)
-    if not master_token_path.exists():
-        return False
+    """Mint initial storage when only the sibling master token exists.
 
-    # A dedicated bootstrap lock is intentionally distinct from the shared
-    # storage-write lock: master_token.refresh() acquires that write lock while
-    # persisting, so holding it here would self-deadlock. Recheck both inputs
-    # after waiting because another process may have completed the bootstrap or
-    # removed the durable token in the meantime.
-    lock = FileLock(str(_bootstrap_lock_path(storage_path)))
-    await _acquire_bootstrap_lock(lock)
-    try:
-        # A leader may have created storage while this caller waited. Report
-        # bootstrap-ready in that case so the waiter takes the same mandatory
-        # passive-validation path instead of entering ordinary recovery.
-        if storage_path.exists():
-            return True
-        if not master_token_path.exists():
-            return False
-        await _run_refresh_to_settlement(
-            storage_path=storage_path,
-            master_token_path=master_token_path,
-        )
-        return True
-    finally:
-        # Release synchronously so cancellation cannot strand the process-wide
-        # lock between a completed mint and an await scheduled for cleanup.
-        lock.release()
+    Thin call into the bootstrap transaction (#2103 PR-2 D7 — the flock /
+    shield / recheck machinery that used to live here now lives in
+    :func:`notebooklm._auth.master_token.bootstrap_storage_from_master_token`,
+    reached only through the public ``notebooklm.auth`` facade since ``cli/``
+    may not import ``notebooklm._*``). Maps the four-state
+    :class:`~notebooklm.auth.BootstrapOutcome` onto the boolean this caller
+    (``cli/playwright_login_io.py``) has always used: ``MINTED`` and
+    ``PRESENT_AFTER_WAIT`` both mean "storage is ready, take the mandatory
+    passive-validation path"; ``PRESENT_ON_ENTRY`` and ``NO_TOKEN`` both mean
+    "nothing was bootstrapped here, enter ordinary recovery" — exactly
+    today's semantics, made explicit rather than collapsed into one bool
+    before it ever reaches this module.
+    """
+    outcome = await master_token_bootstrap_storage(storage_path)
+    return outcome in (BootstrapOutcome.MINTED, BootstrapOutcome.PRESENT_AFTER_WAIT)
 
 
 __all__ = ["bootstrap_missing_storage_from_master_token"]

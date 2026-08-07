@@ -545,7 +545,7 @@ the default dependency.
 | [`_auth/refresh.py`](../src/notebooklm/_auth/refresh.py) | Token refresh driver (external login command, secret redaction). Coalesces refresh-cmd runs across loops via the `single_flight` core and serializes the subprocess across processes with a per-path refresh flock ([refresh-2]). |
 | [`_auth/keepalive.py`](../src/notebooklm/_auth/keepalive.py) | Cookie keepalive + `__Secure-1PSIDTS` rotation. |
 | [`_auth/psidts_recovery.py`](../src/notebooklm/_auth/psidts_recovery.py) | Inline PSIDTS recovery for cold-start (see issue #865). Invoked from the loader **wrapper** bodies, never the network-free pure loader ([ADR-0030](./adr/0030-one-recovery-ladder.md)); its env-var check shares `paths.resolve_auth_json_env`. |
-| [`_auth/master_token.py`](../src/notebooklm/_auth/master_token.py) | Headless master-token auth: mint/persist web cookies from a durable Google master token; layer-4 re-mint recovery (ADR-0023). |
+| [`_auth/master_token.py`](../src/notebooklm/_auth/master_token.py) | Headless master-token auth: minting primitives (exchange/mint/persist) PLUS the whole audited transaction (`bootstrap_from_oauth_token`, `remint_from_stored_token` — the shared kernel L4's re-mint and the CLI's operator refresh both call, `bootstrap_storage_from_master_token` returning a `BootstrapOutcome`, `assert_account_writable`), relocated here from the CLI by #2103's PR-2 structural follow-up (ADR-0023). |
 
 The cookie lifecycle — what gets written, who rotates, what the
 keepalive contract is — is documented separately in
@@ -649,8 +649,8 @@ The cross-command helpers form a small internal CLI stack:
 |--------|------|
 | [`cli/runtime.py`](../src/notebooklm/cli/runtime.py) | Leaf runtime helpers: root `--quiet` lookup and the single `asyncio.run(...)` bridge for sync Click handlers. |
 | [`cli/auth_runtime.py`](../src/notebooklm/cli/auth_runtime.py) | Shared auth bootstrap, command-body error wrapping, and optional opened-client workflow helper. |
-| [`cli/master_token_login.py`](../src/notebooklm/cli/master_token_login.py) | Command driver for `notebooklm login --master-token[-refresh]`, rendering over the master-token login service [`cli/services/login/master_token.py`](../src/notebooklm/cli/services/login/master_token.py) (mint/persist/refresh + browser `oauth_token` capture; ADR-0023). |
-| [`cli/services/auth_refresh.py`](../src/notebooklm/cli/services/auth_refresh.py) | Missing-storage preflight for `auth refresh`: conditionally mint from the exact sibling master token without changing healthy or malformed-storage behavior. |
+| [`cli/master_token_login.py`](../src/notebooklm/cli/master_token_login.py) | Command driver for `notebooklm login --master-token[-refresh]`: resolves paths and renders the outcome over the `notebooklm.auth` transaction ops (`master_token_bootstrap` / `master_token_remint` / `assert_account_writable`, relocated into `_auth/master_token.py` by #2103's PR-2 structural follow-up); only the interactive browser `oauth_token` capture ([`cli/services/login/master_token.py`](../src/notebooklm/cli/services/login/master_token.py)) stays CLI-side (ADR-0023). |
+| [`cli/services/auth_refresh.py`](../src/notebooklm/cli/services/auth_refresh.py) | Thin call into the `_auth` bootstrap transaction (`master_token_bootstrap_storage`, returning a `BootstrapOutcome`) for `auth refresh`'s missing-storage preflight; maps the four-state outcome onto the boolean `cli/playwright_login_io.py` consumes. |
 | [`cli/services/auth_source.py`](../src/notebooklm/cli/services/auth_source.py) | Single resolver for CLI auth-source precedence (`--storage`, `NOTEBOOKLM_AUTH_JSON`, active profile). |
 | [`cli/context.py`](../src/notebooklm/cli/context.py) | Profile/storage-scoped `context.json` persistence for active notebook and conversation state. Account metadata now lives unified in-band in `storage_state.json` (`_auth/account.py`); `context.json` is only its pre-v0.5.0 legacy source, promoted in-band on read and no longer written here (#2103 PR-0). |
 | [`cli/resolve.py`](../src/notebooklm/cli/resolve.py) | Notebook/source/artifact/note ID resolution, including partial-ID matching against public client list calls. |
@@ -1195,7 +1195,7 @@ src/notebooklm/
 │   ├── storage_writer.py        # Canonical storage_state.json writer (ADR-0029): sole atomic-write owner, unified bounded lock
 │   ├── keepalive.py             # Cookie keepalive + __Secure-1PSIDTS rotation
 │   ├── psidts_recovery.py       # Inline PSIDTS recovery for cold-start (issue #865)
-│   ├── master_token.py          # Headless master-token auth: mint cookies + layer-4 re-mint (ADR-0023)
+│   ├── master_token.py          # Headless master-token auth: minting primitives + the audited bootstrap/re-mint transaction (ADR-0023)
 │   ├── recovery.py              # Client-neutral cold-start L3/L4 adapters (consume single_flight; keep per-loop revalidate epoch)
 │   ├── single_flight.py         # Cross-loop coalescing core: (path, policy) flight registry + per-path success_epoch
 │   ├── refresh.py               # Token refresh driver (external login cmd, redaction; coalesces via single_flight + per-path flock)
@@ -1330,7 +1330,7 @@ src/notebooklm/
         │   ├── exceptions.py
         │   ├── firefox_accounts.py
         │   ├── io_seam.py        # Caller-injected LoginIO Protocol + resolver (#1393)
-        │   ├── master_token.py   # Headless master-token bootstrap/refresh + browser oauth_token capture (ADR-0023)
+        │   ├── master_token.py   # Interactive browser oauth_token capture only (bootstrap/refresh moved into _auth/master_token.py, ADR-0023)
         │   ├── outcomes.py
         │   ├── profile_targets.py
         │   ├── refresh.py
