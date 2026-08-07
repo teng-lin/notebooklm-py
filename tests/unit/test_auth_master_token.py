@@ -11,6 +11,7 @@ import json
 import re
 import sys
 import types
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -211,6 +212,41 @@ async def test_remint_from_stored_token_wraps_reload_failure_when_psidts_withhel
 
 
 # --- bootstrap_storage_from_master_token / BootstrapOutcome (#2103 PR-2 D7) -
+
+
+def test_bootstrap_lock_path_does_not_crash_on_a_symlink_loop(tmp_path):
+    """CodeRabbit finding on the combined PR: ``_bootstrap_lock_path`` does its
+    own separate ``expanduser().resolve()`` (it derives a lock path, not the
+    master-token sibling), so it hadn't inherited #2103 PR-1's fix for
+    ``Path.resolve()`` raising ``RuntimeError`` on a symlink loop on Python
+    3.10-3.12."""
+    loop_dir = tmp_path / "loop"
+    try:
+        loop_dir.symlink_to(loop_dir)
+    except (OSError, NotImplementedError):  # pragma: no cover - platform can't self-link
+        pytest.skip("platform cannot create a self-referential symlink")
+    storage = loop_dir / "sub" / "storage_state.json"
+
+    result = mt._bootstrap_lock_path(storage)  # must not raise
+
+    assert result.name == ".storage_state.json.lock.bootstrap"
+
+
+def test_bootstrap_lock_path_resolve_runtime_error_falls_back(tmp_path, monkeypatch):
+    """Pins the exception-handling contract deterministically via monkeypatch
+    (regardless of which Python this suite happens to run under — the real
+    symlink-loop test above only exercises the raising branch on 3.10-3.12;
+    on 3.13+ ``Path.resolve()`` degrades silently instead of raising)."""
+    storage = tmp_path / "storage_state.json"
+
+    def raise_runtime_error(self: Path) -> Path:
+        raise RuntimeError("Symlink loop from '...'")
+
+    monkeypatch.setattr(Path, "resolve", raise_runtime_error)
+
+    result = mt._bootstrap_lock_path(storage)
+
+    assert result == storage.with_name(".storage_state.json.lock.bootstrap")
 
 
 def test_bootstrap_storage_from_master_token_returns_present_on_entry(tmp_path):

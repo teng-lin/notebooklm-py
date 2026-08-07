@@ -3,11 +3,13 @@
 Interactive-browser capture of the single-use ``oauth_token`` cookie Directive
 B needs. #2103 PR-2 structural follow-up relocated the rest of the master-token
 transaction (bootstrap / re-mint / ownership guard) into
-:mod:`notebooklm._auth.master_token` — reached from here only through the
+:mod:`notebooklm._auth.master_token`. The CLI driver
+(``cli/master_token_login.py``) invokes those whole transactions through the
 public ``notebooklm.auth`` facade (``master_token_bootstrap`` /
-``master_token_remint`` / ``assert_account_writable``), never assembled from
-minting primitives. This module keeps ONLY the piece that must stay
-CLI-side: launching a real, visible browser is inherently interactive.
+``master_token_remint`` / ``assert_account_writable``) and never assembles
+minting primitives itself; this module (not the driver) keeps ONLY the piece
+that must stay CLI-side: launching a real, visible browser is inherently
+interactive.
 """
 
 from __future__ import annotations

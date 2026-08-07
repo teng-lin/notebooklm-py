@@ -160,6 +160,19 @@ class TestPromoteLegacyAccount:
     sanitization of a malformed legacy record.
     """
 
+    @pytest.fixture(autouse=True)
+    def _clear_promotion_warn_throttle(self):
+        """``_PROMOTION_WARNED_PATHS`` is per-process module state, never
+        cleared by production code (it's a warn-once-per-path throttle for
+        the process lifetime). These tests only pass today because each
+        ``tmp_path`` gives a distinct path key — an implicit coupling
+        CodeRabbit flagged on the combined PR review. Clearing it makes the
+        warning-throttle assertions independent of path uniqueness, test
+        order, and repeated runs."""
+        _auth_account._PROMOTION_WARNED_PATHS.clear()
+        yield
+        _auth_account._PROMOTION_WARNED_PATHS.clear()
+
     def test_missing_storage_file_is_a_noop_never_creates_it(self, tmp_path):
         """MAJOR (#2103 PR-0 review): a plain read must never CREATE
         ``storage_state.json``. Without this guard, promoting into a

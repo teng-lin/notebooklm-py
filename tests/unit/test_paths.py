@@ -345,11 +345,17 @@ class TestMasterTokenPathFor:
         assert result == (tmp_path / "master_token.json").resolve()
         assert result.is_absolute()
 
-    def test_tilde_path_expands(self, monkeypatch):
-        monkeypatch.setenv("HOME", "/tmp/fake-home-for-tilde-test")
+    def test_tilde_path_expands(self, tmp_path, monkeypatch):
+        """Hardcoding a literal ``/tmp/...`` prefix broke on macOS CI (#2108
+        review): ``/tmp`` is itself a symlink to ``/private/tmp`` there, so
+        the resolved result legitimately starts with a different prefix than
+        the unresolved ``HOME`` value. Use ``tmp_path`` (already the
+        platform's real temp root) and compare against ITS resolved form,
+        matching exactly what ``master_token_path_for`` itself does."""
+        monkeypatch.setenv("HOME", str(tmp_path))
         result = master_token_path_for(Path("~/profiles/default/storage_state.json"))
         assert "~" not in str(result)
-        assert str(result).startswith("/tmp/fake-home-for-tilde-test")
+        assert result == tmp_path.resolve() / "profiles" / "default" / "master_token.json"
 
     def test_symlinked_directory_resolves_to_target(self, tmp_path):
         real_dir = tmp_path / "real"
@@ -381,7 +387,10 @@ class TestMasterTokenPathFor:
         real_dir = tmp_path / "real"
         real_dir.mkdir()
         alias_dir = tmp_path / "alias"
-        alias_dir.symlink_to(real_dir, target_is_directory=True)
+        try:
+            alias_dir.symlink_to(real_dir, target_is_directory=True)
+        except (OSError, NotImplementedError):  # pragma: no cover - Windows without privilege
+            pytest.skip("platform cannot create directory symlinks")
         storage = alias_dir / "storage_state.json"
 
         resolved_parent_style = storage.expanduser().resolve().parent / "master_token.json"

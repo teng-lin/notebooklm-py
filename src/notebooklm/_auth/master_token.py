@@ -539,8 +539,21 @@ class BootstrapOutcome(enum.Enum):
 
 
 def _bootstrap_lock_path(storage_path: Path) -> Path:
-    """Return the canonical lock that serializes first-time session minting."""
-    canonical_path = storage_path.expanduser().resolve()
+    """Return the canonical lock that serializes first-time session minting.
+
+    Degrades to a best-effort (non-canonicalized) path on a circular symlink
+    rather than raising, matching :func:`notebooklm.paths.master_token_path_for`
+    (#2103 PR-1): ``Path.resolve()`` raises ``RuntimeError`` (not ``OSError``)
+    on a symlink loop on Python 3.10-3.12 (fixed upstream in 3.13). Found by
+    CodeRabbit during the combined PR review — this call site does its own
+    separate ``expanduser().resolve()`` rather than going through the shared
+    chokepoint (it derives a *lock* path, not the master-token sibling), so it
+    hadn't inherited PR-1's fix."""
+    expanded = storage_path.expanduser()
+    try:
+        canonical_path = expanded.resolve()
+    except (OSError, RuntimeError):
+        canonical_path = expanded
     return canonical_path.with_name(f".{canonical_path.name}.lock.bootstrap")
 
 
