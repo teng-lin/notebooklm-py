@@ -579,24 +579,21 @@ def mock_get_conversation_id(httpx_mock, build_rpc_response):
 
 @pytest.fixture
 def legacy_vcr_follow_up_probe(monkeypatch):
-    """Supply the pre-existing turn omitted from chat cassettes recorded before #1973.
+    """Supply the prior-turn count omitted from legacy chat cassettes.
 
     The old recordings contain the current-conversation lookup and chat POST,
-    but not the new pre-POST ``khqZz`` probe. Keep those recordings immutable;
-    dedicated characterization tests exercise the real probe request and its
-    empty, non-empty, and failure branches.
+    but not the pre-POST ``khqZz`` count fetch added across #1973 and #1976.
+    Keep those recordings immutable; dedicated characterization tests exercise
+    the real request and its empty, non-empty, multi-turn, and failure branches.
     """
-    from notebooklm._chat import ChatAPI
 
-    original = ChatAPI.get_conversation_turns
+    from notebooklm._chat import api as chat_api_module
 
-    async def _get_conversation_turns(self, notebook_id: str, conversation_id: str, limit: int = 2):
-        """Replay legacy chat cassettes without changing the production signature."""
-        if limit == 1:
-            return [[[None, None, 1, "Existing cassette conversation turn"]]]
-        return await original(self, notebook_id, conversation_id, limit)
+    async def _count_prior_server_turns(fetch_turns, notebook_id: str, conversation_id: str) -> int:
+        """Replay a legacy cassette whose current conversation had one prior turn."""
+        return 1
 
-    monkeypatch.setattr(ChatAPI, "get_conversation_turns", _get_conversation_turns)
+    monkeypatch.setattr(chat_api_module, "count_prior_server_turns", _count_prior_server_turns)
 
 
 @pytest.fixture

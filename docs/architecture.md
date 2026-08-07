@@ -987,6 +987,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_version_check.py` | Dynamic client-side version deprecation guard |
 | `_version_info.py` | Human-facing `version_string()` — package version + short git commit (embedded by `hatch_build.py` at build time, or live `git` from a checkout) |
 | `_chat/notes.py` | Chat-adjacent note saving workflow adapter |
+| `_chat/history.py` | Server-backed complete-history snapshot and user-question turn counting for authoritative `AskResult.turn_number` values |
 | `_chat/wire.py` | Streamed-chat wire request construction + response parsing for the chat client |
 | `_chat/transport.py` | Chat-specific error mapping over the shared transport pipeline |
 | `_chat/deleted_tracker.py` | Bounded `RecentlyDeletedConversations` set — `delete_conversation` records the id (under the conversation lock) so a concurrent null-conversation ask, after acquiring that lock, detects a mid-flight delete and drops `resolved_id_override` to recover the server's real conversation id post-POST (#1875) |
@@ -1170,6 +1171,7 @@ src/notebooklm/
 ├── _chat/                       # Chat-feature subpackage — facade + helpers unified (#1328)
 │   ├── __init__.py              # Re-exports ChatAPI so `from ._chat import ChatAPI` keeps resolving
 │   ├── api.py                   # ChatAPI facade (was _chat.py)
+│   ├── history.py               # Server-backed complete-history turn counting
 │   ├── notes.py                 # Note saving workflow adapter
 │   ├── wire.py                  # Streamed-chat wire request/response parser
 │   ├── transport.py             # Chat error mapping

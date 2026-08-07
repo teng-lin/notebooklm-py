@@ -12,7 +12,8 @@ import pytest
 
 import notebooklm.cli.chat_cmd as chat_cmd_module
 from notebooklm._chat import ChatAPI
-from notebooklm.exceptions import UnknownRPCMethodError
+from notebooklm._chat.history import count_prior_server_turns
+from notebooklm.exceptions import ChatError, UnknownRPCMethodError
 
 
 class TestParseTurnsToQaPairs:
@@ -282,6 +283,57 @@ class TestParseTurnsToQaPairs:
         ]
         result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
         assert result == [(long_q, long_a)]
+
+
+class TestPriorServerTurnCount:
+    """Server-authoritative ordinal counting for cold/stateless clients (#1976)."""
+
+    @pytest.mark.asyncio
+    async def test_grows_snapshot_window_until_the_full_conversation_is_returned(self):
+        chronological_rows = []
+        for turn_number in range(1, 52):
+            chronological_rows.extend(
+                [
+                    [None, None, 1, f"Question {turn_number}?"],
+                    [None, None, 2, None, [[f"Answer {turn_number}."]]],
+                ]
+            )
+        newest_first = list(reversed(chronological_rows))
+
+        get_turns = AsyncMock(
+            side_effect=[
+                [newest_first[:100]],
+                [newest_first],
+            ]
+        )
+        count = await count_prior_server_turns(get_turns, "nb-1", "conv-1")
+
+        assert count == 51
+        assert [call.kwargs["limit"] for call in get_turns.await_args_list] == [
+            100,
+            200,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_counts_question_role_even_when_the_text_slot_is_absent(self):
+        get_turns = AsyncMock(return_value=[[[None, None, 1]]])
+
+        count = await count_prior_server_turns(get_turns, "nb-1", "conv-1")
+
+        assert count == 1
+
+    @pytest.mark.asyncio
+    async def test_rejects_a_history_that_fills_the_safety_ceiling(self):
+        requested_limits: list[int] = []
+
+        async def get_full_window(_notebook_id: str, _conversation_id: str, limit: int = 2):
+            requested_limits.append(limit)
+            return [[[None, None, 1, "Question?"]] * limit]
+
+        with pytest.raises(ChatError, match="maximum 12,800-row snapshot"):
+            await count_prior_server_turns(get_full_window, "nb-1", "conv-1")
+
+        assert requested_limits == [100, 200, 400, 800, 1600, 3200, 6400, 12800]
 
 
 class TestFormatHelpers:

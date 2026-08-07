@@ -80,7 +80,7 @@ NotebookMetadata, SourceSummary
 AccountLimits, UserSettings
 ChatReference, ReportSuggestion, PromptSuggestion, SuggestedTopic
 MindMapKind, MindMapResult
-ResearchStart, ResearchStatus, ResearchTask, ResearchSource
+ResearchStart, ResearchStatus, ResearchTask, ResearchSource, ResearchTerminationReason
 ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
 # Exceptions (all inherit from NotebookLMError)

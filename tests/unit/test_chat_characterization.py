@@ -846,6 +846,7 @@ class TestChatAskErrorHandling:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        build_rpc_response,
     ):
         """Empty answer on a follow-up must not append a turn to the cache.
         Two paths reach this assertion under the current contract:
@@ -877,6 +878,11 @@ class TestChatAskErrorHandling:
             content=response_body.encode(),
             method="POST",
         )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(RPCMethod.GET_CONVERSATION_TURNS, [[]]).encode(),
+            method="POST",
+        )
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
                 "nb_123",
@@ -887,6 +893,7 @@ class TestChatAskErrorHandling:
         # Empty answer: turn_number equals len(turns) (0), not len(turns)+1
         assert result.answer == ""
         assert result.turn_number == 0
+        assert result.is_follow_up is True
         # Caller-supplied conversation_id is preserved across the empty response.
         assert result.conversation_id == "existing-conv-id"
 
@@ -895,6 +902,7 @@ class TestChatAskErrorHandling:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        build_rpc_response,
     ):
         """Test ask() with existing conversation_id sets is_follow_up=True ."""
         import json
@@ -917,6 +925,14 @@ class TestChatAskErrorHandling:
             content=response_body.encode(),
             method="POST",
         )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_CONVERSATION_TURNS,
+                [[[None, None, 1, "Earlier question?"]]],
+            ).encode(),
+            method="POST",
+        )
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
                 "nb_123",
@@ -925,6 +941,7 @@ class TestChatAskErrorHandling:
                 conversation_id="existing-conv-id",
             )
         assert result.is_follow_up is True
+        assert result.turn_number == 2
         assert result.conversation_id == "existing-conv-id"
 
 
@@ -1121,9 +1138,61 @@ class TestAskServerAssignedConversationId:
             result = await client.chat.ask("nb_123", "Continue?", source_ids=["src_001"])
 
         assert result.conversation_id == current_id
-        assert result.turn_number == 1
+        assert result.turn_number == 2
         assert result.is_follow_up is True
         assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
+
+    @pytest.mark.asyncio
+    async def test_current_conversation_counts_server_questions_not_raw_rows(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """A cold client derives the ordinal from complete server-side Q&A rows (#1976)."""
+        import json
+        import re
+
+        current_id = "multi-turn-current-conversation"
+        inner_json = json.dumps(
+            [["Third answer.", None, ["stream-id", 12345], None, [[], None, None, [], 1]]]
+        )
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=f")]}}'\n{len(chunk_json)}\n{chunk_json}\n".encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_LAST_CONVERSATION_ID, [[[current_id]]]
+            ).encode(),
+            method="POST",
+        )
+        # khqZz returns newest-first and counts individual role rows. Counting
+        # questions is reliable; dividing these rows by two is not.
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_CONVERSATION_TURNS,
+                [
+                    [
+                        [None, None, 2, None, [["Second answer."]]],
+                        [None, None, 1, "Second question?"],
+                        [None, None, 2, None, [["First answer."]]],
+                        [None, None, 1, "First question?"],
+                    ]
+                ],
+            ).encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.chat.ask("nb_123", "Third question?", source_ids=["src_001"])
+
+        assert result.is_follow_up is True
+        assert result.turn_number == 3
 
     @pytest.mark.asyncio
     async def test_server_probe_overrides_stale_cached_turns(
@@ -1166,6 +1235,7 @@ class TestAskServerAssignedConversationId:
             result = await client.chat.ask("nb_123", "Fresh question?", source_ids=["src_001"])
 
         assert result.is_follow_up is False
+        assert result.turn_number == 1
         assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
 
     @pytest.mark.asyncio
@@ -1197,6 +1267,36 @@ class TestAskServerAssignedConversationId:
         async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             with pytest.raises(ServerError, match="500"):
                 await client.chat.ask("nb_123", "Continue?", source_ids=["src_001"])
+
+        assert not any(
+            "GenerateFreeFormStreamed" in str(request.url) for request in httpx_mock.get_requests()
+        )
+
+    @pytest.mark.asyncio
+    async def test_explicit_conversation_count_failure_raises_before_chat_post(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+    ):
+        """An explicit follow-up never fabricates an ordinal when history fails."""
+        import re
+
+        from notebooklm.exceptions import ServerError
+
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            status_code=500,
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+            with pytest.raises(ServerError, match="500"):
+                await client.chat.ask(
+                    "nb_123",
+                    "Continue?",
+                    source_ids=["src_001"],
+                    conversation_id="existing-conversation",
+                )
 
         assert not any(
             "GenerateFreeFormStreamed" in str(request.url) for request in httpx_mock.get_requests()
@@ -1261,6 +1361,7 @@ class TestAskServerAssignedConversationId:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        build_rpc_response,
     ):
         """Follow-up asks forward the caller-supplied conversation_id
         verbatim and do NOT call hPTbtc — the caller already has the real id.
@@ -1285,6 +1386,14 @@ class TestAskServerAssignedConversationId:
             content=response_body.encode(),
             method="POST",
         )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_CONVERSATION_TURNS,
+                [[[None, None, 1, "Earlier question?"]]],
+            ).encode(),
+            method="POST",
+        )
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
                 "nb_123",
@@ -1300,10 +1409,13 @@ class TestAskServerAssignedConversationId:
         # AskResult preserves the caller-supplied id; we no longer rebind
         # to first[2][0] because that field is a stream id, not a conv_id.
         assert result.conversation_id == "existing-conv-id"
-        # And no hPTbtc round-trip: the caller already supplied a real id.
-        assert not any("batchexecute" in str(r.url) for r in httpx_mock.get_requests()), (
+        assert result.turn_number == 2
+        # The caller already supplied the id, so no hPTbtc lookup is needed;
+        # khqZz still supplies the server-authoritative turn count (#1976).
+        assert not any("rpcids=hPTbtc" in str(r.url) for r in httpx_mock.get_requests()), (
             "Follow-ups must not call hPTbtc — caller already has the id."
         )
+        assert any("rpcids=khqZz" in str(r.url) for r in httpx_mock.get_requests())
 
 
 class TestGetConversationIdEdgeCases:

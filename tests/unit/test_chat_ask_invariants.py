@@ -123,7 +123,7 @@ class TestChatTimeoutRouting:
             )
         )
         chat = ChatAPI(
-            rpc=SimpleNamespace(),
+            rpc=SimpleNamespace(rpc_call=AsyncMock(return_value=[[]])),
             transport=transport,
             reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
             loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),

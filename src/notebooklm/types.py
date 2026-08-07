@@ -54,6 +54,7 @@ from ._types.research import (
     ResearchStart,
     ResearchStatus,
     ResearchTask,
+    ResearchTerminationReason,
     SourceGuide,
 )
 from ._types.sharing import SharedUser, ShareStatus
@@ -176,6 +177,7 @@ __all__ = [
     "ResearchSource",
     "ResearchTask",
     "ResearchStart",
+    "ResearchTerminationReason",
     "MindMap",
     "MindMapKind",
     "MindMapResult",
@@ -271,6 +273,7 @@ for _public_moved_type in (
     ResearchStart,
     ResearchStatus,
     ResearchTask,
+    ResearchTerminationReason,
     SharedUser,
     ShareStatus,
     Source,

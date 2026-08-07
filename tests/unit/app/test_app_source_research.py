@@ -57,9 +57,23 @@ def _source(url: str = "http://ex.com", title: str = "S") -> SimpleNamespace:
 
 
 def _status(
-    status: ResearchStatus, *, sources: list[Any] | None = None, report: str = ""
+    status: ResearchStatus,
+    *,
+    sources: list[Any] | None = None,
+    report: str = "",
+    reason_message: str | None = None,
+    hint: str | None = None,
 ) -> SimpleNamespace:
-    return SimpleNamespace(status=status, sources=sources or [], report=report)
+    # ``reason_message`` / ``hint`` mirror the real ``ResearchTask`` derivations
+    # (#1964); they default to None, which is what a run with no termination
+    # reason carries.
+    return SimpleNamespace(
+        status=status,
+        sources=sources or [],
+        report=report,
+        reason_message=reason_message,
+        hint=hint,
+    )
 
 
 def _client() -> MagicMock:
@@ -252,3 +266,24 @@ async def test_unknown_status_preserves_raw_value() -> None:
     result = await execute_source_add_research(client, _plan(), import_sources=AsyncMock())
     assert result.outcome == "unknown_status"
     assert result.status == "in_progress"
+
+
+async def test_failed_outcome_carries_reason_and_hint() -> None:
+    """#1964: ``source add-research`` must be able to explain an empty Drive
+    search rather than rendering a bare "Research failed"."""
+    client = _client()
+    client.research.start = AsyncMock(return_value=_start())
+    client.research.wait_for_completion = AsyncMock(
+        return_value=_status(
+            ResearchStatus.FAILED,
+            reason_message="The search of Google Drive found no matches for 'x'.",
+            hint="Try the exact Drive filename, the document URL, or add the "
+            "document directly by its document id.",
+        )
+    )
+
+    result = await execute_source_add_research(client, _plan(), import_sources=AsyncMock())
+
+    assert result.outcome == "failed"
+    assert "no matches" in result.reason_message
+    assert "document id" in result.hint

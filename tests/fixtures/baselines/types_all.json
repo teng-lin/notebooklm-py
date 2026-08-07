@@ -31,6 +31,7 @@
   "ResearchSource",
   "ResearchTask",
   "ResearchStart",
+  "ResearchTerminationReason",
   "MindMap",
   "MindMapKind",
   "MindMapResult",

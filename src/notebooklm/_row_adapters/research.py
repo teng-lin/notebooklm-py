@@ -149,11 +149,14 @@ class ResearchTaskInfoRow:
     code are themselves read through ``safe_index`` by the parser's
     ``_extract_*`` helpers (an absent slot is drift). This adapter centralises
     the *inner* single-level reads those helpers then perform on the bound
-    blocks — ``query_info[0]``, ``bundle[0]``, ``bundle[1]`` — which are
-    routinely-optional and short-circuit to a default rather than raising.
+    blocks — ``query_info[0]``, ``query_info[1]``, ``bundle[0]``, ``bundle[1]``
+    — which are routinely-optional and short-circuit to a default rather than
+    raising.
     """
 
     _QUERY_TEXT_POS: ClassVar[int] = 0
+    _QUERY_SOURCE_TYPE_POS: ClassVar[int] = 1
+    _QUERY_SOURCE_TYPE_MIN_LEN: ClassVar[int] = 2
     _SOURCES_POS: ClassVar[int] = 0
     _SUMMARY_POS: ClassVar[int] = 1
     _SUMMARY_MIN_LEN: ClassVar[int] = 2
@@ -167,6 +170,24 @@ class ResearchTaskInfoRow:
         short-circuits to ``None`` rather than raising.
         """
         return query_info[ResearchTaskInfoRow._QUERY_TEXT_POS] if query_info else None
+
+    @staticmethod
+    def query_source_type(query_info: Any) -> Any:
+        """Search-source tag at ``task_info[1][1]`` — ``None`` when absent.
+
+        The query block echoes the ``[query, source_type]`` pair that started
+        the run (``1`` = web, ``2`` = drive — the same tags
+        :meth:`ResearchAPI.start` sends). Live-captured against POLL_RESEARCH
+        (issue #1964): a drive run echoes ``['notes', 2]``, a web run
+        ``['python asyncio event loop', 1]``.
+
+        Length-guarded soft read: a query block that carries only the text
+        legitimately omits the tag, so this degrades to ``None`` instead of
+        raising ``IndexError``.
+        """
+        if not query_info or len(query_info) < ResearchTaskInfoRow._QUERY_SOURCE_TYPE_MIN_LEN:
+            return None
+        return query_info[ResearchTaskInfoRow._QUERY_SOURCE_TYPE_POS]
 
     @staticmethod
     def bundle_sources(bundle: Any) -> Any:

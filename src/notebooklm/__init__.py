@@ -160,6 +160,7 @@ from .types import (
     ResearchStart,
     ResearchStatus,
     ResearchTask,
+    ResearchTerminationReason,
     RpcTelemetryEvent,
     ShareAccess,
     SharedUser,
@@ -231,6 +232,7 @@ __all__ = [
     "ResearchSource",
     "ResearchTask",
     "ResearchStart",
+    "ResearchTerminationReason",
     "SharedUser",
     "ShareStatus",
     # Utility helpers

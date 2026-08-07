@@ -673,10 +673,21 @@ def _render_add_research_result(result: SourceAddResearchResult, *, json_output:
 
     if result.outcome in ("failed", "timeout"):
         message = "Research timed out" if result.outcome == "timeout" else "Research failed"
+        # Explain WHY and what to do next when the poll named a termination
+        # reason — an empty Drive search is not a broken run (issue #1964).
+        extra: dict[str, Any] = {}
+        if result.reason_message:
+            extra["reason_message"] = result.reason_message
+        if result.hint:
+            extra["hint"] = result.hint
         if json_output:
-            _exit_with_add_research_status(result.outcome, message)
+            _exit_with_add_research_status(result.outcome, message, **extra)
         else:
             console.print(f"[red]{message}[/red]")
+            if result.reason_message:
+                console.print(result.reason_message)
+            if result.hint:
+                console.print(f"[dim]{result.hint}[/dim]")
             exit_with_code(1)
         return  # pragma: no cover
 

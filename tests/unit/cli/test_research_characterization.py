@@ -453,3 +453,106 @@ class TestTaskIdPinning:
         # Second call: task_id pinned to the value discovered on the first poll.
         second_call = poll_mock.await_args_list[1]
         assert second_call.kwargs.get("task_id") == "task_pinned"
+
+
+# ---------------------------------------------------------------------------
+# #1964 — a run that found nothing explains itself instead of saying "failed"
+# ---------------------------------------------------------------------------
+
+
+# Status code 3 + source tag 2 is the live-captured shape of a Drive search
+# that matched no file (see docs/rpc-reference.md).
+DRIVE_NO_MATCH_POLL = {
+    "status": "failed",
+    "task_id": "task_abc",
+    "query": "Example Document.md",
+    "status_code": 3,
+    "source_type": 2,
+}
+
+
+class TestWaitNoResults:
+    def test_empty_drive_search_explains_itself_in_text_mode(self, runner_and_mocks):
+        """Regression for #1964: the user used to get a bare "Research failed"
+        with nothing actionable."""
+        runner, factory = runner_and_mocks
+        result = runner.invoke(
+            cli,
+            ["research", "wait", "-n", "nb_123"],
+            obj=inject_client(factory(DRIVE_NO_MATCH_POLL)),
+        )
+
+        assert result.exit_code == 1
+        out = _strip_ansi(result.output)
+        assert "found no matches" in out
+        assert "Google Drive" in out
+        # The remediation is the actionable half — without it the user knows
+        # what happened but not what to do.
+        assert "document id" in out
+
+    def test_empty_drive_search_reason_on_json_surface(self, runner_and_mocks):
+        runner, factory = runner_and_mocks
+        result = runner.invoke(
+            cli,
+            ["research", "wait", "-n", "nb_123", "--json"],
+            obj=inject_client(factory(DRIVE_NO_MATCH_POLL)),
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["status"] == "failed"
+        assert "found no matches" in payload["reason_message"]
+        assert "document id" in payload["hint"]
+
+    def test_unnameable_failure_keeps_the_bare_wording(self, runner_and_mocks):
+        """A failure with no termination reason must not grow empty
+        reason/hint keys — the historical shape stands."""
+        runner, factory = runner_and_mocks
+        result = runner.invoke(
+            cli,
+            ["research", "wait", "-n", "nb_123", "--json"],
+            obj=inject_client(factory({"status": "failed", "query": "q"})),
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["status"] == "failed"
+        assert "reason_message" not in payload
+        assert "hint" not in payload
+
+
+class TestStatusNoResults:
+    def test_status_text_mode_explains_empty_drive_search(self, runner_and_mocks):
+        runner, factory = runner_and_mocks
+        result = runner.invoke(
+            cli,
+            ["research", "status", "-n", "nb_123"],
+            obj=inject_client(factory(DRIVE_NO_MATCH_POLL)),
+        )
+
+        out = _strip_ansi(result.output)
+        assert "Status: failed" in out
+        assert "found no matches" in out
+        assert "document id" in out
+
+    def test_status_json_shape_is_unchanged(self, runner_and_mocks):
+        """``research status --json`` emits the byte-stable public dict, so the
+        new fields deliberately do NOT appear there (the same call #1922 made
+        for ``status_code``)."""
+        runner, factory = runner_and_mocks
+        result = runner.invoke(
+            cli,
+            ["research", "status", "-n", "nb_123", "--json"],
+            obj=inject_client(factory(DRIVE_NO_MATCH_POLL)),
+        )
+
+        payload = json.loads(result.output)
+        assert set(payload) == {
+            "task_id",
+            "status",
+            "query",
+            "sources",
+            "summary",
+            "report",
+            "tasks",
+        }

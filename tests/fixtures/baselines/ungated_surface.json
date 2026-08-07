@@ -40,6 +40,7 @@
     "ResearchSource",
     "ResearchTask",
     "ResearchStart",
+    "ResearchTerminationReason",
     "SharedUser",
     "ShareStatus",
     "resolve_chat_reference_passage",

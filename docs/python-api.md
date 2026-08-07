@@ -1573,6 +1573,27 @@ async def poll(notebook_id: str, task_id: str | None = None) -> ResearchTask:
       - summary:   str            — summary text when present
       - report:    str            — deep-research report markdown when present
       - tasks:     tuple[ResearchTask, ...] — ALL parsed tasks visible at this poll
+      - status_code: int | None    — raw backend code (task_info[4]) preserved verbatim
+      - source_type: int | None    — search source echoed by the backend (1=web, 2=drive)
+      - termination_reason: ResearchTerminationReason | None
+                                   — WHY the run ended, differentiating the coarse
+                                     status: NO_RESULTS | CANCELLED | COMPLETED |
+                                     IN_PROGRESS | UNKNOWN. `status` flattens the first
+                                     two and UNKNOWN all into FAILED, so branch on this
+                                     to tell an empty search from a real error.
+                                     None when the poll carried no status code.
+      - reason_message: str | None — human-readable explanation, set only when the run
+                                     did not succeed
+      - hint:      str | None      — remediation matched to the reason and the search
+                                     source (an empty Drive search suggests the exact
+                                     filename / document id; an empty web search
+                                     suggests broadening the query)
+      - is_drive_search / is_web_search: bool — whether the search source is KNOWN to be
+                                     Drive / web (both False when the tag is absent or
+                                     unrecognised, in which case the wording and hint
+                                     stay source-agnostic)
+
+    Backend status codes are documented in docs/rpc-reference.md (POLL_RESEARCH).
 
     Each ResearchSource exposes:
       - url, title
@@ -2258,8 +2279,8 @@ if final.is_complete and final.url:
 class AskResult:
     answer: str                        # The answer text with inline citations [1], [2], etc.
     conversation_id: str               # ID for follow-up questions
-    turn_number: int                   # Turn number in conversation
-    is_follow_up: bool                 # Whether this was a follow-up question
+    turn_number: int                   # Server-derived turn number in conversation
+    is_follow_up: bool                 # Explicit ID => True; implicit => prior server turns exist
     references: list[ChatReference]    # Source references cited in the answer
     raw_response: str                  # First 1000 chars of raw API response
 
