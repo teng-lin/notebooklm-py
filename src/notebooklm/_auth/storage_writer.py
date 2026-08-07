@@ -895,7 +895,9 @@ def persist_minted_jar(
                 data = loaded if isinstance(loaded, dict) else {}
             except json.JSONDecodeError:
                 data = {}
-        if existed and not force:
+        if existed and force:
+            logger.debug("persist_minted_jar: force=True bypasses the account-ownership guard.")
+        elif existed:
             existing_owner = _account.read_account_metadata_from_storage_state(data).get("email")
             existing_owner = existing_owner.strip() if isinstance(existing_owner, str) else None
             if not existing_owner:
@@ -904,6 +906,11 @@ def persist_minted_jar(
                         "This profile has no recorded account owner; refusing to overwrite "
                         "its session with a freshly minted one without force=True."
                     )
+                logger.debug(
+                    "persist_minted_jar: existing storage has no recorded owner; proceeding "
+                    "with refuse_unknown_owner=False (re-mint from a token already paired "
+                    "with this storage_path, not a fresh account selection)."
+                )
             elif existing_owner.casefold() != (email or "").casefold():
                 raise _master_token.MasterTokenError(
                     f"This profile already belongs to {existing_owner}, but the mint is "

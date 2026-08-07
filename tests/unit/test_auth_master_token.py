@@ -208,6 +208,56 @@ async def test_remint_from_stored_token_wraps_reload_failure_when_psidts_withhel
     assert {c["name"] for c in data["cookies"]} == {"SID", "APISID", "SAPISID"}
 
 
+# --- bootstrap_from_oauth_token (#2103 PR-2) --------------------------------
+
+
+@pytest.mark.no_default_keepalive_mock  # own the RotateCookies response (mint PSIDTS)
+@pytest.mark.asyncio
+async def test_bootstrap_from_oauth_token_success(fake_gpsoauth, httpx_mock, tmp_path):
+    storage = tmp_path / "storage_state.json"
+    token_path = tmp_path / "master_token.json"
+    httpx_mock.add_response(url=_OAUTHLOGIN_RE, text="APh-UBERAUTH")
+    httpx_mock.add_response(
+        url=_MERGESESSION_RE, headers=_merge_session_cookies("SID", "APISID", "SAPISID")
+    )
+    httpx_mock.add_response(url=_ROTATE_RE, headers=_merge_session_cookies("__Secure-1PSIDTS"))
+
+    count = await mt.bootstrap_from_oauth_token(
+        email="e@x.com", oauth_token="OAUTH", storage_path=storage, verify=False
+    )
+
+    assert count == -1  # verify=False
+    rec = mt.read_master_token(token_path)
+    assert rec["email"] == "e@x.com" and rec["master_token"] == "aas_et/MASTER"
+    data = json.loads(storage.read_text(encoding="utf-8"))
+    assert data["notebooklm"]["account"]["email"] == "e@x.com"
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_from_oauth_token_raises_on_corrupted_stored_token(tmp_path):
+    """#2103 PR-2 review (pr2-reviewer-silent-failures, MAJOR): a corrupted
+    master_token.json must not be silently overwritten with a freshly
+    generated android_id. Before the fix, ``_resolve_bootstrap_android_id``
+    caught ``MasterTokenError`` from ``read_master_token`` the same way it
+    handled a plain missing file, discarding evidence of corruption and
+    proceeding as if no token had ever existed. The pre-PR CLI driver's
+    unwrapped ``read_master_token(master_token_path)`` call raised this same
+    corruption loudly before any capture/mint; a direct library caller of
+    ``master_token_bootstrap`` (the documented public surface) has no
+    equivalent CLI-side pre-capture probe protecting it, so the library
+    function itself must not swallow this."""
+    storage = tmp_path / "storage_state.json"
+    token_path = tmp_path / "master_token.json"
+    token_path.write_text(json.dumps({"version": 99}), encoding="utf-8")
+
+    with pytest.raises(MasterTokenError, match="malformed|version"):
+        await mt.bootstrap_from_oauth_token(
+            email="e@x.com", oauth_token="OAUTH", storage_path=storage, verify=False
+        )
+    # Must not have been silently overwritten with a fresh token/android_id.
+    assert json.loads(token_path.read_text(encoding="utf-8")) == {"version": 99}
+
+
 # --- storage_state_from_jar -----------------------------------------------
 
 

@@ -374,13 +374,22 @@ def _resolve_bootstrap_android_id(master_token_path: Path, *, explicit: str | No
     inside the library so every caller gets identity continuity for free).
     Reusing the stored id (rather than resetting it, even under ``--force``)
     matters because changing it can re-trip Google's new-device risk signal on
-    re-mint."""
+    re-mint.
+
+    Does NOT swallow :class:`MasterTokenError` (PR-2 review, pr2-reviewer-
+    silent-failures): ``read_master_token`` returns ``None`` only when the
+    file is ABSENT, and raises for a present-but-corrupted one. Before this
+    function existed, the pre-PR CLI driver's unwrapped
+    ``read_master_token(master_token_path)`` call raised the same corruption
+    loudly, before any capture or mint. Letting it propagate here (rather
+    than silently generating a fresh id and overwriting a possibly-recoverable
+    token) preserves that for every caller of :func:`bootstrap_from_oauth_token`
+    — including a direct library caller of ``notebooklm.auth.master_token_bootstrap``,
+    which the CLI's own separate pre-capture probe (``master_token_login.py``)
+    does not cover."""
     if explicit:
         return explicit
-    try:
-        record = read_master_token(master_token_path)
-    except MasterTokenError:
-        record = None
+    record = read_master_token(master_token_path)
     return record["android_id"] if record is not None else generate_android_id()
 
 
@@ -559,7 +568,19 @@ async def bootstrap_storage_from_master_token(storage_path: Path) -> BootstrapOu
     Not an ADR-0030 recovery rung: this is a cold-start ENTRY POINT (called
     once, before any client exists), with its own dedicated bootstrap lock —
     distinct from the storage-write lock ``remint_from_stored_token`` acquires
-    while persisting, since holding that lock here would self-deadlock."""
+    while persisting, since holding that lock here would self-deadlock.
+
+    Logs the resolved outcome at DEBUG (PR-2 review, pr2-reviewer-silent-
+    failures): the whole point of a 4-state result instead of a bool is to
+    make "I minted it" distinguishable from "a concurrent leader already
+    had" — that distinction is otherwise invisible in logs, same as before
+    this type existed."""
+    outcome = await _resolve_bootstrap_outcome(storage_path)
+    logger.debug("bootstrap_storage_from_master_token(%s) -> %s", storage_path, outcome)
+    return outcome
+
+
+async def _resolve_bootstrap_outcome(storage_path: Path) -> BootstrapOutcome:
     # Preserve the healthy-storage fast path: profiles that already have a jar
     # should not pay for a lock merely because they also retain a master token.
     if storage_path.exists():
