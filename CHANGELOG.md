@@ -227,6 +227,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   token beside a symlinked/relative `--storage`, are the two behavior changes
   this fixes; ordinary absolute-path profiles are unaffected.
 
+- **A stale or circular `--storage`/profile symlink no longer crashes `auth
+  check` or the cold-start bootstrap (#2103 PR-1 review).** The new
+  `master_token_path_for` canonicalizes via `Path.resolve()`, which raises
+  `RuntimeError` (not `OSError`) on a symlink loop on Python 3.10-3.12 — a
+  CPython pathlib behavior fixed upstream in 3.13, where the same call
+  degrades silently instead. `master_token_path_for` now catches both
+  exception types on every supported Python version and falls back to a
+  best-effort, non-canonicalized path rather than propagating.
+
 - **`NOTEBOOKLM_AUTH_JSON` now beats a profile everywhere, as documented.** The
   precedence `--storage` > `NOTEBOOKLM_AUTH_JSON` > profile file is stated in
   `docs/configuration.md`, drawn in `docs/architecture.md`, and implemented by
