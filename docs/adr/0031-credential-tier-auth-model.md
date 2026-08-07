@@ -128,11 +128,47 @@ introduce its objects and operations in independently shippable stages:
   row list. Moving this seam onto `CookieJar` is deferred to a later stage
   rather than folded in here, so that the "identical behavior" claim this
   stage rests on stays checkable.
-- **Stage 3: `ProfileStore`** — the eight free functions in
-  `storage_writer.py` become transactions on one object owning the
-  lock-acquire → read → mutate → atomic-write template they each hand-roll
-  today. Method names stay initially; `persist_minted_jar`'s #2108
-  ownership-guard and write-ordering semantics are preserved bit-for-bit.
+- **Stage 3: the storage-write transaction template** — the writers in
+  `storage_writer.py` each hand-roll the same preamble (secure the parent dir,
+  derive the lock path, take the bounded lock, branch on held).
+  `storage_transaction.in_storage_transaction` owns it; method names and
+  `persist_minted_jar`'s #2108 ownership-guard and write-ordering are preserved
+  bit-for-bit.
+
+  **Investigation corrected this stage's premise.** The writers are not uniform,
+  and the plan above ("one object") would have flattened a real distinction.
+  On lock-unavailable there are **two intents**:
+
+  - *must-know* — the write mattered and a caller proceeding as though it
+    happened is wrong (five writers);
+  - *tolerable* — the write was cleanup and a miss degrades gracefully (one).
+
+  Must-know has **two mechanisms**, and the split is forced by the writers'
+  return channels rather than by intent: `-> None` has nowhere to report, and
+  `update_account_metadata`'s `-> bool` already spends `False` on "deliberately
+  skipped (`only_if_absent`)", so both raise; the two full-replace writers have
+  rich outcome enums with room for a distinct `LOCK_UNAVAILABLE`, so they
+  report. Each choice is locally forced; the inconsistency is one level up, in
+  writers doing morally identical things having different return types.
+
+  `merge_cookie_delta` is exempt by design, not oversight — it takes the
+  *blocking* `_file_lock_exclusive` and skips the parent-dir prep (it only
+  updates a file that already exists). Different operation, not a variant.
+
+  Two follow-ups this surfaced, deliberately **not** taken here:
+
+  1. *Unify the must-know channel.* Giving every must-know writer a rich outcome
+     type would collapse raise-vs-report to one mechanism, but it is a breaking
+     change for callers that today catch `OSError`/`TimeoutError` around
+     `persist_minted_jar` and `update_account_metadata` — it needs the
+     deprecation runway, not a refactor stage.
+  2. *Revisit the tolerable case.* `clear_in_band_account`'s swallow is
+     justified functionally (the legacy reader still resolves the record), but
+     the operation is **privacy**-motivated — "a stale key must not leave the
+     account email at rest". A swallowed failure leaves exactly that email on
+     disk. The swallow is defended on a different axis than the one that
+     matters most; promoting it to must-know would let a best-effort cleanup
+     fail a caller, so it wants its own decision rather than a silent change.
 - **Stage 4: `AuthTokens.cookies: CookieJar`** — the dual
   `cookies`/`cookie_jar` fields collapse. The only stage touching documented
   public API; requires a `Mapping`-compatible shim or a deprecation runway

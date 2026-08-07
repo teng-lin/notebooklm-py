@@ -32,6 +32,39 @@ from .storage import _LOCK_ACQUIRE_DEADLINE_SECONDS
 logger = logging.getLogger("notebooklm.auth")
 
 
+#
+# THE POLICIES — two intents, three constructors
+# ----------------------------------------------
+# There are only TWO intents here, and it is worth stating which is which,
+# because the surface count of three invites the wrong mental model:
+#
+#   MUST-KNOW  the write mattered; a caller that proceeds as though it happened
+#              is wrong. Five writers. A master token that was not persisted
+#              means the mint was wasted; account metadata that was not written
+#              means routing silently targets the wrong Google account; a login
+#              that was not persisted means the user believes they are signed in.
+#
+#   TOLERABLE  the write was cleanup; missing it degrades gracefully. One writer.
+#
+# MUST-KNOW has *two constructors* only because the writers' return channels
+# differ in what they can express — not because the intent differs:
+#
+#   ``-> None``            no channel at all                      -> raise
+#   ``-> bool``            ``False`` already means "deliberately   -> raise
+#                          skipped (only_if_absent)", so reusing
+#                          it would conflate *chose not to* with
+#                          *could not*
+#   ``-> WriteOutcome``    a rich enum with room for a distinct    -> report
+#   ``-> LoginWriteOutcome`` LOCK_UNAVAILABLE status
+#
+# Each choice is locally forced. The inconsistency lives one level up, in
+# writers that do morally identical things having different return types.
+# Unifying that means giving every MUST-KNOW writer a rich outcome type, which
+# is a breaking change for callers that today catch ``OSError``/``TimeoutError``
+# around ``persist_minted_jar`` and ``update_account_metadata`` — a deprecation
+# runway, not a refactor stage. Tracked in ADR-0031.
+
+
 class _LockUnavailablePolicy(Protocol):
     """What a writer does when the storage lock could not be acquired."""
 
@@ -39,11 +72,11 @@ class _LockUnavailablePolicy(Protocol):
 
 
 def raise_on_lock_unavailable(operation: str) -> _LockUnavailablePolicy:
-    """Fail closed: raise :class:`LockUnavailableError`.
+    """MUST-KNOW, via exception — for writers with no usable return channel.
 
-    For writers where proceeding without the lock risks losing a concurrent
-    writer's commit — the account-metadata write and both master-token
-    persists.
+    Used where the return type is ``None`` (``persist_minted_jar``,
+    ``write_master_token``) or a ``bool`` whose ``False`` already carries a
+    different meaning (``update_account_metadata``).
     """
 
     def _policy(lock_path: Path) -> Any:
@@ -52,31 +85,43 @@ def raise_on_lock_unavailable(operation: str) -> _LockUnavailablePolicy:
     return _policy
 
 
-def skip_on_lock_unavailable(message: str) -> _LockUnavailablePolicy:
-    """Best-effort: log at DEBUG and do nothing.
+def report_on_lock_unavailable(outcome: Any) -> _LockUnavailablePolicy:
+    """MUST-KNOW, via return value — for writers with a rich outcome type.
 
-    Only correct where skipping degrades gracefully rather than corrupting —
-    today just the in-band account clear, whose miss leaves the legacy reader
-    still able to resolve the record.
+    Same intent as :func:`raise_on_lock_unavailable`; different mechanism only
+    because the caller has somewhere unambiguous to put it. The two full-replace
+    writers have their OWN outcome types (:class:`WriteOutcome` vs
+    :class:`LoginWriteOutcome`), so the value comes from the caller.
+    """
+
+    def _policy(lock_path: Path) -> Any:
+        return outcome
+
+    return _policy
+
+
+def skip_on_lock_unavailable(message: str) -> _LockUnavailablePolicy:
+    """TOLERABLE — log at DEBUG and do nothing.
+
+    The only genuinely different intent, and it has exactly one user today:
+    ``clear_in_band_account``. Its justification is functional — a missed clear
+    leaves the legacy reader still able to resolve the account record.
+
+    .. note::
+       That justification is narrower than the operation's motive. Clearing the
+       in-band account is **privacy**-motivated ("a stale key must not leave the
+       account email at rest" — see ``auth.py``), and a swallowed failure leaves
+       precisely that email on disk until the next successful write. Functional
+       degradation is graceful; the privacy miss is silent. Rare — it needs 90 s
+       of lock contention or a lock-infrastructure failure — but the swallow is
+       justified on a different axis than the one that matters most here.
+       Flagged in ADR-0031 rather than changed unilaterally, since promoting it
+       to MUST-KNOW would make a best-effort cleanup able to fail a caller.
     """
 
     def _policy(lock_path: Path) -> Any:
         logger.debug(message, lock_path)
         return None
-
-    return _policy
-
-
-def report_on_lock_unavailable(outcome: Any) -> _LockUnavailablePolicy:
-    """Return a caller-supplied typed outcome describing the miss.
-
-    The two full-replace writers each have their OWN outcome type
-    (:class:`WriteOutcome` vs :class:`LoginWriteOutcome`), so the value is
-    supplied by the caller rather than constructed here.
-    """
-
-    def _policy(lock_path: Path) -> Any:
-        return outcome
 
     return _policy
 
