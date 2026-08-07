@@ -109,16 +109,21 @@ async with NotebookLMClient.from_storage(profile="work", allow_headless=True) as
 # then drive the normal client. No per-session browser; expired sessions
 # re-mint automatically when master_token.json sits beside storage_state.json.
 # (One-time bootstrap: `notebooklm login --master-token --account you@gmail.com`.)
-import json
-from notebooklm.auth import mint_cookies, persist_minted_jar, read_master_token
-from notebooklm.paths import get_master_token_path, get_storage_path
+from notebooklm.auth import master_token_remint
+from notebooklm.paths import get_storage_path
 
-rec = read_master_token(get_master_token_path())            # {email, android_id, master_token}
-jar = await mint_cookies(rec["email"], rec["master_token"], rec["android_id"])
-persist_minted_jar(get_storage_path(), jar, email=rec["email"])
-async with NotebookLMClient.from_storage() as client:       # inline PSIDTS recovery heals the jar
+await master_token_remint(get_storage_path())               # read -> mint -> persist -> reload
+async with NotebookLMClient.from_storage() as client:
     ...
 # ⚠️ The master token is a full-account, durable credential — dedicated account only.
+#
+# The lower-level primitives (read_master_token / mint_cookies /
+# persist_minted_jar / write_master_token / generate_android_id /
+# exchange_master_token) remain importable from notebooklm.auth for callers
+# that need to assemble a custom transaction, but master_token_remint is the
+# audited, recommended path — it also enforces the account-ownership guard
+# (refuses to overwrite a DIFFERENT account's session) that assembling the
+# primitives yourself bypasses.
 
 # From AuthTokens directly
 from notebooklm import AuthTokens

@@ -49,8 +49,22 @@ from ._auth import tokens as _auth_tokens
 # consumes (cli/ may not import private ``_auth.*`` modules — see
 # tests/_guardrails/test_cli_boundary.py) and as the documented programmatic
 # headless-auth surface (docs/python-api.md). Blessed in ``__all__`` below.
+#
+# #2103 PR-2 structural follow-up: the CLI now invokes whole audited
+# TRANSACTIONS (``master_token_bootstrap`` / ``master_token_remint`` /
+# ``master_token_bootstrap_storage`` / ``assert_account_writable``) rather than
+# assembling them from primitives itself. ``exchange_master_token`` /
+# ``mint_cookies`` / ``persist_minted_jar`` / ``write_master_token`` /
+# ``generate_android_id`` are de-blessed accordingly (kept importable —
+# ``_AUTH_DEBLESSED_KEEP_IMPORTABLE`` — for the documented low-level recipe and
+# any existing external caller, but no first-party importer remains). Import
+# them from ``notebooklm._auth.master_token`` below for that reason: they stay
+# reachable via ``notebooklm.auth.<name>`` (attribute access, unaffected by
+# ``__all__``) without being re-blessed as this facade's primary surface.
 from ._auth.master_token import (  # noqa: F401
+    BootstrapOutcome,
     MasterTokenError,
+    assert_account_writable,  # noqa: F401
     exchange_master_token,
     generate_android_id,
     mint_cookies,
@@ -58,6 +72,11 @@ from ._auth.master_token import (  # noqa: F401
     read_master_token,
     write_master_token,
 )
+from ._auth.master_token import bootstrap_from_oauth_token as master_token_bootstrap  # noqa: F401
+from ._auth.master_token import (  # noqa: F401
+    bootstrap_storage_from_master_token as master_token_bootstrap_storage,
+)
+from ._auth.master_token import remint_from_stored_token as master_token_remint  # noqa: F401
 
 # Canonical login/import storage writer (refactor (b), b-PR3). Re-exported here
 # as the public boundary the CLI login/import writers consume — ``cli/`` may not

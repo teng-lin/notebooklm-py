@@ -77,3 +77,60 @@ Implement **Option A**; defer Option B.
 - **Option B (a full Android gRPC backend) is deferred** as a DBSC hedge; the
   master token already solves headless auth for the web client, so building a
   second RPC surface is not justified now.
+
+## Amendment (#2103 structural follow-up, PR-2): transaction relocated to `_auth`; owner check + bootstrap outcome
+
+The whole master-token *transaction* (bootstrap / re-mint / ownership guard) —
+previously assembled from minting primitives inside
+`cli/services/login/master_token.py` and `cli/services/auth_refresh.py` — moved
+into `_auth/master_token.py`. The CLI now invokes whole audited transactions
+(`notebooklm.auth.master_token_bootstrap` / `master_token_remint` /
+`master_token_bootstrap_storage` / `assert_account_writable`) and never
+assembles minting primitives itself; only the inherently-interactive browser
+`oauth_token` capture (Directive B) stays CLI-side.
+
+- **One re-mint kernel.** `remint_from_stored_token(storage_path)` (read the
+  stored token → mint → persist → reload) replaced two independent
+  assemblies of the same sequence — the L4 recovery rung and the CLI's
+  operator-refresh path — that disagreed on error handling and reload. L4
+  wraps it with single-flight + swallow-to-`None`, keeping its own existing
+  reload afterward (`build_httpx_cookies_from_storage`, with inline-PSIDTS
+  semantics) rather than trusting the kernel's own reload (which uses the
+  strict, side-effect-free loader specifically to avoid a redundant network
+  POST). The operator path lets `MasterTokenError` propagate unchanged.
+- **Account-ownership guard, enforced under the storage-write lock.**
+  `storage_writer.persist_minted_jar` now refuses to overwrite existing
+  storage recorded under a *different* account unless `force` — closing both
+  the check-before-mint TOCTOU a pre-check alone cannot close, and the
+  documented low-level recipe's bypass (calling `mint_cookies` +
+  `persist_minted_jar` directly skips any CLI-side pre-check entirely). This
+  is the closure of the #2104 PR review thread
+  (`discussion_r3731673393`) that bound this ADR to fixing the L4 read-side
+  cross-account re-mint. A caller re-minting from a token already paired
+  with that exact `storage_path` (L4, the operator re-mint) passes
+  `refuse_unknown_owner=False`: requiring pre-existing in-band account
+  metadata as a precondition would break mid-session self-recovery for a
+  profile that was never bound to an explicit `--account` (empirically the
+  common case, not the rare one this amendment originally assumed) — the
+  "different recorded owner" refusal still applies unconditionally in every
+  case. A caller *selecting* an account for the first time
+  (`bootstrap_from_oauth_token`) keeps the stricter default.
+- **`BootstrapOutcome`, a four-state result.** The missing-storage bootstrap
+  (mint fresh storage from a stored token when the client cold-starts with no
+  `storage_state.json`) moved into `_auth/master_token.py` as
+  `bootstrap_storage_from_master_token`, returning `BootstrapOutcome ∈
+  {MINTED, PRESENT_AFTER_WAIT, PRESENT_ON_ENTRY, NO_TOKEN}` instead of a plain
+  bool that conflated "this call minted it" with "a concurrent leader already
+  had", and "nothing to do because storage already existed" with "nothing to
+  do because there is no token". `cli/services/auth_refresh.py` maps
+  `{MINTED, PRESENT_AFTER_WAIT} → True` (take the mandatory passive-validation
+  path) and `{PRESENT_ON_ENTRY, NO_TOKEN} → False` (ordinary recovery) —
+  identical external behavior to before this amendment, now backed by an
+  explicit state machine. The bootstrap flock (distinct from the storage-write
+  lock — holding that lock here would self-deadlock against the kernel's own
+  persist) is an ADR-0030 cold-start ENTRY POINT, not a recovery rung.
+- **`android_id` resolution internalized.** `bootstrap_from_oauth_token`
+  resolves `android_id` explicit → stored → generated inside the library; the
+  CLI driver keeps only its cheap pre-capture `read_master_token` probe (fail
+  fast on a malformed `master_token.json` before the ~300s interactive sign-in,
+  not after).

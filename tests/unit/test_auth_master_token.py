@@ -114,6 +114,100 @@ async def test_mint_cookies_missing_required_cookie(fake_gpsoauth, httpx_mock):
         await mt.mint_cookies("e@x.com", "aas_et/MASTER", "abc")
 
 
+# --- remint_from_stored_token (kernel, #2103 PR-2 D1) ----------------------
+
+
+@pytest.mark.no_default_keepalive_mock  # own the RotateCookies response (mint PSIDTS)
+@pytest.mark.asyncio
+async def test_remint_from_stored_token_success(fake_gpsoauth, httpx_mock, tmp_path):
+    storage = tmp_path / "storage_state.json"
+    # #2103 PR-2 D6: persist_minted_jar refuses an unrecorded/mismatched
+    # owner, so the fixture must already record the SAME account the mint is
+    # for (see tests/unit/test_storage_writer.py for the guard's own tests).
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [],
+                "notebooklm": {"version": 1, "account": {"authuser": 0, "email": "e@x.com"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    mt.write_master_token(
+        tmp_path / "master_token.json",
+        email="e@x.com",
+        master_token="aas_et/MASTER",
+        android_id="abc",
+    )
+    httpx_mock.add_response(url=_OAUTHLOGIN_RE, text="APh-UBERAUTH")
+    httpx_mock.add_response(
+        url=_MERGESESSION_RE, headers=_merge_session_cookies("SID", "APISID", "SAPISID")
+    )
+    httpx_mock.add_response(url=_ROTATE_RE, headers=_merge_session_cookies("__Secure-1PSIDTS"))
+
+    jar = await mt.remint_from_stored_token(storage)
+
+    names = {c.name for c in jar.jar}
+    assert "__Secure-1PSIDTS" in names  # the kernel's own reload succeeded
+    data = json.loads(storage.read_text(encoding="utf-8"))
+    assert {c["name"] for c in data["cookies"]} >= {"SID", "APISID", "SAPISID", "__Secure-1PSIDTS"}
+
+
+@pytest.mark.asyncio
+async def test_remint_from_stored_token_raises_when_no_token(tmp_path):
+    storage = tmp_path / "storage_state.json"
+    with pytest.raises(MasterTokenError, match="No master token"):
+        await mt.remint_from_stored_token(storage)
+
+
+@pytest.mark.no_default_keepalive_mock  # own the RotateCookies response (simulate withheld)
+@pytest.mark.asyncio
+async def test_remint_from_stored_token_wraps_reload_failure_when_psidts_withheld(
+    fake_gpsoauth, httpx_mock, tmp_path
+):
+    """``mint_cookies`` is documented best-effort about PSIDTS (Google may
+    withhold RotateCookies; the standard inline recovery mints it on first
+    load) — but this kernel's own internal reload uses the STRICT loader,
+    which enforces the Tier-1 minimum cookie set unconditionally and would
+    otherwise raise a raw ``RequiredCookieValidationError`` (a ``ValueError``
+    subclass) right after a persist that genuinely succeeded. Every caller of
+    this "raising _auth primitive" (#2103 PR-2 D1) handles only
+    ``MasterTokenError`` — a raw loader exception escaping here would crash
+    ``login --master-token-refresh`` instead of a clean red error message."""
+    storage = tmp_path / "storage_state.json"
+    # #2103 PR-2 D6: persist_minted_jar refuses an unrecorded/mismatched
+    # owner, so the fixture must already record the SAME account the mint is
+    # for (see tests/unit/test_storage_writer.py for the guard's own tests).
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [],
+                "notebooklm": {"version": 1, "account": {"authuser": 0, "email": "e@x.com"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    mt.write_master_token(
+        tmp_path / "master_token.json",
+        email="e@x.com",
+        master_token="aas_et/MASTER",
+        android_id="abc",
+    )
+    httpx_mock.add_response(url=_OAUTHLOGIN_RE, text="APh-X")
+    httpx_mock.add_response(
+        url=_MERGESESSION_RE, headers=_merge_session_cookies("SID", "APISID", "SAPISID")
+    )
+    httpx_mock.add_response(url=_ROTATE_RE)  # 200, no Set-Cookie: PSIDTS withheld
+
+    with pytest.raises(MasterTokenError, match="reloading it failed"):
+        await mt.remint_from_stored_token(storage)
+    # The persist already happened before the reload failed: the caller gets
+    # a typed error, not silent data loss, and the file is there for a
+    # subsequent normal load's inline PSIDTS recovery to complete.
+    data = json.loads(storage.read_text(encoding="utf-8"))
+    assert {c["name"] for c in data["cookies"]} == {"SID", "APISID", "SAPISID"}
+
+
 # --- storage_state_from_jar -----------------------------------------------
 
 

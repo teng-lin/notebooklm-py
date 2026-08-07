@@ -236,6 +236,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exception types on every supported Python version and falls back to a
   best-effort, non-canonicalized path rather than propagating.
 
+- **The master-token transaction no longer lets a mint silently overwrite a
+  different account's session (#2103 structural follow-up, PR-2).** Before
+  this, `notebooklm._auth.storage_writer.persist_minted_jar` — the function
+  every master-token mint (bootstrap, L4 recovery, operator refresh, and the
+  documented low-level recipe that calls it directly) ultimately writes
+  through — applied no account check at all: a wrong `--account`, a stale
+  profile alias, or a hand-rolled `mint_cookies` + `persist_minted_jar` call
+  could clobber an existing, different account's cookies *and* durable master
+  token with no warning. It now refuses (raising `MasterTokenError`, or
+  returning a typed `False` on the L4 ladder) when existing storage is bound
+  to a recorded account different from the one being minted, unless `force` —
+  enforced under the storage-write lock itself, closing both the
+  check-before-mint TOCTOU race and the bypass a direct low-level call sat
+  outside of. This closes the #2104 review thread
+  (`discussion_r3731673393`) that bound ADR-0023 to fixing the L4 read-side
+  cross-account re-mint.
+
+- **`notebooklm auth refresh`'s missing-storage bootstrap no longer conflates
+  four different outcomes into one boolean (#2103 structural follow-up,
+  PR-2).** The flock/shield/recheck machinery moved from
+  `cli/services/auth_refresh.py` into `notebooklm._auth.master_token` as
+  `bootstrap_storage_from_master_token`, returning an explicit
+  `BootstrapOutcome` (`MINTED` / `PRESENT_AFTER_WAIT` / `PRESENT_ON_ENTRY` /
+  `NO_TOKEN`) instead of a bool that could not distinguish "this call minted
+  it" from "a concurrent leader already had", nor "nothing to do because
+  storage already existed" from "nothing to do because there's no token".
+  External behavior for `notebooklm auth refresh` is unchanged — the CLI maps
+  the same two outcome pairs onto the same boolean as before.
+
+### Changed
+
+- **The CLI no longer assembles the master-token transaction from minting
+  primitives (#2103 structural follow-up, PR-2).** `bootstrap` (oauth_token →
+  durable token → minted session) and `refresh` (no-prompt re-mint), formerly
+  in `cli/services/login/master_token.py` and `cli/services/auth_refresh.py`,
+  moved into `notebooklm._auth.master_token` as
+  `bootstrap_from_oauth_token`/`remint_from_stored_token`, exposed via the
+  `notebooklm.auth` facade as `master_token_bootstrap`/`master_token_remint`.
+  The CLI now invokes these whole, audited transactions instead of composing
+  `exchange_master_token` + `mint_cookies` + `persist_minted_jar` +
+  `write_master_token` + `generate_android_id` itself; those five primitives
+  remain importable from `notebooklm.auth` (de-blessed, not removed) for the
+  documented low-level recipe, but the CLI no longer imports them. The L4
+  recovery rung (`_auth/recovery.py`) and the operator refresh path
+  previously assembled the same read→mint→persist sequence independently and
+  disagreed on error handling and reload; both now call the shared kernel,
+  `remint_from_stored_token`. `android_id` resolution (explicit → stored →
+  generated) moved from the CLI driver into `bootstrap_from_oauth_token`
+  itself; the CLI keeps only its cheap pre-capture `read_master_token` probe
+  and the inherently-interactive browser `oauth_token` capture.
+
+- **`persist_minted_jar` gained a `force` keyword (default `False`) and, on
+  `notebooklm._auth.storage_writer.persist_minted_jar`, a
+  `refuse_unknown_owner` keyword (default `True`).** Existing callers that
+  always mint into the same account they already control are unaffected;
+  callers assembling a custom transaction that mints across accounts should
+  pass `force=True` explicitly.
+
 - **`NOTEBOOKLM_AUTH_JSON` now beats a profile everywhere, as documented.** The
   precedence `--storage` > `NOTEBOOKLM_AUTH_JSON` > profile file is stated in
   `docs/configuration.md`, drawn in `docs/architecture.md`, and implemented by

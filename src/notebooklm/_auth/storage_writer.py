@@ -825,7 +825,14 @@ def replace_from_login(
 # ---------------------------------------------------------------------------
 
 
-def persist_minted_jar(path: Path, jar: httpx.Cookies, *, email: str | None) -> None:
+def persist_minted_jar(
+    path: Path,
+    jar: httpx.Cookies,
+    *,
+    email: str | None,
+    force: bool = False,
+    refuse_unknown_owner: bool = True,
+) -> None:
     """Replace the cookies in ``storage_state.json`` with a freshly-minted jar.
 
     Relocated from ``master_token.persist_minted_jar``, now routed through
@@ -841,7 +848,33 @@ def persist_minted_jar(path: Path, jar: httpx.Cookies, *, email: str | None) -> 
     the L4 unfiltered-persist gap. The rebind to the minted account
     (``authuser=0`` + the minted ``email``) is unaffected: the filter only
     narrows the cookie rows, never the account namespace.
+
+    #2103 PR-2 D6: the authoritative account-ownership guard lives HERE, under
+    the storage-write lock this function already holds — not only in
+    :func:`notebooklm._auth.master_token.assert_account_writable`'s pre-mint
+    advisory check, which cannot see a caller that mints and persists directly
+    (the documented low-level recipe does exactly that) and cannot close the
+    TOCTOU window between a pre-check and this write. Existing storage bound to
+    a DIFFERENT recorded email than ``email`` always raises
+    :class:`notebooklm._auth.master_token.MasterTokenError` unless ``force``.
+    No existing storage: proceeds unconditionally (nothing to protect yet).
+
+    ``refuse_unknown_owner`` (default ``True``) additionally refuses existing
+    storage with NO recorded owner at all, unless ``force``. Callers re-minting
+    from a master token ALREADY paired with this exact ``storage_path`` (the
+    L4 recovery rung, the no-prompt operator re-mint —
+    :func:`notebooklm._auth.master_token.remint_from_stored_token`) pass
+    ``refuse_unknown_owner=False``: that pairing was already trusted when the
+    token was first bootstrapped for this profile, so an account-less
+    profile (never bound to an ``--account``, e.g. a cookie-only
+    ``import-cookies`` profile — empirically the COMMON case, not the "rare"
+    one D6 originally assumed) must not lose mid-session self-recovery. A
+    caller *selecting* an account for the first time
+    (:func:`notebooklm._auth.master_token.bootstrap_from_oauth_token`) keeps
+    the default: minting into an existing, unrecorded-owner profile is
+    exactly the ambiguous case worth refusing without an explicit ``force``.
     """
+    from . import account as _account  # noqa: PLC0415 (avoid the account<->writer cycle)
     from . import master_token as _master_token  # lazy: avoid import cycle
     from ._browser_cookie_filter import (  # noqa: PLC0415 (leaf; avoid import cycle)
         filter_storage_state_cookies_by_domain_policy,
@@ -855,12 +888,29 @@ def persist_minted_jar(path: Path, jar: httpx.Cookies, *, email: str | None) -> 
                 f"persist_minted_jar: storage lock unavailable at {lock_path}"
             )
         data: dict[str, Any] = {}
-        if path.exists():
+        existed = path.exists()
+        if existed:
             try:
                 loaded = json.loads(path.read_text(encoding="utf-8"))
                 data = loaded if isinstance(loaded, dict) else {}
             except json.JSONDecodeError:
                 data = {}
+        if existed and not force:
+            existing_owner = _account.read_account_metadata_from_storage_state(data).get("email")
+            existing_owner = existing_owner.strip() if isinstance(existing_owner, str) else None
+            if not existing_owner:
+                if refuse_unknown_owner:
+                    raise _master_token.MasterTokenError(
+                        "This profile has no recorded account owner; refusing to overwrite "
+                        "its session with a freshly minted one without force=True."
+                    )
+            elif existing_owner.casefold() != (email or "").casefold():
+                raise _master_token.MasterTokenError(
+                    f"This profile already belongs to {existing_owner}, but the mint is "
+                    f"for {email or '(no account)'}. Minting here would overwrite "
+                    f"{existing_owner}'s session and master token. Pass force=True to "
+                    "overwrite this profile intentionally."
+                )
         # Apply the write-time domain filter to the minted jar (L4 gap): the
         # minted cookies were previously persisted raw. Default policy — trusted
         # Google roots are preserved (main's preserve-trusted-roots behavior).

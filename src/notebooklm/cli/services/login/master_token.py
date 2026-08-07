@@ -1,125 +1,27 @@
-"""Master-token login service (Click-free, per ADR-0015).
+"""Master-token oauth_token capture (Click-free, per ADR-0015).
 
-Bootstrap and refresh of headless master-token auth: obtain/persist the durable
-``aas_et/`` master token, mint web cookies from it, and write them to the
-profile's ``storage_state.json`` so the existing client runs unchanged.
+Interactive-browser capture of the single-use ``oauth_token`` cookie Directive
+B needs. #2103 PR-2 structural follow-up relocated the rest of the master-token
+transaction (bootstrap / re-mint / ownership guard) into
+:mod:`notebooklm._auth.master_token` — reached from here only through the
+public ``notebooklm.auth`` facade (``master_token_bootstrap`` /
+``master_token_remint`` / ``assert_account_writable``), never assembled from
+minting primitives. This module keeps ONLY the piece that must stay
+CLI-side: launching a real, visible browser is inherently interactive.
 """
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
-
-# Both via ``browser_capture``, the single ``_auth`` module the CLI-boundary
-# guardrail sanctions; ``classify_launch_failure`` lives in its
-# ``browser_launch_errors`` leaf and is re-exported there.
+# The single ``_auth`` module the CLI-boundary guardrail sanctions;
+# ``classify_launch_failure`` lives in its ``browser_launch_errors`` leaf and
+# is re-exported there.
 from ...._auth.browser_capture import (  # noqa: TID252
     classify_launch_failure,
     sync_playwright_context,
 )
-from ....auth import (  # noqa: TID252 (package-relative; public boundary, not _auth.*)
-    MasterTokenError,
-    exchange_master_token,
-    get_account_email_for_storage,
-    mint_cookies,
-    persist_minted_jar,
-    read_master_token,
-    write_master_token,
-)
+from ....auth import MasterTokenError  # noqa: TID252 (package-relative; public boundary)
 
 _EMBEDDED_SETUP_URL = "https://accounts.google.com/EmbeddedSetup"
-
-
-async def _verify(storage_path: Path) -> int:
-    """Smoke-test the minted session: list notebooks. Returns the count."""
-    from ....client import NotebookLMClient  # noqa: PLC0415 (avoid import cycle)
-
-    async with NotebookLMClient.from_storage(path=str(storage_path)) as client:
-        return len(await client.notebooks.list())
-
-
-def assert_account_writable(
-    *, email: str, storage_path: Path, master_token_path: Path, force: bool = False
-) -> None:
-    """Refuse to overwrite a profile that already belongs to a *different* Google
-    account, unless ``force``. ``--account`` selects the account to mint; the
-    profile selects where it lands — minting account B into account A's profile
-    silently clobbers A's cookies *and* durable master token. Checks BOTH the
-    stored session and the existing ``master_token.json`` owner, since either can
-    be present without the other (e.g. a stale storage file beside a token for a
-    different account). Called early (before capture) so a wrong profile fails
-    fast."""
-    if force:
-        return
-    try:
-        token_rec = read_master_token(master_token_path)
-    except MasterTokenError:
-        token_rec = None  # malformed token will be re-bootstrapped; not an owner signal
-    owners = {
-        owner.strip()
-        for owner in (get_account_email_for_storage(storage_path), (token_rec or {}).get("email"))
-        if isinstance(owner, str) and owner.strip()
-    }
-    conflict = next((o for o in owners if o.casefold() != email.casefold()), None)
-    if conflict:
-        raise MasterTokenError(
-            f"This profile already belongs to {conflict}, but --account is {email}. "
-            f"Minting here would overwrite {conflict}'s session and master token. "
-            "Use a dedicated profile (e.g. `notebooklm -p <name> login --master-token "
-            f"--account {email}`), or pass --force to overwrite this one."
-        )
-
-
-async def bootstrap(
-    *,
-    email: str,
-    oauth_token: str,
-    android_id: str,
-    storage_path: Path,
-    master_token_path: Path,
-    verify: bool = True,
-    force: bool = False,
-) -> int:
-    """One-time: exchange the single-use ``oauth_token`` for a durable master
-    token, persist it (0600), mint cookies, write ``storage_state.json``, and
-    (optionally) verify by listing notebooks. Returns the notebook count (or -1
-    when verify is False). Raises :class:`MasterTokenError` on rejection.
-
-    Refuses to overwrite a profile that already belongs to a *different* account
-    (``--account`` mismatch) unless ``force`` — minting writes a full session +
-    durable token into the profile, so a wrong profile silently clobbers it."""
-    await asyncio.to_thread(
-        assert_account_writable,
-        email=email,
-        storage_path=storage_path,
-        master_token_path=master_token_path,
-        force=force,
-    )
-    # exchange/write/persist are sync (network + locked file I/O) — off-thread so
-    # they don't block the event loop the CLI runs them on.
-    token = await asyncio.to_thread(exchange_master_token, email, oauth_token, android_id)
-    await asyncio.to_thread(
-        write_master_token,
-        master_token_path,
-        email=email,
-        master_token=token,
-        android_id=android_id,
-    )
-    jar = await mint_cookies(email, token, android_id)
-    await asyncio.to_thread(persist_minted_jar, storage_path, jar, email=email)
-    return await _verify(storage_path) if verify else -1
-
-
-async def refresh(*, storage_path: Path, master_token_path: Path) -> None:
-    """No-prompt re-mint from the stored master token (recovery / hand-run).
-    Overwrites ``storage_state.json`` with a fresh session."""
-    rec = await asyncio.to_thread(read_master_token, master_token_path)
-    if rec is None:
-        raise MasterTokenError(
-            f"No master token at {master_token_path}. Run `notebooklm login --master-token` first."
-        )
-    jar = await mint_cookies(rec["email"], rec["master_token"], rec["android_id"])
-    await asyncio.to_thread(persist_minted_jar, storage_path, jar, email=rec.get("email"))
 
 
 def capture_oauth_token(

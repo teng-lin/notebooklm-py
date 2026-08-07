@@ -87,33 +87,33 @@ EXPECTED_AUTH_ALL: list[str] = [
 AUTH_CROSS_BOUNDARY_NAMES: list[str] = [
     "Account",
     "AccountRecord",
+    "assert_account_writable",
+    "BootstrapOutcome",
     "build_cookie_jar",
     "build_httpx_cookies_from_storage",
     "CLEAR_ACCOUNT",
     "clear_account_metadata",
     "cookie_names_from_storage",
     "enumerate_accounts",
-    "exchange_master_token",
     "extract_cookies_from_storage",
     "extract_cookies_with_domains",
     "extract_email_from_html",
     "fetch_tokens_passive",
     "fetch_tokens_with_domains",
-    "generate_android_id",
     "get_account_email_for_storage",
     "get_authuser_for_storage",
     "GOOGLE_REGIONAL_CCTLDS",
+    "master_token_bootstrap",
+    "master_token_bootstrap_storage",
+    "master_token_remint",
     "MasterTokenError",
-    "mint_cookies",
     "missing_cookies_hint",
-    "persist_minted_jar",
     "read_account_metadata",
     "read_account_metadata_from_storage_state",
     "read_master_token",
     "replace_from_login",
     "validate_with_recovery",
     "write_account_metadata",
-    "write_master_token",
 ]
 
 # Names de-blessed from ``auth.__all__``: removed from the advertised surface but
@@ -127,9 +127,16 @@ AUTH_CROSS_BOUNDARY_NAMES: list[str] = [
 # test — ever imported them. ``drop_legacy_account_key`` joined here when the
 # master-token-relocation PR-0 removed its last two ``src/`` call sites — the CLI
 # login writers now rely on ``replace_from_login`` scrubbing the legacy key
-# internally instead of calling this facade helper afterward. All three are
-# covered here rather than in ``AUTH_CROSS_BOUNDARY_NAMES`` (which requires a live
-# first-party importer).
+# internally instead of calling this facade helper afterward.
+# ``exchange_master_token`` / ``mint_cookies`` / ``persist_minted_jar`` /
+# ``write_master_token`` / ``generate_android_id`` joined here in PR-2 of the
+# same follow-up: the CLI now calls the coarse transaction ops
+# (``master_token_bootstrap`` / ``master_token_remint`` / etc., tracked in
+# ``AUTH_CROSS_BOUNDARY_NAMES`` above) instead of assembling these primitives
+# itself, but they stay importable for the documented low-level recipe
+# (docs/python-api.md) and any external caller that already depends on them.
+# All entries here are covered rather than in ``AUTH_CROSS_BOUNDARY_NAMES``
+# (which requires a live first-party importer).
 _AUTH_DEBLESSED_KEEP_IMPORTABLE: list[str] = [
     "advance_cookie_snapshot_after_save",
     "ALLOWED_COOKIE_DOMAINS",
@@ -139,24 +146,29 @@ _AUTH_DEBLESSED_KEEP_IMPORTABLE: list[str] = [
     "CookieSnapshotKey",
     "CookieSnapshotValue",
     "drop_legacy_account_key",
+    "exchange_master_token",
     "extract_csrf_from_html",
     "extract_session_id_from_html",
     "extract_wiz_field",
     "fetch_tokens",
     "format_authuser_value",
+    "generate_android_id",
     "KEEP_ACCOUNT",
     "KEEPALIVE_ROTATE_URL",
     "load_auth_from_storage",
     "load_httpx_cookies",
     "LoginWriteOutcome",
     "MINIMUM_REQUIRED_COOKIES",
+    "mint_cookies",
     "normalize_cookie_map",
     "NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV",
     "NOTEBOOKLM_REFRESH_CMD_ENV",
     "NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV",
+    "persist_minted_jar",
     "recover_psidts_in_memory",
     "save_cookies_to_storage",
     "snapshot_cookie_jar",
+    "write_master_token",
 ]
 
 
@@ -451,9 +463,12 @@ def test_auth_deblessed_names_stay_importable_but_unblessed() -> None:
     23 from PR-1 (#1592), plus ``KEEP_ACCOUNT`` / ``LoginWriteOutcome``, which had
     no importer at all when ``__all__`` was pinned to the documented surface, plus
     ``drop_legacy_account_key``, whose last ``src/`` importers were removed by the
-    master-token-relocation PR-0 (issue #2103).
+    master-token-relocation PR-0 (issue #2103), plus 5 master-token minting
+    primitives (``exchange_master_token`` / ``mint_cookies`` /
+    ``persist_minted_jar`` / ``write_master_token`` / ``generate_android_id``)
+    whose last ``src/`` importers were removed by the same relocation's PR-2.
     """
-    assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == 26
+    assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == 31
     assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == len(set(_AUTH_DEBLESSED_KEEP_IMPORTABLE)), (
         "_AUTH_DEBLESSED_KEEP_IMPORTABLE must not contain duplicates"
     )
