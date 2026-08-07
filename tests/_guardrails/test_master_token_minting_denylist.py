@@ -29,17 +29,29 @@ Two decidable shapes, following the established pattern in
 
 (a) A NAME import of a forbidden primitive from the ``notebooklm.auth``
     facade, any depth/spelling: ``from notebooklm.auth import mint_cookies``,
-    ``from ...auth import persist_minted_jar as pmj``, ``from notebooklm
-    import auth`` + ``auth.write_master_token`` is NOT this shape (that's (b))
-    but ``from .... import auth`` where the caller then does
-    ``from auth import ...`` inline is not real Python and is not modeled.
+    ``from ...auth import persist_minted_jar as pmj``. (``from notebooklm
+    import auth`` followed by ``auth.write_master_token`` is NOT this shape —
+    the primitive name never appears in an import statement there — that's
+    shape (b) below.)
 
-(b) A MODULE-ALIAS attribute-access call: ``from .. import auth [as
-    auth_helpers]`` (the exact shape ``cli/helpers.py`` and
+(b) A MODULE-ALIAS or PACKAGE-ROOT attribute-access call: ``from .. import
+    auth [as auth_helpers]`` (the exact shape ``cli/helpers.py`` and
     ``cli/_cookie_import.py`` already establish for other names), followed by
-    ``auth_helpers.mint_cookies(...)``. An import-only lint (shape (a) alone)
-    is blind to this — the primitive NAME never appears in an ``import``
-    statement.
+    ``auth_helpers.mint_cookies(...)`` — OR a bare ``import notebooklm``
+    (with or without ``as``, with or without an explicit ``.auth`` suffix),
+    followed by ``<root>.auth.mint_cookies(...)``: importing any submodule
+    of ``notebooklm`` makes ``.auth`` reachable as an attribute of the
+    already-loaded ``notebooklm`` package object, regardless of which name
+    triggered the import (``notebooklm/__init__.py`` itself imports
+    ``.auth``). An import-only lint (shape (a) alone) is blind to both of
+    these — the primitive NAME never appears in an ``import`` statement.
+
+    Not covered by either shape: ``from notebooklm.auth import *`` followed
+    by a bare-name call (`ruff`'s pyflakes F403/F405 already fails CI on the
+    wildcard import itself, so this is backstopped elsewhere, not a gap in
+    practice); ``getattr(auth, "mint_cookies")(...)`` and other
+    string-keyed/dynamic access (no static AST lint can chase this; out of
+    scope for an accidental-reintroduction guard).
 """
 
 from __future__ import annotations
@@ -91,22 +103,30 @@ def _forbidden_name_imports(tree: ast.AST) -> list[str]:
     return hits
 
 
-def _auth_module_aliases(tree: ast.AST) -> tuple[set[str], bool]:
-    """Local bindings of the ``notebooklm.auth`` MODULE object itself (as
-    opposed to a name imported FROM it).
+def _auth_module_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
+    """Local bindings that make the ``notebooklm.auth`` MODULE object (as
+    opposed to a name imported FROM it) reachable.
 
-    Returns ``(direct_aliases, pkg_qualified)``:
+    Returns ``(direct_aliases, pkg_roots)``:
 
-    * ``direct_aliases`` — names that ARE the module (``from .. import auth
-      [as X]``, ``import notebooklm.auth as X``), reached as ``X.<primitive>``.
-    * ``pkg_qualified`` — a plain ``import notebooklm.auth`` (no ``as``) is
-      present, so the module is reached as the dotted chain
-      ``notebooklm.auth.<primitive>`` (mirrors clause (v)'s ``pkg_qualified``
-      in ``test_storage_writer_boundary.py``, which this shape was originally
-      modeled on but had dropped — a real gap, caught in review by testing
-      this exact snippet against the detector)."""
+    * ``direct_aliases`` — names that ARE the ``auth`` module itself
+      (``from .. import auth [as X]``, ``import notebooklm.auth as X``),
+      reached as ``X.<primitive>``.
+    * ``pkg_roots`` — names that ARE the ``notebooklm`` PACKAGE object
+      (``import notebooklm``, ``import notebooklm as nb``, or a plain
+      ``import notebooklm.auth`` with no ``as`` — Python binds the name
+      ``notebooklm``, not ``notebooklm.auth``, for that last form), from
+      which ``<root>.auth.<primitive>`` is reachable at runtime: importing
+      ANY submodule of ``notebooklm`` (which every one of these shapes
+      does, directly or by loading ``notebooklm/__init__.py``, which itself
+      imports ``.auth``) makes ``.auth`` an attribute of the already-loaded
+      ``notebooklm`` package object, regardless of which name in THIS file
+      triggered the import. (PR-3 review round 2, pr3-reviewer-code: a bare
+      ``import notebooklm`` — no explicit ``.auth`` at all — was still a
+      live, empirically-verified bypass of the round-1 fix below, which
+      only recognized the explicit ``import notebooklm.auth`` spelling.)"""
     direct: set[str] = set()
-    pkg_qualified = False
+    pkg_roots: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.level >= 1 and not node.module:
             # ``from <dots> import auth [as X]`` — the imported NAME is "auth".
@@ -119,22 +139,25 @@ def _auth_module_aliases(tree: ast.AST) -> tuple[set[str], bool]:
             )
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "notebooklm.auth":
-                    if alias.asname:
-                        direct.add(alias.asname)
-                    else:
-                        pkg_qualified = True
-    return direct, pkg_qualified
+                if alias.name == "notebooklm.auth" and alias.asname:
+                    direct.add(alias.asname)
+                elif alias.name in ("notebooklm", "notebooklm.auth"):
+                    # Either spelling binds the PACKAGE name locally when no
+                    # ``as`` is given (``import notebooklm.auth`` binds
+                    # ``notebooklm``, per Python's import semantics); ``as``
+                    # renames that same package binding.
+                    pkg_roots.add(alias.asname or "notebooklm")
+    return direct, pkg_roots
 
 
 def _forbidden_attribute_accesses(tree: ast.AST) -> list[str]:
     """Shape (b): ``<auth_alias>.<forbidden_primitive>`` attribute access,
     reached via a module-alias binding (shape (a) never sees the primitive
-    NAME appear in an import statement at all) — including the fully
-    dotted ``notebooklm.auth.<primitive>`` chain from a package-qualified,
-    non-aliased ``import notebooklm.auth``."""
-    direct, pkg_qualified = _auth_module_aliases(tree)
-    if not direct and not pkg_qualified:
+    NAME appear in an import statement at all) — including the two-level
+    ``<pkg_root>.auth.<primitive>`` chain reachable from any binding of the
+    ``notebooklm`` package object itself (see :func:`_auth_module_aliases`)."""
+    direct, pkg_roots = _auth_module_aliases(tree)
+    if not direct and not pkg_roots:
         return []
     hits: list[str] = []
     for node in ast.walk(tree):
@@ -145,13 +168,12 @@ def _forbidden_attribute_accesses(tree: ast.AST) -> list[str]:
         if isinstance(base, ast.Name) and base.id in direct:
             hits.append(node.attr)
             continue
-        # Package-qualified: ``notebooklm.auth.mint_cookies(...)``.
+        # Package-root chain: ``<pkg_root>.auth.mint_cookies(...)``.
         if (
-            pkg_qualified
-            and isinstance(base, ast.Attribute)
+            isinstance(base, ast.Attribute)
             and base.attr == "auth"
             and isinstance(base.value, ast.Name)
-            and base.value.id == "notebooklm"
+            and base.value.id in pkg_roots
         ):
             hits.append(node.attr)
     return hits
@@ -182,19 +204,29 @@ def test_no_cli_module_imports_minting_primitives() -> None:
     )
 
 
-def test_forbidden_minting_primitives_vocabulary_is_non_empty() -> None:
-    """Non-empty vocabulary, else this whole lint would silently pass.
+def test_forbidden_minting_primitives_still_resolve_on_the_facade() -> None:
+    """Non-empty vocabulary, AND every entry must still be a real, resolvable
+    attribute of ``notebooklm.auth`` (PR-3 review round 2, pr3-reviewer-code:
+    a bare literal-equality check against a duplicated set two lines away is
+    a tautology that can never fail — it doesn't catch the failure this lint
+    is actually exposed to, which is a primitive getting renamed/removed out
+    from under the denylist, silently leaving it guarding four dead strings
+    forever while the real name goes unguarded).
 
     (Not cross-checked against ``_AUTH_DEBLESSED_KEEP_IMPORTABLE`` in
     ``test_public_surface.py`` — ``tests/_guardrails/test_no_cross_test_imports.py``
     forbids one ``test_*`` module importing from another; keep this list and
     that one in sync by eye when either changes.)"""
-    assert (
-        frozenset(
-            {"exchange_master_token", "mint_cookies", "persist_minted_jar", "write_master_token"}
-        )
-        == FORBIDDEN_MINTING_PRIMITIVES
-    )
+    import notebooklm.auth as auth_module
+
+    assert FORBIDDEN_MINTING_PRIMITIVES, "the denylist must not be empty"
+    sentinel = object()
+    dead = [
+        name
+        for name in FORBIDDEN_MINTING_PRIMITIVES
+        if getattr(auth_module, name, sentinel) is sentinel
+    ]
+    assert not dead, f"denylisted names no longer resolve on notebooklm.auth: {sorted(dead)}"
 
 
 # --- self-tests: detector shapes ---------------------------------------
@@ -235,6 +267,26 @@ def test_detects_package_qualified_attribute_call() -> None:
     this exact snippet, then fixed alongside this test)."""
     assert _hits("import notebooklm.auth\nnotebooklm.auth.mint_cookies(a, b, c)") == [
         "mint_cookies"
+    ]
+
+
+def test_detects_bare_package_import_attribute_chain() -> None:
+    """A bare ``import notebooklm`` — no explicit ``.auth`` at all — followed
+    by the ``notebooklm.auth.<primitive>`` chain. This is a DIFFERENT, wider
+    gap than the one above: it doesn't even mention ``auth`` in the import
+    statement, yet is empirically runtime-reachable (importing any
+    ``notebooklm`` submodule loads ``notebooklm/__init__.py``, which itself
+    imports ``.auth``, making it an attribute of the already-loaded
+    ``notebooklm`` package object). Found live in PR-3 review round 2
+    (pr3-reviewer-code) after round 1 only fixed the explicit
+    ``import notebooklm.auth`` spelling above; verified missing, then fixed,
+    then this test added."""
+    assert _hits("import notebooklm\nnotebooklm.auth.mint_cookies(a, b, c)") == ["mint_cookies"]
+
+
+def test_detects_aliased_package_import_attribute_chain() -> None:
+    assert _hits("import notebooklm as nb\nnb.auth.persist_minted_jar(a, b)") == [
+        "persist_minted_jar"
     ]
 
 
