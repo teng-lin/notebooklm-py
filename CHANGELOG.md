@@ -287,6 +287,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   itself; the CLI keeps only its cheap pre-capture `read_master_token` probe
   and the inherently-interactive browser `oauth_token` capture.
 
+- **A new lint (#2103 structural follow-up, PR-3) locks in the above:** no
+  module under `cli/` may import or attribute-access `exchange_master_token`,
+  `mint_cookies`, `persist_minted_jar`, or `write_master_token` from the
+  `notebooklm.auth` facade, by name or via a module-alias attribute call
+  (`tests/_guardrails/test_master_token_minting_denylist.py`). `cli/`'s
+  broader access to `notebooklm.auth` for every other name is unaffected.
+
 - **`persist_minted_jar` gained a `force` keyword (default `False`) and, on
   `notebooklm._auth.storage_writer.persist_minted_jar`, a
   `refuse_unknown_owner` keyword (default `True`).** Existing callers that
