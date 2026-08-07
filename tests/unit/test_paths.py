@@ -347,12 +347,19 @@ class TestMasterTokenPathFor:
 
     def test_tilde_path_expands(self, tmp_path, monkeypatch):
         """Hardcoding a literal ``/tmp/...`` prefix broke on macOS CI (#2108
-        review): ``/tmp`` is itself a symlink to ``/private/tmp`` there, so
-        the resolved result legitimately starts with a different prefix than
-        the unresolved ``HOME`` value. Use ``tmp_path`` (already the
-        platform's real temp root) and compare against ITS resolved form,
-        matching exactly what ``master_token_path_for`` itself does."""
+        review round 1): ``/tmp`` is itself a symlink to ``/private/tmp``
+        there, so the resolved result legitimately starts with a different
+        prefix than the unresolved ``HOME`` value. Use ``tmp_path`` (already
+        the platform's real temp root) and compare against ITS resolved
+        form, matching exactly what ``master_token_path_for`` itself does.
+
+        Round 2: setting ``HOME`` alone still failed on Windows CI —
+        ``Path.expanduser()`` there reads ``USERPROFILE``, not ``HOME``
+        (the established cross-platform pattern already used by
+        ``test_mcp_desktop_extension.py``: set both so ``~`` resolves to the
+        temp home on every OS)."""
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         result = master_token_path_for(Path("~/profiles/default/storage_state.json"))
         assert "~" not in str(result)
         assert result == tmp_path.resolve() / "profiles" / "default" / "master_token.json"
