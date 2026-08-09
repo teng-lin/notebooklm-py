@@ -216,6 +216,15 @@ MAPPINGS: tuple[Mapping, ...] = (
         section=DOC,
         note="nested inside responseDoc, not a top-level AnswerResponse index",
     ),
+    Mapping(
+        "chat",
+        "AnswerRow",
+        "_ANSWER_MARKER_POS",
+        "TailwindDoc",
+        "type",
+        section=DOC,
+        note="nested inside responseDoc, not a top-level AnswerResponse index",
+    ),
     # ---- Notes: ProjectNote ------------------------------------------------
     Mapping("notes", "NoteRow", "_ID_POS", "ProjectNote", "id"),
     Mapping("notes", "NoteRow", "_CONTENT_POS", "ProjectNote", "content"),
@@ -342,13 +351,6 @@ UNMAPPED: tuple[Unmapped, ...] = (
     Unmapped("artifacts", "ReportSuggestionRow", "_PROMPT_POS", _SHAPE_UNKNOWN),
     Unmapped("artifacts", "ReportSuggestionRow", "_AUDIENCE_LEVEL_POS", _SHAPE_UNKNOWN),
     # chat.py
-    Unmapped(
-        "chat",
-        "AnswerRow",
-        "_ANSWER_MARKER_POS",
-        "negative index (-1) into a positional message; only lands on "
-        "TailwindDoc.type because tag 5 is currently last — see #2121",
-    ),
     Unmapped("chat", "SavedChatNoteRow", "_OUTER_NOTE_POS", _NESTED_LOCAL),
     Unmapped("chat", "SavedChatNoteRow", "_ID_POS", _SHAPE_UNKNOWN),
     Unmapped("chat", "SavedChatNoteRow", "_SERVER_TITLE_POS", _SHAPE_UNKNOWN),

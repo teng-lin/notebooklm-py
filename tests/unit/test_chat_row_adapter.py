@@ -50,7 +50,7 @@ class TestAnswerRowPositionContract:
             AnswerRow._ANSWER_MARKER_POS,
             AnswerRow._CITATIONS_POS,
             AnswerRow._ANSWER_MARKER_VALUE,
-        ) == (0, 2, 4, -1, 3, 1)
+        ) == (0, 2, 4, 4, 3, 1)
 
 
 class TestCitationPositionContract:
@@ -143,6 +143,11 @@ class TestAnswerRow:
 
     def test_non_answer_marker_is_false(self) -> None:
         assert AnswerRow(_answer_record(marker=0)).is_answer is False
+
+    def test_trailing_type_field_does_not_change_answer_marker(self) -> None:
+        rec = _answer_record()
+        rec[4].append(0)
+        assert AnswerRow(rec).is_answer is True
 
     def test_absent_type_block_means_not_answer_and_no_citations(self) -> None:
         row = AnswerRow(_answer_record(marker=None))
