@@ -455,11 +455,11 @@ async def test_refresh_forces_disk_sample_after_repeated_response_cookie_changes
 
 
 @pytest.mark.asyncio
-async def test_refresh_retries_completed_live_and_disk_rotation_after_second_rejection(
+async def test_refresh_retries_live_rotation_while_disk_lags_after_second_rejection(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A sampled live+disk rotation remains retryable when B has not been sent."""
+    """A forced disk sample cannot clobber an untried external live rotation."""
     storage = tmp_path / "storage_state.json"
     storage.write_text(
         json.dumps(
@@ -503,10 +503,6 @@ async def test_refresh_retries_completed_live_and_disk_rotation_after_second_rej
             authoritative = client_holder[0].cookies
             authoritative.set("SID", "rotated-b", domain=".google.com", path="/")
             authoritative.set("__Secure-1PSIDTS", "rotated-b-ts", domain=".google.com", path="/")
-            storage.write_text(
-                json.dumps(CookieJar.from_httpx(authoritative).to_storage_state()),
-                encoding="utf-8",
-            )
             return httpx.Response(
                 302,
                 headers={"Location": "https://accounts.google.com/signin/v2/identifier"},
@@ -532,11 +528,38 @@ async def test_refresh_retries_completed_live_and_disk_rotation_after_second_rej
     assert "SID=rotated-b" in requests[2]
 
 
+@pytest.mark.parametrize("file_backed", [False, True])
 @pytest.mark.asyncio
-async def test_refresh_retries_second_response_cookie_change_without_storage(
+async def test_refresh_retries_second_auth_response_cookie_change(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    file_backed: bool,
 ) -> None:
-    """Without a disk profile, the second response mutation remains retryable."""
+    """A response-set auth cookie is retryable even when stale disk exists."""
+    storage = tmp_path / "storage_state.json"
+    if file_backed:
+        storage.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {
+                            "name": "SID",
+                            "value": "stale-a",
+                            "domain": ".google.com",
+                            "path": "/",
+                        },
+                        {
+                            "name": "__Secure-1PSIDTS",
+                            "value": "stale-a-ts",
+                            "domain": ".google.com",
+                            "path": "/",
+                        },
+                    ],
+                    "origins": [],
+                }
+            ),
+            encoding="utf-8",
+        )
     live = httpx.Cookies()
     live.set("SID", "stale-a", domain=".google.com", path="/")
     live.set("__Secure-1PSIDTS", "stale-a-ts", domain=".google.com", path="/")
@@ -565,7 +588,7 @@ async def test_refresh_retries_second_response_cookie_change_without_storage(
 
     monkeypatch.delenv("NOTEBOOKLM_REFRESH_CMD_MIDSESSION", raising=False)
     monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH", raising=False)
-    auth = _auth(cookie_jar=live)
+    auth = _auth(storage_path=storage if file_backed else None, cookie_jar=live)
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
         cookies=live,
@@ -578,6 +601,74 @@ async def test_refresh_retries_second_response_cookie_change_without_storage(
     assert "SID=stale-a" in requests[0]
     assert "NID=intermediate-b" in requests[1]
     assert "SID=valid-c" in requests[2]
+
+
+@pytest.mark.asyncio
+async def test_refresh_uses_final_disk_sample_after_rejected_auth_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The bounded third attempt tests disk after two live auth candidates fail."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "disk-d", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "disk-d-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    live = httpx.Cookies()
+    live.set("SID", "stale-a", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "stale-a-ts", domain=".google.com", path="/")
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == get_base_host():
+            cookie = request.headers.get("cookie", "")
+            requests.append(cookie)
+            if "SID=disk-d" in cookie:
+                return httpx.Response(200, text=REFRESH_HTML, request=request)
+            set_cookie = {
+                1: "NID=intermediate; Domain=.google.com; Path=/",
+                2: "SID=invalid-b; Domain=.google.com; Path=/",
+                3: "SID=invalid-c; Domain=.google.com; Path=/",
+            }[len(requests)]
+            return httpx.Response(
+                302,
+                headers={
+                    "Location": "https://accounts.google.com/signin/v2/identifier",
+                    "Set-Cookie": set_cookie,
+                },
+                request=request,
+            )
+        return httpx.Response(200, text="<html>Please sign in</html>", request=request)
+
+    monkeypatch.delenv("NOTEBOOKLM_REFRESH_CMD_MIDSESSION", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH", raising=False)
+    auth = _auth(storage_path=storage, cookie_jar=live)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        cookies=live,
+        follow_redirects=True,
+    ) as http_client:
+        bundle = RecordingRefreshBundle(auth, http_client)
+        assert await _invoke(bundle) is auth
+
+    assert len(requests) == 4
+    assert "SID=stale-a" in requests[0]
+    assert "NID=intermediate" in requests[1]
+    assert "SID=invalid-b" in requests[2]
+    assert "SID=disk-d" in requests[3]
 
 
 @pytest.mark.asyncio

@@ -15,12 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   If a live request is nevertheless rejected, mid-session recovery now first
   re-reads a different valid `storage_state.json` into the live jar before
   invoking the opt-in refresh command, browser, or master-token rungs. If the
-  live jar changed during that read but its retry is still rejected, recovery
-  performs one bounded re-sample. The REST adapter also retries its single
-  client bind on demand after a stale-auth startup, so both live and initially
-  degraded servers can consume cookies refreshed by a CLI or sibling process
-  without a restart. Failed request-time binds are coalesced and rate-limited
-  before another full bootstrap is attempted
+  live jar changes around that read, recovery preserves one untried
+  authentication-bearing live candidate, then performs one final bounded disk
+  sample if that candidate is also rejected. The REST adapter also retries its
+  single client bind on demand after a stale-auth startup, so both live and
+  initially degraded servers can consume cookies refreshed by a CLI or sibling
+  process without a restart. Failed request-time binds are coalesced and
+  rate-limited before another full bootstrap is attempted
   ([#2161](https://github.com/teng-lin/notebooklm-py/issues/2161)).
 
 ### Changed

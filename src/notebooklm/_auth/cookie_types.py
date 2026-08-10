@@ -311,6 +311,11 @@ class CookieJar:
         """Return the set of cookie names present, on any domain."""
         return {c.name for c in self._cookies}
 
+    def _auth_material_state(self) -> dict[CookieIdentity, Cookie]:
+        """Project authentication-bearing rows by their full cookie identity."""
+        names = _cookie_policy._AUTH_MATERIAL_COOKIE_NAMES
+        return {cookie.key: cookie for cookie in self._cookies if cookie.name in names}
+
     def has_secondary_binding(self) -> bool:
         """Whether the Tier-2 binding (``OSID``, or ``APISID`` + ``SAPISID`` +
         ``LSID``) is intact — see

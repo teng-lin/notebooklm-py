@@ -106,11 +106,12 @@ async def refresh_auth_session(
         # A sibling CLI/server process may already have refreshed the same
         # storage_state.json. Re-read it before invoking any credential-bearing
         # or operator-configured recovery mechanism.
-        # Two bounded attempts cover a keepalive mutation during the first disk
-        # read: retry that newer live jar once, then re-sample the profile if it
-        # was still rejected. An ordinary disk replacement makes the second
-        # call a cheap unchanged-profile no-op.
-        for _attempt in range(2):
+        # File-backed recovery has three bounded attempts: retry one live-jar
+        # change; force a disk sample while preserving a new auth-bearing live
+        # candidate; if that candidate is also rejected, use the final sample.
+        # Inline auth has no disk candidate and retains two live-jar retries.
+        attempt_count = 3 if auth.storage_path is not None else 2
+        for _attempt in range(attempt_count):
             if not await _try_storage_cookie_reload(
                 auth=auth,
                 kernel=kernel,
@@ -121,7 +122,8 @@ async def refresh_auth_session(
                 # mutated another cookie. With no profile, retain the second
                 # response mutation as the only local recovery evidence.
                 rejected_cookie_jar=rejected_cookie_jar,
-                force_disk_read=_attempt == 1 and auth.storage_path is not None,
+                force_disk_read=_attempt > 0 and auth.storage_path is not None,
+                preserve_auth_material_change=_attempt < 2,
             ):
                 break
             extracted = await _get_and_extract()
@@ -171,6 +173,7 @@ async def _try_storage_cookie_reload(
     cookie_persistence: CookiePersistence,
     rejected_cookie_jar: CookieJar | None,
     force_disk_read: bool = False,
+    preserve_auth_material_change: bool = True,
 ) -> bool:
     """Reload newer/different file-backed cookies without external recovery."""
     cookie_jar = kernel.get_http_client().cookies
@@ -180,6 +183,7 @@ async def _try_storage_cookie_reload(
             cookie_jar=cookie_jar,
             rejected_cookie_jar=rejected_cookie_jar,
             force_disk_read=force_disk_read,
+            preserve_auth_material_change=preserve_auth_material_change,
             adopt_baseline=lambda path, baseline: cookie_persistence._adopt_reloaded_baseline(
                 path,
                 baseline,

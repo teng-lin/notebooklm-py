@@ -54,8 +54,9 @@ sibling server has already refreshed; it is skipped for inline auth, invalid
 storage, and a profile identical to the live jar. The reload adopts the exact
 disk sample as the next persistence baseline only if the profile has not
 advanced again, and it never overwrites a live jar that changed while the file
-read was in flight. If that newer live jar is still rejected, recovery performs
-one bounded profile re-sample.
+read was in flight. The file-backed bridge is bounded: it can try one changed
+live jar, force-sample disk while preserving one newer authentication-bearing
+live candidate, then use one final disk sample if that candidate is rejected.
 
 The recovery ladder runs cheapest-to-heaviest — **L1** per-call `RotateCookies`
 POST, **L2** background keepalive, **L3** headless re-auth / loopback CDP, **L4**
@@ -633,11 +634,14 @@ persisted cookie jar before invoking L2.5/L3/L4. This local retry performs no
 network I/O or write and only replaces an unchanged live jar when the persisted
 auth cookies differ. Its exact disk sample becomes the persistence baseline for
 the retry's response cookies only while disk still matches; a newer sibling
-generation remains CAS-protected. Cold-start clients already load that same
-file, so the bridge is mid-session-only and does not add another numbered
-credential tier. A REST process that could not bind its client because startup
-auth was stale retries that bind on its next client-dependent request. After
-that immediate retry, repeated failures are negative-cached for five seconds so
+generation remains CAS-protected. Ambient redirect-cookie churn cannot starve
+the disk sample, while a newer in-memory SID/PSIDTS or secondary-binding
+candidate is tried before a lagging disk snapshot; one final disk attempt keeps
+the sequence bounded. Cold-start clients already load that same file, so the
+bridge is mid-session-only and does not add another numbered credential tier. A
+REST process that could not bind its client because startup auth was stale
+retries that bind on its next client-dependent request. After that immediate
+retry, repeated failures are negative-cached for five seconds so
 steady request traffic cannot launch an unbounded sequence of full bootstraps.
 
 ### 4.3 L3 — headless re-auth / CDP attach

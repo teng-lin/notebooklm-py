@@ -101,6 +101,16 @@ MINIMUM_REQUIRED_COOKIES = {"SID", "__Secure-1PSIDTS"}
 # loop in ``psidts_recovery.recover_psidts_in_memory`` (#1977).
 _RECOVERY_TARGET_COOKIE_NAMES: frozenset[str] = frozenset({"__Secure-1PSIDTS", "__Secure-3PSIDTS"})
 
+# Cookie names whose value/domain/path state is authentication-bearing for a
+# live-vs-disk recovery decision. Ambient Google cookies (for example ``NID``)
+# may change on every rejected redirect and must not starve a valid profile
+# reload; changes to these Tier-1, rotation, or secondary-binding cookies can
+# instead represent a newer in-memory session and must not be overwritten by a
+# lagging disk sample.
+_AUTH_MATERIAL_COOKIE_NAMES: frozenset[str] = frozenset(
+    MINIMUM_REQUIRED_COOKIES | _RECOVERY_TARGET_COOKIE_NAMES | {"OSID", "APISID", "SAPISID", "LSID"}
+)
+
 
 _EXTRACTION_HINT = (
     "This typically means --browser-cookies extraction was incomplete "

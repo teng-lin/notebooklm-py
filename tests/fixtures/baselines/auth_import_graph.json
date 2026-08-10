@@ -703,7 +703,7 @@
       "path": "src/notebooklm/_auth/cookie_merge.py"
     },
     {
-      "lines": 887,
+      "lines": 897,
       "name": "cookie_policy",
       "path": "src/notebooklm/_auth/cookie_policy.py"
     },
@@ -713,7 +713,7 @@
       "path": "src/notebooklm/_auth/cookie_semantics.py"
     },
     {
-      "lines": 396,
+      "lines": 401,
       "name": "cookie_types",
       "path": "src/notebooklm/_auth/cookie_types.py"
     },
@@ -803,7 +803,7 @@
       "path": "src/notebooklm/_auth/psidts_recovery.py"
     },
     {
-      "lines": 645,
+      "lines": 671,
       "name": "recovery",
       "path": "src/notebooklm/_auth/recovery.py"
     },
@@ -813,7 +813,7 @@
       "path": "src/notebooklm/_auth/refresh.py"
     },
     {
-      "lines": 235,
+      "lines": 239,
       "name": "session",
       "path": "src/notebooklm/_auth/session.py"
     },
@@ -856,7 +856,7 @@
     "function_local_edges": 11,
     "module_edges": 118,
     "modules": 40,
-    "total_lines": 15441,
+    "total_lines": 15486,
     "unique_edges": 129
   },
   "version": 1

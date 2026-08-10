@@ -15,11 +15,12 @@ before. See the amendment note under "One ladder, rung availability as policy".
 
 **Amended 2026-08-10 ([#2161](https://github.com/teng-lin/notebooklm-py/issues/2161))** —
 mid-session recovery first performs a local, network- and write-free reload when
-a file-backed profile differs from the rejected live jar. If that jar changes
-during the read but remains rejected, recovery performs one bounded re-sample.
-Cold start already loads that profile, so the bridge is mid-session-only and
-precedes the existing L2.5 → L3 → L4 escalation without creating another
-credential tier.
+a file-backed profile differs from the rejected live jar. The bounded bridge
+tries a changed live jar, force-samples disk while preserving one newer
+authentication-bearing live candidate, then uses one final disk sample if that
+candidate is rejected. Cold start already loads that profile, so the bridge is
+mid-session-only and precedes the existing L2.5 → L3 → L4 escalation without
+creating another credential tier.
 
 Companion to [ADR-0029](0029-canonical-storage-writer.md) (refactor (b), the
 single canonical `storage_state.json` writer). Where ADR-0029 unifies the

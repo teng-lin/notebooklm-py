@@ -399,6 +399,7 @@ async def try_storage_cookie_reload(
     cookie_jar: httpx.Cookies,
     rejected_cookie_jar: CookieJar | None = None,
     force_disk_read: bool = False,
+    preserve_auth_material_change: bool = True,
     load_cookie_pair: Callable[[Path], Awaitable[_LoadedCookiePair]] | None = None,
     adopt_baseline: Callable[[Path, CookieJar], Awaitable[None]] | None = None,
 ) -> bool:
@@ -411,9 +412,12 @@ async def try_storage_cookie_reload(
     changed after the rejected request or during the read is preserved and
     reported as retryable instead of being overwritten by the disk sample.
     ``force_disk_read`` still samples storage after a post-request change, but
-    remembers that the current live state has not yet been tried. After an
-    accepted replacement, an optional callback adopts the paired baseline for
-    following cookie saves.
+    remembers that the current live state has not yet been tried. Ambient-only
+    changes may be superseded by the sampled profile, while a live auth-material
+    rotation is preserved against lagging disk. The caller disables that
+    preservation only for the final bounded disk candidate. After an accepted
+    replacement, an optional callback adopts the paired baseline for following
+    cookie saves.
     """
     from .cookies import _load_cookie_pair_pure, _replace_cookie_jar
 
@@ -456,6 +460,21 @@ async def try_storage_cookie_reload(
 
     fresh_state = {cookie.key: cookie for cookie in CookieJar.from_httpx(fresh.live)}
     live_state = {cookie.key: cookie for cookie in live_after}
+    if (
+        fresh_state != live_state
+        and live_changed_since_rejection
+        and preserve_auth_material_change
+        and _auth_material_changed(
+            rejected=rejected_cookie_jar,
+            live=live_after,
+        )
+    ):
+        logger.info(
+            "Stored-cookie reload sampled a different profile but retained an untried "
+            "auth-material live-jar rotation for %s.",
+            storage_path,
+        )
+        return True
     if fresh_state == live_state:
         if adopt_baseline is not None:
             await _try_adopt_storage_baseline(
@@ -489,6 +508,13 @@ async def try_storage_cookie_reload(
         )
     logger.info("Reloaded updated cookies from %s for authentication retry.", storage_path)
     return True
+
+
+def _auth_material_changed(*, rejected: CookieJar | None, live: CookieJar) -> bool:
+    """Return whether rejected→live changed authentication-bearing cookies."""
+    if rejected is None:
+        return False
+    return rejected._auth_material_state() != live._auth_material_state()
 
 
 async def _try_adopt_storage_baseline(
