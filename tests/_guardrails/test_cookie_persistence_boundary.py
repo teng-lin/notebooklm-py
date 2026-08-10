@@ -908,7 +908,12 @@ def test_typed_merge_and_pair_parser_ownership_is_exact() -> None:
             for node in ast.walk(method)
         )
     }
-    assert parser_owners == {"_prepare_open_baseline", "_save_canonical", "save"}
+    assert parser_owners == {
+        "_adopt_reloaded_baseline",
+        "_prepare_open_baseline",
+        "_save_canonical",
+        "save",
+    }
 
 
 def test_canonical_and_legacy_routes_keep_capabilities_separate() -> None:

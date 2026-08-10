@@ -153,6 +153,15 @@ ALLOWLIST: tuple[_AllowlistEntry, ...] = (
         "weakly keyed by asyncio.get_running_loop()); structurally immune to "
         "cross-loop reuse; the per-loop revalidate lock remains consumer policy.",
     ),
+    # The REST client-load lock is constructed inside one FastAPI lifespan and
+    # discarded when that same lifespan exits. It therefore cannot survive an
+    # app reopen or be observed from a different event loop.
+    _AllowlistEntry(
+        "src/notebooklm/server/app.py",
+        None,
+        "Lifespan-local lock created and discarded within one FastAPI event "
+        "loop; it is never retained by the reusable app across lifespan runs.",
+    ),
 )
 
 _ALLOWLIST_BY_KEY = {entry.key: entry for entry in ALLOWLIST}

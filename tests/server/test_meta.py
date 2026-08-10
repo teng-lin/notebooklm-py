@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from notebooklm.exceptions import RPCError
+from notebooklm.exceptions import AuthError, RPCError
 from notebooklm.server.app import create_app
 from notebooklm.server.routes import meta as meta_route
 
@@ -187,6 +187,59 @@ def test_server_info_include_account_degrades_when_startup_auth_failed(
     assert account["authuser"] == 0
     assert account["available"] is False
     assert account["reason"].startswith("Authentication expired or invalid")
+
+
+def test_server_info_include_account_retries_stale_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_auth(monkeypatch, all_passed=True)
+    fake = FakeClient()
+    attempts = 0
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[FakeClient]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
+        yield fake
+
+    app = create_app(client_factory=factory)
+    headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
+    with TestClient(
+        app, headers=headers, client=("127.0.0.1", 5555), raise_server_exceptions=False
+    ) as client:
+        body = client.get("/v1/server/info", params={"include_account": True}).json()
+
+    assert attempts == 2
+    assert body["auth"]["authenticated"] is True
+    assert "startup_error" not in body["auth"]
+    assert body["account"]["available"] is True
+
+
+def test_server_info_include_account_rechecks_after_concurrent_bind(
+    authed_client: TestClient,
+    fake_client: FakeClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_auth(monkeypatch, all_passed=True)
+    calls = 0
+
+    async def racing_get_client(request):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise AuthError("stale request generation")
+        return fake_client
+
+    monkeypatch.setattr(meta_route, "get_client", racing_get_client)
+    monkeypatch.setattr(meta_route, "get_client_error", lambda request: None)
+
+    response = authed_client.get("/v1/server/info", params={"include_account": True})
+
+    assert response.status_code == 200
+    assert response.json()["account"]["available"] is True
+    assert calls == 2
 
 
 def test_server_info_include_account(

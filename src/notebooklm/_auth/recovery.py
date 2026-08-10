@@ -393,6 +393,95 @@ async def coalesced_cold_recovery(
     )
 
 
+async def try_storage_cookie_reload(
+    *,
+    storage_path: Path | None,
+    cookie_jar: httpx.Cookies,
+    load_cookie_pair: Callable[[Path], Awaitable[_LoadedCookiePair]] | None = None,
+    adopt_baseline: Callable[[Path, CookieJar], Awaitable[None]] | None = None,
+) -> bool:
+    """Reload a file-backed session into a rejected live jar for one retry.
+
+    This is the cheap, default-on bridge between a long-lived client's stale
+    in-memory state and a profile that another process may already have
+    refreshed. The loader is deliberately pure and name-only: it performs one
+    disk read with no browser, subprocess, RotateCookies POST, or write. A jar
+    changed during the read is preserved and reported as retryable instead
+    of being overwritten by the disk sample. After an accepted replacement, an
+    optional callback adopts the paired baseline for following cookie saves.
+    """
+    if storage_path is None:
+        return False
+
+    from .cookies import _load_cookie_pair_pure, _replace_cookie_jar
+
+    live_before = CookieJar.from_httpx(cookie_jar)
+
+    try:
+        if load_cookie_pair is None:
+            fresh = await asyncio.to_thread(
+                _load_cookie_pair_pure,
+                storage_path,
+                require_routable=False,
+            )
+        else:
+            fresh = await load_cookie_pair(storage_path)
+    except (OSError, UnicodeError, TypeError, ValueError, OverflowError) as exc:
+        logger.debug(
+            "Stored-cookie reload skipped for %s (%s).",
+            storage_path,
+            type(exc).__name__,
+        )
+        return False
+
+    live_after = CookieJar.from_httpx(cookie_jar)
+    if live_after != live_before:
+        logger.info(
+            "Stored-cookie reload left a concurrently refreshed live jar in place for %s.",
+            storage_path,
+        )
+        return True
+
+    fresh_state = {cookie.key: cookie for cookie in CookieJar.from_httpx(fresh.live)}
+    live_state = {cookie.key: cookie for cookie in live_after}
+    if fresh_state == live_state:
+        if adopt_baseline is not None:
+            await _try_adopt_storage_baseline(
+                storage_path=storage_path,
+                baseline=fresh.baseline,
+                adopt_baseline=adopt_baseline,
+            )
+        logger.debug("Stored-cookie reload skipped for %s: profile is unchanged.", storage_path)
+        return False
+
+    _replace_cookie_jar(cookie_jar, fresh.live)
+    if adopt_baseline is not None:
+        await _try_adopt_storage_baseline(
+            storage_path=storage_path,
+            baseline=fresh.baseline,
+            adopt_baseline=adopt_baseline,
+        )
+    logger.info("Reloaded updated cookies from %s for authentication retry.", storage_path)
+    return True
+
+
+async def _try_adopt_storage_baseline(
+    *,
+    storage_path: Path,
+    baseline: CookieJar,
+    adopt_baseline: Callable[[Path, CookieJar], Awaitable[None]],
+) -> None:
+    """Best-effort persistence adoption after the live-jar decision."""
+    try:
+        await adopt_baseline(storage_path, baseline)
+    except (OSError, UnicodeError, TypeError, ValueError, OverflowError) as exc:
+        logger.debug(
+            "Stored-cookie baseline adoption skipped for %s (%s).",
+            storage_path,
+            type(exc).__name__,
+        )
+
+
 async def _try_headless_reauth_result(
     *,
     storage_path: Path | None,

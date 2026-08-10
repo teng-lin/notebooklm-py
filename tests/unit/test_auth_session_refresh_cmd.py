@@ -73,13 +73,18 @@ class _RecordingAuthCoord:
         self.ops.append("headers")
 
 
+class _RecordingCookiePersistence:
+    async def _adopt_reloaded_baseline(self, path: Path, expected: Any, *, to_thread: Any) -> None:
+        del path, expected, to_thread
+
+
 def _bundle(http_client: httpx.AsyncClient, auth: AuthTokens) -> dict[str, Any]:
     return {
         "auth": auth,
         "kernel": _RecordingKernel(http_client),
         "auth_coord": _RecordingAuthCoord(),
         "lifecycle": _RecordingLifecycle(),
-        "cookie_persistence": object(),
+        "cookie_persistence": _RecordingCookiePersistence(),
     }
 
 

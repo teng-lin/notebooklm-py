@@ -31,7 +31,7 @@ from ..._app.auth_check import AuthCheckPlan, run_auth_check
 from ..._redact import redact
 from ..._version_info import version_string
 from ...client import NotebookLMClient
-from ...exceptions import NotebookLMError
+from ...exceptions import AuthError, NotebookLMError
 from ...paths import get_storage_path, resolve_profile
 from .._context import get_client, get_client_error
 from .._errors import error_item
@@ -138,7 +138,21 @@ async def server_info(
         json_output=True,
     )
     result = await run_auth_check(plan, read_env_auth_json=_no_env_auth_json)
+    account_client: NotebookLMClient | None = None
+    if include_account:
+        try:
+            account_client = await get_client(request)
+        except AuthError:
+            # Account diagnostics degrade below while preserving the current
+            # startup/retry error in the response's auth block.
+            pass
     startup_error = get_client_error(request)
+    if include_account and account_client is None and startup_error is None:
+        # The first lookup can fail just before a concurrent request finishes
+        # binding the singleton client and clears ``client_error``. Re-read the
+        # now-bound client instead of treating that narrow race as an invariant
+        # violation below.
+        account_client = await get_client(request)
     startup_error_item = error_item(startup_error) if startup_error is not None else None
     authenticated = result.all_passed and startup_error is None
     auth: dict[str, Any] = {
@@ -164,5 +178,7 @@ async def server_info(
                 "reason": startup_error_item["message"],
             }
         else:
-            info["account"] = await _account_block(get_client(request), authenticated=authenticated)
+            if account_client is None:  # pragma: no cover - guarded above
+                raise RuntimeError("account diagnostics require a bound client")
+            info["account"] = await _account_block(account_client, authenticated=authenticated)
     return info

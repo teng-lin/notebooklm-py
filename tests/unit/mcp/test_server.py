@@ -13,6 +13,7 @@ pytest.importorskip("fastmcp")
 
 from fastmcp import Client, FastMCP  # noqa: E402 - after importorskip guard
 
+from notebooklm.client import NotebookLMClient  # noqa: E402 - after importorskip guard
 from notebooklm.mcp import __main__ as entry  # noqa: E402 - after importorskip guard
 from notebooklm.mcp._context import (  # noqa: E402 - after importorskip guard
     AppState,
@@ -57,6 +58,25 @@ async def test_lifespan_binds_the_factory_client(mock_client: MagicMock) -> None
     async with Client(server):
         pass
     assert captured["client"] is mock_client
+
+
+async def test_default_factory_enables_keepalive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The process-lifetime MCP client rotates cookies without caller configuration."""
+    seen: dict[str, object] = {}
+
+    @contextlib.asynccontextmanager
+    async def fake_context() -> AsyncIterator[MagicMock]:
+        yield MagicMock()
+
+    def spy_from_storage(**kwargs: object):  # type: ignore[no-untyped-def]
+        seen.update(kwargs)
+        return fake_context()
+
+    monkeypatch.setattr(NotebookLMClient, "from_storage", staticmethod(spy_from_storage))
+    async with Client(create_server(profile="work")):
+        pass
+
+    assert seen == {"profile": "work", "keepalive": 600.0}
 
 
 def test_get_client_reads_appstate() -> None:

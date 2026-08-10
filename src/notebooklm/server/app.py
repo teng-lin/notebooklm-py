@@ -5,8 +5,10 @@ Design highlights:
 - **One client per process, attempted at lifespan.** The ASGI lifespan opens a
   single :class:`~notebooklm.client.NotebookLMClient` via ``from_storage()``
   inside the server loop (satisfies the ADR-0004 loop-affinity contract) and
-  stows it on ``app.state`` for the process lifetime. If startup auth is stale,
-  the app records that failure so diagnostics can still be served.
+  stows it on ``app.state`` for the process lifetime. Its 600-second keepalive
+  rotates cookies while the server runs. If startup auth is stale, the app
+  keeps diagnostics available and retries the single client bind on the next
+  client-dependent request.
 - **Transport-neutral.** Routes are thin adapters over the ``_app/`` cores and
   the public client namespaces; this package imports NO ``click`` / ``rich`` /
   ``cli`` (enforced by ``tests/_guardrails/test_server_boundary.py``).
@@ -26,14 +28,16 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import cast
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .._runtime.config import DEFAULT_SERVER_KEEPALIVE_INTERVAL
 from ..client import NotebookLMClient
 from ..exceptions import AuthError, NotebookLMError
 from ..paths import get_active_profile, resolve_profile, set_active_profile
@@ -256,13 +260,22 @@ _STALE_AUTH_STARTUP_MARKERS = (
     "run 'notebooklm login'",
 )
 
+# Preserve one immediate request-time retry after a degraded startup, then
+# bound repeated full client bootstraps while the profile remains stale. Each
+# bootstrap can perform a homepage fetch (and operator-enabled recovery), so an
+# unbounded retry per request would amplify both latency and upstream traffic.
+_SERVER_AUTH_RETRY_INTERVAL_SECONDS = 5.0
+
 
 def _default_factory(profile: str | None = None) -> AbstractAsyncContextManager[NotebookLMClient]:
     # ``from_storage`` returns a dual awaitable / async-context-manager; we use
     # only the async-context-manager protocol (the canonical, non-deprecated path).
     return cast(
         "AbstractAsyncContextManager[NotebookLMClient]",
-        NotebookLMClient.from_storage(profile=profile),
+        NotebookLMClient.from_storage(
+            profile=profile,
+            keepalive=DEFAULT_SERVER_KEEPALIVE_INTERVAL,
+        ),
     )
 
 
@@ -296,7 +309,7 @@ def create_app(
             resolution for diagnostics such as ``/v1/server/info``.
         client_factory: Test seam — a zero-arg callable returning an async
             context manager that yields a client. Defaults to
-            ``NotebookLMClient.from_storage(profile=profile)``.
+            ``NotebookLMClient.from_storage(profile=profile, keepalive=600.0)``.
 
     Returns:
         A configured :class:`~fastapi.FastAPI` app whose lifespan binds exactly
@@ -310,35 +323,69 @@ def create_app(
         previous_profile = get_active_profile()
         set_active_profile(resolve_profile(profile))
         pending = PendingRegistry()
-        client_started = False
         try:
             limiters = ServerLimiters.from_env()
             limiters.set_bound_loop(asyncio.get_running_loop())
             limiters.reset_after_open()
-            try:
-                async with factory() as client:
-                    client_started = True
-                    app.state.notebooklm = AppState(
-                        client=client,
-                        pending=pending,
-                        limiters=limiters,
-                    )
-                    try:
-                        yield
-                    finally:
-                        app.state.notebooklm = None
-            except Exception as exc:
-                if client_started:
-                    raise
-                startup_error = _normalize_client_startup_error(exc)
-                if startup_error is None:
-                    raise
-                app.state.notebooklm = AppState(
+            async with AsyncExitStack() as clients:
+                state = AppState(
                     client=None,
                     pending=pending,
                     limiters=limiters,
-                    client_error=startup_error,
                 )
+                client_lock = asyncio.Lock()
+                last_load_error: AuthError | None = None
+                retry_not_before = 0.0
+
+                async def load_client(
+                    observed_generation: int,
+                    *,
+                    startup: bool = False,
+                ) -> NotebookLMClient:
+                    """Bind once and coalesce concurrent attempts by generation."""
+                    nonlocal last_load_error, retry_not_before
+                    async with client_lock:
+                        if state.client is not None:
+                            return state.client
+                        if (
+                            state.client_generation != observed_generation
+                            and last_load_error is not None
+                        ):
+                            raise AuthError(str(last_load_error)) from None
+                        if last_load_error is not None and time.monotonic() < retry_not_before:
+                            raise AuthError(str(last_load_error)) from None
+                        try:
+                            client = await clients.enter_async_context(factory())
+                        except Exception as exc:
+                            auth_error = _normalize_client_startup_error(exc)
+                            if auth_error is None:
+                                raise
+                            state.client_error = auth_error
+                            last_load_error = auth_error
+                            state.client_generation += 1
+                            retry_not_before = (
+                                0.0
+                                if startup
+                                else time.monotonic() + _SERVER_AUTH_RETRY_INTERVAL_SECONDS
+                            )
+                            raise AuthError(str(auth_error)) from None
+                        state.client = client
+                        state.client_error = None
+                        last_load_error = None
+                        retry_not_before = 0.0
+                        state.client_generation += 1
+                        return client
+
+                state.client_loader = load_client
+                try:
+                    await load_client(state.client_generation, startup=True)
+                except AuthError:
+                    # Keep liveness and diagnostics available. The first
+                    # client-dependent request retries through ``load_client``;
+                    # a concurrent request joins the same lock and reuses the
+                    # successfully bound process-lifetime client.
+                    pass
+                app.state.notebooklm = state
                 try:
                     yield
                 finally:
@@ -363,6 +410,9 @@ def create_app(
     async def _limit_request_body(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        state: AppState | None = getattr(request.app.state, "notebooklm", None)
+        if state is not None and not hasattr(request.state, "notebooklm_client_generation"):
+            request.state.notebooklm_client_generation = state.client_generation
         # Reject oversized request bodies by declared Content-Length BEFORE the
         # route reads/parses them. Multipart keeps the large upload cap; JSON
         # mutation routes get much smaller route-specific caps so a caller cannot

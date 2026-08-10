@@ -269,6 +269,9 @@ class CookiePersistence:
         adapter: _LegacySnapshotAdapter,
     ) -> None:
         self._default_store = store
+        # This blocking lock is acquired only inside the nested ``_save`` and
+        # ``_adopt`` closures, each dispatched through ``to_thread``. Never
+        # acquire it directly on the event-loop thread.
         self.save_lock = save_lock if save_lock is not None else threading.Lock()
         self._save_seq = itertools.count()
         self._states: dict[Path, _PathSaveState] = {}
@@ -364,6 +367,47 @@ class CookiePersistence:
         ready = ReadyBaseline(pair.baseline)
         state.baseline = ready
         self._legacy.project(key, ready.value)
+
+    async def _adopt_reloaded_baseline(
+        self,
+        path: Path,
+        expected: CookieJar,
+        *,
+        to_thread: ToThread,
+    ) -> None:
+        """Adopt the current disk baseline after a recovery jar replacement.
+
+        The recovery path replaces the live jar before calling this method, so
+        a save sequenced before this operation observed the rejected jar and a
+        save sequenced after it observes the replacement. Re-read under
+        ``save_lock`` to cover a later save that reached the lock first. If disk
+        advanced again, keep the old baseline: adopting unmatched provenance
+        would authorize the live replacement to overwrite that sibling update.
+        """
+        if not isinstance(expected, CookieJar):
+            raise TypeError("expected must be a CookieJar")
+        store = self._resolve_store(path)
+        if store is None:  # pragma: no cover - ``path`` is concrete by contract
+            raise ValueError("baseline adoption requires a storage path")
+        key = store.ordering_key
+        seq = next(self._save_seq)
+
+        def _adopt() -> None:
+            with self.save_lock:
+                pair = _load_cookie_pair_pure(store.path, require_routable=False)
+                if pair.baseline != expected:
+                    logger.debug(
+                        "Cookie profile advanced again; recovery baseline not adopted: %s",
+                        store.path,
+                    )
+                    return
+                state = self._states.setdefault(key, _PathSaveState())
+                ready = ReadyBaseline(pair.baseline)
+                state.baseline = ready
+                state.last_applied_sequence = max(state.last_applied_sequence, seq)
+                self._legacy.project(key, ready.value)
+
+        await to_thread(_adopt)
 
     def capture_open_snapshot(self, jar: httpx.Cookies) -> CookieSnapshot:
         store = self._default_store

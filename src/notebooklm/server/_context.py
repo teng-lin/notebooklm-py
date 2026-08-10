@@ -6,15 +6,15 @@ ASGI lifespan (one client, bound to the server's event loop, satisfying the
 ADR-0004 loop-affinity contract). Route handlers reach it through the
 :func:`get_client` FastAPI dependency, so they never touch app-state internals
 directly. If startup could not bind a live client, diagnostics can still inspect
-the recorded failure while client-dependent routes receive the normal structured
-REST error response.
+the recorded failure while the next client-dependent request retries the bind;
+concurrent requests share the same attempt generation.
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -47,30 +47,43 @@ class AppState:
 
     ``pending`` is the process-lifetime provenance registry consulted by the
     source / artifact poll handlers (see :mod:`._pending`).
+
+    ``client_loader`` is installed only by the application lifespan. It binds
+    at most one client and lets a stale-auth startup recover after another
+    process refreshes the selected profile.
     """
 
     client: NotebookLMClient | None
     pending: PendingRegistry
     limiters: ServerLimiters
     client_error: BaseException | None = None
+    client_loader: Callable[[int], Awaitable[NotebookLMClient]] | None = None
+    client_generation: int = 0
 
 
-def get_client(request: Request) -> NotebookLMClient:
+async def get_client(request: Request) -> NotebookLMClient:
     """Return the lifespan-bound client for the current request.
 
-    The client, or the startup failure that prevented creating it, is stowed on
-    ``app.state`` by the lifespan in :mod:`.app`.
+    The client, or the retryable startup failure that prevented creating it, is
+    stowed on ``app.state`` by the lifespan in :mod:`.app`.
 
     Raises:
         RuntimeError: If no client was bound (the lifespan did not run — should
             never happen during a real request).
     """
     state = _state(request)
+    if state.client is not None:
+        return state.client
+    if state.client_loader is not None:
+        observed_generation = getattr(
+            request.state,
+            "notebooklm_client_generation",
+            state.client_generation,
+        )
+        return await state.client_loader(observed_generation)
     if state.client_error is not None:
         raise _fresh_exception(state.client_error)
-    if state.client is None:  # pragma: no cover - defensive invariant guard
-        raise RuntimeError("no client bound to the server")
-    return state.client
+    raise RuntimeError("no client bound to the server")  # pragma: no cover
 
 
 def get_client_error(request: Request) -> BaseException | None:

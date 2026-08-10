@@ -1,8 +1,8 @@
 """Regression guard for the ``CookiePersistence.save_lock`` contract.
 
 Contract (documented at ``_cookie_persistence.py`` next to the lock definition):
-``save_lock`` is acquired ONLY inside ``CookiePersistence.save``'s ``_save()``
-closure, which runs on a worker thread via ``asyncio.to_thread``. It is never
+``save_lock`` is acquired ONLY inside the collaborator's ``_save()`` and
+``_adopt()`` worker closures, which run via ``asyncio.to_thread``. It is never
 held by an async context — a
 blocking ``threading.Lock`` taken on the event-loop thread would stall every
 other coroutine (keepalive, RPCs, cancellation) while a sibling worker thread
@@ -178,13 +178,13 @@ async def test_save_lock_does_not_block_event_loop(
     )
 
 
-def test_save_lock_only_acquired_inside_save_closure() -> None:
-    """Static guard: the blocking lock is acquired inside the worker closure.
+def test_save_lock_only_acquired_inside_worker_closures() -> None:
+    """Static guard: the blocking lock is acquired inside known worker closures.
 
-    This catches a refactor that adds a second ``with self.save_lock:`` or
-    aliased ``with lock:`` elsewhere (e.g. inside an async method) before such
-    a change can ship — static-only, so it has zero runtime cost and runs even
-    when the async test infrastructure is offline.
+    This catches a refactor that adds ``with self.save_lock:`` or aliased
+    ``with lock:`` elsewhere (e.g. directly inside an async method) before
+    such a change can ship — static-only, so it has zero runtime cost and runs
+    even when the async test infrastructure is offline.
     """
 
     source_path = Path(inspect.getsourcefile(CookiePersistence) or "")
@@ -198,7 +198,8 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
     class _Visitor(ast.NodeVisitor):
         """Walk the module, tracking the enclosing function chain so any
         ``with lock:`` site can be attributed to the function
-        that contains it (lets us check whether it sits inside ``_save``).
+            that contains it (lets us check whether it sits inside an approved
+            worker closure).
         """
 
         def __init__(self) -> None:
@@ -239,14 +240,18 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
 
     _Visitor().visit(tree)
 
+    worker_closures = {"_save", "_adopt"}
     offenders = [
-        (where, lineno) for (where, lineno) in acquisition_sites if "_save" not in where.split(".")
+        (where, lineno)
+        for (where, lineno) in acquisition_sites
+        if not worker_closures.intersection(where.split("."))
     ]
     assert offenders == [], (
         "_save_lock contract violation: blocking lock acquisition found "
-        f"outside the ``_save`` closure: {offenders!r}. The lock must "
-        "ONLY be acquired inside ``_save()`` (run via asyncio.to_thread). "
+        f"outside an approved worker closure: {offenders!r}. The lock must "
+        "ONLY be acquired inside ``_save()`` or ``_adopt()`` (run via "
+        "asyncio.to_thread). "
         "See ``_cookie_persistence.py`` "
         "for the contract details."
     )
-    assert acquisition_sites, "expected CookiePersistence.save to acquire the save lock"
+    assert {where.rsplit(".", 1)[-1] for where, _ in acquisition_sites} == worker_closures

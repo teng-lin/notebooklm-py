@@ -57,6 +57,12 @@ DEFAULT_CHAT_RESPONSE_MAX_BYTES = 256 * 1024 * 1024
 # Minimum keepalive interval to avoid accidentally rate-limiting accounts.google.com
 DEFAULT_KEEPALIVE_MIN_INTERVAL = 60.0
 
+# Long-lived MCP and REST processes keep one client open for their full lifespan.
+# Google's RotateCookies response advertises a 600-second next-rotation cadence,
+# so server adapters opt into that interval instead of inheriting the general
+# client default (``None``, which deliberately disables background work).
+DEFAULT_SERVER_KEEPALIVE_INTERVAL = 600.0
+
 # Default ceiling on concurrent in-flight ``SourcesAPI.add_file`` uploads.
 # Each in-flight upload holds one open file descriptor for the duration of
 # the upload, so the cap is also an FD-exhaustion guard. Sized for typical

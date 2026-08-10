@@ -132,6 +132,8 @@ _EXPECTED_IMPORTS: tuple[ImportRecord, ...] = (
     ("coalesced_cold_recovery", 1, "cookies", "_build_cookie_pair_from_storage", None),
     ("coalesced_cold_recovery", 1, "cookies", "_clone_cookie_jar", None),
     ("coalesced_cold_recovery", 1, "storage", "snapshot_cookie_jar", None),
+    ("try_storage_cookie_reload", 1, "cookies", "_load_cookie_pair_pure", None),
+    ("try_storage_cookie_reload", 1, "cookies", "_replace_cookie_jar", None),
     ("_try_headless_reauth_result", 2, "paths", "get_browser_profile_dir", None),
     ("_try_headless_reauth_result", 1, "cookies", "_build_cookie_pair_from_storage", None),
     ("_try_headless_reauth_result", 1, "headless_reauth", "HeadlessReauthStatus", None),

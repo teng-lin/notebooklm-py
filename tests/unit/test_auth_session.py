@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import inspect
+import json
 import textwrap
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,6 +15,8 @@ from typing import Any
 import httpx
 import pytest
 
+from notebooklm._auth.cookies import _load_cookie_pair_pure
+from notebooklm._auth.recovery import try_storage_cookie_reload
 from notebooklm._auth.session import refresh_auth_session
 from notebooklm._env import get_base_host
 from notebooklm.auth import AuthTokens
@@ -107,6 +112,17 @@ class _RecordingAuthCoord:
         self._operations.append("update_auth_headers")
 
 
+class _RecordingCookiePersistence:
+    async def _adopt_reloaded_baseline(
+        self,
+        path: Path,
+        expected,
+        *,
+        to_thread,  # type: ignore[no-untyped-def]
+    ) -> None:
+        del path, expected, to_thread
+
+
 @dataclass
 class RecordingRefreshBundle:
     """Aggregates the five collaborators :func:`refresh_auth_session`
@@ -131,11 +147,7 @@ class RecordingRefreshBundle:
         # log without re-aggregating two test-side lists.
         self.lifecycle.operations = self.operations
         self.auth_coord = _RecordingAuthCoord(self.operations)
-        # ``refresh_auth_session`` invokes
-        # ``lifecycle.save_cookies(cookie_persistence, jar)`` — the
-        # stub forwards the collaborator unchanged into its operations
-        # log, so a sentinel object is enough here.
-        self.cookie_persistence: Any = object()
+        self.cookie_persistence = _RecordingCookiePersistence()
 
     @property
     def saved_jars(self) -> list[httpx.Cookies]:
@@ -239,6 +251,470 @@ async def test_refresh_auth_session_detects_login_redirect() -> None:
             await _invoke(bundle)
 
     assert bundle.operations == []
+
+
+@pytest.mark.asyncio
+async def test_refresh_auth_session_reloads_fresh_profile_after_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A stale long-lived jar heals from a sibling process's persisted cookies."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {
+                        "name": "SID",
+                        "value": "fresh-sid",
+                        "domain": ".google.com",
+                        "path": "/",
+                        "secure": True,
+                    },
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "fresh-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                        "secure": True,
+                    },
+                    {
+                        "name": "OSID",
+                        "value": "fresh-osid",
+                        "domain": "notebook.google.com",
+                        "path": "/",
+                        "secure": True,
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    stale = httpx.Cookies()
+    stale.set("SID", "stale-sid", domain=".google.com", path="/")
+    stale.set("__Secure-1PSIDTS", "stale-ts", domain=".google.com", path="/")
+    stale.set("OSID", "stale-osid", domain="notebook.google.com", path="/")
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == get_base_host():
+            cookie = request.headers.get("cookie", "")
+            requests.append(cookie)
+            if "SID=fresh-sid" in cookie and "__Secure-1PSIDTS=fresh-ts" in cookie:
+                return httpx.Response(200, text=REFRESH_HTML, request=request)
+            return httpx.Response(
+                302,
+                headers={"Location": "https://accounts.google.com/signin/v2/identifier"},
+                request=request,
+            )
+        return httpx.Response(200, text="<html>Please sign in</html>", request=request)
+
+    monkeypatch.delenv("NOTEBOOKLM_REFRESH_CMD_MIDSESSION", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH", raising=False)
+
+    auth = _auth(storage_path=storage, cookie_jar=stale)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        cookies=stale,
+        follow_redirects=True,
+    ) as http_client:
+        bundle = RecordingRefreshBundle(auth, http_client)
+        result = await _invoke(bundle)
+
+    assert result is auth
+    assert len(requests) == 2
+    assert "SID=stale-sid" in requests[0]
+    assert "SID=fresh-sid" in requests[1]
+    assert bundle.operations == ["update_auth_tokens", "update_auth_headers", "save_cookies"]
+
+
+@pytest.mark.asyncio
+async def test_profile_reload_adopts_disk_baseline_before_persisting_response_cookies(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A→B disk reload must let the retry's B→C Set-Cookie pass CAS."""
+    storage = tmp_path / "storage_state.json"
+
+    def write_profile(sid: str) -> None:
+        storage.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": sid, "domain": ".google.com", "path": "/"},
+                        {
+                            "name": "__Secure-1PSIDTS",
+                            "value": f"{sid}-ts",
+                            "domain": ".google.com",
+                            "path": "/",
+                        },
+                    ],
+                    "origins": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    write_profile("open-a")
+    stale = httpx.Cookies()
+    stale.set("SID", "open-a", domain=".google.com", path="/")
+    stale.set("__Secure-1PSIDTS", "open-a-ts", domain=".google.com", path="/")
+    auth = _auth(storage_path=storage, cookie_jar=stale)
+    core = build_client_shell_for_tests(auth)
+
+    async def inline_to_thread(func):  # type: ignore[no-untyped-def]
+        return func()
+
+    persistence = core._collaborators.cookie_persistence
+    await persistence._prepare_open_baseline(storage, to_thread=inline_to_thread)
+    write_profile("disk-b")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == get_base_host():
+            cookie = request.headers.get("cookie", "")
+            if "SID=disk-b" in cookie:
+                return httpx.Response(
+                    200,
+                    text=REFRESH_HTML,
+                    headers={"Set-Cookie": "SID=response-c; Domain=.google.com; Path=/"},
+                    request=request,
+                )
+            return httpx.Response(
+                302,
+                headers={"Location": "https://accounts.google.com/signin/v2/identifier"},
+                request=request,
+            )
+        return httpx.Response(200, text="<html>Please sign in</html>", request=request)
+
+    monkeypatch.delenv("NOTEBOOKLM_REFRESH_CMD_MIDSESSION", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH", raising=False)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        cookies=stale,
+        follow_redirects=True,
+    ) as http_client:
+        install_http_client_for_test(core._collaborators.kernel, http_client)
+        await core.refresh_auth()
+
+    persisted = json.loads(storage.read_text(encoding="utf-8"))["cookies"]
+    assert next(row["value"] for row in persisted if row["name"] == "SID") == "response-c"
+
+
+@pytest.mark.asyncio
+async def test_refresh_reloads_disk_after_concurrent_live_retry_is_still_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "disk-b", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "disk-b-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    read_started = threading.Event()
+    release_read = threading.Event()
+    blocked_once = False
+
+    class BlockingPath(type(storage)):
+        def read_text(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal blocked_once
+            if not blocked_once:
+                blocked_once = True
+                read_started.set()
+                if not release_read.wait(timeout=2):
+                    raise TimeoutError("test did not release profile read")
+            return super().read_text(*args, **kwargs)
+
+    blocking_storage = BlockingPath(storage)
+    stale = httpx.Cookies()
+    stale.set("SID", "stale-a", domain=".google.com", path="/")
+    stale.set("__Secure-1PSIDTS", "stale-a-ts", domain=".google.com", path="/")
+    stale.set("HSID", "before", domain=".google.com", path="/")
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == get_base_host():
+            cookie = request.headers.get("cookie", "")
+            requests.append(cookie)
+            if "SID=disk-b" in cookie:
+                return httpx.Response(200, text=REFRESH_HTML, request=request)
+            return httpx.Response(
+                302,
+                headers={"Location": "https://accounts.google.com/signin/v2/identifier"},
+                request=request,
+            )
+        return httpx.Response(200, text="<html>Please sign in</html>", request=request)
+
+    monkeypatch.delenv("NOTEBOOKLM_REFRESH_CMD_MIDSESSION", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH", raising=False)
+    auth = _auth(storage_path=blocking_storage, cookie_jar=stale)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        cookies=stale,
+        follow_redirects=True,
+    ) as http_client:
+        bundle = RecordingRefreshBundle(auth, http_client)
+        refresh_task = asyncio.create_task(_invoke(bundle))
+        assert await asyncio.to_thread(read_started.wait, 2)
+        stale.set("HSID", "keepalive-insufficient", domain=".google.com", path="/")
+        http_client.cookies.set(
+            "HSID",
+            "keepalive-insufficient",
+            domain=".google.com",
+            path="/",
+        )
+        release_read.set()
+        result = await refresh_task
+
+    assert result is auth
+    assert len(requests) == 3
+    assert "SID=stale-a" in requests[0]
+    assert "HSID=keepalive-insufficient" in requests[1]
+    assert "SID=disk-b" in requests[2]
+
+
+@pytest.mark.asyncio
+async def test_storage_cookie_reload_declines_without_a_changed_valid_profile(
+    tmp_path: Path,
+) -> None:
+    live = httpx.Cookies()
+    live.set("SID", "same", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "same-ts", domain=".google.com", path="/")
+
+    assert await try_storage_cookie_reload(storage_path=None, cookie_jar=live) is False
+
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("{", encoding="utf-8")
+    assert await try_storage_cookie_reload(storage_path=invalid, cookie_jar=live) is False
+
+    unchanged = tmp_path / "unchanged.json"
+    unchanged.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "same", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "same-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    unchanged_live = httpx.Cookies()
+    assert (
+        await try_storage_cookie_reload(storage_path=unchanged, cookie_jar=unchanged_live) is True
+    )
+    assert (
+        await try_storage_cookie_reload(storage_path=unchanged, cookie_jar=unchanged_live) is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_storage_cookie_reload_preserves_live_jar_changed_during_disk_read(
+    tmp_path: Path,
+) -> None:
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "disk", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "disk-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    live = httpx.Cookies()
+    live.set("SID", "rejected", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "rejected-ts", domain=".google.com", path="/")
+    read_started = asyncio.Event()
+    release_read = asyncio.Event()
+
+    async def blocked_load(path: Path):  # type: ignore[no-untyped-def]
+        read_started.set()
+        await release_read.wait()
+        return _load_cookie_pair_pure(path, require_routable=False)
+
+    async def unexpected_adoption(path, baseline):  # type: ignore[no-untyped-def]
+        raise AssertionError(f"changed live jar must not adopt {path} {baseline!r}")
+
+    reload_task = asyncio.create_task(
+        try_storage_cookie_reload(
+            storage_path=storage,
+            cookie_jar=live,
+            load_cookie_pair=blocked_load,
+            adopt_baseline=unexpected_adoption,
+        )
+    )
+    await read_started.wait()
+    live.set("SID", "keepalive-new", domain=".google.com", path="/")
+    release_read.set()
+
+    assert await reload_task is True
+    assert live.get("SID", domain=".google.com", path="/") == "keepalive-new"
+
+
+@pytest.mark.asyncio
+async def test_profile_advance_between_reload_and_adoption_cannot_be_overwritten(
+    tmp_path: Path,
+) -> None:
+    storage = tmp_path / "storage_state.json"
+
+    def write_profile(sid: str) -> None:
+        storage.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": sid, "domain": ".google.com", "path": "/"},
+                        {
+                            "name": "__Secure-1PSIDTS",
+                            "value": f"{sid}-ts",
+                            "domain": ".google.com",
+                            "path": "/",
+                        },
+                    ],
+                    "origins": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    async def inline_to_thread(func):  # type: ignore[no-untyped-def]
+        return func()
+
+    live = httpx.Cookies()
+    live.set("SID", "open-a", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "open-a-ts", domain=".google.com", path="/")
+    write_profile("open-a")
+    core = build_client_shell_for_tests(_auth(storage_path=storage, cookie_jar=live))
+    persistence = core._collaborators.cookie_persistence
+    await persistence._prepare_open_baseline(storage, to_thread=inline_to_thread)
+    write_profile("sample-b")
+
+    async def load_then_advance(path: Path):  # type: ignore[no-untyped-def]
+        pair = _load_cookie_pair_pure(path, require_routable=False)
+        write_profile("sibling-c")
+        return pair
+
+    assert await try_storage_cookie_reload(
+        storage_path=storage,
+        cookie_jar=live,
+        load_cookie_pair=load_then_advance,
+        adopt_baseline=lambda path, baseline: persistence._adopt_reloaded_baseline(
+            path,
+            baseline,
+            to_thread=inline_to_thread,
+        ),
+    )
+    assert live.get("SID", domain=".google.com", path="/") == "sample-b"
+
+    await persistence._save_canonical(live, storage, to_thread=inline_to_thread)
+
+    persisted = json.loads(storage.read_text(encoding="utf-8"))["cookies"]
+    assert next(row["value"] for row in persisted if row["name"] == "SID") == "sibling-c"
+
+
+@pytest.mark.asyncio
+async def test_reload_sequence_supersedes_a_pre_replacement_cookie_save(tmp_path: Path) -> None:
+    storage = tmp_path / "storage_state.json"
+
+    def write_profile(sid: str) -> None:
+        storage.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": sid, "domain": ".google.com", "path": "/"},
+                        {
+                            "name": "__Secure-1PSIDTS",
+                            "value": f"{sid}-ts",
+                            "domain": ".google.com",
+                            "path": "/",
+                        },
+                    ],
+                    "origins": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    async def inline_to_thread(func):  # type: ignore[no-untyped-def]
+        return func()
+
+    live = httpx.Cookies()
+    live.set("SID", "open-a", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "open-a-ts", domain=".google.com", path="/")
+    write_profile("open-a")
+    core = build_client_shell_for_tests(_auth(storage_path=storage, cookie_jar=live))
+    persistence = core._collaborators.cookie_persistence
+    await persistence._prepare_open_baseline(storage, to_thread=inline_to_thread)
+    write_profile("disk-b")
+
+    read_started = asyncio.Event()
+    release_read = asyncio.Event()
+    save_queued = asyncio.Event()
+    release_save = asyncio.Event()
+
+    async def blocked_load(path: Path):  # type: ignore[no-untyped-def]
+        pair = _load_cookie_pair_pure(path, require_routable=False)
+        read_started.set()
+        await release_read.wait()
+        return pair
+
+    async def blocked_save_thread(func):  # type: ignore[no-untyped-def]
+        save_queued.set()
+        await release_save.wait()
+        return func()
+
+    reload_task = asyncio.create_task(
+        try_storage_cookie_reload(
+            storage_path=storage,
+            cookie_jar=live,
+            load_cookie_pair=blocked_load,
+            adopt_baseline=lambda path, baseline: persistence._adopt_reloaded_baseline(
+                path,
+                baseline,
+                to_thread=inline_to_thread,
+            ),
+        )
+    )
+    await read_started.wait()
+    stale_save = asyncio.create_task(
+        persistence._save_canonical(live, storage, to_thread=blocked_save_thread)
+    )
+    await save_queued.wait()
+    release_read.set()
+    assert await reload_task is True
+    release_save.set()
+    await stale_save
+
+    assert live.get("SID", domain=".google.com", path="/") == "disk-b"
+    persisted = json.loads(storage.read_text(encoding="utf-8"))["cookies"]
+    assert next(row["value"] for row in persisted if row["name"] == "SID") == "disk-b"
 
 
 @pytest.mark.asyncio

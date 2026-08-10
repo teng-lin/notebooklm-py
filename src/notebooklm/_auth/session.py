@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from .._env import get_base_url
@@ -10,7 +11,7 @@ from ..exceptions import AuthExtractionError
 from ..paths import profile_from_storage_path
 from .account import authuser_query
 from .extraction import extract_wiz_field
-from .recovery import try_headless_reauth, try_master_token_reauth
+from .recovery import try_headless_reauth, try_master_token_reauth, try_storage_cookie_reload
 from .refresh import try_refresh_cmd_reauth
 from .tokens import AuthTokens
 
@@ -92,14 +93,32 @@ async def refresh_auth_session(
     extracted = await _get_and_extract()
     if extracted is None:
         # Dead first-party cookies. Mid-session recovery ladder, in order:
-        # L2.5 refresh-cmd (opt-in) → L3 headless re-mint → L4 master-token.
+        # persisted-profile reload (default) → L2.5 refresh-cmd (opt-in) →
+        # L3 headless re-mint → L4 master-token.
         # Each rung, on success, reloads cookies and retries the homepage GET.
         #
+        # A sibling CLI/server process may already have refreshed the same
+        # storage_state.json. Re-read it before invoking any credential-bearing
+        # or operator-configured recovery mechanism.
+        # Two bounded attempts cover a keepalive mutation during the first disk
+        # read: retry that newer live jar once, then re-sample the profile if it
+        # was still rejected. An ordinary disk replacement makes the second
+        # call a cheap unchanged-profile no-op.
+        for _attempt in range(2):
+            if not await _try_storage_cookie_reload(
+                auth=auth,
+                kernel=kernel,
+                cookie_persistence=cookie_persistence,
+            ):
+                break
+            extracted = await _get_and_extract()
+            if extracted is not None:
+                break
         # Layer-2.5: NOTEBOOKLM_REFRESH_CMD, promoted from cold-start-only into
         # the mid-session ladder (audit refresh-4). Gated OPT-IN for one release
         # by NOTEBOOKLM_REFRESH_CMD_MIDSESSION=1 (default OFF); it reuses the
         # SAME single-flight-coalesced cold-start machinery + per-path flock.
-        if await _try_refresh_cmd_reauth(auth=auth, kernel=kernel):
+        if extracted is None and await _try_refresh_cmd_reauth(auth=auth, kernel=kernel):
             extracted = await _get_and_extract()
         # Layer-3 headless re-auth (opt-in / env-gated); on a successful re-mint,
         # reload cookies and retry once.
@@ -130,6 +149,24 @@ async def refresh_auth_session(
     await lifecycle.save_cookies(cookie_persistence, http_client.cookies)
 
     return auth
+
+
+async def _try_storage_cookie_reload(
+    *,
+    auth: AuthTokens,
+    kernel: Kernel,
+    cookie_persistence: CookiePersistence,
+) -> bool:
+    """Reload newer/different file-backed cookies without external recovery."""
+    return await try_storage_cookie_reload(
+        storage_path=auth.storage_path,
+        cookie_jar=kernel.get_http_client().cookies,
+        adopt_baseline=lambda path, baseline: cookie_persistence._adopt_reloaded_baseline(
+            path,
+            baseline,
+            to_thread=asyncio.to_thread,
+        ),
+    )
 
 
 async def _try_refresh_cmd_reauth(*, auth: AuthTokens, kernel: Kernel) -> bool:
