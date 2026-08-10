@@ -15,7 +15,18 @@ from typing import Any, ClassVar, TypeAlias
 from filelock import FileLock
 
 from .._atomic_io import atomic_write_json
-from .profile_account import AccountView, KeepAccount, ProfileAccount
+from .cookies import (
+    _build_cookie_pair_from_storage_state,
+    _load_storage_state,
+    _LoadedCookiePair,
+)
+from .profile_account import (
+    ACCOUNT_ROUTE_CLEARED_KEY,
+    AccountView,
+    KeepAccount,
+    ProfileAccount,
+    parse_profile_account,
+)
 from .profile_store import LoginWriteRequest, ProfileStore, ReplaceResult, ReplaceStatus
 
 logger = logging.getLogger("notebooklm.auth")
@@ -39,6 +50,20 @@ class NoAccount:
 
 
 ResolvedAccount: TypeAlias = InBandAccount | LegacyAccount | NoAccount
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class _LoadedProfilePair:
+    """One raw profile sample with paired cookies and its account route."""
+
+    cookies: _LoadedCookiePair = field(repr=False)
+    account: ProfileAccount | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.cookies, _LoadedCookiePair) or (
+            self.account is not None and not isinstance(self.account, ProfileAccount)
+        ):
+            raise TypeError("loaded profile pair fields are invalid")
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -112,6 +137,43 @@ class LegacyAccountContext:
             logger.debug("legacy account-key cleanup failed at %s: %s", context_path, exc)
 
 
+def _in_band_route(storage_state: dict[str, Any]) -> tuple[bool, ProfileAccount | None]:
+    """Project a present in-band route while preserving legacy absence semantics."""
+    namespace = storage_state.get("notebooklm")
+    if isinstance(namespace, dict) and namespace.get(ACCOUNT_ROUTE_CLEARED_KEY) is True:
+        return True, None
+    raw_account = namespace.get("account") if isinstance(namespace, dict) else None
+    if not isinstance(raw_account, dict) or not raw_account:
+        return False, None
+    return True, parse_profile_account(raw_account, view=AccountView.ROUTE)
+
+
+def _load_profile_pair_pure(
+    path: Path | None = None, *, require_routable: bool = True
+) -> _LoadedProfilePair:
+    """Load cookies and the compatible route without mixing primary generations."""
+    storage_state = _load_storage_state(path)
+    first_storage_state = storage_state
+    route_present, account = _in_band_route(storage_state)
+    if not route_present and path is not None:
+        legacy_account = LegacyAccountContext().read(path)
+        storage_state = _load_storage_state(path)
+        route_present, account = _in_band_route(storage_state)
+        if not route_present:
+            account = (
+                None
+                if storage_state != first_storage_state
+                else parse_profile_account(legacy_account, view=AccountView.ROUTE)
+            )
+    return _LoadedProfilePair(
+        cookies=_build_cookie_pair_from_storage_state(
+            storage_state,
+            require_routable=require_routable,
+        ),
+        account=account,
+    )
+
+
 class LegacyAccountMigrator:
     """Own lossless account resolution and embed-before-scrub promotion."""
 
@@ -124,6 +186,8 @@ class LegacyAccountMigrator:
             return None
         payload = document.to_json()
         namespace = payload.get("notebooklm")
+        if isinstance(namespace, dict) and namespace.get(ACCOUNT_ROUTE_CLEARED_KEY) is True:
+            return InBandAccount(ProfileAccount(0, None)), {}
         account = namespace.get(_ACCOUNT_CONTEXT_KEY) if isinstance(namespace, dict) else None
         if not isinstance(account, dict) or not account:
             return None

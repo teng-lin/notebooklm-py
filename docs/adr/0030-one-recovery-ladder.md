@@ -18,7 +18,10 @@ mid-session recovery first performs a local, network- and write-free reload when
 a file-backed profile differs from the rejected live jar. The bounded bridge
 tries a changed live jar, force-samples disk while preserving one newer
 authentication-bearing live candidate, then uses one final disk sample if that
-candidate is rejected. Cold start already loads that profile, so the bridge is
+candidate is rejected. The selected sample's cookies and in-band account route
+are installed as one generation, and each retry rebuilds its homepage route;
+an account-only profile rewrite is therefore retryable too. Cold start already
+loads that profile, so the bridge is
 mid-session-only and precedes the existing L2.5 → L3 → L4 escalation without
 creating another credential tier.
 

@@ -50,9 +50,14 @@ The built-in MCP and REST servers enable a 600-second L2 keepalive for their
 process-lifetime client. On a mid-session rejection, any file-backed client also
 performs a network-free reload of a different valid `storage_state.json` before
 escalating. That retry lets a long-lived process consume a session a CLI or
-sibling server has already refreshed; it is skipped for inline auth, invalid
-storage, and a profile identical to the live jar. The reload adopts the exact
-disk sample as the next persistence baseline only if the profile has not
+sibling server has already refreshed. The selected sample's cookies and in-band
+account route advance together, so a sibling login that changes accounts also
+reroutes the immediate retry and subsequent RPCs; an account-only rewrite is not
+mistaken for an unchanged profile. A cleared/default route is recorded in-band,
+so legacy `context.json` fallback cannot cross the primary-file commit-to-scrub
+window. The reload is skipped for inline auth,
+invalid storage, and a profile identical to the live session. It adopts the
+exact disk sample as the next persistence baseline only if the profile has not
 advanced again, and it never overwrites a live jar that changed while the file
 read was in flight. The file-backed bridge is bounded: it can try one changed
 live jar, force-sample disk while preserving one newer authentication-bearing
@@ -631,9 +636,12 @@ MCP servers, and long-running workers. The built-in MCP and REST adapters pass
 
 After a confirmed mid-session rejection, a file-backed client also re-reads its
 persisted cookie jar before invoking L2.5/L3/L4. This local retry performs no
-network I/O or write and only replaces an unchanged live jar when the persisted
-auth cookies differ. Its exact disk sample becomes the persistence baseline for
-the retry's response cookies only while disk still matches; a newer sibling
+network I/O or write and only replaces an unchanged live jar when the selected
+profile generation differs. Cookies and the in-band `authuser`/account email are
+sampled once and installed coherently under the auth snapshot lock; the homepage
+URL is rebuilt from that route for each retry, including account-only rewrites
+and resets to the default account. Its exact disk sample becomes the persistence
+baseline for the retry's response cookies only while disk still matches; a newer sibling
 generation remains CAS-protected. Ambient redirect-cookie churn cannot starve
 the disk sample, while a newer in-memory SID/PSIDTS or secondary-binding
 candidate is tried before a lagging disk snapshot; one final disk attempt keeps

@@ -438,9 +438,18 @@ def test_account_clear_corruption_policy(
             )
         else:
             assert storage.clear_in_band_account(path) is None
-    assert _bytes(path) == case.initial
+    if case.category == "absent":
+        assert _bytes(path) == _pretty_bytes(
+            {
+                "cookies": [],
+                "origins": [],
+                "notebooklm": {"version": 1, "account_route_cleared": True},
+            }
+        )
+    else:
+        assert _bytes(path) == case.initial
     assert _backup_bytes(path) is None
-    assert write_counter == []
+    assert len(write_counter) == (1 if case.category == "absent" else 0)
     expected_logs = (
         [("notebooklm.auth", logging.DEBUG, case.message.format(path=path))] if case.message else []
     )
@@ -465,7 +474,11 @@ def test_valid_account_clear_preserves_cookies_origins_unknown_data_and_namespac
     assert storage.clear_in_band_account(path) is None
     expected = {
         **initial,
-        "notebooklm": {"version": 1, "another": {"keep": True}},
+        "notebooklm": {
+            "version": 1,
+            "another": {"keep": True},
+            "account_route_cleared": True,
+        },
     }
     assert path.read_bytes() == _pretty_bytes(expected)
     assert _backup_bytes(path) is None

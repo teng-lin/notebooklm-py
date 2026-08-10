@@ -28,6 +28,7 @@ from .master_token_file import MasterTokenFile
 from .master_token_types import MasterToken
 from .paths import _storage_state_lock_path, canonical_storage_key
 from .profile_account import (
+    ACCOUNT_ROUTE_CLEARED_KEY,
     AccountDirective,
     AccountView,
     ClearAccount,
@@ -337,6 +338,11 @@ class ProfileStore:
             )
             if carried_namespace is not None:
                 filtered["notebooklm"] = carried_namespace
+            elif not request.carry_account:
+                filtered["notebooklm"] = {
+                    "version": 1,
+                    ACCOUNT_ROUTE_CLEARED_KEY: True,
+                }
             _commit_profile_json(self.path, filtered)
             return ReplaceResult(ReplaceStatus.APPLIED)
 
@@ -385,7 +391,7 @@ class ProfileStore:
                     account["email"] = email
                 namespace = {"account": account}
             else:
-                namespace = {}
+                namespace = {ACCOUNT_ROUTE_CLEARED_KEY: True}
 
             if selection.include_domains:
                 namespace["include_domains"] = sorted(selection.include_domains)
@@ -463,6 +469,7 @@ class ProfileStore:
             namespace = data.get("notebooklm")
             namespace = namespace if isinstance(namespace, dict) else {}
             namespace["version"] = 1
+            namespace.pop(ACCOUNT_ROUTE_CLEARED_KEY, None)
             namespace["account"] = {
                 "authuser": 0,
                 **({"email": request.email} if request.email else {}),
@@ -541,9 +548,12 @@ class ProfileStore:
                 namespace = {}
             elif only_if_absent:
                 current = namespace.get("account")
-                if isinstance(current, dict) and current:
+                if (isinstance(current, dict) and current) or namespace.get(
+                    ACCOUNT_ROUTE_CLEARED_KEY
+                ) is True:
                     return False
             namespace["version"] = 1
+            namespace.pop(ACCOUNT_ROUTE_CLEARED_KEY, None)
             namespace["account"] = account_payload
             updated = document.with_namespace(namespace)
             _commit_profile_json(self._path, updated.to_json())
@@ -555,30 +565,70 @@ class ProfileStore:
             on_unavailable=raise_on_lock_unavailable("write_account_metadata"),
         )
 
+    def _update_account_if_document_unchanged(
+        self,
+        record: ProfileAccount,
+        *,
+        expected: ProfileDocument,
+    ) -> bool:
+        """Persist account metadata only against the exact sampled profile document."""
+        expected_payload = expected.to_json()
+        account_payload: dict[str, object] = {"authuser": record.authuser}
+        if record.email:
+            account_payload["email"] = record.email
+
+        def _write() -> bool:
+            if not self._path.exists():
+                return False
+            try:
+                current = self.read_document()
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"storage state at {self._path} is corrupted: {exc}") from exc
+            if current.to_json() != expected_payload:
+                return False
+            payload = current.to_json()
+            namespace = payload.get("notebooklm")
+            if not isinstance(namespace, dict):
+                namespace = {}
+            namespace["version"] = 1
+            namespace.pop(ACCOUNT_ROUTE_CLEARED_KEY, None)
+            namespace["account"] = account_payload
+            _commit_profile_json(self._path, current.with_namespace(namespace).to_json())
+            return True
+
+        return self._under_bounded_lock(
+            operation="write_account_metadata",
+            body=_write,
+            on_unavailable=raise_on_lock_unavailable("write_account_metadata"),
+        )
+
     def clear_account(self) -> None:
         """Remove the in-band account using the best-effort clear policy."""
-        if not self._path.exists():
-            return
 
         def _clear() -> None:
-            try:
-                document = self.read_document()
-            except UnicodeDecodeError:
-                raise
-            except (OSError, json.JSONDecodeError) as exc:
-                logger.debug("in-band account clear skipped at %s: %s", self._path, exc)
-                return
-            except _ProfileDocumentStructureError as exc:
-                if exc.field == "root" and exc.reason == "not_object":
+            if self._path.exists():
+                try:
+                    document = self.read_document()
+                except UnicodeDecodeError:
+                    raise
+                except (OSError, json.JSONDecodeError) as exc:
+                    logger.debug("in-band account clear skipped at %s: %s", self._path, exc)
                     return
-                raise
+                except _ProfileDocumentStructureError as exc:
+                    if exc.field == "root" and exc.reason == "not_object":
+                        return
+                    raise
+            else:
+                document = ProfileDocument.empty()
 
             payload = document.to_json()
             namespace = payload.get("notebooklm")
-            if not isinstance(namespace, dict) or "account" not in namespace:
-                return
-            del namespace["account"]
-            updated = document.with_namespace(None if set(namespace) <= {"version"} else namespace)
+            if not isinstance(namespace, dict):
+                namespace = {}
+            namespace.pop("account", None)
+            namespace["version"] = 1
+            namespace[ACCOUNT_ROUTE_CLEARED_KEY] = True
+            updated = document.with_namespace(namespace)
             _commit_profile_json(self._path, updated.to_json())
 
         self._under_bounded_lock(

@@ -71,6 +71,7 @@ _AUTH_FIELDS = frozenset(
         "authuser",
         "cookie_snapshot",
         "account_email",
+        "_profile_session_generation",
     }
 )
 _FORBIDDEN_ACCOUNT_READERS = frozenset(

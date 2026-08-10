@@ -188,6 +188,7 @@ def test_production_consumers_are_exactly_the_approved_set() -> None:
         if _imports_profile_document(path, tree):
             consumers.append(path.relative_to(REPO_ROOT).as_posix())
     assert consumers == [
+        "src/notebooklm/_auth/account_email.py",
         "src/notebooklm/_auth/cookie_merge.py",
         "src/notebooklm/_auth/profile_store.py",
         "src/notebooklm/_auth/psidts_recovery.py",

@@ -691,6 +691,10 @@ def test_phase9_closed_values_and_paired_compatibility_owners_are_exact() -> Non
             [("live", "httpx.Cookies", False), ("baseline", "CookieJar", False)],
             False,
         ),
+        profile_migration._LoadedProfilePair: (
+            [("cookies", "_LoadedCookiePair", False), ("account", "ProfileAccount | None", True)],
+            False,
+        ),
         recovery.ColdRecoveryResult: (
             [
                 ("cookie_jar", "httpx.Cookies", False),
@@ -982,7 +986,10 @@ def test_legacy_account_writer_preserves_odd_values_and_clears_unknowns(tmp_path
     )
     assert unknown_outcome.ok
     unknown_document = json.loads(unknown_path.read_text(encoding="utf-8"))
-    assert "notebooklm" not in unknown_document
+    assert unknown_document["notebooklm"] == {
+        "account_route_cleared": True,
+        "version": 1,
+    }
 
 
 def test_facade_identities_and_three_cookie_save_lookup_seams() -> None:

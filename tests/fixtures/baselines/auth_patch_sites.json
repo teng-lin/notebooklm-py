@@ -25,6 +25,12 @@
       "module": "account"
     },
     {
+      "attribute": "_write_account_metadata_if_document_unchanged",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "account_email"
+    },
+    {
       "attribute": "get_base_host",
       "count": 1,
       "idiom": "patch.object",
@@ -471,14 +477,19 @@
   ],
   "summary": {
     "TOTAL": {
-      "private": 154,
+      "private": 156,
       "public": 138,
-      "total": 292
+      "total": 294
     },
     "account": {
       "private": 2,
       "public": 12,
       "total": 14
+    },
+    "account_email": {
+      "private": 2,
+      "public": 0,
+      "total": 2
     },
     "browser_capture": {
       "private": 0,

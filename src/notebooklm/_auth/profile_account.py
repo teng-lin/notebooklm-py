@@ -9,6 +9,8 @@ from typing import TypeAlias
 
 from .cookie_types import CookieJar
 
+ACCOUNT_ROUTE_CLEARED_KEY = "account_route_cleared"
+
 
 @dataclass(frozen=True, slots=True)
 class ProfileAccount:

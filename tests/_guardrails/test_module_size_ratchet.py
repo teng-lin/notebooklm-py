@@ -532,15 +532,15 @@ def test_credential_store_and_migration_modules_use_the_ordinary_budget() -> Non
     assert {path: measured[path] for path in leaves} == {
         "_auth/credential_io.py": 23,
         "_auth/master_token_file.py": 89,
-        "_auth/profile_migration.py": 311,
-        "_auth/profile_store.py": 814,
+        "_auth/profile_migration.py": 375,
+        "_auth/profile_store.py": 864,
     }
     assert (
         measured["_auth/storage.py"]
         + measured["_auth/profile_store.py"]
         + measured["_auth/cookie_filter.py"]
         + measured["_auth/profile_migration.py"]
-        == 2348
+        == 2462
     )
     synthetic = dict.fromkeys(leaves, MODULE_SIZE_BUDGET + 1)
     assert _over_budget_offenders(synthetic, {}, MODULE_SIZE_BUDGET) == synthetic

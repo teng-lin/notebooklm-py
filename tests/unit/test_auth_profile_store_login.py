@@ -462,7 +462,11 @@ def test_held_set_projection_copy_failure_releases_without_backup_or_commit(
         (KeepAccount(), {}, None),
         (KeepAccount(), {"account": {}}, {"account": {}, "version": 1}),
         (KeepAccount(), ["odd"], None),
-        (ClearAccount(), {"unknown": 1}, None),
+        (
+            ClearAccount(),
+            {"unknown": 1},
+            {"account_route_cleared": True, "version": 1},
+        ),
         (
             SetAccount(ProfileAccount(True, 17)),  # type: ignore[arg-type]
             {"unknown": 1},

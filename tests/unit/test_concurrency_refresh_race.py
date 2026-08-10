@@ -25,7 +25,9 @@ The auth-snapshot lock hardened the invariant by:
   ``AuthSnapshot`` rather than reading ``self.auth`` LIVE — that
   prior live-read was the actual torn-read hazard, since it let a
   refresh's write to ``self.auth.session_id`` slip into the URL between
-  snapshot capture and request build.
+  snapshot capture and request build; and
+- serializing the no-await stored-profile install, so cookies and the
+  ``authuser``/``account_email`` route advance as one generation.
 
 This file *locks* the invariant in four ways:
 
@@ -67,6 +69,7 @@ import textwrap
 import httpx
 import pytest
 
+from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
 from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._runtime.auth import AuthRefreshCoordinator
@@ -406,6 +409,85 @@ def test_update_auth_tokens_has_no_await_inside_mutation_block():
         "the critical mutation block; doing so would let snapshots observe "
         "torn auth tokens."
     )
+
+
+def test_profile_session_install_has_no_await_inside_mutation_block() -> None:
+    """Stored cookies and account routing must advance in one locked block."""
+    src = textwrap.dedent(inspect.getsource(AuthRefreshCoordinator.install_profile_session))
+    tree = ast.parse(src)
+    func = next(node for node in ast.walk(tree) if isinstance(node, ast.AsyncFunctionDef))
+    mutation_try = next(
+        (
+            node
+            for node in ast.walk(func)
+            if isinstance(node, ast.Try)
+            and any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "_replace_profile_session"
+                for statement in node.body
+                for call in ast.walk(statement)
+            )
+        ),
+        None,
+    )
+    assert mutation_try is not None
+    assert [node for node in ast.walk(mutation_try) if isinstance(node, ast.Await)] == []
+
+
+async def test_stale_account_only_profile_install_cannot_overwrite_newer_route() -> None:
+    """The install CAS includes route/generation even when cookie bytes are equal."""
+    auth = AuthTokens(
+        cookies={"SID": "same", "__Secure-1PSIDTS": "same-ts"},
+        csrf_token="csrf",
+        session_id="session",
+        authuser=1,
+        account_email="first@example.com",
+    )
+    client = build_client_shell_for_tests(auth)
+    coordinator = client._collaborators.auth_coord
+    target = auth.cookie_jar
+    assert target is not None
+    expected = CookieJar.from_httpx(target)
+    same_source = httpx.Cookies(target)
+    lock = coordinator.get_auth_snapshot_lock()
+
+    await lock.acquire()
+    try:
+        stale_install = asyncio.create_task(
+            coordinator.install_profile_session(
+                auth=auth,
+                target_cookie_jar=target,
+                source_cookie_jar=same_source,
+                expected_cookie_jar=expected,
+                expected_authuser=1,
+                expected_account_email="first@example.com",
+                expected_generation=0,
+                authuser=2,
+                account_email="stale@example.com",
+            )
+        )
+        await asyncio.sleep(0)
+        assert not stale_install.done()
+        assert (
+            auth._replace_profile_session(
+                target_cookie_jar=target,
+                source_cookie_jar=same_source,
+                expected_cookie_jar=expected,
+                expected_authuser=1,
+                expected_account_email="first@example.com",
+                expected_generation=0,
+                authuser=3,
+                account_email="newer@example.com",
+            )
+            is True
+        )
+    finally:
+        lock.release()
+
+    assert await stale_install is None
+    assert (auth.authuser, auth.account_email) == (3, "newer@example.com")
+    assert auth._profile_session_generation == 1
 
 
 def _synthetic_rpc_response_text(rpc_id: str) -> str:

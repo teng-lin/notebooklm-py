@@ -189,6 +189,25 @@ def test_non_empty_unknown_in_band_wins_without_legacy_sample(tmp_path):
     assert store.reads == 1
 
 
+def test_account_clear_tombstone_wins_without_sampling_stale_legacy(tmp_path):
+    tombstone = ProfileDocument.decode(
+        {
+            "cookies": [],
+            "origins": [],
+            "notebooklm": {"version": 1, "account_route_cleared": True},
+        }
+    )
+    contexts = _RecordingContext({"authuser": 7, "email": "stale@example.com"})
+    store = _SequencedStore(tmp_path / "state.json", [tombstone])
+
+    result, raw = LegacyAccountMigrator(contexts)._resolve_with_projection(store)  # type: ignore[arg-type]
+
+    assert result == InBandAccount(ProfileAccount(0, None))
+    assert raw == {}
+    assert contexts.reads == []
+    assert store.reads == 1
+
+
 def test_promotion_between_first_and_legacy_samples_is_found_by_second_read(tmp_path):
     store = _SequencedStore(
         tmp_path / "state.json",

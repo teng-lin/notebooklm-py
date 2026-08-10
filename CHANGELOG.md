@@ -14,8 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   600-second background `RotateCookies` loop for their process-lifetime client.
   If a live request is nevertheless rejected, mid-session recovery now first
   re-reads a different valid `storage_state.json` into the live jar before
-  invoking the opt-in refresh command, browser, or master-token rungs. If the
-  live jar changes around that read, recovery preserves one untried
+  invoking the opt-in refresh command, browser, or master-token rungs. Cookies
+  and the file's in-band account route are installed from the same profile
+  generation, so a sibling login that changes accounts also reroutes the
+  immediate retry and later REST/MCP requests. An in-band clear marker prevents
+  a just-cleared/default profile from briefly inheriting stale legacy
+  `context.json` routing before sibling cleanup completes. If the live jar changes around
+  that read, recovery preserves one untried
   authentication-bearing live candidate, then performs one final bounded disk
   sample if that candidate is also rejected. The REST adapter also retries its
   single client bind on demand after a stale-auth startup, so both live and

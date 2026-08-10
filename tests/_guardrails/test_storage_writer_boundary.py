@@ -44,6 +44,7 @@ _PROFILE_COMMIT_CALLERS = frozenset(
         "_auth/profile_store.ProfileStore.replace_minted_session",
         "_auth/profile_store.ProfileStore.replace_from_remint",
         "_auth/profile_store.ProfileStore.clear_account",
+        "_auth/profile_store.ProfileStore._update_account_if_document_unchanged",
         "_auth/profile_store.ProfileStore.update_account",
     }
 )

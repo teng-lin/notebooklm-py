@@ -409,6 +409,32 @@ def test_unknown_relaxation_and_force_have_exact_logs_and_truthiness(
     ]
 
 
+def test_minted_session_replaces_account_clear_tombstone(tmp_path: Path) -> None:
+    path = tmp_path / "A.json"
+    _write(
+        path,
+        {
+            "cookies": [],
+            "origins": [],
+            "notebooklm": {
+                "version": 1,
+                "account_route_cleared": True,
+                "future": "keep",
+            },
+        },
+    )
+
+    ProfileStore(path, locks=RecordingLocks()).replace_minted_session(  # type: ignore[arg-type]
+        _request(email="new@example.com", force=True)
+    )
+
+    assert json.loads(path.read_text(encoding="utf-8"))["notebooklm"] == {
+        "version": 1,
+        "future": "keep",
+        "account": {"authuser": 0, "email": "new@example.com"},
+    }
+
+
 def test_filter_fidelity_and_destination_preservation(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,

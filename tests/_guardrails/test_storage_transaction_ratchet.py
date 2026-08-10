@@ -34,6 +34,7 @@ _UNCONVERTED: frozenset[str] = frozenset()
 _POLICY_CALLERS: dict[str, frozenset[str]] = {
     "raise_on_lock_unavailable": frozenset(
         {
+            "profile_store.ProfileStore._update_account_if_document_unchanged",
             "profile_store.ProfileStore.update_account",
             "profile_store.ProfileStore.replace_minted_session",
         }
@@ -60,6 +61,7 @@ _DIRECT_ACQUIRE_OWNERS = frozenset(
 
 _BOUNDED_STORE_OWNERS = frozenset(
     {
+        "ProfileStore._update_account_if_document_unchanged",
         "ProfileStore.update_account",
         "ProfileStore.clear_account",
         "ProfileStore.replace_from_login",
@@ -149,11 +151,11 @@ def _qualified_callers(target: str) -> set[str]:
     return callers
 
 
-def test_lock_unavailable_policy_ownership_is_exact_2_1_2() -> None:
+def test_lock_unavailable_policy_ownership_is_exact_3_1_2() -> None:
     actual = {policy: _qualified_callers(policy) for policy in _POLICY_CALLERS}
     assert actual == {policy: set(callers) for policy, callers in _POLICY_CALLERS.items()}
     assert {policy: len(callers) for policy, callers in actual.items()} == {
-        "raise_on_lock_unavailable": 2,
+        "raise_on_lock_unavailable": 3,
         "skip_on_lock_unavailable": 1,
         "report_on_lock_unavailable": 2,
     }
@@ -301,6 +303,7 @@ def test_bounded_store_owners_are_exact_and_use_no_other_transaction() -> None:
     }
     assert actual == set(_BOUNDED_STORE_OWNERS)
     for name in (
+        "_update_account_if_document_unchanged",
         "update_account",
         "clear_account",
         "replace_from_remint",

@@ -30,6 +30,7 @@ Caller = tuple[str, str, str]
 
 _STORE_METHODS = {
     "_read_account_document",
+    "_update_account_if_document_unchanged",
     "read_document",
     "read_session",
     "read_account",
@@ -101,6 +102,7 @@ _EXPECTED_IMPORTS: list[ImportRecord] = [
     ("module", 1, "master_token_types", "MasterToken", None),
     ("module", 1, "paths", "_storage_state_lock_path", None),
     ("module", 1, "paths", "canonical_storage_key", None),
+    ("module", 1, "profile_account", "ACCOUNT_ROUTE_CLEARED_KEY", None),
     ("module", 1, "profile_account", "AccountDirective", None),
     ("module", 1, "profile_account", "AccountView", None),
     ("module", 1, "profile_account", "ClearAccount", None),
@@ -243,6 +245,7 @@ def test_production_importers_are_exactly_approved_store_owners_and_loader() -> 
     assert actual == {
         "_cookie_persistence.py",
         "_runtime/init.py",
+        "account_email.py",
         "account_repair.py",
         "master_token.py",
         "master_token_bootstrap.py",
@@ -1199,6 +1202,18 @@ def test_direct_production_store_callers_are_exact_and_function_granular() -> No
             "merge_cookie_observation",
         ),
         ("_runtime/init.py", "build_collaborators", "ProfileStore"),
+        ("account_email.py", "_read_matching_account_heal_document", "ProfileStore"),
+        ("account_email.py", "_read_matching_account_heal_document", "read_document"),
+        (
+            "account_email.py",
+            "_write_account_metadata_if_document_unchanged",
+            "ProfileStore",
+        ),
+        (
+            "account_email.py",
+            "_write_account_metadata_if_document_unchanged",
+            "_update_account_if_document_unchanged",
+        ),
         ("master_token.py", "_bootstrapper", "ProfileStore"),
         (
             "master_token_bootstrap.py",
@@ -1222,6 +1237,11 @@ def test_direct_production_store_callers_are_exact_and_function_granular() -> No
         ("profile_store.py", "ProfileStore.read_account", "_read_account_document"),
         ("profile_store.py", "ProfileStore.clear_account", "read_document"),
         ("profile_store.py", "ProfileStore._read_cookie_document", "read_document"),
+        (
+            "profile_store.py",
+            "ProfileStore._update_account_if_document_unchanged",
+            "read_document",
+        ),
         ("profile_store.py", "in_storage_transaction", "ProfileStore"),
         (
             "profile_migration.py",

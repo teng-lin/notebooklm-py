@@ -18,9 +18,11 @@ import pytest
 from notebooklm._auth import session as session_module
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._auth.cookies import _load_cookie_pair_pure
+from notebooklm._auth.profile_migration import LegacyAccountContext, _load_profile_pair_pure
 from notebooklm._auth.recovery import try_storage_cookie_reload
 from notebooklm._auth.session import refresh_auth_session
 from notebooklm._env import get_base_host
+from notebooklm._runtime.auth import AuthRefreshCoordinator
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
@@ -109,6 +111,30 @@ class _RecordingAuthCoord:
         self._operations.append("update_auth_tokens")
         auth.csrf_token = csrf
         auth.session_id = session_id
+
+    async def install_profile_session(
+        self,
+        *,
+        auth: AuthTokens,
+        target_cookie_jar: httpx.Cookies,
+        source_cookie_jar: httpx.Cookies,
+        expected_cookie_jar: CookieJar,
+        expected_authuser: int,
+        expected_account_email: str | None,
+        expected_generation: int,
+        authuser: int,
+        account_email: str | None,
+    ) -> bool | None:
+        return auth._replace_profile_session(
+            target_cookie_jar=target_cookie_jar,
+            source_cookie_jar=source_cookie_jar,
+            expected_cookie_jar=expected_cookie_jar,
+            expected_authuser=expected_authuser,
+            expected_account_email=expected_account_email,
+            expected_generation=expected_generation,
+            authuser=authuser,
+            account_email=account_email,
+        )
 
     def update_auth_headers(self, *, auth: AuthTokens, kernel: Any) -> None:
         self._operations.append("update_auth_headers")
@@ -227,6 +253,89 @@ async def test_refresh_auth_session_selected_account_uses_authuser_url() -> None
         await _invoke(bundle)
 
     assert requests == [httpx.URL("https://notebook.google.com/?authuser=2")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stored_account", "retry_url", "expected_route"),
+    [
+        (
+            {"authuser": 2, "email": "new@example.com"},
+            httpx.URL("https://notebook.google.com/?authuser=new%40example.com"),
+            (2, "new@example.com"),
+        ),
+        (None, httpx.URL("https://notebook.google.com/"), (0, None)),
+    ],
+    ids=["selected-account", "default-account"],
+)
+async def test_refresh_reloads_account_only_profile_generation_for_retry(
+    tmp_path: Path,
+    stored_account: dict[str, object] | None,
+    retry_url: httpx.URL,
+    expected_route: tuple[int, str | None],
+) -> None:
+    """An account-only profile rewrite reroutes the immediate retry and later RPCs."""
+    storage = tmp_path / "storage_state.json"
+    stored_state: dict[str, object] = {
+        "cookies": [
+            {
+                "name": "SID",
+                "value": "same-sid",
+                "domain": ".google.com",
+                "path": "/",
+                "httpOnly": True,
+            },
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "same-ts",
+                "domain": ".google.com",
+                "path": "/",
+                "httpOnly": True,
+            },
+        ],
+        "origins": [],
+    }
+    if stored_account is not None:
+        stored_state["notebooklm"] = {"account": stored_account}
+    storage.write_text(json.dumps(stored_state), encoding="utf-8")
+    live = httpx.Cookies()
+    live.set("SID", "same-sid", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "same-ts", domain=".google.com", path="/")
+    requests: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == get_base_host():
+            requests.append(request.url)
+            if request.url == retry_url:
+                return httpx.Response(200, text=REFRESH_HTML, request=request)
+            return httpx.Response(
+                302,
+                headers={"Location": "https://accounts.google.com/signin/v2/identifier"},
+                request=request,
+            )
+        return httpx.Response(200, text="<html>Please sign in</html>", request=request)
+
+    auth = _auth(
+        storage_path=storage,
+        cookie_jar=live,
+        authuser=1,
+        account_email="old@example.com",
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        cookies=live,
+        follow_redirects=True,
+    ) as http_client:
+        bundle = RecordingRefreshBundle(auth, http_client)
+        assert await _invoke(bundle) is auth
+
+    assert requests == [
+        httpx.URL("https://notebook.google.com/?authuser=old%40example.com"),
+        retry_url,
+    ]
+    assert (auth.authuser, auth.account_email) == expected_route
+    snapshot = await AuthRefreshCoordinator().snapshot(auth=auth)
+    assert (snapshot.authuser, snapshot.account_email) == expected_route
 
 
 @pytest.mark.asyncio
@@ -474,6 +583,9 @@ async def test_refresh_retries_live_rotation_while_disk_lags_after_second_reject
                     },
                 ],
                 "origins": [],
+                "notebooklm": {
+                    "account": {"authuser": 2, "email": "disk@example.com"},
+                },
             }
         ),
         encoding="utf-8",
@@ -512,7 +624,12 @@ async def test_refresh_retries_live_rotation_while_disk_lags_after_second_reject
 
     monkeypatch.delenv("NOTEBOOKLM_REFRESH_CMD_MIDSESSION", raising=False)
     monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH", raising=False)
-    auth = _auth(storage_path=storage, cookie_jar=live)
+    auth = _auth(
+        storage_path=storage,
+        cookie_jar=live,
+        authuser=1,
+        account_email="live@example.com",
+    )
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
         cookies=live,
@@ -526,6 +643,7 @@ async def test_refresh_retries_live_rotation_while_disk_lags_after_second_reject
     assert "SID=stale-a" in requests[0]
     assert "NID=intermediate" in requests[1]
     assert "SID=rotated-b" in requests[2]
+    assert (auth.authuser, auth.account_email) == (1, "live@example.com")
 
 
 @pytest.mark.parametrize("file_backed", [False, True])
@@ -689,6 +807,9 @@ async def test_cancelled_baseline_adoption_still_synchronizes_public_cookie_view
                     },
                 ],
                 "origins": [],
+                "notebooklm": {
+                    "account": {"authuser": 2, "email": "new@example.com"},
+                },
             }
         ),
         encoding="utf-8",
@@ -696,7 +817,12 @@ async def test_cancelled_baseline_adoption_still_synchronizes_public_cookie_view
     live = httpx.Cookies()
     live.set("SID", "stale-a", domain=".google.com", path="/")
     live.set("__Secure-1PSIDTS", "stale-a-ts", domain=".google.com", path="/")
-    auth = _auth(storage_path=storage, cookie_jar=live)
+    auth = _auth(
+        storage_path=storage,
+        cookie_jar=live,
+        authuser=1,
+        account_email="old@example.com",
+    )
     adoption_started = asyncio.Event()
 
     class BlockingPersistence:
@@ -717,6 +843,7 @@ async def test_cancelled_baseline_adoption_still_synchronizes_public_cookie_view
             session_module._try_storage_cookie_reload(
                 auth=auth,
                 kernel=_RecordingKernel(http_client),
+                auth_coord=_RecordingAuthCoord([]),  # type: ignore[arg-type]
                 cookie_persistence=BlockingPersistence(),  # type: ignore[arg-type]
                 rejected_cookie_jar=rejected,
             )
@@ -728,6 +855,7 @@ async def test_cancelled_baseline_adoption_still_synchronizes_public_cookie_view
 
         assert auth.cookie_jar is http_client.cookies
         assert auth.cookies[("SID", ".google.com", "/")] == "disk-b"
+        assert (auth.authuser, auth.account_email) == (2, "new@example.com")
 
 
 @pytest.mark.asyncio
@@ -929,6 +1057,178 @@ async def test_storage_cookie_reload_declines_without_a_changed_valid_profile(
 
 
 @pytest.mark.asyncio
+async def test_storage_cookie_reload_preserves_legacy_account_route(tmp_path: Path) -> None:
+    """A pending/failed context.json promotion remains authoritative on reload."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "disk-b", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "disk-b-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "context.json").write_text(
+        json.dumps({"account": {"authuser": 6, "email": "legacy@example.com"}}),
+        encoding="utf-8",
+    )
+    live = httpx.Cookies()
+    live.set("SID", "open-a", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "open-a-ts", domain=".google.com", path="/")
+    core = build_client_shell_for_tests(
+        _auth(
+            storage_path=storage,
+            cookie_jar=live,
+            authuser=6,
+            account_email="legacy@example.com",
+        )
+    )
+    expected = CookieJar.from_httpx(live)
+
+    assert await try_storage_cookie_reload(
+        storage_path=storage,
+        cookie_jar=live,
+        install_profile=lambda target, source, sampled, authuser, account_email: (
+            core._collaborators.auth_coord.install_profile_session(
+                auth=core.auth,
+                target_cookie_jar=target,
+                source_cookie_jar=source,
+                expected_cookie_jar=sampled,
+                expected_authuser=6,
+                expected_account_email="legacy@example.com",
+                expected_generation=0,
+                authuser=authuser,
+                account_email=account_email,
+            )
+        ),
+    )
+    assert expected != CookieJar.from_httpx(live)
+    assert live.get("SID", domain=".google.com", path="/") == "disk-b"
+    assert (core.auth.authuser, core.auth.account_email) == (6, "legacy@example.com")
+
+
+def test_profile_pair_rechecks_primary_after_legacy_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A login/promotion during the sibling read yields one second-file generation."""
+    storage = tmp_path / "storage_state.json"
+
+    def write_profile(sid: str, account: dict[str, object] | None) -> None:
+        payload: dict[str, object] = {
+            "cookies": [
+                {"name": "SID", "value": sid, "domain": ".google.com", "path": "/"},
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": f"{sid}-ts",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
+            ],
+            "origins": [],
+        }
+        if account is not None:
+            payload["notebooklm"] = {"account": account}
+        storage.write_text(json.dumps(payload), encoding="utf-8")
+
+    write_profile("first-a", None)
+
+    def advance_primary(self: LegacyAccountContext, path: Path):  # type: ignore[no-untyped-def]
+        del self
+        assert path == storage
+        write_profile("second-b", {"authuser": 2, "email": "second@example.com"})
+        return {"authuser": 9, "email": "stale-legacy@example.com"}
+
+    monkeypatch.setattr(LegacyAccountContext, "read", advance_primary)
+    pair = _load_profile_pair_pure(storage, require_routable=False)
+
+    assert pair.cookies.live.get("SID", domain=".google.com", path="/") == "second-b"
+    assert pair.account is not None
+    assert (pair.account.authuser, pair.account.email) == (2, "second@example.com")
+
+
+def test_profile_pair_does_not_apply_legacy_route_to_changed_default_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A concurrent clear/default login wins over stale sibling metadata."""
+    storage = tmp_path / "storage_state.json"
+
+    def write_profile(sid: str) -> None:
+        storage.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": sid, "domain": ".google.com", "path": "/"},
+                        {
+                            "name": "__Secure-1PSIDTS",
+                            "value": f"{sid}-ts",
+                            "domain": ".google.com",
+                            "path": "/",
+                        },
+                    ],
+                    "origins": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    write_profile("first-a")
+
+    def clear_to_default(self: LegacyAccountContext, path: Path):  # type: ignore[no-untyped-def]
+        del self
+        assert path == storage
+        write_profile("second-b")
+        return {"authuser": 7, "email": "stale-legacy@example.com"}
+
+    monkeypatch.setattr(LegacyAccountContext, "read", clear_to_default)
+    pair = _load_profile_pair_pure(storage, require_routable=False)
+
+    assert pair.cookies.live.get("SID", domain=".google.com", path="/") == "second-b"
+    assert pair.account is None
+
+
+def test_profile_pair_tombstone_beats_stale_legacy_after_clear_commit(tmp_path: Path) -> None:
+    """The post-commit/pre-scrub window has an authoritative in-band absence."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "new-b", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "new-b-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ],
+                "notebooklm": {"version": 1, "account_route_cleared": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "context.json").write_text(
+        json.dumps({"account": {"authuser": 7, "email": "stale@example.com"}}),
+        encoding="utf-8",
+    )
+
+    pair = _load_profile_pair_pure(storage, require_routable=False)
+
+    assert pair.cookies.live.get("SID", domain=".google.com", path="/") == "new-b"
+    assert pair.account is None
+
+
+@pytest.mark.asyncio
 async def test_storage_cookie_reload_preserves_live_jar_changed_during_disk_read(
     tmp_path: Path,
 ) -> None:
@@ -959,7 +1259,7 @@ async def test_storage_cookie_reload_preserves_live_jar_changed_during_disk_read
     async def blocked_load(path: Path):  # type: ignore[no-untyped-def]
         read_started.set()
         await release_read.wait()
-        return _load_cookie_pair_pure(path, require_routable=False)
+        return _load_profile_pair_pure(path, require_routable=False)
 
     async def unexpected_adoption(path, baseline):  # type: ignore[no-untyped-def]
         raise AssertionError(f"changed live jar must not adopt {path} {baseline!r}")
@@ -968,7 +1268,7 @@ async def test_storage_cookie_reload_preserves_live_jar_changed_during_disk_read
         try_storage_cookie_reload(
             storage_path=storage,
             cookie_jar=live,
-            load_cookie_pair=blocked_load,
+            load_profile_pair=blocked_load,
             adopt_baseline=unexpected_adoption,
         )
     )
@@ -1010,14 +1310,14 @@ async def test_forced_storage_read_retries_matching_untried_live_jar(tmp_path: P
     async def recording_load(path: Path):  # type: ignore[no-untyped-def]
         nonlocal loads
         loads += 1
-        return _load_cookie_pair_pure(path, require_routable=False)
+        return _load_profile_pair_pure(path, require_routable=False)
 
     assert await try_storage_cookie_reload(
         storage_path=storage,
         cookie_jar=live,
         rejected_cookie_jar=CookieJar.from_httpx(rejected),
         force_disk_read=True,
-        load_cookie_pair=recording_load,
+        load_profile_pair=recording_load,
     )
     assert loads == 1
     assert live.get("SID", domain=".google.com", path="/") == "rotated-b"
@@ -1033,7 +1333,7 @@ async def test_forced_storage_read_retries_matching_untried_live_jar(tmp_path: P
         cookie_jar=live,
         rejected_cookie_jar=CookieJar.from_httpx(rejected),
         force_disk_read=True,
-        load_cookie_pair=failing_load,
+        load_profile_pair=failing_load,
     )
     assert loads == 2
 
@@ -1101,7 +1401,7 @@ async def test_profile_advance_between_reload_and_adoption_cannot_be_overwritten
 ) -> None:
     storage = tmp_path / "storage_state.json"
 
-    def write_profile(sid: str) -> None:
+    def write_profile(sid: str, authuser: int, email: str) -> None:
         storage.write_text(
             json.dumps(
                 {
@@ -1115,6 +1415,9 @@ async def test_profile_advance_between_reload_and_adoption_cannot_be_overwritten
                         },
                     ],
                     "origins": [],
+                    "notebooklm": {
+                        "account": {"authuser": authuser, "email": email},
+                    },
                 }
             ),
             encoding="utf-8",
@@ -1126,21 +1429,44 @@ async def test_profile_advance_between_reload_and_adoption_cannot_be_overwritten
     live = httpx.Cookies()
     live.set("SID", "open-a", domain=".google.com", path="/")
     live.set("__Secure-1PSIDTS", "open-a-ts", domain=".google.com", path="/")
-    write_profile("open-a")
-    core = build_client_shell_for_tests(_auth(storage_path=storage, cookie_jar=live))
+    write_profile("open-a", 1, "open@example.com")
+    core = build_client_shell_for_tests(
+        _auth(
+            storage_path=storage,
+            cookie_jar=live,
+            authuser=1,
+            account_email="open@example.com",
+        )
+    )
     persistence = core._collaborators.cookie_persistence
     await persistence._prepare_open_baseline(storage, to_thread=inline_to_thread)
-    write_profile("sample-b")
+    write_profile("sample-b", 2, "sample@example.com")
 
     async def load_then_advance(path: Path):  # type: ignore[no-untyped-def]
-        pair = _load_cookie_pair_pure(path, require_routable=False)
-        write_profile("sibling-c")
+        pair = _load_profile_pair_pure(path, require_routable=False)
+        write_profile("sibling-c", 3, "sibling@example.com")
         return pair
 
+    expected_authuser = core.auth.authuser
+    expected_account_email = core.auth.account_email
+    expected_generation = core.auth._profile_session_generation
     assert await try_storage_cookie_reload(
         storage_path=storage,
         cookie_jar=live,
-        load_cookie_pair=load_then_advance,
+        load_profile_pair=load_then_advance,
+        install_profile=lambda target, source, expected, authuser, account_email: (
+            core._collaborators.auth_coord.install_profile_session(
+                auth=core.auth,
+                target_cookie_jar=target,
+                source_cookie_jar=source,
+                expected_cookie_jar=expected,
+                expected_authuser=expected_authuser,
+                expected_account_email=expected_account_email,
+                expected_generation=expected_generation,
+                authuser=authuser,
+                account_email=account_email,
+            )
+        ),
         adopt_baseline=lambda path, baseline: persistence._adopt_reloaded_baseline(
             path,
             baseline,
@@ -1148,6 +1474,7 @@ async def test_profile_advance_between_reload_and_adoption_cannot_be_overwritten
         ),
     )
     assert live.get("SID", domain=".google.com", path="/") == "sample-b"
+    assert (core.auth.authuser, core.auth.account_email) == (2, "sample@example.com")
 
     await persistence._save_canonical(live, storage, to_thread=inline_to_thread)
 
@@ -1196,7 +1523,7 @@ async def test_reload_sequence_supersedes_a_pre_replacement_cookie_save(tmp_path
     release_save = asyncio.Event()
 
     async def blocked_load(path: Path):  # type: ignore[no-untyped-def]
-        pair = _load_cookie_pair_pure(path, require_routable=False)
+        pair = _load_profile_pair_pure(path, require_routable=False)
         read_started.set()
         await release_read.wait()
         return pair
@@ -1210,7 +1537,7 @@ async def test_reload_sequence_supersedes_a_pre_replacement_cookie_save(tmp_path
         try_storage_cookie_reload(
             storage_path=storage,
             cookie_jar=live,
-            load_cookie_pair=blocked_load,
+            load_profile_pair=blocked_load,
             adopt_baseline=lambda path, baseline: persistence._adopt_reloaded_baseline(
                 path,
                 baseline,

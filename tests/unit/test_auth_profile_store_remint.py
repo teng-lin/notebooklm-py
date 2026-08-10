@@ -136,7 +136,11 @@ def test_carry_false_never_reads_destination(
     monkeypatch.setattr(store, "read_document", lambda: pytest.fail("destination read"))
     result = store.replace_from_remint(RemintWriteRequest(_source(_row()), False))
     assert result.status is ReplaceStatus.APPLIED
-    assert json.loads(path.read_text()) == {"cookies": [_row()], "origins": []}
+    assert json.loads(path.read_text()) == {
+        "cookies": [_row()],
+        "origins": [],
+        "notebooklm": {"version": 1, "account_route_cleared": True},
+    }
 
 
 @pytest.mark.parametrize(
@@ -270,7 +274,10 @@ def test_filter_projection_fidelity_optional_and_isolation(
     projection = request.source.to_json()
     assert projection["cookies"][0] == raw  # type: ignore[index]
     assert committed[0]["origins"] == []
-    assert "notebooklm" not in committed[0]
+    assert committed[0]["notebooklm"] == {
+        "version": 1,
+        "account_route_cleared": True,
+    }
 
 
 def test_direct_filter_warning_duplicate_and_raw_row_fidelity(

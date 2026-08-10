@@ -27,6 +27,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
+from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._auth.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 from notebooklm._auth.session import refresh_auth_session
 from notebooklm._runtime.auth import AuthRefreshCoordinator
@@ -95,6 +96,30 @@ class _RecordingAuthCoord:
         self.ops.append("update")
         auth.csrf_token = csrf
         auth.session_id = session_id
+
+    async def install_profile_session(
+        self,
+        *,
+        auth: AuthTokens,
+        target_cookie_jar: httpx.Cookies,
+        source_cookie_jar: httpx.Cookies,
+        expected_cookie_jar: CookieJar,
+        expected_authuser: int,
+        expected_account_email: str | None,
+        expected_generation: int,
+        authuser: int,
+        account_email: str | None,
+    ) -> bool | None:
+        return auth._replace_profile_session(
+            target_cookie_jar=target_cookie_jar,
+            source_cookie_jar=source_cookie_jar,
+            expected_cookie_jar=expected_cookie_jar,
+            expected_authuser=expected_authuser,
+            expected_account_email=expected_account_email,
+            expected_generation=expected_generation,
+            authuser=authuser,
+            account_email=account_email,
+        )
 
     def update_auth_headers(self, *, auth: AuthTokens, kernel: Any) -> None:
         self.ops.append("headers")

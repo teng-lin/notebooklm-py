@@ -91,11 +91,11 @@ def test_scope_duplicate_self_and_scc_rules(audit, tmp_path):
 def test_live_projection_is_the_frozen_scorecard(audit):
     result = audit.build_projection()
     assert result["summary"] == {
-        "modules": 40,
-        "total_lines": 15486,
-        "unique_edges": 129,
-        "module_edges": 118,
-        "function_local_edges": 11,
+        "modules": 41,
+        "total_lines": 15884,
+        "unique_edges": 138,
+        "module_edges": 126,
+        "function_local_edges": 12,
     }
     assert result["sccs"] == {
         "module_level": [],
@@ -123,6 +123,7 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("account_repair", "profile_store", "module"),
     }
     assert {edge for edge in edges if "profile_account" in edge[:2]} == {
+        ("account_email", "profile_account", "module"),
         ("account_repair", "profile_account", "module"),
         ("profile_account", "cookie_types", "module"),
         ("profile_document", "profile_account", "module"),
@@ -132,6 +133,7 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("tokens", "profile_account", "module"),
     }
     assert {edge for edge in edges if "profile_document" in edge[:2]} == {
+        ("account_email", "profile_document", "module"),
         ("cookie_merge", "profile_document", "module"),
         ("psidts_recovery", "profile_document", "module"),
         ("profile_document", "cookie_types", "module"),
@@ -194,6 +196,7 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("mint_service", "master_token_types", "module"),
     }
     assert {edge for edge in edges if "profile_store" in edge[:2]} == {
+        ("account_email", "profile_store", "module"),
         ("account_repair", "profile_store", "module"),
         ("master_token", "profile_store", "module"),
         ("master_token_bootstrap", "profile_store", "module"),
@@ -223,13 +226,18 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("master_token_bootstrap", "profile_store", "module"),
     }
     assert {edge for edge in edges if "profile_migration" in edge[:2]} == {
+        ("account_email", "profile_migration", "module"),
         ("account_repair", "profile_migration", "module"),
+        ("profile_migration", "cookies", "module"),
         ("profile_migration", "profile_account", "module"),
         ("profile_migration", "profile_store", "module"),
+        ("recovery", "profile_migration", "function"),
+        ("recovery", "profile_migration", "module"),
         ("storage", "profile_migration", "module"),
         ("tokens", "profile_migration", "module"),
     }
     assert {edge for edge in edges if "tokens" in edge[:2]} == {
+        ("account_email", "tokens", "module"),
         ("session", "tokens", "module"),
         ("tokens", "account", "module"),
         ("tokens", "cookie_types", "module"),
@@ -252,6 +260,8 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("recovery", "headless_reauth", "function"),
         ("recovery", "master_token", "function"),
         ("recovery", "paths", "module"),
+        ("recovery", "profile_migration", "function"),
+        ("recovery", "profile_migration", "module"),
         ("recovery", "single_flight", "module"),
         ("recovery", "storage", "function"),
         ("recovery", "storage", "module"),

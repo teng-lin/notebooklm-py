@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+import httpx
+
 from .._env import get_base_url
 from .._url_utils import is_google_auth_redirect
 from ..exceptions import AuthExtractionError
@@ -69,14 +71,14 @@ async def refresh_auth_session(
     ``allow_headless`` straight through.
     """
     http_client = kernel.get_http_client()
-    url = f"{get_base_url()}/"
-    if auth.account_email or auth.authuser:
-        url = f"{url}?{authuser_query(auth.authuser, auth.account_email)}"
     rejected_cookie_jar: CookieJar | None = None
 
     async def _get_and_extract() -> tuple[str, str] | None:
         """GET the homepage + extract tokens; ``None`` signals a dead-cookie 302."""
         nonlocal rejected_cookie_jar
+        url = f"{get_base_url()}/"
+        if auth.account_email or auth.authuser:
+            url = f"{url}?{authuser_query(auth.authuser, auth.account_email)}"
         request_cookie_jar = CookieJar.from_httpx(http_client.cookies)
         response = await http_client.get(url)
         response.raise_for_status()
@@ -115,6 +117,7 @@ async def refresh_auth_session(
             if not await _try_storage_cookie_reload(
                 auth=auth,
                 kernel=kernel,
+                auth_coord=auth_coord,
                 cookie_persistence=cookie_persistence,
                 # Preserve a post-request jar mutation for the first retry. If
                 # that jar is also rejected, force the bounded second attempt
@@ -170,6 +173,7 @@ async def _try_storage_cookie_reload(
     *,
     auth: AuthTokens,
     kernel: Kernel,
+    auth_coord: AuthRefreshCoordinator,
     cookie_persistence: CookiePersistence,
     rejected_cookie_jar: CookieJar | None,
     force_disk_read: bool = False,
@@ -177,6 +181,29 @@ async def _try_storage_cookie_reload(
 ) -> bool:
     """Reload newer/different file-backed cookies without external recovery."""
     cookie_jar = kernel.get_http_client().cookies
+    expected_authuser = auth.authuser
+    expected_account_email = auth.account_email
+    expected_generation = auth._profile_session_generation
+
+    async def install_profile(
+        target: httpx.Cookies,
+        source: httpx.Cookies,
+        expected: CookieJar,
+        authuser: int,
+        account_email: str | None,
+    ) -> bool | None:
+        return await auth_coord.install_profile_session(
+            auth=auth,
+            target_cookie_jar=target,
+            source_cookie_jar=source,
+            expected_cookie_jar=expected,
+            expected_authuser=expected_authuser,
+            expected_account_email=expected_account_email,
+            expected_generation=expected_generation,
+            authuser=authuser,
+            account_email=account_email,
+        )
+
     try:
         return await try_storage_cookie_reload(
             storage_path=auth.storage_path,
@@ -184,6 +211,7 @@ async def _try_storage_cookie_reload(
             rejected_cookie_jar=rejected_cookie_jar,
             force_disk_read=force_disk_read,
             preserve_auth_material_change=preserve_auth_material_change,
+            install_profile=install_profile,
             adopt_baseline=lambda path, baseline: cookie_persistence._adopt_reloaded_baseline(
                 path,
                 baseline,

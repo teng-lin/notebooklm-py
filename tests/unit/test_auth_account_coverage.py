@@ -557,24 +557,27 @@ class TestClearInBandAccount:
         _clear_in_band_account(storage)
         assert json.loads(storage.read_text(encoding="utf-8")) == ["x"]
 
-    def test_namespace_missing_account_key_returns(self, tmp_path):
-        # namespace present but no account key → return (line 483-484).
+    def test_namespace_missing_account_key_records_clear(self, tmp_path):
         storage = tmp_path / "storage_state.json"
         storage.write_text(
             json.dumps({"cookies": [], "notebooklm": {"version": 1}}), encoding="utf-8"
         )
         _clear_in_band_account(storage)
-        # Untouched.
-        assert json.loads(storage.read_text(encoding="utf-8"))["notebooklm"] == {"version": 1}
+        assert json.loads(storage.read_text(encoding="utf-8"))["notebooklm"] == {
+            "version": 1,
+            "account_route_cleared": True,
+        }
 
-    def test_account_cleared_drops_version_only_namespace(self, tmp_path):
-        # account removed; remaining namespace is {version} → namespace dropped.
+    def test_account_clear_records_authoritative_absence(self, tmp_path):
         storage = tmp_path / "storage_state.json"
         write_account_metadata(storage, authuser=2, email="bob@example.com")
         assert "notebooklm" in json.loads(storage.read_text(encoding="utf-8"))
         _clear_in_band_account(storage)
         data = json.loads(storage.read_text(encoding="utf-8"))
-        assert "notebooklm" not in data
+        assert data["notebooklm"] == {
+            "version": 1,
+            "account_route_cleared": True,
+        }
 
     def test_account_cleared_keeps_namespace_with_extra_keys(self, tmp_path):
         # namespace carries an extra (non-version) key → namespace retained.
@@ -614,7 +617,10 @@ class TestClearAccountMetadataFacade:
 
         clear_account_metadata(storage)
 
-        assert "notebooklm" not in json.loads(storage.read_text(encoding="utf-8"))
+        assert json.loads(storage.read_text(encoding="utf-8"))["notebooklm"] == {
+            "version": 1,
+            "account_route_cleared": True,
+        }
         assert json.loads((tmp_path / "context.json").read_text(encoding="utf-8")) == {
             "notebook_id": "nb"
         }

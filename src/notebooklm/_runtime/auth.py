@@ -57,6 +57,8 @@ import time
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import TYPE_CHECKING, Any, cast
 
+import httpx
+
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
 from .._request_types import AuthSnapshot
@@ -64,6 +66,7 @@ from ..auth import AuthTokens
 from .config import CORE_LOGGER_NAME
 
 if TYPE_CHECKING:
+    from .._auth.cookie_types import CookieJar
     from .._client_metrics import ClientMetrics
     from .._kernel import Kernel
 
@@ -294,6 +297,46 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
                 self._metrics.record_lock_wait(time.perf_counter() - wait_start)
             auth.csrf_token = csrf
             auth.session_id = session_id
+        finally:
+            lock.release()
+
+    async def install_profile_session(
+        self,
+        *,
+        auth: AuthTokens,
+        target_cookie_jar: httpx.Cookies,
+        source_cookie_jar: httpx.Cookies,
+        expected_cookie_jar: CookieJar,
+        expected_authuser: int,
+        expected_account_email: str | None,
+        expected_generation: int,
+        authuser: int,
+        account_email: str | None,
+    ) -> bool | None:
+        """Atomically install one stored cookie and account-route generation.
+
+        ``None`` means the authoritative live jar changed while the disk sample
+        was being selected, so the caller must preserve and retry that newer
+        live state. Once the lock is acquired, the check and all cookie/route
+        writes are synchronous: cancellation cannot leave a mixed generation,
+        and :meth:`snapshot` cannot observe a torn routing pair.
+        """
+        lock = self.get_auth_snapshot_lock()
+        wait_start = time.perf_counter()
+        await lock.acquire()
+        try:
+            if self._metrics is not None:
+                self._metrics.record_lock_wait(time.perf_counter() - wait_start)
+            return auth._replace_profile_session(
+                target_cookie_jar=target_cookie_jar,
+                source_cookie_jar=source_cookie_jar,
+                expected_cookie_jar=expected_cookie_jar,
+                expected_authuser=expected_authuser,
+                expected_account_email=expected_account_email,
+                expected_generation=expected_generation,
+                authuser=authuser,
+                account_email=account_email,
+            )
         finally:
             lock.release()
 

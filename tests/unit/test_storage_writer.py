@@ -201,7 +201,10 @@ def test_replace_from_remint_no_carry_drops_stale_binding(tmp_path: Path) -> Non
     assert outcome.ok
     data = json.loads(path.read_text(encoding="utf-8"))
     assert {c["name"] for c in data["cookies"]} == {"SID", "SAPISID"}
-    assert "notebooklm" not in data  # stale binding dropped
+    assert data["notebooklm"] == {
+        "version": 1,
+        "account_route_cleared": True,
+    }  # stale binding dropped and cannot be resurrected from legacy context
 
 
 def test_replace_from_remint_takes_storage_lock(
@@ -363,8 +366,10 @@ def test_replace_from_login_default_drops_youtube_keeps_trusted_roots(tmp_path: 
     names = {c["name"] for c in data["cookies"]}
     assert "YT" not in names
     assert {"SID", "MEDIA"} <= names
-    # CLEAR + no opt-ins => no notebooklm namespace at all.
-    assert "notebooklm" not in data
+    assert data["notebooklm"] == {
+        "version": 1,
+        "account_route_cleared": True,
+    }
 
 
 def test_replace_from_login_required_dropped_writes_nothing(tmp_path: Path) -> None:

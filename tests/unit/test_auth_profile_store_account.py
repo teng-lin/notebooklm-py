@@ -235,6 +235,67 @@ def test_update_corruption_and_shape_failures_are_exact(tmp_path: Path) -> None:
     assert json.loads(path.read_text(encoding="utf-8")) == [1, 2]
 
 
+def test_conditional_account_update_applies_only_to_exact_document(tmp_path: Path) -> None:
+    path = tmp_path / "profile.json"
+    _write(
+        path,
+        {
+            "cookies": [
+                {"name": "SID", "value": "a", "domain": ".google.com", "path": "/"},
+            ],
+            "origins": [],
+        },
+    )
+    store = ProfileStore(path)
+    expected = store.read_document()
+
+    assert store._update_account_if_document_unchanged(
+        ProfileAccount(1, "first@example.com"),
+        expected=expected,
+    )
+    committed = path.read_bytes()
+    assert not store._update_account_if_document_unchanged(
+        ProfileAccount(2, "stale@example.com"),
+        expected=expected,
+    )
+    assert path.read_bytes() == committed
+    assert store.read_account() == ProfileAccount(1, "first@example.com")
+
+
+def test_stale_legacy_promotion_cannot_cross_account_clear_tombstone(tmp_path: Path) -> None:
+    path = tmp_path / "profile.json"
+    _write(
+        path,
+        {
+            "cookies": [],
+            "notebooklm": {"version": 1, "account_route_cleared": True},
+        },
+    )
+
+    assert not ProfileStore(path).update_account(
+        ProfileAccount(7, "stale@example.com"),
+        only_if_absent=True,
+    )
+    assert _read_in_band_projection(path) == {}
+
+
+def test_clear_missing_profile_blocks_already_sampled_legacy_promotion(tmp_path: Path) -> None:
+    path = tmp_path / "profile.json"
+    store = ProfileStore(path)
+
+    store.clear_account()
+
+    assert not store.update_account(
+        ProfileAccount(7, "stale@example.com"),
+        only_if_absent=True,
+    )
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "cookies": [],
+        "origins": [],
+        "notebooklm": {"version": 1, "account_route_cleared": True},
+    }
+
+
 def test_update_lock_and_commit_failures_escape(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -280,20 +341,39 @@ def test_update_truthiness_failure_precedes_lock_and_parent(tmp_path: Path) -> N
     assert locks.requests == []
 
 
-@pytest.mark.parametrize("payload", [[], {"notebooklm": "bad"}, {"notebooklm": {"version": 1}}])
-def test_clear_malformed_or_absent_account_is_noop(tmp_path: Path, payload: object) -> None:
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ([], []),
+        (
+            {"notebooklm": "bad"},
+            {"notebooklm": {"version": 1, "account_route_cleared": True}},
+        ),
+        (
+            {"notebooklm": {"version": 1}},
+            {"notebooklm": {"version": 1, "account_route_cleared": True}},
+        ),
+    ],
+)
+def test_clear_records_an_authoritative_absence(
+    tmp_path: Path,
+    payload: object,
+    expected: object,
+) -> None:
     path = tmp_path / "profile.json"
     _write(path, payload)
-    before = path.read_bytes()
     ProfileStore(path).clear_account()
-    assert path.read_bytes() == before
+    assert json.loads(path.read_text(encoding="utf-8")) == expected
 
 
 def test_clear_removes_version_only_namespace_and_preserves_siblings(tmp_path: Path) -> None:
     path = tmp_path / "profile.json"
     _write(path, {"root": 1, "notebooklm": {"version": "odd", "account": {"authuser": 2}}})
     ProfileStore(path).clear_account()
-    assert json.loads(path.read_text(encoding="utf-8")) == {"root": 1}
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "root": 1,
+        "notebooklm": {"version": 1, "account_route_cleared": True},
+    }
 
     _write(
         path,
@@ -302,7 +382,11 @@ def test_clear_removes_version_only_namespace_and_preserves_siblings(tmp_path: P
     ProfileStore(path).clear_account()
     assert json.loads(path.read_text(encoding="utf-8")) == {
         "root": 1,
-        "notebooklm": {"version": 1, "unknown": [1, 2]},
+        "notebooklm": {
+            "version": 1,
+            "account_route_cleared": True,
+            "unknown": [1, 2],
+        },
     }
 
 
@@ -314,10 +398,13 @@ def test_clear_missing_lock_miss_and_commit_failure(
     path = tmp_path / "missing" / "profile.json"
     locks = RecordingLocks()
     assert ProfileStore(path, locks=locks).clear_account() is None
-    assert locks.requests == []
-    assert not path.parent.exists()
+    assert [request.operation for request in locks.requests] == ["clear_account_metadata"]
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "cookies": [],
+        "origins": [],
+        "notebooklm": {"version": 1, "account_route_cleared": True},
+    }
 
-    path.parent.mkdir()
     _write(path, {"notebooklm": {"account": {"authuser": 1}}})
     missed = RecordingLocks(LockState.UNAVAILABLE)
     with caplog.at_level(logging.DEBUG, logger="notebooklm.auth"):

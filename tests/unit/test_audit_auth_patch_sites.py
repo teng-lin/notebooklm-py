@@ -231,8 +231,8 @@ def test_live_replacement_patch_contract_and_scorecard_are_exact(script):
     projection = script.build_projection(sites)
     assert projection["summary"]["TOTAL"] == {
         "public": 138,
-        "private": 154,
-        "total": 292,
+        "private": 156,
+        "total": 294,
     }
     relevant = {
         (row["module"], row["attribute"], row["idiom"]): row["count"]

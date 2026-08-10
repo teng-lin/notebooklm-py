@@ -39,9 +39,9 @@ from ._artifacts import ArtifactsAPI
 from ._auth import tokens as _auth_tokens
 from ._auth.account import _probe_authuser
 from ._auth.account import authuser_query as authuser_query
+from ._auth.account_email import AccountEmailCacheKey, resolve_account_email
 from ._auth.extraction import extract_wiz_field as extract_wiz_field
 from ._auth.session import refresh_auth_session
-from ._auth.storage import get_account_email_for_storage, write_account_metadata
 from ._chat import ChatAPI
 from ._client_assembly import _assemble_client
 from ._client_composed import ClientComposed
@@ -304,11 +304,13 @@ class NotebookLMClient:
 
     #: Per-client memo for the signed-in account email so a *successful* live probe
     #: (used only when neither the in-memory ``AuthTokens`` nor persisted storage
-    #: carries one) runs at most once per process. A failed/undiscoverable probe is
-    #: NOT memoized (stays ``None``), so a genuinely account-less profile re-probes on
-    #: each call — acceptable for the rare ``include_account`` path. Assigned in
-    #: ``_assemble_client`` (factory-shell parity); ``None`` = not yet resolved.
+    #: carries one) runs at most once per account route. A failed/undiscoverable probe
+    #: is NOT memoized, so a genuinely account-less profile re-probes on each call —
+    #: acceptable for the rare ``include_account`` path. The route key invalidates a
+    #: cached email after mid-session profile reload switches or clears the account.
+    #: Assigned in ``_assemble_client`` (factory-shell parity).
     _account_email_cache: str | None
+    _account_email_cache_route: AccountEmailCacheKey | None
 
     @property
     def auth(self) -> AuthTokens:
@@ -833,38 +835,17 @@ class NotebookLMClient:
         (calling outside ``async with``) is the only surfaced error, from
         :meth:`Kernel.get_http_client`, and only on the live-fallback path.
         """
-        if self._account_email_cache is not None:
-            return self._account_email_cache or None
-        email = self._auth.account_email
-        if not email and self._auth.storage_path is not None:
-            email = get_account_email_for_storage(self._auth.storage_path)
-        if email:
-            self._account_email_cache = email
-            return email
-        if not live_fallback:
-            return None
-        authuser = self._auth.authuser
-        try:
-            email = await _probe_authuser(self._collaborators.kernel.get_http_client(), authuser)
-        except httpx.HTTPError as e:  # transport blip → undiscoverable, not fatal
-            logger.debug("account-email live probe failed: %s", type(e).__name__)
-            return None
-        if not email:
-            return None
-        self._account_email_cache = email
-        if self._auth.storage_path is not None:
-            # Self-heal so the next call (and next process) is network-free. Blocking
-            # FileLock I/O → off the event loop. Best-effort: a corrupt storage file
-            # raises RuntimeError (not OSError), so catch both.
-            try:
-                await asyncio.to_thread(
-                    write_account_metadata,
-                    self._auth.storage_path,
-                    authuser=authuser,
-                    email=email,
-                )
-            except (OSError, RuntimeError) as e:
-                logger.debug("account-email self-heal write failed: %s", type(e).__name__)
+        email, cached_email, cached_key = await resolve_account_email(
+            auth=self._auth,
+            cached_email=self._account_email_cache,
+            cached_key=self._account_email_cache_route,
+            live_fallback=live_fallback,
+            get_http_client=self._collaborators.kernel.get_http_client,
+            probe=_probe_authuser,
+            to_thread=asyncio.to_thread,
+        )
+        self._account_email_cache = cached_email
+        self._account_email_cache_route = cached_key
         return email
 
 

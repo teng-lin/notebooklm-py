@@ -154,6 +154,7 @@ class AuthTokens:
     authuser: int = 0
     cookie_snapshot: CookieSnapshot | None = field(default=None, repr=False)
     account_email: str | None = None
+    _profile_session_generation: int = field(default=0, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Normalize legacy flat cookie mappings into domain-keyed mappings.
@@ -195,6 +196,44 @@ class AuthTokens:
         """
         self.cookie_jar = cookie_jar
         self.cookies = _auth_cookies._cookie_map_from_jar(cookie_jar)
+
+    def _replace_profile_session(
+        self,
+        *,
+        target_cookie_jar: httpx.Cookies,
+        source_cookie_jar: httpx.Cookies,
+        expected_cookie_jar: CookieJar,
+        expected_authuser: int,
+        expected_account_email: str | None,
+        expected_generation: int,
+        authuser: int,
+        account_email: str | None,
+    ) -> bool | None:
+        """Install one stored cookie/account generation without an await boundary.
+
+        The live HTTP jar, its two public compatibility views, and the routing
+        identity must advance together. The caller holds the auth snapshot lock,
+        so RPC snapshots cannot observe cookies from one stored generation with
+        ``authuser``/``account_email`` from another.
+
+        Returns:
+            Whether the account route changed, or ``None`` when the live jar
+            advanced after the disk sample and the stored generation was not
+            installed.
+        """
+        if (
+            CookieJar.from_httpx(target_cookie_jar) != expected_cookie_jar
+            or (self.authuser, self.account_email) != (expected_authuser, expected_account_email)
+            or self._profile_session_generation != expected_generation
+        ):
+            return None
+        route_before = (self.authuser, self.account_email)
+        _auth_cookies._replace_cookie_jar(target_cookie_jar, source_cookie_jar)
+        self.replace_cookie_jar(target_cookie_jar)
+        self.authuser = authuser
+        self.account_email = account_email
+        self._profile_session_generation += 1
+        return route_before != (authuser, account_email)
 
     def __repr__(self) -> str:
         """Return a redacted representation safe for logs and pytest diffs.
