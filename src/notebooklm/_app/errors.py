@@ -69,6 +69,7 @@ from ..exceptions import (
     RPCError,
     ServerError,
     SourceAddError,
+    SourceAddPartialError,
     ValidationError,
     WaitTimeoutError,
 )
@@ -120,13 +121,11 @@ class ErrorCategory(Enum):
     #: catch-all so adapters can recover that carried code rather than folding
     #: it into the library default.
     SOURCE_MUTATION = "source_mutation"
-    #: A per-source ADD failure (``SourceAddError``) — NotebookLM rejected this
-    #: specific source input (invalid/inaccessible/paywalled/empty/unparseable
-    #: URL). Distinct from the generic :attr:`LIBRARY` catch-all so adapters
-    #: project it as a 4xx input error and, in a batch add, ISOLATE it as a
-    #: per-item error instead of aborting the whole batch. ``_source/add.py``
-    #: re-raises every infra signal (auth/rate-limit/server/network) UNWRAPPED,
-    #: so a ``SourceAddError`` is guaranteed to be a per-item input failure.
+    #: A per-source ADD failure (``SourceAddError``) — usually a rejected source
+    #: input. Distinct from the generic :attr:`LIBRARY` catch-all so adapters
+    #: project it as a 4xx input error and isolate it in a batch. The partial
+    #: upload subtype retains typed infrastructure causes, which are classified
+    #: by their cause instead of as ``SOURCE_ADD``.
     SOURCE_ADD = "source_add"
     #: A library error that fits none of the above (catch-all under
     #: ``NotebookLMError``).
@@ -333,18 +332,19 @@ def _category_for(exc: BaseException) -> ErrorCategory:
         return ErrorCategory.RPC
 
     # --- Per-source ADD failure (SourceAddError). ----------------------------
-    # A SourceError -> NotebookLMError (NOT an RPCError), so it reaches here only
-    # after every RPC/infra branch missed. ``_source/add.py`` re-raises the TYPED
-    # infra signals (auth/rate-limit/server/network) UNWRAPPED and wraps only a
-    # residual RPCError as SourceAddError — usually a genuine per-source rejection
-    # (bad URL, FAILED_PRECONDITION, …), which isolates as the NON-fatal SOURCE_ADD.
-    # BUT a transient/server failure can still reach the wrap as a *bare* RPCError
-    # (the null-result-with-status path in ``rpc/decoder.py`` raises RPCError with an
-    # infra ``rpc_code`` rather than a typed ServerError). Keep those FATAL so a batch
-    # add aborts for retry/backoff instead of masking a rate-limit/5xx as a per-item
-    # error. Must precede the LIBRARY catch-all to keep its distinct 4xx category.
+    # ``_source/add.py`` leaves typed infrastructure failures unwrapped, while the
+    # upload pipeline uses SourceAddPartialError to retain the registered source ID.
+    # Classify that subtype by any typed infrastructure cause. Other wrapped errors
+    # are usually per-source rejections and isolate as the non-fatal SOURCE_ADD, but
+    # a transient/server failure can still arrive as a bare RPCError with an infra
+    # ``rpc_code``. Keep those fatal for retry/backoff. This branch must precede the
+    # LIBRARY catch-all to preserve the distinct 4xx category.
     if isinstance(exc, SourceAddError):
         cause = getattr(exc, "cause", None)
+        if isinstance(exc, SourceAddPartialError) and isinstance(
+            cause, (AuthError, RateLimitError, ServerError, NetworkError)
+        ):
+            return _category_for(cause)
         if isinstance(cause, RPCError) and _is_transient_rpc_code(_normalized_rpc_code(cause)):
             return ErrorCategory.SERVER
         return ErrorCategory.SOURCE_ADD

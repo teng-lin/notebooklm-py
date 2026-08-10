@@ -900,14 +900,28 @@ class SourceError(NotebookLMError):
 
 
 class SourceAddError(SourceError):
-    """Failed to add a source, with its identifier and optional underlying cause."""
+    """Failed to add a source.
 
-    def __init__(self, url: str, cause: Exception | None = None, message: str | None = None):
-        self.url, self.cause = url, cause
+    Attributes:
+        url: The URL or identifier that failed.
+        cause: The underlying exception.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        cause: Exception | None = None,
+        message: str | None = None,
+    ):
+        self.url = url
+        self.cause = cause
         msg = message or (
-            f"Failed to add source: {url}\nPossible causes:\n  - URL is invalid or inaccessible\n"
+            f"Failed to add source: {url}\n"
+            "Possible causes:\n"
+            "  - URL is invalid or inaccessible\n"
             "  - Content is behind a paywall or requires authentication\n"
-            "  - Page content is empty or could not be parsed\n  - Rate limiting or quota exceeded"
+            "  - Page content is empty or could not be parsed\n"
+            "  - Rate limiting or quota exceeded"
         )
         super().__init__(msg)
 
@@ -928,36 +942,23 @@ class SourceAddPartialError(SourceAddError):
 class SourceNotFoundError(NotFoundError, RPCError, SourceError):
     """Source not found in notebook.
 
-    Inherits from :class:`NotFoundError` (cross-domain umbrella),
-    :class:`RPCError` (transport-level catchability), and :class:`SourceError`
-    (domain base). The RPC base is what ``client.sources.get_fulltext`` raises
-    (and what ``client.sources.wait_until_ready`` raises during polling when
-    the source disappears) when the server returns an empty / degenerate
-    payload for a missing source ID, so ``except RPCError`` keeps working at
-    call sites that handle transport-level failures. ``except SourceError``
-    continues to work at domain-level call sites that don't care about the
-    RPC layer. ``except NotFoundError`` catches it alongside
-    :class:`NotebookNotFoundError` and :class:`ArtifactNotFoundError`.
+    Combines :class:`NotFoundError`, :class:`RPCError`, and :class:`SourceError`. Full-text and
+    readiness calls raise it for empty missing-source payloads, preserving transport-, domain-, and
+    cross-domain not-found catches alongside :class:`NotebookNotFoundError` and
+    :class:`ArtifactNotFoundError`.
 
-    As of v0.8.0 ``client.sources.get`` **raises** this error for a missing
-    source; use ``client.sources.get_or_none`` for a ``None``-on-miss lookup.
-    Workflows that need a concrete source to proceed (e.g. ``get_fulltext``,
-    ``wait_until_ready``) also surface the missing source as this exception.
+    Since v0.8.0, ``client.sources.get`` raises it; use ``client.sources.get_or_none`` for
+    ``None``-on-miss. Concrete-source workflows such as full-text and readiness calls also raise it.
 
     .. note::
-       **v0.6.0 BREAKING CHANGE:** prior to v0.6.0, :class:`SourceNotFoundError`
-       did NOT inherit from :class:`RPCError`. Code that catches ``RPCError``
-       *before* a more specific ``except SourceNotFoundError`` clause may now
-       intercept what previously fell through to the specific handler. Reorder
-       your ``except`` clauses to put the more specific exceptions first. This
-       restores symmetry with :class:`NotebookNotFoundError`, which has
-       inherited from :class:`RPCError` since the 0.5.x series.
+       Since v0.6.0 this also inherits :class:`RPCError`, restoring notebook-not-found symmetry.
+       Put a specific ``except SourceNotFoundError`` before ``except RPCError`` when both are used.
+       Earlier releases let the specific handler run even when the RPC handler appeared first.
 
     Attributes:
         source_id: The ID that was not found.
         method_id: The RPC method ID (inherited from :class:`RPCError`).
-        raw_response: First 80 chars of the raw response, if any
-            (``NOTEBOOKLM_DEBUG=1`` preserves the full body).
+        raw_response: First 80 response chars; ``NOTEBOOKLM_DEBUG=1`` preserves the full body.
     """
 
     def __init__(
@@ -993,10 +994,9 @@ class SourceProcessingError(SourceError):
 class SourceTimeoutError(WaitTimeoutError, SourceError):
     """Timed out waiting for source readiness.
 
-    Inherits from :class:`WaitTimeoutError` (and therefore the built-in
-    :class:`TimeoutError`) in addition to :class:`SourceError`. The
-    ``WaitTimeoutError`` mixin is additive: ``except SourceError`` and the new
-    ``except WaitTimeoutError`` / ``except TimeoutError`` clauses all catch it.
+    Inherits from :class:`WaitTimeoutError` (and therefore the built-in :class:`TimeoutError`) in
+    addition to :class:`SourceError`. The ``WaitTimeoutError`` mixin is additive:
+    ``except SourceError`` and ``except WaitTimeoutError`` / ``except TimeoutError`` all catch it.
 
     Attributes:
         source_id: The ID of the source.

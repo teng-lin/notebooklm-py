@@ -104,6 +104,31 @@ def test_error_body_carries_retriable_flag() -> None:
     assert _error_body(exc.ValidationError("bad"))["retriable"] is False
 
 
+@pytest.mark.parametrize(
+    ("cause", "status", "category", "retriable"),
+    [
+        (exc.NetworkError("offline"), 502, "network", True),
+        (exc.ServerError("unavailable"), 502, "server", True),
+        (exc.AuthError("expired"), 401, "auth", False),
+        (exc.RateLimitError("slow down"), 429, "rate_limited", True),
+        (exc.ValidationError("rejected file"), 422, "source_add", False),
+    ],
+)
+def test_partial_upload_error_preserves_cause_projection(
+    cause: Exception, status: int, category: str, retriable: bool
+) -> None:
+    error = exc.SourceAddPartialError(
+        "report.pdf", source_id="source-1", stage="upload_finalize", cause=cause
+    )
+
+    response = error_response(error)
+    body = _error_body(error)
+
+    assert response.status_code == status
+    assert body["category"] == category
+    assert body["retriable"] is retriable
+
+
 def test_error_body_carries_hint_where_present() -> None:
     assert "hint" in _error_body(exc.RateLimitError("slow down"))
     # A category with no hint (RPC) omits the field entirely.

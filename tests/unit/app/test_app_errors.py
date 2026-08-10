@@ -258,6 +258,29 @@ def test_source_add_error_with_transient_cause_stays_fatal() -> None:
         assert batch_item_is_fatal(e) is True, f"code {code} must abort the batch"
 
 
+@pytest.mark.parametrize(
+    ("cause", "category", "retriable"),
+    [
+        (exc.NetworkError("offline"), ErrorCategory.NETWORK, True),
+        (exc.ServerError("unavailable"), ErrorCategory.SERVER, True),
+        (exc.AuthError("expired"), ErrorCategory.AUTH, False),
+        (exc.RateLimitError("slow down"), ErrorCategory.RATE_LIMITED, True),
+        (exc.ValidationError("rejected file"), ErrorCategory.SOURCE_ADD, False),
+    ],
+)
+def test_source_add_partial_error_preserves_cause_classification(
+    cause: Exception, category: ErrorCategory, retriable: bool
+) -> None:
+    error = exc.SourceAddPartialError(
+        "report.pdf", source_id="source-1", stage="upload_finalize", cause=cause
+    )
+
+    result = classify(error)
+
+    assert result.category is category
+    assert result.retriable is retriable
+
+
 def test_source_mutation_error_keeps_cli_attributes() -> None:
     """Re-basing onto NotebookLMError must not drop the CLI-read attributes."""
     err = SourceMutationError(

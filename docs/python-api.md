@@ -446,6 +446,26 @@ except NonIdempotentRetryError:
 
 `client.sources.add_file(...)` and `client.sources.add_drive(...)` are now also covered by the probe-then-create wrapper: the create RPC runs with `disable_internal_retries=True` and, on transport failure, the wrapper probes the server-side source list (via `idempotent_create`) before deciding whether to retry — so transient failures no longer produce duplicate sources. See `_source/add.py` (`SourceAddService.add_drive`) and `_source/upload.py` (`SourceUploadPipeline.register_file_source`) for the implementation.
 
+**Partial file uploads.** File registration creates the source row before the
+resumable HTTP upload starts. If session setup or the combined upload/finalize
+request then fails, `add_file` raises `SourceAddPartialError`, a
+`SourceAddError` subclass. The exception exposes the retained `source_id`, a
+`stage` of `"start_session"` or `"upload_finalize"`, and the original exception
+as both `cause` and `__cause__`. The client never deletes the row automatically:
+inspect it or remove it explicitly with `client.sources.delete(notebook_id,
+error.source_id)`. Cancellation still propagates as `CancelledError` rather than
+being converted into this exception.
+
+```python
+from notebooklm import SourceAddPartialError
+
+try:
+    source = await client.sources.add_file(nb_id, "report.pdf")
+except SourceAddPartialError as error:
+    print(error.source_id, error.stage)
+    # Reconcile first, then delete explicitly if the retained row is unusable.
+```
+
 ---
 
 ## Concurrency contract

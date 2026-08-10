@@ -136,6 +136,29 @@ def test_retriable_categories_are_marked_retriable() -> None:
         assert tool_error_payload(exception)["retriable"] is (category in retriable)
 
 
+@pytest.mark.parametrize(
+    ("cause", "code", "retriable"),
+    [
+        (exc.NetworkError("offline"), "NETWORK", True),
+        (exc.ServerError("unavailable"), "SERVER", True),
+        (exc.AuthError("expired"), "AUTH", False),
+        (exc.RateLimitError("slow down"), "RATE_LIMITED", True),
+        (exc.ValidationError("rejected file"), "SOURCE_ADD", False),
+    ],
+)
+def test_partial_upload_error_projects_its_cause_consistently(
+    cause: Exception, code: str, retriable: bool
+) -> None:
+    error = exc.SourceAddPartialError(
+        "report.pdf", source_id="source-1", stage="upload_finalize", cause=cause
+    )
+
+    payload = tool_error_payload(error)
+
+    assert payload["code"] == code
+    assert payload["retriable"] is retriable
+
+
 def test_message_is_redaction_capped_but_code_preserved() -> None:
     """A very long message is capped; code + retriable still present and correct."""
     long = exc.ValidationError("x" * 2000)

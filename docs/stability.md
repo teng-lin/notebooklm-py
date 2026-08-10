@@ -99,7 +99,9 @@ NonIdempotentRetryError            # Raised by idempotent=True calls on a non-id
 # TimeoutError). v0.7.0 added the WaitTimeoutError umbrella so `except
 # WaitTimeoutError` catches source/artifact/research wait timeouts uniformly,
 # while `except TimeoutError` keeps working — see docs/python-api.md#waittimeouterror.
-SourceError, SourceAddError, SourceProcessingError, SourceTimeoutError, SourceNotFoundError
+SourceError, SourceAddError, SourceAddPartialError, SourceProcessingError, SourceTimeoutError, SourceNotFoundError
+# SourceAddPartialError.source_id and .stage identify a retained row after an
+# upload boundary fails; the library does not delete that row automatically.
 NotebookError, NotebookNotFoundError
 ArtifactError, ArtifactDownloadError, ArtifactFeatureUnavailableError, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactParseError
 ArtifactTimeoutError, ArtifactPendingTimeoutError, ArtifactInProgressTimeoutError

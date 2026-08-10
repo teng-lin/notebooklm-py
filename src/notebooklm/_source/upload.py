@@ -30,11 +30,13 @@ from ..exceptions import (
     NetworkError,
     RateLimitError,
     ServerError,
+    SourceAddPartialError,
+    SourceAddStage,
     ValidationError,
 )
 from ..rpc import RPCError, RPCMethod, get_upload_url
 from ..rpc.types import SourceStatus
-from ..types import Source, SourceAddError, SourceAddPartialError
+from ..types import Source, SourceAddError
 
 # Decode/validation helpers live in ``_upload_decode``; re-exported here so the
 # historical ``notebooklm._source.upload.<helper>`` import surface (and the
@@ -400,7 +402,8 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     registration = await self._register_file_source_for_upload(
                         notebook_id, filename
                     )
-                    source_id, stage = registration.value, "start_session"
+                    source_id = registration.value
+                    stage: SourceAddStage = "start_session"
                     try:
                         upload_url = await self.start_resumable_upload(
                             notebook_id,
@@ -420,10 +423,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                         )
                     except Exception as exc:  # noqa: BLE001 - preserve all post-register failures
                         raise SourceAddPartialError(
-                            filename,
-                            source_id=source_id,
-                            stage=stage,
-                            cause=exc,
+                            filename, source_id=source_id, stage=stage, cause=exc
                         ) from exc
                 finally:
                     if not handed_off:

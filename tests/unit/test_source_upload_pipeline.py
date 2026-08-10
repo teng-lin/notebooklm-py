@@ -160,6 +160,27 @@ def make_pipeline(
     )
 
 
+def track_opened_files(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    opened_files: list[Any] = []
+    real_open = builtins.open
+
+    def tracked_open(*args, **kwargs):
+        file_obj = real_open(*args, **kwargs)
+        opened_files.append(file_obj)
+        return file_obj
+
+    monkeypatch.setattr(builtins, "open", tracked_open)
+    return opened_files
+
+
+def upload_client_factory(failure: BaseException) -> MagicMock:
+    client = AsyncMock()
+    client.post = AsyncMock(side_effect=failure)
+    client_cm = AsyncMock()
+    client_cm.__aenter__.return_value = client
+    return MagicMock(return_value=client_cm)
+
+
 def test_extract_register_file_source_id_accepts_known_response_shapes() -> None:
     assert _extract_register_file_source_id([["src_123"]], "report.pdf") == "src_123"
     assert _extract_register_file_source_id([[[["src_123"]]]], "report.pdf") == "src_123"
@@ -495,28 +516,12 @@ async def test_add_file_surfaces_registered_source_when_upload_fails(
 ) -> None:
     file_path = tmp_path / "report.pdf"
     file_path.write_bytes(b"hello")
-    service = make_pipeline()
     failure = ValidationError(f"{failing_step} failed")
-    uploaded_file = None
-    opened_files = []
-    real_open = builtins.open
-
-    def tracked_open(*args, **kwargs):
-        file_obj = real_open(*args, **kwargs)
-        opened_files.append(file_obj)
-        return file_obj
-
-    async def upload_file_streaming(_upload_url, file_obj, **_kwargs):
-        nonlocal uploaded_file
-        uploaded_file = file_obj
-        try:
-            if failing_step == "upload":
-                raise failure
-        finally:
-            file_obj.close()
+    factory = upload_client_factory(failure) if failing_step == "upload" else None
+    service = make_pipeline(async_client_factory=factory)
+    opened_files = track_opened_files(monkeypatch)
 
     monkeypatch.setattr(service, "register_file_source", AsyncMock(return_value="src_123"))
-    monkeypatch.setattr(builtins, "open", tracked_open)
     monkeypatch.setattr(
         service,
         "start_resumable_upload",
@@ -525,7 +530,6 @@ async def test_add_file_surfaces_registered_source_when_upload_fails(
             return_value="https://notebooklm.google.com/upload/_/?upload_id=session",
         ),
     )
-    monkeypatch.setattr(service, "upload_file_streaming", upload_file_streaming)
 
     with pytest.raises(SourceAddPartialError) as exc_info:
         await service.add_file("nb_123", file_path)
@@ -537,8 +541,6 @@ async def test_add_file_surfaces_registered_source_when_upload_fails(
     assert error.cause is failure
     assert error.__cause__ is failure
     assert opened_files and opened_files[0].closed
-    if uploaded_file is not None:
-        assert uploaded_file.closed
 
 
 @pytest.mark.asyncio
@@ -548,6 +550,7 @@ async def test_add_file_does_not_wrap_registration_failure(
     file_path = tmp_path / "report.pdf"
     file_path.write_bytes(b"hello")
     service = make_pipeline()
+    opened_files = track_opened_files(monkeypatch)
     failure = SourceAddError("report.pdf", message="registration failed")
     monkeypatch.setattr(service, "register_file_source", AsyncMock(side_effect=failure))
     start = AsyncMock()
@@ -558,6 +561,7 @@ async def test_add_file_does_not_wrap_registration_failure(
 
     assert exc_info.value is failure
     assert not isinstance(exc_info.value, SourceAddPartialError)
+    assert opened_files and opened_files[0].closed
     start.assert_not_awaited()
 
 
@@ -568,8 +572,10 @@ async def test_add_file_does_not_wrap_cancellation_after_registration(
 ) -> None:
     file_path = tmp_path / "report.pdf"
     file_path.write_bytes(b"hello")
-    service = make_pipeline()
     cancelled = asyncio.CancelledError()
+    factory = upload_client_factory(cancelled) if cancel_stage == "upload" else None
+    service = make_pipeline(async_client_factory=factory)
+    opened_files = track_opened_files(monkeypatch)
     monkeypatch.setattr(service, "register_file_source", AsyncMock(return_value="src_123"))
     monkeypatch.setattr(
         service,
@@ -580,21 +586,16 @@ async def test_add_file_does_not_wrap_cancellation_after_registration(
         ),
     )
 
-    async def cancel_upload(_upload_url, file_obj, **_kwargs):
-        file_obj.close()
-        if cancel_stage == "upload":
-            raise cancelled
-
-    monkeypatch.setattr(service, "upload_file_streaming", cancel_upload)
-
     with pytest.raises(asyncio.CancelledError) as exc_info:
         await service.add_file("nb_123", file_path)
 
     assert exc_info.value is cancelled
+    assert opened_files and opened_files[0].closed
 
 
 @pytest.mark.asyncio
-async def test_upload_failure_closes_caller_owned_file_object() -> None:
+async def test_upload_failure_closes_file_object_after_ownership_transfer() -> None:
+    """Passing an IO object transfers ownership to the upload pipeline."""
     request = httpx.Request("POST", "https://notebooklm.google.com/upload/_/")
     response = httpx.Response(400, request=request)
     client = AsyncMock()

@@ -485,13 +485,11 @@ class SourcesAPI:
     ) -> Source:
         """Add a file source to a notebook using Google's resumable upload.
 
-        Registers the source, opens an upload session, streams the file body
-        (memory-efficient for large files), and — if a custom ``title`` is given —
-        issues a follow-up ``UPDATE_SOURCE`` rename (the file-add RPC has no title
-        slot). Uploads run under the Sources-owned semaphore
-        (``max_concurrent_uploads``, default 4), which also caps open file
-        descriptors; the path is resolved before admission and opened exactly once
-        (a single open pins the bytes, so a later path swap cannot alter the upload).
+        Registers the source, opens an upload session, streams the file body (memory-efficient for
+        large files), and — if a custom ``title`` is given — issues a follow-up ``UPDATE_SOURCE``
+        rename (the file-add RPC has no title slot). Uploads run under the Sources-owned semaphore
+        (``max_concurrent_uploads``, default 4), which also caps open file descriptors; the path is
+        resolved before admission and opened exactly once, pinning the bytes against path swaps.
 
         Args:
             notebook_id: The notebook ID.
@@ -511,12 +509,14 @@ class SourcesAPI:
                 callback during the upload body; its exceptions abort the upload.
 
         Returns:
-            The created Source object. If wait=False, status may be PROCESSING.
+            The created Source object; if wait=False, status may be PROCESSING.
 
         Raises:
             ValidationError: If the path is not a regular file, the title is
                 empty, or the file is an HTML-family type the upload endpoint
                 rejects (convert to text/Markdown/PDF first).
+            SourceAddPartialError: If a registered source row's upload start or finalization fails;
+                its ``source_id`` and ``stage`` identify the retained row and recovery boundary.
         """
         return await self._uploader.add_file(
             notebook_id,
