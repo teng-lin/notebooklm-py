@@ -708,7 +708,7 @@
       "path": "src/notebooklm/_auth/account.py"
     },
     {
-      "lines": 176,
+      "lines": 174,
       "name": "account_email",
       "path": "src/notebooklm/_auth/account_email.py"
     },
@@ -906,7 +906,7 @@
     "function_local_edges": 12,
     "module_edges": 126,
     "modules": 41,
-    "total_lines": 15884,
+    "total_lines": 15882,
     "unique_edges": 138
   },
   "version": 1

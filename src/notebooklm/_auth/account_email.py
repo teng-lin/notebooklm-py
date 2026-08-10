@@ -35,9 +35,7 @@ def _session_key(auth: AuthTokens) -> AccountEmailCacheKey:
 
 
 def _auth_material_values(jar: CookieJar) -> dict[CookieIdentity, str]:
-    return {
-        identity: cookie.value for identity, cookie in jar._auth_material_state().items()
-    }
+    return {identity: cookie.value for identity, cookie in jar._auth_material_state().items()}
 
 
 def _read_matching_account_heal_document(
