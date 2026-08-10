@@ -67,9 +67,9 @@ class TestExtractReportMarkdown:
         src = [None, "t", None, 5, None, None, ["# Report", 3, None, None, None, []]]
         assert extract_report_markdown(src) == "# Report"
 
-    @pytest.mark.parametrize("kind", [1, 2])
-    def test_web_snippet_content_blocks_are_not_reports(self, kind):
-        src = [None, "t", None, 5, None, None, [None, kind, "web snippet", None, 13]]
+    @pytest.mark.parametrize("kind", [1, 2, 3.0, True])
+    def test_non_report_content_kinds_are_not_reports(self, kind):
+        src = [None, "t", None, 5, None, None, ["# Fake", kind, "web snippet", None, 13]]
         assert extract_report_markdown(src) == ""
 
     @pytest.mark.parametrize("text", [None, 42, ""])
@@ -337,6 +337,8 @@ class TestParseResearchTasks:
         sources = [
             ["https://one.example", "One", "desc", 1, None, None, [None, 1, "snippet"]],
             ["https://two.example", "Two", "desc", 1, None, None, [None, 2, "snippet"]],
+            ["https://float.example", "Float", "desc", 1, None, None, ["# Fake", 3.0]],
+            ["https://bool.example", "Bool", "desc", 1, None, None, ["# Fake", True]],
             [None, "Deep Report", None, 5, None, None, ["# Actual report", 3]],
         ]
         task_info = [None, ["deep query"], None, [sources], 6]
@@ -344,9 +346,8 @@ class TestParseResearchTasks:
         tasks = parse_research_tasks([[["task_reordered", task_info]]])
 
         assert tasks[0]["report"] == "# Actual report"
-        assert "report_markdown" not in tasks[0]["sources"][0]
-        assert "report_markdown" not in tasks[0]["sources"][1]
-        assert tasks[0]["sources"][2]["report_markdown"] == "# Actual report"
+        assert all("report_markdown" not in source for source in tasks[0]["sources"][:-1])
+        assert tasks[0]["sources"][-1]["report_markdown"] == "# Actual report"
 
     def test_web_rows_without_report_do_not_fabricate_one(self):
         sources = [

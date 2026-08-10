@@ -207,11 +207,9 @@ class TestResearchResultRow:
         row = ResearchResultRow([None, "t", None, 5, None, None, block])
         assert row.report_markdown == ""
 
-    @pytest.mark.parametrize("kind", [1, 2])
-    def test_web_content_block_is_not_report(self, kind) -> None:
-        row = ResearchResultRow(
-            ["https://example.com", "t", None, 1, None, None, [None, kind, "s"]]
-        )
+    @pytest.mark.parametrize("kind", [1, 2, 3.0, True])
+    def test_non_report_content_kind_is_not_report(self, kind) -> None:
+        row = ResearchResultRow(["https://example.com", "t", None, 1, None, None, ["# Fake", kind]])
         assert row.report_markdown == ""
 
 

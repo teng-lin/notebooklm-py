@@ -316,10 +316,10 @@ class ResearchResultRow:
     def report_markdown(self) -> str:
         """Report markdown from a kind-3 content block, otherwise ``""``."""
         block = self.content_block
-        if (
-            len(block) < self._CONTENT_MIN_LEN
-            or block[self._CONTENT_KIND_POS] != self._REPORT_CONTENT_KIND
-        ):
+        if len(block) < self._CONTENT_MIN_LEN:
+            return ""
+        kind = block[self._CONTENT_KIND_POS]
+        if type(kind) is not int or kind != self._REPORT_CONTENT_KIND:
             return ""
         text = block[self._CONTENT_TEXT_POS]
         return text if isinstance(text, str) and text else ""
