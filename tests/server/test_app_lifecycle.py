@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 import pytest
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from notebooklm import paths
@@ -245,13 +246,16 @@ def test_non_auth_client_startup_failure_is_not_swallowed() -> None:
         pass
 
 
-def test_non_auth_retry_failure_preserves_structured_exception() -> None:
+def test_non_auth_retry_failure_preserves_and_rate_limits_structured_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class StructuredStartupError(Exception):
         def __init__(self, message: str, *, code: int) -> None:
             super().__init__(message)
             self.code = code
 
     attempts = 0
+    now = 100.0
 
     @asynccontextmanager
     async def factory() -> AsyncIterator[FakeClient]:
@@ -263,15 +267,30 @@ def test_non_auth_retry_failure_preserves_structured_exception() -> None:
         yield FakeClient()  # pragma: no cover - makes this an async context manager
 
     app = create_app(client_factory=factory)
+
+    @app.exception_handler(StructuredStartupError)
+    async def structured_error_handler(request, exc):  # type: ignore[no-untyped-def]
+        return JSONResponse(status_code=503, content={"code": exc.code, "message": str(exc)})
+
+    monkeypatch.setattr(app_module.time, "monotonic", lambda: now)
     headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
     with TestClient(
         app, headers=headers, client=("127.0.0.1", 5555), raise_server_exceptions=False
     ) as client:
-        response = client.get("/v1/notebooks")
+        original = client.get("/v1/notebooks")
+        throttled = client.get("/v1/notebooks")
+        assert attempts == 2
 
-    assert response.status_code == 500
-    assert response.json()["error"]["category"] == "unexpected"
-    assert attempts == 2
+        now += app_module._SERVER_AUTH_RETRY_INTERVAL_SECONDS
+        retried = client.get("/v1/notebooks")
+
+    assert original.status_code == 503
+    assert original.json() == {"code": 503, "message": "structured retry failure"}
+    assert throttled.status_code == 500
+    assert throttled.json()["error"]["category"] == "unexpected"
+    assert retried.status_code == 503
+    assert retried.json() == {"code": 503, "message": "structured retry failure"}
+    assert attempts == 3
 
 
 def test_create_app_default_factory_threads_profile(monkeypatch) -> None:  # type: ignore[no-untyped-def]

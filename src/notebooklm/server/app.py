@@ -334,7 +334,7 @@ def create_app(
                     limiters=limiters,
                 )
                 client_lock = asyncio.Lock()
-                last_load_error: AuthError | None = None
+                last_load_error: AuthError | RuntimeError | None = None
                 retry_not_before = 0.0
 
                 async def load_client(
@@ -351,14 +351,26 @@ def create_app(
                             state.client_generation != observed_generation
                             and last_load_error is not None
                         ):
-                            raise AuthError(str(last_load_error)) from None
+                            raise last_load_error.__class__(str(last_load_error)) from None
                         if last_load_error is not None and time.monotonic() < retry_not_before:
-                            raise AuthError(str(last_load_error)) from None
+                            raise last_load_error.__class__(str(last_load_error)) from None
                         try:
                             client = await clients.enter_async_context(factory())
                         except Exception as exc:
                             auth_error = _normalize_client_startup_error(exc)
                             if auth_error is None:
+                                safe_error = RuntimeError(
+                                    "Client startup failed "
+                                    f"({type(exc).__name__}); retry temporarily rate-limited."
+                                )
+                                state.client_error = safe_error
+                                last_load_error = safe_error
+                                state.client_generation += 1
+                                retry_not_before = (
+                                    0.0
+                                    if startup
+                                    else time.monotonic() + _SERVER_AUTH_RETRY_INTERVAL_SECONDS
+                                )
                                 raise
                             state.client_error = auth_error
                             last_load_error = auth_error
