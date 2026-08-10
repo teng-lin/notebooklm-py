@@ -498,6 +498,11 @@
     {
       "scope": "module",
       "source": "session",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "session",
       "target": "extraction"
     },
     {
@@ -798,7 +803,7 @@
       "path": "src/notebooklm/_auth/psidts_recovery.py"
     },
     {
-      "lines": 619,
+      "lines": 623,
       "name": "recovery",
       "path": "src/notebooklm/_auth/recovery.py"
     },
@@ -808,7 +813,7 @@
       "path": "src/notebooklm/_auth/refresh.py"
     },
     {
-      "lines": 215,
+      "lines": 227,
       "name": "session",
       "path": "src/notebooklm/_auth/session.py"
     },
@@ -849,10 +854,10 @@
   },
   "summary": {
     "function_local_edges": 11,
-    "module_edges": 117,
+    "module_edges": 118,
     "modules": 40,
-    "total_lines": 15395,
-    "unique_edges": 128
+    "total_lines": 15411,
+    "unique_edges": 129
   },
   "version": 1
 }

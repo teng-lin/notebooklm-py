@@ -189,6 +189,36 @@ def test_server_info_include_account_degrades_when_startup_auth_failed(
     assert account["reason"].startswith("Authentication expired or invalid")
 
 
+def test_server_info_include_account_degrades_after_non_auth_retry_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_auth(monkeypatch, all_passed=True)
+    attempts = 0
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[FakeClient]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
+        raise RuntimeError("temporary bootstrap transport failure")
+        yield FakeClient()  # pragma: no cover - makes this an async context manager
+
+    app = create_app(client_factory=factory)
+    headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
+    with TestClient(
+        app, headers=headers, client=("127.0.0.1", 5555), raise_server_exceptions=False
+    ) as client:
+        response = client.get("/v1/server/info", params={"include_account": True})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["auth"]["authenticated"] is False
+    assert body["auth"]["startup_error"]["category"] == "unexpected"
+    assert body["account"]["available"] is False
+    assert attempts == 2
+
+
 def test_server_info_include_account_retries_stale_startup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

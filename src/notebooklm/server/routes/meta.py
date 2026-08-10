@@ -143,9 +143,15 @@ async def server_info(
         try:
             account_client = await get_client(request)
         except AuthError:
-            # Account diagnostics degrade below while preserving the current
-            # startup/retry error in the response's auth block.
+            # A concurrent request can bind successfully immediately after
+            # this request loses an auth generation; re-check state below.
             pass
+        except Exception:
+            # Degrade only failures that the loader recorded for diagnostics.
+            # Unrecorded exceptions still identify a route/programming error
+            # and must retain the normal server error path.
+            if get_client_error(request) is None:
+                raise
     startup_error = get_client_error(request)
     if include_account and account_client is None and startup_error is None:
         # The first lookup can fail just before a concurrent request finishes

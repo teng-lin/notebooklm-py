@@ -397,6 +397,7 @@ async def try_storage_cookie_reload(
     *,
     storage_path: Path | None,
     cookie_jar: httpx.Cookies,
+    rejected_cookie_jar: CookieJar | None = None,
     load_cookie_pair: Callable[[Path], Awaitable[_LoadedCookiePair]] | None = None,
     adopt_baseline: Callable[[Path, CookieJar], Awaitable[None]] | None = None,
 ) -> bool:
@@ -406,16 +407,19 @@ async def try_storage_cookie_reload(
     in-memory state and a profile that another process may already have
     refreshed. The loader is deliberately pure and name-only: it performs one
     disk read with no browser, subprocess, RotateCookies POST, or write. A jar
-    changed during the read is preserved and reported as retryable instead
-    of being overwritten by the disk sample. After an accepted replacement, an
-    optional callback adopts the paired baseline for following cookie saves.
+    changed after the rejected request or during the read is preserved and
+    reported as retryable instead of being overwritten by the disk sample.
+    After an accepted replacement, an optional callback adopts the paired
+    baseline for following cookie saves.
     """
-    if storage_path is None:
-        return False
-
     from .cookies import _load_cookie_pair_pure, _replace_cookie_jar
 
     live_before = CookieJar.from_httpx(cookie_jar)
+    if rejected_cookie_jar is not None and live_before != rejected_cookie_jar:
+        logger.info("Stored-cookie reload left a post-request jar change in place.")
+        return True
+    if storage_path is None:
+        return False
 
     try:
         if load_cookie_pair is None:

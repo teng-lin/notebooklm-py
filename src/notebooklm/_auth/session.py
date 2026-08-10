@@ -10,6 +10,7 @@ from .._url_utils import is_google_auth_redirect
 from ..exceptions import AuthExtractionError
 from ..paths import profile_from_storage_path
 from .account import authuser_query
+from .cookie_types import CookieJar
 from .extraction import extract_wiz_field
 from .recovery import try_headless_reauth, try_master_token_reauth, try_storage_cookie_reload
 from .refresh import try_refresh_cmd_reauth
@@ -71,13 +72,18 @@ async def refresh_auth_session(
     url = f"{get_base_url()}/"
     if auth.account_email or auth.authuser:
         url = f"{url}?{authuser_query(auth.authuser, auth.account_email)}"
+    rejected_cookie_jar: CookieJar | None = None
 
     async def _get_and_extract() -> tuple[str, str] | None:
         """GET the homepage + extract tokens; ``None`` signals a dead-cookie 302."""
+        nonlocal rejected_cookie_jar
+        request_cookie_jar = CookieJar.from_httpx(http_client.cookies)
         response = await http_client.get(url)
         response.raise_for_status()
         if is_google_auth_redirect(str(response.url)):
+            rejected_cookie_jar = request_cookie_jar
             return None
+        rejected_cookie_jar = None
         try:
             csrf_value = extract_wiz_field(response.text, "SNlM0e", strict=True)
             sid_value = extract_wiz_field(response.text, "FdrFJe", strict=True)
@@ -109,6 +115,7 @@ async def refresh_auth_session(
                 auth=auth,
                 kernel=kernel,
                 cookie_persistence=cookie_persistence,
+                rejected_cookie_jar=rejected_cookie_jar,
             ):
                 break
             extracted = await _get_and_extract()
@@ -156,21 +163,26 @@ async def _try_storage_cookie_reload(
     auth: AuthTokens,
     kernel: Kernel,
     cookie_persistence: CookiePersistence,
+    rejected_cookie_jar: CookieJar | None,
 ) -> bool:
     """Reload newer/different file-backed cookies without external recovery."""
     cookie_jar = kernel.get_http_client().cookies
-    reloaded = await try_storage_cookie_reload(
-        storage_path=auth.storage_path,
-        cookie_jar=cookie_jar,
-        adopt_baseline=lambda path, baseline: cookie_persistence._adopt_reloaded_baseline(
-            path,
-            baseline,
-            to_thread=asyncio.to_thread,
-        ),
-    )
-    if reloaded:
+    try:
+        return await try_storage_cookie_reload(
+            storage_path=auth.storage_path,
+            cookie_jar=cookie_jar,
+            rejected_cookie_jar=rejected_cookie_jar,
+            adopt_baseline=lambda path, baseline: cookie_persistence._adopt_reloaded_baseline(
+                path,
+                baseline,
+                to_thread=asyncio.to_thread,
+            ),
+        )
+    finally:
+        # The reload mutates the authoritative HTTP jar before its optional
+        # adoption await. Keep public compatibility views synchronized even if
+        # cancellation lands while adoption is waiting on disk or save_lock.
         auth.replace_cookie_jar(cookie_jar)
-    return reloaded
 
 
 async def _try_refresh_cmd_reauth(*, auth: AuthTokens, kernel: Kernel) -> bool:
