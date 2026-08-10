@@ -137,7 +137,6 @@ async def server_info(
         test_fetch=False,
         json_output=True,
     )
-    result = await run_auth_check(plan, read_env_auth_json=_no_env_auth_json)
     account_client: NotebookLMClient | None = None
     if include_account:
         try:
@@ -159,6 +158,10 @@ async def server_info(
         # now-bound client instead of treating that narrow race as an invariant
         # violation below.
         account_client = await get_client(request)
+    # Probe after any lazy bind: that bind can succeed because storage was
+    # repaired after this request started, and the response must describe the
+    # newly bound session rather than an earlier stale disk snapshot.
+    result = await run_auth_check(plan, read_env_auth_json=_no_env_auth_json)
     startup_error_item = error_item(startup_error) if startup_error is not None else None
     authenticated = result.all_passed and startup_error is None
     auth: dict[str, Any] = {

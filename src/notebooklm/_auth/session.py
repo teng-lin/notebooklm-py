@@ -115,7 +115,14 @@ async def refresh_auth_session(
                 auth=auth,
                 kernel=kernel,
                 cookie_persistence=cookie_persistence,
-                rejected_cookie_jar=rejected_cookie_jar,
+                # Preserve a post-request jar mutation for the first retry. If
+                # that jar is also rejected, force the bounded second attempt
+                # to sample an available disk profile even when the response
+                # mutated another cookie. With no profile, retain the second
+                # response mutation as the only local recovery evidence.
+                rejected_cookie_jar=(
+                    None if _attempt == 1 and auth.storage_path is not None else rejected_cookie_jar
+                ),
             ):
                 break
             extracted = await _get_and_extract()

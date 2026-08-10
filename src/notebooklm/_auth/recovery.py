@@ -455,6 +455,13 @@ async def try_storage_cookie_reload(
                 baseline=fresh.baseline,
                 adopt_baseline=adopt_baseline,
             )
+        if CookieJar.from_httpx(cookie_jar) != live_after:
+            logger.info(
+                "Stored-cookie reload left a live jar changed during baseline adoption "
+                "in place for %s.",
+                storage_path,
+            )
+            return True
         logger.debug("Stored-cookie reload skipped for %s: profile is unchanged.", storage_path)
         return False
 

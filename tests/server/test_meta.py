@@ -222,18 +222,26 @@ def test_server_info_include_account_degrades_after_non_auth_retry_failure(
 def test_server_info_include_account_retries_stale_startup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_auth(monkeypatch, all_passed=True)
     fake = FakeClient()
     attempts = 0
+    refreshed = False
+    probe_states: list[bool] = []
+
+    async def _fake_run(plan: Any, *, read_env_auth_json: Any) -> _FakeAuthResult:
+        del plan, read_env_auth_json
+        probe_states.append(refreshed)
+        return _FakeAuthResult(all_passed=refreshed)
 
     @asynccontextmanager
     async def factory() -> AsyncIterator[FakeClient]:
-        nonlocal attempts
+        nonlocal attempts, refreshed
         attempts += 1
         if attempts == 1:
             raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
+        refreshed = True
         yield fake
 
+    monkeypatch.setattr(meta_route, "run_auth_check", _fake_run)
     app = create_app(client_factory=factory)
     headers = {"Authorization": f"Bearer {TEST_TOKEN}", "Host": "127.0.0.1"}
     with TestClient(
@@ -242,7 +250,9 @@ def test_server_info_include_account_retries_stale_startup(
         body = client.get("/v1/server/info", params={"include_account": True}).json()
 
     assert attempts == 2
+    assert probe_states == [True]
     assert body["auth"]["authenticated"] is True
+    assert body["auth"]["sid_cookie"] is True
     assert "startup_error" not in body["auth"]
     assert body["account"]["available"] is True
 

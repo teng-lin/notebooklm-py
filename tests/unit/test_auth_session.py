@@ -390,6 +390,119 @@ async def test_refresh_preserves_a_jar_changed_after_the_rejected_request(
 
 
 @pytest.mark.asyncio
+async def test_refresh_forces_disk_sample_after_repeated_response_cookie_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Repeated rejected-response mutations cannot starve the bounded disk read."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "disk-b", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "disk-b-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    live = httpx.Cookies()
+    live.set("SID", "stale-a", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "stale-a-ts", domain=".google.com", path="/")
+    requests: list[str] = []
+    mutation = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal mutation
+        if request.url.host == get_base_host():
+            cookie = request.headers.get("cookie", "")
+            requests.append(cookie)
+            if "SID=disk-b" in cookie:
+                return httpx.Response(200, text=REFRESH_HTML, request=request)
+            mutation += 1
+            return httpx.Response(
+                302,
+                headers={
+                    "Location": "https://accounts.google.com/signin/v2/identifier",
+                    "Set-Cookie": f"NID=mutation-{mutation}; Domain=.google.com; Path=/",
+                },
+                request=request,
+            )
+        return httpx.Response(200, text="<html>Please sign in</html>", request=request)
+
+    monkeypatch.delenv("NOTEBOOKLM_REFRESH_CMD_MIDSESSION", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH", raising=False)
+    auth = _auth(storage_path=storage, cookie_jar=live)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        cookies=live,
+        follow_redirects=True,
+    ) as http_client:
+        bundle = RecordingRefreshBundle(auth, http_client)
+        assert await _invoke(bundle) is auth
+
+    assert len(requests) == 3
+    assert "SID=stale-a" in requests[0]
+    assert "NID=mutation-1" in requests[1]
+    assert "SID=disk-b" in requests[2]
+
+
+@pytest.mark.asyncio
+async def test_refresh_retries_second_response_cookie_change_without_storage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without a disk profile, the second response mutation remains retryable."""
+    live = httpx.Cookies()
+    live.set("SID", "stale-a", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "stale-a-ts", domain=".google.com", path="/")
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == get_base_host():
+            cookie = request.headers.get("cookie", "")
+            requests.append(cookie)
+            if "SID=valid-c" in cookie:
+                return httpx.Response(200, text=REFRESH_HTML, request=request)
+            set_cookie = (
+                "NID=intermediate-b; Domain=.google.com; Path=/"
+                if len(requests) == 1
+                else "SID=valid-c; Domain=.google.com; Path=/"
+            )
+            return httpx.Response(
+                302,
+                headers={
+                    "Location": "https://accounts.google.com/signin/v2/identifier",
+                    "Set-Cookie": set_cookie,
+                },
+                request=request,
+            )
+        return httpx.Response(200, text="<html>Please sign in</html>", request=request)
+
+    monkeypatch.delenv("NOTEBOOKLM_REFRESH_CMD_MIDSESSION", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH", raising=False)
+    auth = _auth(cookie_jar=live)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        cookies=live,
+        follow_redirects=True,
+    ) as http_client:
+        bundle = RecordingRefreshBundle(auth, http_client)
+        assert await _invoke(bundle) is auth
+
+    assert len(requests) == 3
+    assert "SID=stale-a" in requests[0]
+    assert "NID=intermediate-b" in requests[1]
+    assert "SID=valid-c" in requests[2]
+
+
+@pytest.mark.asyncio
 async def test_cancelled_baseline_adoption_still_synchronizes_public_cookie_views(
     tmp_path: Path,
 ) -> None:
@@ -696,6 +809,63 @@ async def test_storage_cookie_reload_preserves_live_jar_changed_during_disk_read
 
     assert await reload_task is True
     assert live.get("SID", domain=".google.com", path="/") == "keepalive-new"
+
+
+@pytest.mark.asyncio
+async def test_storage_cookie_reload_retries_live_jar_changed_during_baseline_adoption(
+    tmp_path: Path,
+) -> None:
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {
+                        "name": "SID",
+                        "value": "rejected-a",
+                        "domain": ".google.com",
+                        "path": "/",
+                        "httpOnly": True,
+                    },
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "rejected-a-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                        "httpOnly": True,
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    live = httpx.Cookies()
+    live.set("SID", "rejected-a", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "rejected-a-ts", domain=".google.com", path="/")
+    assert CookieJar.from_httpx(_load_cookie_pair_pure(storage).live) == CookieJar.from_httpx(live)
+    adoption_started = asyncio.Event()
+    release_adoption = asyncio.Event()
+
+    async def blocked_adoption(path: Path, baseline: CookieJar) -> None:
+        del path, baseline
+        adoption_started.set()
+        await release_adoption.wait()
+
+    reload_task = asyncio.create_task(
+        try_storage_cookie_reload(
+            storage_path=storage,
+            cookie_jar=live,
+            rejected_cookie_jar=CookieJar.from_httpx(live),
+            adopt_baseline=blocked_adoption,
+        )
+    )
+    await adoption_started.wait()
+    live.set("SID", "keepalive-b", domain=".google.com", path="/")
+    release_adoption.set()
+
+    assert await reload_task is True
+    assert live.get("SID", domain=".google.com", path="/") == "keepalive-b"
 
 
 @pytest.mark.asyncio
