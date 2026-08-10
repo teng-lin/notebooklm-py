@@ -808,7 +808,7 @@
       "path": "src/notebooklm/_auth/refresh.py"
     },
     {
-      "lines": 211,
+      "lines": 215,
       "name": "session",
       "path": "src/notebooklm/_auth/session.py"
     },
@@ -851,7 +851,7 @@
     "function_local_edges": 11,
     "module_edges": 117,
     "modules": 40,
-    "total_lines": 15391,
+    "total_lines": 15395,
     "unique_edges": 128
   },
   "version": 1

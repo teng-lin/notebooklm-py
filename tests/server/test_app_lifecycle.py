@@ -192,9 +192,11 @@ def test_concurrent_requests_share_one_failed_startup_retry() -> None:
     ):
         first = pool.submit(client.get, "/v1/notebooks")
         second = pool.submit(client.get, "/v1/notebooks")
-        assert retry_started.wait(timeout=2)
-        assert both_requests_started.wait(timeout=2)
-        release_retry.set()
+        try:
+            assert retry_started.wait(timeout=2)
+            assert both_requests_started.wait(timeout=2)
+        finally:
+            release_retry.set()
         responses = (first.result(timeout=2), second.result(timeout=2))
 
     assert [response.status_code for response in responses] == [401, 401]

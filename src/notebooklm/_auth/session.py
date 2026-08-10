@@ -158,15 +158,19 @@ async def _try_storage_cookie_reload(
     cookie_persistence: CookiePersistence,
 ) -> bool:
     """Reload newer/different file-backed cookies without external recovery."""
-    return await try_storage_cookie_reload(
+    cookie_jar = kernel.get_http_client().cookies
+    reloaded = await try_storage_cookie_reload(
         storage_path=auth.storage_path,
-        cookie_jar=kernel.get_http_client().cookies,
+        cookie_jar=cookie_jar,
         adopt_baseline=lambda path, baseline: cookie_persistence._adopt_reloaded_baseline(
             path,
             baseline,
             to_thread=asyncio.to_thread,
         ),
     )
+    if reloaded:
+        auth.replace_cookie_jar(cookie_jar)
+    return reloaded
 
 
 async def _try_refresh_cmd_reauth(*, auth: AuthTokens, kernel: Kernel) -> bool:

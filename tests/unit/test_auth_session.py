@@ -113,13 +113,7 @@ class _RecordingAuthCoord:
 
 
 class _RecordingCookiePersistence:
-    async def _adopt_reloaded_baseline(
-        self,
-        path: Path,
-        expected,
-        *,
-        to_thread,  # type: ignore[no-untyped-def]
-    ) -> None:
+    async def _adopt_reloaded_baseline(self, path: Path, expected: Any, *, to_thread: Any) -> None:
         del path, expected, to_thread
 
 
@@ -326,6 +320,8 @@ async def test_refresh_auth_session_reloads_fresh_profile_after_rejection(
     assert len(requests) == 2
     assert "SID=stale-sid" in requests[0]
     assert "SID=fresh-sid" in requests[1]
+    assert auth.cookies[("SID", ".google.com", "/")] == "fresh-sid"
+    assert auth.cookie_jar is http_client.cookies
     assert bundle.operations == ["update_auth_tokens", "update_auth_headers", "save_cookies"]
 
 
