@@ -208,6 +208,19 @@ async def test_progress_keepalive_errors_are_swallowed() -> None:
     assert out["source_id"] == "s-ok"
 
 
+async def test_await_upload_is_widget_accessible_for_chatgpt() -> None:
+    # #1891: ChatGPT (Apps SDK) gates component-initiated tool calls behind
+    # ``openai/widgetAccessible`` (defaults false), so the upload widget's auto-confirm
+    # ``callTool("await_upload", …)`` is rejected unless the tool descriptor opts in.
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator[MagicMock]:
+        yield MagicMock()
+
+    server = create_server(client_factory=factory, file_transfer=_cfg())
+    tools = {t.name: t for t in await server._list_tools()}
+    assert (tools["await_upload"].meta or {}).get("openai/widgetAccessible") is True
+
+
 async def test_await_upload_tool_delivers_progress_over_the_protocol() -> None:
     # End-to-end over the REAL MCP protocol (in-memory Client with a progressToken-bearing
     # request): the await_upload tool's keepalive reaches the client as an actual progress

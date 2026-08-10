@@ -15,12 +15,14 @@ Playwright / network is needed; ``playwright`` stays lazily imported.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from notebooklm._auth import headless_reauth as hr
+from notebooklm._auth.browser_capture import _CaptureAbortKind, _HeadlessCaptureAbort
 from notebooklm._auth.headless_reauth import (
     HeadlessReauthResult,
     HeadlessReauthStatus,
@@ -120,6 +122,17 @@ def test_optin_on_empty_profile_dir_is_unavailable(tmp_path: Path, monkeypatch) 
     assert result.status is HeadlessReauthStatus.UNAVAILABLE
 
 
+def test_ownership_marker_only_profile_is_not_reusable(tmp_path: Path) -> None:
+    """A freshly prepared marker-only directory holds no reusable Google session."""
+    profile = tmp_path / "A.json.browser_profile"
+    profile.mkdir()
+    (profile / ".notebooklm-owned").touch()
+
+    readiness = hr.headless_reauth_readiness(browser_profile=profile)
+
+    assert readiness.profile_present is False
+
+
 # ---------------------------------------------------------------------------
 # Decision matrix: opt-in ON + profile present → drives the browser
 # ---------------------------------------------------------------------------
@@ -202,6 +215,62 @@ def test_failed_on_unexpected_capture_error(tmp_path: Path, monkeypatch) -> None
     assert "RuntimeError" in result.reason
 
 
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        (_CaptureAbortKind.BROWSER_CLOSED, "browser was closed"),
+        (_CaptureAbortKind.CONNECTION_EXHAUSTED, "connection retries were exhausted"),
+    ],
+)
+def test_typed_capture_abort_maps_to_safe_infrastructure_reason(
+    tmp_path: Path, monkeypatch, kind: _CaptureAbortKind, expected: str
+) -> None:
+    """Typed capture aborts stay FAILED without masquerading as expired sessions."""
+
+    def _abort(*_args, **_kwargs):
+        raise _HeadlessCaptureAbort(kind)
+
+    monkeypatch.setattr(hr, "run_browser_capture", _abort)
+    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
+    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
+
+    result = attempt_headless_reauth(
+        storage_path=tmp_path / "storage_state.json",
+        allow_headless=True,
+        browser_profile=_make_profile(tmp_path),
+        env={},
+    )
+
+    assert result.status is HeadlessReauthStatus.FAILED
+    assert expected in result.reason
+    assert "expired" not in result.reason
+    assert "http" not in result.reason
+    assert "cookie" not in result.reason
+
+
+def test_typed_capture_abort_from_cdp_uses_same_safe_mapping(tmp_path: Path, monkeypatch) -> None:
+    """The CDP arm shares the profile arm's infrastructure classification."""
+
+    def _abort(*_args, **_kwargs):
+        raise _HeadlessCaptureAbort(_CaptureAbortKind.BROWSER_CLOSED)
+
+    monkeypatch.setattr(hr, "run_cdp_capture", _abort)
+    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
+
+    result = attempt_headless_reauth(
+        storage_path=tmp_path / "storage_state.json",
+        allow_headless=True,
+        cdp_url="http://127.0.0.1:9222",
+        env={},
+    )
+
+    assert result.status is HeadlessReauthStatus.FAILED
+    assert result.reason == (
+        "headless capture failed: browser was closed during capture; "
+        "retry headless re-authentication"
+    )
+
+
 def test_env_optin_drives_browser_without_explicit_flag(tmp_path: Path, monkeypatch) -> None:
     """``NOTEBOOKLM_HEADLESS_REAUTH=1`` enables L3 even with allow_headless=False."""
     monkeypatch.setattr(hr, "run_browser_capture", lambda *a, **k: None)
@@ -268,9 +337,11 @@ def test_concurrent_explicit_attempts_coalesce_to_one_browser(tmp_path: Path, mo
 
     The explicit ``refresh_auth(allow_headless=True)`` entry bypasses the
     mid-RPC coordinator's single-flight, so the per-storage-path drive lock +
-    freshness skip in ``attempt_headless_reauth`` is what prevents redundant
-    browsers. The leader writes the storage file (advancing its mtime); waiting
-    followers observe the fresh file and coalesce.
+    outcome coalescing in ``attempt_headless_reauth`` is what prevents redundant
+    browsers. The leader drives one real capture and publishes its typed
+    SUCCESS; the followers, which snapshotted the drive-sequence before blocking
+    and see it advance during their wait, coalesce onto that SUCCESS outcome
+    (not on the storage file's mtime).
     """
     import threading
     import time
@@ -312,6 +383,235 @@ def test_concurrent_explicit_attempts_coalesce_to_one_browser(tmp_path: Path, mo
     assert drives["count"] == 1
     assert len(results) == 6
     assert all(r.status is HeadlessReauthStatus.SUCCESS for r in results)
+
+
+class _ContentionSignalLock:
+    """A drive-lock stand-in that fires an event the moment it must block.
+
+    Wraps a real ``threading.Lock`` and exposes a ``contended`` event set on the
+    first ``acquire`` that cannot take the lock immediately — i.e. the moment a
+    follower is about to block behind the leader. That lets a test gate the
+    "an unrelated writer advances the file WHILE the follower waits" step
+    deterministically, without sleeps, and guarantees the follower has already
+    taken its pre-wait drive-sequence snapshot (the snapshot happens right
+    before ``with record.drive_lock`` in ``_drive_capture_coalesced``).
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.contended = threading.Event()
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        if self._lock.acquire(blocking=False):
+            return True
+        # Held by someone else — this acquirer is about to block.
+        self.contended.set()
+        if timeout is None or timeout < 0:
+            return self._lock.acquire(blocking)
+        return self._lock.acquire(blocking, timeout)
+
+    def release(self) -> None:
+        self._lock.release()
+
+    def __enter__(self) -> _ContentionSignalLock:
+        self.acquire()
+        return self
+
+    def __exit__(self, *_exc: object) -> bool:
+        self.release()
+        return False
+
+
+def test_follower_does_not_report_false_success_when_leader_failed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Leader re-mint FAILS + an unrelated write advances the file → follower FAILED.
+
+    This is the [capture-3] regression. The old coalescing keyed on the storage
+    file's mtime: a follower that observed the mtime advance while it waited
+    reported SUCCESS — even if the leader's re-mint actually FAILED and the
+    advance came from an *unrelated* writer (keepalive / PSIDTS rotation). The
+    new coalescing keys on the leader's TYPED outcome stamped with a
+    drive-sequence, so the unrelated mtime bump is ignored and the follower
+    surfaces the leader's real FAILED result.
+
+    Deterministic ordering (no sleeps): the leader parks inside its capture
+    holding the drive lock; the follower blocks on that lock (firing
+    ``contended`` right after it takes its pre-wait sequence snapshot); the test
+    then advances the file mtime and only then lets the leader's drive fail.
+    On the pre-c-PR3 mtime code the follower would read SUCCESS here; on the
+    outcome-based code it reads FAILED.
+    """
+    import os
+
+    storage = tmp_path / "storage_state.json"
+    storage.write_text("{}", encoding="utf-8")  # pre-existing file (mtime t0)
+    profile = _make_profile(tmp_path)
+
+    # Inject a shared drive record whose lock signals contention, so both the
+    # leader and the follower coalesce through the same sequence + outcome.
+    record = hr._DriveRecord(
+        drive_lock=_ContentionSignalLock(),  # type: ignore[arg-type]
+        _state_lock=threading.Lock(),
+    )
+    monkeypatch.setattr(hr, "_get_drive_record", lambda _p, *, source: record)
+    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
+    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
+
+    leader_in_capture = threading.Event()
+    leader_may_finish = threading.Event()
+
+    def _leader_capture(plan, io, *, headless, interactive):
+        leader_in_capture.set()
+        assert leader_may_finish.wait(timeout=5)
+        # The leader's re-mint FAILS: the profile's Google session is dead.
+        raise HeadlessLoginRequiredError("profile session is dead")
+
+    monkeypatch.setattr(hr, "run_browser_capture", _leader_capture)
+
+    results: dict[str, HeadlessReauthResult] = {}
+
+    def _run(tag: str) -> None:
+        results[tag] = attempt_headless_reauth(
+            storage_path=storage, allow_headless=True, browser_profile=profile, env={}
+        )
+
+    leader = threading.Thread(target=_run, args=("leader",))
+    leader.start()
+    assert leader_in_capture.wait(timeout=5)  # leader holds the drive lock
+
+    follower = threading.Thread(target=_run, args=("follower",))
+    follower.start()
+    # Follower has snapshotted its sequence (pre=0) and is now blocked on the lock.
+    assert record.drive_lock.contended.wait(timeout=5)  # type: ignore[attr-defined]
+
+    # An UNRELATED writer advances the storage file's mtime while the follower
+    # waits — the exact trigger that false-positived the old mtime heuristic.
+    st = storage.stat()
+    storage.write_text('{"cookies": [{"name": "x"}], "origins": []}', encoding="utf-8")
+    os.utime(storage, (st.st_atime + 10, st.st_mtime + 10))
+
+    leader_may_finish.set()  # leader's drive now fails → publishes FAILED
+    leader.join(timeout=5)
+    follower.join(timeout=5)
+
+    assert results["leader"].status is HeadlessReauthStatus.FAILED
+    # The crux: the follower must NOT infer SUCCESS from the advanced mtime.
+    assert results["follower"].status is HeadlessReauthStatus.FAILED
+    assert results["follower"].succeeded is False
+
+
+def test_stale_outcome_from_previous_cycle_is_not_coalesced(tmp_path: Path, monkeypatch) -> None:
+    """A solo follower after a past drive treats the old outcome as 'no outcome'.
+
+    A caller that arrives when NO drive is active during its wait must not
+    coalesce onto the outcome of a *previous* drive cycle (whose cookies may
+    have re-died since) — it drives its own browser. This pins the
+    strictly-newer-sequence discipline (``completed > pre``, not ``>=``).
+    """
+    storage = tmp_path / "storage_state.json"
+    profile = _make_profile(tmp_path)
+    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
+    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
+
+    drives = {"count": 0}
+
+    def _capture(plan, io, *, headless, interactive):
+        drives["count"] += 1
+        plan.storage_path.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
+
+    monkeypatch.setattr(hr, "run_browser_capture", _capture)
+
+    # First (completed) drive cycle publishes a SUCCESS outcome at sequence 1.
+    first = attempt_headless_reauth(
+        storage_path=storage, allow_headless=True, browser_profile=profile, env={}
+    )
+    assert first.status is HeadlessReauthStatus.SUCCESS
+    assert drives["count"] == 1
+
+    # A later, solo caller must NOT coalesce onto that stale outcome; it drives.
+    second = attempt_headless_reauth(
+        storage_path=storage, allow_headless=True, browser_profile=profile, env={}
+    )
+    assert second.status is HeadlessReauthStatus.SUCCESS
+    assert drives["count"] == 2  # drove its own browser, did not coalesce
+
+
+# ---------------------------------------------------------------------------
+# Why the drive coalescer is NOT ``_auth.single_flight`` (ADR-0030 honesty pass)
+# ---------------------------------------------------------------------------
+
+
+def test_single_flight_is_unreachable_from_the_sync_drive_entry() -> None:
+    """``single_flight.claim`` needs a running loop; this drive never has one.
+
+    Pins the reason ``_DriveRecord``'s docstring now states, so the refusal
+    cannot rot back into the retired "a later shared single-flight core will
+    reuse this wholesale" claim.
+
+    ``single_flight.claim`` creates a leader ``asyncio.Task`` and therefore
+    calls ``asyncio.get_running_loop()``. The headless drive's coalescing point
+    (``_drive_capture_coalesced``, reached only from the SYNC public
+    ``attempt_headless_reauth``) has no running loop, and its one production
+    caller runs it *off* the loop via ``asyncio.to_thread`` precisely because
+    the browser drive blocks — so the loop is absent by construction, not by
+    accident.
+    """
+    import asyncio
+    import inspect
+
+    from notebooklm._auth import recovery
+    from notebooklm._auth import single_flight as sf
+
+    # The entry point and its coalescer are synchronous; the async caller that
+    # reaches them hands them to a worker thread.
+    assert not inspect.iscoroutinefunction(attempt_headless_reauth)
+    assert not inspect.iscoroutinefunction(hr._drive_capture_coalesced)
+    assert inspect.iscoroutinefunction(recovery.try_headless_reauth)
+
+    async def _never_runs() -> None:  # pragma: no cover - claim raises first
+        return None
+
+    # In the production shape (inside ``asyncio.to_thread``) there is no loop,
+    # so a claim cannot be made at all.
+    async def _drive_in_worker_thread() -> str:
+        def _claim_from_worker() -> str:
+            try:
+                sf.claim(("path", "profile"), _never_runs)
+            except RuntimeError as exc:
+                return str(exc)
+            return "claimed"  # pragma: no cover - would mean a loop was present
+
+        return await asyncio.to_thread(_claim_from_worker)
+
+    assert asyncio.run(_drive_in_worker_thread()) == "no running event loop"
+
+
+def test_drive_record_keying_is_resolved_inside_the_sync_entry(tmp_path: Path) -> None:
+    """The ``(path, source)`` key depends on CDP resolution the async caller lacks.
+
+    The second reason ``_DriveRecord`` documents for not hoisting the claim up
+    into ``recovery.try_headless_reauth``: the ``source`` half of the key is
+    decided by ``resolve_cdp_url`` — which also enforces the loopback boundary —
+    inside ``attempt_headless_reauth``. A hoisted claim would have to duplicate
+    that security decision or collapse the two sources onto one key, which is
+    the cross-source false-FAILED bug the split key exists to prevent.
+    """
+    storage = tmp_path / "storage_state.json"
+
+    profile_record = hr._get_drive_record(storage, source="profile")
+    cdp_record = hr._get_drive_record(storage, source="cdp")
+
+    # Same storage file, different credential source → different records, so a
+    # dead profile's FAILED can never be handed to a live CDP attach.
+    assert profile_record is not cdp_record
+    assert hr._get_drive_record(storage, source="profile") is profile_record
+
+    # The source is only knowable after ``resolve_cdp_url`` runs, and that call
+    # is the loopback gate: a remote endpoint resolves to ``None`` (→ the
+    # "profile" source), so the key and the security boundary are one decision.
+    assert hr.resolve_cdp_url("http://127.0.0.1:9222", {}) == "http://127.0.0.1:9222"
+    assert hr.resolve_cdp_url("http://remote-host:9222", {}) is None
 
 
 class _DummyModule:

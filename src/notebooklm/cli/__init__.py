@@ -35,6 +35,7 @@ external importer.
 from .agent_cmd import agent
 from .artifact_cmd import artifact
 from .chat_cmd import register_chat_commands
+from .collection_cmd import collection
 from .doctor_cmd import register_doctor_command
 from .download_cmd import download
 from .generate_cmd import generate
@@ -99,6 +100,7 @@ __all__ = [
     "download",
     "note",
     "label",
+    "collection",
     "share",
     "skill",
     "research",

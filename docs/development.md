@@ -121,7 +121,7 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | `_streaming_post.py` | `stream_post_with_size_cap` | Low-level POST streaming and response-size guard. |
 | `_conversation_cache.py` | `ConversationCache` | Per-instance true-LRU conversation cache for `ChatAPI` continuity. Caps the conversation count (`MAX_CONVERSATION_CACHE_SIZE`) and the turns retained per conversation (`MAX_TURNS_PER_CONVERSATION`). |
 | `_polling_registry.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
-| `_cookie_persistence.py` | `CookiePersistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. |
+| `_cookie_persistence.py` | `CookiePersistence` | Per-path typed baselines, ordered `ProfileStore` cookie merges, `__Secure-1PSIDTS` rotation, and the concrete v0.x snapshot adapter. |
 
 The feature-facing surface is the set of **capability Protocols** in
 `notebooklm._runtime.contracts` — `Kernel`, `RpcCaller`, and
@@ -244,41 +244,212 @@ from those catalogues rather than introducing parallel patterns.
 Multiple `notebooklm` processes (parallel CLI runs, an in-process keepalive
 beside a cron-driven `notebooklm auth refresh`, container start-up races,
 `xargs -P` fan-outs) can target the same `NOTEBOOKLM_HOME` simultaneously.
-The library coordinates with **cross-process file locks** (POSIX `flock` /
-Windows `LockFileEx`, via the [`filelock`](https://pypi.org/project/filelock/)
-package) so reads and writes against shared on-disk state never tear or
-clobber a sibling's update.
+The library coordinates with **cross-process file locks** — the project-internal
+`StorageLockManager` (`_auth/storage_lock.py`, using `flock`/`msvcrt`) for
+`storage_state.json` and its sibling credential file, and the
+[`filelock`](https://pypi.org/project/filelock/) package for `migration.py` and
+`context.json` — so reads and writes against shared on-disk state never tear or
+clobber a sibling's update. See
+[ADR-0029](adr/0029-canonical-storage-writer.md) for why the split exists.
 
 All locks are sibling files next to the resource they guard (zero-byte,
-left on disk after release — `filelock` reuses them).
+left on disk after release — both lock implementations reuse them).
 
 | Lock file | Owner | Scope | Acquisition |
 |---|---|---|---|
-| `<profile>/storage_state.json.lock` | `_auth/storage.py::save_cookies_to_storage` | Read-merge-write of `storage_state.json` (cookie sync after a rotation or 302) | Blocking exclusive |
-| `<profile>/.storage_state.json.rotate.lock` | `_auth/keepalive.py::_poke_session` | Cross-process dedup of the `accounts.google.com/RotateCookies` keepalive POST | Non-blocking exclusive (`LOCK_NB`); skip on contention |
+| `<profile>/.storage_state.json.lock` | `_auth/profile_store.py` transaction owner via `_auth/storage_lock.py`; `_auth/storage.py` retains compatibility adapters | Every mutation of `storage_state.json`: cookie CAS, typed in-band account update/clear, and remint/login/minted full replacement | Cookie methods: blocking exclusive, fail-open. Account update and minted replacement: bounded 90s, fail-closed; clear: bounded best-effort; browser/remint and login: bounded typed status. |
+| `<profile>/.master_token.json.lock` | `_auth/master_token_file.py` via the `ProfileStore` derived-token methods; `_auth/storage.py` retains the arbitrary-path v0.x adapter | Writes to `master_token.json` (the durable L4 credential) | Same bounded manager acquire as above (90s deadline), fail-closed. |
+| `<profile>/.storage_state.json.rotate.lock` | `_auth/keepalive.py::_poke_session` via `_auth/storage_lock.py` | Cross-process dedup of the `accounts.google.com/RotateCookies` keepalive POST | Non-blocking exclusive; skip on contention |
+| `<profile>/.storage_state.json.refresh.lock` | `_auth/refresh.py` via `_auth/keepalive.py` and `_auth/storage_lock.py` | Cross-process dedup of the `NOTEBOOKLM_REFRESH_CMD` subprocess | Non-blocking exclusive; skip on contention, waiter polls asynchronously with jittered backoff |
+| `<profile>/.storage_state.json.lock.bootstrap` | `_auth/master_token_bootstrap.py::MasterTokenBootstrapper.bootstrap_storage`; `_auth/master_token.py` retains the v0.x adapter | Cross-process exclusion for the FIRST-TIME mint of a profile that has only a `master_token.json` — held across the mint, whose persist takes `.storage_state.json.lock` *inside* this section (so the two must never share a path) | Non-blocking exclusive (`filelock`), retried on a 50ms async sleep up to a 90s deadline |
 | `<home>/.migration.lock` | `migration.py::migrate_to_profiles` | One-shot legacy→profile layout migration on startup | Blocking exclusive, 30s timeout (raises `MigrationLockTimeoutError`) |
-| `<profile>/context.json.lock` | `_atomic_io.py::atomic_update_json` through CLI context helpers | Read-modify-write of the active-notebook/account-routing context for a profile | Blocking exclusive, 10s timeout |
+| `<profile>/context.json.lock` | `_atomic_io.py::atomic_update_json` through CLI context helpers; also `_auth/profile_migration.py::LegacyAccountContext.scrub` for legacy `account` cleanup | Read-modify-write of the active-notebook/account-routing context for a profile | Blocking exclusive, 10s timeout (`filelock`); migration cleanup keeps best-effort error handling and the public atomic JSON writer |
 
 Design notes:
 
-- **Two layered storage locks (not one).** The `.lock` and `.rotate.lock`
-  files protect the *same* `storage_state.json` but serve different access
-  patterns: a long-running save must not block — or be blocked by — a
-  best-effort rotation poke. Keeping them separate prevents the keepalive
-  from queueing behind a slow cookie write (and vice-versa).
-- **Fail-open on lock infrastructure failure.** When the lock file itself
-  cannot be created (read-only home dir, NFS without `flock`, permission
-  denied), `_poke_session` proceeds *without* coordination rather than
-  wedging forever. A duplicate rotation across processes is bounded and
-  harmless; a permanently-suppressed rotation is not.
-- **Locks are sibling files, never the resource itself.** `filelock` reuses
-  the sentinel across invocations, so cleanup is not required — and a
-  TOCTOU race between unlink and reacquire is avoided.
+- **Three layered storage locks (not one).** The `.lock`, `.rotate.lock`, and
+  `.refresh.lock` files protect the *same* `storage_state.json` but serve
+  different access patterns: a full-replace write must not block — or be
+  blocked by — a best-effort rotation poke or a refresh-cmd subprocess.
+  Keeping them separate prevents any one from queueing behind another. The
+  fourth sibling, `.lock.bootstrap`, is separate for a harder reason than
+  throughput: the mint it guards acquires `.storage_state.json.lock` *inside*
+  its critical section — and the two sides use different mechanisms
+  (`filelock.FileLock` outside, `StorageLockManager` inside), so the in-process
+  lock registry never sees the outer hold. What makes sharing one path fatal is
+  the OS lock: both take an exclusive `flock` on the sentinel, and `flock`
+  conflicts between two open file descriptions even inside one process, so the
+  inner acquire would be guaranteed-unavailable rather than merely contended.
+- **One derivation, four files, three different base-path policies.** Every
+  credential lock path is `.<name>.<kind>` next to the storage file, computed in
+  exactly one place (`_auth/paths.py::_lock_sibling`). What differs per lock is
+  the *base* it is derived from, and that choice decides whether two spellings
+  of one profile collapse onto the same lock:
+  - `.storage_state.json.lock.bootstrap` canonicalizes **inside** the helper
+    (`_bootstrap_lock_path` -> `canonical_storage_key`, degrading to
+    `expanduser()` on a symlink loop), because its cold-start callers get
+    whatever spelling the CLI was handed and two processes must not both mint.
+  - `.refresh.lock` is alias-proof **by its callers**: both production sites
+    (`refresh._fetch_tokens_with_refresh`, `refresh.try_refresh_cmd_reauth`)
+    pass the already-canonicalized path they key the single flight on.
+  - `.rotate.lock` is alias-proof only on the keepalive route, where
+    `_client_assembly` canonicalizes the keepalive storage path once at client
+    assembly; the PSIDTS rotation-recovery route passes its load path through
+    unchanged.
+  - `.storage_state.json.lock` never canonicalizes for I/O: `ProfileStore` and
+    the compatibility transaction alias derive `_storage_state_lock_path` from
+    the caller's raw path, so two processes
+    reaching the same file through different path spellings (e.g. a symlink vs.
+    its resolved target) can take different main-write locks and race. Callers
+    are expected to reach a profile's storage file through one consistent path
+    (`paths.py`'s resolvers), which holds in every in-tree call site today.
+
+  These filenames are a cross-version contract — a mixed-version window (old CLI
+  + new server on one profile) loses updates the moment two versions disagree on
+  a lock name — so all four are pinned against hard-coded strings in
+  `tests/unit/test_auth_lock_path_derivation.py`.
+- **Per-intent fail-open/fail-closed split ([ADR-0029](adr/0029-canonical-storage-writer.md)).**
+  The cookie CAS merge and the rotation/refresh-cmd pokes fail **open** on lock
+  infrastructure failure (read-only home dir, NFS without `flock`, permission
+  denied) rather than wedging forever — availability wins, and the CAS guard
+  (or the reactive nature of a poke) keeps correctness. Full-file
+  read-modify-write intents (account update, master-token persist/re-mint)
+  fail **closed**, raising `LockUnavailableError`, because failing open there
+  could silently overwrite a concurrent CAS delta.
+
+`ProfileStore` also owns typed account reads, best-effort clear, and the complete
+browser/remint, login/import, and minted-session replacement transactions. Remint carries the latest whole raw
+`notebooklm` namespace only when requested, filters through the pure
+`_auth/cookie_filter.py` leaf, and commits once; `storage.replace_from_remint`
+remains the compatibility and browser patch seam. Login filtering, required-name
+validation, KEEP/SET/CLEAR construction, optional backup, and commit now run under one bounded
+store lock. `_auth/profile_migration.py` owns the legacy-account boundary:
+`LegacyAccountMigrator` performs lossless in-band/legacy/in-band two-read resolution, typed legacy
+sanitization, only-if-absent promotion, and embed-before-scrub ordering;
+`LegacyAccountContext` owns the sibling file and lock. `LegacyPromotionScheduler` owns the
+canonical process one-shot registry and daemon workers. Reads only schedule and return; the
+process-default exit hook drains for two seconds per snapshot worker.
+
+`storage.replace_from_login` keeps its v0.x identity but delegates post-`APPLIED`, outside-lock
+promotion/scrub to `LoginProfileWriter`; failed store results do no sibling work. Raw source account
+key presence still chooses scrub versus promotion. `AccountMetadataWriter` similarly preserves the
+distinct update-then-scrub and best-effort-clear-then-scrub order, while naturally escaping store
+exceptions abort before scrub. For minted persistence,
+`storage.persist_minted_jar` eagerly snapshots the live jar with the raw master-token serializer
+fields (including `same_site="None"`) and deep-copies the runtime-permissive email in the same
+repr-hidden request before path/lock work. It does not use the filtering and SameSite-lossy
+`CookieJar.from_httpx()` constructor. `ProfileStore.replace_minted_session` then owns the
+same-lock latest-owner decision, default filter, destination preservation/rebind, and one commit;
+the adapter translates its private refusal outside the handler to context-free canonical
+`MasterTokenError`. This immutable jar-and-email snapshot is the intentional isolation correction.
+An empty in-band account mapping does not
+block promotion but is still preserved when remint carries the whole namespace;
+a non-empty unknown-only mapping remains present and wins.
+
+`_auth/master_token_bootstrap.py` owns the concrete bootstrap, re-mint, and
+missing-storage transaction over one `ProfileStore`. Keep new behavior tests on
+`MasterTokenBootstrapper`, `MintService`, `ProfileStore`, and the call-time
+strict-loader seam; do not restore patches of the v0.x coarse functions in
+`_auth/master_token.py`. The adapter composes one store/service/bootstrap lock
+and retains late-bound bridges for legacy owner lookup, Android-ID generation,
+strict reload, and default verification. Session persistence finishes before
+token persistence; a missing-storage leader remains shielded to settlement
+before its bootstrap lock is released. At the extraction freeze the coordinator
+is 373 lines and the compatibility adapter is 463 lines.
+
+The final measured persistence boundary is 1,115 lines in `_auth/storage.py`, 311 in
+`_auth/profile_migration.py`, 814 in `_auth/profile_store.py`, 96 in
+`_auth/cookie_filter.py`, and 89 in `_auth/master_token_file.py` (2,425 total). `storage.py`
+remains the v0.x signature/result facade; the extracted owners do not create a second facade.
+
+`_auth/tokens.py` now owns the Phase 9 stored-auth composition: captured-inline/file sources,
+`LoadPolicy`, paired `SessionSeed`/`TokenAcquisition`, final-attempt `AccountRouteResolver`, the
+closed `LoadedAuth` result, and `StoredAuthLoader`. Its only structural test seam is
+`TokenAcquirer`; inject that seam for ladder-result tests, and patch the call-time
+`tokens._load_stored_auth` provider for `AuthTokens.from_storage`/client composition tests. Raw
+loads and PSIDTS heal, file-account resolution, and the initial `ProfileStore` merge remain worker
+offloads. `_auth/cookies.py` owns one-sample live/SameSite-preserving seed provenance.
+`_auth/recovery.py` now owns the complete cold operation. A fresh, one-shot
+`ColdRecoveryCoordinator` spells L2.5 → L3 → L4 directly; its class-owned `_drive_cold` and
+`_coalesce_cold` methods are the sole ladder and flight bodies. `ColdRecoveryState` owns the
+synchronized weak-loop path-lock/generation maps, and `SingleFlight` owns cross-loop flights and
+canonical-path success epochs. The exact-signature module functions are compatibility adapters to
+the process-default owners, not second implementations. The coordinator claims under a threading
+lock before its first await and deletes all eleven collaborator references on every exit.
+
+The sole production composition remains in `refresh.py`; its late-bound closures retain DEBUG skip
+and WARNING start/failure logs, raw caller / canonical L2.5 / raw caller route timing, original
+exception precedence, and exact traceback projection. Waiter cancellation propagates only after
+the shared flight settles and never cancels sibling work; a leader cancellation is mirrored as the
+original `CancelledError`. Cancellation before jar replacement leaves the caller jar untouched,
+while later cancellation does not roll back a completed replacement. Test isolated owners through
+constructor injection. Use process-default module adapters only when testing v0.x lookup seams;
+their reset helpers reject live/locked work and clear only quiescent state.
+
+`RotationState` similarly owns keepalive's weak-loop locks and per-canonical-path monotonic stamps.
+The claim is atomic and occurs before the POST, so HTTP failure and cancellation consume the
+60-second slot; the historical `_POKE_*` dictionaries/lock are identity views into that owner, not
+independent state. `AccountRepairService` is also one-shot: cookie loading alone is offloaded,
+write/clear remain synchronous, only the frozen handled exception set becomes a result, and all six
+collaborators are scrubbed on every exit. Patch these services through constructor injection rather
+than adding module monkeypatch sites.
+
+PSIDTS load composition now receives the pure cookie loader as an explicit callable. Keep
+conversion in `CookieJar`, raw-row fidelity in `ProfileDocument`, and persistence in `ProfileStore`;
+do not restore `psidts_recovery -> cookies` or `psidts_recovery -> storage`. Preserve the sentinel,
+contended-reread, acquired-full-reread, pre-POST observation, typed CAS, and post-save disk-live
+winner order. Its catches are intentionally narrow: cancellation, Unicode failures, and unlisted
+errors must not be normalized into a silent decline. The master-token exception follows the same
+compatibility rule: define it only in `master_token_types.py`, but preserve
+`__module__ == "notebooklm._auth.master_token"`, facade/storage identity, cause chains, and old
+pickle payloads.
+
+`fetch_tokens_with_domains` now loads one paired live jar and SameSite-preserving baseline, then
+passes that baseline through the unchanged exact-baseline ladder. After the final fetch it captures
+an immutable `CookieJar` observation on the caller thread and makes exactly one direct positional
+`asyncio.to_thread` handoff to the private synchronous helper and one concrete `ProfileStore`.
+`HARD_FAILURE` retains the exact selected initial/L2.5/L3/L4 baseline object; every advancing
+result selects the exact returned next-baseline object. Cancellation is ordinary `to_thread`
+cancellation: the caller is cancelled immediately, while an already-dispatched worker may finish
+and commit. File auth alone constructs the store; inline env auth logs the existing skip and does
+not persist. Patch the private typed helper/store method for these tests, not the retired private
+`refresh.save_cookies_to_storage` alias. The public saver/facade and client/runtime saver-injection
+seams remain exact. Phase 12C measures **40 modules / 15,237 lines / 128 unique edges (117 module +
+11 function-local)**. Module-only and all-scope SCC sets are both empty. The final touched production
+LOC is: account 252, account-repair 132, account-types 50, cookie-types 396, cookies 961, keepalive
+438, master-token 455, master-token-types 68, PSIDTS recovery 1,222, recovery 530, refresh 1,184,
+single-flight 268, and storage 1,127. These are ratchet evidence, not a budget to spend.
+
+Phase 10 completes runtime ownership. `NotebookLMClient.from_storage` registers a
+`FileLoadedAuth` result's exact `ProfileStore`/baseline pair with `CookiePersistence`, without a
+second disk read. A direct file client prepares its baseline once before transport construction;
+missing, malformed, or invalid input becomes a sticky typed failure for canonical saves. A
+fileless client records only a one-shot live compatibility projection and creates no typed state.
+
+First-party `_from_store` persistence retains no `AuthTokens`. An untouched default saver routes
+through the private canonical merge; a custom or patched default routes through the exact public
+legacy `save(cookie_jar, storage_path, *, to_thread)` signature. Non-default legacy paths lazily
+initialize their own retryable adapter snapshot and suppress the writer when the source is invalid.
+`ClientLifecycle` alone owns the client `AuthTokens` mirror and refreshes `cookie_snapshot` after
+open and accepted canonical or legacy saves. Tests should patch the public saver only when they
+intend to exercise legacy compatibility; canonical tests should target the private typed seam.
+Measured owners are 457 lines in `_cookie_persistence.py`, 618 in `_runtime/init.py`, 628 in
+`_runtime/lifecycle.py`, and 992 in `client.py`.
+
+- **In-process lock before OS lock.** `StorageLockManager` takes an in-process
+  `threading.Lock` keyed by the exact raw lock-path spelling *before* the OS lock, so
+  threads within one process serialize before ever touching the OS primitive —
+  layered under the per-loop `asyncio.Lock` dedup described below.
+- **Locks are sibling files, never the resource itself.** Both lock
+  implementations reuse the sentinel across invocations, so cleanup is not
+  required — and a TOCTOU race between unlink and reacquire is avoided.
 - **In-process serializers complement, not replace, file locks.**
-  `_auth/keepalive.py::_poke_session` also takes an `asyncio.Lock` keyed on
-  `(event_loop, profile)` to dedupe an `asyncio.gather` fan-out before
-  reaching the cross-process flock — the file lock only sees one
-  contender per process per rate-limit window.
+  `_auth/keepalive.py::_poke_session` takes an `asyncio.Lock` keyed on
+  `(event_loop, profile)` to dedupe an `asyncio.gather` fan-out before reaching
+  the cross-process flock; the refresh-cmd path does the same but *across event
+  loops in one process* via `_auth/single_flight.py`
+  ([ADR-0030](adr/0030-one-recovery-ladder.md)) — the file lock only sees one
+  contender per process per rate-limit window either way.
 
 Path resolution for all locked resources flows through `paths.py`
 (`get_storage_path`, `get_context_path`, `get_home_dir`), so a `--storage`
@@ -351,6 +522,62 @@ docstring/install-doc drift guards, version-sync, and CI-script audits.
 These are valuable release/CI guardrails but cost ~30–45s locally. See
 [`CONTRIBUTING.md`](../CONTRIBUTING.md#fast-local-loop-skip-repo-wide-audit-checks)
 for the canonical fast-loop guidance.
+
+### Testing across boundaries and against reality
+
+The test pyramid has three distinct jobs:
+
+1. **Unit/component tests** use deterministic collaborators and synthetic
+   outputs to cover branches, error handling, and security contracts.
+2. **Composition/replay tests** cross the real in-process boundary, such as
+   CLI → client → RPC, REST → client → RPC, or MCP → client. VCR replay proves
+   that the recorded wire shape is handled; it does not prove that a fixture
+   reflects the current external service.
+3. **Reality probes** run an external executable or environment that production
+   code interprets. They are required for assumptions about subprocess output,
+   browser/tool availability, platform behavior, or third-party strings.
+
+Synthetic subprocess output is still appropriate for tier-1 tests. It is not
+evidence that the real executable emits that output. The initial runtime seam
+audit is intentionally bounded to production behavior that interprets external
+results:
+
+| Seam | Evidence/disposition |
+| --- | --- |
+| `NotebookLMClient.notebooks.list()` → RPC executor → decoder | `tests/integration/test_rpc_seam_matrix.py` asserts the RPC ID, encoded `f.req` envelope, CSRF form field, and typed adapter result; response RPC-ID drift fails through the same path. |
+| CLI `source list` → source service → client | `tests/unit/cli/test_source.py::TestSourceList::test_source_list_composes_cli_service_and_client_boundary` invokes the real Click command and verifies the client-backed result, so fabricated command output cannot pass. |
+| MCP `notebook_list` → app/client → RPC | `tests/integration/mcp_vcr/test_notebooks.py::test_mcp_notebook_list_crosses_adapter_to_client_boundary` drives an in-memory FastMCP client through the real client and an existing RPC cassette. |
+| REST `POST /v1/notebooks/{id}/sources/url` → source service → client | `tests/server/test_integration_real_client.py::TestRestSeamMatrix::test_url_add_crosses_rest_to_client_boundary` drives the real FastAPI route, client, decoder, and response projection through an existing cassette. |
+| `cli/services/playwright_login.py::ensure_chromium_installed` | The programmatic probe is checked against real Playwright, and a separate required Chromium launch smoke checks usability. |
+| Playwright launch/error classification | Synthetic classification tests remain valid; add a reality probe only when claiming a specific third-party message shape. |
+| `_auth/refresh.py` custom refresh command | Classification/security contract only; the command is operator-supplied, so there is no fixed third-party output contract. |
+| Auth refresh composition (`AuthRefreshCoordinator` → `NotebookLMClient.refresh_auth` → `_auth/session.py`) | `tests/unit/test_auth_refresh_seam.py` crosses the production assembly with a deterministic homepage response; the existing VCR test covers the stale-RPC → homepage-refresh → retry path. No live reality probe is used because it would require mutable authenticated external state and would not provide a stable CI contract. |
+| `_version_info.py` git lookup | Local-tool lookup with fallback behavior; synthetic and fallback tests are sufficient. |
+| `scripts/` subprocesses | Audited `audit_public_api_compat.py`, `regen_baselines.py`, and `audit_test_suite.py`: each invokes a local developer/CI tool, not a product boundary. Their wrappers are covered by `tests/unit/test_ci_audit_scripts.py` and related audit tests; no external-output reality probe is claimed. |
+
+The bounded MCP seam-matrix slice is
+[`tests/integration/mcp_vcr/test_notebooks.py::test_mcp_notebook_list_crosses_adapter_to_client_boundary`](../tests/integration/mcp_vcr/test_notebooks.py).
+It drives the in-memory FastMCP client through the registered MCP tool, the
+real `NotebookLMClient.notebooks.list()` service, RPC decoding, and the MCP
+structured-content projection. VCR replays the existing notebook-list
+recording, so this composition check uses no live credentials or network while
+still failing if the adapter bypasses or mis-wires the client boundary.
+
+The two Playwright probes are marked `reality` and named in the required-mode
+contract. In the browser-enabled CI lane, run them explicitly and serially:
+
+```bash
+uv run pytest tests/unit/cli/test_playwright_login_coverage.py \
+  -m reality --require-reality
+```
+
+`--require-reality` fails when an expected probe is missing, filtered out,
+skipped, xfailed, errors during setup/teardown, or does not produce exactly one
+passing call-phase result. Ordinary local runs retain actionable dependency
+skips. The required lane is deliberately serial and rejects xdist, because the
+controller must own complete collection and phase accounting. This distinction
+is deliberate: a skipped reality probe must never look like evidence that the
+external assumption was tested.
 
 ### Selecting a profile for E2E tests
 
@@ -490,7 +717,10 @@ A representative slice (run `ls tests/_guardrails/` for the full set):
   only shrinks (e.g. `test_module_size_ratchet.py`,
   `tests/scripts/check_method_coverage.py`). The rule lands without a giant
   cleanup PR, and the gate fails when an allowlisted entry becomes clean so it
-  gets removed.
+  gets removed. (One recorded exception:
+  [ADR-0033](adr/0033-auth-consolidation-policy.md) sanctioned-merge entries
+  under `src/notebooklm/_auth/`, where a consolidation may add or raise an
+  annotated entry at its measured LOC — see that gate's own docstring.)
 - **Scan yourself too.** A gate that shows the *wrong* form in its examples
   should use placeholders (or build them at runtime) rather than excluding its
   own file, so it still polices its own references
@@ -504,6 +734,68 @@ Most gates are fast and run in the normal loop; the slow repo-wide cassette scan
 couple more tightly to implementation than a static linter — a
 behavior-preserving refactor can still trip one. That coupling is deliberate: it
 catches architecture drift that ruff and mypy structurally cannot see.
+
+### The wire contract (`test_wire_contract.py`)
+
+`batchexecute` responses are positional JSON: index `3` carries no clue what it
+means, so a wrong index is *silent* — it yields a plausible value of the wrong
+thing. Worse, a unit test written from the same misunderstanding will confirm the
+mistake rather than catch it. That has happened here: two constants named
+"failed-artifact error text" and "nested error payload" actually pointed at
+`sources` and `isPubliclyReadable`, and had passing tests built around the
+imaginary shape.
+
+The gate closes that loop using two recovered reference artifacts, both checked
+into `docs/`:
+
+| file | what it pins |
+|---|---|
+| `mobile/schema.proto` | 282 messages / 767 fields with real names and tag numbers |
+| `mobile/enums.txt` | 77 enums / ~1900 values with exact integers |
+
+Both come from the official Android app, which speaks the *same backend messages*
+over gRPC — where fields are tag-addressed rather than positional. The two line up
+exactly: **JSON index `i` == protobuf tag `i + 1`**. That equivalence is what lets
+a positional client be checked against a named schema.
+
+Four checks run:
+
+- **Declared mappings hold** — for each entry in `_wire_contract.MAPPINGS`,
+  `constant == tag - 1`. Known-wrong entries are `xfail` with an issue reference;
+  the fixing PR removes the marker.
+- **Nothing escapes review** — every `_*_POS`-style constant in the scanned
+  modules must appear in `MAPPINGS`, `UNMAPPED`, or `PINNED`. A new positional
+  read cannot land without someone recording what it points at.
+- **Pinned values stay frozen** — entries in `PINNED` read `addUnused()` slots the
+  proto cannot confirm, so the check freezes the value rather than validating it.
+  A change-detector, not a validation.
+- **Enums agree** — client enum members match the recovered backend enum, and
+  declared gaps stay honest.
+
+**Adding a constant.** Three destinations, in descending order of strength:
+
+| destination | when | what the test does |
+|---|---|---|
+| `MAPPINGS` | you can name the protobuf field it reads | asserts `constant == tag - 1` |
+| `PINNED` | the proto has no name for the slot (`addUnused()`), but live evidence establishes the meaning | freezes the value; record the evidence |
+| `UNMAPPED` | you don't know | nothing — but the reason is on the record |
+
+*An honest `UNMAPPED`
+entry is better than a guessed mapping* — a wrong mapping lends false confidence
+to exactly the defect class this gate exists to catch. Several `UNMAPPED` reasons
+carry hard-won warnings (e.g. one index collides with a block that is only safe
+because rows happen to arrive in a particular order); read them before assuming an
+index is fine.
+
+Widening `_SCANNED_DIRS` / `_SCANNED_FILES` in the test is the intended way to
+bring more of the client under the contract — the coverage check will then demand
+a registry entry for each newly-visible constant.
+
+**Caveats.** The proto declares several messages twice (wire vs the app's local
+persistence schema, with *different* tags), so lookups take a section hint and
+refuse ambiguous matches rather than guessing. And the upstream extractor emits
+the literal placeholder `fieldType` where it could not recover a name — those
+fields can only be pinned by tag, with provenance recorded in the mapping's note.
 
 ### Updating baselines
 
@@ -870,10 +1162,37 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 
 ### Setting Up Nightly E2E Tests
 
-1. Get storage state: `cat ~/.notebooklm/storage_state.json`
+1. Bootstrap a master token once: `notebooklm login --master-token --account <you@gmail.com>`
+   (needs the `[headless]` extra; see
+   [installation.md → master-token auth](installation.md#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry)).
 2. Add GitHub secrets:
-   - `NOTEBOOKLM_AUTH_JSON`: Storage state JSON
+   - `NOTEBOOKLM_MASTER_TOKEN_JSON` (**required**): contents of
+     `~/.notebooklm/profiles/default/master_token.json`. The workflows exit `1`
+     when it is empty — it is the only credential they ship.
    - `NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID`: Your test notebook ID
+
+   `NOTEBOOKLM_AUTH_JSON` is **no longer used by any workflow**. Any other
+   active client supersedes a cookie snapshot within ~10 minutes (the ~600 s
+   rotation cadence), and a *superseded* value has been observed failing
+   within roughly half an hour — so a snapshot exported on a workstation was
+   routinely dead before a scheduled run started (see
+   [auth-cookie-lifecycle.md §2.5](auth-cookie-lifecycle.md#25-four-timers-people-confuse)).
+
+The live-E2E workflows (`verify-package.yml`, `nightly.yml`, `rpc-health.yml`,
+`verify-artifacts.yml`) ship no inline credential at all. Their "Materialize
+auth profile" step writes `master_token.json` to a real on-disk profile (mode
+`0600`) because the layer-4 re-mint only engages when the token sits beside the
+profile's `storage_state.json` — env-var auth bypasses it entirely. The step
+then runs `notebooklm login --master-token-refresh`, which **bootstraps**
+`storage_state.json` from the token, preserving a deterministic fresh-jar CI
+setup;
+ordinary file-backed cold loading now also reaches layer 4 after a confirmed
+login redirect, and layer 4 continues to cover mid-run expiry. So as long as
+the pre-mint succeeds, a cookie secret that Google has rotated no longer fails
+the run. The pre-mint is non-fatal: on failure (e.g. a revoked master
+token) the step logs a `::warning::` and falls back to the cookie snapshot,
+which then must still be live for the run to pass. Without the master-token
+secret, behavior degrades to the old cookie-only mode.
 
 Scheduled canaries target `main` only. Release canaries are manual: dispatch
 `nightly.yml` or `rpc-health.yml` with `custom_branch=release/vX.Y.Z`.
@@ -882,7 +1201,7 @@ Scheduled canaries target `main` only. Release canaries are manual: dispatch
 
 | Task | Frequency |
 |------|-----------|
-| Refresh credentials | Every 1-2 weeks |
+| Refresh credentials | Every 1-2 weeks (cookie-only); rarely needed once `NOTEBOOKLM_MASTER_TOKEN_JSON` is set — the master token survives cookie rotation until revoked |
 | Check nightly results | Daily |
 
 ### Workflow secret gates
@@ -918,9 +1237,10 @@ secrets that live only in environments resolve to empty under that branch.
 Binding the environment unconditionally is the single source of truth.
 
 Additionally, **every job that consumes `NOTEBOOKLM_AUTH_JSON` runs a
-fail-fast preflight step** (`if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then exit 1`)
-before the test/script step. Without the preflight, an empty secret would
-let pytest skip every auth-requiring test silently and the job would land
+fail-fast preflight** (`if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then exit 1`)
+before the test/script step — in the live-E2E workflows this lives at the top
+of the "Materialize auth profile" step. Without the preflight, an empty secret
+would let pytest skip every auth-requiring test silently and the job would land
 green with 0 tests run (issue #1009). The preflight surfaces an `::error::`
 annotation linked to the secret-config misconfig so the failure is visible
 in the GitHub UI rather than hidden behind "0 passed".
@@ -1040,17 +1360,26 @@ When introducing a workflow that touches `secrets.*`:
 **Why:** The `login` command saves to a file, which conflicts with environment-based auth.
 
 **Solution:**
-- Don't run `login` in CI/CD - use the env var for auth instead
-- If you need to refresh auth, do it locally and update the secret
+- With inline env-var auth, don't run browser `login` in CI/CD — use the env var for auth instead, and refresh it locally when needed
+- With a materialized file-based profile, prefer `notebooklm auth refresh`. This repo's live-E2E workflows intentionally use the legacy `login --master-token-refresh` route because they require an unconditional fresh jar before each run
 
 #### Session expired in CI/CD
 
 **Cause:** Google sessions expire periodically (typically every 1-2 weeks).
 
-**Solution:**
+**Solution (cookie-only auth):**
 1. Re-run `notebooklm login` locally
-2. Copy the contents of `~/.notebooklm/storage_state.json`
+2. Copy the contents of `~/.notebooklm/profiles/default/storage_state.json`
 3. Update your GitHub secret
+
+**Solution (file-based profile with `NOTEBOOKLM_MASTER_TOKEN_JSON`):** usually none
+needed — the materialize step pre-mints fresh cookies from the master token each run,
+and the client's layer-4 re-mint covers mid-run expiry. If the run still fails on auth,
+check the materialize step's log: a `::warning::` about a failed re-mint means the run
+fell back to the (possibly expired) cookie snapshot — it does not by itself identify
+the cause. Inspect the login error above the warning: a transient network/gpsoauth
+blip just needs a re-run, while an invalid or revoked master token requires re-running
+the `notebooklm login --master-token` bootstrap and updating both secrets.
 
 #### Multiple accounts in CI/CD
 

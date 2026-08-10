@@ -23,73 +23,33 @@ uberauth, or cookie values.
 
 from __future__ import annotations
 
-import asyncio
 import json
-import logging
-import os
 import secrets
-import threading
-from collections.abc import Iterator
-from contextlib import contextmanager
+import sys
 from pathlib import Path
 from typing import Any
 
 import httpx
+from filelock import FileLock
 
-# perform_oauth for the OAuthLogin token rides the Chromecast app + signature
-# (the spike confirmed the labs-tailwind app's sig downscopes; chromecast yields
-# a uberauth-capable token; the labs-tailwind app's sig downscopes to email).
-_MASTER_APP = "com.google.android.apps.chromecast.app"
-_MASTER_SIG = "24bb24c05e47e0aefa68a58a766179d9b613a600"
-_OAUTHLOGIN_SERVICE = "oauth2:https://www.google.com/accounts/OAuthLogin"
+from .master_token_bootstrap import BootstrapOutcome, MasterTokenBootstrapper, _BootstrapError
 
-# MergeSession requires SID + a secondary binding (APISID+SAPISID or OSID) so the
-# client's _recover_psidts_inline can mint __Secure-1PSIDTS on first load.
-_REQUIRED_MINTED_COOKIES = {"SID", "APISID", "SAPISID"}
+# The bootstrap lock's PATH is derived by the one shared credential-lock
+# derivation in ``paths.py`` (ADR-0033 PR 1.3) — this module used to hand-roll
+# its own ``expanduser().resolve()`` + f-string sibling, the fourth and last
+# spelling of a computation whose filenames must never drift apart. Its
+# MECHANISM stays ``filelock.FileLock`` here, unchanged and deliberately not
+# unified with ``storage._file_lock`` (plan §1/§5: a cross-version and
+# cross-platform interop event this effort does not take). ``paths`` imports
+# nothing from this package, so this is a plain module-level import, not one of
+# the deferred cycle-breaks below.
+from .master_token_file import MasterTokenFile
+from .master_token_types import MasterToken, MasterTokenError, _MasterTokenRecordError
+from .mint_service import MintService, _MintError
+from .paths import _bootstrap_lock_path
+from .profile_store import ProfileStore
 
 _MASTER_TOKEN_VERSION = 1
-
-logger = logging.getLogger("notebooklm.auth.master_token")
-
-# Serializes the global-logger save/restore in _quiet_gpsoauth_logging so
-# overlapping re-mints on different threads (asyncio.to_thread) can't stomp each
-# other's saved levels. ponytail: one process-wide lock; the window is one short
-# sync RPC, so contention is negligible.
-_LOG_LOCK = threading.Lock()
-
-
-class MasterTokenError(Exception):
-    """The master token (or its exchange) was rejected — re-bootstrap needed.
-
-    Raised for revoked/expired master tokens, gpsoauth failures, and a minted
-    cookie jar missing the cookies the web client needs. Carries no secrets.
-    """
-
-
-def _require_gpsoauth() -> Any:
-    try:
-        import gpsoauth  # noqa: PLC0415  (lazy: optional [headless] extra)
-    except ImportError as exc:  # pragma: no cover - import guard
-        raise MasterTokenError(
-            "Master-token auth needs gpsoauth. Install: pip install 'notebooklm-py[headless]'"
-        ) from exc
-    return gpsoauth
-
-
-@contextmanager
-def _quiet_gpsoauth_logging() -> Iterator[None]:
-    """Silence urllib3/requests DEBUG bodies around the gpsoauth call so the
-    master token / ya29 in request bodies never reach a debug log sink."""
-    names = ("urllib3", "requests", "urllib3.connectionpool")
-    with _LOG_LOCK:
-        saved = {n: logging.getLogger(n).level for n in names}
-        try:
-            for n in names:
-                logging.getLogger(n).setLevel(logging.WARNING)
-            yield
-        finally:
-            for n, lvl in saved.items():
-                logging.getLogger(n).setLevel(lvl)
 
 
 def generate_android_id() -> str:
@@ -102,116 +62,72 @@ def generate_android_id() -> str:
 def exchange_master_token(email: str, oauth_token: str, android_id: str) -> str:
     """One-time: a single-use EmbeddedSetup ``oauth_token`` -> durable ``aas_et/``
     master token. Raises :class:`MasterTokenError` on rejection (no secret leak)."""
-    gpsoauth = _require_gpsoauth()
+    caller_exception = sys.exc_info()[1]
     try:
-        with _quiet_gpsoauth_logging():
-            res = gpsoauth.exchange_token(email, oauth_token, android_id)
-    except Exception as exc:  # noqa: BLE001 — any gpsoauth/transport failure; never leak the body
-        raise MasterTokenError("exchange_token failed (network or gpsoauth error).") from exc
-    token = res.get("Token")
-    if not token:
-        # res may carry Error/ErrorDetail (no secrets); include only the code.
-        raise MasterTokenError(
-            f"exchange_token rejected the oauth_token (Error={res.get('Error', 'unknown')}). "
-            "The oauth_token is single-use and short-lived — re-capture it."
+        token = MintService().exchange(email, oauth_token, android_id)
+    except _MintError as exc:
+        error_context = exc.__context__
+        if exc.__cause__ is None and error_context is caller_exception:
+            error_context = None
+        error_snapshot = (
+            str(exc),
+            exc.__cause__,
+            error_context,
+            exc.__suppress_context__,
         )
-    return str(token)
+    else:
+        return token.secret
+    caller_exception = None
+    error = MasterTokenError(error_snapshot[0])
+    try:
+        raise error
+    except MasterTokenError:
+        # Raising while the caller handles another exception overwrites
+        # ``__context__``. Restore the lower-layer projection after that first
+        # raise, then preserve it with a bare re-raise.
+        error.__cause__ = error_snapshot[1]
+        error.__context__ = error_snapshot[2]
+        error.__suppress_context__ = error_snapshot[3]
+        raise
 
 
 async def mint_cookies(email: str, master_token: str, android_id: str) -> httpx.Cookies:
     """Mint a fresh NotebookLM web cookie jar from the master token.
 
-    perform_oauth (sync, run inline — it is a single short request) -> ya29, then
+    perform_oauth (sync, offloaded once) -> ya29, then
     OAuthLogin?issueuberauth=1 -> uberauth -> MergeSession -> Set-Cookie jar.
     Raises :class:`MasterTokenError` if the token is revoked or the jar lacks the
     cookies the web client needs.
     """
-    gpsoauth = _require_gpsoauth()
-
-    def _perform() -> Any:
-        with _quiet_gpsoauth_logging():
-            return gpsoauth.perform_oauth(
-                email,
-                master_token,
-                android_id,
-                service=_OAUTHLOGIN_SERVICE,
-                app=_MASTER_APP,
-                client_sig=_MASTER_SIG,
-            )
-
+    caller_exception = sys.exc_info()[1]
     try:
-        # perform_oauth is a sync (requests) network call — off-thread it so it
-        # never blocks the event loop of a live client during layer-4 recovery.
-        oauth = await asyncio.to_thread(_perform)
-    except Exception as exc:  # noqa: BLE001 — any gpsoauth/transport failure; never leak the body
-        raise MasterTokenError("perform_oauth failed (network or gpsoauth error).") from exc
-    bearer = oauth.get("Auth")
-    if not bearer:
-        raise MasterTokenError(
-            f"perform_oauth rejected the master token (Error={oauth.get('Error', 'unknown')}). "
-            "Re-bootstrap with `notebooklm login --master-token`."
+        jar = await MintService().mint(
+            MasterToken(email=email, android_id=android_id, secret=master_token)
         )
-
-    # Wrap the cookie-mint HTTP legs: an unwrapped httpx error would escape the
-    # refresh path AND its ``.request.url`` embeds the uberauth token. Re-raise as
-    # a secret-free MasterTokenError so the caller declines gracefully.
+    except _MintError as exc:
+        error_context = exc.__context__
+        if exc.__cause__ is None and error_context is caller_exception:
+            error_context = None
+        error_snapshot = (
+            str(exc),
+            exc.__cause__,
+            error_context,
+            exc.__suppress_context__,
+        )
+    else:
+        return jar
+    caller_exception = None
+    error = MasterTokenError(error_snapshot[0])
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-            auth = {"Authorization": f"Bearer {bearer}"}
-            uber = await client.get(
-                "https://accounts.google.com/OAuthLogin",
-                params={"source": "ChromiumBrowser", "issueuberauth": "1"},
-                headers=auth,
-            )
-            uberauth = uber.text.strip()
-            if uber.status_code != 200 or not uberauth or " " in uberauth:
-                raise MasterTokenError("OAuthLogin did not return a uberauth token.")
-            await client.get(
-                "https://accounts.google.com/MergeSession",
-                params={
-                    "service": "mail",
-                    "continue": "https://www.google.com",
-                    "uberauth": uberauth,
-                },
-                headers=auth,
-            )
-            # Mint __Secure-1PSIDTS now too (the rotating freshness partner of
-            # __Secure-1PSID) so the stored jar is complete and valid at rest — no
-            # first-call recovery needed and `auth check` passes immediately. This
-            # is the same RotateCookies POST the keepalive/inline recovery use; it
-            # needs the SID + APISID/SAPISID binding the MergeSession jar already
-            # carries. Best-effort: Google may withhold it, and inline recovery
-            # remains the fallback, so a failure here must not fail the mint.
-            from .keepalive import (  # noqa: PLC0415 (low-level; avoid import cycle)
-                _KEEPALIVE_ROTATE_BODY,
-                _KEEPALIVE_ROTATE_HEADERS,
-                KEEPALIVE_ROTATE_URL,
-            )
-
-            try:
-                await client.post(
-                    KEEPALIVE_ROTATE_URL,
-                    headers=_KEEPALIVE_ROTATE_HEADERS,
-                    content=_KEEPALIVE_ROTATE_BODY,
-                )
-            except httpx.HTTPError as exc:
-                logger.debug("RotateCookies during mint failed (non-fatal): %s", exc)
-            jar = httpx.Cookies()
-            for cookie in client.cookies.jar:
-                jar.jar.set_cookie(cookie)
-    except httpx.HTTPError:
-        raise MasterTokenError(
-            "cookie minting failed (network error reaching accounts.google.com)."
-        ) from None  # drop the httpx __cause__ whose URL carries the uberauth
-
-    names = {c.name for c in jar.jar}
-    missing = _REQUIRED_MINTED_COOKIES - names
-    if missing:
-        raise MasterTokenError(
-            f"Minted cookie jar is missing required cookies: {sorted(missing)}. "
-            "MergeSession may have changed; the session would fail PSIDTS recovery."
-        )
-    return jar
+        raise error
+    except MasterTokenError:
+        # See ``exchange_master_token``: the first raise establishes the
+        # traceback; restoring here keeps an active caller exception out of
+        # the public chain without retaining the private translation error.
+        error.__cause__ = error_snapshot[1]
+        error.__context__ = error_snapshot[2]
+        error.__suppress_context__ = error_snapshot[3]
+        raise
 
 
 def storage_state_from_jar(jar: httpx.Cookies, *, email: str | None = None) -> dict[str, Any]:
@@ -226,45 +142,46 @@ def storage_state_from_jar(jar: httpx.Cookies, *, email: str | None = None) -> d
         "origins": [],
     }
     if email is not None:
-        # Mirrors _auth/account.write_account_metadata's namespace shape.
+        # Mirrors _auth/storage.write_account_metadata's namespace shape.
         state["notebooklm"] = {"version": 1, "account": {"authuser": 0, "email": email}}
     return state
 
 
-def persist_minted_jar(path: Path, jar: httpx.Cookies, *, email: str | None) -> None:
+def persist_minted_jar(
+    path: Path,
+    jar: httpx.Cookies,
+    *,
+    email: str | None,
+    force: bool = False,
+    refuse_unknown_owner: bool = True,
+) -> None:
     """Replace the cookies in ``storage_state.json`` with a freshly-minted jar,
     preserving existing CLI context (notebook_id/conversation_id) and refreshing
     the account namespace. Serialized on the shared storage lock so it never
     tears against a running keepalive. Old cookies are *replaced*, not merged —
-    a re-mint is a brand-new session."""
-    from filelock import FileLock  # noqa: PLC0415 (transitive dep)
+    a re-mint is a brand-new session.
 
-    from .paths import _storage_state_lock_path  # noqa: PLC0415 (avoid import cycle)
+    Delegates the storage-state write to the canonical
+    :func:`notebooklm._auth.storage.persist_minted_jar`, which routes the
+    write through ``_atomic_io`` (fsync durability + temp cleanup, closing
+    [storage-F5]) under the unified bounded storage lock. This function stays as
+    the ``notebooklm.auth``-exported facade symbol.
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with FileLock(str(_storage_state_lock_path(path)), timeout=10.0):
-        data: dict[str, Any] = {}
-        if path.exists():
-            try:
-                loaded = json.loads(path.read_text(encoding="utf-8"))
-                data = loaded if isinstance(loaded, dict) else {}
-            except json.JSONDecodeError:
-                data = {}
-        data["cookies"] = storage_state_from_jar(jar)["cookies"]
-        data.setdefault("origins", [])
-        ns_raw = data.get("notebooklm")
-        ns: dict[str, Any] = ns_raw if isinstance(ns_raw, dict) else {}
-        ns["version"] = 1
-        ns["account"] = {"authuser": 0, **({"email": email} if email else {})}
-        data["notebooklm"] = ns
-        # 0600: the jar holds live session cookies (SID/SAPISID/__Secure-1PSID…).
-        # Hidden .{name}.tmp matches write_master_token so neither leaves a
-        # visible *.tmp artifact mid-write.
-        tmp = path.with_name(f".{path.name}.tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        tmp.replace(path)
+    Raises :class:`MasterTokenError` (#2103 PR-2 D6) if existing storage belongs
+    to a *different* recorded account and ``force`` is not set — the
+    authoritative ownership guard, enforced here under the storage-write lock so
+    it also covers a caller that mints and persists directly (bypassing
+    :func:`bootstrap_from_oauth_token`/:func:`remint_from_stored_token`
+    entirely) and closes the TOCTOU window a check-before-mint pre-check alone
+    cannot. ``refuse_unknown_owner`` (default ``True``) additionally refuses
+    existing storage with NO recorded owner at all; see
+    :func:`notebooklm._auth.storage.persist_minted_jar` for why
+    ``remint_from_stored_token`` passes ``False`` here."""
+    from . import storage  # noqa: PLC0415 (deferred; no cycle either way (verified))
+
+    storage.persist_minted_jar(
+        path, jar, email=email, force=force, refuse_unknown_owner=refuse_unknown_owner
+    )
 
 
 # --- master_token.json persistence (mode 0600, beside storage_state.json) ---
@@ -275,31 +192,264 @@ def read_master_token(path: Path) -> dict[str, Any] | None:
     :class:`MasterTokenError` on a malformed/old-version file."""
     if not path.exists():
         return None
+    token_file = MasterTokenFile(path)
+    malformed_message: str | None = None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        result = token_file._read_present_with_raw()
     except (OSError, json.JSONDecodeError) as exc:
         raise MasterTokenError(f"Unreadable master_token.json: {exc}") from exc
-    if not isinstance(data, dict):  # e.g. a bare JSON array — avoid .get AttributeError
-        raise MasterTokenError("master_token.json is malformed or an unsupported version.")
-    required = ("master_token", "email", "android_id")
-    if data.get("version") != _MASTER_TOKEN_VERSION or any(not data.get(k) for k in required):
-        raise MasterTokenError("master_token.json is malformed or an unsupported version.")
-    return data
+    except _MasterTokenRecordError:
+        malformed_message = "master_token.json is malformed or an unsupported version."
+    if malformed_message is not None:
+        raise MasterTokenError(malformed_message)
+    return dict(result.raw)
 
 
 def write_master_token(path: Path, *, email: str, master_token: str, android_id: str) -> None:
-    """Persist a master-token record at mode 0600 (full-account credential)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "version": _MASTER_TOKEN_VERSION,
-        "email": email,
-        "android_id": android_id,
-        "master_token": master_token,
-    }
-    # Create the temp at 0600 from the start (don't widen-then-chmod) — this is a
-    # full-account credential. umask cannot widen 0600 (it has no group/other bits).
-    tmp = path.parent / f".{path.name}.tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(payload, f)
-    tmp.replace(path)
+    """Persist a master-token record at mode 0600 (full-account credential).
+
+    Delegates to :func:`notebooklm._auth.storage.write_master_token`,
+    which routes the write through ``_atomic_io`` (atomic + fsync-durable + temp
+    cleanup) under a bounded sibling lock — closing the lockless-write half of
+    [storage-F5]. This function stays as the ``notebooklm.auth``-exported facade
+    symbol."""
+    from . import storage  # noqa: PLC0415 (deferred; no cycle either way (verified))
+
+    storage.write_master_token(path, email=email, master_token=master_token, android_id=android_id)
+
+
+# --- the transaction (relocated from cli/services/login/master_token.py,
+# #2103 structural follow-up PR-2): the CLI now invokes whole audited
+# transactions below, never assembles minting primitives itself. ---
+
+
+async def _verify_by_listing_notebooks(storage_path: Path) -> int:
+    """Smoke-test a minted session: list notebooks. Returns the count.
+
+    This is the ONLY place ``_auth`` reaches up to the top-level client, and
+    ADR-0033's PR 0.2 set out to delete the edge by injecting the verifier from
+    the call site. Investigation says it is irreducible at this layer, so it is
+    documented rather than faked:
+
+    * The sole caller is :func:`bootstrap_from_oauth_token`, which is itself the
+      outermost entry point — it is public surface, re-exported as
+      ``notebooklm.auth.master_token_bootstrap`` and called by library users
+      directly, not only by ``cli/master_token_login.py``.
+    * ``verify=True`` is that function's DEFAULT, and the behaviour that default
+      names is precisely "open a ``NotebookLMClient`` and list notebooks". So a
+      caller-supplied verifier can only remove this import if supplying one
+      becomes mandatory — a breaking signature change for every existing
+      ``master_token_bootstrap(verify=True)`` call — or if the default body
+      moves up into the ``notebooklm.auth`` facade, which would turn an
+      identity re-export into a wrapper and change the facade surface (plan §1
+      non-goal). Neither is available to a behaviour-frozen mechanical PR.
+    * The deferral is load-bearing, and the original ``(avoid import cycle)``
+      note is accurate here — unlike the two ``browser_capture`` sites this PR
+      corrected. Verified by hoisting it: ``client`` does
+      ``from .auth import AuthTokens`` at module scope (``client.py``) and
+      ``notebooklm.auth`` imports THIS module, so a top-level import closes
+      ``_auth.master_token -> client -> notebooklm.auth -> _auth.master_token``
+      and fails at import time with a partially-initialized ``notebooklm.auth``.
+
+    Removing the edge for real belongs with the ADR-0032 facade work that is
+    already licensed to reshape ``notebooklm.auth``; it is recorded here so the
+    next attempt does not re-derive the same dead end.
+    """
+    from ..client import NotebookLMClient  # noqa: PLC0415 (cycle via notebooklm.auth)
+
+    async with NotebookLMClient.from_storage(path=str(storage_path)) as client:
+        return len(await client.notebooks.list())
+
+
+def assert_account_writable(*, email: str, storage_path: Path, force: bool = False) -> None:
+    """Refuse an advisory cross-account overwrite unless force is set."""
+    if force:
+        return
+    caller_exception = sys.exc_info()[1]
+    try:
+        try:
+            _bootstrapper(storage_path).assert_account_writable(
+                email=email,
+                force=force,
+                session_owner_reader=_session_owner_reader,
+            )
+        except _BootstrapError as exc:
+            error_context = exc.__context__
+            if (
+                exc.__cause__ is not None
+                and exc.__suppress_context__
+                and error_context is caller_exception
+            ):
+                error_context = exc.__cause__
+            error_snapshot = (
+                str(exc),
+                exc.__cause__,
+                error_context,
+                exc.__suppress_context__,
+            )
+        else:
+            return
+        caller_exception = None
+        error = MasterTokenError(error_snapshot[0])
+        try:
+            raise error
+        except MasterTokenError:
+            error.__cause__ = error_snapshot[1]
+            error.__context__ = error_snapshot[2]
+            error.__suppress_context__ = error_snapshot[3]
+            raise
+    finally:
+        caller_exception = None
+
+
+async def bootstrap_from_oauth_token(
+    *,
+    email: str,
+    oauth_token: str,
+    storage_path: Path,
+    android_id: str | None = None,
+    verify: bool = True,
+    force: bool = False,
+) -> int:
+    """Exchange, mint, persist the session then token, and optionally verify."""
+    try:
+        caller_exception = sys.exc_info()[1]
+        try:
+            return await _bootstrapper(storage_path).bootstrap_from_oauth_token(
+                email=email,
+                oauth_token=oauth_token,
+                android_id=android_id,
+                verify=verify,
+                force=force,
+                session_owner_reader=_session_owner_reader,
+                android_id_generator=_android_id_generator,
+            )
+        except _BootstrapError as exc:
+            error_context = exc.__context__
+            if (
+                exc.__cause__ is not None
+                and exc.__suppress_context__
+                and error_context is caller_exception
+            ):
+                error_context = exc.__cause__
+            error_snapshot = (
+                str(exc),
+                exc.__cause__,
+                error_context,
+                exc.__suppress_context__,
+            )
+        caller_exception = None
+        error = MasterTokenError(error_snapshot[0])
+        try:
+            raise error
+        except MasterTokenError:
+            error.__cause__ = error_snapshot[1]
+            error.__context__ = error_snapshot[2]
+            error.__suppress_context__ = error_snapshot[3]
+            raise
+    finally:
+        caller_exception = None
+        del oauth_token
+
+
+async def remint_from_stored_token(storage_path: Path) -> httpx.Cookies:
+    """Re-mint and strictly reload a session from the paired stored token."""
+    caller_exception = sys.exc_info()[1]
+    try:
+        try:
+            return await _bootstrapper(storage_path).remint_from_stored_token(
+                strict_loader=_strict_loader
+            )
+        except _BootstrapError as exc:
+            error_context = exc.__context__
+            if (
+                exc.__cause__ is not None
+                and exc.__suppress_context__
+                and error_context is caller_exception
+            ):
+                error_context = exc.__cause__
+            error_snapshot = (
+                str(exc),
+                exc.__cause__,
+                error_context,
+                exc.__suppress_context__,
+            )
+        caller_exception = None
+        error = MasterTokenError(error_snapshot[0])
+        try:
+            raise error
+        except MasterTokenError:
+            error.__cause__ = error_snapshot[1]
+            error.__context__ = error_snapshot[2]
+            error.__suppress_context__ = error_snapshot[3]
+            raise
+    finally:
+        caller_exception = None
+
+
+async def bootstrap_storage_from_master_token(storage_path: Path) -> BootstrapOutcome:
+    """Resolve the four-state cold-start bootstrap transaction."""
+    caller_exception = sys.exc_info()[1]
+    try:
+        try:
+            return await _bootstrapper(storage_path).bootstrap_storage(strict_loader=_strict_loader)
+        except _BootstrapError as exc:
+            error_context = exc.__context__
+            if (
+                exc.__cause__ is not None
+                and exc.__suppress_context__
+                and error_context is caller_exception
+            ):
+                error_context = exc.__cause__
+            error_snapshot = (
+                str(exc),
+                exc.__cause__,
+                error_context,
+                exc.__suppress_context__,
+            )
+        caller_exception = None
+        error = MasterTokenError(error_snapshot[0])
+        try:
+            raise error
+        except MasterTokenError:
+            error.__cause__ = error_snapshot[1]
+            error.__context__ = error_snapshot[2]
+            error.__suppress_context__ = error_snapshot[3]
+            raise
+    finally:
+        caller_exception = None
+
+
+async def bootstrap_missing_storage_from_master_token(storage_path: Path) -> bool:
+    """Collapse cold-start outcomes to the historical CLI boolean."""
+    outcome = await bootstrap_storage_from_master_token(storage_path)
+    return outcome in (BootstrapOutcome.MINTED, BootstrapOutcome.PRESENT_AFTER_WAIT)
+
+
+def _session_owner_reader(storage_path: Path) -> str | None:
+    from .storage import get_account_email_for_storage  # noqa: PLC0415
+
+    return get_account_email_for_storage(storage_path)
+
+
+def _android_id_generator() -> str:
+    return generate_android_id()
+
+
+def _strict_loader(storage_path: Path) -> httpx.Cookies:
+    from .cookies import _build_httpx_cookies_from_storage_strict  # noqa: PLC0415
+
+    return _build_httpx_cookies_from_storage_strict(storage_path)
+
+
+async def _verifier(storage_path: Path) -> int:
+    return await _verify_by_listing_notebooks(storage_path)
+
+
+def _bootstrapper(storage_path: Path) -> MasterTokenBootstrapper:
+    return MasterTokenBootstrapper(
+        mint_service=MintService(),
+        store=ProfileStore(storage_path),
+        bootstrap_lock=FileLock(str(_bootstrap_lock_path(storage_path))),
+        verifier=_verifier,
+    )

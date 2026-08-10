@@ -25,6 +25,7 @@ from ..paths import (
 )
 from .error_handler import exit_with_code, handle_errors
 from .rendering import console, json_output_response
+from .services.auth_source import AuthSource
 
 
 def _doctor_paths() -> DoctorPaths:
@@ -33,11 +34,19 @@ def _doctor_paths() -> DoctorPaths:
     Each callable is resolved off the module global at call time so a
     ``patch("notebooklm.cli.doctor_cmd.<helper>", ...)`` test seam lands.
     """
+    auth = AuthSource.from_click_context(click.get_current_context(silent=True))
     return DoctorPaths(
-        get_path_info=get_path_info,
+        get_path_info=lambda: get_path_info(
+            profile=auth.profile,
+            storage_path=auth.storage_override,
+        ),
         get_home_dir=get_home_dir,
         get_profile_dir=get_profile_dir,
-        get_storage_path=get_storage_path,
+        get_storage_path=lambda: (
+            auth.storage_override
+            if auth.storage_override is not None
+            else get_storage_path(profile=auth.profile)
+        ),
         get_config_path=get_config_path,
         headless_reauth_check=_headless_reauth_check,
     )
@@ -58,17 +67,26 @@ def _headless_reauth_check() -> dict[str, str]:
     forces a ``playwright`` import on the common path.
 
     ``doctor`` is a read-only diagnostic, so resolving the browser-profile dir
-    is wrapped: ``get_browser_profile_dir`` can raise ``ValueError`` (malformed
-    profile config) or ``OSError`` (permission / filesystem issues), and the
-    readiness probe stats the dir. Either is degraded to a ``warn`` row rather
-    than crashing the whole command — consistent with the other doctor checks,
-    which all map malformed inputs to a status instead of raising.
+    is wrapped: path resolution can raise ``ValueError`` / ``OSError``, and the
+    readiness probe can also raise ``RuntimeError`` while checking browser
+    availability. Each is degraded to a ``warn`` row rather than crashing the
+    whole command — consistent with the other doctor checks, which all map
+    malformed inputs to a status instead of raising.
+
+    This L3 row reads the live :class:`AuthSource` independently of the other
+    doctor paths so root ``--storage`` and ``--profile`` select the same browser
+    directory as runtime re-auth.
     """
     from .._auth.headless_reauth import headless_reauth_readiness
 
     try:
-        readiness = headless_reauth_readiness(browser_profile=get_browser_profile_dir())
-    except (ValueError, OSError) as exc:
+        auth = AuthSource.from_click_context(click.get_current_context(silent=True))
+        browser_profile = get_browser_profile_dir(
+            profile=auth.profile,
+            storage_path=auth.storage_override,
+        )
+        readiness = headless_reauth_readiness(browser_profile=browser_profile)
+    except (ValueError, OSError, RuntimeError) as exc:
         return {
             "status": "warn",
             "detail": f"unavailable: could not resolve the browser profile ({type(exc).__name__})",

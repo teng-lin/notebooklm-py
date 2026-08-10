@@ -2,10 +2,10 @@
 
 Pins the two-layer contract:
 
-* ``REQUIRED_COOKIE_DOMAINS`` is the default *extraction* set fed to
-  rookiepy. This is the canonical enforcement point: sibling-product
-  cookies (YouTube, etc.) never reach ``storage_state.json`` unless
-  the user opts in via ``--include-domains`` on
+* ``REQUIRED_COOKIE_DOMAINS`` is the default *requested extraction* set fed
+  to rookiepy. The write filter then retains boundary-matched trusted Google
+  roots for compatibility, even when an extractor returns host-scoped
+  subdomain cookies. Distinct roots such as YouTube require opt-in on
   ``notebooklm login`` / ``notebooklm auth refresh`` /
   ``notebooklm auth inspect``.
 * The runtime gate consults the full ``REQUIRED ∪ OPTIONAL`` union so
@@ -82,8 +82,8 @@ class TestNeutralBuilderMatchesCliBuilder:
         neutral_domains = _neutral_build_cookie_domain_allowlist(
             include_optional=include_optional, include_domains=include_domains
         )
-        # Order is not significant for the allowlist; compare as sets.
-        assert set(cli_domains) == set(neutral_domains)
+        assert cli_domains == neutral_domains
+        assert cli_domains == sorted(cli_domains)
 
     @pytest.mark.parametrize(
         "labels",
@@ -93,6 +93,115 @@ class TestNeutralBuilderMatchesCliBuilder:
         assert _resolve_optional_cookie_domains(labels) == (
             _neutral_resolve_optional_cookie_domains(labels)
         )
+
+
+class TestWriteTimeFilterParity:
+    """All login/import persist paths route through ONE writer that binds ONE filter.
+
+    Before b-PR3 each rookiepy/Firefox writer imported its own module-level
+    ``filter_storage_state_cookies_by_domain_policy`` binding and the pin asserted
+    those bindings were identical. Since b-PR3 the write-time filter + the
+    post-filter required-cookie revalidation are owned by
+    ``ProfileStore.replace_from_login`` behind the unchanged
+    ``storage.replace_from_login`` adapter; the three CLI writers
+    (``cookie_writes._write_extracted_cookies``,
+    ``refresh._login_with_browser_cookies``, ``_cookie_import._import_cookie_json``)
+    all call that ONE function via the ``notebooklm.auth`` facade. On-disk parity
+    with the Playwright capture arms now follows from **writer-routing identity**
+    (one writer, one filter) rather than from each module binding the same filter.
+    """
+
+    def test_all_login_paths_route_through_one_writer(self):
+        """Routing identity: every login/import writer calls the SAME
+        ``replace_from_login`` (the single auth-facade export)."""
+        import notebooklm.auth as auth_module
+        from notebooklm._auth import storage
+        from notebooklm.cli import _cookie_import
+        from notebooklm.cli.services.login import cookie_writes, refresh
+
+        canonical = storage.replace_from_login
+        assert auth_module.replace_from_login is canonical
+        assert cookie_writes.replace_from_login is canonical
+        assert _cookie_import.replace_from_login is canonical
+        # The refresh driver reaches it through its injectable deps seam.
+        assert refresh.default_refresh_deps().replace_from_login is canonical
+
+    def test_writer_binds_the_playwright_filter(self):
+        """Identity pin: the filter the writer applies IS the filter the
+        Playwright capture arms use (one filter, bound in one place now).
+
+        Since ADR-0034 PR 7C the login owner is ``_auth/profile_store.py``, beside
+        the path transaction; minted-session filtering remains in ``_auth/storage.py``.
+        This is write-time policy, not browser code. The old
+        ``_browser_cookie_filter`` leaf is a re-export shim (pinned by
+        ``test_consolidation_shims_are_identity_reexports``), so this asserts
+        against the canonical home.
+        """
+        from notebooklm._auth import _browser_cookie_filter, browser_capture, cookie_filter, storage
+        from notebooklm.cli.services.playwright_login import (
+            filter_storage_state_cookies_by_domain_policy as playwright_filter,
+        )
+
+        canonical = cookie_filter.filter_storage_state_cookies_by_domain_policy
+        assert storage._safe_cookie_shape is cookie_filter._safe_cookie_shape
+        assert browser_capture._safe_cookie_shape is storage._safe_cookie_shape
+        assert storage.filter_storage_state_cookies_by_domain_policy is canonical
+        assert browser_capture.filter_storage_state_cookies_by_domain_policy is canonical
+        assert _browser_cookie_filter.filter_storage_state_cookies_by_domain_policy is canonical
+        assert playwright_filter is canonical
+
+    @pytest.mark.parametrize("include_domains", [None, {"mail"}, {"all"}])
+    def test_writer_persists_same_domain_set_as_playwright_filter(self, tmp_path, include_domains):
+        """Behavioral pin: the on-disk cookie set ``replace_from_login`` persists
+        equals what the Playwright write-time filter keeps, cookie-for-cookie.
+
+        Because all three CLI writers call this one function, proving parity for
+        the writer proves it for every login/import path.
+        """
+        from notebooklm.auth import replace_from_login
+        from notebooklm.cli.services.playwright_login import (
+            filter_storage_state_cookies_by_domain_policy as playwright_filter,
+        )
+
+        probe_domains = [
+            ".google.com",
+            "google.com",
+            "notebooklm.google.com",
+            "accounts.google.com",
+            ".googleusercontent.com",
+            ".google.co.uk",
+            ".google.de",
+            "mail.google.com",
+            ".mail.google.com",
+            "docs.google.com",
+            "myaccount.google.com",
+            ".youtube.com",
+            "evil-google.com",
+            ".not-youtube.com",
+        ]
+        # Required cookies on an allowlisted domain so the writer's post-filter
+        # required-cookie revalidation does not short-circuit before the write.
+        cookies = [
+            {"name": "SID", "value": "v", "domain": ".google.com", "path": "/"},
+            {"name": "__Secure-1PSIDTS", "value": "v", "domain": ".google.com", "path": "/"},
+            *(
+                {"name": f"C{i}", "value": "v", "domain": d, "path": "/"}
+                for i, d in enumerate(probe_domains)
+            ),
+        ]
+        state = {"cookies": cookies, "origins": []}
+
+        storage_path = tmp_path / "storage_state.json"
+        outcome = replace_from_login(storage_path, dict(state), include_domains=include_domains)
+        assert outcome.ok
+        persisted = {
+            (c["name"], c["domain"]) for c in json.loads(storage_path.read_text())["cookies"]
+        }
+        playwright_kept = {
+            (c["name"], c["domain"])
+            for c in playwright_filter(dict(state), include_domains=include_domains)["cookies"]
+        }
+        assert persisted == playwright_kept
 
 
 class TestRequiredVsOptional:
@@ -105,6 +214,8 @@ class TestRequiredVsOptional:
             "google.com",
             ".notebooklm.google.com",
             "notebooklm.google.com",
+            ".notebook.google.com",
+            "notebook.google.com",
             ".googleusercontent.com",
             "accounts.google.com",
             ".accounts.google.com",
@@ -177,7 +288,7 @@ class TestRuntimeGate:
             )
 
     def test_runtime_gate_accepts_google_subdomain_optional_siblings(self):
-        """Docs / myaccount / Mail pass via the .google.com suffix tier."""
+        """Google-root siblings and regional subdomains pass the suffix tier."""
         for domain in (
             "docs.google.com",
             ".docs.google.com",
@@ -185,6 +296,10 @@ class TestRuntimeGate:
             ".myaccount.google.com",
             "mail.google.com",
             ".mail.google.com",
+            "drive.usercontent.google.com",
+            "accounts.google.com.hk",
+            "lh3.google.co.uk",
+            "lh3.googleusercontent.com",
         ):
             assert _is_allowed_cookie_domain(domain) is True
 
@@ -193,6 +308,10 @@ class TestRuntimeGate:
         assert _is_allowed_cookie_domain(".not-youtube.com") is False
         assert _is_allowed_cookie_domain("notyoutube.com") is False
         assert _is_allowed_cookie_domain("evil-google.com") is False
+        assert _is_allowed_cookie_domain("evilgoogle.com") is False
+        assert _is_allowed_cookie_domain("google.com.evil.com") is False
+        assert _is_allowed_cookie_domain("google.uk.co") is False
+        assert _is_allowed_cookie_domain("google.co.uk.evil.com") is False
         assert _is_allowed_cookie_domain(".google.zz") is False
 
 
@@ -240,6 +359,105 @@ class TestBuildGoogleCookieDomains:
         domains = set(_build_google_cookie_domains(include_domains={"all"}))
         for optional_set in OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values():
             assert optional_set.issubset(domains)
+
+
+class TestGeminiNotebookRebrandHost:
+    """``notebook.google.com`` (the July 2026 Gemini Notebook rebrand host) is
+    treated as a REQUIRED auth domain so ``--browser-cookies`` extraction
+    requests it and the runtime loader keeps its binding cookies.
+
+    Background (issue #2013): Google rebranded NotebookLM to Gemini Notebook
+    on 2026-07-16 and now also serves the app from ``notebook.google.com``.
+    The per-product binding cookies (``OSID`` / ``__Secure-OSID``) are set on
+    this host in addition to the legacy ``notebooklm.google.com``. Before this
+    fix the host was absent from :data:`REQUIRED_COOKIE_DOMAINS`, so
+    ``notebooklm login --browser-cookies`` never asked rookiepy for it and a
+    user whose browser only populated ``OSID`` on the rebrand host would fail
+    the Tier-2 secondary-binding check (or silently keep a stale jar).
+    """
+
+    def test_rebrand_host_in_required_set(self):
+        """Both dotted and bare rebrand host variants are REQUIRED."""
+        # Set-intersection form sidesteps CodeQL's substring-sanitization
+        # heuristic (same pattern as test_youtube_rejected_by_default above).
+        rebrand_variants = frozenset({"notebook.google.com", ".notebook.google.com"})
+        assert rebrand_variants & REQUIRED_COOKIE_DOMAINS == rebrand_variants
+
+    def test_rebrand_host_requested_by_default_extraction(self):
+        """Default ``_build_google_cookie_domains`` asks for the rebrand host."""
+        domains = frozenset(_build_google_cookie_domains())
+        # Set-intersection form sidesteps CodeQL's substring-sanitization
+        # heuristic.
+        rebrand_variants = frozenset({"notebook.google.com", ".notebook.google.com"})
+        assert rebrand_variants & domains == rebrand_variants
+
+    def test_rebrand_host_passes_runtime_gate(self):
+        """The rebrand host is accepted by the runtime cookie-domain gate."""
+        assert _is_allowed_cookie_domain("notebook.google.com") is True
+        assert _is_allowed_cookie_domain(".notebook.google.com") is True
+
+    def test_rebrand_host_osid_survives_extraction(self):
+        """A storage_state with ``OSID`` only on ``notebook.google.com`` is
+        kept by ``extract_cookies_with_domains`` (the load-time loader)."""
+        from notebooklm._auth.cookies import extract_cookies_with_domains
+
+        storage = {
+            "cookies": [
+                {"name": "SID", "value": "sid", "domain": ".google.com", "path": "/"},
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "psidts",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
+                {
+                    "name": "OSID",
+                    "value": "rebrand_osid",
+                    "domain": "notebook.google.com",
+                    "path": "/",
+                },
+            ],
+            "origins": [],
+        }
+        cookie_map = extract_cookies_with_domains(storage)
+        assert cookie_map[("OSID", "notebook.google.com", "/")] == "rebrand_osid"
+
+    def test_legacy_app_host_osid_outranks_rebrand_host_when_both_present(self):
+        """When ``OSID`` is set on both the legacy and rebrand hosts, the
+        legacy ``notebooklm.google.com`` (Tier 2) wins over
+        ``notebook.google.com`` (Tier 2) only via first-occurrence within the
+        same tier — but the dotted ``.notebooklm.google.com`` (Tier 3)
+        strictly outranks both. This guards against the rebrand host silently
+        shadowing the canonical app host."""
+        from notebooklm._auth.cookies import extract_cookies_from_storage
+
+        storage = {
+            "cookies": [
+                {"name": "SID", "value": "sid", "domain": ".google.com", "path": "/"},
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "psidts",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
+                {
+                    "name": "OSID",
+                    "value": "rebrand",
+                    "domain": "notebook.google.com",
+                    "path": "/",
+                },
+                {
+                    "name": "OSID",
+                    "value": "legacy",
+                    "domain": ".notebooklm.google.com",
+                    "path": "/",
+                },
+            ],
+            "origins": [],
+        }
+        cookies = extract_cookies_from_storage(storage)
+        # Tier 3 (.notebooklm.google.com) outranks Tier 2 (notebook.google.com).
+        assert cookies["OSID"] == "legacy"
 
 
 class TestParseIncludeDomains:
@@ -555,7 +773,8 @@ class TestLoginCliFlag:
             )
 
         assert result.exit_code == 0, result.output
-        assert "sibling-product cookies not included" in result.output
+        assert "sibling-product domains are not explicitly requested" in result.output
+        assert "trusted Google roots may still be retained" in result.output
 
     def test_login_with_include_domains_suppresses_migration_note(self, monkeypatch):
         """The migration note is suppressed once the user opts in."""
@@ -575,7 +794,7 @@ class TestLoginCliFlag:
             )
 
         assert result.exit_code == 0, result.output
-        assert "sibling-product cookies not included" not in result.output
+        assert "sibling-product domains are not explicitly requested" not in result.output
 
     def test_login_include_domains_on_playwright_path_no_longer_warns(self, monkeypatch, tmp_path):
         """``--include-domains`` now applies on the Playwright path (P1-17).

@@ -17,6 +17,8 @@ import httpx
 import pytest
 
 import notebooklm.auth as auth_module
+from notebooklm._auth.cookie_policy import app_host_scope_note
+from notebooklm._env import ENTERPRISE_BASE_HOST, PERSONAL_LEGACY_HOST
 from notebooklm.cli.services.login import cookie_jar
 from notebooklm.cli.services.login.outcomes import (
     CookieValidationFailure,
@@ -112,6 +114,42 @@ class TestStaleCookies:
         assert out.code == "STALE_COOKIES"
         assert "Account discovery failed" in out.message
         assert "notebooklm login" in out.message
+
+    def test_loud_stale_outcome_names_the_probed_host_and_scope_caveat(self, monkeypatch):
+        """A stale-looking rejection can really be a scope mismatch on the sibling host.
+
+        ``enumerate_accounts`` probes the *configured* host, so the refresh advice
+        names that host (not a fixed URL), and carries the shared cross-host
+        caveat — otherwise the message sends the user to re-mint cookies on a
+        host this client never calls.
+        """
+        monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{PERSONAL_LEGACY_HOST}")
+
+        with _enumerate_env(
+            validate_return=({"cookies": [1]}, None),
+            run_async_side_effect=ValueError("rejected"),
+        ) as io:
+            out = cookie_jar._enumerate_one_jar([{"x": 1}], "firefox", None, quiet=False, io=io)
+
+        assert isinstance(out, StaleCookies)
+        assert f"https://{PERSONAL_LEGACY_HOST} (the host this client probed)" in out.message
+        assert app_host_scope_note() in out.message
+
+    def test_loud_stale_outcome_drops_the_caveat_on_the_enterprise_host(self, monkeypatch):
+        """The enterprise host has no alias — no cross-host scope to warn about."""
+        monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{ENTERPRISE_BASE_HOST}")
+
+        with _enumerate_env(
+            validate_return=({"cookies": [1]}, None),
+            run_async_side_effect=ValueError("rejected"),
+        ) as io:
+            out = cookie_jar._enumerate_one_jar([{"x": 1}], "firefox", None, quiet=False, io=io)
+
+        assert isinstance(out, StaleCookies)
+        assert f"https://{ENTERPRISE_BASE_HOST} (the host this client probed)" in out.message
+        assert "host-scoped" not in out.message
+        # Blank-line hygiene: no double gap where the caveat would have gone.
+        assert "\n\n\n" not in out.message
 
 
 class TestNetworkFailure:

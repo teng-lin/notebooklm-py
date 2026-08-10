@@ -28,6 +28,7 @@ from .._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES, DEFAULT_CHAT_TIME
 from .._runtime.contracts import LoopGuard, RpcCaller
 from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError, ValidationError
 from .deleted_tracker import RecentlyDeletedConversations
+from .history import count_prior_server_turns
 from .notes import save_chat_answer_as_note
 from .transport import chat_aware_authed_post
 from .wire import (
@@ -285,6 +286,7 @@ class ChatAPI(LoopBoundPrimitive):
         # conversation that we resumed — refined on the null-ask path below,
         # where a first-ever (or just-deleted) conversation starts fresh (#1965).
         is_follow_up = not is_new_conversation
+        prior_turn_count = 0
 
         async def perform_request(
             *,
@@ -402,15 +404,18 @@ class ChatAPI(LoopBoundPrimitive):
 
             return answer_text, references, resolved_conversation_id, response.text
 
-        def cache_turn(resolved_conversation_id: str, answer_text: str) -> int:
-            turns = self._cache.get_cached_conversation(resolved_conversation_id)
+        def cache_turn(
+            resolved_conversation_id: str,
+            answer_text: str,
+            server_prior_turn_count: int,
+        ) -> int:
             if answer_text:
-                turn_number = len(turns) + 1
+                turn_number = server_prior_turn_count + 1
                 self._cache.cache_conversation_turn(
                     resolved_conversation_id, question, answer_text, turn_number
                 )
             else:
-                turn_number = len(turns)
+                turn_number = server_prior_turn_count
             return turn_number
 
         # Null-conversation asks carry no caller id; the server appends them to
@@ -444,27 +449,28 @@ class ChatAPI(LoopBoundPrimitive):
                     # cached because another client may have deleted them (#1973).
                     is_follow_up = False
                     if override is not None:
-                        turns_data = await self.get_conversation_turns(
-                            notebook_id, override, limit=1
+                        prior_turn_count = await count_prior_server_turns(
+                            self.get_conversation_turns, notebook_id, override
                         )
-                        is_follow_up = bool(
-                            unwrap_conversation_turns(
-                                turns_data, source="_chat.ask.follow_up_probe"
-                            )
-                        )
+                        is_follow_up = prior_turn_count > 0
                     posted = await perform_request(
                         conversation_history=None,
                         active_conversation_id=None,
                         resolved_id_override=override,
                     )
                     answer_text, references, resolved_conversation_id, raw_response = posted
-                    turn_number = cache_turn(resolved_conversation_id, answer_text)
+                    turn_number = cache_turn(
+                        resolved_conversation_id, answer_text, prior_turn_count
+                    )
             else:
                 async with self._get_conversation_lock(resolved_conversation_id):
-                    turn_number = cache_turn(resolved_conversation_id, answer_text)
+                    turn_number = cache_turn(resolved_conversation_id, answer_text, 0)
         else:
             assert conversation_id is not None  # narrowed by is_new_conversation
             async with self._get_conversation_lock(conversation_id):
+                prior_turn_count = await count_prior_server_turns(
+                    self.get_conversation_turns, notebook_id, conversation_id
+                )
                 conversation_history = self._build_conversation_history(conversation_id)
                 (
                     answer_text,
@@ -475,7 +481,7 @@ class ChatAPI(LoopBoundPrimitive):
                     conversation_history=conversation_history,
                     active_conversation_id=conversation_id,
                 )
-                turn_number = cache_turn(resolved_conversation_id, answer_text)
+                turn_number = cache_turn(resolved_conversation_id, answer_text, prior_turn_count)
 
         return AskResult(
             answer=answer_text,

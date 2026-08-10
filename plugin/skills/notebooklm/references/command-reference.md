@@ -73,7 +73,7 @@ condensed quick reference and the CLI-not-on-PATH substitution rule (`sh
 | Check artifact status | `notebooklm artifact list` |
 | Wait for completion | `notebooklm artifact wait <artifact_id>` |
 | Delete artifact | `notebooklm artifact delete <artifact_id> --yes` |
-| Download audio | `notebooklm download audio ./output.mp3` |
+| Download audio | `notebooklm download audio ./output.m4a` |
 | Download video | `notebooklm download video ./output.mp4` |
 | Download cinematic video | `notebooklm download cinematic-video ./cinematic.mp4` (alias for `download video`) |
 | Download infographic | `notebooklm download infographic ./infographic.png` |
@@ -201,7 +201,7 @@ Common generate options vary by subcommand:
 
 | Type | Command | Options | Download |
 |------|---------|---------|----------|
-| Podcast | `generate audio` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | .mp3 |
+| Podcast | `generate audio` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | .m4a |
 | Video | `generate video` | `--format [explainer\|brief\|cinematic\|short]` (⁴), `--style [auto\|custom\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]`, `--style-prompt` with `--style custom` | .mp4 |
 | Slide Deck | `generate slide-deck` | `--format [detailed\|presenter]`, `--length [default\|short]` (²) | .pdf / .pptx |
 | Slide Revision | `generate revise-slide "prompt" --artifact <id> --slide N` | `--wait`, `--notebook` | *(re-downloads parent deck)* |

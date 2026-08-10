@@ -62,8 +62,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        default="podcast.mp3",
-        help="Output path for the downloaded podcast (default: podcast.mp3).",
+        default="podcast.m4a",
+        help="Output path for the downloaded podcast (default: podcast.m4a).",
     )
     parser.add_argument(
         "--notebook-id",

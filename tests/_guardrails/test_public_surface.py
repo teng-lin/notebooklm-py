@@ -18,21 +18,24 @@ Two complementary tests guard the contract:
 1. The snapshot test (``test_*_module_has_expected_all``) pins the exact
    list, so accidental drift in shape or ordering fails loudly.
 2. The audit test (``test_*_all_matches_external_imports_audit``) AST-scans
-   ``src/``, ``tests/``, ``docs/`` for ``from notebooklm.<module> import X``
-   patterns and fails if any externally imported public name was added
-   without updating ``__all__``.
+   ``src/``, ``tests/``, ``docs/`` for direct imports and binding-aware
+   first-party ``auth.Name`` uses, then fails if any externally imported public
+   name was added without updating ``__all__``.
 """
 
 from __future__ import annotations
 
 import ast
 import pathlib
+import re
 from functools import lru_cache
 
 import pytest
 
 import notebooklm.auth as auth_module
 import notebooklm.client as client_module
+from tests._guardrails import test_auth_storage_compatibility as _auth_compat
+from tests._guardrails._public_import_manifest import _DOCUMENTED_PUBLIC_IMPORTS
 
 pytestmark = pytest.mark.repo_lint
 
@@ -49,69 +52,144 @@ _SCAN_ROOTS = ("src", "tests", "docs")
 
 EXPECTED_CLIENT_ALL: list[str] = ["NotebookLMClient"]
 
+# The ``notebooklm.auth`` PUBLIC surface — exactly what docs/stability.md
+# promises, and nothing else. ``test_auth_all_matches_documented_public_surface``
+# pins this list to the doc and to the manifest in
+# ``test_public_surface_manifest.py``, so the three can never drift apart.
+#
+# Do NOT add a name here just because first-party code imports it across the
+# CLI/_app boundary — that is what ``AUTH_CROSS_BOUNDARY_NAMES`` below is for.
+# Adding a name here is a public-API commitment and needs the docs change to
+# match.
 EXPECTED_AUTH_ALL: list[str] = [
-    "Account",
     "AuthTokens",
-    "build_cookie_jar",
-    "build_httpx_cookies_from_storage",
-    "clear_account_metadata",
     "convert_rookiepy_cookies_to_storage_state",
-    "cookie_names_from_storage",
-    "enumerate_accounts",
-    "exchange_master_token",
-    "extract_cookies_from_storage",
-    "extract_cookies_with_domains",
-    "extract_email_from_html",
-    "fetch_tokens_passive",
-    "fetch_tokens_with_domains",
-    "generate_android_id",
-    "get_account_email_for_storage",
-    "get_authuser_for_storage",
-    "GOOGLE_REGIONAL_CCTLDS",
-    "MasterTokenError",
-    "mint_cookies",
-    "missing_cookies_hint",
+    "LockUnavailableError",
     "OPTIONAL_COOKIE_DOMAINS",
     "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
-    "persist_minted_jar",
-    "read_account_metadata",
-    "read_account_metadata_from_storage_state",
-    "read_master_token",
     "REQUIRED_COOKIE_DOMAINS",
-    "validate_with_recovery",
-    "write_account_metadata",
-    "write_master_token",
 ]
 
-# Names de-blessed from ``auth.__all__`` in PR-1 (#1592): removed from the
-# advertised surface but kept importable as module attributes for back-compat
-# (the rpc-tranche mechanism — see scripts/api-compat-allowlist.json). The freeze
-# test below locks that promise so a future change can't silently drop importability
-# or re-bless a name.
+# First-party-only names reachable at ``notebooklm.auth.<name>``: importable, NOT
+# public API, NOT in ``__all__``.
+#
+# These exist because the CLI boundary lint (tests/_guardrails/test_cli_boundary.py)
+# forbids ``cli/`` from importing ``notebooklm._*``, so ``cli/`` and ``_app/`` reach
+# auth helpers through the ``notebooklm.auth`` facade. Before this list existed, the
+# external-imports audit resolved that need by forcing each name into ``__all__`` —
+# i.e. "the CLI needs it" auto-published it as public API, and ``auth.__all__``
+# reached 38 names against 6 documented ones. Splitting the two roles keeps the
+# published surface pinned to the docs while the boundary need is still tracked and
+# enforced (importability + no-dead-entries below).
+#
+# Adding a name here does NOT publish it, and carries no stability guarantee. It is
+# still a real cost — every entry is a name the auth layer cannot move freely — so
+# prefer routing new CLI needs through ``_app/`` service functions instead.
+AUTH_CROSS_BOUNDARY_NAMES: list[str] = [
+    "Account",
+    "AccountRecord",
+    "assert_account_writable",
+    "bootstrap_missing_storage_from_master_token",
+    "build_cookie_jar",
+    "build_httpx_cookies_from_storage",
+    "CLEAR_ACCOUNT",
+    "cookie_names_from_storage",
+    "enumerate_accounts",
+    "extract_cookies_from_storage",
+    "extract_cookies_with_domains",
+    "fetch_tokens_passive",
+    "fetch_tokens_with_domains",
+    "GOOGLE_REGIONAL_CCTLDS",
+    "master_token_bootstrap",
+    "master_token_remint",
+    "MasterTokenError",
+    "missing_cookies_hint",
+    "read_account_metadata",
+    "read_master_token",
+    "repair_account_metadata_from_playwright_storage",
+    "replace_from_login",
+    "resolve_account_identity",
+    "validate_with_recovery",
+]
+
+# Names de-blessed from ``auth.__all__``: removed from the advertised surface but
+# kept importable as module attributes for back-compat (the rpc-tranche mechanism —
+# see scripts/api-compat-allowlist.json). The freeze test below locks that promise
+# so a future change can't silently drop importability or re-bless a name.
+#
+# 23 entries came from PR-1 (#1592). ``KEEP_ACCOUNT`` and ``LoginWriteOutcome`` were
+# added when ``__all__`` was pinned to the documented surface: they were blessed
+# additively alongside the storage-writer refactor but no caller — first-party or
+# test — ever imported them. ``drop_legacy_account_key`` joined here when the
+# master-token-relocation PR-0 removed its last two ``src/`` call sites — the CLI
+# login writers now rely on ``replace_from_login`` scrubbing the legacy key
+# internally instead of calling this facade helper afterward.
+# ``exchange_master_token`` / ``mint_cookies`` / ``persist_minted_jar`` /
+# ``write_master_token`` / ``generate_android_id`` joined here in PR-2 of the
+# same follow-up: the CLI now calls the coarse transaction ops
+# (``master_token_bootstrap`` / ``master_token_remint`` / etc., tracked in
+# ``AUTH_CROSS_BOUNDARY_NAMES`` above) instead of assembling these primitives
+# itself, but they stay importable for the documented low-level recipe
+# (docs/python-api.md) and any external caller that already depends on them.
+# All entries here are covered rather than in ``AUTH_CROSS_BOUNDARY_NAMES``
+# (which requires a live first-party importer).
+#
+# ``get_account_email_for_storage`` / ``get_authuser_for_storage`` /
+# ``clear_account_metadata`` / ``extract_email_from_html`` / ``write_account_metadata``
+# are the exception to the "de-blessed from __all__" history above: they were
+# never public API, only cross-boundary. Their last cli/_app facade importers
+# switched to coarse ops (``resolve_account_identity`` for the first two,
+# ``repair_account_metadata_from_playwright_storage`` for the latter three —
+# auth cross-boundary ledger shrink, follow-up to #2103), but all five names
+# stay frozen on ``notebooklm.auth`` for first-party test callers
+# (``tests/_guardrails/test_public_surface_manifest.py``'s
+# ``_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES``), so they land here rather than
+# disappearing from the facade entirely.
+#
+# ``read_account_metadata_from_storage_state`` joined the same follow-up for a
+# different reason: it is not in ``_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES``, but
+# ``scripts/api-compat-allowlist.json`` explicitly records it as a "de-advertisement,
+# not removal" that stays importable — dropping the facade alias entirely (as an
+# earlier revision of this PR did) silently broke that documented promise with no
+# guardrail catching it, since the audit script only diffs ``__all__`` membership.
 _AUTH_DEBLESSED_KEEP_IMPORTABLE: list[str] = [
     "advance_cookie_snapshot_after_save",
     "ALLOWED_COOKIE_DOMAINS",
     "authuser_query",
+    "clear_account_metadata",
     "CookieSaveResult",
     "CookieSnapshot",
     "CookieSnapshotKey",
     "CookieSnapshotValue",
+    "drop_legacy_account_key",
+    "exchange_master_token",
     "extract_csrf_from_html",
+    "extract_email_from_html",
     "extract_session_id_from_html",
     "extract_wiz_field",
     "fetch_tokens",
     "format_authuser_value",
+    "generate_android_id",
+    "get_account_email_for_storage",
+    "get_authuser_for_storage",
+    "KEEP_ACCOUNT",
     "KEEPALIVE_ROTATE_URL",
     "load_auth_from_storage",
     "load_httpx_cookies",
+    "LoginWriteOutcome",
     "MINIMUM_REQUIRED_COOKIES",
+    "mint_cookies",
     "normalize_cookie_map",
     "NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV",
     "NOTEBOOKLM_REFRESH_CMD_ENV",
     "NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV",
+    "persist_minted_jar",
+    "read_account_metadata_from_storage_state",
     "recover_psidts_in_memory",
     "save_cookies_to_storage",
     "snapshot_cookie_jar",
+    "write_account_metadata",
+    "write_master_token",
 ]
 
 
@@ -137,13 +215,16 @@ def test_client_all_entries_resolve_on_module() -> None:
 
 
 def test_auth_module_has_expected_all() -> None:
-    """``notebooklm.auth.__all__`` matches the audited externally-imported set.
+    """``notebooklm.auth.__all__`` matches the documented public surface.
 
-    This test is the canonical record of what the audit found on 2026-05-17.
     If you intentionally add or remove a public name from ``auth.py``, update
-    ``EXPECTED_AUTH_ALL`` above to match and re-run the audit to confirm no
-    external caller is broken (search for ``from notebooklm.auth import`` and
-    ``from ..auth import`` across ``src/``, ``tests/``, ``docs/``).
+    ``EXPECTED_AUTH_ALL`` above AND docs/stability.md in the same PR — the two
+    are cross-checked by
+    ``test_auth_all_matches_documented_public_surface``.
+
+    Needing a name across the CLI/_app boundary is NOT a reason to add it here;
+    add it to ``AUTH_CROSS_BOUNDARY_NAMES`` instead, which grants importability
+    without publishing it.
     """
     assert hasattr(auth_module, "__all__"), (
         "notebooklm.auth must declare __all__ to pin its public surface."
@@ -202,13 +283,18 @@ def test_auth_all_excludes_private_names() -> None:
 
 
 @lru_cache(maxsize=1)
-def _collect_external_imports_by_module() -> dict[str, frozenset[str]]:
-    """Return public names imported from ``notebooklm.<module>`` by module.
+def _collect_external_imports_by_root() -> dict[tuple[str, str], frozenset[str]]:
+    """Return public names imported from ``notebooklm.<module>``, keyed ``(root, module)``.
 
     The auth/client audit tests both walk the same tree. Cache the scan so
     adding a second audited module does not double the unit-suite cost.
+
+    Results stay split per scan root because the two questions differ: "is this
+    name imported anywhere (incl. tests/docs)?" gates the declared-somewhere
+    audit, while "does ``src/`` still import it?" is what makes a cross-boundary
+    entry live rather than dead.
     """
-    imports_by_module: dict[str, set[str]] = {}
+    imports: dict[tuple[str, str], set[str]] = {}
     src_root = _REPO_ROOT / "src"
     for root in _SCAN_ROOTS:
         for path in (_REPO_ROOT / root).rglob("*.py"):
@@ -251,43 +337,236 @@ def _collect_external_imports_by_module() -> dict[str, frozenset[str]]:
                 for alias in node.names:
                     if alias.name == "*" or alias.name.startswith("_"):
                         continue
-                    imports_by_module.setdefault(module_basename, set()).add(alias.name)
-    return {name: frozenset(names) for name, names in imports_by_module.items()}
+                    imports.setdefault((root, module_basename), set()).add(alias.name)
+
+    # Phase 13 app operations use the public facade as a qualified module
+    # binding (``from .. import auth; auth.Name``). Reuse the caller ledger's
+    # binding-aware, control-flow-aware detector so this liveness audit has one
+    # truth source for shadowing rather than a weaker parallel scanner.
+    qualified = _auth_compat._alias_callers(src_root / "notebooklm")
+    imports.setdefault(("src", "auth"), set()).update(
+        name for name in qualified if not name.startswith("_")
+    )
+    return {key: frozenset(names) for key, names in imports.items()}
+
+
+def _collect_auth_imports_under(root: str) -> set[str]:
+    """Return public ``notebooklm.auth`` names imported by files under ``root``."""
+    return set(_collect_external_imports_by_root().get((root, "auth"), frozenset()))
 
 
 def _collect_external_imports(module_basename: str) -> set[str]:
     """Return the set of public names imported from ``notebooklm.<module_basename>``.
 
-    Reads from the cached repo-wide scan in
-    :func:`_collect_external_imports_by_module`, which walks every ``.py``
+    Unions every scan root of the cached repo-wide scan in
+    :func:`_collect_external_imports_by_root`, which walks every ``.py``
     file under ``src/``, ``tests/``, ``docs/`` once per process.
     """
-    return set(_collect_external_imports_by_module().get(module_basename, frozenset()))
+    by_root = _collect_external_imports_by_root()
+    return {
+        name
+        for (_root, module), names in by_root.items()
+        if module == module_basename
+        for name in names
+    }
 
 
 def test_auth_all_matches_external_imports_audit() -> None:
-    """``auth.__all__`` is a superset of every public name actually imported.
+    """Every name imported from ``notebooklm.auth`` is declared somewhere.
 
     This is the dynamic counterpart to ``test_auth_module_has_expected_all``.
     Where the former pins to a snapshotted list, this one scans the live
-    codebase (``src/``, ``tests/``, ``docs/``) and fails if any externally
-    imported public name has been added without updating ``__all__``.
+    codebase (``src/``, ``tests/``, ``docs/``) and fails if a name is imported
+    from ``notebooklm.auth`` without appearing in either declared list.
+
+    Note the deliberate asymmetry with the pre-#1592-era rule: an imported name
+    satisfies this audit via ``AUTH_CROSS_BOUNDARY_NAMES`` *or* ``__all__``. A
+    new CLI/_app import therefore no longer forces a name onto the public
+    surface — publishing stays an explicit, docs-backed decision.
     """
-    declared = set(auth_module.__all__)
+    declared = set(auth_module.__all__) | set(AUTH_CROSS_BOUNDARY_NAMES)
+    declared |= set(_AUTH_DEBLESSED_KEEP_IMPORTABLE)
     actually_imported = _collect_external_imports("auth")
     missing = actually_imported - declared
     assert not missing, (
-        "Public names imported from notebooklm.auth but missing from "
-        f"auth.__all__: {sorted(missing)}\n"
-        "Add them to __all__ (and to EXPECTED_AUTH_ALL above) so the public "
-        "surface stays explicit."
+        "Names imported from notebooklm.auth but declared in neither list: "
+        f"{sorted(missing)}\n"
+        "First-party (cli/ or _app/) need? Add to AUTH_CROSS_BOUNDARY_NAMES.\n"
+        "Genuinely public API? Add to EXPECTED_AUTH_ALL, auth.__all__, and "
+        "docs/stability.md together."
     )
 
 
+def test_auth_all_matches_documented_public_surface() -> None:
+    """``auth.__all__`` == docs/stability.md == the public-import manifest.
+
+    The forcing function that kept ``auth.__all__`` honest used to be "is it
+    imported somewhere?", which is a question about first-party convenience, not
+    about what was promised to users. This test replaces it with the right
+    question: the published surface must equal what the docs promise.
+
+    Three sources are cross-checked so none can drift alone:
+
+    1. ``notebooklm.auth.__all__`` (the runtime surface),
+    2. every ``notebooklm.auth.<Name>`` reference in docs/stability.md (the
+       user-facing promise — the ``notebooklm.auth.*`` internals line does not
+       match, ``*`` not being an identifier),
+    3. ``_DOCUMENTED_PUBLIC_IMPORTS["notebooklm.auth"]`` (the machine-readable
+       manifest, shared with ``test_public_surface_manifest.py``).
+    """
+    declared = set(auth_module.__all__)
+
+    doc_path = _REPO_ROOT / "docs" / "stability.md"
+    documented = set(
+        re.findall(r"notebooklm\.auth\.([A-Za-z_][A-Za-z0-9_]*)", doc_path.read_text())
+    )
+    assert declared == documented, (
+        "notebooklm.auth public surface drifted from docs/stability.md.\n"
+        f"  in __all__ but undocumented: {sorted(declared - documented)}\n"
+        f"  documented but not in __all__: {sorted(documented - declared)}\n"
+        "Publishing a name means updating both — that is the point of this gate.\n"
+        "Note the scan is doc-wide: writing a bare `notebooklm.auth.some_internal` "
+        "anywhere in stability.md reads as a promise. Refer to internals as "
+        "`notebooklm._auth.<sub>.some_internal` in prose instead."
+    )
+
+    manifest = set(_DOCUMENTED_PUBLIC_IMPORTS["notebooklm.auth"])
+    assert declared == manifest, (
+        "notebooklm.auth public surface drifted from the documented public-import "
+        "manifest in tests/_guardrails/test_public_surface_manifest.py.\n"
+        f"  in __all__ but not in the manifest: {sorted(declared - manifest)}\n"
+        f"  in the manifest but not in __all__: {sorted(manifest - declared)}"
+    )
+
+
+def test_auth_cross_boundary_names_stay_importable_and_unblessed() -> None:
+    """First-party boundary names resolve on the facade but are not published.
+
+    Both halves matter: dropping importability breaks ``cli/``/``_app/`` (which
+    the CLI boundary lint forbids from reaching ``notebooklm._auth`` directly),
+    and re-blessing a name silently re-publishes it as API.
+    """
+    assert len(AUTH_CROSS_BOUNDARY_NAMES) == len(set(AUTH_CROSS_BOUNDARY_NAMES)), (
+        "AUTH_CROSS_BOUNDARY_NAMES must not contain duplicates: "
+        f"{sorted({n for n in AUTH_CROSS_BOUNDARY_NAMES if AUTH_CROSS_BOUNDARY_NAMES.count(n) > 1})}"
+    )
+    private = [name for name in AUTH_CROSS_BOUNDARY_NAMES if name.startswith("_")]
+    assert not private, (
+        "AUTH_CROSS_BOUNDARY_NAMES tracks the non-underscore facade surface; the "
+        f"CLI boundary lint already forbids private-name imports: {private}"
+    )
+
+    sentinel = object()
+    declared = set(auth_module.__all__)
+    for name in AUTH_CROSS_BOUNDARY_NAMES:
+        assert getattr(auth_module, name, sentinel) is not sentinel, (
+            f"cross-boundary {name!r} must stay importable from notebooklm.auth"
+        )
+        assert name not in declared, (
+            f"cross-boundary {name!r} is in auth.__all__ — it is first-party-only. "
+            "If it is genuinely public API, move it to EXPECTED_AUTH_ALL and "
+            "document it in docs/stability.md."
+        )
+
+
+def test_auth_cross_boundary_names_have_first_party_importers(tmp_path: pathlib.Path) -> None:
+    """No dead entries: every cross-boundary name is really imported by ``src/``.
+
+    The list is a cost, not a catalogue — each entry pins a name the auth layer
+    cannot move freely. An entry whose last caller went away should be deleted,
+    not carried forever (this is how the surface silently re-inflates).
+    """
+    imported_by_src = _collect_auth_imports_under("src")
+    unused = [name for name in AUTH_CROSS_BOUNDARY_NAMES if name not in imported_by_src]
+    assert not unused, (
+        "AUTH_CROSS_BOUNDARY_NAMES entries with no importer under src/: "
+        f"{sorted(unused)}\n"
+        "Drop them from the list (they stay importable via "
+        "_AUTH_DEBLESSED_KEEP_IMPORTABLE only if an external caller still needs them)."
+    )
+
+    path = tmp_path / "src" / "notebooklm" / "feature" / "synthetic.py"
+    path.parent.mkdir(parents=True)
+
+    def qualified_attributes(source: str) -> set[str]:
+        old_root = _auth_compat.REPO_ROOT
+        try:
+            _auth_compat.REPO_ROOT = tmp_path
+            collector = _auth_compat._AliasUseCollector(path)
+            collector.visit(ast.parse(source))
+            return collector.attributes
+        finally:
+            _auth_compat.REPO_ROOT = old_root
+
+    recognized = qualified_attributes(
+        "import notebooklm.auth as module\n"
+        "from notebooklm import auth as absolute\n"
+        "from .. import auth as relative\n"
+        "module.AbsoluteModule\n"
+        "@absolute.Decorator\n"
+        "def outer(value: relative.Parameter = absolute.Default) -> relative.Return:\n"
+        "    if value:\n"
+        "        relative.ControlFlow\n"
+        "    def inner():\n"
+        "        return absolute.Closure\n"
+        "    return inner\n"
+    )
+    assert recognized == {
+        "AbsoluteModule",
+        "Closure",
+        "ControlFlow",
+        "Decorator",
+        "Default",
+        "Parameter",
+        "Return",
+    }
+
+    shadowed = qualified_attributes(
+        "from .. import auth as facade\n"
+        "def parameter(facade):\n    return facade.ParameterShadow\n"
+        "def assigned():\n    facade = object()\n    return facade.AssignmentShadow\n"
+        "def imported():\n    import math as facade\n    return facade.ImportShadow\n"
+        "def local_scope():\n    facade.LocalShadow\n    facade = object()\n"
+        "[facade.ComprehensionShadow for facade in values]\n"
+        "match value:\n    case facade:\n        facade.PatternShadow\n"
+        "try:\n    operation()\nexcept Exception as facade:\n    facade.ExceptionShadow\n"
+        "(facade := object()).WalrusShadow\n"
+    )
+    assert shadowed == set()
+
+    dynamic = qualified_attributes(
+        "from .. import auth as facade\n"
+        "getattr(facade, 'Getattr')\n"
+        "vars(facade)['Vars']\n"
+        "globals()['facade'].Globals\n"
+        "facade.__dict__['Dict']\n"
+        "facade['Subscript']\n"
+        "facade['Computed' + 'Key']\n"
+    )
+    assert dynamic == {"__dict__"}
+
+
 def test_auth_deblessed_names_stay_importable_but_unblessed() -> None:
-    """PR-1 (#1592): de-blessed auth names stay importable for back-compat but are
-    absent from ``__all__`` — the rpc-tranche freeze guard, applied to auth."""
-    assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == 23
+    """De-blessed auth names stay importable for back-compat but are absent from
+    ``__all__`` — the rpc-tranche freeze guard, applied to auth.
+
+    23 from PR-1 (#1592), plus ``KEEP_ACCOUNT`` / ``LoginWriteOutcome``, which had
+    no importer at all when ``__all__`` was pinned to the documented surface, plus
+    ``drop_legacy_account_key``, whose last ``src/`` importers were removed by the
+    master-token-relocation PR-0 (issue #2103), plus 5 master-token minting
+    primitives (``exchange_master_token`` / ``mint_cookies`` /
+    ``persist_minted_jar`` / ``write_master_token`` / ``generate_android_id``)
+    whose last ``src/`` importers were removed by the same relocation's PR-2, plus
+    ``get_account_email_for_storage`` / ``get_authuser_for_storage`` / ``clear_account_metadata``
+    / ``extract_email_from_html`` / ``write_account_metadata``, whose last cli/_app
+    facade importers switched to ``resolve_account_identity`` /
+    ``repair_account_metadata_from_playwright_storage`` in the auth
+    cross-boundary ledger shrink (follow-up to #2103), plus
+    ``read_account_metadata_from_storage_state``, whose facade alias the same
+    follow-up must keep per ``scripts/api-compat-allowlist.json``'s explicit
+    retained-and-importable promise.
+    """
+    assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == 37
     assert len(_AUTH_DEBLESSED_KEEP_IMPORTABLE) == len(set(_AUTH_DEBLESSED_KEEP_IMPORTABLE)), (
         "_AUTH_DEBLESSED_KEEP_IMPORTABLE must not contain duplicates"
     )

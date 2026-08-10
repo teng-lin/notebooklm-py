@@ -17,7 +17,7 @@ from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._runtime.contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._source import upload as _source_upload
-from ._source.add import SourceAddService, honor_requested_title
+from ._source.add import SourceAddService, honor_requested_title_if_fresh
 from ._source.content import SourceContentRenderer
 from ._source.drive_import import DriveFetcher, DriveImportService
 from ._source.listing import SourceLister
@@ -34,7 +34,6 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 _SOURCE_ID_UUID_PATTERN = _source_upload._SOURCE_ID_UUID_PATTERN
 _extract_register_file_source_id = _source_upload._extract_register_file_source_id
@@ -404,7 +403,7 @@ class SourcesAPI:
         Example:
             source = await client.sources.add_url(nb_id, url, wait=True)
         """
-        source = await self._adder.add_url(
+        result = await self._adder.add_url(
             notebook_id,
             url,
             wait=wait,
@@ -416,8 +415,9 @@ class SourcesAPI:
             extract_youtube_video_id=self._extract_youtube_video_id,
             is_youtube_url=is_youtube_url,
             logger=logger,
+            return_result=True,
         )
-        return await honor_requested_title(self.rename, notebook_id, source, title, logger)
+        return await honor_requested_title_if_fresh(self.rename, notebook_id, result, title, logger)
 
     async def add_text(
         self,
@@ -564,7 +564,7 @@ class SourcesAPI:
                 notebook_id, file_id="1abc123xyz", title="My Document",
                 mime_type=DriveMimeType.GOOGLE_DOC.value, wait=True)
         """
-        source = await self._adder.add_drive(
+        result = await self._adder.add_drive(
             notebook_id,
             file_id,
             title,
@@ -575,8 +575,9 @@ class SourcesAPI:
             list_sources=self.list,
             wait_until_ready=self.wait_until_ready,
             logger=logger,
+            return_result=True,
         )
-        return await honor_requested_title(self.rename, notebook_id, source, title, logger)
+        return await honor_requested_title_if_fresh(self.rename, notebook_id, result, title, logger)
 
     async def add_drive_file(
         self,
@@ -616,10 +617,9 @@ class SourcesAPI:
             ),
             add_file=self.add_file,
         )
-        # Gate the whole download→upload op on a DEDICATED download semaphore (not
-        # the upload one — ``add_file`` needs that, so reusing it would deadlock) so
-        # concurrent remote-MCP calls can't each buffer a 200 MiB temp and exhaust
-        # disk; at most ``max_concurrent_uploads`` temps exist at once.
+        # Gate the whole download→upload op on a DEDICATED download semaphore;
+        # reusing the upload one would deadlock because ``add_file`` needs it.
+        # It bounds temporary-file fan-out to ``max_concurrent_uploads``.
         async with self._uploader.get_download_semaphore():
             return await service.add_drive_file(
                 notebook_id, document_id, title=title, wait=wait, wait_timeout=wait_timeout
@@ -978,7 +978,7 @@ class SourcesAPI:
             logger=logger,
         )
 
-    async def _cancel_upload_session(self, upload_url: str, base_url: str, auth_route: str) -> None:
+    async def _cancel_upload_session(self, upload_url: str, auth_route: str) -> None:
         """Best-effort POST a Scotty resumable-upload cancel command.
 
         Invoked fire-and-forget (via ``asyncio.create_task``) from
@@ -988,13 +988,13 @@ class SourcesAPI:
 
         Network failures are swallowed — Ctrl-C cleanup is best-effort;
         the worst case is that the session lives until Scotty GCs it.
-        Since the caller schedules this on a detached task, there is no
-        outer await chain that can deliver a cancellation here, so no
-        extra shield is needed at this layer.
+        Since the caller schedules this on a detached task, there is no outer
+        await chain that can deliver a cancellation here, so no extra shield is
+        needed at this layer. No base URL is passed: ``Origin``/``Referer`` are
+        derived from the validated upload URL inside the pipeline.
         """
         await self._uploader.cancel_upload_session(
             upload_url,
-            base_url,
             auth_route,
             logger=logger,
         )

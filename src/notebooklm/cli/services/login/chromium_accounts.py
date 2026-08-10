@@ -13,13 +13,13 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from ...._app.login_cookie import Account, project_browser_account
 from .cookie_domains import _build_google_cookie_domains
 from .cookie_jar import _enumerate_one_jar
 from .outcomes import BrowserCookieOutcome, CookieValidationFailure, NetworkFailure
 from .rookiepy_errors import _handle_rookiepy_error
 
 if TYPE_CHECKING:
-    from ....auth import Account
     from .io_seam import LoginIO
 
 # Shared rookiepy-not-installed message — kept identical to the single-jar
@@ -119,6 +119,7 @@ def _enumerate_chromium_profiles_fanout(
     *,
     verbose: bool,
     include_domains: set[str] | None,
+    validate_before_probe: bool = True,
 ) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]] | BrowserCookieOutcome:
     """Fan out account discovery across multiple Chromium user-data profiles.
 
@@ -134,129 +135,132 @@ def _enumerate_chromium_profiles_fanout(
     out of ``cli/services``. The ``io`` sink carries the verbose progress and
     per-profile skip/dedupe lines.
     """
-    chromium_profiles = _chromium_profiles_module()
-
-    domains = _build_google_cookie_domains(include_domains=include_domains)
-
-    if verbose:
-        names = ", ".join(f"'{p.human_name}'" for p in profiles)
-        _emit_progress(
-            io,
-            f"[yellow]Reading cookies from {len(profiles)} {browser_name} "
-            f"user-profiles: {names}[/yellow]",
-        )
-
-    from ....auth import Account
-
-    per_profile_cookies: dict[str | None, list[dict[str, Any]]] = {}
-    read_failures: list[tuple[str, Exception]] = []
+    chromium_profiles = domains = names = name_labels = item = None
+    per_profile_cookies = read_failures = aggregated = None
+    seen_emails: dict[str, str] | None = None
+    profile = raw = jar_result = accounts = account = projected_account = None
+    first_profile = first_error = None
     successful_reads = 0
-    seen_emails: dict[str, str] = {}  # email -> winning browser_profile
-    aggregated: list[Account] = []
-    global_default_assigned = False
+    global_default_assigned = is_default = False
+    read_cookies = enumerate_jar = project_account = emit_progress = None
+    try:
+        chromium_profiles = _chromium_profiles_module()
+        domains = _build_google_cookie_domains(include_domains=include_domains)
+        read_cookies = chromium_profiles.read_chromium_profile_cookies
+        enumerate_jar = _enumerate_one_jar
+        project_account = project_browser_account
+        emit_progress = _emit_progress
 
-    for profile in profiles:
-        try:
-            raw = chromium_profiles.read_chromium_profile_cookies(profile, domains=domains)
-        except ImportError:
-            # rookiepy isn't installed — same friendly message the legacy
-            # single-jar path prints (``_read_browser_cookies``). Abort fan-out
-            # since every profile would fail the same way.
-            return CookieValidationFailure(
-                code="ROOKIEPY_NOT_INSTALLED", message=_ROOKIEPY_NOT_INSTALLED_MESSAGE
+        if verbose:
+            name_labels = []
+            for item in profiles:
+                name_labels.append(f"'{item.human_name}'")
+            names = ", ".join(name_labels)
+            emit_progress(
+                io,
+                f"[yellow]Reading cookies from {len(profiles)} {browser_name} "
+                f"user-profiles: {names}[/yellow]",
             )
-        except (OSError, RuntimeError) as e:
-            # One profile failing (e.g. a locked DB) shouldn't kill discovery
-            # of the others. Surface a per-profile note and continue.
-            read_failures.append((profile.human_name, e))
-            if verbose:
-                _emit_progress(
-                    io,
-                    f"  [yellow]skipping {browser_name} profile "
-                    f"'{profile.human_name}': {e}[/yellow]",
+
+        per_profile_cookies = {}
+        read_failures = []
+        seen_emails = {}
+        aggregated = []
+
+        for profile in profiles:
+            try:
+                raw = read_cookies(profile, domains=domains)
+            except ImportError:
+                return CookieValidationFailure(
+                    code="ROOKIEPY_NOT_INSTALLED",
+                    message=_ROOKIEPY_NOT_INSTALLED_MESSAGE,
                 )
-            continue
-
-        successful_reads += 1
-        try:
-            jar_result = _enumerate_one_jar(
-                raw,
-                browser_name,
-                browser_profile=profile.directory_name,
-                quiet=True,
-                io=io,
-            )
-        except httpx.RequestError as e:
-            # Network failure — every subsequent profile probe will hit the
-            # same error, so abort the entire fan-out rather than collapse
-            # the transport failure into per-profile "signed out" skips.
-            return NetworkFailure(
-                code="NETWORK_ERROR",
-                message=(
-                    f"[red]Account discovery failed (network error):[/red] {e}\n"
-                    "Check your internet connection and try again."
-                ),
-            )
-        if isinstance(jar_result, BrowserCookieOutcome):
-            # Stale-jar / missing-cookies failure for one profile. In
-            # fan-out mode an individual profile being signed out is
-            # normal — continue to the next one.
-            if verbose:
-                _emit_progress(
-                    io,
-                    f"  [dim]no signed-in Google accounts in '{profile.human_name}'[/dim]",
-                )
-            continue
-        accounts = jar_result
-
-        per_profile_cookies[profile.directory_name] = raw
-        for account in accounts:
-            if account.email in seen_emails:
+            except (OSError, RuntimeError) as exc:
+                read_failures.append((profile.human_name, exc))
                 if verbose:
-                    _emit_progress(
+                    emit_progress(
                         io,
-                        f"  [yellow]warning: {account.email} also appears in "
-                        f"'{profile.human_name}'; using cookies from "
-                        f"'{seen_emails[account.email]}'[/yellow]",
+                        f"  [yellow]skipping {browser_name} profile "
+                        f"'{profile.human_name}': {exc}[/yellow]",
                     )
                 continue
-            seen_emails[account.email] = profile.directory_name
-            # ``is_default`` from ``_enumerate_one_jar`` is the per-jar
-            # authuser=0 marker — every Chromium user-profile has its own.
-            # For a unified cross-profile view, only the FIRST profile's
-            # default carries the global default flag (typically Default's
-            # primary Google account, matching what the user sees when they
-            # open Chrome without explicitly picking a different profile).
-            is_default = account.is_default and not global_default_assigned
-            if is_default:
-                global_default_assigned = True
-            aggregated.append(
-                Account(
-                    authuser=account.authuser,
-                    email=account.email,
-                    is_default=is_default,
-                    browser_profile=account.browser_profile,
-                )
-            )
 
-    if not aggregated:
-        if successful_reads == 0 and read_failures:
-            first_profile, first_error = read_failures[0]
+            successful_reads += 1
+            try:
+                jar_result = enumerate_jar(
+                    raw,
+                    browser_name,
+                    browser_profile=profile.directory_name,
+                    quiet=True,
+                    validate_before_probe=validate_before_probe,
+                    io=io,
+                )
+            except httpx.RequestError as exc:
+                return NetworkFailure(
+                    code="NETWORK_ERROR",
+                    message=(
+                        f"[red]Account discovery failed (network error):[/red] {exc}\n"
+                        "Check your internet connection and try again."
+                    ),
+                )
+            if isinstance(jar_result, BrowserCookieOutcome):
+                if verbose:
+                    emit_progress(
+                        io,
+                        f"  [dim]no signed-in Google accounts in '{profile.human_name}'[/dim]",
+                    )
+                continue
+            accounts = jar_result
+
+            per_profile_cookies[profile.directory_name] = raw
+            for account in accounts:
+                if account.email in seen_emails:
+                    if verbose:
+                        emit_progress(
+                            io,
+                            f"  [yellow]warning: {account.email} also appears in "
+                            f"'{profile.human_name}'; using cookies from "
+                            f"'{seen_emails[account.email]}'[/yellow]",
+                        )
+                    continue
+                seen_emails[account.email] = profile.directory_name
+                is_default = account.is_default and not global_default_assigned
+                if is_default:
+                    global_default_assigned = True
+                projected_account = project_account(
+                    account,
+                    browser_profile=account.browser_profile,
+                    is_default=is_default,
+                )
+                aggregated.append(projected_account)
+
+        if not aggregated:
+            if successful_reads == 0 and read_failures:
+                first_profile, first_error = read_failures[0]
+                return CookieValidationFailure(
+                    code="COOKIE_READ_FAILED",
+                    message=(
+                        f"[red]Could not read cookies from any {browser_name} "
+                        "user-profile.[/red]\n"
+                        f"First error ({first_profile}): {first_error}\n"
+                        "Close the browser or unlock its cookie store, then try again."
+                    ),
+                )
             return CookieValidationFailure(
-                code="COOKIE_READ_FAILED",
+                code="NO_ACCOUNTS_FOUND",
                 message=(
-                    f"[red]Could not read cookies from any {browser_name} user-profile.[/red]\n"
-                    f"First error ({first_profile}): {first_error}\n"
-                    "Close the browser or unlock its cookie store, then try again."
+                    f"[red]No signed-in Google accounts found across {len(profiles)} "
+                    f"{browser_name} user-profiles.[/red]\n"
+                    "Sign in to a Google account in your browser and try again."
                 ),
             )
-        return CookieValidationFailure(
-            code="NO_ACCOUNTS_FOUND",
-            message=(
-                f"[red]No signed-in Google accounts found across {len(profiles)} "
-                f"{browser_name} user-profiles.[/red]\n"
-                "Sign in to a Google account in your browser and try again."
-            ),
-        )
 
-    return per_profile_cookies, aggregated
+        return per_profile_cookies, aggregated
+    finally:
+        del io, browser_name, profiles, verbose, include_domains, validate_before_probe
+        del chromium_profiles, domains, names, name_labels, item
+        del per_profile_cookies, read_failures
+        del seen_emails, aggregated, profile, raw, jar_result, accounts, account
+        del projected_account, first_profile, first_error, successful_reads
+        del global_default_assigned, is_default, read_cookies, enumerate_jar
+        del project_account, emit_progress

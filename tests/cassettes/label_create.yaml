@@ -16,11 +16,11 @@ interactions:
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED;
         _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: GET
-    uri: https://notebooklm.google.com/
+    uri: https://notebook.google.com/
   response:
     body:
       string: "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><base href=\"https://notebooklm.google.com/\"><link
@@ -1878,11 +1878,11 @@ interactions:
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED;
         _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=I3xc3c&source-path=%2Fnotebook%2Fbe2a98a8-5897-4634-bc7c-05d29e493ae8&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=I3xc3c&source-path=%2Fnotebook%2Fbe2a98a8-5897-4634-bc7c-05d29e493ae8&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''
@@ -1976,11 +1976,11 @@ interactions:
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED;
         _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=agX4Bc&source-path=%2Fnotebook%2Fbe2a98a8-5897-4634-bc7c-05d29e493ae8&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=agX4Bc&source-path=%2Fnotebook%2Fbe2a98a8-5897-4634-bc7c-05d29e493ae8&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ")]}'\n\n188\n[[\"wrb.fr\",\"agX4Bc\",\"[null,[[\\\"VCR Test Label\\\",null,\\\"fdfc8ac4-3237-4f2a-8a79-3e24297a7040\\\",\\\"\U0001F4C4\\\"]]]\",null,null,null,\"generic\"],[\"di\",373],[\"af.httprm\",373,\"-1658117002161509117\",11]]\n23\n[[\"e\",4,null,null,226]]\n"

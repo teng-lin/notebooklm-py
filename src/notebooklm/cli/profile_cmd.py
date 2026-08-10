@@ -17,13 +17,12 @@ from pathlib import Path
 import click
 from rich.table import Table
 
+from .._app.profile import gather_profile_accounts as gather_profile_list
 from .._app.profile import (
-    gather_profile_list,
     is_protected_profile,
     retarget_default_profile_mutator,
     set_default_profile_mutator,
 )
-from ..auth import read_account_metadata
 from ..io import atomic_update_json
 from ..paths import (
     get_config_path,
@@ -134,7 +133,6 @@ def _run_list_cmd(*, json_output: bool) -> None:
         list_profiles=list_profiles,
         resolve_profile=resolve_profile,
         get_storage_path=get_storage_path,
-        read_account_metadata=read_account_metadata,
     )
 
     if not entries:

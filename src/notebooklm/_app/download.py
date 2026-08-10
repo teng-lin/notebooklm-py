@@ -12,9 +12,10 @@ vocabulary; the CLI adapter rebuilds its historical ``--json`` envelope in
 Public API: :class:`DownloadTypeSpec` (per-leaf metadata), :class:`DownloadPlan`
 (one validated invocation), :class:`DownloadResult` (the typed outcome),
 :func:`build_download_plan` (sync validation + assembly), :func:`execute_download`
-(the download coroutine), :data:`FORMAT_EXTENSIONS`, and the pure
-:func:`select_artifact` / :func:`artifact_title_to_filename` helpers re-exported
-by ``cli/download_helpers.py`` for its established import seam.
+(the download coroutine), the registry-derived :data:`FORMAT_EXTENSIONS` and
+:data:`EXTENSION_MIME_TYPES` tables with :func:`mime_type_for_extension`, and the
+pure :func:`select_artifact` / :func:`artifact_title_to_filename` helpers
+re-exported by ``cli/download_helpers.py`` for its established import seam.
 
 The notebook-id and partial-artifact-id resolvers are **injected** as callables
 (``notebook_resolver`` / ``artifact_resolver``) so this module never imports the
@@ -38,20 +39,27 @@ from typing import Any, Protocol, TypedDict
 
 from ..exceptions import ValidationError
 from ..types import Artifact, ArtifactType
+from .download_specs import EXTENSION_MIME_TYPES, DownloadTypeSpec
+from .download_specs import FORMAT_EXTENSIONS as FORMAT_EXTENSIONS
 from .events import ProgressEvent, ProgressSink
 
 # Reserve space for " (999)" suffix when handling duplicate filenames.
 DUPLICATE_SUFFIX_RESERVE = 7
 
-# Format → extension map shared with the runtime extension-override path
-# and the registry layer. Quiz/flashcards expose all three formats;
-# slide-deck only swaps the extension between pdf and pptx via a dedicated
-# mapping defined inline in its spec row.
-FORMAT_EXTENSIONS: dict[str, str] = {
-    "json": ".json",
-    "markdown": ".md",
-    "html": ".html",
-}
+#: Fallback when an extension isn't in :data:`EXTENSION_MIME_TYPES` (unreachable for
+#: the registered specs — every spec extension is mapped — but keeps callers total).
+DEFAULT_MIME_TYPE = "application/octet-stream"
+
+
+def mime_type_for_extension(extension: str) -> str:
+    """The MIME type for ``extension`` (with leading dot), case-insensitively.
+
+    An unmapped extension falls back to :data:`DEFAULT_MIME_TYPE` rather than
+    being guessed via :mod:`mimetypes`, whose builtin table has no ``.m4a`` row
+    (it resolves only when the host ships an ``/etc/mime.types``) and otherwise
+    varies with the host's mime database.
+    """
+    return EXTENSION_MIME_TYPES.get(extension.lower(), DEFAULT_MIME_TYPE)
 
 
 class ArtifactDict(TypedDict):
@@ -62,37 +70,23 @@ class ArtifactDict(TypedDict):
     created_at: int  # Unix timestamp
 
 
-@dataclass(frozen=True)
-class DownloadTypeSpec:
-    """Static metadata for one ``download <name>`` leaf command.
+def resolve_extension(spec: DownloadTypeSpec, output_format: str | None = None) -> str:
+    """The file extension a download of ``spec`` in ``output_format`` will carry.
 
-    The only axes of variation across the 9 leaf commands: ``name`` /
-    ``kind`` / default ``extension`` / ``default_dir`` / the
-    ``client.artifacts`` ``download_attr`` to bind, ``--help`` text, and the
-    optional ``--format`` wiring (``format_choices`` / ``format_default`` /
-    ``format_help`` / ``format_extension_map`` extension override /
-    ``format_kwarg`` to forward / ``format_param_name`` adapter flag name /
-    ``forward_format_only_if_set`` slide-deck "pptx-only" forwarding).
+    ``output_format`` picks the extension for the format-bearing types (slide-deck
+    pdf/pptx; quiz/flashcards json/markdown/html) via the spec's
+    ``format_extension_map``; ``None`` — or a leaf with no format axis — yields the
+    spec's default ``extension`` (already the default format's extension).
 
-    ``frozen=True`` freezes only the *reference*; the ``format_extension_map``
-    contents stay mutable — the registry rows are module constants treated as
-    read-only by convention.
+    An adapter that spools a download to a server-side temp file must name that
+    file with THIS extension rather than ``spec.extension``: a format-bearing type
+    writes a different representation than its default, so the default would label
+    a PPTX deck ``.pdf`` and a markdown quiz ``.json`` — and any Content-Type or
+    ``Content-Disposition`` derived from that name inherits the mislabel.
     """
-
-    name: str
-    kind: ArtifactType
-    extension: str
-    default_dir: str
-    download_attr: str
-    help_summary: str
-    help_examples: str
-    format_choices: tuple[str, ...] = ()
-    format_default: str = ""
-    format_help: str = ""
-    format_extension_map: dict[str, str] = field(default_factory=dict)
-    format_kwarg: str = ""
-    format_param_name: str = "output_format"
-    forward_format_only_if_set: bool = False
+    if output_format:
+        return spec.format_extension_map.get(output_format, spec.extension)
+    return spec.extension
 
 
 class _DownloadFacade(Protocol):
@@ -327,7 +321,7 @@ def artifact_title_to_filename(
 
     Args:
         title: Artifact title.
-        extension: File extension (with leading dot, e.g., ".mp3").
+        extension: File extension (with leading dot, e.g., ".m4a").
         existing_files: Set of filenames already used.
         max_length: Maximum filename length before extension.
 

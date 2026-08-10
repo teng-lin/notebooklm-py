@@ -1,128 +1,250 @@
-"""Tests for the per-loop / per-resolved-storage-path refresh lock registry.
+"""Tests for the single-flight core that replaced the refresh lock registry.
 
-The module-global ``_REFRESH_LOCK = asyncio.Lock()`` was removed because
-``asyncio.Lock`` binds to the first event loop that uses it, breaking on
-cross-loop / cross-thread usage. The replacement mirrors the keepalive
-``_get_poke_lock`` pattern: a ``WeakKeyDictionary`` keyed on the running
-loop, with per-resolved-storage-path inner locks. Cross-loop atomicity
-for ``_REFRESH_GENERATIONS`` is provided by the sync ``_REFRESH_STATE_LOCK``.
+c-PR2 relocated the per-loop / per-resolved-storage-path refresh coalescing
+machinery (``_REFRESH_LOCKS_BY_LOOP`` / ``_get_refresh_lock`` /
+``_REFRESH_GENERATIONS`` / the per-loop in-flight future map) into the shared
+``notebooklm._auth.single_flight`` core. This suite is the case-for-case
+migration of the deleted white-box suite: every pinned GUARANTEE is re-expressed
+against the new surface —
+
+* per-loop *lock identity* → per-key *flight claim identity* (one leader per
+  ``flight_key`` while in flight; a settled flight is overwritable);
+* the path-canonicalization equivalence (relative / symlink representations of
+  one file collapse to a single refresh key);
+* the ``_REFRESH_GENERATIONS`` cross-loop guard → the process-global per-path
+  ``success_epoch`` (bumped on subprocess success only), and the stronger
+  cross-loop-coalescing guarantee the shared core now provides: two event loops
+  racing the same refresh coalesce onto EXACTLY ONE subprocess.
 """
 
 from __future__ import annotations
 
 import asyncio
-import gc
 import threading
 from pathlib import Path
 
+import httpx
 import pytest
 
 from notebooklm import auth as auth_mod
+from notebooklm._auth import keepalive as _keepalive
 from notebooklm._auth import refresh as _auth_refresh
+from notebooklm._auth import single_flight as _single_flight
 
 
 @pytest.fixture(autouse=True)
-def _clear_refresh_state():
-    """Reset module state between tests."""
-    auth_mod._REFRESH_GENERATIONS.clear()
-    # The WeakKeyDictionary is mutated indirectly; we don't reset it here so
-    # the cleanup test can observe natural GC behavior.
+def _clear_single_flight_state():
+    """Reset the process-global single-flight core between tests."""
+    _single_flight._reset_for_tests()
     yield
-    auth_mod._REFRESH_GENERATIONS.clear()
+    _single_flight._reset_for_tests()
 
 
-class TestPerLoopLockIdentity:
-    def test_different_loops_get_different_locks(self):
-        """A lock created in loop X must NOT be returned to loop Y.
+class TestFlightClaimIdentity:
+    """Per-``flight_key`` claim identity replaces the per-loop lock identity.
 
-        Both loops must be kept alive simultaneously so the WeakKeyDictionary
-        entries survive long enough to compare the locks by identity. Using
-        ``asyncio.run`` for each loop in turn allows Python 3.13's GC to
-        reclaim the first loop's entry before the second is created, after
-        which ``id()`` of the second lock can collide with the recycled
-        memory address of the first.
-        """
-        path = Path("/tmp/notebooklm-test/storage_state.json")
+    The old contract pinned that ``_get_refresh_lock`` returned the same
+    ``asyncio.Lock`` for one (loop, path) and distinct locks for distinct keys.
+    The single-flight analogue: while a flight is in flight, every claimant of
+    the same ``flight_key`` follows the SAME leader flight; distinct keys get
+    distinct flights; a settled flight is overwritable by the next leader.
+    """
 
-        loop_a = asyncio.new_event_loop()
-        loop_b = asyncio.new_event_loop()
-        try:
+    def test_second_claim_same_key_follows_leader(self):
+        async def _run():
+            gate = asyncio.Event()
 
-            async def _grab():
-                return auth_mod._get_refresh_lock(path)
+            async def _leader_body():
+                await gate.wait()
+                return "done"
 
-            lock_a = loop_a.run_until_complete(_grab())
-            lock_b = loop_b.run_until_complete(_grab())
-            # Hold strong references to both locks AND both loops until
-            # after the assertion so neither can be GC'd / address-recycled.
-            assert lock_a is not lock_b, (
-                "Different event loops must produce distinct asyncio.Lock instances"
-            )
-        finally:
-            loop_a.close()
-            loop_b.close()
+            is_leader_1, flight_1 = _single_flight.claim(("k", "p"), _leader_body)
+            is_leader_2, flight_2 = _single_flight.claim(("k", "p"), _leader_body)
+            # First claim leads; the second (while in flight) follows the SAME
+            # flight rather than spawning a second leader.
+            assert is_leader_1 is True
+            assert is_leader_2 is False
+            assert flight_2 is flight_1
+            gate.set()
+            await _single_flight.await_flight(flight_1)
 
-    def test_same_loop_same_path_returns_same_lock(self):
-        """Repeated calls within one loop for the same path return the same lock."""
-        path = Path("/tmp/notebooklm-test/storage_state.json")
+        asyncio.run(_run())
 
-        async def capture_two_locks():
-            return id(auth_mod._get_refresh_lock(path)), id(auth_mod._get_refresh_lock(path))
+    def test_distinct_keys_get_distinct_flights(self):
+        async def _run():
+            gate = asyncio.Event()
 
-        a, b = asyncio.run(capture_two_locks())
-        assert a == b
+            async def _leader_body():
+                await gate.wait()
 
-    def test_same_loop_different_paths_get_different_locks(self):
-        """Distinct storage paths within one loop get distinct locks."""
-        path_a = Path("/tmp/notebooklm-test/profile_a/storage_state.json")
-        path_b = Path("/tmp/notebooklm-test/profile_b/storage_state.json")
-
-        async def capture():
-            return (
-                id(auth_mod._get_refresh_lock(path_a)),
-                id(auth_mod._get_refresh_lock(path_b)),
+            is_leader_a, flight_a = _single_flight.claim(("path-a", "p"), _leader_body)
+            is_leader_b, flight_b = _single_flight.claim(("path-b", "p"), _leader_body)
+            assert is_leader_a is True
+            assert is_leader_b is True
+            assert flight_a is not flight_b
+            gate.set()
+            await asyncio.gather(
+                _single_flight.await_flight(flight_a),
+                _single_flight.await_flight(flight_b),
             )
 
-        a, b = asyncio.run(capture())
-        assert a != b
+        asyncio.run(_run())
+
+    def test_settled_flight_is_overwritable_by_next_leader(self):
+        async def _run():
+            calls = 0
+
+            async def _leader_body():
+                nonlocal calls
+                calls += 1
+
+            is_leader_1, flight_1 = _single_flight.claim(("k", "p"), _leader_body)
+            assert is_leader_1 is True
+            await _single_flight.await_flight(flight_1)
+            # Once settled, a fresh claim becomes a NEW leader (the prior cycle's
+            # flight does not pin the slot forever).
+            is_leader_2, flight_2 = _single_flight.claim(("k", "p"), _leader_body)
+            assert is_leader_2 is True
+            assert flight_2 is not flight_1
+            await _single_flight.await_flight(flight_2)
+            assert calls == 2
+
+        asyncio.run(_run())
+
+
+class TestSuccessEpoch:
+    """``success_epoch`` relocates the ``_REFRESH_GENERATIONS`` semantics."""
+
+    def test_note_success_bumps_per_path_key(self):
+        assert _single_flight.read_success_epoch("A") == 0
+        _single_flight.note_success("A")
+        assert _single_flight.read_success_epoch("A") == 1
+        # Keyed per canonical PATH only — a different path is independent.
+        assert _single_flight.read_success_epoch("B") == 0
+        _single_flight.note_success("A")
+        assert _single_flight.read_success_epoch("A") == 2
+
+
+class TestClaimIfEpochCurrent:
+    """Compare-under-exclusion: the epoch compare + the claim are one lock hold."""
+
+    def test_skips_when_epoch_already_advanced(self):
+        async def _run():
+            ran = False
+
+            async def _body():
+                nonlocal ran
+                ran = True
+
+            # A sibling already succeeded (epoch 1) before this caller (which
+            # captured epoch_before=0) reaches the claim.
+            _single_flight.note_success("path")
+            claimed = _single_flight.claim_if_epoch_current(
+                ("path", "pol"), _body, path_key="path", epoch_before=0
+            )
+            assert claimed is None, "stale epoch_before must produce a skip signal"
+            # No leader task was created, so the factory never runs.
+            await asyncio.sleep(0)
+            assert ran is False
+            assert _single_flight.SingleFlight.process_default()._flights == {}
+
+        asyncio.run(_run())
+
+    def test_claims_when_epoch_unchanged(self):
+        async def _run():
+            ran = False
+
+            async def _body():
+                nonlocal ran
+                ran = True
+
+            claimed = _single_flight.claim_if_epoch_current(
+                ("path", "pol"), _body, path_key="path", epoch_before=0
+            )
+            assert claimed is not None
+            is_leader, flight = claimed
+            assert is_leader is True
+            await _single_flight.await_flight(flight)
+            assert ran is True
+
+        asyncio.run(_run())
+
+
+class TestDoubleCancelDoesNotDetonateBridge:
+    """A SECOND cancellation during the settle window must not cancel the bridge.
+
+    Regression for the un-shielded settle-loop bug: ``asyncio.wrap_future``
+    chains cancellation to its source, so a repeated cancel arriving while the
+    leader subprocess is still PENDING would call ``bridge.cancel()`` — discarding
+    the leader's real result and detonating every sibling follower with a
+    spurious ``CancelledError`` (#621). ``await_flight`` shields the settle-loop
+    await, so the repeated cancel is absorbed WITHOUT cancelling the bridge.
+    """
+
+    def test_second_cancel_while_pending_preserves_bridge_and_siblings(self):
+        async def _run():
+            leader_gate = asyncio.Event()
+
+            async def _leader_body():
+                await leader_gate.wait()
+                return "leader-result"
+
+            # Leader claim creates the driving task; a follower shares it.
+            is_leader, flight = _single_flight.claim(("k", "p"), _leader_body)
+            assert is_leader is True
+
+            follower_result: list[str] = []
+
+            async def _follower():
+                is_l2, f2 = _single_flight.claim(("k", "p"), _leader_body)
+                assert is_l2 is False and f2 is flight
+                follower_result.append(await _single_flight.await_flight(f2))
+
+            follower_task = asyncio.ensure_future(_follower())
+
+            async def _awaiter():
+                await _single_flight.await_flight(flight)
+
+            awaiter_task = asyncio.ensure_future(_awaiter())
+            await asyncio.sleep(0)  # let both start awaiting the pending bridge
+
+            # Cancel the awaiter TWICE while the bridge is still PENDING (the
+            # leader body is blocked on the gate).
+            awaiter_task.cancel()
+            await asyncio.sleep(0)  # 1st cancel → enters the settle loop
+            awaiter_task.cancel()
+            await asyncio.sleep(0)  # 2nd cancel → absorbed inside the settle loop
+
+            # The repeated cancel must NOT have cancelled the shared bridge.
+            assert not flight.bridge.cancelled(), (
+                "second cancel detonated the shared bridge (un-shielded settle loop)"
+            )
+
+            # Release the leader; siblings must still receive the REAL result.
+            leader_gate.set()
+            with pytest.raises(asyncio.CancelledError):
+                await awaiter_task
+            await follower_task
+
+            assert not flight.bridge.cancelled()
+            assert follower_result == ["leader-result"], (
+                "a sibling follower must still get the leader's real result, "
+                "not a spurious CancelledError"
+            )
+
+        asyncio.run(_run())
 
 
 class TestResolvedPathEquivalence:
-    def test_none_with_profile_and_explicit_path_share_lock(self, monkeypatch, tmp_path):
-        """``(None, profile="foo")`` and the explicit path resolve to the same key.
+    """Two surface representations of one file share a single refresh key.
 
-        ``_fetch_tokens_with_refresh`` computes
-        ``refresh_storage_path = storage_path or get_storage_path(profile=profile)``
-        and keys the lock on that resolved Path, so two callers using either
-        form share the same lock.
-        """
-        resolved = tmp_path / "profile_foo" / "storage_state.json"
+    ``_fetch_tokens_with_refresh`` canonicalizes via
+    :func:`notebooklm._auth.paths.canonical_storage_key` before keying the
+    flight / success-epoch, so a symlinked path and the canonical real path (and
+    relative vs absolute) flow to the SAME key.
+    """
 
-        async def capture():
-            # Both calls pass the SAME resolved Path object the production code
-            # would compute. The registry keys on Path equality, not identity.
-            lock_via_none = auth_mod._get_refresh_lock(resolved)
-            # Build an equivalent Path object (different instance, same value).
-            equivalent = Path(str(resolved))
-            lock_via_explicit = auth_mod._get_refresh_lock(equivalent)
-            return id(lock_via_none), id(lock_via_explicit)
-
-        a, b = asyncio.run(capture())
-        assert a == b, "Equal Path values must hash to the same registry slot"
-
-    def test_symlink_and_real_path_share_lock_via_refresh(self, monkeypatch, tmp_path):
-        """Two different surface representations of the same physical file
-        (symlink vs canonical absolute path, and relative vs absolute) must
-        flow through ``_fetch_tokens_with_refresh``'s path canonicalization
-        and end up sharing a single lock / generation-key.
-
-        The production fix is ``.expanduser().resolve()`` applied to
-        ``refresh_storage_path`` before it is used as a key. Without that
-        normalization, two callers referring to the same on-disk file by
-        different paths would each get their own lock — defeating the
-        cross-loop / cross-thread refresh coalescing.
-        """
-        # Set up a real file plus a symlink pointing at it.
+    def test_symlink_and_real_path_share_refresh_key(self, monkeypatch, tmp_path):
         real_dir = tmp_path / "real"
         real_dir.mkdir()
         real_path = real_dir / "storage_state.json"
@@ -132,20 +254,17 @@ class TestResolvedPathEquivalence:
         link_dir.symlink_to(real_dir, target_is_directory=True)
         symlinked_path = link_dir / "storage_state.json"
 
-        # Sanity: surface paths differ, resolved targets match.
         assert symlinked_path != real_path
         assert symlinked_path.resolve() == real_path.resolve()
 
         captured_keys: list[str] = []
-        original_get_refresh_lock = auth_mod._get_refresh_lock
 
-        def spy_get_refresh_lock(p):
-            captured_keys.append(str(p))
-            return original_get_refresh_lock(p)
+        async def spy_coalesced(refresh_key, resolved_storage_path, profile, *, deps=None):
+            captured_keys.append(refresh_key)
+            return None
 
-        # Force a refresh attempt and short-circuit downstream side effects.
         monkeypatch.setenv(auth_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "dummy")
-        monkeypatch.setattr(_auth_refresh, "_get_refresh_lock", spy_get_refresh_lock)
+        monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", spy_coalesced)
 
         call_phase = {"first": True}
 
@@ -155,11 +274,6 @@ class TestResolvedPathEquivalence:
                 raise ValueError("Authentication expired. Run 'notebooklm login'.")
             return "csrf-token", "session-id"
 
-        async def fake_run_refresh_cmd(storage_path, profile):
-            return None
-
-        import httpx
-
         def fake_build(_p):
             return httpx.Cookies()
 
@@ -167,7 +281,6 @@ class TestResolvedPathEquivalence:
             return None
 
         monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-        monkeypatch.setattr(_auth_refresh, "_run_refresh_cmd", fake_run_refresh_cmd)
         monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build)
         monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
 
@@ -175,112 +288,71 @@ class TestResolvedPathEquivalence:
             jar = httpx.Cookies()
             return await auth_mod._fetch_tokens_with_refresh(jar, storage_path=path)
 
-        # First caller uses the symlinked path.
         asyncio.run(drive(symlinked_path))
-        # Reset phase so the second caller also triggers the refresh branch.
         call_phase["first"] = True
-        # Second caller uses the canonical real path.
         asyncio.run(drive(real_path))
 
-        # Both calls must have canonicalized to the same key.
         assert len(captured_keys) == 2
         assert captured_keys[0] == captured_keys[1], (
             f"Symlinked and direct paths produced distinct keys: {captured_keys!r}"
         )
-        # And the canonical key must equal the resolved real path.
         assert captured_keys[0] == str(real_path.resolve())
 
 
-class TestWeakKeyDictionaryCleanup:
-    def test_loops_are_garbage_collected(self):
-        """When loops go out of scope, their inner dict is reclaimed."""
-        path = Path("/tmp/notebooklm-test/storage_state.json")
+class TestPromptPopRetention:
+    """Settled flights are popped from the registry (prompt-pop retention).
 
-        def spawn_and_drop():
-            """Run a short-lived loop, return; do not retain a reference."""
+    The old suite pinned that the per-loop WeakKeyDictionary reclaimed closed
+    loops. The process-global core instead removes a flight the moment it
+    settles, so the registry does not accumulate stale entries across cycles.
+    """
 
-            async def inner():
-                auth_mod._get_refresh_lock(path)
+    def test_registry_does_not_accumulate_across_cycles(self):
+        async def _run():
+            async def _leader_body():
+                return None
 
-            asyncio.run(inner())
+            for _ in range(5):
+                _is_leader, flight = _single_flight.claim(("k", "p"), _leader_body)
+                await _single_flight.await_flight(flight)
+                # Yield so the task done-callbacks (mirror + pop) run.
+                await asyncio.sleep(0)
 
-        baseline_len = len(auth_mod._REFRESH_LOCKS_BY_LOOP)
-        for _ in range(5):
-            spawn_and_drop()
+            assert _single_flight.SingleFlight.process_default()._flights == {}, (
+                "Settled flights must be popped from the process-global registry"
+            )
 
-        # Force collection of the closed loops.
-        gc.collect()
-
-        post_len = len(auth_mod._REFRESH_LOCKS_BY_LOOP)
-        # The WeakKeyDictionary should reclaim entries for collected loops.
-        # We assert the registry didn't grow unboundedly across iterations.
-        assert post_len <= baseline_len + 1, (
-            f"WeakKeyDictionary did not reclaim closed-loop entries "
-            f"(baseline={baseline_len}, post={post_len})"
-        )
+        asyncio.run(_run())
 
 
-class TestCrossLoopGenerationGuard:
-    def test_two_loops_at_most_two_refreshes(self, monkeypatch, tmp_path):
-        """Two concurrent event loops both call ``_fetch_tokens_with_refresh``;
-        AT MOST 2 subprocess invocations occur (each loop runs once at the
-        worst), and crucially BOTH calls succeed without raising.
+class TestCrossLoopCoalescing:
+    def test_two_loops_share_exactly_one_subprocess(self, monkeypatch, tmp_path):
+        """Two event loops racing the same refresh coalesce onto ONE subprocess.
 
-        Race model: both loops observe an auth-expiry failure, each
-        capture the same pre-refresh generation, each acquire their OWN
-        per-loop asyncio lock (the registry hands out distinct locks per
-        loop), then race the check-and-claim under ``_REFRESH_STATE_LOCK``.
-
-        Legacy contract (before the gated-generation fix): this test
-        asserted ``run_count == 1`` because the old code bumped
-        ``_REFRESH_GENERATIONS`` EAGERLY pre-subprocess; the cross-loop
-        loser saw the bump and skipped. That eager-bump behavior was the
-        root cause of the phantom-bump failure — when the subprocess
-        failed, the bump fooled concurrent waiters into skipping with
-        stale storage.
-
-        Current contract (gated-generation fix): generation is bumped
-        ONLY after the subprocess succeeds. Cross-loop callers cannot
-        signal "in flight" to each other (``asyncio.Future`` is
-        loop-bound). In the rare
-        cross-loop-concurrent-refresh case both loops may run their own
-        subprocess — equivalent to two ``RotateCookies`` POSTs against
-        the same storage. The end-state is correct (fresh cookies on
-        disk; last writer wins, but both write the same fresh data).
-
-        For SAME-LOOP coalescing (the dominant real-world case), the
-        per-loop in-flight future ensures exactly-once subprocess
-        execution; see ``tests/integration/concurrency/test_refresh_cmd_race.py``.
-
-        To force a deterministic race in a unit test, we use a barrier at
-        the point AFTER both threads have captured the generation but
-        BEFORE either has entered the inner sync mutex.
+        The deleted contract allowed 1–2 subprocess runs because cross-loop
+        callers could not signal "in flight" to each other (``asyncio.Future``
+        was loop-bound). The single-flight core's process-global registry +
+        ``concurrent.futures.Future`` bridge now genuinely coalesces across
+        loops: the leader runs the ONE subprocess and the other loop follows it
+        via ``asyncio.wrap_future``. So the invariant tightens to EXACTLY ONE
+        subprocess, both callers succeed, and the success epoch bumps once.
         """
-        import httpx
-
         storage = tmp_path / "storage_state.json"
         storage.write_text('{"cookies": [], "origins": []}')
 
-        # Force ``_should_try_refresh`` to return True.
         monkeypatch.setenv(auth_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "dummy")
 
         run_count = 0
         run_count_lock = threading.Lock()
-
-        # Barrier #1: align both fakes at the failure point so neither
-        # captures the generation before the other has had a chance to
-        # observe gen 0.
+        # Align both threads at the refresh-branch so neither wins the leadership
+        # claim before the other has entered.
         fail_barrier = threading.Barrier(2, timeout=5)
-        # Barrier #2: align both threads INSIDE their per-loop asyncio lock
-        # but BEFORE the inner sync-mutex check-and-claim. This guarantees
-        # both have already captured gen=0 pre-lock.
-        post_lock_barrier = threading.Barrier(2, timeout=5)
 
         async def fake_run_refresh_cmd(storage_path, profile):
             nonlocal run_count
             with run_count_lock:
                 run_count += 1
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
 
         async def fake_fetch_tokens_with_jar(cookie_jar, storage_path, **kwargs):
             if not getattr(cookie_jar, "_refresh_done", False):
@@ -298,37 +370,15 @@ class TestCrossLoopGenerationGuard:
         def fake_snapshot(jar):
             return None
 
-        # Wrap ``_get_refresh_lock`` so we can interpose a barrier between
-        # the (pre-lock) generation capture and the (post-lock) inner
-        # sync-mutex check-and-claim.
-        original_get_refresh_lock = auth_mod._get_refresh_lock
-
-        class _BarrierLock:
-            def __init__(self, inner):
-                self._inner = inner
-
-            async def __aenter__(self):
-                await self._inner.acquire()
-                # Yield to a thread so the OTHER loop can also acquire its
-                # (distinct) per-loop lock before either touches the
-                # generation dict.
-                await asyncio.to_thread(post_lock_barrier.wait)
-                return self
-
-            async def __aexit__(self, exc_type, exc, tb):
-                self._inner.release()
-                return False
-
-        def wrapped_get_refresh_lock(p):
-            return _BarrierLock(original_get_refresh_lock(p))
-
-        monkeypatch.setattr(_auth_refresh, "_run_refresh_cmd", fake_run_refresh_cmd)
+        # The subprocess runner is INJECTED via ``RefreshCmdDeps`` (plan §7 deps
+        # record). Both threads pass the SAME record, which is what the module
+        # attribute used to give them implicitly.
+        deps = _auth_refresh.RefreshCmdDeps(run_refresh_cmd=fake_run_refresh_cmd)
         monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
         monkeypatch.setattr(
             _auth_refresh, "build_httpx_cookies_from_storage", fake_build_httpx_cookies
         )
         monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
-        monkeypatch.setattr(_auth_refresh, "_get_refresh_lock", wrapped_get_refresh_lock)
 
         results: list[BaseException | tuple] = []
         results_lock = threading.Lock()
@@ -336,7 +386,9 @@ class TestCrossLoopGenerationGuard:
         def run_in_own_loop():
             async def _work():
                 jar = httpx.Cookies()
-                return await auth_mod._fetch_tokens_with_refresh(jar, storage_path=storage)
+                return await auth_mod._fetch_tokens_with_refresh(
+                    jar, storage_path=storage, deps=deps
+                )
 
             try:
                 res = asyncio.run(_work())
@@ -356,23 +408,100 @@ class TestCrossLoopGenerationGuard:
         assert not thread_a.is_alive() and not thread_b.is_alive(), (
             "Threads failed to terminate; likely a deadlock"
         )
-        # Both calls must have completed successfully.
         assert len(results) == 2
         for r in results:
             assert not isinstance(r, BaseException), f"Refresh raised: {r!r}"
 
-        # The critical assertion under the gated-generation contract:
-        # AT MOST one subprocess invocation per loop (== 2 across two
-        # loops). Under the legacy eager-bump contract this asserted
-        # ``run_count == 1`` (cross-loop coalescing); the fix dropped
-        # eager-bump to close the phantom-bump failure mode, accepting
-        # that two cross-loop callers may both run their subprocess in
-        # the rare concurrent-refresh case (correct end-state: fresh
-        # cookies on disk).
-        assert 1 <= run_count <= 2, (
-            f"Expected 1–2 refresh invocations across loops, observed "
-            f"{run_count}. ``run_count == 0`` would mean the cross-loop "
-            "generation guard SKIPPED both refreshes (phantom-bump regression). "
-            "``run_count > 2`` means each loop ran refresh more than once "
-            "(per-loop coalescing broken)."
+        # Cross-loop coalescing: exactly ONE subprocess across both loops.
+        assert run_count == 1, (
+            f"Expected exactly 1 cross-loop-coalesced refresh invocation, observed "
+            f"{run_count}. ``0`` would mean a phantom-skip regression; ``>1`` means "
+            "the cross-loop coalescing (process-global flight registry) regressed to "
+            "the old per-loop behavior."
         )
+        # Success epoch bumped exactly once (subprocess succeeded once).
+        assert _single_flight.read_success_epoch(str(storage.expanduser().resolve())) == 1
+
+
+class TestFlockLoserWaitsThenReloads:
+    """Cross-process flock loser WAITS for the winner before reloading (P2).
+
+    Pre-fix, a process that lost ``.storage_state.json.refresh.lock`` returned
+    from ``_refresh_cmd_leader_body`` immediately, so the caller reloaded the
+    STALE file before the winner had written the fresh cookies. The loser now
+    polls the flock until it frees (winner finished writing), then returns — with
+    no subprocess of its own and no success-epoch bump.
+    """
+
+    @pytest.mark.asyncio
+    async def test_wait_for_refresh_holder_polls_until_released(self, monkeypatch, tmp_path):
+        import contextlib
+
+        # contended, contended, then released → the wait must poll through the
+        # two contended probes and return True on the third.
+        states = iter([False, False, True])
+
+        @contextlib.contextmanager
+        def fake_try(lock_path):
+            yield next(states)
+
+        # ``_wait_for_refresh_holder`` lives in keepalive and resolves the flock
+        # via keepalive's own name, so patch it there.
+        monkeypatch.setattr(_keepalive, "_file_lock_try_exclusive", fake_try)
+        lock_path = tmp_path / ".storage_state.json.refresh.lock"
+        assert await _auth_refresh._wait_for_refresh_holder(lock_path) is True
+
+    @pytest.mark.asyncio
+    async def test_wait_for_refresh_holder_times_out_best_effort(self, monkeypatch, tmp_path):
+        import contextlib
+
+        @contextlib.contextmanager
+        def always_contended(lock_path):
+            yield False
+
+        monkeypatch.setattr(_keepalive, "_file_lock_try_exclusive", always_contended)
+        # Force an already-elapsed deadline so the loop bails on the first pass.
+        monkeypatch.setattr(_keepalive, "_LOCK_ACQUIRE_DEADLINE_SECONDS", -1.0)
+        lock_path = tmp_path / ".storage_state.json.refresh.lock"
+        assert await _auth_refresh._wait_for_refresh_holder(lock_path) is False
+
+    @pytest.mark.asyncio
+    async def test_leader_body_loser_waits_no_subprocess_no_bump(self, monkeypatch, tmp_path):
+        import contextlib
+
+        calls = {"n": 0}
+
+        @contextlib.contextmanager
+        def fake_try(lock_path):
+            # Call 1 = leader body's own acquire (refresh alias) → contended.
+            # Calls 2+ = the wait poll (keepalive) → contended once, then released.
+            calls["n"] += 1
+            yield calls["n"] >= 3
+
+        ran: list[Path] = []
+
+        async def fake_run(path, profile):
+            ran.append(path)
+
+        # The leader body's acquire + lock-path derivation + subprocess runner
+        # are INJECTED (``RefreshCmdDeps``), not monkeypatched onto the module —
+        # the ``_file_lock_try_exclusive`` / ``_refresh_lock_path`` aliases that
+        # existed purely as a patching protocol are gone. The wait poll still
+        # resolves the flock through ``keepalive`` (it lives there), so install
+        # the SAME stateful fake on that name too: one counter must span the
+        # leader's acquire AND the poll loop.
+        deps = _auth_refresh.RefreshCmdDeps(
+            run_refresh_cmd=fake_run,
+            acquire_refresh_flock=fake_try,
+            derive_refresh_lock_path=lambda p: tmp_path / ".x.lock",
+        )
+        monkeypatch.setattr(_keepalive, "_file_lock_try_exclusive", fake_try)
+
+        storage = tmp_path / "storage_state.json"
+        key = str(storage)
+        before = _single_flight.read_success_epoch(key)
+        await _auth_refresh._refresh_cmd_leader_body(key, storage, None, deps=deps)
+
+        assert ran == [], "the flock loser must NOT run its own subprocess"
+        assert _single_flight.read_success_epoch(key) == before, "loser must not bump the epoch"
+        assert calls["n"] >= 3, "the loser must WAIT (poll the flock), not return immediately"

@@ -92,6 +92,7 @@ class TestGetPathInfoStorageOverride:
         info = get_path_info(storage_path=storage)
         assert info["storage_path"] == str(storage)
         assert info["context_path"] == str(tmp_path / "explicit.json.context.json")
+        assert info["browser_profile_dir"] == str(tmp_path / "explicit.json.browser_profile")
         assert info["profile_source"] == "CLI flag (--storage)"
 
     def test_no_override_unchanged(self, isolated_home):
@@ -197,6 +198,7 @@ class TestStatusPathsReflectsStorageOverride:
         paths = data["paths"]
         assert paths["storage_path"] == str(storage_a)
         assert paths["context_path"] == str(tmp_path / "A.json.context.json")
+        assert paths["browser_profile_dir"] == str(tmp_path / "A.json.browser_profile")
         assert paths["profile_source"] == "CLI flag (--storage)"
 
 

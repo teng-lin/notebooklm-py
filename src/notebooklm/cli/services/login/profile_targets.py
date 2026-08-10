@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import re
 
-from ....auth import read_account_metadata
+from ...._app.profile import (
+    ProfileTargetRequest,
+    profile_account_email,
+    profiles_by_account_email,
+    resolve_all_accounts_target,
+)
 from ....paths import get_storage_path
 from .exceptions import LoginConfigurationError
 
@@ -73,46 +78,42 @@ def email_to_profile_name(email: str, *, fallback: str = "account") -> str:
 def _profiles_by_account_email(profile_names: list[str]) -> dict[str, str]:
     """Return existing profiles keyed by *casefolded* account metadata email.
 
-    Keys are casefolded so that mixed-casing in stored ``context.json``
-    metadata (``Alice@Gmail.com`` vs. an incoming ``alice@gmail.com``)
-    doesn't cause us to miss the match and wrongly allocate a suffixed
-    profile. Lookup callers must casefold their email key likewise.
+    Keys are casefolded so that mixed-casing in stored account metadata
+    (``Alice@Gmail.com`` vs. an incoming ``alice@gmail.com``) doesn't cause us
+    to miss the match and wrongly allocate a suffixed profile. Lookup callers
+    must casefold their email key likewise. ``read_account_metadata`` reads
+    the unified in-band ``storage_state.json`` record, self-healing a
+    pre-v0.5.0 legacy ``context.json`` record in-band on first read rather
+    than reading it standingly (#2103 PR-0) — ``context.json`` is only the
+    pre-migration source, not where a promoted profile's email lives.
     """
-    profiles_by_email: dict[str, str] = {}
-    for profile in profile_names:
-        metadata = read_account_metadata(get_storage_path(profile=profile))
-        email = metadata.get("email")
-        if isinstance(email, str) and email:
-            # list_profiles() is sorted, so this also prefers the unsuffixed
-            # profile over older duplicate suffixes such as alice-2.
-            profiles_by_email.setdefault(email.casefold(), profile)
-    return profiles_by_email
+    return profiles_by_account_email(profile_names, get_storage_path=get_storage_path)
 
 
 def _profile_account_email(profile: str) -> str | None:
-    """Return the account email recorded in ``profile``'s ``context.json``.
+    """Return ``profile``'s recorded account email (unified in-band record).
 
     ``None`` when the profile has no account metadata at all (hand-created
     via plain ``notebooklm login --profile NAME``, or pre-dating the
     account-tracking feature). Used by ``--all-accounts --update`` to
     decide whether adopting a name-matching profile is safe.
     """
-    metadata = read_account_metadata(get_storage_path(profile=profile))
-    email = metadata.get("email")
-    return email if isinstance(email, str) and email else None
+    return profile_account_email(profile, get_storage_path=get_storage_path)
 
 
 def _next_available_profile_name(base_name: str, unavailable: set[str]) -> str:
     """Return ``base_name`` or the next ``-N`` suffix not in ``unavailable``."""
-    if base_name not in unavailable:
-        return base_name
-
-    suffix = 2
-    while True:
-        candidate = f"{base_name}-{suffix}"
-        if candidate not in unavailable:
-            return candidate
-        suffix += 1
+    return resolve_all_accounts_target(
+        ProfileTargetRequest(
+            base_name=base_name,
+            account_email="",
+            existing_profiles=frozenset(),
+            unavailable=frozenset(unavailable),
+            claimed=frozenset(),
+            update=False,
+        ),
+        get_storage_path=get_storage_path,
+    )
 
 
 def _resolve_all_accounts_target(
@@ -136,8 +137,14 @@ def _resolve_all_accounts_target(
     cheap to handle). Profiles whose metadata binds a *different* email
     fall back to the suffix path to avoid clobbering them.
     """
-    if update and base_name in existing_profiles and base_name not in claimed:
-        existing_email = _profile_account_email(base_name)
-        if existing_email is None or existing_email.casefold() == account_email.casefold():
-            return base_name
-    return _next_available_profile_name(base_name, unavailable | claimed)
+    return resolve_all_accounts_target(
+        ProfileTargetRequest(
+            base_name=base_name,
+            account_email=account_email,
+            existing_profiles=frozenset(existing_profiles),
+            unavailable=frozenset(unavailable),
+            claimed=frozenset(claimed),
+            update=update,
+        ),
+        get_storage_path=get_storage_path,
+    )

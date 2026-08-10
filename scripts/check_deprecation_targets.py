@@ -10,9 +10,12 @@ should have been deleted (or the target bumped) before the release.
 This gate scans every ``warnings.warn(...)`` / ``DeprecationWarning(...)``
 message string under ``src/notebooklm/`` and fails if any names the version
 in ``pyproject.toml`` as a *removal target* (``removed in vX.Y.Z`` /
-``will be removed in vX.Y.Z`` / ``removal in vX.Y.Z``). It is wired alongside
-the other ``scripts/check_*.py`` static gates and is also exercised by
-``tests/unit/test_check_deprecation_targets.py``.
+``will be removed in vX.Y.Z`` / ``removal in vX.Y.Z``). It also parses the
+immutable ``DEPRECATION_SPECS`` auth-storage table and its literal registered
+calls without importing package code. Keys/callsites must match, versions must
+be literal semantic versions, and public replacements must resolve structurally.
+It is wired alongside the other ``scripts/check_*.py`` static gates and is also
+exercised by ``tests/unit/test_check_deprecation_targets.py``.
 
 Allowlist
 ---------
@@ -30,8 +33,8 @@ Usage::
 
 Exit codes:
     0  No deprecation message names the current release as its removal target
-       (modulo documented allowlist entries).
-    1  One or more offending deprecation messages found (printed with file:line).
+       (modulo documented allowlist entries), and the registry is coherent.
+    1  One or more offending messages or registry errors were found.
     2  Argument / parse error (missing pyproject, unreadable version, etc.).
 """
 
@@ -68,6 +71,13 @@ SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
 # ``_removal_pattern`` keeps incidental ``warn()`` calls from matching unless
 # they actually name the shipping version as a removal target.
 _DEPRECATION_CALL_NAMES = frozenset({"warnings.warn", "warn", "DeprecationWarning"})
+_REGISTERED_EMITTER = "warn_registered_deprecation"
+_SPEC_TABLE = "DEPRECATION_SPECS"
+_SPEC_FIELDS = ("key", "message", "category", "replacement", "since", "removal", "stacklevel")
+_AUTH_STORAGE_SPEC_KEYS = frozenset(
+    {"auth_tokens_from_storage", "auth_tokens_sync_storage_construction"}
+)
+_SEMVER = re.compile(r"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
 
 
 class _Offender:
@@ -163,6 +173,218 @@ def _call_name(node: ast.AST) -> str:
     return ""
 
 
+def _target_name(node: ast.Assign | ast.AnnAssign) -> str | None:
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    names = [target.id for target in targets if isinstance(target, ast.Name)]
+    return names[0] if len(names) == 1 else None
+
+
+def _literal(node: ast.AST, field: str, problems: list[str]) -> object | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, int)):
+        return node.value
+    problems.append(f"{field} must be a string/integer literal")
+    return None
+
+
+def _spec_arguments(node: ast.Call, problems: list[str]) -> dict[str, ast.AST]:
+    if len(node.args) > len(_SPEC_FIELDS):
+        problems.append("DeprecationSpec has too many positional arguments")
+        return {}
+    values = dict(zip(_SPEC_FIELDS, node.args, strict=False))
+    for keyword in node.keywords:
+        if keyword.arg is None:
+            problems.append("DeprecationSpec may not use ** expansion")
+            continue
+        if keyword.arg not in _SPEC_FIELDS:
+            problems.append(f"DeprecationSpec has unknown field {keyword.arg!r}")
+            continue
+        if keyword.arg in values:
+            problems.append(f"DeprecationSpec repeats field {keyword.arg!r}")
+            continue
+        values[keyword.arg] = keyword.value
+    missing = sorted(set(_SPEC_FIELDS) - values.keys())
+    if missing:
+        problems.append(f"DeprecationSpec is missing fields: {', '.join(missing)}")
+    return values
+
+
+def _find_public_symbol(module: ast.Module, name: str) -> ast.AST | tuple[str, str] | None:
+    for statement in module.body:
+        if isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if statement.name == name:
+                return statement
+        if isinstance(statement, ast.ImportFrom):
+            for alias in statement.names:
+                if (alias.asname or alias.name) == name:
+                    if statement.level != 1 or not statement.module:
+                        return None
+                    return statement.module, alias.name
+    return None
+
+
+def _replacement_resolves(replacement: str) -> bool:
+    """Resolve a dotted public target structurally, without importing package code."""
+    parts = replacement.split(".")
+    if len(parts) < 2 or parts[0] != "notebooklm" or any(not part for part in parts):
+        return False
+    init_path = SRC_ROOT / "__init__.py"
+    if not init_path.is_file():
+        return False
+    module = ast.parse(init_path.read_text(encoding="utf-8"), filename=str(init_path))
+    target = _find_public_symbol(module, parts[1])
+    if isinstance(target, tuple):
+        module_name, imported_name = target
+        source = SRC_ROOT.joinpath(*module_name.split(".")).with_suffix(".py")
+        if not source.is_file():
+            source = SRC_ROOT.joinpath(*module_name.split("."), "__init__.py")
+        if not source.is_file():
+            return False
+        module = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        target = _find_public_symbol(module, imported_name)
+    if target is None or isinstance(target, tuple):
+        return False
+    for attribute in parts[2:]:
+        if not isinstance(target, ast.ClassDef):
+            return False
+        target = next(
+            (
+                statement
+                for statement in target.body
+                if isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                and statement.name == attribute
+            ),
+            None,
+        )
+        if target is None:
+            return False
+    return True
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    parts = [int(part) for part in version.split(".")]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
+def _registered_deprecation_problems(version: str) -> list[str]:
+    """Validate the immutable spec table and its literal registered callsites."""
+    spec_path = SRC_ROOT / "_deprecation.py"
+    modules: list[tuple[Path, ast.Module]] = []
+    calls: dict[str, list[str]] = {}
+    problems: list[str] = []
+    for path in sorted(SRC_ROOT.rglob("*.py")):
+        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        modules.append((path, module))
+        for node in ast.walk(module):
+            if not isinstance(node, ast.Call):
+                continue
+            if _call_name(node.func).rsplit(".", 1)[-1] != _REGISTERED_EMITTER:
+                continue
+            rel = path.relative_to(REPO_ROOT).as_posix()
+            if len(node.args) != 1 or node.keywords:
+                problems.append(f"{rel}:{node.lineno}: registered call must have one literal key")
+                continue
+            key = _literal(node.args[0], "registered deprecation key", problems)
+            if not isinstance(key, str):
+                continue
+            calls.setdefault(key, []).append(f"{rel}:{node.lineno}")
+
+    # Synthetic inline-warning tests intentionally omit the registry module.
+    # A real registered call without its table is still a hard failure.
+    if not spec_path.is_file():
+        if calls:
+            problems.append(f"{_SPEC_TABLE} is missing")
+        return problems
+
+    spec_module = next(module for path, module in modules if path == spec_path)
+    assignments = [
+        node
+        for node in spec_module.body
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and _target_name(node) == _SPEC_TABLE
+    ]
+    if len(assignments) != 1:
+        problems.append(f"{_SPEC_TABLE} must have exactly one assignment")
+        return problems
+    value = assignments[0].value
+    if (
+        not isinstance(value, ast.Call)
+        or _call_name(value.func) != "MappingProxyType"
+        or len(value.args) != 1
+        or value.keywords
+        or not isinstance(value.args[0], ast.Dict)
+    ):
+        problems.append(f"{_SPEC_TABLE} must be one literal MappingProxyType dictionary")
+        return problems
+
+    specs: dict[str, dict[str, object]] = {}
+    table = value.args[0]
+    for key_node, spec_node in zip(table.keys, table.values, strict=True):
+        if key_node is None:
+            problems.append(f"{_SPEC_TABLE} may not use ** expansion")
+            continue
+        table_key = _literal(key_node, "deprecation table key", problems)
+        if not isinstance(table_key, str) or not table_key:
+            problems.append("deprecation table key must be a non-empty string")
+            continue
+        if table_key in specs:
+            problems.append(f"duplicate deprecation spec key: {table_key}")
+            continue
+        if not isinstance(spec_node, ast.Call) or _call_name(spec_node.func) != "DeprecationSpec":
+            problems.append(f"{table_key}: value must be a literal DeprecationSpec call")
+            continue
+        arguments = _spec_arguments(spec_node, problems)
+        if set(arguments) != set(_SPEC_FIELDS):
+            continue
+        parsed: dict[str, object] = {}
+        for field in ("key", "message", "replacement", "since", "removal", "stacklevel"):
+            parsed[field] = _literal(arguments[field], f"{table_key}.{field}", problems)
+        category = arguments["category"]
+        if not isinstance(category, ast.Name) or category.id != "DeprecationWarning":
+            problems.append(f"{table_key}.category must be literal DeprecationWarning")
+        parsed["category"] = "DeprecationWarning"
+        specs[table_key] = parsed
+
+    actual_keys = frozenset(specs)
+    if actual_keys != _AUTH_STORAGE_SPEC_KEYS:
+        problems.append(
+            f"{_SPEC_TABLE} keys differ: expected {sorted(_AUTH_STORAGE_SPEC_KEYS)!r}, "
+            f"got {sorted(actual_keys)!r}"
+        )
+
+    for table_key, spec in specs.items():
+        if spec.get("key") != table_key:
+            problems.append(f"{table_key}: table key and spec.key differ")
+        message = spec.get("message")
+        if not isinstance(message, str) or not message.strip():
+            problems.append(f"{table_key}.message must be a non-empty string literal")
+        replacement = spec.get("replacement")
+        if not isinstance(replacement, str) or not replacement.strip():
+            problems.append(f"{table_key}.replacement must be a non-empty string literal")
+        elif not _replacement_resolves(replacement):
+            problems.append(f"{table_key}.replacement does not resolve: {replacement}")
+        for field in ("since", "removal"):
+            field_value = spec.get(field)
+            if not isinstance(field_value, str) or not _SEMVER.fullmatch(field_value):
+                problems.append(f"{table_key}.{field} must be a literal semantic version")
+        removal = spec.get("removal")
+        if isinstance(removal, str) and _SEMVER.fullmatch(removal):
+            if _version_key(removal) == _version_key(version):
+                problems.append(f"{table_key}.removal equals shipping version {version}")
+        stacklevel = spec.get("stacklevel")
+        if not isinstance(stacklevel, int) or isinstance(stacklevel, bool) or stacklevel < 1:
+            problems.append(f"{table_key}.stacklevel must be a positive integer literal")
+
+    for key, locations in sorted(calls.items()):
+        if key not in specs:
+            problems.append(f"registered callsite has no spec: {key} at {', '.join(locations)}")
+        elif len(locations) != 1:
+            problems.append(f"registered spec {key} has {len(locations)} callsites")
+    for key in sorted(specs.keys() - calls.keys()):
+        problems.append(f"stale deprecation spec has no callsite: {key}")
+    return problems
+
+
 def _scan(version: str) -> list[_Offender]:
     pattern = _removal_pattern(version)
     offenders: list[_Offender] = []
@@ -214,6 +436,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     offenders = _scan(version)
+    registry_problems = _registered_deprecation_problems(version)
 
     blocking: list[_Offender] = []
     matched_allowlist_keys: set[tuple[str, str]] = set()
@@ -256,7 +479,12 @@ def main(argv: list[str] | None = None) -> int:
         for line in stale:
             print(line, file=sys.stderr)
 
-    if blocking or stale:
+    if registry_problems:
+        print("Registered deprecation specification errors:", file=sys.stderr)
+        for problem in registry_problems:
+            print(f"  {problem}", file=sys.stderr)
+
+    if blocking or stale or registry_problems:
         return 1
 
     allowlisted = len(matched_allowlist_keys)

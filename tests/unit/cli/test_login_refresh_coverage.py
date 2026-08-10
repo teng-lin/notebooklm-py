@@ -24,8 +24,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-import notebooklm.auth as auth_module
 import notebooklm.cli.playwright_login_io as playwright_login_io_module
+from notebooklm._auth.storage import LoginWriteOutcome, LoginWriteStatus
 from notebooklm.cli.services.login import refresh
 from notebooklm.cli.services.login.outcomes import BrowserCookieOutcome
 
@@ -55,11 +55,20 @@ def _deps(**overrides: Any) -> refresh.RefreshDeps:
 
 
 def _login_base_deps(**overrides: Any) -> refresh.RefreshDeps:
-    storage_state = {"cookies": [{"name": "SID"}], "origins": []}
+    # Required cookies on an allowlisted domain: the write-time filter and
+    # the post-filter Tier-1 recheck both run on this state, so the success
+    # paths need SID + __Secure-1PSIDTS to survive filtering.
+    storage_state = {
+        "cookies": [
+            {"name": "SID", "domain": ".google.com", "path": "/"},
+            {"name": "__Secure-1PSIDTS", "domain": ".google.com", "path": "/"},
+        ],
+        "origins": [],
+    }
     return _deps(
         read_browser_cookies=MagicMock(return_value=["raw"]),
         validate_with_recovery=MagicMock(return_value=(storage_state, None)),
-        cookie_names_from_storage=MagicMock(return_value=["SID"]),
+        cookie_names_from_storage=MagicMock(return_value={"SID", "__Secure-1PSIDTS"}),
         missing_cookies_hint=MagicMock(return_value="hint"),
         sync_server_language_to_config=MagicMock(),
         fetch_tokens_with_domains=MagicMock(return_value=None),
@@ -247,57 +256,35 @@ def test_login_with_cookies_validation_error_exits(tmp_path, capsys) -> None:
 
 def test_login_with_cookies_save_oserror_exits(tmp_path) -> None:
     """An OSError while writing storage exits 1."""
-    deps = _login_base_deps(atomic_write_json=MagicMock(side_effect=OSError("disk full")))
+    deps = _login_base_deps(replace_from_login=MagicMock(side_effect=OSError("disk full")))
     with pytest.raises(SystemExit) as exc_info:
         refresh._login_with_browser_cookies(tmp_path / "out" / "storage.json", "chrome", deps=deps)
     assert exc_info.value.code == 1
 
 
-def test_login_with_cookies_write_metadata_oserror_warns(tmp_path, capsys) -> None:
-    """A write_account_metadata OSError warns but does not exit."""
-    deps = _login_base_deps(atomic_write_json=MagicMock())
-    with (
-        patch.object(
-            auth_module,
-            "write_account_metadata",
-            side_effect=OSError("metadata write fail"),
-        ),
-        patch.object(playwright_login_io_module, "run_async"),
-    ):
-        refresh._login_with_browser_cookies(
-            tmp_path / "storage.json",
-            "chrome",
-            authuser=1,
-            email="x@example.com",
-            deps=deps,
+def test_login_with_cookies_lock_unavailable_exits(tmp_path) -> None:
+    """A fail-closed ``lock_unavailable`` writer outcome exits 1 (nothing saved).
+
+    Since b-PR3 the account metadata is embedded in the same atomic write, so a
+    lock failure is a whole-write failure — no separate best-effort metadata step
+    survives it."""
+    deps = _login_base_deps(
+        replace_from_login=MagicMock(
+            return_value=LoginWriteOutcome(LoginWriteStatus.LOCK_UNAVAILABLE)
         )
-    out = capsys.readouterr().out
-    assert "account metadata write failed" in out
-
-
-def test_login_with_cookies_clear_metadata_oserror_logged(tmp_path, caplog) -> None:
-    """A clear_account_metadata OSError on a default login is logged."""
-    import logging
-
-    deps = _login_base_deps(atomic_write_json=MagicMock())
-    with (
-        patch.object(auth_module, "clear_account_metadata", side_effect=OSError("clear fail")),
-        patch.object(playwright_login_io_module, "run_async"),
-        caplog.at_level(logging.WARNING, logger=REFRESH),
-    ):
-        refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome", deps=deps)
-    assert any(
-        "Failed to clear stale account metadata" in rec.getMessage() for rec in caplog.records
     )
+    with pytest.raises(SystemExit) as exc_info:
+        refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome", deps=deps)
+    assert exc_info.value.code == 1
 
 
 def test_login_with_cookies_account_line_printed(tmp_path, capsys) -> None:
-    """When an email is provided the Account: line is printed."""
-    deps = _login_base_deps(atomic_write_json=MagicMock())
-    with (
-        patch.object(auth_module, "write_account_metadata"),
-        patch.object(playwright_login_io_module, "run_async"),
-    ):
+    """When an email is provided the Account: line is printed.
+
+    The account binding is now embedded in the writer's single atomic write
+    (``AccountRecord``); the real writer runs here."""
+    deps = _login_base_deps()
+    with patch.object(playwright_login_io_module, "run_async"):
         refresh._login_with_browser_cookies(
             tmp_path / "storage.json",
             "chrome",
@@ -311,14 +298,11 @@ def test_login_with_cookies_account_line_printed(tmp_path, capsys) -> None:
 
 def test_login_with_cookies_verify_valueerror_warns(tmp_path, capsys) -> None:
     """A ValueError from verification warns but does not exit."""
-    deps = _login_base_deps(atomic_write_json=MagicMock())
-    with (
-        patch.object(auth_module, "clear_account_metadata"),
-        patch.object(
-            playwright_login_io_module,
-            "run_async",
-            side_effect=ValueError("invalid cookies"),
-        ),
+    deps = _login_base_deps()
+    with patch.object(
+        playwright_login_io_module,
+        "run_async",
+        side_effect=ValueError("invalid cookies"),
     ):
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome", deps=deps)
     out = capsys.readouterr().out
@@ -327,14 +311,11 @@ def test_login_with_cookies_verify_valueerror_warns(tmp_path, capsys) -> None:
 
 def test_login_with_cookies_verify_network_error_warns(tmp_path, capsys) -> None:
     """A network RequestError warns but does not exit."""
-    deps = _login_base_deps(atomic_write_json=MagicMock())
-    with (
-        patch.object(auth_module, "clear_account_metadata"),
-        patch.object(
-            playwright_login_io_module,
-            "run_async",
-            side_effect=httpx.RequestError("connect failed"),
-        ),
+    deps = _login_base_deps()
+    with patch.object(
+        playwright_login_io_module,
+        "run_async",
+        side_effect=httpx.RequestError("connect failed"),
     ):
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome", deps=deps)
     out = capsys.readouterr().out
@@ -343,15 +324,217 @@ def test_login_with_cookies_verify_network_error_warns(tmp_path, capsys) -> None
 
 def test_login_with_cookies_verify_unexpected_error_warns(tmp_path, capsys) -> None:
     """An unexpected error warns but does not exit."""
-    deps = _login_base_deps(atomic_write_json=MagicMock())
-    with (
-        patch.object(auth_module, "clear_account_metadata"),
-        patch.object(
-            playwright_login_io_module,
-            "run_async",
-            side_effect=RuntimeError("boom"),
-        ),
+    deps = _login_base_deps()
+    with patch.object(
+        playwright_login_io_module,
+        "run_async",
+        side_effect=RuntimeError("boom"),
     ):
         refresh._login_with_browser_cookies(tmp_path / "storage.json", "chrome", deps=deps)
     out = capsys.readouterr().out
     assert "Unexpected error during verification" in out
+
+
+# ---------------------------------------------------------------------------
+# _login_with_browser_cookies — write-time cookie-domain filtering
+# ---------------------------------------------------------------------------
+def _rookiepy_cookie(domain: str, name: str) -> dict:
+    """A rookiepy-shaped raw cookie row (matches the extractor output)."""
+    return {
+        "domain": domain,
+        "name": name,
+        "value": "v",
+        "path": "/",
+        "secure": True,
+        "expires": None,
+        "http_only": False,
+    }
+
+
+def _sibling_heavy_jar() -> list[dict]:
+    """Required auth cookies plus sibling-product rows.
+
+    Mirrors what the Firefox container extractor can hand the writer: its
+    suffix-based domain match (rookiepy semantics: dot-prefixed = suffix
+    match) returns cookies for every ``*.google.com`` subdomain even when
+    the extraction request contained only ``REQUIRED_COOKIE_DOMAINS``.
+    """
+    return [
+        _rookiepy_cookie(".google.com", "SID"),
+        _rookiepy_cookie(".google.com", "__Secure-1PSIDTS"),
+        _rookiepy_cookie("mail.google.com", "MAIL_OSID"),
+        _rookiepy_cookie("docs.google.com", "DOCS_OSID"),
+        _rookiepy_cookie("myaccount.google.com", "ACCOUNT_OSID"),
+        _rookiepy_cookie(".youtube.com", "YOUTUBE_SID"),
+    ]
+
+
+def _login_and_read_storage(tmp_path, jar: list[dict] | None = None, **login_kwargs) -> dict:
+    """Drive ``_login_with_browser_cookies`` with the real validate → filter →
+    write pipeline (only the network/verification seams stubbed) and return
+    the persisted ``storage_state.json``."""
+    import json
+
+    storage_path = tmp_path / "storage_state.json"
+    deps = _deps(
+        read_browser_cookies=MagicMock(
+            return_value=jar if jar is not None else _sibling_heavy_jar()
+        ),
+        sync_server_language_to_config=MagicMock(),
+        fetch_tokens_with_domains=MagicMock(return_value=None),
+    )
+    with patch.object(playwright_login_io_module, "run_async"):
+        refresh._login_with_browser_cookies(storage_path, "chrome", deps=deps, **login_kwargs)
+    return json.loads(storage_path.read_text())
+
+
+def test_login_with_cookies_keeps_google_subdomains_but_drops_youtube(tmp_path) -> None:
+    """Default login uses trusted-root suffix matching for compatibility."""
+    persisted = _login_and_read_storage(tmp_path)
+    names = {c["name"] for c in persisted["cookies"]}
+    assert {
+        "SID",
+        "__Secure-1PSIDTS",
+        "MAIL_OSID",
+        "DOCS_OSID",
+        "ACCOUNT_OSID",
+    } <= names
+    assert "YOUTUBE_SID" not in names
+
+
+def test_login_with_cookies_opt_in_persists_youtube(tmp_path) -> None:
+    """``--include-domains=youtube`` adds the distinct YouTube root."""
+    persisted = _login_and_read_storage(tmp_path, include_domains={"youtube"})
+    names = {c["name"] for c in persisted["cookies"]}
+    assert {"SID", "__Secure-1PSIDTS", "YOUTUBE_SID"} <= names
+
+
+def test_login_with_cookies_functional_domains_survive(tmp_path) -> None:
+    """Drive-ingest and media-download domains pass the write-time filter.
+
+    ``drive.google.com`` (both dotted variants) and
+    ``.googleusercontent.com`` are in ``REQUIRED_COOKIE_DOMAINS`` (Drive
+    ingest redirects, artifact media downloads), so a default browser-cookie
+    login must persist them unchanged. Compatibility suffix matching also
+    keeps the actual Drive download host and host-scoped media domains.
+    """
+    jar = [
+        _rookiepy_cookie(".google.com", "SID"),
+        _rookiepy_cookie(".google.com", "__Secure-1PSIDTS"),
+        _rookiepy_cookie("drive.google.com", "DRIVE_HOST"),
+        _rookiepy_cookie(".drive.google.com", "DRIVE_DOT"),
+        _rookiepy_cookie("drive.usercontent.google.com", "DRIVE_DOWNLOAD"),
+        _rookiepy_cookie(".googleusercontent.com", "GUC_DOMAIN"),
+        _rookiepy_cookie("lh3.googleusercontent.com", "GUC_HOST"),
+    ]
+    persisted = _login_and_read_storage(tmp_path, jar=jar)
+    names = {c["name"] for c in persisted["cookies"]}
+    assert {
+        "SID",
+        "__Secure-1PSIDTS",
+        "DRIVE_HOST",
+        "DRIVE_DOT",
+        "DRIVE_DOWNLOAD",
+        "GUC_DOMAIN",
+        "GUC_HOST",
+    } <= names
+
+
+def test_login_with_cookies_required_only_on_sibling_domain_exits(tmp_path, capsys) -> None:
+    """Filtering away a required cookie exits 1 instead of writing.
+
+    The converter accepts opted-in runtime domains, so a jar whose only
+    ``SID`` sits on ``youtube.com`` passes ``validate_with_recovery``;
+    the write-time filter then drops that row. The post-filter Tier-1
+    recheck must exit 1 (writing nothing) rather than persisting unusable
+    auth with a success exit.
+    """
+    storage_path = tmp_path / "storage_state.json"
+    jar = [
+        _rookiepy_cookie(".youtube.com", "SID"),
+        _rookiepy_cookie(".google.com", "__Secure-1PSIDTS"),
+    ]
+    deps = _deps(
+        read_browser_cookies=MagicMock(return_value=jar),
+        sync_server_language_to_config=MagicMock(),
+        fetch_tokens_with_domains=MagicMock(return_value=None),
+    )
+    with (
+        patch.object(playwright_login_io_module, "run_async"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        refresh._login_with_browser_cookies(storage_path, "chrome", deps=deps)
+    assert exc_info.value.code == 1
+    assert "SID" in capsys.readouterr().out
+    assert not storage_path.exists()
+
+
+def test_refresh_forwards_include_domains_to_writer(tmp_path) -> None:
+    """``_refresh_from_browser_cookies`` threads the opt-in set to the writer."""
+    account = _account("bob@example.com", browser_profile="Default")
+    writer = MagicMock(return_value=None)
+    deps = _deps(
+        enumerate_browser_accounts=MagicMock(return_value=({"Default": ["raw"]}, [account])),
+        read_account_metadata=MagicMock(return_value={"email": "bob@example.com"}),
+        select_refresh_account=MagicMock(return_value=account),
+        write_extracted_cookies=writer,
+        sync_server_language_to_config=MagicMock(),
+    )
+    refresh._refresh_from_browser_cookies(
+        "chrome",
+        storage_path=tmp_path / "storage_state.json",
+        profile=None,
+        quiet=True,
+        include_domains={"youtube"},
+        deps=deps,
+    )
+    writer.assert_called_once()
+    assert writer.call_args.kwargs["include_domains"] == {"youtube"}
+
+
+def test_login_single_targeted_forwards_include_domains_to_writer(tmp_path) -> None:
+    """``_login_browser_cookies_single`` threads the opt-in set to the writer."""
+    account = _account("bob@example.com", browser_profile="Default")
+    writer = MagicMock(return_value=None)
+    deps = _deps(
+        enumerate_browser_accounts=MagicMock(return_value=({"Default": ["raw"]}, [account])),
+        select_account=MagicMock(return_value=account),
+        confirm_profile_account_overwrite=MagicMock(),
+        get_storage_path=MagicMock(return_value=tmp_path / "storage_state.json"),
+        write_extracted_cookies=writer,
+        sync_server_language_to_config=MagicMock(),
+    )
+    refresh._login_browser_cookies_single(
+        "chrome",
+        storage=None,
+        account_email="bob@example.com",
+        profile_name=None,
+        active_profile="work",
+        include_domains={"youtube"},
+        deps=deps,
+    )
+    writer.assert_called_once()
+    assert writer.call_args.kwargs["include_domains"] == {"youtube"}
+
+
+def test_login_all_accounts_forwards_include_domains_to_writer(tmp_path) -> None:
+    """``_login_all_accounts_from_browser`` threads the opt-in set to the writer."""
+    account = _account("alice@example.com", browser_profile="Default")
+    writer = MagicMock(return_value=None)
+    deps = _deps(
+        enumerate_browser_accounts=MagicMock(return_value=({"Default": ["raw"]}, [account])),
+        list_profiles=MagicMock(return_value=[]),
+        profiles_by_account_email=MagicMock(return_value={}),
+        email_to_profile_name=MagicMock(return_value="alice"),
+        resolve_all_accounts_target=MagicMock(return_value="alice"),
+        get_storage_path=MagicMock(return_value=tmp_path / "alice.json"),
+        write_extracted_cookies=writer,
+        sync_server_language_to_config=MagicMock(),
+    )
+    refresh._login_all_accounts_from_browser(
+        "chrome",
+        include_domains={"youtube"},
+        deps=deps,
+    )
+    writer.assert_called_once()
+    assert writer.call_args.kwargs["include_domains"] == {"youtube"}

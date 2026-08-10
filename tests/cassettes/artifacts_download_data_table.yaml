@@ -15,11 +15,11 @@ interactions:
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
         __Secure-3PSIDCC=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: GET
-    uri: https://notebooklm.google.com/
+    uri: https://notebook.google.com/
   response:
     body:
       string: "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><base href=\"https://notebooklm.google.com/\"><link
@@ -1574,11 +1574,11 @@ interactions:
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
         __Secure-3PSIDCC=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=gArtLc&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=gArtLc&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ")]}'\n\n79986\n[[\"wrb.fr\",\"gArtLc\",\"[[[\\\"a0e4dca6-3bb0-4ed0-aea1-dfa91cf89767\\\",\\\"Agent
@@ -2258,11 +2258,11 @@ interactions:
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
         __Secure-3PSIDCC=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=cFji9&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=cFji9&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ')]}''

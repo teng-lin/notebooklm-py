@@ -45,3 +45,9 @@ docs/scratch/
 
 # Baked into the wheel by hatch_build.py; never committed.
 src/notebooklm/_commit.py
+
+# Mobile reverse-engineering working files (local only)
+# The APK is ~39MB of Google's proprietary binaries — never commit it.
+notebooklm.apk/
+frida-scripts/
+error.log

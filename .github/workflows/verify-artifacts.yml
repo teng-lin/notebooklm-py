@@ -14,7 +14,7 @@ jobs:
     name: Verify Artifacts
     runs-on: ubuntu-latest
     if: github.repository == 'teng-lin/notebooklm-py'
-    # Secret-bearing job. ``NOTEBOOKLM_AUTH_JSON`` and friends live only in
+    # Secret-bearing job. ``NOTEBOOKLM_MASTER_TOKEN_JSON`` and friends live only in
     # the ``protected-readonly`` GitHub Environment (issue #1009), so the
     # env binding is unconditional — every trigger sees the same secret
     # values. Add a ``required reviewers`` rule on the environment if you
@@ -29,7 +29,7 @@ jobs:
         persist-credentials: false
 
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
         cache: 'pip'
@@ -40,30 +40,65 @@ jobs:
     - name: Install dependencies
       # `uv sync --frozen` reproduces the lockfile-pinned dep tree. The
       # inline verification script below only touches the public client API
-      # (no playwright / pytest / markdownify), so no extras are needed.
-      run: uv sync --frozen
+      # (no playwright / pytest / markdownify). `--extra headless` = gpsoauth,
+      # required for the master-token mint that materializes the auth profile.
+      run: uv sync --frozen --extra headless
 
-    # Fail-fast preflight. Without this, ``NotebookLMClient.from_storage()``
-    # below would die with a confusing "no storage" error when the secret
-    # resolves empty (issue #1009).
-    - name: Verify auth secret is present
+    # Fail-fast preflight + profile materialization. Without the empty-secret
+    # check, ``NotebookLMClient.from_storage()`` below would die with a
+    # confusing "no storage" error when the secret resolves empty (#1009).
+    #
+    # This step used to hand the script an inline NOTEBOOKLM_AUTH_JSON. That
+    # credential is a cookie snapshot, and Google supersedes __Secure-1PSIDTS
+    # on a ~600 s cadence — a superseded value is rejected shortly after, so
+    # the secret was routinely dead before the run started. A master token
+    # does not rotate; the mint below turns it into a fresh session on disk,
+    # which also lets the layer-4 re-mint engage for mid-run expiry.
+    - name: Materialize auth profile
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
       shell: bash
       run: |
-        if [ -z "${NOTEBOOKLM_AUTH_JSON:-}" ]; then
-          echo "::error::NOTEBOOKLM_AUTH_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
+        if [ -z "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
+          echo "::error::NOTEBOOKLM_MASTER_TOKEN_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
           exit 1
         fi
         if [ -z "${NOTEBOOKLM_GENERATION_NOTEBOOK_ID:-}" ]; then
           echo "::error::NOTEBOOKLM_GENERATION_NOTEBOOK_ID resolved to empty."
           exit 1
         fi
+        umask 077
+        mkdir -p ~/.notebooklm/profiles/default
+        printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
+        chmod 600 ~/.notebooklm/profiles/default/master_token.json
+        # `unset` is load-bearing: `login` refuses to run while inline env
+        # auth is set, and the secret is already on disk.
+        unset NOTEBOOKLM_MASTER_TOKEN_JSON
+        minted=""
+        for attempt in 1 2 3; do
+          if uv run notebooklm login --master-token-refresh; then
+            minted=1
+            break
+          fi
+          echo "::warning::master-token mint attempt ${attempt} failed."
+          if [ "$attempt" -lt 3 ]; then
+            # Jitter: nightly's ubuntu/windows legs mint concurrently from the
+            # same token, so a fixed backoff would have them retry in lockstep
+            # and collide again on whatever throttled the first attempt.
+            sleep $((attempt * 15 + RANDOM % 20))
+          fi
+        done
+        if [ -z "$minted" ]; then
+          echo "::error::master-token mint failed after 3 attempts — no auth available."
+          exit 1
+        fi
+        echo "Auth profile materialized (master token; fresh cookies minted)."
 
     - name: Verify artifacts exist
+      # Auth comes from the profile materialized above (no inline env-var
+      # credential is shipped at all) so the layer-4 re-mint can engage.
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
       run: |
         uv run python -c "

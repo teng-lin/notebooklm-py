@@ -1,0 +1,1460 @@
+// NotebookLM Android — recovered protobuf schema
+//
+// Source: reverse-engineered from the official Android app
+//   (com.google.android.apps.labs.language.tailwind v1.46.7), Flutter AOT snapshot
+//   libNotebookLM_prod_android_library_flutter_artifacts.so, Dart 3.13.0-256.0.dev.
+// Method: blutter (ported to Dart 3.13) decompiled each GeneratedMessage's BuilderInfo._i();
+//   field tag/name/type/cardinality parsed from the disassembled registrations
+//   (aOS=string, aOM=message, aE=enum, aI=int, aOB=bool, aD=double, pPM=repeated message, ...).
+//   See docs/mobile/capture.md and docs/mobile/endpoints.md.
+//
+// Ground truth: field NUMBERS, NAMES, and cardinality are from the binary (not inferred).
+//   Scalar kinds from adders are exact; a few int widths (int32/int64) and enum vs message may
+//   need confirmation. Wire-capture cross-check (docs/mobile/endpoints.md) agrees on every
+//   RPC request/response message checked.
+//
+// 282 messages, 767 fields. Regenerate with scripts/parse_pbschema.py over a blutter dump.
+
+syntax = "proto3";
+
+package google.internal.labs.tailwind;
+
+
+// ===== google.internal.labs.tailwind.api.v1/live_session.pb.dart =====
+message LiveTranscription {
+  string text = 1;
+  bool finished = 2;
+}
+message LivePart {
+  LiveBlob inlineData = 2;
+}
+message LiveContent {
+  repeated LivePart parts = 2;
+}
+message LiveServerContent {
+  LiveContent modelTurn = 1;
+  bool turnComplete = 3;
+  LiveTranscription inputTranscription = 5;
+  LiveTranscription outputTranscription = 6;
+  int64 generationId = 7;
+}
+message LiveSessionServerMessage {
+  LiveSessionEstablished sessionEstablished = 1;
+  LiveServerContent serverContent = 2;
+}
+message LiveBlob {
+  string mimeType = 1;
+}
+message LiveRealtimeInput {
+  LiveBlob audio = 1;
+}
+message LiveSessionSetup {
+  string project = 1;
+  bool enableInputTranscription = 2;
+  bool enableOutputTranscription = 3;
+}
+message LiveSessionClientMessage {
+  LiveSessionSetup setup = 1;
+  LiveRealtimeInput realtimeInput = 2;
+}
+
+// ===== google.internal.labs.tailwind.discovery.v1/labs_tailwind_discovery_service.pb.dart =====
+message PrototypeProjectInfo {
+  string projectId = 1;
+  string title = 2;
+  Timestamp lastUpdatedTime = 3;
+  string emoji = 7;
+}
+message PrototypeNotebookFeedEntry {
+  PrototypeProjectInfo projectInfo = 1;
+  repeated Source sources = 4;
+}
+message PrototypeNotebookSearchResponse {
+  repeated PrototypeNotebookFeedEntry entries = 1;
+}
+message PrototypeNotebookSearchRequest {
+  string query = 1;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1.agency/function_call.pb.dart =====
+message FunctionResponse {
+  string name = 1;
+}
+message FunctionCall {
+  string name = 1;
+  TailwindStruct args = 2;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1.agency/tailwind_struct.pb.dart =====
+message TailwindValue {
+  double numberValue = 2;
+  string stringValue = 3;
+  bool boolValue = 4;
+}
+message TailwindStruct {
+  repeated TailwindStruct_TailwindStructEntry fields = 1;
+}
+message TailwindStruct_TailwindStructEntry {
+  string key = 1;
+  TailwindValue value = 2;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/app_artifact.pb.dart =====
+message QuizGenerationOptions {
+  QuizGenerationOptions_QuestionQuantity questionQuantity = 1;
+  QuizGenerationOptions_QuizDifficulty quizDifficulty = 2;
+}
+message FlashcardsGenerationOptions {
+  FlashcardsGenerationOptions_CardQuantity cardQuantity = 1;
+  FlashcardsGenerationOptions_FlashcardsDifficulty flashcardsDifficulty = 2;
+}
+message AppArtifactGenerationOptions {
+  AppType appType = 1;
+  string freeTextSteeringPrompt = 3;
+  string languageCode = 4;
+  FlashcardsGenerationOptions flashcardsGenerationOptions = 7;
+  QuizGenerationOptions quizGenerationOptions = 8;
+}
+message TemplatizedApp {
+  string appData = 1;
+}
+message AppArtifact {
+  string appHtml = 1;
+  AppArtifactGenerationOptions generationOptions = 2;
+  TemplatizedApp templatizedApp = 3;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/artifact_state.pb.dart =====
+message ArtifactState {
+  AudioOverviewState audioOverviewState = 1;
+  VideoOverviewState videoOverviewState = 2;
+  AppArtifactState appArtifactState = 3;
+  repeated ScheduledNotificationConfig scheduledNotificationConfigs = 4;
+}
+message AppArtifactState {
+  Struct appState = 1;
+}
+message AudioOverviewState {
+  Duration playbackPosition = 1;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/artifacts.pb.dart =====
+message ArtifactCustomizationChoices {
+  SlidesCustomizationChoices slidesCustomizationChoices = 3;
+  TailoredReportCustomizationChoices tailoredReportCustomizationChoices = 4;
+}
+message AudioOverviewArtifact {
+  AudioOverviewGenerationOptions generationOptions = 2;
+  bool isInteractive = 5;
+  repeated MediaStreamingUrl mediaUrls = 6;
+  Duration duration = 7;
+}
+message Artifact {
+  string artifactId = 1;
+  string title = 2;
+  ArtifactType type = 3;
+  repeated ArtifactSource sources = 4;
+  ArtifactStatus status = 5;
+  bool isPubliclyReadable = 6;
+  AudioOverviewArtifact audioOverview = 7;
+  TailoredReportArtifact tailoredReport = 8;
+  ExplainerVideoArtifact explainerVideo = 9;
+  AppArtifact app = 10;
+  Timestamp lastModifiedTimestamp = 11;
+  InfographicArtifact infographic = 15;
+  SlidesArtifact slides = 17;
+  ArtifactState artifactUserState = 18;
+  string etag = 22;
+  FileArtifact file = 25;
+}
+message ArtifactSource {
+  SourceId sourceId = 1;
+  string sourceName = 2;
+  OriginalSourceContentType sourceContentType = 3;
+  string mimeType = 4;
+  string providerId = 5;
+  string contentId = 6;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/audio_overviews.pb.dart =====
+message AudioOverviewGenerationOptions {
+  string episodeFocus = 1;
+  EpisodeLength episodeLength = 2;
+  repeated SourceId sourceIds = 4;
+  string languageCode = 5;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/document_guide.pb.dart =====
+message MainIdeas {
+  repeated string textIdeas = 1;
+}
+message Snippet {
+  string textSnippet = 1;
+}
+message DocumentGuide {
+  InputSource source = 1;
+  Snippet snippet = 2;
+  MainIdeas mainIdeas = 3;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/explainer_video_artifact.pb.dart =====
+message ExplainerVideoGenerationOptions {
+  repeated SourceId sourceIds = 1;
+  string languageCode = 2;
+  string videoFocus = 3;
+  VideoOverviewTemplateFormat templateFormat = 5;
+  VideoOverviewStyle videoOverviewStyle = 6;
+  string stylePrompt = 7;
+}
+message ExplainerVideoArtifact {
+  ExplainerVideoGenerationOptions generationOptions = 3;
+  repeated MediaStreamingUrl mediaUrls = 5;
+  Duration duration = 6;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/file_artifact.pb.dart =====
+message FileArtifact {
+  string fileName = 1;
+  string mimeType = 2;
+  string filePreviewUrl = 3;
+  string fileDownloadUrl = 4;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/generation_context.pb.dart =====
+message GenerationContext {
+  string artifactId = 1;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/infographic_artifact.pb.dart =====
+message InfographicArtifact {
+  InfographicGenerationOptions generationOptions = 1;
+  repeated Infographic infographics = 3;
+}
+message InfographicGenerationOptions {
+  string userSteeringPrompt = 1;
+  string languageCode = 2;
+  InfographicGenerationOptions_AspectRatio aspectRatio = 4;
+  InfographicGenerationOptions_InfographicStyle style = 6;
+}
+message Infographic {
+  string title = 1;
+  ServedImage image = 2;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/input_source.pb.dart =====
+message InputSourceOptions {
+  string projectId = 1;
+  bool useAllSources = 2;
+}
+message InputSource {
+  SourceId sourceId = 1;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/labs_tailwind_orchestration_service.pb.dart =====
+message LogInteractionEventRequest {
+  RequestContext requestContext = 1;
+  ViewStudioArtifactEvent viewStudioArtifact = 2;
+}
+message ViewStudioArtifactEvent {
+  string artifactId = 1;
+}
+message ListExpertIntelligenceContentResponse {
+  repeated ListExpertIntelligenceContentResponse_ContentMetadata contents = 1;
+}
+message ListExpertIntelligenceContentResponse_ContentMetadata {
+  string contentId = 1;
+  string title = 3;
+  string description = 4;
+  string thumbnailImageUrl = 5;
+  bool exportDisabled = 6;
+  repeated string authors = 8;
+  double fieldType = 9;
+  Timestamp updatedTimestamp = 10;
+}
+message ListExpertIntelligenceContentRequest {
+  RequestContext requestContext = 1;
+  ContentProvider providerId = 2;
+}
+message GetDriveSourceStatusResponse {
+  repeated GetDriveSourceStatusResponse_SourceStatus sourceStatuses = 1;
+}
+message GetDriveSourceStatusResponse_SourceStatus {
+  string sourceId = 1;
+  SourceSettings settings = 2;
+}
+message GetDriveSourceStatusRequest {
+  string projectId = 1;
+}
+message DeleteChatTurnsRequest {
+  RequestContext requestContext = 1;
+  string chatSessionId = 2;
+  bool deleteAllHistory = 4;
+}
+message ChatHistoryMessage {
+  string messageId = 1;
+  Timestamp timestamp = 2;
+  string userQueryText = 4;
+  ActOnSourcesResponse actOnSourcesResponse = 5;
+}
+message ListChatTurnsResponse {
+  repeated ChatHistoryMessage chatTurns = 1;
+  string nextPageToken = 2;
+}
+message ListChatTurnsRequest {
+  RequestContext requestContext = 1;
+  string chatSessionId = 4;
+  string pageToken = 6;
+}
+message ListChatSessionsResponse {
+  repeated ChatSession sessions = 1;
+}
+message ListChatSessionsRequest {
+  RequestContext requestContext = 1;
+  Provenance provenance = 2;
+  string projectId = 3;
+}
+message SuggestArtifactsResponse {
+  repeated Artifact suggestedArtifacts = 1;
+}
+message SuggestArtifactsRequest {
+  RequestContext requestContext = 1;
+  string projectId = 2;
+  SuggestArtifactsRequest_SuggestArtifactsMode mode = 3;
+  GenerationContext generationContext = 7;
+  repeated MagicArtifactType requiredArtifactTypes = 8;
+}
+message DiscoveredSource {
+  string sourceUrl = 1;
+  string title = 2;
+  string hint = 3;
+  DiscoveredSourceCorpusType corpusType = 4;
+  string faviconUrl = 6;
+}
+message DiscoverSourcesFeedbackKey {
+  string discoverSourcesId = 1;
+}
+message DiscoverSourcesResponse {
+  repeated DiscoveredSource discoveredSources = 1;
+  string overview = 2;
+  DiscoverSourcesFeedbackKey discoverSourcesFeedbackKey = 3;
+  string shortDescription = 6;
+}
+message DiscoveryContext {
+  string context = 1;
+}
+message FinishDiscoverSourcesRunRequest {
+  RequestContext requestContext = 1;
+  string sourceDiscoveryJobId = 3;
+  string projectId = 4;
+  repeated UserContent userContent = 5;
+  repeated MagicArtifactType magicArtifactTypes = 7;
+}
+message DiscoverSourcesRequest {
+  DiscoveryContext discoveryContext = 1;
+  RequestContext requestContext = 2;
+  DiscoveryMode discoveryMode = 3;
+  string projectId = 4;
+  string clientSessionId = 6;
+}
+message UploadFileRequest {
+  string projectId = 3;
+  RequestContext requestContext = 4;
+  string sourceId = 5;
+  Provenance provenance = 6;
+}
+message GetIceConfigResponse {
+  string iceConfig = 1;
+}
+message GetIceConfigRequest {
+  RequestContext requestContext = 1;
+}
+message SendSdpOfferResponse {
+  string sdpAnswer = 1;
+}
+message SendSdpOfferRequest {
+  string sdpOffer = 1;
+  RequestContext requestContext = 2;
+}
+message DeleteNotesRequest {
+  string projectId = 1;
+  repeated string noteIds = 3;
+  RequestContext requestContext = 4;
+}
+message NoteMutation {
+  NoteMutation_EditNoteMutation editNoteMutation = 1;
+}
+message NoteMutation_EditNoteMutation {
+  string content = 1;
+  string name = 2;
+}
+message MutateNoteResponse {
+  ProjectNote note = 1;
+}
+message MutateNoteRequest {
+  string projectId = 1;
+  string noteId = 2;
+  repeated NoteMutation mutations = 3;
+  RequestContext requestContext = 4;
+}
+message CreateNoteResponse {
+  ProjectNote note = 1;
+}
+message CreateNoteRequest {
+  string projectId = 1;
+  string content = 2;
+  NoteMetadata metadata = 3;
+  string name = 5;
+  RequestContext requestContext = 7;
+}
+message GenerateNotebookGuideResponse {
+  NotebookGuide notebookGuide = 1;
+}
+message GenerateNotebookGuideRequest {
+  string projectId = 1;
+  RequestContext requestContext = 2;
+}
+message GenerateDocumentGuidesResponse {
+  repeated DocumentGuide guides = 1;
+}
+message GenerateDocumentGuidesRequest {
+  repeated InputSource sources = 1;
+  RequestContext requestContext = 2;
+}
+message NotebookSummaryFeedbackKey {
+  string projectId = 1;
+}
+message ArtifactFeedbackKey {
+  string artifactId = 1;
+  string projectId = 2;
+}
+message ConversationTurnFeedback {
+  ConversationTurnFeedback_Rating rating = 1;
+}
+message ConversationTurnKey {
+  string sessionId = 1;
+  string conversationId = 2;
+  int32 fieldType = 3;
+}
+message SubmitFeedbackRequest {
+  ConversationTurnKey conversationTurnKey = 1;
+  ConversationTurnFeedback conversationTurnFeedback = 2;
+  NotebookSummaryFeedbackKey notebookSummaryFeedbackKey = 5;
+  RequestContext requestContext = 6;
+  DiscoverSourcesFeedbackKey discoverSourcesFeedbackKey = 8;
+  ArtifactFeedbackKey artifactFeedbackKey = 9;
+}
+message ActOnSourcesResponse {
+  AnswerResponse response = 1;
+  NextStepSuggestions nextStepSuggestions = 6;
+}
+message ActOnSourcesRequest {
+  repeated InputSource sources = 1;
+  ActOnSourcesOptions options = 2;
+  FreeFormAction freeFormAction = 3;
+  InputSourceOptions sourceOptions = 7;
+  RequestContext requestContext = 8;
+  string chatSessionId = 10;
+  QueryOrigin origin = 11;
+}
+message GenerateFreeFormStreamedResponse {
+  AnswerResponse answer = 1;
+  bool isFinalResponse = 5;
+  NextStepSuggestions nextStepSuggestions = 6;
+}
+message GenerateFreeFormStreamedRequest {
+  repeated InputSource sources = 1;
+  string userQuery = 2;
+  repeated ConversationEvent conversationHistory = 3;
+  RequestContext requestContext = 4;
+  string chatSessionId = 5;
+  string userMessageId = 6;
+  string projectId = 8;
+  QueryOrigin origin = 9;
+}
+message FreeFormAction {
+  string userQuery = 1;
+  repeated ConversationEvent conversationHistory = 2;
+  string userMessageId = 3;
+}
+message ConversationEvent {
+  string text = 1;
+  ConversationEvent_ConversationEventType type = 3;
+}
+message AnswerResponse {
+  string response = 1;
+  ConversationTurnKey conversationTurnKey = 3;
+  EmptyAnswerReason emptyAnswerReason = 4;
+  TailwindDoc responseDoc = 5;
+}
+message ActOnSourcesOptions {
+  ContentType citationContentType = 7;
+  ContentType answerContentType = 10;
+}
+message AddSourcesRequest {
+  repeated UserContent userContent = 1;
+  string projectId = 2;
+  RequestContext requestContext = 3;
+}
+message TentativeSourceMetadata {
+  string name = 1;
+}
+message AddTentativeSourcesResponse {
+  repeated Source tentativeSources = 1;
+}
+message AddTentativeSourcesRequest {
+  repeated TentativeSourceMetadata tentativeSourcesMetadata = 1;
+  string projectId = 2;
+  RequestContext requestContext = 3;
+  Provenance provenance = 4;
+}
+message UserContent {
+  GoogleDriveContent googleDriveContent = 1;
+  TextContent textContent = 2;
+  WebContent webContent = 3;
+  UserContent_TextContentType textContentType = 4;
+  VideoContent videoContent = 8;
+  SourceId tentativeSourceId = 9;
+  ExpertIntelligenceContent expertIntelligenceContent = 16;
+}
+message ExpertIntelligenceContent {
+  ContentProvider providerId = 1;
+  string contentId = 2;
+  string sourceName = 3;
+  string description = 4;
+  string thumbnailImageUrl = 5;
+  double fieldType = 6;
+  repeated string authors = 7;
+}
+message VideoContent {
+  string youtubeUrl = 1;
+}
+message WebContent {
+  string url = 1;
+  string sourceName = 2;
+}
+message TextContent {
+  string sourceName = 1;
+  string content = 2;
+}
+message GoogleDriveContent {
+  string documentId = 1;
+  string mimeType = 2;
+  bool canDownload = 3;
+  string sourceName = 4;
+}
+message DeleteSourcesRequest {
+  repeated SourceId sourceIds = 1;
+  RequestContext requestContext = 2;
+}
+message PlainTextSourceContent {
+  string header = 1;
+  string body = 2;
+}
+message LoadSourceResponse {
+  Source source = 1;
+  PlainTextSourceContent plainText = 2;
+  string markdownString = 3;
+  TailwindDoc tailwindDoc = 4;
+}
+message LoadSourceRequest {
+  SourceId sourceId = 1;
+  RequestContext requestContext = 3;
+}
+message GetNotesResponse {
+  repeated NoteOrStatus notes = 1;
+}
+message GetNotesRequest {
+  string projectId = 1;
+  RequestContext requestContext = 4;
+}
+message LabelAndSources {
+  string label = 1;
+  repeated SourceId sourceIds = 2;
+  string labelId = 3;
+  string emoji = 4;
+}
+message GetLabelsResponse {
+  repeated LabelAndSources labelAndSources = 1;
+}
+message GetLabelsRequest {
+  RequestContext requestContext = 1;
+  string projectId = 2;
+}
+message GetProjectResponse {
+  Project project = 1;
+}
+message GetProjectRequest {
+  string projectId = 1;
+  bool includeAudioOverviewIds = 2;
+  RequestContext requestContext = 3;
+}
+message RemoveRecentlyViewedProjectRequest {
+  string projectId = 1;
+  RequestContext requestContext = 2;
+}
+message ListRecentlyViewedProjectsResponse {
+  repeated Project projects = 1;
+}
+message ListRecentlyViewedProjectsRequest {
+  bool includeOwnProjects = 2;
+  bool includeAudioOverviewIds = 3;
+  RequestContext requestContext = 4;
+}
+message DeleteProjectsRequest {
+  repeated string projectIds = 1;
+  RequestContext requestContext = 2;
+}
+message MutateAccountRequest {
+  repeated AccountMutation mutations = 1;
+  RequestContext requestContext = 2;
+}
+message AccountMutation {
+  AccountMutation_ChangePropertyMutation changeProperty = 2;
+}
+message AccountMutation_ChangePropertyMutation {
+  UserInfo newUserInfo = 1;
+}
+message UserInfo {
+  bool acceptedTos = 1;
+  bool optedInToMarketingEmails = 4;
+  bool isEeaUser = 9;
+}
+message Account {
+  TierLimits tierLimits = 2;
+  UserInfo userInfo = 3;
+  PremiumUserInfo premiumUserInfo = 5;
+}
+message GetOrCreateAccountResponse {
+  Account account = 1;
+}
+message TierLimits {
+  int32 fieldType = 2;
+  int32 fieldType = 3;
+  int32 fieldType = 4;
+}
+message GetOrCreateAccountRequest {
+  RequestContext requestContext = 1;
+  Provenance provenance = 2;
+}
+message MutateProjectRequest {
+  string projectId = 1;
+  repeated ProjectMutation mutations = 2;
+  RequestContext requestContext = 3;
+}
+message ProjectMutation {
+  ProjectMutation_ChangePropertyMutation changeProperty = 4;
+}
+message ProjectMutation_ChangePropertyMutation {
+  string newTitle = 2;
+}
+message CreateProjectRequest {
+  string name = 1;
+  RequestContext requestContext = 4;
+  Provenance provenance = 5;
+}
+message ProjectMetadata {
+  ProjectRole userRole = 1;
+  Timestamp createTime = 9;
+  bool isPublic = 13;
+  repeated string audioOverviewArtifactIds = 17;
+}
+message Project {
+  string title = 1;
+  repeated Source sources = 2;
+  string id = 3;
+  string emoji = 4;
+  ProjectMetadata metadata = 6;
+  PremiumFeatureInfo premiumFeatureInfo = 10;
+  TierLimits projectTierLimits = 11;
+  repeated ChatSession chatSessions = 12;
+}
+message PremiumFeatureInfo {
+  bool canEditAdvancedSettings = 1;
+  bool canEditGuidebookConfig = 2;
+  bool canViewAnalytics = 3;
+}
+message NoteOrStatus {
+  ProjectNote note = 2;
+}
+message Source {
+  SourceId sourceId = 1;
+  string title = 2;
+  SourceMetadata metadata = 3;
+  SourceSettings settings = 4;
+}
+message SourceMetadata {
+  GoogleDocsSourceMetadata googleDocsMetadata = 1;
+  OriginalSourceContentType originalSourceContentType = 5;
+  WebpageMetadata webpageMetadata = 8;
+  GoogleDriveSourceMetadata googleDriveSourceMetadata = 10;
+  ExpertIntelligenceSourceMetadata expertIntelligenceSourceMetadata = 19;
+}
+message ExpertIntelligenceSourceMetadata {
+  string contentId = 1;
+  string title = 3;
+  repeated string authors = 4;
+  string thumbnailImageUrl = 5;
+  string description = 6;
+  double fieldType = 7;
+}
+message WebpageMetadata {
+  string url = 1;
+}
+message GoogleDriveSourceMetadata {
+  string documentId = 1;
+  string mimeType = 3;
+}
+message GoogleDocsSourceMetadata {
+  string documentId = 1;
+}
+message PromptSuggestion {
+  string title = 1;
+  string prompt = 2;
+}
+message GeneratePromptSuggestionsResponse {
+  repeated PromptSuggestion suggestions = 1;
+}
+message GeneratePromptSuggestionsRequest {
+  RequestContext requestContext = 1;
+  string projectId = 2;
+  repeated SourceId sourceIds = 3;
+  SuggestionConfigId configId = 4;
+}
+message GetArtifactCustomizationChoicesResponse {
+  ArtifactCustomizationChoices artifactCustomizationChoices = 1;
+}
+message GetArtifactCustomizationChoicesRequest {
+  RequestContext requestContext = 1;
+  string projectId = 2;
+  ArtifactType artifactType = 3;
+}
+message ListArtifactsResponse {
+  repeated Artifact artifacts = 1;
+}
+message ListArtifactsRequest {
+  RequestContext requestContext = 1;
+  string projectId = 2;
+}
+message DeriveArtifactResponse {
+  Artifact artifact = 1;
+}
+message DeriveArtifactRequest {
+  RequestContext requestContext = 1;
+  string originalArtifactId = 2;
+  SlidesDerivationOptions slidesDerivationOptions = 3;
+}
+message CreateArtifactResponse {
+  Artifact artifact = 1;
+}
+message CreateArtifactRequest {
+  RequestContext requestContext = 1;
+  string projectId = 2;
+  Artifact artifact = 3;
+}
+message DeleteArtifactRequest {
+  RequestContext requestContext = 1;
+  string artifactId = 2;
+}
+message UpsertArtifactUserStateRequest {
+  RequestContext requestContext = 1;
+  string artifactId = 2;
+  ArtifactState artifactState = 3;
+  FieldMask updateMask = 4;
+}
+message GetArtifactUserStateResponse {
+  ArtifactState artifactState = 1;
+}
+message GetArtifactUserStateRequest {
+  RequestContext requestContext = 1;
+  string artifactId = 2;
+}
+message UpdateArtifactRequest {
+  Artifact artifact = 1;
+  FieldMask updateMask = 2;
+  string etag = 3;
+  RequestContext requestContext = 4;
+}
+message GetArtifactResponse {
+  Artifact artifact = 1;
+}
+message GetArtifactRequest {
+  string artifactId = 1;
+  RequestContext requestContext = 2;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/media_streaming.pb.dart =====
+message MediaStreamingUrl {
+  string url = 1;
+  MediaStreamingType type = 2;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/next_step_suggestions.pb.dart =====
+message NextStep {
+  string suggestion = 1;
+  MagicArtifactType suggestionType = 2;
+}
+message NextStepSuggestions {
+  repeated NextStep nextSteps = 1;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/notebook_guide.pb.dart =====
+message NotebookGuide {
+  NotebookSummary summary = 1;
+  NextStepSuggestions nextStepSuggestions = 6;
+}
+message NotebookSummary {
+  string textSummary = 1;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/premium_user_info.pb.dart =====
+message PremiumUserInfo {
+  bool isPremiumUser = 1;
+  UserDomain userDomain = 2;
+  PremiumTier userPremiumTier = 4;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/project_note.pb.dart =====
+message NoteMetadata {
+  NoteType type = 1;
+  Timestamp lastEditTimestamp = 3;
+  NotePromptType notePromptType = 4;
+}
+message ProjectNote {
+  string id = 1;
+  string content = 2;
+  NoteMetadata metadata = 3;
+  string name = 5;
+  TailwindDoc tailwindDocContent = 6;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/served_image.pb.dart =====
+message ServedImage {
+  string url = 1;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/slides_artifact.pb.dart =====
+message SlidesArtifact {
+  SlidesGenerationOptions generationOptions = 1;
+  repeated Slide slides = 3;
+  string pdfDownloadUrl = 4;
+  string pptxDownloadUrl = 5;
+}
+message SlideEditInstruction {
+  int32 slideIndex = 1;
+  string editInstruction = 2;
+}
+message SlidesDerivationOptions {
+  repeated SlideEditInstruction slideEditInstructions = 1;
+}
+message SlidesGenerationOptions {
+  string userSteeringPrompt = 1;
+  string languageCode = 2;
+  DeckType deckType = 3;
+  SlideDeckLength length = 4;
+}
+message SlidesCustomizationChoices {
+  repeated SlidesType types = 1;
+}
+message SlidesType {
+  DeckType deckType = 1;
+  string title = 2;
+  string description = 3;
+}
+message Slide {
+  ServedImage image = 1;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/source_id.pb.dart =====
+message SourceRevision {
+  SourceId source = 1;
+}
+message SourceId {
+  string id = 1;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/tailored_report_artifact.pb.dart =====
+message TailoredReportCustomizationChoices {
+  repeated TailoredReportTypeOption reportTypeOptions = 1;
+}
+message TailoredReportTypeOption {
+  string reportType = 1;
+  string reportDescription = 2;
+  string reportDirective = 3;
+}
+message TailoredReportArtifactGenerationOptions {
+  string type = 1;
+  string description = 2;
+  repeated SourceId sourceIds = 4;
+  string languageCode = 5;
+  string documentDirective = 6;
+}
+message TailoredReportArtifact {
+  TailoredReportArtifactGenerationOptions generationOptions = 2;
+  TailwindDoc reportDoc = 3;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/tailwind_doc.pb.dart =====
+message AnnotationMapEntry {
+  ObjectId objectId = 1;
+  Range contentRange = 2;
+}
+message ObjectId {
+  string id = 1;
+}
+message Citation {
+  TailwindDocFragment fragment = 5;
+  CitationSource sourceAttribution = 6;
+  ObjectId objectId = 7;
+}
+message CitationSource {
+  SourceRevision ingestedSource = 1;
+}
+message Range {
+  int32 startIndex = 2;
+  int32 endIndex = 3;
+}
+message TailwindDocFragment {
+  repeated StructuralElement elements = 1;
+}
+message TextRun {
+  string content = 1;
+  TextStyle textStyle = 2;
+}
+message TableCell {
+  int32 startIndex = 1;
+  int32 endIndex = 2;
+  repeated StructuralElement content = 3;
+}
+message TableRow {
+  int32 startIndex = 1;
+  int32 endIndex = 2;
+  repeated TableCell tableCells = 3;
+}
+message Table {
+  int32 rows = 1;
+  int32 columns = 2;
+  repeated TableRow tableRows = 3;
+}
+message ParagraphElement {
+  int32 startIndex = 1;
+  int32 endIndex = 2;
+  TextRun textRun = 3;
+  Image image = 4;
+  Resource resource = 5;
+}
+message Paragraph {
+  repeated ParagraphElement elements = 1;
+  ParagraphStyle paragraphStyle = 2;
+  BulletInfo bulletInfo = 4;
+}
+message Image {
+  string url = 1;
+  string sourceImageId = 3;
+  ImageBlockReason blockReason = 4;
+}
+message A2uiBlock {
+  string json = 1;
+}
+message CodeBlock {
+  string content = 1;
+  string languageHint = 2;
+}
+message Resource {
+  string id = 1;
+}
+message Thought {
+  repeated StructuralElement elements = 1;
+}
+message StructuralElement {
+  int32 startIndex = 1;
+  int32 endIndex = 2;
+  Paragraph paragraph = 3;
+  Table table = 5;
+  Image image = 6;
+  CodeBlock codeBlock = 7;
+  A2uiBlock a2uiBlock = 8;
+  Thought thought = 9;
+  FunctionCall functionCall = 10;
+  FunctionResponse functionResponse = 11;
+  HorizontalRule horizontalRule = 12;
+}
+message Body {
+  repeated StructuralElement content = 1;
+  repeated AnnotationMapEntry inlineObjectLocations = 2;
+}
+message DocumentObject {
+  ObjectId objectId = 1;
+  Citation citation = 2;
+}
+message TailwindDoc {
+  Body body = 1;
+  repeated DocumentObject objects = 4;
+  ResponseType type = 5;
+}
+
+// ===== google.internal.labs.tailwind.orchestration.v1/tailwind_doc_common.pb.dart =====
+message BulletInfo {
+  int32 nestingLevel = 3;
+  string glyph = 101;
+  ListType listType = 102;
+  int32 ordinal = 103;
+  int32 absoluteOrdinal = 104;
+}
+message ParagraphStyle {
+  NamedStyleType namedStyleType = 2;
+}
+message TextStyle {
+  bool bold = 1;
+  bool italic = 2;
+  bool underline = 3;
+  string url = 4;
+  FontInfo fontInfo = 5;
+  Color textColor = 6;
+  Color backgroundColor = 7;
+  bool code = 8;
+  bool strikethrough = 9;
+  MathStyleType math = 10;
+}
+message Color {
+  int32 red = 1;
+  int32 green = 2;
+  int32 blue = 3;
+}
+message FontInfo {
+  string fontFamily = 1;
+  int32 weight = 2;
+  double fontSizePt = 3;
+}
+
+// ===== google.internal.labs.tailwind.v1/source_settings.pb.dart =====
+message SourceSettings {
+  SourceStatus status = 2;
+  UserDriveSourceStatus userDriveSourceStatus = 4;
+}
+
+// ===== googledata.experiments.mobile.tailwind/application_properties.pb.dart =====
+message AccountProperties {
+  PremiumTier premiumTier = 1;
+}
+message ApplicationProperties {
+  ApplicationProperties_BuildVariant buildVariant = 1;
+  AccountPropertiesEntrySet accountPropertiesSet = 3;
+}
+
+// ===== labs.language.tailwind.common.protos/app_api_capabilities.pb.dart =====
+message AppApiCapabilities {
+  repeated AppApiCapability capabilities = 1;
+}
+
+// ===== labs.language.tailwind.common.protos/chat_history.pb.dart =====
+message ChatSession {
+  string chatSessionId = 1;
+}
+
+// ===== labs.language.tailwind.common.protos/metadata.pb.dart =====
+message RequestContext {
+  ClientType clientType = 1;
+  ClientMetadata clientMetadata = 2;
+  repeated ClientCapability clientCapabilities = 3;
+  Provenance provenance = 4;
+  AppApiCapabilities appApiCapabilities = 5;
+  RequestExecutionMode executionMode = 6;
+}
+message ClientMetadata {
+  string clientVersion = 1;
+}
+
+// ===== labs.language.tailwind.common.protos/notifications.pb.dart =====
+message ScheduledPushNotificationCustomPayload {
+  string projectId = 1;
+  string artifactId = 2;
+  ScheduledNotificationType scheduledNotificationType = 3;
+}
+message ArtifactReadyPushNotificationCustomPayload {
+  string artifactId = 1;
+  string projectId = 3;
+}
+
+// ===== labs.language.tailwind.common.protos/projects.pb.dart =====
+message ProjectPublicSettings {
+  bool isPubliclyReadable = 1;
+  bool isDiscoverable = 2;
+}
+
+// ===== labs.language.tailwind.common.protos/provenance.pb.dart =====
+message ClientInfo {
+  ClientInfo_ApplicationPlatform applicationPlatform = 1;
+  ClientInfo_Device device = 2;
+  string applicationVersion = 3;
+}
+message Provenance {
+  Provenance_OriginProductType originProductType = 1;
+  ClientInfo clientInfo = 11;
+}
+
+// ===== labs.language.tailwind.mobile.app.models/discovered_sources.pb.dart =====
+message DiscoveredSource {
+  string sourceUrl = 1;
+  string faviconUrl = 2;
+  string title = 3;
+  string hint = 4;
+  DiscoveredSourceCorpusType corpusType = 5;
+}
+message DiscoverSourcesFeedbackKey {
+  string discoverSourcesId = 1;
+}
+message DiscoveredSourcesInfo {
+  repeated DiscoveredSource discoveredSources = 1;
+  string overview = 2;
+  DiscoverSourcesFeedbackKey discoverSourcesFeedbackKey = 3;
+  string shortDescription = 4;
+}
+
+// ===== labs.language.tailwind.mobile.app.protos.persistence/artifact_consumption_store.pb.dart =====
+message ArtifactConsumptionRecord {
+  ArtifactEngagementMetadata artifactEngagementMetadata = 1;
+  string projectId = 2;
+  string artifactId = 3;
+}
+
+// ===== labs.language.tailwind.mobile.app.protos.persistence/audio_overview_cache.pb.dart =====
+message CachedAudioOverview {
+  string id = 1;
+  string mimeType = 2;
+  bool supportInteractive = 3;
+  string languageCode = 4;
+  string title = 5;
+  Duration duration = 6;
+  int32 sourceCount = 7;
+  Timestamp lastModifiedTimestamp = 8;
+  Duration playbackPosition = 9;
+}
+
+// ===== labs.language.tailwind.mobile.app.protos.persistence/project.pb.dart =====
+message TierLimits {
+  int32 fieldType = 2;
+  int32 fieldType = 3;
+  int32 fieldType = 4;
+}
+message ProjectMetadata {
+  ProjectRole userRole = 1;
+  Timestamp createTime = 2;
+  repeated string audioOverviewIds = 3;
+  bool isPublic = 4;
+}
+message Project {
+  string title = 1;
+  repeated Source sources = 2;
+  string id = 3;
+  string emoji = 4;
+  ProjectMetadata metadata = 5;
+  PremiumFeatureInfo premiumFeatureInfo = 6;
+  TierLimits projectTierLimits = 7;
+  repeated ChatSession chatSessions = 9;
+}
+message ChatSession {
+  string chatSessionId = 1;
+}
+message PremiumFeatureInfo {
+  bool canEditAdvancedSettings = 1;
+  bool canEditGuidebookConfig = 2;
+  bool canViewAnalytics = 3;
+}
+message ProjectList {
+  repeated Project projects = 1;
+}
+
+// ===== labs.language.tailwind.mobile.app.protos.persistence/slides_cache.pb.dart =====
+message CachedSlides {
+  string id = 1;
+}
+
+// ===== labs.language.tailwind.mobile.app.protos.persistence/source.pb.dart =====
+message ExpertIntelligenceSourceMetadata {
+  string title = 1;
+  repeated string authors = 2;
+  string thumbnailImageUrl = 3;
+  string description = 4;
+  double fieldType = 5;
+  string contentId = 6;
+}
+message SourceGuideKeyTopics {
+  repeated string textIdeas = 1;
+}
+message SourceGuideSummary {
+  string textSummary = 1;
+}
+message SourceGuide {
+  Source source = 1;
+  SourceGuideSummary summary = 2;
+  SourceGuideKeyTopics keyTopics = 3;
+}
+message PlainTextSourceContent {
+  string header = 1;
+  string body = 2;
+}
+message SourceSettings {
+  SourceStatus status = 1;
+  UserDriveSourceStatus userDriveSourceStatus = 2;
+}
+message GoogleDriveSourceMetadata {
+  string documentId = 1;
+  string mimeType = 2;
+}
+message GoogleDocsSourceMetadata {
+  string documentId = 1;
+}
+message SourceMetadata {
+  OriginalSourceContentType originalSourceContentType = 1;
+  GoogleDocsSourceMetadata googleDocsSourceMetadata = 2;
+  GoogleDriveSourceMetadata googleDriveSourceMetadata = 3;
+  string webpageUrl = 4;
+  ExpertIntelligenceSourceMetadata expertIntelligenceSourceMetadata = 5;
+}
+message Source {
+  string id = 1;
+  string title = 2;
+  SourceMetadata metadata = 3;
+  SourceSettings settings = 4;
+}
+
+// ===== labs.language.tailwind.mobile.app.protos.persistence/tailwind_doc.pb.dart =====
+message AnnotationMapEntry {
+  string objectId = 1;
+  int32 startIndex = 2;
+  int32 endIndex = 3;
+}
+message TailwindDocFragment {
+  repeated StructuralElement elements = 1;
+}
+message Citation {
+  string sourceId = 1;
+  TailwindDocFragment fragment = 2;
+  string objectId = 3;
+}
+message DocumentObject {
+  string objectId = 1;
+  Citation citation = 2;
+}
+message A2uiBlock {
+  string json = 1;
+}
+message CodeBlock {
+  string content = 1;
+  string languageHint = 2;
+}
+message Image {
+  string url = 1;
+  string sourceImageId = 2;
+  ImageBlockReason blockReason = 3;
+}
+message TextStyle {
+  bool bold = 1;
+  bool italic = 2;
+  bool underline = 3;
+  string url = 4;
+  FontInfo fontInfo = 5;
+  Color textColor = 6;
+  Color backgroundColor = 7;
+  bool code = 8;
+  bool strikethrough = 9;
+}
+message Color {
+  int32 red = 1;
+  int32 green = 2;
+  int32 blue = 3;
+}
+message FontInfo {
+  string fontFamily = 1;
+  int32 weight = 2;
+  double fontSizePt = 3;
+}
+message TextRun {
+  string content = 1;
+  TextStyle textStyle = 2;
+}
+message TableCell {
+  int32 startIndex = 1;
+  int32 endIndex = 2;
+  repeated StructuralElement content = 3;
+}
+message TableRow {
+  int32 startIndex = 1;
+  int32 endIndex = 2;
+  repeated TableCell tableCells = 3;
+}
+message Table {
+  int32 rows = 1;
+  int32 columns = 2;
+  repeated TableRow tableRows = 3;
+}
+message ParagraphElement {
+  int32 startIndex = 1;
+  int32 endIndex = 2;
+  TextRun text = 3;
+  Image image = 4;
+}
+message BulletInfo {
+  int32 nestingLevel = 1;
+  string glyph = 2;
+  ListType listType = 3;
+  int32 ordinal = 4;
+  int32 absoluteOrdinal = 5;
+}
+message Paragraph {
+  repeated ParagraphElement elements = 1;
+  BulletInfo bulletInfo = 2;
+}
+message StructuralElement {
+  int32 startIndex = 1;
+  int32 endIndex = 2;
+  Paragraph paragraph = 3;
+  Table table = 4;
+  Image image = 5;
+  CodeBlock codeBlock = 6;
+  A2uiBlock a2uiBlock = 7;
+}
+message Body {
+  repeated StructuralElement content = 1;
+  repeated AnnotationMapEntry inlineObjectLocations = 2;
+}
+message TailwindDoc {
+  Body body = 1;
+  repeated DocumentObject objects = 2;
+}
+
+// ===== labs.language.tailwind.mobile.app.services/debug_options.pb.dart =====
+message DebugOptions {
+  string serverEnvironment = 5;
+  bool usesCaptions = 6;
+  bool showsVeOverlay = 11;
+}
+
+// ===== labs.language.tailwind.mobile.app.services/tailwind_account.pb.dart =====
+message TailwindAccount {
+  bool acceptedTos = 1;
+  bool optedInToMarketingEmails = 2;
+  bool isPremiumUser = 3;
+  UserDomain userDomain = 4;
+  PremiumTier premiumTier = 5;
+  bool isEeaUser = 6;
+}
+
+// ===== labs.language.tailwind.mobile.app.services/user_preferences.pb.dart =====
+message UserPreferences {
+  bool hasEverLaunched = 1;
+  int64 audioOverviewPlayedDurationSeconds = 2;
+  bool hasNotificationPermissionPromptBeenShown = 3;
+  bool hasCinematicBannerBeenDismissed = 4;
+  bool hasShortsBannerBeenDismissed = 6;
+}
+
+// ===== labs.language.tailwind.sharing/labs_tailwind_sharing_service.pb.dart =====
+message CreateAccessRequestRequest {
+  string projectId = 1;
+  ProjectRole requestedProjectRole = 3;
+  RequestContext requestContext = 4;
+}
+message ShareProjectRequest {
+  repeated ShareProjectRequest_ProjectToShare project = 1;
+  RequestContext requestContext = 4;
+}
+message ShareProjectRequest_PublicDocumentSettings {
+  bool isPubliclyReadable = 1;
+  bool isDiscoverable = 2;
+}
+message ShareProjectRequest_ProjectToShare {
+  string projectId = 1;
+  ShareProjectRequest_PublicDocumentSettings publicDocumentSettings = 3;
+}
+message GetProjectDetailsResponse {
+  ProjectPublicSettings publicSettings = 2;
+  int32 maxIndividualsShareLimit = 3;
+  bool isPublicSharingAllowed = 4;
+}
+message GetProjectDetailsRequest {
+  string projectId = 1;
+  RequestContext requestContext = 2;
+}
+
+// ===== logs.proto.labs_tailwind.metadata/a2ui_metadata.pb.dart =====
+message A2uiRenderResultMetadata {
+  A2uiRenderResultMetadata_RenderOutcome renderOutcome = 1;
+  int32 a2uiBlockCount = 2;
+  string errorMessage = 3;
+  repeated string missingFieldNames = 4;
+  string rawJsonPreview = 5;
+}
+message A2uiMetadata {
+  A2uiCardType cardType = 1;
+  A2uiRenderResultMetadata renderResult = 4;
+}
+
+// ===== logs.proto.labs_tailwind.metadata/artifact_engagement_metadata.pb.dart =====
+message ArtifactEngagementMetadata {
+  ArtifactType artifactType = 1;
+  Duration consumptionDuration = 2;
+}
+
+// ===== logs.proto.labs_tailwind.metadata/chat_streaming_terminated_metadata.pb.dart =====
+message ChatStreamingTerminatedMetadata {
+  ChatStreamTerminationReason reason = 1;
+}
+
+// ===== logs.proto.labs_tailwind.metadata/notification_metadata.pb.dart =====
+message NotificationMetadata {
+  NotificationType notificationType = 1;
+  ScheduledNotificationType scheduledNotificationType = 2;
+}
+
+// ===== logs.proto.labs_tailwind.metadata/proactive_suggestion_metadata.pb.dart =====
+message ProactiveChatSuggestionMetadata {
+  int32 chatTurnIndex = 1;
+}
+message ProactiveSuggestionMetadata {
+  int32 index = 2;
+  ProactiveChatSuggestionMetadata chatSuggestionMetadata = 3;
+}
+
+// ===== logs.proto.labs_tailwind.metadata/search_metadata.pb.dart =====
+message SearchMetadata {
+  string searchQuery = 1;
+  bool isSemanticSearch = 2;
+}
+
+// ===== logs.proto.labs_tailwind/tailwind_client_extension.pb.dart =====
+message TailwindUiInteractionMetadata {
+  string projectId = 1;
+  string artifactId = 2;
+  ProactiveSuggestionMetadata proactiveSuggestionMetadata = 3;
+  TrafficSource trafficSource = 8;
+  ArtifactEngagementMetadata artifactEngagementMetadata = 9;
+  NotebookAccessState notebookAccessState = 11;
+  A2uiMetadata a2uiMetadata = 12;
+  SearchMetadata searchMetadata = 13;
+  ChatStreamingTerminatedMetadata chatStreamingTerminatedMetadata = 14;
+  NotificationMetadata notificationMetadata = 15;
+}
+message TailwindClientExtension {
+  Surface surface = 1;
+  string sessionId = 2;
+  string clientVersion = 5;
+}
+
+// ===== logs.proto.labs_tailwind/tailwind_interaction_metadata.pb.dart =====
+message TailwindInteractionMetadata {
+  TailwindUiInteractionMetadata tailwindUiInteractionMetadata = 1;
+}
+
+// ===== logs.proto.labs_tailwind/tailwind_visual_element_metadata.pb.dart =====
+message TailwindVisualElementMetadata {
+  TailwindUiInteractionMetadata tailwindUiInteractionMetadata = 1;
+  ProactiveSuggestionMetadata proactiveSuggestionMetadata = 2;
+  string projectId = 3;
+  string artifactId = 4;
+  TrafficSource trafficSource = 7;
+  SearchMetadata searchMetadata = 8;
+  bool isPublicProject = 9;
+  UserRole userRole = 10;
+  ExplainerVideoType explainerVideoType = 14;
+}

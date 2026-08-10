@@ -17,6 +17,11 @@ Tests cover:
 * A deprecation naming a *different* version does not trip the gate.
 * An allowlisted offender does not block; removing the offender makes the
   allowlist entry stale (rc 1).
+* The immutable auth-storage registry has exactly its two literal keys, valid
+  semantic versions and structurally resolvable public replacements.
+* Registered specs and callsites are a one-to-one set; missing, stale,
+  duplicate, dynamic, or lapsed entries fail closed without importing package
+  code.
 * Missing / malformed ``pyproject.toml`` returns rc 2.
 
 Script is imported via spec-loading to match the convention used by
@@ -119,6 +124,197 @@ def synthetic(script, tmp_path, monkeypatch):
     monkeypatch.setattr(script, "LAPSED_ALLOWLIST", ())
     monkeypatch.setattr(script, "_ALLOWLIST_BY_KEY", {})
     return src
+
+
+def _spec_entry(
+    key: str,
+    *,
+    replacement: str = '"notebooklm.NotebookLMClient.from_storage"',
+    since: str = '"0.9.0"',
+    removal: str = '"1.0"',
+) -> str:
+    return dedent(
+        f"""
+        {key!r}: DeprecationSpec(
+            key={key!r},
+            message="deprecated auth storage path",
+            category=DeprecationWarning,
+            replacement={replacement},
+            since={since},
+            removal={removal},
+            stacklevel=3,
+        ),
+        """
+    )
+
+
+def _install_registered_tree(
+    src: Path,
+    *,
+    entries: list[str] | None = None,
+    calls: list[str] | None = None,
+    immutable: bool = True,
+) -> None:
+    entries = entries or [
+        _spec_entry("auth_tokens_from_storage"),
+        _spec_entry("auth_tokens_sync_storage_construction"),
+    ]
+    calls = calls or [
+        'warn_registered_deprecation("auth_tokens_from_storage")',
+        'warn_registered_deprecation("auth_tokens_sync_storage_construction")',
+    ]
+    (src / "__init__.py").write_text("from .client import NotebookLMClient\n", encoding="utf-8")
+    (src / "client.py").write_text(
+        dedent(
+            """
+            class NotebookLMClient:
+                @classmethod
+                def from_storage(cls):
+                    return cls()
+            """
+        ),
+        encoding="utf-8",
+    )
+    wrapper = "MappingProxyType({" if immutable else "{"
+    close = "})" if immutable else "}"
+    registry = (
+        "from types import MappingProxyType\n\n"
+        "class DeprecationSpec:\n"
+        "    pass\n\n"
+        f"DEPRECATION_SPECS = {wrapper}\n" + "".join(entries) + f"{close}\n"
+    )
+    (src / "_deprecation.py").write_text(registry, encoding="utf-8")
+    (src / "_auth").mkdir()
+    (src / "_auth" / "tokens.py").write_text("\n".join(calls) + "\n", encoding="utf-8")
+
+
+def test_registered_deprecation_specs_and_callsites_are_validated(
+    script, synthetic, tmp_path
+) -> None:
+    _install_registered_tree(synthetic)
+    pyproject = _write_pyproject(tmp_path, "0.8.0")
+    rc, out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 0, err
+    assert "OK" in out
+
+
+@pytest.mark.parametrize(
+    ("replacement", "expected"),
+    [
+        ('""', "replacement must be a non-empty string literal"),
+        ('"notebooklm.Missing.value"', "replacement does not resolve"),
+    ],
+)
+def test_registered_replacement_must_be_nonempty_and_resolve_without_imports(
+    script, synthetic, tmp_path, replacement, expected
+) -> None:
+    _install_registered_tree(
+        synthetic,
+        entries=[
+            _spec_entry("auth_tokens_from_storage", replacement=replacement),
+            _spec_entry("auth_tokens_sync_storage_construction"),
+        ],
+    )
+    pyproject = _write_pyproject(tmp_path, "0.8.0")
+    rc, _out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 1
+    assert expected in err
+
+
+def test_duplicate_registered_spec_key_is_rejected(script, synthetic, tmp_path) -> None:
+    _install_registered_tree(
+        synthetic,
+        entries=[
+            _spec_entry("auth_tokens_from_storage"),
+            _spec_entry("auth_tokens_from_storage"),
+            _spec_entry("auth_tokens_sync_storage_construction"),
+        ],
+    )
+    pyproject = _write_pyproject(tmp_path, "0.8.0")
+    rc, _out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 1
+    assert "duplicate deprecation spec key" in err
+
+
+def test_required_registered_spec_key_cannot_disappear(script, synthetic, tmp_path) -> None:
+    _install_registered_tree(
+        synthetic,
+        entries=[_spec_entry("auth_tokens_from_storage")],
+        calls=['warn_registered_deprecation("auth_tokens_from_storage")'],
+    )
+    pyproject = _write_pyproject(tmp_path, "0.8.0")
+    rc, _out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 1
+    assert "DEPRECATION_SPECS keys differ" in err
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("since", '"v0.9.0"'), ("since", "FUTURE_VERSION"), ("removal", '"next"')],
+)
+def test_registered_versions_are_literal_semantic_versions(
+    script, synthetic, tmp_path, field, value
+) -> None:
+    kwargs = {field: value}
+    _install_registered_tree(
+        synthetic,
+        entries=[
+            _spec_entry("auth_tokens_from_storage", **kwargs),
+            _spec_entry("auth_tokens_sync_storage_construction"),
+        ],
+    )
+    pyproject = _write_pyproject(tmp_path, "0.8.0")
+    rc, _out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 1
+    assert f"auth_tokens_from_storage.{field}" in err
+
+
+def test_registered_removal_cannot_equal_shipping_release(script, synthetic, tmp_path) -> None:
+    _install_registered_tree(
+        synthetic,
+        entries=[
+            _spec_entry("auth_tokens_from_storage", removal='"0.8.0"'),
+            _spec_entry("auth_tokens_sync_storage_construction"),
+        ],
+    )
+    pyproject = _write_pyproject(tmp_path, "0.8.0")
+    rc, _out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 1
+    assert "removal equals shipping version 0.8.0" in err
+
+
+def test_registered_spec_without_callsite_is_stale(script, synthetic, tmp_path) -> None:
+    _install_registered_tree(
+        synthetic,
+        calls=['warn_registered_deprecation("auth_tokens_from_storage")'],
+    )
+    pyproject = _write_pyproject(tmp_path, "0.8.0")
+    rc, _out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 1
+    assert "stale deprecation spec has no callsite" in err
+
+
+def test_registered_callsite_without_spec_is_rejected(script, synthetic, tmp_path) -> None:
+    _install_registered_tree(
+        synthetic,
+        calls=[
+            'warn_registered_deprecation("auth_tokens_from_storage")',
+            'warn_registered_deprecation("auth_tokens_sync_storage_construction")',
+            'warn_registered_deprecation("unregistered")',
+        ],
+    )
+    pyproject = _write_pyproject(tmp_path, "0.8.0")
+    rc, _out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 1
+    assert "registered callsite has no spec: unregistered" in err
+
+
+def test_registered_table_must_remain_immutable(script, synthetic, tmp_path) -> None:
+    _install_registered_tree(synthetic, immutable=False)
+    pyproject = _write_pyproject(tmp_path, "0.8.0")
+    rc, _out, err = _run(script, ["--pyproject", str(pyproject)])
+    assert rc == 1
+    assert "must be one literal MappingProxyType dictionary" in err
 
 
 @pytest.mark.parametrize(

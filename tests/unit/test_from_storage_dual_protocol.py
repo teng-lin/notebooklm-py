@@ -50,7 +50,7 @@ def _stub_homepage(httpx_mock: HTTPXMock) -> None:
     """Stub the notebooklm homepage GET used to seed the CSRF/session tokens."""
     html = '"SNlM0e":"dual_csrf" "FdrFJe":"dual_session"'
     httpx_mock.add_response(
-        url="https://notebooklm.google.com/",
+        url="https://notebook.google.com/",
         content=html.encode(),
     )
 
@@ -180,8 +180,34 @@ class TestWrapperShape:
             path=str(tmp_path / "nonexistent.json"),
         )
         assert isinstance(wrapper, _FromStorageContext)
+        with pytest.raises(TypeError):
+            NotebookLMClient.from_storage(
+                str(tmp_path / "nonexistent.json"),
+                30.0,
+                None,
+                None,
+                60.0,
+                3,
+                3,
+                None,
+                4,
+                16,
+                None,
+                None,
+                None,
+                None,
+                True,  # type: ignore[misc]
+            )
         # No coroutine, so nothing to await — and importantly, the missing
         # storage file has NOT been read yet (no FileNotFoundError).
+
+    def test_allow_headless_is_a_lazy_keyword_only_factory_option(self, tmp_path: Path) -> None:
+        """Cold browser permission can be selected without triggering I/O."""
+        wrapper = NotebookLMClient.from_storage(
+            path=str(tmp_path / "nonexistent.json"),
+            allow_headless=True,
+        )
+        assert isinstance(wrapper, _FromStorageContext)
 
     @pytest.mark.asyncio
     async def test_yielded_value_is_notebooklmclient(

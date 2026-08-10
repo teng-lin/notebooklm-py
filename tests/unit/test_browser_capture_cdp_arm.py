@@ -31,8 +31,30 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from notebooklm._auth.browser_capture import BrowserCapturePlan, run_cdp_capture
+from notebooklm._auth.browser_capture import (
+    TARGET_CLOSED_ERROR,
+    BrowserCapturePlan,
+    _CaptureAbortKind,
+    _HeadlessCaptureAbort,
+    run_cdp_capture,
+)
+from notebooklm._env import get_base_url
 from notebooklm.exceptions import HeadlessLoginRequiredError
+
+
+def _landed_on_app() -> str:
+    """The URL a healthy session lands on, tracking the configured host.
+
+    Production navigates the captured page to ``get_base_url()``, so the
+    simulated landing has to follow it. Pinned to the legacy alias instead,
+    every generic-landing test below reached its "authenticated" branch through
+    the alias-accept in ``accepted_login_hosts`` — dropping the *configured*
+    host from that accept set would not have failed a single one of them. The
+    deliberate cross-host case
+    (:func:`test_cdp_cross_personal_host_landing_is_authenticated`) still names
+    both hosts literally.
+    """
+    return f"{get_base_url()}/"
 
 
 class _RaisingCaptureIO:
@@ -109,6 +131,20 @@ def _plan(tmp_path: Path) -> BrowserCapturePlan:
     )
 
 
+def _authenticated_cookies() -> list[dict[str, str]]:
+    return [
+        {"name": "SID", "value": "v", "domain": ".google.com", "path": "/"},
+        {"name": "APISID", "value": "a", "domain": ".google.com", "path": "/"},
+        {"name": "SAPISID", "value": "s", "domain": ".google.com", "path": "/"},
+        {
+            "name": "__Secure-1PSIDTS",
+            "value": "ts",
+            "domain": ".google.com",
+            "path": "/",
+        },
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Authenticated landing → capture + persist (same allowlist as other arms)
 # ---------------------------------------------------------------------------
@@ -117,13 +153,11 @@ def _plan(tmp_path: Path) -> BrowserCapturePlan:
 @pytest.mark.requires_playwright
 def test_cdp_authenticated_landing_persists_and_filters(tmp_path: Path) -> None:
     cookies = [
-        {"name": "SID", "value": "v", "domain": ".google.com", "path": "/"},
-        # A sibling-product cookie the domain filter must DROP.
-        {"name": "X", "value": "y", "domain": "mail.google.com", "path": "/"},
+        *_authenticated_cookies(),
+        # A distinct optional root the domain filter must DROP.
+        {"name": "X", "value": "y", "domain": ".youtube.com", "path": "/"},
     ]
-    playwright, browser, _context, page = _fake_cdp_browser(
-        "https://notebooklm.google.com/", cookies=cookies
-    )
+    playwright, browser, _context, page = _fake_cdp_browser(_landed_on_app(), cookies=cookies)
     io = _RaisingCaptureIO()
 
     result = _run_cdp(_plan(tmp_path), io, playwright, "http://127.0.0.1:9222")
@@ -135,7 +169,7 @@ def test_cdp_authenticated_landing_persists_and_filters(tmp_path: Path) -> None:
     # wait_until would waste 30s then TimeoutError before classification (#1697).
     page.goto.assert_called_once()
     assert page.goto.call_args.kwargs.get("wait_until") in {"commit", "domcontentloaded"}
-    # Persisted, with the same domain allowlist (mail.google.com dropped).
+    # Persisted, with the same domain allowlist (unrequested YouTube dropped).
     storage = tmp_path / "storage_state.json"
     assert storage.exists()
     persisted = json.loads(storage.read_text(encoding="utf-8"))
@@ -150,7 +184,9 @@ def test_cdp_authenticated_landing_persists_and_filters(tmp_path: Path) -> None:
 @pytest.mark.requires_playwright
 def test_cdp_uses_temporary_page_in_existing_context(tmp_path: Path) -> None:
     """Reuse the operator's EXISTING context but navigate/close our OWN page."""
-    playwright, browser, context, page = _fake_cdp_browser("https://notebooklm.google.com/")
+    playwright, browser, context, page = _fake_cdp_browser(
+        _landed_on_app(), cookies=_authenticated_cookies()
+    )
     io = _RaisingCaptureIO()
 
     _run_cdp(_plan(tmp_path), io, playwright, "http://127.0.0.1:9222")
@@ -161,6 +197,48 @@ def test_cdp_uses_temporary_page_in_existing_context(tmp_path: Path) -> None:
     context.new_page.assert_called_once()
     page.close.assert_called_once()
     context.close.assert_not_called()
+
+
+@pytest.mark.requires_playwright
+@pytest.mark.parametrize(
+    ("selected", "landed"),
+    [
+        ("https://notebooklm.google.com", "https://notebook.google.com/"),
+        ("https://notebook.google.com", "https://notebooklm.google.com/"),
+    ],
+)
+def test_cdp_cross_personal_host_landing_is_authenticated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selected: str, landed: str
+) -> None:
+    """Landing on the *other* personal host is a success, not an off-host miss.
+
+    The CDP arm classifies its landing through ``url_matches_base_host``, so it
+    inherits ``accepted_login_hosts``. Google may redirect between the legacy
+    host and the post-rebrand alias in either direction; treating that as
+    off-host would raise on a perfectly good session.
+    """
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", selected)
+    # A complete cookie set: capture validates the captured rows before
+    # persisting them (#2061), so a SID-only jar would fail here on the
+    # cookie set rather than on the host classification under test.
+    playwright, browser, _context, page = _fake_cdp_browser(
+        landed, cookies=_authenticated_cookies()
+    )
+    io = _RaisingCaptureIO()
+
+    result = _run_cdp(_plan(tmp_path), io, playwright, "http://127.0.0.1:9222")
+
+    assert result is not None
+    storage = tmp_path / "storage_state.json"
+    assert storage.exists()
+    assert {c["name"] for c in json.loads(storage.read_text(encoding="utf-8"))["cookies"]} == {
+        "SID",
+        "APISID",
+        "SAPISID",
+        "__Secure-1PSIDTS",
+    }
+    page.close.assert_called_once()
+    browser.close.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -193,9 +271,7 @@ def test_cdp_off_host_landing_raises_loudly_and_persists_nothing(tmp_path: Path)
 @pytest.mark.requires_playwright
 def test_cdp_no_context_raises_and_persists_nothing(tmp_path: Path) -> None:
     """An attached browser with no context cannot supply a session → raise."""
-    playwright, browser, _context, _page = _fake_cdp_browser(
-        "https://notebooklm.google.com/", has_context=False
-    )
+    playwright, browser, _context, _page = _fake_cdp_browser(_landed_on_app(), has_context=False)
     io = _RaisingCaptureIO()
 
     with pytest.raises(HeadlessLoginRequiredError, match="no browser"):
@@ -204,6 +280,22 @@ def test_cdp_no_context_raises_and_persists_nothing(tmp_path: Path) -> None:
     assert not (tmp_path / "storage_state.json").exists()
     # We still disconnected, and never fabricated a context.
     browser.new_context.assert_not_called()
+    browser.close.assert_called_once()
+
+
+@pytest.mark.requires_playwright
+def test_cdp_target_closed_is_typed_instead_of_session_expired(tmp_path: Path) -> None:
+    """A closed attached browser is infrastructure failure, not a dead session."""
+    playwright, browser, _context, page = _fake_cdp_browser(_landed_on_app())
+    from playwright.sync_api import Error as PlaywrightError
+
+    page.goto.side_effect = PlaywrightError(TARGET_CLOSED_ERROR)
+
+    with pytest.raises(_HeadlessCaptureAbort) as excinfo:
+        _run_cdp(_plan(tmp_path), _RaisingCaptureIO(), playwright, "http://127.0.0.1:9222")
+
+    assert excinfo.value.kind is _CaptureAbortKind.BROWSER_CLOSED
+    assert not (tmp_path / "storage_state.json").exists()
     browser.close.assert_called_once()
 
 
@@ -230,10 +322,16 @@ def test_cdp_malformed_cookie_value_never_logged(tmp_path: Path, caplog) -> None
         {"name": "bad", "value": sentinel, "domain": 12345, "path": "/"},
         # A valid allowed cookie so the capture still persists something.
         {"name": "SID", "value": "ok", "domain": ".google.com", "path": "/"},
+        {"name": "APISID", "value": "a", "domain": ".google.com", "path": "/"},
+        {"name": "SAPISID", "value": "s", "domain": ".google.com", "path": "/"},
+        {
+            "name": "__Secure-1PSIDTS",
+            "value": "ts",
+            "domain": ".google.com",
+            "path": "/",
+        },
     ]
-    playwright, _browser, _context, _page = _fake_cdp_browser(
-        "https://notebooklm.google.com/", cookies=cookies
-    )
+    playwright, _browser, _context, _page = _fake_cdp_browser(_landed_on_app(), cookies=cookies)
     io = _RaisingCaptureIO()
 
     with caplog.at_level(logging.WARNING):
@@ -243,6 +341,19 @@ def test_cdp_malformed_cookie_value_never_logged(tmp_path: Path, caplog) -> None
     assert any("non-str domain" in r.message for r in caplog.records)
     # ...but its value never appears in any log record.
     assert sentinel not in caplog.text
+    # ...and it was flagged on the documented operator-facing logger. ADR-0030
+    # c-PR5 requires these warnings to reach ``notebooklm.auth`` rather than a
+    # private per-module child, and the relocation of this filter into the
+    # persistence module made that a live risk: a logger bound to ``__name__``
+    # follows its defining module, so a future move would silently re-home these
+    # records. Nothing asserted the name before, so such a move would have gone
+    # green — this test captured at the root and only ever matched on message
+    # text.
+    assert all(
+        record.name == "notebooklm.auth"
+        for record in caplog.records
+        if "storage_state cookie" in record.message
+    ), "filter warnings must stay on the documented notebooklm.auth logger (ADR-0030)"
 
 
 def test_safe_cookie_shape_is_value_free() -> None:
@@ -271,3 +382,44 @@ def test_safe_cookie_shape_tolerates_non_str_keys() -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+# ---------------------------------------------------------------------------
+# A failed in-memory heal must never discard the completed sign-in (#2082)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.requires_playwright
+def test_capture_persists_even_when_the_psidts_heal_declines(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Google withholding ``__Secure-1PSIDTS`` must not cost the user their login.
+
+    The login flow's passive ``goto()`` navigations do not always draw a
+    ``Set-Cookie: __Secure-1PSIDTS`` (issue #865), and the in-memory heal cannot
+    run at all without a rotatable secondary binding. Before this guard the
+    capture raised before ``atomic_write_json``, throwing away a completed SSO
+    round-trip and surfacing as a generic "please report a bug". The cookies are
+    still the best material available, and the disk-based cold-start recovery
+    retries from them on the next command — so persist, and say so.
+    """
+    playwright, browser, _context, page = _fake_cdp_browser(
+        _landed_on_app(),
+        cookies=[{"name": "SID", "value": "v", "domain": ".google.com", "path": "/"}],
+    )
+    io = _RaisingCaptureIO()
+
+    with caplog.at_level("WARNING", logger="notebooklm._auth.browser_capture"):
+        result = _run_cdp(_plan(tmp_path), io, playwright, "http://127.0.0.1:9222")
+
+    assert result is not None
+    storage = tmp_path / "storage_state.json"
+    assert storage.exists(), "a completed sign-in must survive a failed heal"
+    assert {c["name"] for c in json.loads(storage.read_text(encoding="utf-8"))["cookies"]} == {
+        "SID"
+    }
+    assert any("__Secure-1PSIDTS" in record.getMessage() for record in caplog.records), (
+        "the incomplete state must be reported, not silently persisted"
+    )
+    page.close.assert_called_once()
+    browser.close.assert_called_once()

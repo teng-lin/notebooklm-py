@@ -72,6 +72,7 @@ _NOT_FOUND_ID_ATTRS = (
     "note_id",
     "mind_map_id",
     "label_id",
+    "collection_id",
 )
 
 
@@ -80,8 +81,8 @@ def _not_found_extra(error: NotFoundError) -> dict[str, Any]:
 
     Surfaces whichever resource-id attribute the concrete subclass carries
     (``source_id`` / ``artifact_id`` / ``note_id`` / ``mind_map_id`` /
-    ``label_id`` / ``notebook_id``) under both its native key and a generic
-    ``id`` key, so
+    ``label_id`` / ``collection_id`` / ``notebook_id``) under both its native key
+    and a generic ``id`` key, so
     automation can read the id without knowing the exact not-found subtype —
     mirroring the per-command ``source``/``artifact``/``note get`` payloads.
     Returns an empty dict when no known id attribute is present (e.g. a future

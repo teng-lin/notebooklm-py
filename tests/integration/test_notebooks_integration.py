@@ -764,7 +764,7 @@ class TestShareEdgeCases:
         async with NotebookLMClient(auth_tokens) as client:
             url = client.notebooks.get_share_url("nb_123")
 
-        assert url == "https://notebooklm.google.com/notebook/nb_123"
+        assert url == "https://notebook.google.com/notebook/nb_123"
 
     @pytest.mark.asyncio
     async def test_get_share_url_with_artifact(
@@ -776,4 +776,4 @@ class TestShareEdgeCases:
         async with NotebookLMClient(auth_tokens) as client:
             url = client.notebooks.get_share_url("nb_123", artifact_id="art_789")
 
-        assert url == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_789"
+        assert url == "https://notebook.google.com/notebook/nb_123?artifactId=art_789"

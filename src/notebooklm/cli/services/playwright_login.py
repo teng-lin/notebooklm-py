@@ -31,6 +31,7 @@ wrappers render + exit. Entry points: :class:`PlaywrightLoginPlan`,
 
 from __future__ import annotations
 
+import inspect
 import logging
 import shutil
 import subprocess
@@ -42,6 +43,10 @@ from typing import Any, NoReturn, Protocol
 
 import httpx
 
+from ..._app.profile import (
+    ProfileRepairRequest,
+    repair_playwright_account,
+)
 from ..._auth.browser_capture import (
     BROWSER_CLOSED_HELP,
     CHANNEL_BROWSERS,
@@ -60,7 +65,12 @@ from ..._auth.browser_capture import (
     url_matches_base_host,
     windows_playwright_event_loop,
 )
-from ...paths import get_browser_profile_dir, get_storage_path
+from ...paths import (
+    BROWSER_PROFILE_OWNERSHIP_MARKER,
+    browser_profile_is_owned,
+    get_browser_profile_dir,
+    get_storage_path,
+)
 from .playwright_redaction import redact_subprocess_output
 
 logger = logging.getLogger(__name__)
@@ -99,36 +109,6 @@ ACCOUNT_METADATA_REMEDIATION = (
 # ---------------------------------------------------------------------------
 
 
-def _select_playwright_account(
-    accounts: list[Any],
-    *,
-    active_email: str | None,
-) -> tuple[Any | None, str | None]:
-    """Select the account Playwright just logged into, or return an ambiguity reason."""
-    if active_email:
-        normalized = active_email.casefold()
-        matches = [
-            account
-            for account in accounts
-            if isinstance(getattr(account, "email", None), str)
-            and account.email.casefold() == normalized
-        ]
-        if len(matches) == 1:
-            return matches[0], None
-        if matches:
-            return None, f"multiple discovered accounts matched {active_email}"
-        return None, f"current NotebookLM page email {active_email} was not discovered"
-
-    if len(accounts) == 1:
-        return accounts[0], None
-    if accounts:
-        return (
-            None,
-            "multiple Google accounts were discovered but the active page email was unavailable",
-        )
-    return None, "no Google accounts were discovered"
-
-
 def repair_playwright_account_metadata(
     storage_path: Path,
     io: LoginIO,
@@ -145,91 +125,134 @@ def repair_playwright_account_metadata(
     ``quiet`` stays a service-level parameter (the Protocol has no silencing
     concept). Returns ``True`` when metadata was written, ``False`` when it
     was cleared or left absent.
-    """
-    from ...auth import (
-        build_httpx_cookies_from_storage,
-        clear_account_metadata,
-        enumerate_accounts,
-        extract_email_from_html,
-        write_account_metadata,
-    )
 
-    active_email = extract_email_from_html(page_html) if isinstance(page_html, str) else None
+    The coarse app operation owns the public repair invocation and neutral
+    result classification; this wrapper owns only ``LoginIO`` presentation.
+    ``io.run_async`` itself is still wrapped here (not just the coroutine's own
+    handling): a scheduling ``RuntimeError`` must degrade to the historical
+    best-effort warning rather than aborting login/refresh.
+    """
+    request: ProfileRepairRequest | None = None
+    operation = None
+    result = None
     try:
         if not quiet:
             io.emit("[dim]Identifying Google account...[/dim]")
-        jar = build_httpx_cookies_from_storage(storage_path)
-        accounts = io.run_async(enumerate_accounts(jar))
-        selected, reason = _select_playwright_account(accounts, active_email=active_email)
-        if selected is None:
-            clear_account_metadata(storage_path)
+        request = ProfileRepairRequest(storage_path=storage_path, page_html=page_html)
+        operation = repair_playwright_account(request)
+        try:
+            try:
+                result = io.run_async(operation)
+            except BaseException:
+                if inspect.getcoroutinestate(operation) == inspect.CORO_CREATED:
+                    operation.close()
+                raise
+        except (OSError, ValueError, RuntimeError, httpx.HTTPError) as exc:
             if not quiet:
                 io.emit(
-                    "[yellow]Warning: account metadata was not written; "
-                    f"{reason}. {ACCOUNT_METADATA_REMEDIATION}[/yellow]"
+                    "[yellow]Warning: account metadata was not written. "
+                    "NotebookLM auth still saved, but multi-account routing may "
+                    "fall back to authuser=0. "
+                    f"{ACCOUNT_METADATA_REMEDIATION} Details: {exc}[/yellow]"
                 )
             return False
-        write_account_metadata(
-            storage_path,
-            authuser=selected.authuser,
-            email=selected.email,
-        )
-    except (OSError, ValueError, RuntimeError, httpx.HTTPError) as exc:
-        try:
-            clear_account_metadata(storage_path)
-        except Exception as clear_exc:
-            logger.warning(
-                "Failed to clear stale account metadata for %s: %s",
-                storage_path,
-                clear_exc,
-            )
+        if result.status == "WRITTEN":
+            if not quiet:
+                io.emit(f"[green]Account:[/green] {result.email}")
+            return True
         if not quiet:
-            io.emit(
-                "[yellow]Warning: account metadata was not written. "
-                "NotebookLM auth still saved, but multi-account routing may "
-                "fall back to authuser=0. "
-                f"{ACCOUNT_METADATA_REMEDIATION} Details: {exc}[/yellow]"
-            )
+            if result.status == "ERROR":
+                io.emit(
+                    "[yellow]Warning: account metadata was not written. "
+                    "NotebookLM auth still saved, but multi-account routing may "
+                    "fall back to authuser=0. "
+                    f"{ACCOUNT_METADATA_REMEDIATION} Details: {result.detail}[/yellow]"
+                )
+            else:
+                io.emit(
+                    "[yellow]Warning: account metadata was not written; "
+                    f"{result.detail}. {ACCOUNT_METADATA_REMEDIATION}[/yellow]"
+                )
         return False
-
-    if not quiet:
-        io.emit(f"[green]Account:[/green] {selected.email}")
-    return True
+    finally:
+        del storage_path, io, page_html, request, operation, result
 
 
 # ---------------------------------------------------------------------------
 # Chromium install pre-flight (CLI-install concern; stays in the adapter)
 # ---------------------------------------------------------------------------
 
+CHROMIUM_PRESENT_MARKER = "notebooklm-chromium-present"
+CHROMIUM_MISSING_MARKER = "notebooklm-chromium-missing"
+
+# Detection source for the pre-flight, run in an isolated interpreter.
+#
+# It asks Playwright itself where the bundled Chromium build lives
+# (``BrowserType.executable_path``, a stable public API) and tests that path
+# on disk, printing one of the markers above.
+#
+# It deliberately does NOT parse ``playwright install --dry-run`` output
+# (#2031): that command prints the same ``browser:`` / ``Install location:`` /
+# ``Download url:`` block whether or not the browser is on disk — it reports
+# where a build *would* go, not whether it is there — so it cannot answer this
+# question in either direction. Its human-readable text is also not a stable
+# interface (the historical ``"will download"`` marker this pre-flight matched
+# on is emitted by no shipping Playwright release).
+#
+# Running it out-of-process keeps the check timeout-bounded (an in-process
+# ``sync_playwright()`` start cannot be interrupted), starts the driver with a
+# clean default event-loop policy on Windows, and leaves no Playwright state in
+# the CLI process before the real launch.
+CHROMIUM_PROBE_SOURCE = f"""\
+import os
+import sys
+
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as playwright:
+    path = playwright.chromium.executable_path
+sys.stdout.write(
+    "{CHROMIUM_PRESENT_MARKER}" if path and os.path.exists(path) else "{CHROMIUM_MISSING_MARKER}"
+)
+"""
+
 
 def ensure_chromium_installed(io: LoginIO) -> None:
     """Check if Chromium is installed and install if needed.
 
-    Runs ``playwright install --dry-run chromium`` to detect a missing browser,
-    then auto-installs. Silently proceeds on any error so Playwright handles it
-    during launch. Both subprocess calls are timeout-bounded (30 s dry-run,
-    300 s install) so a network-stalled CLI cannot hang ``notebooklm login``;
-    ``TimeoutExpired`` is a pre-flight failure — the warning surfaces and login
-    continues. ``io`` carries the presentation / exit sink (an install failure
-    exits 1 via ``io.fail``; the ``except SystemExit: raise`` re-raise keeps
-    that terminal path intact).
+    Resolves Playwright's bundled-Chromium executable path in an isolated
+    interpreter (:data:`CHROMIUM_PROBE_SOURCE`) and auto-installs when that
+    path is absent. Silently proceeds on any error — including an unreadable
+    probe answer — so Playwright handles it during launch. Both subprocess
+    calls are timeout-bounded (30 s probe, 300 s install) so a network-stalled
+    CLI cannot hang ``notebooklm login``; ``TimeoutExpired`` is a pre-flight
+    failure — the warning surfaces and login continues. ``io`` carries the
+    presentation / exit sink (an install failure exits 1 via ``io.fail``; the
+    ``except SystemExit: raise`` re-raise keeps that terminal path intact).
     """
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "--dry-run", "chromium"],
+            [sys.executable, "-c", CHROMIUM_PROBE_SOURCE],
             capture_output=True,
             text=True,
             timeout=30,
         )
-        stdout_lower = result.stdout.lower()
-        if "chromium" not in stdout_lower or "will download" not in stdout_lower:
-            # The dry-run probe succeeded but didn't see a "will download"
-            # marker; nothing to do. If the probe printed an unexpected
-            # diagnostic to stderr, surface a sanitised version at debug
-            # level so operators can investigate without leaking env values.
+        saw_present = CHROMIUM_PRESENT_MARKER in result.stdout
+        saw_missing = CHROMIUM_MISSING_MARKER in result.stdout
+        # Install only on an unambiguous "missing" answer from a probe that
+        # ran to completion. Anything else — the browser is on disk, the probe
+        # exited non-zero, or it returned an answer we cannot read (printed
+        # neither marker, or printed both) — means "nothing to do": installing
+        # on a guess would re-download on every login, and a genuinely missing
+        # browser still raises an actionable Playwright error at launch.
+        chromium_missing = result.returncode == 0 and saw_missing and not saw_present
+        if not chromium_missing:
+            # If the probe printed an unexpected diagnostic to stderr, surface
+            # a sanitised version at debug level so operators can investigate
+            # without leaking env values.
             if result.stderr:
                 logger.debug(
-                    "playwright install --dry-run stderr: %s",
+                    "chromium pre-flight probe stderr: %s",
                     redact_subprocess_output(result.stderr),
                 )
             return
@@ -278,8 +301,9 @@ def ensure_chromium_installed(io: LoginIO) -> None:
             f"{exc.timeout}s. Proceeding anyway.[/dim]"
         )
     except Exception as e:
-        # FileNotFoundError: playwright CLI not found but sync_playwright imported
-        # Other exceptions: dry-run check failed — let Playwright handle it during launch.
+        # FileNotFoundError: the interpreter that runs the probe is gone.
+        # Other exceptions: the probe could not run — let Playwright handle it
+        # during launch.
         io.emit(f"[dim]Warning: Chromium pre-flight check failed: {e}. Proceeding anyway.[/dim]")
 
 
@@ -355,20 +379,31 @@ def prepare_login_paths(
 
     Clears the cached browser profile on ``--fresh`` (returning
     :class:`PathError` on OSError so the command layer exits 1), then creates
-    both parent dirs with platform-aware permissions. Returns
+    both parent dirs with platform-aware permissions. Explicit-storage browser
+    dirs created here receive an ownership marker; ``--fresh`` refuses to
+    delete an existing unowned sidecar. Returns
     :class:`PreparedPaths` on success (``fresh_cleared`` flags whether the
     wipe ran, so the wrapper emits the cleared-session line).
     """
     if storage:
         storage_path = Path(storage)
+        browser_profile = get_browser_profile_dir(storage_path=storage_path)
     elif profile:
         storage_path = get_storage_path(profile=profile)
+        browser_profile = get_browser_profile_dir(profile=profile)
     else:
         storage_path = get_storage_path()
-    browser_profile = get_browser_profile_dir()
+        browser_profile = get_browser_profile_dir()
 
     fresh_cleared = False
     if fresh and browser_profile.exists():
+        if storage and not browser_profile_is_owned(storage_path, browser_profile):
+            return PathError(
+                "[red]Refusing to delete an unowned browser profile.[/red]\n"
+                "The directory is not recognized as NotebookLM-managed:\n"
+                f"{browser_profile}\n"
+                "Move it aside, or remove it manually only if you know it is safe."
+            )
         try:
             shutil.rmtree(browser_profile)
             fresh_cleared = True
@@ -380,6 +415,7 @@ def prepare_login_paths(
                 f"If the problem persists, manually delete: {browser_profile}"
             )
 
+    browser_profile_existed = browser_profile.exists()
     if sys.platform == "win32":
         # On Windows < Python 3.13, mode= is ignored by mkdir(). On
         # Python 3.13+, mode= applies Windows ACLs that can be overly
@@ -392,6 +428,9 @@ def prepare_login_paths(
         storage_path.parent.chmod(0o700)
         browser_profile.mkdir(parents=True, exist_ok=True, mode=0o700)
         browser_profile.chmod(0o700)
+
+    if storage and not browser_profile_existed:
+        (browser_profile / BROWSER_PROFILE_OWNERSHIP_MARKER).touch()
 
     return PreparedPaths(
         storage_path=storage_path,

@@ -110,6 +110,27 @@ def test_validate_resumable_upload_url_missing_host_raises() -> None:
         _validate_resumable_upload_url("https:///upload/_/?upload_id=session")
 
 
+def test_validate_resumable_upload_url_rejects_explicit_port_zero() -> None:
+    """An explicit ``:0`` is a stated port, not an absent one.
+
+    ``urlsplit`` returns the *int* ``0`` for ``https://host:0/``, and ``0`` is
+    falsy — so ``parsed.port or _default_port_for_scheme(...)`` silently folded
+    it into 443 and the URL passed the port check. A server-supplied
+    ``X-Goog-Upload-URL`` could therefore name a port the caller never agreed
+    to and still be trusted. Absent and explicit ports must stay distinct.
+    """
+    with pytest.raises(ValidationError, match="host is not trusted"):
+        _validate_resumable_upload_url(
+            "https://notebooklm.google.com:0/upload/_/?upload_id=session"
+        )
+
+
+def test_validate_resumable_upload_url_accepts_explicit_default_port() -> None:
+    """The port-0 fix must not reject an explicitly stated ``:443``."""
+    url = "https://notebooklm.google.com:443/upload/_/?upload_id=session"
+    assert _validate_resumable_upload_url(url) == url
+
+
 def test_register_response_shape_label_all_branches() -> None:
     """Every shape label branch is exercised ."""
     assert _register_response_shape_label({"a": 1}) == "object"

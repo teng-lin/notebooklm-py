@@ -61,6 +61,7 @@ CLI_COMMAND_MODULES = {
     "agent",
     "artifact",
     "chat",
+    "collection",
     "doctor",
     "download",
     "generate",

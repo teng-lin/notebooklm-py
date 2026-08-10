@@ -334,12 +334,18 @@ class TestKeepaliveExplicitStoragePath:
                             "domain": ".google.com",
                             "path": "/",
                         },
+                        {
+                            "name": "__Secure-1PSIDTS",
+                            "value": "initial_1psidts",
+                            "domain": ".google.com",
+                            "path": "/",
+                        },
                     ]
                 }
             )
         )
         auth = AuthTokens(
-            cookies={"SID": "manual_sid"},
+            cookies={"SID": "manual_sid", "__Secure-1PSIDTS": "initial_1psidts"},
             csrf_token="t",
             session_id="s",
             # NOTE: storage_path is *not* set on auth
@@ -570,7 +576,7 @@ class TestSaveCookiesUnification:
 
         # NotebookLM homepage with new tokens (refresh_auth scrapes these)
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=b'<html><script>window.WIZ_global_data={"SNlM0e":"new_csrf","FdrFJe":"new_sid"};</script></html>',
         )
 

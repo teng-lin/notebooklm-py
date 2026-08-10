@@ -114,6 +114,12 @@ async def research_status(notebook_id: str, run_id: str, client: ClientDep) -> d
     (``no_research`` | ``in_progress`` | ``completed`` | ``failed`` |
     ``not_found``), the found ``sources``, and any ``report`` once complete. Poll
     until ``completed``, then ``POST .../{run_id}/import``.
+
+    ``status: failed`` covers several outcomes, so ``termination_reason``
+    (``no_results`` | ``cancelled`` | ``unknown``, else ``completed`` |
+    ``in_progress``) names which, with ``reason_message`` / ``hint`` populated
+    when the run did not succeed (#1964). Without these a REST caller saw a bare
+    ``failed`` here while the import route below already explained itself.
     """
     result = await research_core.poll_and_classify(client, notebook_id, run_id)
     return {
@@ -122,6 +128,10 @@ async def research_status(notebook_id: str, run_id: str, client: ClientDep) -> d
         "task_id": result.task_id,
         "kind": result.kind,
         "status": result.status,
+        "status_code": result.status_code,
+        "termination_reason": result.termination_reason,
+        "reason_message": result.reason_message,
+        "hint": result.hint,
         "query": result.query,
         "sources": to_jsonable(result.sources),
         "summary": result.summary,

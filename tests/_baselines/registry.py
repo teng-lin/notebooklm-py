@@ -125,6 +125,20 @@ def _derive_cli_contract() -> dict[str, object]:
     return build_cli_contract()
 
 
+def _derive_auth_patch_sites() -> dict[str, object]:
+    """Stable path/line-free projection from the auth patch-site audit."""
+    from scripts.audit_auth_patch_sites import build_projection, collect_sites
+
+    return build_projection(collect_sites(_TESTS_ROOT))
+
+
+def _derive_auth_import_graph() -> dict[str, object]:
+    """Static direct-module import graph for ``notebooklm._auth``."""
+    from scripts.audit_auth_import_graph import build_projection
+
+    return build_projection()
+
+
 # ---------------------------------------------------------------------------
 # Baseline registry
 # ---------------------------------------------------------------------------
@@ -173,6 +187,20 @@ class Baseline:
 
 
 BASELINES: list[Baseline] = [
+    Baseline(
+        name="auth_patch_sites",
+        path=_BASELINES_DIR / "auth_patch_sites.json",
+        derive=_derive_auth_patch_sites,
+        sort_keys=True,
+        description="Auth test patch sites aggregated by module, attribute, and idiom.",
+    ),
+    Baseline(
+        name="auth_import_graph",
+        path=_BASELINES_DIR / "auth_import_graph.json",
+        derive=_derive_auth_import_graph,
+        sort_keys=True,
+        description="Static direct-module import graph for notebooklm._auth.",
+    ),
     Baseline(
         name="types_all",
         path=_BASELINES_DIR / "types_all.json",

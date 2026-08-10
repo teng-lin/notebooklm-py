@@ -21,11 +21,11 @@ interactions:
         __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED; __Secure-OSID=SCRUBBED; _ga=SCRUBBED;
         _gcl_au=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=J7Gthc&source-path=%2Fnotebook%2F4462cd3d-e77a-4d8c-8b1f-8bfd7232f995&f.sid=SCRUBBED&hl=en&rt=c&authuser=SCRUBBED_EMAIL%40example.com
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=J7Gthc&source-path=%2Fnotebook%2F4462cd3d-e77a-4d8c-8b1f-8bfd7232f995&f.sid=SCRUBBED&hl=en&rt=c&authuser=SCRUBBED_EMAIL%40example.com
   response:
     body:
       string: ')]}''

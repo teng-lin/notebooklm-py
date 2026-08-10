@@ -139,11 +139,17 @@ def _read_storage_state(
         # Env-var auth: read the inline JSON via the injected accessor so this
         # neutral core stays out of the auth-source consolidation gate's grep.
         try:
-            return json.loads(read_env_auth_json()), None
+            state = json.loads(read_env_auth_json())
+            if not isinstance(state, dict) or not isinstance(state.get("cookies"), list):
+                return None, "Storage state must contain a 'cookies' list."
+            return state, None
         except json.JSONDecodeError as exc:
             return None, f"Invalid JSON: {exc}"
     try:
-        return json.loads(plan.storage_path.read_text(encoding="utf-8")), None
+        state = json.loads(plan.storage_path.read_text(encoding="utf-8"))
+        if not isinstance(state, dict) or not isinstance(state.get("cookies"), list):
+            return None, "Storage state must contain a 'cookies' list."
+        return state, None
     except json.JSONDecodeError as exc:
         return None, f"Invalid JSON: {exc}"
     except (OSError, UnicodeDecodeError) as exc:
@@ -161,11 +167,13 @@ def _psidts_status(storage_state: dict[str, Any]) -> dict[str, Any]:
     on a missing-PSIDTS profile. ``expires`` is the Playwright epoch-seconds
     field; ``-1`` (session cookie) / missing maps to ``None``.
     """
-    for cookie in storage_state.get("cookies", []):
-        if cookie.get("name") != _PSIDTS_COOKIE:
+    from .. import auth
+
+    for cookie in auth._sanitized_auth_entries(storage_state):
+        if cookie["name"] != _PSIDTS_COOKIE:
             continue
         expires_at: str | None = None
-        expires = cookie.get("expires")
+        expires = cookie["expires"]
         # ``bool`` is an ``int`` subclass — a stray ``expires: true`` must not be
         # read as epoch 1.
         if isinstance(expires, (int, float)) and not isinstance(expires, bool) and expires > 0:
@@ -183,55 +191,46 @@ def _psidts_status(storage_state: dict[str, Any]) -> dict[str, Any]:
 def _account_info(plan: AuthCheckPlan, storage_state: dict[str, Any]) -> dict[str, Any]:
     """Resolve the persisted account ``{email, authuser}`` for this profile.
 
-    For env-var auth the in-band record lives in the parsed inline JSON; for a
-    file profile, the on-disk reader also consults the legacy sibling record.
+    Thin call into :func:`notebooklm._auth.storage.resolve_account_identity`
+    (auth cross-boundary ledger shrink, follow-up to #2103): for env-var auth
+    the in-band record lives in the already-parsed ``storage_state``; for a
+    file profile a pre-v0.5.0 legacy ``context.json[account]`` record is
+    derived into in-band shape rather than returned as a raw pass-through (see
+    ``_auth.storage.read_account_metadata``, #2103 PR-0). The derivation is
+    read-only — the durable migration is a detached one-shot (ADR-0033 PR 5.1),
+    so this is a plain consult with no write side effect.
     """
-    from ..auth import (
-        get_account_email_for_storage,
-        get_authuser_for_storage,
-        read_account_metadata_from_storage_state,
-    )
+    from ..auth import resolve_account_identity
 
-    if plan.has_env_auth:
-        meta = read_account_metadata_from_storage_state(storage_state)
-        raw_email = meta.get("email")
-        email = raw_email.strip() if isinstance(raw_email, str) else ""
-        raw_authuser = meta.get("authuser")
-        # Match the file path's get_authuser_for_storage: a real int only (``bool``
-        # is an ``int`` subclass, so exclude it), negatives clamped to 0.
-        authuser = raw_authuser if type(raw_authuser) is int and raw_authuser >= 0 else 0
-        return {"email": email or None, "authuser": authuser}
-    return {
-        "email": get_account_email_for_storage(plan.storage_path),
-        "authuser": get_authuser_for_storage(plan.storage_path),
-    }
+    return resolve_account_identity(
+        has_env_auth=plan.has_env_auth,
+        storage_path=plan.storage_path,
+        env_auth_storage_state=storage_state,
+    )
 
 
 def _master_token_status(plan: AuthCheckPlan) -> dict[str, Any]:
-    """Note a sibling ``master_token.json`` (headless master-token profile).
-
-    The record lives beside ``storage_state.json`` (login --master-token writes
-    both into the profile dir), so resolve it relative to the actual storage path
-    — this also honors a ``--storage`` override. Env-var auth carries no profile
-    directory, so master-token is N/A there.
-    """
-    if plan.has_env_auth:
-        return {"present": False, "path": None, "account": None}
-
-    from ..auth import read_master_token
-
-    path = plan.storage_path.with_name("master_token.json")
-    if not path.exists():
-        return {"present": False, "path": str(path), "account": None}
-    account: str | None = None
+    """Project the coarse master-token app status into auth-check details."""
+    status = None
     try:
-        record = read_master_token(path)
-    except Exception as exc:  # malformed/unreadable — still report presence
-        logger.debug("master_token.json present but unreadable: %s", exc)
-        record = None
-    if record:
-        account = record.get("email")
-    return {"present": True, "path": str(path), "account": account}
+        from . import master_token
+
+        status = master_token.inspect_master_token_status(
+            plan.storage_path,
+            has_env_auth=plan.has_env_auth,
+        )
+        if status.unreadable_error_type is not None:
+            logger.debug(
+                "master_token.json present but unreadable: %s",
+                status.unreadable_error_type,
+            )
+        return {
+            "present": status.present,
+            "path": str(status.path) if status.path is not None else None,
+            "account": status.account,
+        }
+    finally:
+        del status
 
 
 async def run_auth_check(
@@ -254,7 +253,7 @@ async def run_auth_check(
     does not construct. The CLI command layer adds it into ``details`` after this
     returns (only when ``token_fetch`` passed and the probe is non-passive).
     """
-    from ..auth import extract_cookies_from_storage
+    from .. import auth
 
     checks = _make_initial_checks()
     details: dict[str, Any] = {
@@ -286,37 +285,44 @@ async def run_auth_check(
     # so the Rich table and --json envelope can never disagree — issue #1640).
     details["account"] = _account_info(plan, storage_state)
     details["profile"] = plan.profile
-    master_token = _master_token_status(plan)
-    psidts = _psidts_status(storage_state)
-    details["master_token"] = master_token
-    details["psidts"] = psidts
+    details["master_token"] = _master_token_status(plan)
 
-    # Check 3: cookies present + SID lookup.
-    try:
-        cookies = extract_cookies_from_storage(storage_state)
-        checks["cookies_present"] = bool(cookies)
-        checks["sid_cookie"] = "SID" in cookies
-        details["cookies_found"] = list(cookies.keys())
+    def _check_local_state(state: dict[str, Any]) -> str | None:
+        """Refresh side-effect-free cookie diagnostics from one state snapshot."""
+        entries = auth._sanitized_auth_entries(state)
+        psidts = _psidts_status(state)
+        details["psidts"] = psidts
 
         cookies_by_domain: dict[str, list[str]] = {}
-        for cookie in storage_state.get("cookies", []):
-            domain = cookie.get("domain", "")
-            name = cookie.get("name", "")
-            if domain and name and "google" in domain.lower():
+        for cookie in entries:
+            domain = cookie["domain"]
+            name = cookie["name"]
+            if "google" in domain.lower():
                 cookies_by_domain.setdefault(domain, []).append(name)
         details["cookies_by_domain"] = cookies_by_domain
         details["cookie_domains"] = sorted(cookies_by_domain.keys())
-    except ValueError as exc:
-        # The default missing-cookie hint blames browser-cookie extraction
-        # (App-Bound Encryption). For a master-token profile a missing PSIDTS is
-        # normal and self-heals — but only when PSIDTS is the *sole* missing
-        # required cookie (SID present). If SID is also missing the session is
-        # not recoverable, so keep the generic hint.
-        sid_present = any(c.get("name") == "SID" for c in storage_state.get("cookies", []))
-        if sid_present and not psidts["present"] and master_token["present"]:
-            details["error"] = _MASTER_TOKEN_PSIDTS_HINT
-        else:
-            details["error"] = str(exc)
+
+        try:
+            cookies = auth.extract_cookies_from_storage(state)
+            checks["cookies_present"] = bool(cookies)
+            checks["sid_cookie"] = "SID" in cookies
+            details["cookies_found"] = list(cookies.keys())
+            auth._validate_routable_entries(
+                entries,
+                to_cookie=auth._storage_entry_to_cookie,
+                require_routable=True,
+            )
+            return None
+        except ValueError as exc:
+            checks["cookies_present"] = False
+            sid_present = "SID" in {entry["name"] for entry in entries}
+            if sid_present and not psidts["present"] and details["master_token"]["present"]:
+                return _MASTER_TOKEN_PSIDTS_HINT
+            return str(exc)
+
+    local_error = _check_local_state(storage_state)
+    details["error"] = local_error
+    if local_error is not None and not plan.test_fetch:
         return AuthCheckResult(plan=plan, checks=checks, details=details)
 
     # Check 4: optional token-fetch round-trip. ``passive`` selects the
@@ -328,13 +334,29 @@ async def run_auth_check(
 
             fetch = fetch_tokens_passive if plan.passive else fetch_tokens_with_domains
             token_path = None if plan.has_env_auth else plan.storage_path
-            csrf, session_id = await fetch(token_path, plan.profile)
+            token_profile = None if plan.has_env_auth else plan.profile
+            csrf, session_id = await fetch(token_path, token_profile)
             checks["token_fetch"] = True
             details["csrf_length"] = len(csrf)
             details["session_id_length"] = len(session_id)
         except Exception as exc:
             checks["token_fetch"] = False
             details["error"] = f"Token fetch failed: {exc}"
+        else:
+            # A normal (non-passive) loader may have healed the file. Re-read
+            # and recompute the local checks so --test reports the post-heal
+            # state rather than the preflight failure that triggered recovery.
+            if local_error is not None and not plan.passive:
+                refreshed_state, refresh_error = _read_storage_state(
+                    plan, read_env_auth_json=read_env_auth_json
+                )
+                if refreshed_state is None:
+                    details["error"] = refresh_error
+                else:
+                    details["account"] = _account_info(plan, refreshed_state)
+                    details["master_token"] = _master_token_status(plan)
+                    recomputed_error = _check_local_state(refreshed_state)
+                    details["error"] = recomputed_error
 
     return AuthCheckResult(plan=plan, checks=checks, details=details)
 

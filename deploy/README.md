@@ -97,8 +97,9 @@ cp deploy/.env.example deploy/.env
 
 ## 3. Choose a tunnel
 The stack ships two tunnel sidecars as Compose **profiles** — pick one (the server
-runs under either). Both terminate TLS at their edge, so there's no cert to manage and
-no host ports are published.
+runs under either). Both terminate TLS at their edge, so there's no cert to manage.
+The origin publishes only `127.0.0.1:9420`, which is unreachable off-host and also lets
+a consolidated host-networked tunnel route `http://notebooklm-mcp:9420` to it.
 
 > **Only using Claude Code / Cursor / Desktop (not claude.ai)? You may not need a public
 > tunnel at all** — those clients send a bearer, so they need *reachability*, not a public
@@ -133,6 +134,10 @@ Feb 2026; the old Zero Trust dashboard now redirects here):
    `https://` in the field's placeholder. Cloudflare auto-creates the DNS record + serves TLS.
    Leave **Path** empty so the **whole host** (`/`) is routed — not a `/mcp`-scoped path — so
    the root OAuth routes are reachable. (Profile: `cloudflare`, the default.)
+
+For a consolidated host tunnel, do not enable the `cloudflare` profile. Start only
+`notebooklm-mcp`, map `notebooklm-mcp` to `127.0.0.1` in the shared connector, and keep
+the same public-hostname service URL.
 > Optional: set `NOTEBOOKLM_MCP_TRUST_PROXY=1` in `.env` to key the per-IP login
 > throttle on the tunnel's `CF-Connecting-IP` header. Default off keys on the socket
 > peer (the tunnel egress) — one global throttle bucket. Only enable it behind a trusted

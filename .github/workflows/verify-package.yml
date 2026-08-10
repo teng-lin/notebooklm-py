@@ -19,7 +19,7 @@ jobs:
   verify:
     name: Verify from ${{ inputs.source }}
     runs-on: ubuntu-latest
-    # Secret-bearing job (steps below reference secrets.NOTEBOOKLM_AUTH_JSON
+    # Secret-bearing job (steps below reference secrets.NOTEBOOKLM_MASTER_TOKEN_JSON
     # + secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID for the live E2E pass). The
     # workflow is workflow_dispatch-only, so every run is human-initiated;
     # this `protected-readonly` environment requires a maintainer to approve
@@ -34,7 +34,7 @@ jobs:
         persist-credentials: false
 
     - name: Set up Python 3.12
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
         cache: 'pip'
@@ -55,6 +55,8 @@ jobs:
       # smoke time. `cookies` stays excluded because rookiepy has Python
       # 3.13+ install issues.
       # The published wheel itself is force-reinstalled in the next step.
+      # `headless` = gpsoauth, required for the layer-4 master-token re-mint
+      # that the materialized auth profile below relies on.
       run: >
         uv sync --frozen
         --extra browser
@@ -62,6 +64,7 @@ jobs:
         --extra markdown
         --extra mcp
         --extra server
+        --extra headless
 
     - name: Install published wheel from TestPyPI (--no-deps)
       if: inputs.source == 'testpypi'
@@ -153,22 +156,70 @@ jobs:
         echo "## E2E Tests Skipped" >> $GITHUB_STEP_SUMMARY
         echo "E2E tests were not run because this workflow is executing on a fork." >> $GITHUB_STEP_SUMMARY
 
+    - name: Materialize auth profile
+      if: github.repository == 'teng-lin/notebooklm-py'
+      shell: bash
+      env:
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
+      run: |
+        # Write the master token to a real on-disk profile and mint from it.
+        # Inline env auth never engages the layer-4 re-mint (it only fires when
+        # master_token.json sits BESIDE the profile's storage_state.json —
+        # src/notebooklm/_auth/session.py), so a rotated cookie secret used to
+        # hard-fail the run (e.g. run 30799508786).
+        if [ -z "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
+          echo "::error::NOTEBOOKLM_MASTER_TOKEN_JSON secret is not configured"
+          exit 1
+        fi
+        umask 077
+        mkdir -p ~/.notebooklm/profiles/default
+        printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
+        chmod 600 ~/.notebooklm/profiles/default/master_token.json
+        # The master token is now the ONLY credential shipped. A cookie
+        # snapshot cannot be: Google supersedes __Secure-1PSIDTS on a ~600 s
+        # cadence and a superseded value is rejected shortly after, so a
+        # secret minted on a workstation is routinely dead before the run
+        # starts. A master token does not rotate, so it cannot go stale.
+        # The mint below bootstraps storage_state.json from it; layer-4 then
+        # covers mid-run expiry. `unset` is load-bearing: `login` refuses to
+        # run while inline env auth is set, and the secret is already on disk.
+        unset NOTEBOOKLM_MASTER_TOKEN_JSON
+        source .venv/bin/activate
+        minted=""
+        for attempt in 1 2 3; do
+          if notebooklm login --master-token-refresh; then
+            minted=1
+            break
+          fi
+          echo "::warning::master-token mint attempt ${attempt} failed."
+          if [ "$attempt" -lt 3 ]; then
+            # Jitter: nightly's ubuntu/windows legs mint concurrently from the
+            # same token, so a fixed backoff would have them retry in lockstep
+            # and collide again on whatever throttled the first attempt.
+            sleep $((attempt * 15 + RANDOM % 20))
+          fi
+        done
+        # Fatal, unlike before: there is no cookie snapshot left to fall back
+        # to, so a failed mint means the job has no credentials at all.
+        if [ -z "$minted" ]; then
+          echo "::error::master-token mint failed after 3 attempts — no auth available."
+          exit 1
+        fi
+        echo "Auth profile materialized (master token; fresh cookies minted)."
+
     - name: Run E2E tests
       id: e2e
       if: github.repository == 'teng-lin/notebooklm-py'
       # Don't fail the job here — the retry step below gets a 10-min cool-down
       # shot at any failures, and its exit code is what marks the job red.
+      # Auth comes from the profile materialized above (no inline env-var
+      # credential is shipped at all) so the layer-4 re-mint can engage.
       continue-on-error: true
       shell: bash
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
       run: |
         source .venv/bin/activate
-        if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then
-          echo "::error::NOTEBOOKLM_AUTH_JSON secret is not configured"
-          exit 1
-        fi
         if [ -z "$NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID" ]; then
           echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID secret is not configured"
           exit 1
@@ -183,7 +234,6 @@ jobs:
       if: steps.e2e.outcome == 'failure'
       shell: bash
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
       run: |
         source .venv/bin/activate

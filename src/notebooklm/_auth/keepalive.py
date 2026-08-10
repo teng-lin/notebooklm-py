@@ -1,6 +1,6 @@
-"""Keepalive ``RotateCookies`` poke helpers for authentication.
+"""Keepalive ``RotateCookies`` policy helpers for authentication.
 
-This private module hosts the rotation throttle + POST that
+This private module hosts the rotation throttle and re-exports the raw POST that
 ``notebooklm.auth`` previously owned at module level. ``notebooklm.auth`` keeps
 re-exporting compatibility names, but production no longer mirrors facade-level
 rebindings; tests that substitute keepalive internals should patch this
@@ -17,19 +17,37 @@ import asyncio
 import contextlib
 import logging
 import os
+import random
 import threading
 import time
 import weakref
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
+from . import mint_service as _mint_service
 from . import paths as _auth_paths
-from . import storage as _auth_storage
+from .storage_lock import (
+    _LOCK_ACQUIRE_DEADLINE_SECONDS,
+    _LOCK_ACQUIRE_INITIAL_DELAY_SECONDS,
+    _LOCK_ACQUIRE_MAX_DELAY_SECONDS,
+    LockRequest,
+    StorageLockManager,
+)
 
 logger = logging.getLogger("notebooklm.auth")
+
+# Compatibility bindings for the one raw RotateCookies wire contract, now
+# owned dependency-bottom by ``mint_service``. Keepalive owns only policy.
+KEEPALIVE_ROTATE_URL = _mint_service.KEEPALIVE_ROTATE_URL
+_KEEPALIVE_ROTATE_HEADERS = _mint_service._KEEPALIVE_ROTATE_HEADERS
+_KEEPALIVE_ROTATE_BODY = _mint_service._KEEPALIVE_ROTATE_BODY
+_KEEPALIVE_POKE_TIMEOUT = _mint_service._KEEPALIVE_POKE_TIMEOUT
+_ROTATE_POST_KWARGS = _mint_service._ROTATE_POST_KWARGS
+_rotate_post = _mint_service._rotate_post
+_rotate_post_sync = _mint_service._rotate_post_sync
 
 
 # --- Keepalive constants -----------------------------------------------------
@@ -37,7 +55,7 @@ logger = logging.getLogger("notebooklm.auth")
 # partners of __Secure-1PSID / __Secure-3PSID. Their server-side validity window
 # is short (minutes-to-hours scale) and Google only emits a rotated value when
 # the client asks the identity surface to rotate. Pure RPC traffic against
-# notebooklm.google.com never triggers rotation, so a long-lived storage_state
+# the app host never triggers rotation, so a long-lived storage_state
 # silently stales out and every subsequent call fails with the
 # "Authentication expired or invalid" redirect (see issue #312).
 #
@@ -48,17 +66,6 @@ logger = logging.getLogger("notebooklm.auth")
 # ``__Secure-1PSIDTS`` / ``__Secure-3PSIDTS`` for either session type. The
 # response body declares the next-rotation interval (`["identity.hfcr",600]` —
 # 10 minutes), which sets the floor for how often this is worth firing.
-KEEPALIVE_ROTATE_URL = "https://accounts.google.com/RotateCookies"
-_KEEPALIVE_ROTATE_HEADERS = {
-    "Content-Type": "application/json",
-    "Origin": "https://accounts.google.com",
-}
-# Observed unbound RotateCookies request body — a placeholder pair Chrome sends
-# when there is no DBSC binding token to attest. Validated across Gemini-API and
-# the in-house experiments referenced in #345; kept in one place so it can be
-# changed if Google ever changes the contract.
-_KEEPALIVE_ROTATE_BODY = '[000,"-0000000000000000000"]'
-_KEEPALIVE_POKE_TIMEOUT = 15.0
 # Skip the poke if storage_state.json was rewritten within this window — protects
 # accounts.google.com from rapid CLI loops (e.g. 10 sequential `notebooklm`
 # invocations) that would each fire their own rotation. Google's own declared
@@ -73,6 +80,17 @@ _KEEPALIVE_PRECISION_TOLERANCE = 2.0
 # Env-var name lives in ``notebooklm._auth.paths``; aliased here so the
 # keepalive bodies can reference it without an extra module hop.
 NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV = _auth_paths.NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV
+
+
+def _rotation_http_client(jar: httpx.Cookies) -> httpx.Client:
+    """Ephemeral sync client for a one-shot rotation against a prepared jar.
+
+    ``httpx.Client(cookies=jar)`` copies the source jar into a private client
+    jar; the rotated ``Set-Cookie`` values land in ``client.cookies``, never in
+    ``jar`` — callers read the client's jar after the POST.
+    """
+    return httpx.Client(cookies=jar, follow_redirects=True, timeout=_KEEPALIVE_POKE_TIMEOUT)
+
 
 # In-process state for rotation throttling, keyed per-profile and per-loop.
 #
@@ -103,27 +121,83 @@ NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV = _auth_paths.NOTEBOOKLM_DISABLE_KEEPALIVE
 #      and both fire the POST.
 # It is held briefly, never across an ``await``, so it cannot deadlock against
 # any asyncio primitive.
-_POKE_STATE_LOCK = threading.Lock()
-_POKE_LOCKS_BY_LOOP: weakref.WeakKeyDictionary[Any, dict[Path | None, asyncio.Lock]] = (
-    weakref.WeakKeyDictionary()
-)
-# Monotonic timestamp of the last in-process poke *attempt* (success or
-# failure), keyed by storage_path. Stamped under ``_POKE_STATE_LOCK`` inside
-# ``_try_claim_rotation`` so the check-and-set is atomic across event loops
-# and across direct ``_rotate_cookies`` callers. Failure-stampede protection
-# comes for free: even a POST that times out has already claimed the slot,
-# so 10 fanned-out callers don't each wait 15 s on a hung server.
-_LAST_POKE_ATTEMPT_MONOTONIC: dict[Path | None, float] = {}
+class RotationState:
+    """Process owner for keepalive serialization and rate-limit state."""
+
+    _process_default_owner: ClassVar[RotationState]
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._locks_by_loop: weakref.WeakKeyDictionary[
+            Any, weakref.WeakValueDictionary[Path | None, asyncio.Lock]
+        ] = weakref.WeakKeyDictionary()
+        self._last_attempt_monotonic: dict[Path | None, float] = {}
+
+    @classmethod
+    def process_default(cls) -> RotationState:
+        return cls._process_default_owner
+
+    def poke_lock(self, storage_path: Path | None) -> asyncio.Lock:
+        key = canonical_storage_key(storage_path)
+        loop = asyncio.get_running_loop()
+        with self._lock:
+            per_loop = self._locks_by_loop.get(loop)
+            if per_loop is None:
+                per_loop = weakref.WeakValueDictionary()
+                self._locks_by_loop[loop] = per_loop
+            lock = per_loop.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                per_loop[key] = lock
+            return lock
+
+    def try_claim(self, storage_path: Path | None) -> bool:
+        key = canonical_storage_key(storage_path)
+        with self._lock:
+            last = self._last_attempt_monotonic.get(key, 0.0)
+            now = time.monotonic()
+            if last > 0 and (now - last) < _KEEPALIVE_RATE_LIMIT_SECONDS:
+                return False
+            self._last_attempt_monotonic[key] = now
+            return True
+
+    def _reset_for_tests(self) -> None:
+        with self._lock:
+            if any(
+                lock.locked() for locks in self._locks_by_loop.values() for lock in locks.values()
+            ):
+                raise RuntimeError("cannot reset rotation state while a poke lock is held")
+            self._locks_by_loop.clear()
+            self._last_attempt_monotonic.clear()
+
+
+RotationState._process_default_owner = RotationState()
+
+# Historical raw state names are non-owning identity views. Production reaches
+# the same state only through ``RotationState`` methods.
+_POKE_STATE_LOCK = RotationState.process_default()._lock
+_POKE_LOCKS_BY_LOOP = RotationState.process_default()._locks_by_loop
+_LAST_POKE_ATTEMPT_MONOTONIC = RotationState.process_default()._last_attempt_monotonic
 
 # Rotation sentinel path lives in ``notebooklm._auth.paths``; aliased here for
 # white-box callers that reach ``notebooklm.auth._rotation_lock_path``.
 _rotation_lock_path = _auth_paths._rotation_lock_path
+# Canonicalization helper shared with the refresh flock derivation ([refresh-5]):
+# the poke lock registry and the rotation throttle map key on the CANONICAL
+# storage path so relative / symlinked / ``~`` representations of one file
+# collapse to a single dedupe slot.
+canonical_storage_key = _auth_paths.canonical_storage_key
 
-# Cross-process file-lock primitives live in ``_auth.storage``. Aliased into
-# this module's namespace so the keepalive bodies resolve them locally; tests
-# that need to substitute the lock primitive should patch
-# ``notebooklm._auth.keepalive._file_lock`` directly.
-_file_lock = _auth_storage._file_lock
+# Keepalive retains its v0.x late-bound string-valued wrapper while sharing the
+# process-default manager with storage. Tests substitute this local seam.
+_STORAGE_LOCKS = StorageLockManager.process_default()
+
+
+@contextlib.contextmanager
+def _file_lock(lock_path: Path, *, blocking: bool, log_prefix: str) -> Iterator[str]:
+    request = LockRequest(path=lock_path, blocking=blocking, operation=log_prefix)
+    with _STORAGE_LOCKS.acquire(request) as state:
+        yield state.value
 
 
 def _get_poke_lock(storage_path: Path | None) -> asyncio.Lock:
@@ -133,17 +207,7 @@ def _get_poke_lock(storage_path: Path | None) -> asyncio.Lock:
     to the current loop. The dict mutation runs under the sync state lock so
     concurrent threads with their own loops don't tear the registry.
     """
-    loop = asyncio.get_running_loop()
-    with _POKE_STATE_LOCK:
-        per_loop = _POKE_LOCKS_BY_LOOP.get(loop)
-        if per_loop is None:
-            per_loop = {}
-            _POKE_LOCKS_BY_LOOP[loop] = per_loop
-        lock = per_loop.get(storage_path)
-        if lock is None:
-            lock = asyncio.Lock()
-            per_loop[storage_path] = lock
-        return lock
+    return RotationState.process_default().poke_lock(storage_path)
 
 
 def _try_claim_rotation(storage_path: Path | None) -> bool:
@@ -156,13 +220,12 @@ def _try_claim_rotation(storage_path: Path | None) -> bool:
     ``_rotate_cookies`` callers (layer-2 keepalive loops, etc.) — neither
     of which holds the per-loop async lock used by layer-1 ``_poke_session``.
     """
-    with _POKE_STATE_LOCK:
-        last = _LAST_POKE_ATTEMPT_MONOTONIC.get(storage_path, 0.0)
-        now = time.monotonic()
-        if last > 0 and (now - last) < _KEEPALIVE_RATE_LIMIT_SECONDS:
-            return False
-        _LAST_POKE_ATTEMPT_MONOTONIC[storage_path] = now
-        return True
+    return RotationState.process_default().try_claim(storage_path)
+
+
+def _reset_poke_state_for_tests() -> None:
+    """Reset process rotation state after proving every async lock quiescent."""
+    RotationState.process_default()._reset_for_tests()
 
 
 @contextlib.contextmanager
@@ -181,6 +244,40 @@ def _file_lock_try_exclusive(lock_path: Path) -> Iterator[bool]:
         # "held" → True (proceed, we own it); "unavailable" → True (fail open);
         # "contended" → False (someone else is rotating, skip).
         yield state != "contended"
+
+
+async def _wait_for_refresh_holder(lock_path: Path) -> bool:
+    """Bounded async wait for another PROCESS's refresh flock to release.
+
+    The refresh-cmd flock is held by the winning process across its
+    ``_run_refresh_cmd`` subprocess. A loser that fails the non-blocking acquire
+    must not reload immediately: the winner has not yet written the fresh
+    cookies, so an immediate reload re-reads the STALE file and the loser fails
+    even though a refresh is moments away. Poll the flock with jittered async
+    backoff (``asyncio.sleep`` keeps the event loop live) until it frees —
+    meaning the winner finished writing — then let the caller reload.
+
+    Reuses the shared bounded-acquire tuning (lock-manager deadline/initial/max
+    delay). Returns ``True`` when the holder released (or the lock infra is
+    unworkable → fail open) within the deadline, ``False`` on timeout (the caller
+    falls back to a best-effort stale reload). No subprocess runs, no epoch bump.
+    """
+    deadline = time.monotonic() + _LOCK_ACQUIRE_DEADLINE_SECONDS
+    delay = _LOCK_ACQUIRE_INITIAL_DELAY_SECONDS
+    while True:
+        with _file_lock_try_exclusive(lock_path) as acquired:
+            if acquired:
+                # Holder released (or the lock is unworkable → fail open): the
+                # freshly-written file is now the best we can reload.
+                return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            logger.debug("refresh flock still held at the bounded deadline; reloading best-effort")
+            return False
+        # Jittered exponential backoff, async so the event loop is not frozen.
+        sleep_for = min(delay + random.uniform(0.0, delay), remaining)
+        await asyncio.sleep(sleep_for)
+        delay = min(delay * 2, _LOCK_ACQUIRE_MAX_DELAY_SECONDS)
 
 
 def _is_recently_rotated(storage_path: Path | None) -> bool:
@@ -208,7 +305,7 @@ async def _poke_session(client: httpx.AsyncClient, storage_path: Path | None = N
     """Best-effort POST to ``accounts.google.com/RotateCookies`` to rotate SIDTS.
 
     Failures are logged at DEBUG and swallowed: this is purely a freshness
-    optimisation. The caller's request to notebooklm.google.com is the
+    optimisation. The caller's request to the app host is the
     authoritative health check.
 
     Three layered guards keep the POST from stampeding ``accounts.google.com``:
@@ -336,20 +433,6 @@ async def _rotate_cookies(client: httpx.AsyncClient, storage_path: Path | None =
         )
         return
     try:
-        # ``follow_redirects=True`` is defensive: empirically RotateCookies
-        # answers 200 directly with the rotated Set-Cookie, but if Google ever
-        # routes a 30x through an identity hop we still pick up cookies from
-        # the terminal response.
-        response = await client.post(
-            KEEPALIVE_ROTATE_URL,
-            headers=_KEEPALIVE_ROTATE_HEADERS,
-            content=_KEEPALIVE_ROTATE_BODY,
-            follow_redirects=True,
-            timeout=_KEEPALIVE_POKE_TIMEOUT,
-        )
-        # httpx does not auto-raise on 4xx/5xx; without this, a 429 or 5xx from
-        # Google would log nothing and the caller would proceed assuming the
-        # rotation happened.
-        response.raise_for_status()
+        await _rotate_post(client)
     except httpx.HTTPError as exc:
         logger.debug("Keepalive RotateCookies POST failed (non-fatal): %s", exc)

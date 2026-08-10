@@ -25,12 +25,16 @@ jobs:
     steps:
     - uses: actions/checkout@v7
       with:
+        fetch-depth: 0
         persist-credentials: false
 
     - name: Set up Python 3.12
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
+
+    - name: Install package for API inspection
+      run: python -m pip install --disable-pip-version-check --editable .
 
     - name: Validate tag matches version
       run: |
@@ -41,6 +45,34 @@ jobs:
           exit 1
         fi
         echo "Version validated: $TOML_VERSION"
+
+    - name: Resolve previous stable API baseline
+      id: baseline
+      run: |
+        set -euo pipefail
+        current_tag="${GITHUB_REF_NAME}"
+        current_sha=$(git rev-list -n 1 "$current_tag")
+        previous_tag=""
+        while IFS= read -r tag; do
+          if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+            [ "$(git rev-list -n 1 "$tag")" != "$current_sha" ]; then
+            previous_tag="$tag"
+            break
+          fi
+        done < <(git tag --sort=-version:refname --merged "$current_sha")
+        if [ -z "$previous_tag" ]; then
+          echo "No previous stable release tag found before $current_tag." >&2
+          echo "Fetch complete tag history or create a prior stable tag, then rerun the release." >&2
+          exit 1
+        fi
+        echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+        echo "Using previous stable API baseline: $previous_tag"
+
+    - name: Audit public API compatibility before artifact publication
+      run: |
+        python scripts/audit_public_api_compat.py \
+          --baseline-ref "${{ steps.baseline.outputs.previous_tag }}" \
+          --check-stale
 
     - name: Install build tools
       run: |
@@ -114,9 +146,129 @@ jobs:
         path: dist/
 
     - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # @ v1.14.0
+      uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # @ v1.14.2
       with:
         # PEP 740 attestations: pypa/gh-action-pypi-publish generates an
         # in-toto attestation for the uploaded artifacts and publishes it
         # via PyPI's Trusted Publishing flow (OIDC, no API token).
         attestations: true
+
+  prune-api-compat:
+    name: Open post-tag API allowlist prune PR
+    needs: publish
+    runs-on: ubuntu-latest
+    # This job uses its repository-write permission only for the generated
+    # automation branch; the script never pushes main directly.
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ github.ref }}
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+
+    - name: Install package for API inspection
+      run: python -m pip install --disable-pip-version-check --editable .
+
+    - name: Resolve previous stable API baseline
+      id: baseline
+      run: |
+        set -euo pipefail
+        current_tag="${GITHUB_REF_NAME}"
+        current_sha=$(git rev-list -n 1 "$current_tag")
+        previous_tag=""
+        while IFS= read -r tag; do
+          if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+            [ "$(git rev-list -n 1 "$tag")" != "$current_sha" ]; then
+            previous_tag="$tag"
+            break
+          fi
+        done < <(git tag --sort=-version:refname --merged "$current_sha")
+        if [ -z "$previous_tag" ]; then
+          echo "No previous stable release tag found before $current_tag." >&2
+          echo "Fetch complete tag history or create a prior stable tag, then rerun the release." >&2
+          exit 1
+        fi
+        echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+        if [[ "$current_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "baseline_ref=$current_tag" >> "$GITHUB_OUTPUT"
+        else
+          echo "baseline_ref=$previous_tag" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Prune stale entries from immutable release tag
+      run: |
+        python scripts/audit_public_api_compat.py \
+          --baseline-ref "${{ steps.baseline.outputs.baseline_ref }}" \
+          --prune
+
+    - name: Create or safely reuse automation branch and PR
+      env:
+        GH_TOKEN: ${{ github.token }}
+        AUTOMATION_BRANCH: automation/api-compat-prune-${{ github.ref_name }}
+      run: |
+        set -euo pipefail
+        if git diff --quiet -- scripts/api-compat-allowlist.json; then
+          echo "No stale API-compat entries found; no prune PR is needed."
+          exit 0
+        fi
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add scripts/api-compat-allowlist.json
+        git commit -m "chore(api): prune stale compatibility allowances"
+        generated_tree=$(git rev-parse HEAD^{tree})
+
+        existing_commit=$(git ls-remote --quiet origin "refs/heads/$AUTOMATION_BRANCH" | awk 'NR == 1 {print $1}')
+        if [ -n "$existing_commit" ]; then
+          git fetch --no-tags origin "refs/heads/$AUTOMATION_BRANCH:refs/remotes/origin/$AUTOMATION_BRANCH"
+          existing_tree=$(git rev-parse "refs/remotes/origin/$AUTOMATION_BRANCH^{tree}")
+          if [ "$existing_tree" != "$generated_tree" ]; then
+            echo "Automation branch $AUTOMATION_BRANCH exists with a different tree." >&2
+            echo "Review or remove that human-modified branch, then rerun; no force-push was attempted." >&2
+            exit 1
+          fi
+          pr_count=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$AUTOMATION_BRANCH" --base main --state open --json number --jq 'length')
+          if [ "$pr_count" -eq 0 ]; then
+            echo "Automation branch $AUTOMATION_BRANCH already exists, but no open PR was found." >&2
+            echo "Open the matching PR or remove the stale automation branch, then rerun." >&2
+            exit 1
+          fi
+          echo "Reused identical automation branch and existing PR for $AUTOMATION_BRANCH."
+          exit 0
+        fi
+
+        gh auth setup-git
+        git branch "$AUTOMATION_BRANCH"
+        if ! git push origin "refs/heads/$AUTOMATION_BRANCH"; then
+          echo "Automation branch appeared during creation; verifying its contents."
+          git fetch --no-tags origin "refs/heads/$AUTOMATION_BRANCH:refs/remotes/origin/$AUTOMATION_BRANCH"
+          existing_tree=$(git rev-parse "refs/remotes/origin/$AUTOMATION_BRANCH^{tree}")
+          if [ "$existing_tree" != "$generated_tree" ]; then
+            echo "Automation branch $AUTOMATION_BRANCH exists with a different tree." >&2
+            echo "Review or remove that human-modified branch, then rerun; no force-push was attempted." >&2
+            exit 1
+          fi
+          pr_count=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$AUTOMATION_BRANCH" --base main --state open --json number --jq 'length')
+          if [ "$pr_count" -eq 0 ]; then
+            echo "Automation branch $AUTOMATION_BRANCH already exists, but no open PR was found." >&2
+            echo "Open the matching PR or remove the stale automation branch, then rerun." >&2
+            exit 1
+          fi
+          echo "Reused identical automation branch and existing PR for $AUTOMATION_BRANCH."
+          exit 0
+        fi
+        gh pr create \
+          --repo "$GITHUB_REPOSITORY" \
+          --head "$AUTOMATION_BRANCH" \
+          --base main \
+          --title "chore(api): prune stale compatibility allowances for $GITHUB_REF_NAME" \
+          --body "Automated post-tag cleanup for $GITHUB_REF_NAME. This PR removes only allowlist entries that are stale against the immutable release tag; review and merge it before the next release."

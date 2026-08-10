@@ -113,6 +113,18 @@ _RECOVERABLE_BROWSER_COOKIES = [
         "secure": True,
         "http_only": True,
     },
+    # LSID completes the secondary binding (#1977). Without it this set has no
+    # valid binding, so ``missing_cookies_hint`` takes the "sign in again" branch
+    # instead of the RotateCookies-recovery one these tests assert on. PSIDTS
+    # recovery itself still fires either way — that gate is deliberately weaker.
+    {
+        "domain": "accounts.google.com",
+        "name": "LSID",
+        "value": "browser_lsid",
+        "path": "/",
+        "secure": True,
+        "http_only": True,
+    },
 ]
 
 

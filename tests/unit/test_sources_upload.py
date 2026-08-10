@@ -867,7 +867,6 @@ class TestUploadFileStreaming:
 
             await sources_api._cancel_upload_session(
                 "https://notebooklm.google.com/upload/_/?upload_id=session",
-                "https://notebooklm.google.com",
                 auth_route,
             )
 

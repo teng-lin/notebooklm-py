@@ -123,7 +123,7 @@ class TestChatTimeoutRouting:
             )
         )
         chat = ChatAPI(
-            rpc=SimpleNamespace(),
+            rpc=SimpleNamespace(rpc_call=AsyncMock(return_value=[[]])),
             transport=transport,
             reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
             loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
@@ -488,6 +488,10 @@ class TestChatBlOverride:
         ``DEFAULT_BL`` from the SUT and asserting equality would be a
         tautology — any wrong-value edit to ``_env.DEFAULT_BL`` would still
         pass. The literal pin catches that.
+
+        Updating it is therefore part of bumping the constant, deliberately.
+        Last re-captured live from the app shell on 2026-08-04 (#2073); the
+        nightly canary's build-label lane reports when it falls behind again.
         """
         monkeypatch.delenv("NOTEBOOKLM_BL", raising=False)
 
@@ -512,7 +516,7 @@ class TestChatBlOverride:
         )
         assert (
             _extract_query_param(str(request.url), "bl")
-            == "boq_labs-tailwind-frontend_20260301.03_p0"
+            == "boq_labs-tailwind-frontend_20260802.02_p0"
         )
 
 

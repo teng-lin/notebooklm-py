@@ -27,6 +27,15 @@
       "suggestions",
       "wait"
     ],
+    "collection": [
+      "add",
+      "create",
+      "delete",
+      "list",
+      "notebooks",
+      "remove",
+      "rename"
+    ],
     "download": [
       "audio",
       "cinematic-video",
@@ -1204,7 +1213,7 @@
           "default": [],
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Opt in to persisting sibling-product cookies. Same syntax as 'notebooklm login --include-domains': youtube, docs, myaccount, mail, all. By default, only required Google auth/Drive/NotebookLM cookie domains are kept.",
+          "help": "Explicitly request known sibling-product hosts. Trusted Google-root subdomains returned by the browser are retained for compatibility. Syntax: 'notebooklm login --include-domains': youtube, docs, myaccount, mail, all. Distinct unrequested roots are discarded by default.",
           "is_flag": false,
           "kind": "option",
           "multiple": true,
@@ -1459,6 +1468,24 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
+          "help": "Permit layer-3 browser recovery when stored cookies are fully expired. Uses the persisted browser profile (or NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL). Does not launch or attach to a browser unless ordinary refresh fails.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "allow_headless",
+          "opts": [
+            "--allow-headless"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
           "help": "Output as JSON",
           "is_flag": true,
           "kind": "option",
@@ -1499,6 +1526,288 @@
         }
       ],
       "short_help": "Clear current notebook context."
+    },
+    "collection": {
+      "class": "Group",
+      "commands": [
+        "add",
+        "create",
+        "delete",
+        "list",
+        "notebooks",
+        "remove",
+        "rename"
+      ],
+      "params": [],
+      "short_help": "Collection management commands..."
+    },
+    "collection add": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "collection_ref",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "kind": "argument",
+          "name": "notebook_refs",
+          "nargs": -1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Add notebook(s) to a collection (append;..."
+    },
+    "collection create": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "name",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Create an empty, named collection."
+    },
+    "collection delete": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "collection_refs",
+          "nargs": -1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Skip confirmation",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "yes",
+          "opts": [
+            "--yes",
+            "-y"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Delete one or more collections (the..."
+    },
+    "collection list": {
+      "class": "Command",
+      "params": [
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "List all collections in the account (with..."
+    },
+    "collection notebooks": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "collection_ref",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Expand a collection to its member..."
+    },
+    "collection remove": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "collection_ref",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "kind": "argument",
+          "name": "notebook_refs",
+          "nargs": -1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Un-assign notebook(s) from a collection..."
+    },
+    "collection rename": {
+      "class": "Command",
+      "params": [
+        {
+          "kind": "argument",
+          "name": "collection_ref",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "kind": "argument",
+          "name": "new_name",
+          "nargs": 1,
+          "required": true,
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Rename a collection (preserves its emoji)."
     },
     "completion": {
       "class": "Command",
@@ -7449,7 +7758,7 @@
           "default": [],
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Opt in to extracting sibling-product cookies (default: required Google auth/Drive cookies only). Pass labels comma-separated or repeat the flag: --include-domains=youtube,docs OR --include-domains=youtube --include-domains=docs. Supported labels: youtube, docs, myaccount, mail, all.",
+          "help": "Explicitly request known sibling hosts. Trusted Google-root subdomains returned by the browser are retained for compatibility. Pass labels or repeat the flag: --include-domains=youtube,docs OR --include-domains=youtube --include-domains=docs. Supported labels: youtube, docs, myaccount, mail, all.",
           "is_flag": false,
           "kind": "option",
           "multiple": true,
@@ -7485,7 +7794,7 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Re-mint web cookies from the stored master token (no prompt). For recovery / cron.",
+          "help": "Legacy forced re-mint; prefer 'notebooklm auth refresh'.",
           "is_flag": true,
           "kind": "option",
           "multiple": false,
@@ -8042,6 +8351,7 @@
         "ask",
         "auth",
         "clear",
+        "collection",
         "completion",
         "configure",
         "create",
@@ -11119,6 +11429,7 @@
     "ask",
     "auth",
     "clear",
+    "collection",
     "completion",
     "configure",
     "create",
@@ -11180,6 +11491,7 @@
     "chat",
     "note",
     "label",
+    "collection",
     "share",
     "research"
   ]

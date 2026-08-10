@@ -14,11 +14,11 @@ interactions:
         __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: GET
-    uri: https://notebooklm.google.com/
+    uri: https://notebook.google.com/
   response:
     body:
       string: "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><base href=\"https://notebooklm.google.com/\"><title>Google\

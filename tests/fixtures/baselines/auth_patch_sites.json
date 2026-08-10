@@ -1,0 +1,575 @@
+{
+  "sites": [
+    {
+      "attribute": "_probe_authuser",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "account"
+    },
+    {
+      "attribute": "enumerate_accounts",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "account"
+    },
+    {
+      "attribute": "enumerate_accounts",
+      "count": 8,
+      "idiom": "patch.object",
+      "module": "account"
+    },
+    {
+      "attribute": "extract_email_from_html",
+      "count": 3,
+      "idiom": "patch.object",
+      "module": "account"
+    },
+    {
+      "attribute": "get_base_host",
+      "count": 1,
+      "idiom": "patch.object",
+      "module": "browser_capture"
+    },
+    {
+      "attribute": "time",
+      "count": 1,
+      "idiom": "patch.object",
+      "module": "browser_capture"
+    },
+    {
+      "attribute": "MINIMUM_REQUIRED_COOKIES",
+      "count": 3,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy"
+    },
+    {
+      "attribute": "_EXTRACTION_HINT",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy"
+    },
+    {
+      "attribute": "_SECONDARY_BINDING_WARNED",
+      "count": 4,
+      "idiom": "assignment",
+      "module": "cookie_policy"
+    },
+    {
+      "attribute": "_has_valid_secondary_binding",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy"
+    },
+    {
+      "attribute": "cookie_names_from_storage",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy"
+    },
+    {
+      "attribute": "sanitize_cookie_entry",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_semantics"
+    },
+    {
+      "attribute": "_build_httpx_cookies_from_storage_strict",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookies"
+    },
+    {
+      "attribute": "_cookie_from_normalized_entry",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookies"
+    },
+    {
+      "attribute": "_load_cookies_pure",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookies"
+    },
+    {
+      "attribute": "build_httpx_cookies_from_storage",
+      "count": 3,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookies"
+    },
+    {
+      "attribute": "build_httpx_cookies_from_storage",
+      "count": 4,
+      "idiom": "patch.object",
+      "module": "cookies"
+    },
+    {
+      "attribute": "_atomic_write_json_unchecked",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "credential_io"
+    },
+    {
+      "attribute": "_commit_json_unchecked",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "credential_io"
+    },
+    {
+      "attribute": "_get_drive_record",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "headless_reauth"
+    },
+    {
+      "attribute": "_playwright_installed",
+      "count": 16,
+      "idiom": "monkeypatch.setattr",
+      "module": "headless_reauth"
+    },
+    {
+      "attribute": "attempt_headless_reauth",
+      "count": 9,
+      "idiom": "monkeypatch.setattr",
+      "module": "headless_reauth"
+    },
+    {
+      "attribute": "run_browser_capture",
+      "count": 17,
+      "idiom": "monkeypatch.setattr",
+      "module": "headless_reauth"
+    },
+    {
+      "attribute": "run_cdp_capture",
+      "count": 7,
+      "idiom": "monkeypatch.setattr",
+      "module": "headless_reauth"
+    },
+    {
+      "attribute": "_KEEPALIVE_RATE_LIMIT_SECONDS",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive"
+    },
+    {
+      "attribute": "_LOCK_ACQUIRE_DEADLINE_SECONDS",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive"
+    },
+    {
+      "attribute": "_STORAGE_LOCKS",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive"
+    },
+    {
+      "attribute": "_file_lock_try_exclusive",
+      "count": 3,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive"
+    },
+    {
+      "attribute": "_rotate_cookies",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive"
+    },
+    {
+      "attribute": "MasterTokenFile",
+      "count": 4,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token"
+    },
+    {
+      "attribute": "_bootstrapper",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token"
+    },
+    {
+      "attribute": "_verify_by_listing_notebooks",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token"
+    },
+    {
+      "attribute": "generate_android_id",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token"
+    },
+    {
+      "attribute": "_commit_master_token_json",
+      "count": 5,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token_file"
+    },
+    {
+      "attribute": "_ensure_secure_parent_dir",
+      "count": 3,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token_file"
+    },
+    {
+      "attribute": "_master_token_from_legacy_record",
+      "count": 3,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token_file"
+    },
+    {
+      "attribute": "_master_token_to_legacy_record",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token_file"
+    },
+    {
+      "attribute": "_storage_state_lock_path",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token_file"
+    },
+    {
+      "attribute": "FileLock",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_migration"
+    },
+    {
+      "attribute": "atomic_write_json",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_migration"
+    },
+    {
+      "attribute": "MasterTokenFile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store"
+    },
+    {
+      "attribute": "_STORAGE_LOCKS",
+      "count": 2,
+      "idiom": "assignment",
+      "module": "profile_store"
+    },
+    {
+      "attribute": "_STORAGE_LOCKS",
+      "count": 6,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store"
+    },
+    {
+      "attribute": "_commit_profile_json",
+      "count": 18,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store"
+    },
+    {
+      "attribute": "_ensure_secure_parent_dir",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store"
+    },
+    {
+      "attribute": "filter_storage_state_cookies_by_domain_policy",
+      "count": 7,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store"
+    },
+    {
+      "attribute": "_check_routable",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery"
+    },
+    {
+      "attribute": "_file_lock_try_exclusive",
+      "count": 3,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery"
+    },
+    {
+      "attribute": "_recover_psidts_inline",
+      "count": 4,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery"
+    },
+    {
+      "attribute": "_try_claim_rotation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery"
+    },
+    {
+      "attribute": "load_with_recovery",
+      "count": 3,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery"
+    },
+    {
+      "attribute": "recover_psidts_in_memory",
+      "count": 7,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery"
+    },
+    {
+      "attribute": "_try_headless_reauth_result",
+      "count": 7,
+      "idiom": "monkeypatch.setattr",
+      "module": "recovery"
+    },
+    {
+      "attribute": "_try_master_token_reauth_result",
+      "count": 6,
+      "idiom": "monkeypatch.setattr",
+      "module": "recovery"
+    },
+    {
+      "attribute": "coalesced_cold_recovery",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "recovery"
+    },
+    {
+      "attribute": "_coalesced_run_refresh_cmd",
+      "count": 12,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh"
+    },
+    {
+      "attribute": "_fetch_tokens_with_exact_baseline",
+      "count": 6,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh"
+    },
+    {
+      "attribute": "_fetch_tokens_with_jar",
+      "count": 17,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh"
+    },
+    {
+      "attribute": "_poke_session",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh"
+    },
+    {
+      "attribute": "_replace_cookie_jar",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh"
+    },
+    {
+      "attribute": "_run_refresh_cmd",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh"
+    },
+    {
+      "attribute": "build_httpx_cookies_from_storage",
+      "count": 11,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh"
+    },
+    {
+      "attribute": "get_storage_path",
+      "count": 8,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh"
+    },
+    {
+      "attribute": "snapshot_cookie_jar",
+      "count": 9,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh"
+    },
+    {
+      "attribute": "read_success_epoch",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "single_flight"
+    },
+    {
+      "attribute": "LegacyAccountMigrator",
+      "count": 3,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage"
+    },
+    {
+      "attribute": "MasterTokenFile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage"
+    },
+    {
+      "attribute": "ProfileStore",
+      "count": 9,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage"
+    },
+    {
+      "attribute": "_STORAGE_LOCKS",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage"
+    },
+    {
+      "attribute": "_cookie_is_http_only",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage"
+    },
+    {
+      "attribute": "get_account_email_for_storage",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage"
+    },
+    {
+      "attribute": "read_account_metadata",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage"
+    },
+    {
+      "attribute": "replace_from_remint",
+      "count": 1,
+      "idiom": "patch.object",
+      "module": "storage"
+    },
+    {
+      "attribute": "save_cookies_to_storage",
+      "count": 3,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage"
+    },
+    {
+      "attribute": "write_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage"
+    },
+    {
+      "attribute": "_LOCK_ACQUIRE_DEADLINE_SECONDS",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage_lock"
+    },
+    {
+      "attribute": "_load_stored_auth",
+      "count": 6,
+      "idiom": "monkeypatch.setattr",
+      "module": "tokens"
+    },
+    {
+      "attribute": "resolve_auth_json_env",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "tokens"
+    }
+  ],
+  "summary": {
+    "TOTAL": {
+      "private": 154,
+      "public": 138,
+      "total": 292
+    },
+    "account": {
+      "private": 2,
+      "public": 12,
+      "total": 14
+    },
+    "browser_capture": {
+      "private": 0,
+      "public": 2,
+      "total": 2
+    },
+    "cookie_policy": {
+      "private": 6,
+      "public": 4,
+      "total": 10
+    },
+    "cookie_semantics": {
+      "private": 0,
+      "public": 1,
+      "total": 1
+    },
+    "cookies": {
+      "private": 3,
+      "public": 7,
+      "total": 10
+    },
+    "credential_io": {
+      "private": 3,
+      "public": 0,
+      "total": 3
+    },
+    "headless_reauth": {
+      "private": 17,
+      "public": 33,
+      "total": 50
+    },
+    "keepalive": {
+      "private": 8,
+      "public": 0,
+      "total": 8
+    },
+    "master_token": {
+      "private": 3,
+      "public": 5,
+      "total": 8
+    },
+    "master_token_file": {
+      "private": 15,
+      "public": 0,
+      "total": 15
+    },
+    "profile_migration": {
+      "private": 0,
+      "public": 4,
+      "total": 4
+    },
+    "profile_store": {
+      "private": 27,
+      "public": 8,
+      "total": 35
+    },
+    "psidts_recovery": {
+      "private": 9,
+      "public": 10,
+      "total": 19
+    },
+    "recovery": {
+      "private": 13,
+      "public": 2,
+      "total": 15
+    },
+    "refresh": {
+      "private": 39,
+      "public": 28,
+      "total": 67
+    },
+    "single_flight": {
+      "private": 0,
+      "public": 1,
+      "total": 1
+    },
+    "storage": {
+      "private": 2,
+      "public": 20,
+      "total": 22
+    },
+    "storage_lock": {
+      "private": 1,
+      "public": 0,
+      "total": 1
+    },
+    "tokens": {
+      "private": 6,
+      "public": 1,
+      "total": 7
+    }
+  },
+  "version": 1
+}

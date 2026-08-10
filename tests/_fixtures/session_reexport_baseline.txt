@@ -1,4 +1,4 @@
-_enumerate_browser_accounts
+_inspect_browser_accounts
 _login_all_accounts_from_browser
 _login_browser_cookies_single
 _parse_include_domains

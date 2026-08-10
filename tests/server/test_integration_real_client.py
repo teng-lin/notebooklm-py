@@ -133,14 +133,6 @@ class TestSources:
         assert body["notebook_id"] == _NB
         assert isinstance(body["sources"], list)
 
-    @notebooklm_vcr.use_cassette("sources_add_url.yaml", allow_playback_repeats=True)
-    def test_add_url(self, real_authed_client: TestClient) -> None:
-        resp = real_authed_client.post(
-            f"/v1/notebooks/{_NB}/sources/url", json={"url": "https://example.com/x"}
-        )
-        assert resp.status_code == 201
-        assert isinstance(resp.json().get("id"), str)
-
     @notebooklm_vcr.use_cassette("sources_add_text.yaml", allow_playback_repeats=True)
     def test_add_text(self, real_authed_client: TestClient) -> None:
         resp = real_authed_client.post(
@@ -154,6 +146,23 @@ class TestSources:
         resp = real_authed_client.delete(f"/v1/notebooks/{_NB}/sources/{_SRC}")
         assert resp.status_code == 204
         assert resp.content == b""
+
+
+class TestRestSeamMatrix:
+    """One representative REST adapter → client/service composition path."""
+
+    @notebooklm_vcr.use_cassette("sources_add_url.yaml", allow_playback_repeats=True)
+    def test_url_add_crosses_rest_to_client_boundary(self, real_authed_client: TestClient) -> None:
+        """Drive the route through the real client and project its decoded source."""
+        resp = real_authed_client.post(
+            f"/v1/notebooks/{_NB}/sources/url", json={"url": "https://example.com/x"}
+        )
+
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["id"] == "20d66b0b-787f-480e-a9c1-6823f7a12d8e"
+        assert body["kind"] == "web_page"
+        assert body["status_label"] == "ready"
 
 
 class TestChatAndArtifacts:

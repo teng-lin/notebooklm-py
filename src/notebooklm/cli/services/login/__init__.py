@@ -51,7 +51,11 @@ from ...runtime import run_async
 
 # Internal implementations — re-exported for the session-side patch
 # surface (baseline fixture) and for `profile_cmd` helper access.
-from .browser_accounts import _enumerate_browser_accounts, _read_browser_cookies
+from .browser_accounts import (
+    _enumerate_browser_accounts,
+    _inspect_browser_accounts,
+    _read_browser_cookies,
+)
 from .cookie_domains import (
     _INCLUDE_DOMAINS_ALL,
     _build_google_cookie_domains,
@@ -98,6 +102,7 @@ __all__ = [
     "_enumerate_one_jar",
     # Browser-account discovery + reading.
     "_enumerate_browser_accounts",
+    "_inspect_browser_accounts",
     "_read_browser_cookies",
     # Profile name allocation.
     "_PROFILE_NAME_RE",

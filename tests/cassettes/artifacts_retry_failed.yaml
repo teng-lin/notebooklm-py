@@ -17,11 +17,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=Rytqqe&source-path=%2Fnotebook%2Fbb00c9e3-656c-4fd2-b890-2b71e1cf3814&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=Rytqqe&source-path=%2Fnotebook%2Fbb00c9e3-656c-4fd2-b890-2b71e1cf3814&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''

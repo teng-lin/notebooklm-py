@@ -5,7 +5,7 @@ interactions:
       Content-Type:
       - application/x-www-form-urlencoded;charset=UTF-8
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=FLmJqe&source-path=%2Fnotebook%2Fbb00c9e3-656c-4fd2-b890-2b71e1cf3814&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=FLmJqe&source-path=%2Fnotebook%2Fbb00c9e3-656c-4fd2-b890-2b71e1cf3814&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ")]}'\n42\n[[\"wrb.fr\", \"FLmJqe\", \"null\", null, null]]\n"

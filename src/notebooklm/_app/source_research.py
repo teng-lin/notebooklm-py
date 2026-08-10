@@ -116,6 +116,12 @@ class SourceAddResearchResult:
     report: str = ""
     status: str | None = None
     import_result: ResearchImportOutcome | None = None
+    # Why a non-success run ended, plus its remediation (issue #1964) — so
+    # ``source add-research`` can explain an empty Drive search instead of
+    # printing a bare "Research failed". ``None`` when the poll carried no
+    # termination reason.
+    reason_message: str | None = None
+    hint: str | None = None
 
 
 def validate_add_research_flags(*, import_all: bool, cited_only: bool, no_wait: bool) -> None:
@@ -273,6 +279,8 @@ async def execute_source_add_research(
             poll_task_id=task_id,
             sources=sources,
             report=report,
+            reason_message=status.reason_message,
+            hint=status.hint,
         )
     return SourceAddResearchResult(
         outcome="unknown_status",
@@ -282,6 +290,8 @@ async def execute_source_add_research(
         sources=sources,
         report=report,
         status=status_val,
+        reason_message=status.reason_message,
+        hint=status.hint,
     )
 
 

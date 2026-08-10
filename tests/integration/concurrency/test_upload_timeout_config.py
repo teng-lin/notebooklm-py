@@ -176,12 +176,12 @@ async def test_default_upload_timeout_preserves_back_compat_finalize(
 
 async def test_from_storage_accepts_upload_timeout(monkeypatch, auth_tokens) -> None:
     """``from_storage`` honors the ``upload_timeout`` kwarg and threads it to SourcesAPI."""
-    from notebooklm import auth as auth_module
+    from notebooklm._auth import tokens as _auth_tokens
 
-    async def _fake_from_storage(*args: object, **kwargs: object):
-        return auth_tokens
+    async def _fake_load_stored_auth(*args: object, **kwargs: object):
+        return _auth_tokens.InlineLoadedAuth(auth_tokens)
 
-    monkeypatch.setattr(auth_module.AuthTokens, "from_storage", _fake_from_storage)
+    monkeypatch.setattr(_auth_tokens, "_load_stored_auth", _fake_load_stored_auth)
 
     custom = httpx.Timeout(7.0, read=14.0)
     # Context not entered — only inspecting constructor-level wiring.

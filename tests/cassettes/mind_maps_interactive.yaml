@@ -89,11 +89,11 @@ interactions:
       Cookie:
       - SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: GET
-    uri: https://notebooklm.google.com/?authuser=SCRUBBED_EMAIL%40example.com
+    uri: https://notebook.google.com/?authuser=SCRUBBED_EMAIL%40example.com
   response:
     body:
       string: "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><base href=\"https://notebooklm.google.com/\"><link
@@ -1933,11 +1933,11 @@ interactions:
       Cookie:
       - SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=cFji9&source-path=%2Fnotebook%2Ff7d1e2b6-2334-4016-b81d-aded7b3fa9b6&f.sid=SCRUBBED
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=cFji9&source-path=%2Fnotebook%2Ff7d1e2b6-2334-4016-b81d-aded7b3fa9b6&f.sid=SCRUBBED
   response:
     body:
       string: ')]}''
@@ -2016,11 +2016,11 @@ interactions:
       Cookie:
       - SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=gArtLc&source-path=%2Fnotebook%2Ff7d1e2b6-2334-4016-b81d-aded7b3fa9b6&f.sid=SCRUBBED
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=gArtLc&source-path=%2Fnotebook%2Ff7d1e2b6-2334-4016-b81d-aded7b3fa9b6&f.sid=SCRUBBED
   response:
     body:
       string: ')]}''
@@ -2116,11 +2116,11 @@ interactions:
       Cookie:
       - SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=cFji9&source-path=%2Fnotebook%2Ff7d1e2b6-2334-4016-b81d-aded7b3fa9b6&f.sid=SCRUBBED
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=cFji9&source-path=%2Fnotebook%2Ff7d1e2b6-2334-4016-b81d-aded7b3fa9b6&f.sid=SCRUBBED
   response:
     body:
       string: ')]}''
@@ -2199,11 +2199,11 @@ interactions:
       Cookie:
       - SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=v9rmvd&source-path=%2Fnotebook%2Ff7d1e2b6-2334-4016-b81d-aded7b3fa9b6&f.sid=SCRUBBED
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=v9rmvd&source-path=%2Fnotebook%2Ff7d1e2b6-2334-4016-b81d-aded7b3fa9b6&f.sid=SCRUBBED
   response:
     body:
       string: ')]}''

@@ -1,12 +1,10 @@
 """exactly-once warning dedupe under a single event loop.
 
-These tests pin the **single-event-loop** case of the documented "best-effort
-under threads, exactly-once on a single loop" contract for the two module-level
-warning flags re-exported on ``notebooklm.auth`` (canonical owners live on the
-``_auth`` seams since D1 PR-2 retired ``_AuthFacadeModule``):
+These tests pin the **single-event-loop** case of the warning-once contract for
+the two canonical owners:
 
 - ``_SECONDARY_BINDING_WARNED`` (canonical owner: ``_auth.cookie_policy``)
-- ``_FLOCK_UNAVAILABLE_WARNED`` (canonical owner: ``_auth.storage``)
+- the manager-lifecycle cookie warning claim (owner: ``_auth.storage_lock``)
 
 Both follow the same shape: a synchronous ``if not flag: flag = True; warn()``
 block with no ``await`` between the check and the set. The asyncio scheduler
@@ -40,7 +38,7 @@ _TIER1_ONLY_COOKIES = {"SID", "__Secure-1PSIDTS"}
 
 @pytest.fixture(autouse=True)
 def _reset_warning_flags() -> Iterator[None]:
-    """Reset both warning flags on their canonical seam owners around each test.
+    """Reset cookie policy and isolate the lock-manager warning lifecycle.
 
     ``conftest.py::_reset_poke_state`` already resets these flags for every
     test in the suite; this local fixture is kept for read-in-isolation
@@ -52,15 +50,18 @@ def _reset_warning_flags() -> Iterator[None]:
     owners directly.
     """
     from notebooklm._auth import cookie_policy as _cookie_policy
-    from notebooklm._auth import storage as _auth_storage
+    from notebooklm._auth import profile_store as _profile_store
+    from notebooklm._auth.storage_lock import StorageLockManager
 
     _cookie_policy._SECONDARY_BINDING_WARNED = False
-    _auth_storage._FLOCK_UNAVAILABLE_WARNED = False
+    isolated_locks = StorageLockManager()
+    original_locks = _profile_store._STORAGE_LOCKS
+    _profile_store._STORAGE_LOCKS = isolated_locks
     try:
         yield
     finally:
         _cookie_policy._SECONDARY_BINDING_WARNED = False
-        _auth_storage._FLOCK_UNAVAILABLE_WARNED = False
+        _profile_store._STORAGE_LOCKS = original_locks
 
 
 def test_secondary_binding_warns_exactly_once_under_asyncio_gather(
@@ -105,25 +106,24 @@ def test_flock_unavailable_warns_exactly_once_under_asyncio_gather(
     warning must fire exactly once on a single event loop."""
 
     @contextlib.contextmanager
-    def fake_file_lock(lock_path: Path, *, blocking: bool, log_prefix: str) -> Iterator[str]:
-        # Simulate the "lock infrastructure failed" branch — the inner
-        # ``_file_lock`` would yield ``"unavailable"`` on NFS without flock
-        # support, fd exhaustion, etc. ``_file_lock_exclusive`` is the only
-        # caller that emits the dedupe warning, and only on this state.
-        yield "unavailable"
+    def fake_acquire(request) -> Iterator[object]:  # type: ignore[no-untyped-def]
+        # Simulate the manager's lock-infrastructure failure result.
+        from notebooklm._auth.storage_lock import LockState
 
-    import notebooklm._auth.storage as _auth_storage
+        yield LockState.UNAVAILABLE
 
-    monkeypatch.setattr(_auth_storage, "_file_lock", fake_file_lock)
+    import notebooklm._auth.profile_store as _profile_store
+
+    monkeypatch.setattr(_profile_store._STORAGE_LOCKS, "acquire", fake_acquire)
 
     lock_path = tmp_path / ".storage_state.json.lock"
 
     async def first_access() -> None:
-        # ``_file_lock_exclusive`` is a sync context manager; entering and
-        # exiting it inside a coroutine mirrors the realistic call shape
-        # (it's invoked from the cookie-save path).
-        with auth_module._file_lock_exclusive(lock_path):
-            pass
+        store = _profile_store.ProfileStore(lock_path.with_name("storage_state.json"))
+        store._under_blocking_cookie_lock(  # noqa: SLF001
+            operation="save_cookies_to_storage",
+            body=lambda: None,
+        )
 
     async def run_gather() -> None:
         await asyncio.gather(*(first_access() for _ in range(100)))
@@ -138,9 +138,7 @@ def test_flock_unavailable_warns_exactly_once_under_asyncio_gather(
         f"expected exactly one flock-unavailable warning, "
         f"got {len(flock_warnings)}: {[r.getMessage() for r in flock_warnings]}"
     )
-    # Warning flag now lives on the storage seam (_AuthFacadeModule retired
-    # in D1 PR-2). Read from the owner directly rather than the auth-module
-    # re-export captured at import time.
-    from notebooklm._auth import storage as _auth_storage
+    # Warning ownership follows the isolated manager lifecycle.
+    from notebooklm._auth import profile_store as _profile_store
 
-    assert _auth_storage._FLOCK_UNAVAILABLE_WARNED is True
+    assert _profile_store._STORAGE_LOCKS._cookie_warning_claimed is True

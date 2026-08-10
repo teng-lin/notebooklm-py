@@ -879,7 +879,7 @@ class TestStaleAccountMetadataCleanup:
                 "value": f"{name}-value",
                 "path": "/",
                 "secure": True,
-                "expires": 9999,
+                "expires": 4102444800,
                 "http_only": False,
             }
             for name in ("SID", "APISID", "SAPISID", "__Secure-1PSIDTS")

@@ -31,6 +31,8 @@ from ._research_task_parser import parse_research_task_models
 from ._row_adapters.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
 from ._runtime.contracts import RpcCaller
 from ._types.research import (
+    RESEARCH_SOURCE_TYPE_DRIVE,
+    RESEARCH_SOURCE_TYPE_WEB,
     ResearchSource,
     ResearchSourceInput,
     ResearchStart,
@@ -302,8 +304,11 @@ class ResearchAPI:
         if mode_lower == "deep" and source_lower == "drive":
             raise ValidationError("Deep Research only supports Web sources.")
 
-        # 1 = Web, 2 = Drive
-        source_type = 1 if source_lower == "web" else 2
+        # Same constants the read side decodes ``task_info[1][1]`` with, so the
+        # round trip has one definition of the tag rather than two (#1964).
+        source_type = (
+            RESEARCH_SOURCE_TYPE_WEB if source_lower == "web" else RESEARCH_SOURCE_TYPE_DRIVE
+        )
 
         # The whole research feature is Google's "DiscoverSources" pipeline:
         # fast -> DiscoverSourcesManifold, deep -> DiscoverSourcesAsync,

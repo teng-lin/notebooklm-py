@@ -17,7 +17,7 @@ import httpx
 from ._auth.account import format_authuser_value
 from ._auth_refresh_retry import RefreshBudget, refresh_and_count
 from ._deadline import RuntimeDeadline
-from ._env import get_default_language
+from ._env import get_base_url, get_default_language
 from ._idempotency import (
     IDEMPOTENCY_REGISTRY,
     resolve_effective_disable_internal_retries,
@@ -53,6 +53,29 @@ if TYPE_CHECKING:
     from ._runtime.transport import RuntimeTransport
 
 logger = logging.getLogger(__name__)
+
+
+def _error_host_suffix(request: httpx.Request | None) -> str:
+    """Return ``" on <host>"`` for an error message, or ``""`` if no host is known.
+
+    The host is taken from the request that actually failed rather than re-read
+    from the environment. ``NOTEBOOKLM_BASE_URL`` is resolved lazily on every
+    endpoint build, so in a long-running process a re-point while an RPC is in
+    flight would otherwise make the message name a host this failure never
+    touched -- and a re-point to an *invalid* value would raise ``ValueError``
+    out of the ``except`` block, masking the HTTP error entirely.
+
+    The configured base URL is only a fallback, for the paths where no request
+    object survived. It degrades to an unsuffixed message rather than raising:
+    an error mapper must never fail in place of the error it is reporting.
+    """
+    host = request.url.host if request is not None else ""
+    if not host:
+        try:
+            host = httpx.URL(get_base_url()).host
+        except (ValueError, httpx.InvalidURL):
+            return ""
+    return f" on {host}" if host else ""
 
 
 class DecodeResponse(Protocol):
@@ -267,7 +290,13 @@ class RpcExecutor:
         except TransportRateLimited as exc:
             elapsed = time.perf_counter() - start
             logger.error("RPC %s failed after %.3fs: HTTP 429", method.name, elapsed)
-            msg = f"API rate limit exceeded calling {method.name}"
+            # This branch -- not the 429 arm of ``raise_rpc_error_from_http_status``
+            # -- is what a real HTTP 429 reaches: the transport converts it to
+            # ``TransportRateLimited`` once the retry budget is exhausted, or
+            # immediately when retries are disabled. It carries the same host
+            # suffix so the two 429 paths stay indistinguishable to the user.
+            on_host = _error_host_suffix(exc.original.request)
+            msg = f"API rate limit exceeded calling {method.name}{on_host}"
             if exc.retry_after:
                 msg += f". Retry after {exc.retry_after} seconds"
             raise RateLimitError(
@@ -429,32 +458,45 @@ class RpcExecutor:
         exc: httpx.HTTPStatusError,
         method: RPCMethod,
     ) -> NoReturn:
-        """Map an HTTP-status failure onto the RPC error hierarchy."""
+        """Map an HTTP-status failure onto the RPC error hierarchy.
+
+        Every message names the **host** as well as the method -- including the
+        401/403 fallback, which is where a wrong-host session is just as likely
+        to land. Google serves the personal app from two hosts
+        (``notebooklm.google.com`` and, since the Gemini Notebook rebrand,
+        ``notebook.google.com`` -- see ADR-0028), and ``NOTEBOOKLM_BASE_URL``
+        selects between them. Without the host in the message, "talking to the
+        wrong host" and "this account cannot see that notebook" are the same 404
+        to a user, and the only recovery lever is one they cannot tell they need.
+        """
         status = exc.response.status_code
+        on_host = _error_host_suffix(exc.request)
 
         if status == 429:
             retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
-            msg = f"API rate limit exceeded calling {method.name}"
+            msg = f"API rate limit exceeded calling {method.name}{on_host}"
             if retry_after:
                 msg += f". Retry after {retry_after} seconds"
             raise RateLimitError(msg, method_id=method.value, retry_after=retry_after) from exc
 
         if 500 <= status < 600:
             raise ServerError(
-                f"Server error {status} calling {method.name}: {exc.response.reason_phrase}",
+                f"Server error {status} calling {method.name}{on_host}: "
+                f"{exc.response.reason_phrase}",
                 method_id=method.value,
                 status_code=status,
             ) from exc
 
         if 400 <= status < 500 and status not in (401, 403):
             raise ClientError(
-                f"Client error {status} calling {method.name}: {exc.response.reason_phrase}",
+                f"Client error {status} calling {method.name}{on_host}: "
+                f"{exc.response.reason_phrase}",
                 method_id=method.value,
                 status_code=status,
             ) from exc
 
         raise RPCError(
-            f"HTTP {status} calling {method.name}: {exc.response.reason_phrase}",
+            f"HTTP {status} calling {method.name}{on_host}: {exc.response.reason_phrase}",
             method_id=method.value,
         ) from exc
 

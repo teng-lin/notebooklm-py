@@ -445,9 +445,9 @@ class TestKeepalivePoke:
 
     @pytest.mark.asyncio
     async def test_poke_made_by_default(self, httpx_mock: HTTPXMock):
-        """Token fetch hits RotateCookies before notebooklm.google.com."""
+        """Token fetch hits RotateCookies before the app host."""
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=_NOTEBOOKLM_HOMEPAGE_HTML,
         )
 
@@ -459,13 +459,13 @@ class TestKeepalivePoke:
             f"expected exactly one RotateCookies request, got: {all_urls}"
         )
         # Order matters per the docstring: the RotateCookies poke must precede
-        # the notebooklm.google.com fetch so the rotation runs before the
+        # the app-host fetch so the rotation runs before the
         # cookie jar is consumed for the homepage GET. Without this assertion
         # a regression that flipped the order would still produce a single
         # poke request and silently pass.
         assert all_urls.index(KEEPALIVE_ROTATE_URL) < all_urls.index(
-            "https://notebooklm.google.com/"
-        ), f"poke must precede notebooklm homepage fetch; saw order {all_urls}"
+            "https://notebook.google.com/"
+        ), f"poke must precede the app-host homepage fetch; saw order {all_urls}"
         assert str(poke_requests[0].url) == KEEPALIVE_ROTATE_URL
         assert poke_requests[0].method == "POST"
 
@@ -473,7 +473,7 @@ class TestKeepalivePoke:
     async def test_poke_uses_jspb_body_and_origin(self, httpx_mock: HTTPXMock):
         """Body matches the Chrome jspb sentinel; Origin is the accounts surface."""
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=_NOTEBOOKLM_HOMEPAGE_HTML,
         )
 
@@ -491,7 +491,7 @@ class TestKeepalivePoke:
         """``NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1`` suppresses the poke."""
         monkeypatch.setenv(NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV, "1")
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=_NOTEBOOKLM_HOMEPAGE_HTML,
         )
 
@@ -523,7 +523,7 @@ class TestKeepalivePoke:
         )
         # storage_state.json was just written — mtime is "now", well inside the 60s window.
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=_NOTEBOOKLM_HOMEPAGE_HTML,
         )
 
@@ -555,7 +555,7 @@ class TestKeepalivePoke:
         )
         _stale_storage(storage_path, age_seconds=120)
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=_NOTEBOOKLM_HOMEPAGE_HTML,
         )
 
@@ -574,7 +574,7 @@ class TestKeepalivePoke:
             is_reusable=True,
         )
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=_NOTEBOOKLM_HOMEPAGE_HTML,
         )
 
@@ -620,7 +620,7 @@ class TestKeepalivePoke:
             },
         )
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=_NOTEBOOKLM_HOMEPAGE_HTML,
         )
 
@@ -638,7 +638,7 @@ class TestKeepalivePoke:
         """Network-level HTTPError on the poke is swallowed at DEBUG; token fetch proceeds."""
         httpx_mock.add_exception(httpx.ConnectError("simulated DNS failure"), url=_POKE_URL_RE)
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=_NOTEBOOKLM_HOMEPAGE_HTML,
         )
 

@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from ._upload_decode import _upload_url_origin
+
 
 @dataclass(frozen=True)
 class ResumableUploadStartRequest:
@@ -57,19 +59,25 @@ def build_resumable_upload_start_request(
     file_size: int,
     source_id: str,
     content_type: str,
-    base_url: str,
     upload_url: str,
     authuser_query: str,
     authuser_header: str,
 ) -> ResumableUploadStartRequest:
-    """Build the HTTP request that starts a resumable upload session."""
+    """Build the HTTP request that starts a resumable upload session.
+
+    ``Origin`` / ``Referer`` are derived from ``upload_url`` — the endpoint this
+    request is actually POSTed to — rather than from a separately supplied base
+    URL, so the two can never name different hosts (see
+    :func:`notebooklm._source._upload_decode._upload_url_origin`).
+    """
+    origin = _upload_url_origin(upload_url)
     return ResumableUploadStartRequest(
         url=f"{upload_url}?{authuser_query}",
         headers={
             "Accept": "*/*",
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-            "Origin": base_url,
-            "Referer": f"{base_url}/",
+            "Origin": origin,
+            "Referer": f"{origin}/",
             "x-goog-authuser": authuser_header,
             "x-goog-upload-command": "start",
             "x-goog-upload-header-content-length": str(file_size),

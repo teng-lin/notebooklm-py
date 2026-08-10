@@ -53,7 +53,13 @@ from notebooklm.types import (
     SourceTimeoutError,
 )
 
-from .conftest import create_mock_client, inject_client, research_start, source_guide
+from .conftest import (
+    create_mock_client,
+    inject_client,
+    research_start,
+    research_task,
+    source_guide,
+)
 
 pytestmark = pytest.mark.characterization
 
@@ -491,6 +497,73 @@ class TestSourceAddResearchCharacterization:
         )
         assert result.exit_code == 2
         assert "--import-all requires" in result.output
+
+    def test_add_research_empty_drive_search_explains_itself(
+        self, runner, mock_auth, patched_fetch_tokens
+    ):
+        """#1964: an empty Drive search rendered a bare "Research failed"."""
+        client = create_mock_client()
+        client.research.start = AsyncMock(return_value=research_start({"task_id": "task_123"}))
+        # Live-captured shape: status code 3 + source tag 2.
+        client.research.wait_for_completion = AsyncMock(
+            return_value=research_task(
+                {
+                    "status": "failed",
+                    "task_id": "task_123",
+                    "query": "Example Document.md",
+                    "status_code": 3,
+                    "source_type": 2,
+                }
+            )
+        )
+        result = runner.invoke(
+            cli,
+            ["source", "add-research", "Example Document.md", "-n", "nb_123", "--from", "drive"],
+            obj=inject_client(client),
+        )
+
+        assert result.exit_code == 1
+        assert "found no matches" in result.output
+        assert "document id" in result.output
+
+    def test_add_research_empty_drive_search_json_carries_reason(
+        self, runner, mock_auth, patched_fetch_tokens
+    ):
+        client = create_mock_client()
+        client.research.start = AsyncMock(return_value=research_start({"task_id": "task_123"}))
+        client.research.wait_for_completion = AsyncMock(
+            return_value=research_task(
+                {
+                    "status": "failed",
+                    "task_id": "task_123",
+                    "query": "Example Document.md",
+                    "status_code": 3,
+                    "source_type": 2,
+                }
+            )
+        )
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "add-research",
+                "Example Document.md",
+                "-n",
+                "nb_123",
+                "--from",
+                "drive",
+                "--json",
+            ],
+            obj=inject_client(client),
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["status"] == "failed"
+        assert payload["reason_message"] == (
+            "The search of Google Drive found no matches for 'Example Document.md'."
+        )
+        assert "document id" in payload["hint"]
 
 
 # ----------------------------------------------------------------------------

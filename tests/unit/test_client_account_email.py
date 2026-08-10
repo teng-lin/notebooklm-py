@@ -78,7 +78,7 @@ def _write_storage_state(path) -> None:
 
 
 # The probe hits authuser=0 by default (the AuthTokens default index).
-_PROBE_URL = "https://notebooklm.google.com/?authuser=0"
+_PROBE_URL = "https://notebook.google.com/?authuser=0"
 
 
 async def test_in_memory_email_returned_without_http(httpx_mock: HTTPXMock) -> None:

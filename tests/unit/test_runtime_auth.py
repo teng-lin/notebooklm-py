@@ -675,3 +675,109 @@ async def test_auth_coord_cancel_inflight_refresh_cancels_and_joins_pending_task
         "concurrency invariant pinned by "
         "test_await_refresh_cancellation_preserves_task_slot."
     )
+
+
+# ---------------------------------------------------------------------------
+# set_bound_loop rebind hook + reset_after_open (#2106)
+# ---------------------------------------------------------------------------
+
+
+def test_set_bound_loop_different_loop_discards_stale_locks() -> None:
+    """A loop change via ``set_bound_loop`` alone discards both lazy locks.
+
+    Pins the clear-on-rebind self-consistency contract (#2106): even without
+    a matching ``reset_after_open`` call, rebinding to a different loop must
+    invalidate the locks allocated under the previous loop so they are never
+    reused. Latent-hazard hardening — no ``await`` currently runs under
+    either lock, so a stale lock cannot be contended (and thus cannot bind /
+    raise cross-loop today); the discard keeps the coordinator consistent
+    with ``ClientComposed`` / ``SourceUploadPipeline`` / ``ChatAPI``.
+    """
+    coord = AuthRefreshCoordinator()
+
+    async def _bind_and_build_under_loop_a() -> None:
+        coord.set_bound_loop(asyncio.get_running_loop())
+        coord.get_refresh_lock()
+        coord.get_auth_snapshot_lock()
+
+    asyncio.run(_bind_and_build_under_loop_a())
+    assert coord._refresh_lock is not None
+    assert coord._auth_snapshot_lock is not None
+
+    async def _rebind_under_loop_b() -> None:
+        # set_bound_loop to a genuinely different loop must drop both stale
+        # locks so the next accessor call rebuilds them on loop B.
+        coord.set_bound_loop(asyncio.get_running_loop())
+        assert coord._refresh_lock is None
+        assert coord._auth_snapshot_lock is None
+        # And the accessors rebuild fresh instances on the new loop.
+        assert isinstance(coord.get_refresh_lock(), asyncio.Lock)
+        assert isinstance(coord.get_auth_snapshot_lock(), asyncio.Lock)
+
+    asyncio.run(_rebind_under_loop_b())
+
+
+@pytest.mark.asyncio
+async def test_set_bound_loop_same_loop_keeps_cached_locks() -> None:
+    """Re-binding to the *same* loop must NOT discard the live locks.
+
+    Idempotent ``set_bound_loop`` calls with the unchanged loop are a no-op
+    on the cache — only a genuine loop change invalidates it (the
+    ``_on_loop_rebind`` hook fires only on a real change).
+    """
+    coord = AuthRefreshCoordinator()
+    loop = asyncio.get_running_loop()
+    coord.set_bound_loop(loop)
+    refresh_lock = coord.get_refresh_lock()
+    snapshot_lock = coord.get_auth_snapshot_lock()
+
+    # Same loop again — both cached locks survive.
+    coord.set_bound_loop(loop)
+    assert coord._refresh_lock is refresh_lock
+    assert coord._auth_snapshot_lock is snapshot_lock
+
+
+@pytest.mark.asyncio
+async def test_reset_after_open_discards_locks_preserves_task_and_callback() -> None:
+    """``reset_after_open`` drops both lazy locks and nothing else.
+
+    The locks are rebuilt lazily on the new loop by the accessors; the
+    ``_refresh_task`` slot (slot-preservation invariant — sibling waiters
+    identify the shared single-flight task through it) and the
+    ``_refresh_callback`` wiring MUST survive the reset.
+    """
+
+    async def _callback() -> AuthTokens:
+        return _fresh_auth()  # pragma: no cover — never awaited here
+
+    coord = AuthRefreshCoordinator(refresh_callback=_callback)
+    coord.set_bound_loop(asyncio.get_running_loop())
+    first_refresh_lock = coord.get_refresh_lock()
+    first_snapshot_lock = coord.get_auth_snapshot_lock()
+
+    async def _done_refresh() -> AuthTokens:
+        return _fresh_auth()
+
+    done_task: asyncio.Task[AuthTokens] = asyncio.create_task(_done_refresh())
+    await done_task
+    coord._refresh_task = done_task
+
+    coord.reset_after_open()
+
+    assert coord._refresh_lock is None
+    assert coord._auth_snapshot_lock is None
+    assert coord._refresh_task is done_task, (
+        "reset_after_open must NOT clear the _refresh_task slot — the "
+        "slot-preservation invariant (see cancel_inflight_refresh) lets "
+        "sibling waiters identify the shared single-flight task; the slot "
+        "is replaced only by the next refresh wave once the task is done()."
+    )
+    assert coord._refresh_callback is _callback, (
+        "reset_after_open must NOT drop the refresh callback — the "
+        "refresh-on-401 wiring is construction-time state, not loop-bound "
+        "state."
+    )
+
+    # The accessors rebuild fresh lock instances after the reset.
+    assert coord.get_refresh_lock() is not first_refresh_lock
+    assert coord.get_auth_snapshot_lock() is not first_snapshot_lock

@@ -634,7 +634,7 @@ class TestDownloadAll:
         assert result.exit_code == 0
         assert output_dir.exists()
         # Check that files were downloaded
-        downloaded_files = list(output_dir.glob("*.mp3"))
+        downloaded_files = list(output_dir.glob("*.m4a"))
         assert len(downloaded_files) == 2
 
     def test_download_all_dry_run(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
@@ -700,7 +700,7 @@ class TestDownloadAll:
         # is non-zero because at least one item failed.
         assert result.exit_code != 0
         # One file should be downloaded
-        downloaded_files = list(output_dir.glob("*.mp3"))
+        downloaded_files = list(output_dir.glob("*.m4a"))
         assert len(downloaded_files) == 1
         # The text-mode renderer must show the structured "Failed" section
         # listing the actual error, not just the boolean "Error: True" guard.
@@ -944,7 +944,7 @@ class TestDownloadAllNameFilter:
 
         assert result.exit_code == 0
         assert sorted(downloaded_ids) == ["audio_beta1", "audio_beta2"]
-        downloaded_files = list(output_dir.glob("*.mp3"))
+        downloaded_files = list(output_dir.glob("*.m4a"))
         assert len(downloaded_files) == 2
 
     def test_name_filter_dry_run_previews_only_matches(
@@ -1069,9 +1069,9 @@ class TestDownloadAllDryRunFilenameParity:
         # All three filenames must be distinct (the second and third get
         # auto-renamed via (2)/(3) suffixes — same as the execution path).
         assert len(set(filenames)) == 3
-        assert "Duplicate Title.mp3" in filenames
-        assert "Duplicate Title (2).mp3" in filenames
-        assert "Duplicate Title (3).mp3" in filenames
+        assert "Duplicate Title.m4a" in filenames
+        assert "Duplicate Title (2).m4a" in filenames
+        assert "Duplicate Title (3).m4a" in filenames
 
     def test_dry_run_matches_execution_filenames(
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
@@ -1145,7 +1145,7 @@ class TestDownloadAllDryRunFilenameParity:
         output_dir = tmp_path / "downloads"
         output_dir.mkdir(parents=True)
         # Create existing file
-        (output_dir / "First Audio.mp3").write_bytes(b"existing")
+        (output_dir / "First Audio.m4a").write_bytes(b"existing")
 
         async def mock_download_audio(notebook_id, output_path, artifact_id=None, **kwargs):
             Path(output_path).write_bytes(b"new content")
@@ -1167,9 +1167,9 @@ class TestDownloadAllDryRunFilenameParity:
 
         assert result.exit_code == 0
         # First file should remain unchanged
-        assert (output_dir / "First Audio.mp3").read_bytes() == b"existing"
+        assert (output_dir / "First Audio.m4a").read_bytes() == b"existing"
         # Second file should be downloaded
-        assert (output_dir / "Second Audio.mp3").exists()
+        assert (output_dir / "Second Audio.m4a").exists()
 
 
 # =============================================================================

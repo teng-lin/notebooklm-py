@@ -72,6 +72,9 @@ from .exceptions import (
     ChatError,
     ChatResponseParseError,
     ClientError,
+    # Domain: Collections
+    CollectionError,
+    CollectionNotFoundError,
     # Validation/Config
     ConfigurationError,
     DecodingError,
@@ -130,6 +133,7 @@ from .types import (
     ChatResponseLength,
     CitedSourceSelection,
     ClientMetricsSnapshot,
+    Collection,
     ConnectionLimits,
     ConversationTurn,
     DriveMimeType,
@@ -156,6 +160,7 @@ from .types import (
     ResearchStart,
     ResearchStatus,
     ResearchTask,
+    ResearchTerminationReason,
     RpcTelemetryEvent,
     ShareAccess,
     SharedUser,
@@ -216,6 +221,7 @@ __all__ = [
     "MindMapResult",
     "Note",
     "Label",
+    "Collection",
     "ConversationTurn",
     "ChatReference",
     "AskResult",
@@ -226,6 +232,7 @@ __all__ = [
     "ResearchSource",
     "ResearchTask",
     "ResearchStart",
+    "ResearchTerminationReason",
     "SharedUser",
     "ShareStatus",
     # Utility helpers
@@ -289,6 +296,9 @@ __all__ = [
     # Domain Exceptions: Source labels
     "LabelError",
     "LabelNotFoundError",
+    # Domain Exceptions: Collections
+    "CollectionError",
+    "CollectionNotFoundError",
     # Cross-domain umbrella: wait/poll timeouts
     "WaitTimeoutError",
     # Warnings

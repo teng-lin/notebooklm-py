@@ -36,7 +36,7 @@ jobs:
         persist-credentials: false
 
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
         cache: 'pip'
@@ -155,7 +155,6 @@ jobs:
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    needs: quality
     strategy:
       fail-fast: false
       matrix:
@@ -179,7 +178,7 @@ jobs:
         persist-credentials: false
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
@@ -266,6 +265,12 @@ jobs:
           echo "::warning::Playwright system dependency installation timed out or failed."
           echo "::warning::Continuing so the non-browser test matrix can run."
         fi
+
+    - name: Run required external-reality probes
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+      run: >-
+        uv run pytest tests/unit/cli/test_playwright_login_coverage.py
+        -m reality --require-reality
 
     - name: Assert cassettes are sanitized
       # Runs on all matrix entries (ubuntu, macos, windows × 5 Python versions).

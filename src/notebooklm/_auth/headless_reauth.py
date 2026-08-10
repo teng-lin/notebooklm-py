@@ -73,7 +73,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from ..exceptions import HeadlessLoginRequiredError
-from .browser_capture import BrowserCapturePlan, run_browser_capture, run_cdp_capture
+from .browser_capture import (
+    BrowserCapturePlan,
+    _CaptureAbortKind,
+    _HeadlessCaptureAbort,
+    run_browser_capture,
+    run_cdp_capture,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -98,7 +104,129 @@ NOTEBOOKLM_HEADLESS_REAUTH_ENV = "NOTEBOOKLM_HEADLESS_REAUTH"
 # precedence over this env var.
 NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV = "NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL"
 
-# Per-storage-path single-flight for the (blocking, sync) browser drive.
+
+@dataclass
+class _DriveRecord:
+    """Per-(storage path, credential source) drive-coalescing state for the headless browser drive.
+
+    The in-process coalescing primitive for one ``storage_state.json``. It
+    bundles the drive lock that serializes browser drives with the typed
+    outcome of the most recent COMPLETED drive, stamped with a monotonic
+    drive-sequence number (``completed``). Followers coalesce on that typed
+    outcome — never on file mtime — so a sibling write that merely touches the
+    storage file can never be mistaken for a successful re-mint.
+
+    **Why this is NOT** :mod:`notebooklm._auth.single_flight`. An earlier
+    version of this docstring promised the opposite — that the structure was
+    kept self-contained "so a later shared single-flight core can reuse it
+    wholesale". That core landed (ADR-0030 c-PR2) and this record did not adopt
+    it. The promise was wrong, not merely unfulfilled, and is retired here.
+
+    ``single_flight`` coalesces callers that each have a RUNNING EVENT LOOP:
+    ``claim()`` calls ``asyncio.get_running_loop()`` to create the leader
+    ``asyncio.Task``. This drive has no loop at its coalescing point and
+    structurally cannot get one. :func:`attempt_headless_reauth` is a SYNC
+    entry, and its only production caller deliberately runs it *off* the loop —
+    ``asyncio.to_thread(attempt_headless_reauth, ...)`` in
+    :func:`notebooklm._auth.recovery.try_headless_reauth` — because the browser
+    drive blocks. Inside that worker thread ``claim()`` raises ``RuntimeError:
+    no running event loop`` (measured, not inferred; pinned by
+    ``test_single_flight_is_unreachable_from_the_sync_drive_entry``).
+
+    Neither escape route is free:
+
+    * **Spin a throwaway loop** (``asyncio.run``) inside the sync entry just to
+      reach ``claim()``. This coalesces correctly in a spike, but it makes the
+      documented sync entry raise ``RuntimeError: asyncio.run() cannot be
+      called from a running event loop`` for any caller that invokes it from
+      inside a coroutine, and it spends a fresh
+      event loop plus a second thread hop per browser drive (loop → to_thread →
+      new loop → to_thread → blocking drive) to replace one ``threading.Lock``.
+    * **Hoist the claim** into the async ``recovery.try_headless_reauth``. That
+      narrows one thing this record exists for and complicates another.
+      (1) *Coverage*: every PRODUCTION path already funnels through
+      ``recovery.try_headless_reauth``, so a hoisted claim would still coalesce
+      all of them. What it drops is the SYNC entry's own coalescing for direct,
+      loop-less callers — today that is its whitebox tests
+      (``test_concurrent_explicit_attempts_coalesce_to_one_browser``) and any
+      future non-``recovery`` caller. The entry is private
+      (``notebooklm._auth``, fenced off from the CLI by ``test_cli_boundary``),
+      so that residual is small but real. (2) *Keying*: the ``source``
+      discriminator (``"profile"`` vs ``"cdp"``) is resolved INSIDE
+      :func:`attempt_headless_reauth` by :func:`resolve_cdp_url`, which also
+      enforces the LOCAL-UNATTENDED-ONLY loopback boundary — ``recovery`` would
+      have to CALL that gate itself to build a correct flight key (it is a pure
+      module-level function, so this is a call, not a reimplementation — the
+      real residual is that a rejected non-loopback endpoint resolves to
+      ``None``, so the rejection warning would move), or
+      collapse the two sources into one key (the exact cross-source false-FAILED
+      bug the per-``(path, source)`` key fixes; see :func:`_get_drive_record`).
+
+    For the record, what ``single_flight`` would NOT have broken: the typed
+    closed-enum outcome rides a flight future unchanged; nothing jar-bearing is
+    retained either way (a :class:`HeadlessReauthResult` carries status, reason
+    and a path — no credential); and the [capture-3] stale-outcome guarantee is
+    structural there too, since ``claim`` joins only a not-yet-done flight and
+    prompt-pops settled ones. The blocker is the event loop, not the contract —
+    so this record stays, with its own state lock and its own sequence, as the
+    THREAD-level coalescer that ``single_flight``'s task-level model cannot be.
+
+    Attributes:
+        drive_lock: Serializes browser drives against this storage file; the
+            leader holds it across the whole capture, followers block on it.
+        _state_lock: Guards ``_completed`` / ``_last_outcome`` so a follower's
+            pre-wait :meth:`snapshot_completed` (taken WITHOUT the drive lock)
+            races safely against the leader's :meth:`publish` (under the drive
+            lock).
+        _completed: Monotonic count of drives that finished and published an
+            outcome on this path. Bumped only by :meth:`publish`.
+        _last_outcome: The typed result of the most recent completed drive, or
+            ``None`` before any drive has completed.
+    """
+
+    drive_lock: threading.Lock
+    _state_lock: threading.Lock
+    _completed: int = 0
+    _last_outcome: HeadlessReauthResult | None = None
+
+    def snapshot_completed(self) -> int:
+        """Return the completed-drive count for a pre-wait freshness snapshot.
+
+        A follower calls this BEFORE blocking on :attr:`drive_lock`, then
+        passes the value to :meth:`fresh_outcome_since` after acquiring the
+        lock — accepting an outcome only from a drive that completed during its
+        wait.
+        """
+        with self._state_lock:
+            return self._completed
+
+    def publish(self, outcome: HeadlessReauthResult) -> int:
+        """Record a completed drive's typed outcome and bump the sequence.
+
+        Called by the leader while holding :attr:`drive_lock`. Returns the new
+        (post-bump) completed-drive count.
+        """
+        with self._state_lock:
+            self._completed += 1
+            self._last_outcome = outcome
+            return self._completed
+
+    def fresh_outcome_since(self, pre_completed: int) -> HeadlessReauthResult | None:
+        """Return the leader's outcome only if a drive completed during the wait.
+
+        Given the caller's pre-wait :meth:`snapshot_completed` value, return the
+        most recent typed outcome iff the completed-drive count has advanced
+        past it (a strictly-newer drive finished while the caller waited).
+        Otherwise return ``None`` — a stale outcome from a previous drive cycle
+        reads as "no outcome", so the caller drives its own browser.
+        """
+        with self._state_lock:
+            if self._completed > pre_completed and self._last_outcome is not None:
+                return self._last_outcome
+            return None
+
+
+# In-process drive coalescer for the (blocking, sync) browser drive.
 #
 # The mid-RPC cascade already coalesces through
 # ``AuthRefreshCoordinator.await_refresh``, but the explicit
@@ -106,12 +234,30 @@ NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV = "NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL"
 # coordinator, and several clients (or processes-within-a-process) can target
 # the same profile. This registry guarantees that, within ONE process, at most
 # ONE browser drives a given ``storage_state.json`` at a time: concurrent
-# callers serialize on a per-resolved-path ``threading.Lock``, and a follower
-# that sees the storage file freshly rewritten by the leader while it waited
-# SKIPS its own browser (coalesces) instead of launching a redundant one.
+# callers serialize on a per-resolved-path drive lock, and a follower coalesces
+# onto the LEADER'S TYPED OUTCOME — but ONLY an outcome from a drive that
+# completed *during its own wait* — instead of launching a redundant browser.
 #
-# ``_DRIVE_REGISTRY_LOCK`` makes the get-or-create of a per-path lock atomic
-# across the worker threads ``asyncio.to_thread`` may use. This is a
+# **Coalescing keys on the leader's outcome, never on file mtime.** An earlier
+# design skipped the follower's browser when it observed the storage file's
+# mtime advance while it waited. That was a false-SUCCESS hazard: an *unrelated*
+# writer (a keepalive / PSIDTS rotation) advancing the same file's mtime made a
+# follower report SUCCESS even when the leader's re-mint actually FAILED — the
+# user then hit a confusing downstream auth error instead of the honest "Run
+# 'notebooklm login'" path. Followers now accept only the leader's *typed*
+# :class:`HeadlessReauthResult`, stamped with a monotonic drive-sequence
+# number, and only when that sequence advanced during the wait.
+#
+# **Snapshot-before-wait (the in-process analogue of the #816 rule).** A
+# follower snapshots the completed-drive count BEFORE blocking on the drive
+# lock and accepts an outcome only from a *strictly-newer* completed drive. A
+# stale outcome from a PREVIOUS drive cycle (cookies may have re-died since)
+# reads as "no outcome", so the follower drives its own browser. A follower
+# that cannot observe a fresh leader outcome (crashed leader, stale record)
+# also drives its own — a redundant browser is SAFE, a false SUCCESS is NOT.
+#
+# ``_DRIVE_REGISTRY_LOCK`` makes the get-or-create of a per-path drive record
+# atomic across the worker threads ``asyncio.to_thread`` may use. This is a
 # best-effort, single-process guard; cross-process coordination (two CLI
 # invocations) is out of scope here — they each own their own browser, the same
 # way the interactive ``notebooklm login`` flow does.
@@ -123,7 +269,7 @@ NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL_ENV = "NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL"
 # ``_LAST_POKE_ATTEMPT_MONOTONIC`` elsewhere in the auth layer; a long-running
 # process does not accumulate entries from RPC traffic, only from new profiles.
 _DRIVE_REGISTRY_LOCK = threading.Lock()
-_DRIVE_LOCKS_BY_PATH: dict[str, threading.Lock] = {}
+_DRIVE_RECORDS_BY_PATH: dict[str, _DriveRecord] = {}
 
 
 def headless_reauth_env_enabled(env: dict[str, str] | None = None) -> bool:
@@ -263,9 +409,9 @@ class _SilentRaisingCaptureIO:
       leak through this sink.
     * ``fail`` raises :class:`HeadlessLoginRequiredError` instead of exiting the
       process — an unattended library call must never call ``sys.exit``. The
-      neutral core routes user-facing aborts through ``io.fail``; mapping them
-      to this exception lets :func:`attempt_headless_reauth` classify them as
-      :attr:`HeadlessReauthStatus.FAILED` rather than hanging or exiting.
+      neutral core routes user-facing aborts through ``io.fail``; infrastructure
+      aborts use a private typed marker so they cannot be mistaken for these
+      dead-session paths.
     * ``run_async`` is never reached on the capture path (the core only calls it
       from the interactive adapter's account-metadata repair, which the
       headless arm does not run); it raises if somehow invoked so a contract
@@ -289,6 +435,21 @@ class _SilentRaisingCaptureIO:
             "run_async is not supported on the headless re-auth IO sink "
             "(the headless arm performs no account-metadata repair)."
         )
+
+
+def _capture_abort_reason(kind: _CaptureAbortKind) -> str:
+    """Return a stable, non-sensitive public reason for an infrastructure abort."""
+    if kind is _CaptureAbortKind.BROWSER_CLOSED:
+        return (
+            "headless capture failed: browser was closed during capture; "
+            "retry headless re-authentication"
+        )
+    if kind is _CaptureAbortKind.CONNECTION_EXHAUSTED:
+        return (
+            "headless capture failed: connection retries were exhausted; "
+            "check network connectivity and retry"
+        )
+    return "headless capture failed: infrastructure aborted the capture"
 
 
 def _resolve_reusable_profile(
@@ -327,11 +488,14 @@ def _resolve_reusable_profile(
     # session. An absent or non-directory path has no session to harvest.
     if not candidate.is_dir():
         return None
-    # An empty dir (e.g. created by a path-prep step but never logged into) has
-    # no Chrome session state. ``next(iterdir)`` is cheap and avoids treating a
-    # freshly-mkdir'd profile as reusable.
+    # An empty or ownership-marker-only dir (created by path prep but never
+    # logged into) has no Chrome session state.
+    from ..paths import BROWSER_PROFILE_OWNERSHIP_MARKER
+
     try:
-        next(candidate.iterdir())
+        next(
+            entry for entry in candidate.iterdir() if entry.name != BROWSER_PROFILE_OWNERSHIP_MARKER
+        )
     except StopIteration:
         return None
     except OSError as exc:  # unreadable dir — treat as no reusable profile
@@ -478,9 +642,12 @@ def attempt_headless_reauth(
     This function performs the *recovery*, not the retry. On ``SUCCESS`` the
     caller re-runs the normal auth path (L1 token refresh) which now finds the
     freshly-persisted cookies. It is a recovery, not the hot path. Browser
-    drives are coalesced in two places: mid-RPC callers join the existing
-    refresh single-flight, and explicit ``attempt_headless_reauth`` callers
-    serialize per storage path in :func:`_drive_capture_coalesced`.
+    drives are coalesced in two places: mid-RPC callers join
+    ``AuthRefreshCoordinator.await_refresh``'s loop-bound single-flight, and
+    every caller of THIS function — including the bare-thread ones that have no
+    event loop — serializes per ``(storage path, credential source)`` in
+    :func:`_drive_capture_coalesced`. That second one is deliberately not
+    :mod:`notebooklm._auth.single_flight`; :class:`_DriveRecord` records why.
 
     Args:
         storage_path: ``storage_state.json`` to (re)write on success.
@@ -552,32 +719,41 @@ def attempt_headless_reauth(
         include_domains=include_domains,
     )
 
-    # Per-storage-path single-flight: within this process, at most one browser
-    # drives a given storage file at a time, and a follower that finds the file
-    # freshly rewritten while it waited coalesces (skips its own browser). This
-    # covers the explicit ``refresh_auth(allow_headless=True)`` entry and
-    # multi-client callers, which do NOT pass through the mid-RPC coordinator's
-    # single-flight.
+    # Per-(storage path, source) coalescing: within this process, at most one
+    # browser drives a given storage file PER CREDENTIAL SOURCE at a time — a
+    # profile drive and a CDP drive against the same storage_state.json each
+    # hold their own record, deliberately (see _get_drive_record). A follower
+    # coalesces onto the
+    # leader's TYPED outcome (only one produced by a drive that completed during
+    # its wait) instead of launching a redundant browser. This covers the
+    # explicit ``refresh_auth(allow_headless=True)`` entry and multi-client
+    # callers, which do NOT pass through the mid-RPC coordinator's single-flight.
     return _drive_capture_coalesced(plan)
 
 
-def _get_drive_lock(storage_path: Path) -> threading.Lock:
-    """Return the per-resolved-storage-path single-flight lock for the browser drive."""
-    key = str(storage_path.expanduser().resolve())
+def _get_drive_record(storage_path: Path, *, source: str) -> _DriveRecord:
+    """Return the per-(resolved-storage-path, source) drive record.
+
+    Get-or-create is atomic under :data:`_DRIVE_REGISTRY_LOCK` so the worker
+    threads ``asyncio.to_thread`` may use all share one :class:`_DriveRecord`
+    (and therefore one drive lock and one drive-sequence) per storage file.
+
+    The key includes ``source`` (``"profile"`` vs ``"cdp"``) as well as the path
+    (CodeRabbit #4). The two credential sources re-mint into the SAME
+    ``storage_state.json``, but they are DIFFERENT sessions: a follower must not
+    coalesce onto the OTHER source's FAILED outcome (e.g. treat its own live CDP
+    attach as failed because the dedicated profile's session was dead, or vice
+    versa). Sharing the OUTCOME across sources was the bug; a shared lock would
+    merely serialize them, which is not required and not what we do — each source
+    gets its own record, lock, and drive-sequence.
+    """
+    key = f"{storage_path.expanduser().resolve()}\x00{source}"
     with _DRIVE_REGISTRY_LOCK:
-        lock = _DRIVE_LOCKS_BY_PATH.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            _DRIVE_LOCKS_BY_PATH[key] = lock
-        return lock
-
-
-def _storage_mtime(storage_path: Path) -> float | None:
-    """Best-effort mtime of the storage file, or ``None`` when absent/unreadable."""
-    try:
-        return storage_path.stat().st_mtime
-    except OSError:
-        return None
+        record = _DRIVE_RECORDS_BY_PATH.get(key)
+        if record is None:
+            record = _DriveRecord(drive_lock=threading.Lock(), _state_lock=threading.Lock())
+            _DRIVE_RECORDS_BY_PATH[key] = record
+        return record
 
 
 def _drive_capture_coalesced(
@@ -585,35 +761,47 @@ def _drive_capture_coalesced(
     *,
     cdp_url: str | None = None,
 ) -> HeadlessReauthResult:
-    """Drive the headless capture under the per-path single-flight + freshness skip.
+    """Drive the headless capture under the per-(path, source) drive lock + outcome coalescing.
 
-    Captures the storage mtime BEFORE acquiring the lock. After acquiring it, a
-    follower whose storage file was rewritten by the leader while it waited
-    (mtime advanced) skips its own browser and reports SUCCESS — so N concurrent
-    callers spawn at most ONE browser per storage file. The leader (and any
-    follower whose wait did not yield a fresh file) drives the real capture.
+    Snapshots the completed-drive count BEFORE blocking on the drive lock
+    (:meth:`_DriveRecord.snapshot_completed`). After acquiring the lock, a
+    follower coalesces onto the leader's TYPED outcome only if a drive completed
+    during its wait (:meth:`_DriveRecord.fresh_outcome_since` returns
+    non-``None``) — so N genuine concurrent callers spawn at most ONE browser
+    per storage file, and every follower reports exactly what the leader's drive
+    produced (SUCCESS *or* FAILED), never a mtime-inferred false SUCCESS.
 
-    Both credential sources (dedicated profile and ``cdp_url`` attach) coalesce
-    on the SAME per-storage-path lock, since both re-mint into the same
-    ``storage_state.json``.
+    A follower that observes no fresh outcome — a crashed leader, or only a
+    stale outcome from a previous drive cycle whose cookies may have re-died —
+    drives its own browser. Redundant is safe; false SUCCESS is not.
+
+    The two credential sources (dedicated profile and ``cdp_url`` attach) use
+    SEPARATE per-(path, source) records (CodeRabbit #4): both re-mint into the
+    same ``storage_state.json``, but a follower must coalesce only onto an outcome
+    from its OWN source — never accept the other source's FAILED result (a dead
+    profile must not fail a live CDP attach, nor vice versa).
     """
-    storage_path = plan.storage_path
-    pre_mtime = _storage_mtime(storage_path)
-    lock = _get_drive_lock(storage_path)
-    with lock:
-        post_mtime = _storage_mtime(storage_path)
-        if post_mtime is not None and (pre_mtime is None or post_mtime > pre_mtime):
-            # A sibling leader re-minted while we waited; coalesce on its result.
+    source = "cdp" if cdp_url is not None else "profile"
+    record = _get_drive_record(plan.storage_path, source=source)
+    # Snapshot BEFORE blocking on the drive lock: we accept an outcome only from
+    # a drive that finishes DURING this wait (strictly-newer sequence).
+    pre_completed = record.snapshot_completed()
+    with record.drive_lock:
+        fresh = record.fresh_outcome_since(pre_completed)
+        if fresh is not None:
+            # A sibling leader's drive completed while we waited; coalesce onto
+            # its TYPED outcome (its status, whether SUCCESS or FAILED), not an
+            # mtime heuristic. Skips a redundant browser without ever inferring
+            # success from an unrelated file write.
             logger.info(
-                "Layer-3 headless re-auth coalesced onto a concurrent re-mint "
-                "(storage already refreshed); skipping a redundant browser."
+                "Layer-3 headless re-auth coalesced onto a concurrent drive's "
+                "outcome (%s); skipping a redundant browser.",
+                fresh.status.value,
             )
-            return HeadlessReauthResult(
-                HeadlessReauthStatus.SUCCESS,
-                "coalesced onto a concurrent headless re-mint",
-                storage_path=storage_path,
-            )
-        return _drive_capture(plan, cdp_url=cdp_url)
+            return fresh
+        result = _drive_capture(plan, cdp_url=cdp_url)
+        record.publish(result)
+        return result
 
 
 def _drive_capture(
@@ -657,6 +845,14 @@ def _drive_capture(
         # the core aborted via io.fail. Honest FAILED — never masked as success.
         logger.warning("Layer-3 re-auth failed: %s", exc)
         return HeadlessReauthResult(HeadlessReauthStatus.FAILED, source_dead_reason)
+    except _HeadlessCaptureAbort as exc:
+        # Only the private, stable category crosses into the public result.
+        # Never expose the marker's text or a Playwright exception/endpoint.
+        logger.warning("Layer-3 re-auth aborted: %s", exc.kind.value)
+        return HeadlessReauthResult(
+            HeadlessReauthStatus.FAILED,
+            _capture_abort_reason(exc.kind),
+        )
     except Exception as exc:  # noqa: BLE001 - recovery is best-effort
         # Any other capture failure (launch/attach error, navigation failure,
         # filesystem error) is a non-fatal recovery failure: surface FAILED so

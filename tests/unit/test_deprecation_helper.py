@@ -1,13 +1,82 @@
 """Unit tests for the ``notebooklm._deprecation`` warn helper + quiet gate."""
 
 import warnings
+from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
 from notebooklm._deprecation import (
+    DEPRECATION_SPECS,
+    DeprecationSpec,
     deprecations_quiet,
     warn_deprecated,
+    warn_registered_deprecation,
 )
+
+_FROM_STORAGE_MESSAGE = (
+    "AuthTokens.from_storage(...) is deprecated; use "
+    "notebooklm.NotebookLMClient.from_storage(...) and access client.auth within the managed "
+    "client lifecycle instead. It will be removed in v1.0."
+)
+_SYNC_CONSTRUCTION_MESSAGE = (
+    "Constructing AuthTokens(..., storage_path=..., cookie_jar=None) is deprecated because it "
+    "performs synchronous storage/recovery I/O; use "
+    "notebooklm.NotebookLMClient.from_storage(...) and access client.auth within the managed "
+    "client lifecycle instead. It will be removed in v1.0."
+)
+
+
+def test_auth_storage_registry_is_exact_frozen_and_immutable() -> None:
+    assert tuple(DEPRECATION_SPECS) == (
+        "auth_tokens_from_storage",
+        "auth_tokens_sync_storage_construction",
+    )
+    assert [field.name for field in fields(DeprecationSpec)] == [
+        "key",
+        "message",
+        "category",
+        "replacement",
+        "since",
+        "removal",
+        "stacklevel",
+    ]
+    expected = {
+        "auth_tokens_from_storage": (_FROM_STORAGE_MESSAGE, 3),
+        "auth_tokens_sync_storage_construction": (_SYNC_CONSTRUCTION_MESSAGE, 4),
+    }
+    for key, spec in DEPRECATION_SPECS.items():
+        message, stacklevel = expected[key]
+        assert spec == DeprecationSpec(
+            key=key,
+            message=message,
+            category=DeprecationWarning,
+            replacement="notebooklm.NotebookLMClient.from_storage",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=stacklevel,
+        )
+    with pytest.raises(TypeError):
+        DEPRECATION_SPECS["extra"] = DEPRECATION_SPECS["auth_tokens_from_storage"]  # type: ignore[index]
+    with pytest.raises(FrozenInstanceError):
+        DEPRECATION_SPECS["auth_tokens_from_storage"].key = "changed"  # type: ignore[misc]
+
+
+def test_registered_emitter_uses_live_quiet_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_QUIET_DEPRECATIONS", "1")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        warn_registered_deprecation("auth_tokens_from_storage")
+    monkeypatch.delenv("NOTEBOOKLM_QUIET_DEPRECATIONS")
+    with pytest.warns(DeprecationWarning, match="NotebookLMClient.from_storage"):
+        warn_registered_deprecation("auth_tokens_from_storage")
+
+
+def test_registered_emitter_rejects_unknown_key_without_warning() -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(KeyError, match="not_registered"):
+            warn_registered_deprecation("not_registered")
+    assert caught == []
 
 
 class TestWarnDeprecated:

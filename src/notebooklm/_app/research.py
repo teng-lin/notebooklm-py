@@ -73,6 +73,15 @@ class ResearchStatusResult:
     # The MCP ``research_status`` tool surfaces it so an agent can distinguish
     # failure sub-codes the coarse ``status`` flattens into ``failed``.
     status_code: int | None = None
+    # Differentiated termination reason + remediation, derived from the raw
+    # code and the run's search source (issue #1964). ``termination_reason`` is
+    # the string value of ``ResearchTerminationReason`` (``no_results`` /
+    # ``cancelled`` / ``unknown`` / …) so adapters can serialize it directly;
+    # ``reason_message`` and ``hint`` are populated only for a run that did not
+    # succeed, so a caller never renders a bare ``failed`` with nothing to say.
+    termination_reason: str | None = None
+    reason_message: str | None = None
+    hint: str | None = None
 
 
 def _classify_status_kind(status_val: str) -> ResearchStatusKind:
@@ -104,6 +113,7 @@ async def poll_and_classify(
     # lowercase code the CLI render branches + the original status command keyed
     # off (matches ``execute_research_wait``'s ``status.status.value``).
     status_val = status.status.value
+    reason = status.termination_reason
     return ResearchStatusResult(
         kind=_classify_status_kind(status_val),
         status=status_val,
@@ -114,6 +124,9 @@ async def poll_and_classify(
         public_dict=status.to_public_dict(),
         task_id=status.task_id,
         status_code=status.status_code,
+        termination_reason=reason.value if reason is not None else None,
+        reason_message=status.reason_message,
+        hint=status.hint,
     )
 
 
@@ -137,7 +150,10 @@ async def poll_importable_research(
 
     * ``not_found`` — the pinned run is not among the polled runs (nothing to
       import; the typed ``NOT_FOUND`` sentinel, not a fallback to the current run);
-    * ``failed`` — the run will not complete;
+    * ``failed`` — the run produced no importable sources. The raised message
+      names WHY when the poll carried a termination reason (a Drive search that
+      matched nothing reads very differently from a cancelled or broken run —
+      issue #1964), falling back to the generic wording when it did not;
     * any non-``completed`` status (e.g. ``in_progress`` / ``no_research``) —
       only a completed run has a final source set;
     * ``completed`` with no sources — refuse the silent empty import.
@@ -162,9 +178,26 @@ async def poll_importable_research(
     # in_progress/no_research/failed snapshot would import a partial/empty set as
     # a "success" — refuse with an action-appropriate message.
     if status.status == "failed":
+        # A run that simply matched nothing, or was cancelled, is NOT a broken
+        # run — telling the caller to "start a new research session" is the
+        # wrong remediation for it (issue #1964). Those two NAMED outcomes lead
+        # with their own explanation.
+        #
+        # Everything else keeps the historical guidance verbatim: an
+        # unrecognised code is coarsened to FAILED and treated as terminal, so
+        # "it will not complete" remains exactly the right advice — it just
+        # gains the observed code. (Review caught the first cut sending every
+        # code-carrying failure down the differentiated path, which silently
+        # dropped that guidance for genuinely-broken runs.)
+        detail = " ".join(part for part in (status.reason_message, status.hint) if part)
+        if status.termination_reason in ("no_results", "cancelled") and detail:
+            # "cannot be imported" rather than "has no sources": a run cancelled
+            # mid-flight can carry partially-discovered sources.
+            raise ValidationError(f"Research run {run_id!r} cannot be imported. {detail}")
+        suffix = f" {status.reason_message}" if status.reason_message else ""
         raise ValidationError(
             f"Research run {run_id!r} failed; it will not complete — start a new "
-            "research session rather than polling."
+            f"research session rather than polling.{suffix}"
         )
     if status.status != "completed":
         raise ValidationError(
@@ -333,6 +366,12 @@ class ResearchWaitResult:
     sources: list[dict[str, Any]] = field(default_factory=list)
     report: str = ""
     import_result: ResearchImportLike | None = None
+    # Why a ``failed`` wait ended, plus its remediation (issue #1964). Carried
+    # so the CLI can say "your Drive query matched nothing, try the filename"
+    # instead of a bare "Research failed"; ``None`` on success and whenever the
+    # poll carried no termination reason.
+    reason_message: str | None = None
+    hint: str | None = None
 
     @property
     def sources_count(self) -> int:
@@ -448,13 +487,22 @@ async def execute_research_wait(
 
     if status_val == "no_research":
         return _terminal("no_research")
+    # Both non-success exits carry the differentiated reason (#1964) so the
+    # renderer never has to show a bare "Research failed".
+    failure_detail: dict[str, Any] = {
+        "query": query,
+        "sources": sources,
+        "report": report,
+        "reason_message": status.reason_message,
+        "hint": status.hint,
+    }
     if status_val == "failed":
-        return _terminal("failed", query=query, sources=sources, report=report)
+        return _terminal("failed", **failure_detail)
 
     # wait_for_completion only returns completed/no_research/failed; keep a
     # narrow fallback so future terminal statuses cannot be rendered as success.
     if status_val != "completed":
-        return _terminal("failed", query=query, sources=sources, report=report)
+        return _terminal("failed", **failure_detail)
 
     import_result: ResearchImportLike | None = None
     if plan.import_all and sources and task_id:

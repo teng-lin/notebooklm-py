@@ -15,11 +15,11 @@ interactions:
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
         __Secure-3PSIDCC=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: GET
-    uri: https://notebooklm.google.com/
+    uri: https://notebook.google.com/
   response:
     body:
       string: "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><base href=\"https://notebooklm.google.com/\"><link
@@ -1574,11 +1574,11 @@ interactions:
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
         __Secure-3PSIDCC=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=rLM1Ne&source-path=%2Fnotebook%2Ff66923f0-1df4-4ffe-9822-3ed63c558b1c&f.sid=SCRUBBED&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=rLM1Ne&source-path=%2Fnotebook%2Ff66923f0-1df4-4ffe-9822-3ed63c558b1c&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ")]}'\n\n13386\n[[\"wrb.fr\",\"rLM1Ne\",\"[[\\\"GENERATION: Claude Code
@@ -1717,11 +1717,11 @@ interactions:
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
         __Secure-3PSIDCC=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=s0tc2d&source-path=%2F&f.sid=SCRUBBED&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=s0tc2d&source-path=%2F&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ")]}'\n\n281\n[[\"wrb.fr\",\"s0tc2d\",\"[\\\"VCR Test Renamed\\\",null,\\\"f66923f0-1df4-4ffe-9822-3ed63c558b1c\\\",\\\"\U0001F916\\\",null,[1,false,true,null,null,null,1,false,[1768174413,819385000],null,null,null,false,true,1,false]]\",null,null,null,\"generic\"],[\"di\",263],[\"af.httprm\",262,\"-2887852624197950770\",11]]\n23\n[[\"e\",4,null,null,319]]\n"
@@ -1807,11 +1807,11 @@ interactions:
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
         __Secure-3PSIDCC=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=rLM1Ne&source-path=%2Fnotebook%2Ff66923f0-1df4-4ffe-9822-3ed63c558b1c&f.sid=SCRUBBED&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=rLM1Ne&source-path=%2Fnotebook%2Ff66923f0-1df4-4ffe-9822-3ed63c558b1c&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ")]}'\n\n13327\n[[\"wrb.fr\",\"rLM1Ne\",\"[[\\\"VCR Test Renamed\\\",[[[\\\"45cbeb85-a1ee-42b5-b4a4-888b01393fe9\\\"],\\\"Adding
@@ -1949,11 +1949,11 @@ interactions:
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
         __Secure-3PSIDCC=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=s0tc2d&source-path=%2F&f.sid=SCRUBBED&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=s0tc2d&source-path=%2F&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ")]}'\n\n340\n[[\"wrb.fr\",\"s0tc2d\",\"[\\\"GENERATION: Claude Code
@@ -2040,11 +2040,11 @@ interactions:
         OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
         __Secure-3PSIDCC=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=rLM1Ne&source-path=%2Fnotebook%2Ff66923f0-1df4-4ffe-9822-3ed63c558b1c&f.sid=SCRUBBED&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=rLM1Ne&source-path=%2Fnotebook%2Ff66923f0-1df4-4ffe-9822-3ed63c558b1c&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ")]}'\n\n13386\n[[\"wrb.fr\",\"rLM1Ne\",\"[[\\\"GENERATION: Claude Code

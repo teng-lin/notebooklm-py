@@ -1645,7 +1645,7 @@ params = [
 - The server appears to apply a "smart title" pass for `[2]`-mode notes — the captured response title differed from the captured request title (the request sent `"New Saved Note"`; the response stored `"Le Verger de la Connaissance : Le Cas de la Pomme"`). `ChatAPI.save_answer_as_note()` surfaces the server-stored title in the returned `Note`.
 
 **Known gaps**:
-- The `passage_id` UUID at slot `[3][0][5][0][0]` does NOT appear in the streaming chat response shape we currently parse. `_build_source_passage_descriptor` falls back to `chunk_id` as a placeholder when `ChatReference.passage_id` is unset (which is always, in production today). Empirically the server accepts this and the web UI still renders hover anchors. If a future capture reveals where this UUID comes from, populate `ChatReference.passage_id` in `_chat_wire.py::parse_single_citation()` and the encoder will use it automatically.
+- The `passage_id` UUID at slot `[3][0][5][0][0]` does NOT appear in the streaming chat response shape we currently parse. `_build_source_passage_descriptor` falls back to `chunk_id` as a placeholder when `ChatReference.passage_id` is unset (which is always, in production today). Empirically the server accepts this and the web UI still renders hover anchors. If a future capture reveals where this UUID comes from, populate `ChatReference.passage_id` in `_chat/wire.py::parse_single_citation()` and the encoder will use it automatically.
 - Multi-citation segmentation uses a *cumulative-span* heuristic (each `[N]` anchors `clean_text[0..position]` rather than a per-segment span). This matches the captured single-citation payload exactly but is unverified against multi-citation captures. See issue #660 PR description.
 
 ### RPC: UPDATE_NOTE (cYAfTb)
@@ -1996,8 +1996,8 @@ await client.sharing.add_user(notebook_id, "user@example.com", SharePermission.V
 ```
 
 **Share URLs:**
-- Notebook: `https://notebooklm.google.com/notebook/{notebook_id}`
-- Artifact deep-link: `https://notebooklm.google.com/notebook/{notebook_id}?artifactId={artifact_id}`
+- Notebook: `https://notebook.google.com/notebook/{notebook_id}`
+- Artifact deep-link: `https://notebook.google.com/notebook/{notebook_id}?artifactId={artifact_id}`
 
 The `?artifactId=xxx` parameter creates a deep link that opens the notebook and
 navigates to that specific artifact. It does not make the artifact an
@@ -2152,10 +2152,10 @@ await rpc_call(
 # [
 #     [task_id, [
 #         ...,
-#         query_info,           # [1]: [query_text, ...]
+#         query_info,           # [1]: [query_text, source_type]  (1=web, 2=drive)
 #         ...,
 #         sources_and_summary,  # [3]: [[sources], summary_text]
-#         status_code,          # [4]: 2=completed, 6=completed (deep), other=in_progress
+#         status_code,          # [4]: see the status-code table below
 #     ]],
 #     ...
 # ]
@@ -2178,6 +2178,40 @@ await rpc_call(
 # - For deep research, sources parsed from poll() carry `research_task_id`, which is
 #   later used by IMPORT_RESEARCH.
 ```
+
+#### Task status codes (`task_info[4]`)
+
+Captured live against the serving backend for issue #1964 — except code `6`,
+which was already known. `ResearchStatus` coarsens these into `in_progress` /
+`completed` / `failed`; `ResearchTask.termination_reason` keeps the distinction
+the coarse status loses, and is derived from the same table so the two can never
+disagree.
+
+| Code | Meaning | Termination reason | Observed in |
+| --- | --- | --- | --- |
+| `1` | Run in flight | `in_progress` | Every run, before it settles |
+| `2` | Completed with results | `completed` | Fast web and fast Drive runs |
+| `3` | **No matches** — terminal, zero sources | `no_results` | Drive runs (only place observed) |
+| `4` | Cancelled via `CANCEL_RESEARCH` | `cancelled` | A deep run cancelled mid-flight |
+| `6` | Completed (deep research) | `completed` | Deep research |
+
+Notes:
+
+- **Code `3` reads as Drive's "found nothing" signal, not an error.** It arrives
+  with a sources bundle carrying no sources (`[None, None, None, None, 1]`) and
+  zero parsed sources. Reproduced with three distinct non-matching Drive queries;
+  not seen on a web run in these probes, where the same gibberish query still
+  returned code `2` with loosely-related results. Three captures are strong
+  evidence, not proof — the decode only asserts `no_results` inside the envelope
+  it was observed in, and falls back to `unknown` for a code-3 row that
+  nonetheless carries sources. Treating it as an undifferentiated failure is
+  what issue #1964 fixed.
+- **A cancelled run is code `4`, distinct from `3`.** Confirmed by cancelling a
+  deep run mid-flight. Fast runs finish server-side before a cancel can land, so
+  a fast run cancelled immediately after start still completes with code `2`.
+- Any other terminal code maps to the `unknown` reason rather than being guessed
+  at — these codes are undocumented Google internals in the same volatility class
+  as the RPC method ids.
 
 ### RPC: IMPORT_RESEARCH (LBwxtb)
 
@@ -2331,9 +2365,10 @@ await rpc_call(
 # Source limit at: result[0][1][2]
 # Max characters per source at: result[0][1][3]  (e.g. 500000)
 # Tier enum at: result[0][1][4]  — OPAQUE key, not an ordinal rank.
-#   1=Standard/Free, 2=Pro, 4=Plus, 3=Ultra(20TB), 6=Ultra(30TB); 5=Expanded (legacy/
-#   unconfirmed); Enterprise separate. Live-confirmed 1 & 2 (source limits match Google's
-#   published 50 / 300). Full per-tier limits: docs/quota-limits.md
+#   1=Standard/Free, 2=Pro, 4=Plus, 3=Ultra(20TB), 6=Ultra(30TB); 5=Expanded (aligns
+#   with the Workspace "Expanded" access level, not a consumer plan). Live-confirmed
+#   1 & 2 (source limits match Google's published 50 / 300). Full per-tier limits:
+#   docs/quota-limits.md
 ```
 
 The full per-tier notebook/source/studio limits these enum values map to are documented in
@@ -2376,7 +2411,7 @@ await rpc_call(
 Common language codes include:
 - `en` (English), `ja` (日本語), `zh_Hans` (中文简体), `zh_Hant` (中文繁體)
 - `ko` (한국어), `es` (Español), `fr` (Français), `de` (Deutsch), `pt_BR` (Português)
-- See `cli/language_cmd.py::SUPPORTED_LANGUAGES` for the full list of 80+ languages
+- See `_app/language.py::SUPPORTED_LANGUAGES` for the full list of 80+ languages
 
 ---
 
@@ -2541,8 +2576,8 @@ await rpc_call(
 )
 
 # Share URL format:
-# - Notebook: https://notebooklm.google.com/notebook/{notebook_id}
-# - Artifact deep-link: https://notebooklm.google.com/notebook/{notebook_id}?artifactId={artifact_id}
+# - Notebook: https://notebook.google.com/notebook/{notebook_id}
+# - Artifact deep-link: https://notebook.google.com/notebook/{notebook_id}?artifactId={artifact_id}
 ```
 
 **Important:** The `?artifactId=xxx` URL is a **deep link** - it opens the shared notebook and navigates to that artifact. The artifact itself isn't independently shared.

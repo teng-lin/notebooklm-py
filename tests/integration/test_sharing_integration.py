@@ -46,7 +46,7 @@ class TestGetShareStatus:
         assert status.is_public is True
         assert len(status.shared_users) == 2
         assert status.shared_users[0].email == "owner@example.com"
-        assert status.share_url == "https://notebooklm.google.com/notebook/nb_123"
+        assert status.share_url == "https://notebook.google.com/notebook/nb_123"
 
     @pytest.mark.asyncio
     async def test_get_status_private_notebook(

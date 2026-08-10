@@ -11,10 +11,12 @@ integration so the loop stays broken.
 
 from __future__ import annotations
 
+import itertools
 import json
 import re
 import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock
 
 import httpx
@@ -23,6 +25,7 @@ from pytest_httpx import HTTPXMock
 
 import notebooklm.paths as _nb_paths
 from notebooklm import auth as auth_module
+from notebooklm._auth import cookies as auth_cookies
 from notebooklm._auth import psidts_recovery
 
 _ROTATE_URL_RE = re.compile(r"^https://accounts\.google\.com/RotateCookies$")
@@ -41,6 +44,73 @@ _RECOVERABLE_COOKIES: list[dict] = [
 
 def _write_storage(path: Path, cookies: list[dict]) -> None:
     path.write_text(json.dumps({"cookies": cookies, "origins": []}), encoding="utf-8")
+
+
+def _stage_storage_reads(
+    monkeypatch: pytest.MonkeyPatch,
+    path: Path,
+    *cookie_states: list[dict],
+) -> None:
+    """Serve exact successive disk samples without patching an auth module."""
+    real_read_text = Path.read_text
+    states = iter(cookie_states)
+    last = cookie_states[-1]
+
+    def _read_text(current: Path, *args: Any, **kwargs: Any) -> str:
+        nonlocal last
+        if current == path:
+            last = next(states, last)
+            return json.dumps({"cookies": last, "origins": []})
+        return real_read_text(current, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+
+def _rotate_requests(httpx_mock: HTTPXMock) -> list[httpx.Request]:
+    """Return only the ``RotateCookies`` POSTs the mock recorded.
+
+    Filtered rather than counted wholesale: the recovery paths run under an
+    autouse keepalive mock that may record unrelated traffic, so "did the POST
+    fire?" has to be asked about this URL specifically.
+    """
+    return [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]
+
+
+def _rookiepy_recoverable() -> list[dict]:
+    """Rookiepy-shaped cookies meeting the recovery precondition, PSIDTS absent.
+
+    The snake_case twin of :data:`_RECOVERABLE_COOKIES` — rookiepy's own field
+    spelling (``http_only``), which the in-memory path consumes directly without
+    going through ``convert_rookiepy_cookies_to_storage_state``. ``expires`` is
+    omitted (= session cookie); an explicit small ``int`` would be epoch seconds,
+    landing in 1970 and being filtered as expired before reaching the wire.
+    """
+    return [
+        {
+            "name": "SID",
+            "value": "test_sid",
+            "domain": ".google.com",
+            "path": "/",
+            "secure": True,
+            "http_only": False,
+        },
+        {
+            "name": "APISID",
+            "value": "test_apisid",
+            "domain": ".google.com",
+            "path": "/",
+            "secure": False,
+            "http_only": False,
+        },
+        {
+            "name": "SAPISID",
+            "value": "test_sapisid",
+            "domain": ".google.com",
+            "path": "/",
+            "secure": True,
+            "http_only": True,
+        },
+    ]
 
 
 def _make_psidts_response(status_code: int = 200, *, include_psidts: bool = True):
@@ -81,7 +151,7 @@ class TestRecoveryPreconditions:
         _write_storage(storage_path, cookies)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_psidts_already_present_returns_false_without_post(
@@ -100,7 +170,7 @@ class TestRecoveryPreconditions:
         _write_storage(storage_path, cookies)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_missing_secondary_binding_returns_false_without_post(
@@ -112,7 +182,7 @@ class TestRecoveryPreconditions:
         _write_storage(storage_path, cookies)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_osid_alone_satisfies_secondary_binding(self, tmp_path, httpx_mock: HTTPXMock):
@@ -145,18 +215,29 @@ class TestRecoveryPreconditions:
         monkeypatch.setattr(psidts_recovery, "_try_claim_rotation", lambda _path: False)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
 
 class TestPsidtsExpiryGate:
-    """The precondition gate must treat a present-but-EXPIRED PSIDTS as absent.
+    """The precondition gate: RFC 6265 routing, not a domain-priority ranking.
 
-    Tier-0 cold-start fix: ``_recover_psidts_inline`` originally keyed purely on
-    name presence, so an idle Chrome session whose ``__Secure-1PSIDTS`` row is
-    still on disk but past its ``expires`` epoch silently skipped the one
-    ``RotateCookies`` POST that would heal it (cold-start then failed at the
-    first authed GET). A ``-1``/``None`` (session-cookie) expiry stays
-    not-expired, matching ``_storage_entry_to_cookie``.
+    Two questions, two predicates (issue #2057):
+
+    - ``_psidts_routes_to_rotate`` — *should we fire?* Answered against the URL
+      the decision is about, so an absent, expired, or non-routing
+      ``__Secure-1PSIDTS`` all mean "fire".
+    - ``_psidts_is_live`` — *did the heal land?* Deliberately domain-blind,
+      because it must predict the caller's retried preflight, which is
+      name-presence over the allowlist.
+
+    The predecessor gate ranked one global winner by ``_auth_domain_priority``
+    and read that winner's expiry. The tiers are not distinct, so the winner
+    depended on ``storage_state`` ordering; and the ranking was inverted
+    relative to the action it gated, since ``accounts.google.com`` — the host
+    the POST targets — sits in the lowest tier.
+
+    A ``-1``/``None`` (session-cookie) expiry stays not-expired, matching
+    ``_storage_entry_to_cookie``.
     """
 
     _PAST = 1_000_000_000  # 2001-09-09, comfortably in the past
@@ -174,50 +255,66 @@ class TestPsidtsExpiryGate:
             }
         ]
 
-    # --- direct unit tests of the helper with an injectable ``now`` ---------
+    @staticmethod
+    def _psidts(domain=".google.com", *, expires, value="v", path="/") -> dict:
+        return {
+            "name": "__Secure-1PSIDTS",
+            "value": value,
+            "domain": domain,
+            "path": path,
+            "expires": expires,
+            "secure": True,
+        }
 
-    def test_helper_expired_needs_recovery(self):
-        """Present + expires strictly before ``now`` → recovery proceeds."""
-        assert (
-            psidts_recovery._psidts_needs_recovery(
-                {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": 100.0}, now=200.0
-            )
-            is True
+    @staticmethod
+    def _routes(entries, *, now=None) -> bool:
+        return psidts_recovery._psidts_routes_to_rotate(
+            entries, to_cookie=psidts_recovery._storage_cookie, now=now
         )
 
-    def test_helper_fresh_is_skipped(self):
-        """Present + expires at/after ``now`` → recovery is a no-op."""
-        assert (
-            psidts_recovery._psidts_needs_recovery(
-                {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": 300.0}, now=200.0
-            )
-            is False
+    @staticmethod
+    def _live(entries, *, now=None) -> bool:
+        return psidts_recovery._psidts_is_live(
+            entries, to_cookie=psidts_recovery._storage_cookie, now=now
         )
 
-    def test_helper_session_cookie_is_skipped(self):
+    # --- expiry, via the injectable ``now`` seam ----------------------------
+
+    def test_expired_does_not_route_so_recovery_proceeds(self):
+        """Expired against ``now`` → nothing routes → recovery fires."""
+        assert self._routes([self._psidts(expires=100.0)], now=200.0) is False
+
+    def test_fresh_routes_so_recovery_is_skipped(self):
+        """Fresh against ``now`` → routes to the rotate URL → recovery is a no-op.
+
+        Pins the fix for the seam that ``CookieJar.add_cookie_header`` would
+        otherwise destroy: it resets its own clock from ``time.time()``, so an
+        injected ``now`` in the past could only ever mark cookies expired. The
+        probe copies carry no expiry, leaving ``now`` the sole authority.
+        """
+        assert self._routes([self._psidts(expires=300.0)], now=200.0) is True
+
+    def test_session_cookie_routes(self):
         """``expires`` of -1 / None is a session cookie → never expired."""
         for sentinel in (-1, None):
-            assert (
-                psidts_recovery._psidts_needs_recovery(
-                    {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": sentinel}, now=200.0
-                )
-                is False
-            ), sentinel
+            assert self._routes([self._psidts(expires=sentinel)], now=200.0) is True, sentinel
 
-    def test_helper_missing_needs_recovery(self):
-        """Absent PSIDTS → recovery proceeds (current behavior, preserved)."""
-        assert psidts_recovery._psidts_needs_recovery(set(), {}, now=200.0) is True
+    def test_missing_psidts_does_not_route(self):
+        """Absent PSIDTS → recovery proceeds (original behavior, preserved)."""
+        assert self._routes(_RECOVERABLE_COOKIES, now=200.0) is False
 
-    def test_helper_expires_exactly_now_is_skipped(self):
-        """Boundary: ``expires == now`` is fresh (``expires < now`` is strict)."""
-        assert (
-            psidts_recovery._psidts_needs_recovery(
-                {"__Secure-1PSIDTS"}, {"__Secure-1PSIDTS": 200.0}, now=200.0
-            )
-            is False
-        )
+    def test_expires_exactly_now_is_expired(self):
+        """Boundary: ``expires == now`` is EXPIRED.
 
-    # --- domain-filtered / priority-resolved index gate --------------------
+        Deliberate change. The predecessor gate compared ``expires < now``;
+        ``http.cookiejar.Cookie.is_expired`` compares ``expires <= now``, and it
+        is now the single expiry authority. One second, intentionally moved.
+        """
+        assert self._routes([self._psidts(expires=200.0)], now=200.0) is False
+        assert self._live([self._psidts(expires=200.0)], now=200.0) is False
+        assert self._routes([self._psidts(expires=201.0)], now=200.0) is True
+
+    # --- RFC 6265 routing, not domain ranking (issue #2057) ----------------
 
     def test_psidts_on_unallowed_domain_does_not_skip_recovery(self):
         """A PSIDTS on a non-Google domain must NOT satisfy the precondition.
@@ -225,43 +322,236 @@ class TestPsidtsExpiryGate:
         Otherwise a stray ``__Secure-1PSIDTS`` cookie left by an unrelated site
         would falsely mark the Google session healthy and skip the heal.
         """
-        entries = _RECOVERABLE_COOKIES + [
-            {
-                "name": "__Secure-1PSIDTS",
-                "value": "evil",
-                "domain": ".evil.example",
-                "path": "/",
-                "expires": self._FUTURE,
-            }
-        ]
-        names, expiry = psidts_recovery._index_recovery_cookies(entries)
-        assert "__Secure-1PSIDTS" not in names
-        assert psidts_recovery._psidts_needs_recovery(names, expiry) is True
+        entries = _RECOVERABLE_COOKIES + [self._psidts(".evil.example", expires=self._FUTURE)]
+        assert self._routes(entries) is False
+        assert self._live(entries) is False
 
-    def test_index_prefers_base_google_domain_for_duplicates(self):
-        """Duplicate names resolve by ``_auth_domain_priority`` (``.google.com`` wins).
+    @pytest.mark.parametrize(
+        "domain, routes",
+        [
+            (".google.com", True),
+            ("google.com", True),  # no leading dot still routes (cookiejar v0)
+            ("accounts.google.com", True),  # host cookie on the POST's own host
+            (".accounts.google.com", True),
+            (".notebooklm.google.com", False),  # app host never reaches accounts.
+            ("notebooklm.google.com", False),
+            (".notebook.google.com", False),  # Gemini Notebook rebrand host
+            (".google.com.sg", False),  # regional ccTLD
+            (".googleusercontent.com", False),
+        ],
+    )
+    def test_routing_follows_rfc6265_not_domain_tier(self, domain, routes):
+        """Whether recovery fires is decided by routing, not by priority tier.
 
-        Regardless of list order, the ``.google.com`` PSIDTS expiry must win
-        over a regional-domain duplicate so the gate is order-independent.
+        ``accounts.google.com`` — the exact host ``KEEPALIVE_ROTATE_URL``
+        targets — sits in the LOWEST priority tier, while the app hosts that
+        outrank it never reach that host at all. The ranked gate had the
+        ordering exactly inverted relative to the action it gated.
         """
-        fresh_base = {
-            "name": "__Secure-1PSIDTS",
-            "value": "base",
+        entries = [self._psidts(domain, expires=self._FUTURE)]
+        assert self._routes(entries) is routes
+        # Every one of these is live: "did it land?" is domain-blind by design.
+        assert self._live(entries) is True
+
+    def test_path_scoped_psidts_does_not_route(self):
+        """RFC 6265 §5.4 path matching applies — the ranked gate ignored ``path``."""
+        entries = [self._psidts(expires=self._FUTURE, path="/elsewhere")]
+        assert self._routes(entries) is False
+        assert self._live(entries) is True
+
+    def test_divergent_case_stale_ranked_winner_fresh_sibling(self):
+        """The case the ranked gate got wrong (issue #2057).
+
+        ``.google.com`` is tier 4 and outranks everything, so a stale row there
+        made the ranked gate report "needs recovery" / "not persisted" even
+        though a fresh ``accounts.google.com`` sibling both routes to the POST
+        and satisfies the preflight.
+        """
+        entries = [
+            self._psidts(".google.com", expires=self._PAST),
+            self._psidts("accounts.google.com", expires=self._FUTURE),
+        ]
+        assert self._routes(entries) is True
+        assert self._live(entries) is True
+
+    def test_inverse_divergence_app_host_only(self):
+        """Fresh on the app host only: the heal IS needed, and the preflight WILL pass.
+
+        The two predicates must disagree here — that disagreement is the whole
+        point of splitting them.
+        """
+        entries = [self._psidts(".notebooklm.google.com", expires=self._FUTURE)]
+        assert self._routes(entries) is False
+        assert self._live(entries) is True
+
+    @pytest.mark.parametrize(
+        "entries_factory",
+        [
+            lambda s: [s._psidts(".google.com", expires=s._FUTURE)],
+            lambda s: [
+                s._psidts(".google.com", expires=s._PAST),
+                s._psidts("accounts.google.com", expires=s._FUTURE),
+            ],
+            lambda s: [
+                s._psidts(".notebooklm.google.com", expires=s._FUTURE),
+                s._psidts(".google.com.sg", expires=s._PAST),
+            ],
+            # Duplicate identity + a malformed row: the two cases where an
+            # order-sensitive implementation is most likely to slip through.
+            lambda s: [
+                s._psidts(".google.com", expires=s._FUTURE, value="a"),
+                s._psidts(".google.com", expires=s._PAST, value="b"),
+                s._psidts(".google.com", expires="nonsense", value="c"),
+            ],
+        ],
+    )
+    def test_reordering_storage_state_cannot_change_the_answer(self, entries_factory):
+        """Order-independence is the property the ranked gate could not offer.
+
+        Within a shared priority tier the old index resolved duplicates by
+        "first occurrence wins", so reordering the file changed the gate's
+        answer. This is the ratchet that replaces that surface.
+
+        Exhaustive over permutations rather than sampled: the PSIDTS rows are
+        few enough that `itertools.permutations` is both cheap and strictly
+        stronger than N random shuffles, and a failure reproduces exactly
+        instead of depending on an unseeded RNG.
+        """
+        psidts_rows = entries_factory(self)
+        expected = None
+        for ordering in itertools.permutations(psidts_rows):
+            entries = _RECOVERABLE_COOKIES + list(ordering)
+            answer = (self._routes(entries), self._live(entries))
+            if expected is None:
+                expected = answer
+            assert answer == expected, ordering
+
+    def test_routed_implies_live(self):
+        """``routed ⇒ live`` — the invariant that makes the flock-skip return True safe.
+
+        ``_recover_psidts_inline`` reports "healed by another process" purely
+        from the routed predicate. That is only sound because anything routing
+        to ``accounts.google.com`` is necessarily unexpired and on an allowed
+        domain, i.e. also live.
+        """
+        domains = [".google.com", "accounts.google.com", ".notebooklm.google.com", ".evil.example"]
+        expiries = [self._FUTURE, self._PAST, -1, None, "abc", True]
+        for domain in domains:
+            for expires in expiries:
+                for value in ("v", ""):
+                    entries = [self._psidts(domain, expires=expires, value=value)]
+                    if self._routes(entries):
+                        assert self._live(entries), entries
+
+    def test_live_implies_preflight_passes_on_the_psidts_half(self):
+        """``live ⇒ the retried preflight passes`` — pins the §"did it land?" alignment.
+
+        ``_is_psidts_persisted`` exists to predict the caller's preflight. If it
+        were ever stricter in a way the preflight is not, a healthy session
+        would be reported as unhealed and the caller would re-raise.
+        """
+        for domain in (".google.com", "accounts.google.com", ".notebooklm.google.com"):
+            entries = _RECOVERABLE_COOKIES + [self._psidts(domain, expires=self._FUTURE)]
+            assert self._live(entries) is True
+            # The preflight is domain-blind name presence; it must not raise.
+            auth_cookies.extract_cookies_from_storage({"cookies": entries, "origins": []})
+
+    # --- duplicate identities and malformed rows ---------------------------
+
+    def test_duplicate_identity_poisons_routing_but_not_liveness(self):
+        """A dead twin blocks ROUTING in either order — but must not block the heal.
+
+        ``http.cookiejar`` keeps one cookie per identity and lets a later row
+        replace an earlier one, so a jar built from a duplicated identity
+        depends on entry order. The routing predicate resolves that
+        conservatively, which is order-independent and never over-optimistic:
+        the cost is one needless POST.
+
+        ``_psidts_is_live`` must NOT inherit that rule. It models the retried
+        preflight, which is name presence and would pass. Poisoning it turns a
+        working session into a PERMANENT failure loop, because
+        ``save_cookies_to_storage`` CAS-matches the first stored row and leaves
+        the stale twin on disk: every load would fire a POST, write to disk,
+        then re-raise "Missing required cookies". The twin is issue #1523's data
+        shape — #1523 fixed the producer, and nothing on the load/save path
+        removes an existing one.
+        """
+        fresh = self._psidts(expires=self._FUTURE, value="fresh")
+        stale = self._psidts(expires=self._PAST, value="stale")
+        for ordering in ([fresh, stale], [stale, fresh]):
+            assert self._routes(ordering) is False, ordering
+            assert self._live(ordering) is True, ordering
+            # The preflight the live predicate models does pass on this state.
+            auth_cookies.extract_cookies_from_storage(
+                {"cookies": _RECOVERABLE_COOKIES + ordering, "origins": []}
+            )
+
+    def test_duplicate_name_on_distinct_identities_is_unaffected(self):
+        """Same name, different domain → different identity → no poisoning."""
+        entries = [
+            self._psidts(".google.com", expires=self._FUTURE),
+            self._psidts(".notebooklm.google.com", expires=self._PAST),
+        ]
+        assert self._routes(entries) is True
+        assert self._live(entries) is True
+
+    @pytest.mark.parametrize("expires", ["", "never", float("nan"), float("inf"), [], {}])
+    def test_malformed_expires_never_raises_and_splits_the_two_predicates(self, expires):
+        """``Cookie.__init__`` coerces eagerly; a bad ``expires`` must not escape.
+
+        Both predicates run inside the callers' ``except ValueError:`` handlers,
+        so a coercion error would replace the actionable "Missing required
+        cookies" diagnostic with a converter traceback.
+
+        The two predicates then answer differently, and deliberately so. An
+        unconvertible row cannot go in a jar, so it cannot be sent: routing says
+        "fire", the safe direction. But the row IS on disk and the preflight
+        will see it by name, so liveness says "present" — mirroring the
+        predecessor gate, which treated an uninterpretable expiry as present
+        rather than guessing. Reporting it absent would re-raise over a session
+        whose preflight passes.
+        """
+        entries = _RECOVERABLE_COOKIES + [self._psidts(expires=expires)]
+        assert self._routes(entries) is False
+        assert self._live(entries) is True
+
+    def test_expired_single_row_is_not_live(self):
+        """A row KNOWN to be expired still does not count as healed (issue #1273).
+
+        The relaxation for duplicates and malformed rows must not weaken this:
+        a no-op save that leaves one stale PSIDTS behind must not fake a heal.
+        """
+        entries = _RECOVERABLE_COOKIES + [self._psidts(expires=self._PAST)]
+        assert self._routes(entries) is False
+        assert self._live(entries) is False
+
+    def test_numeric_string_expires_is_honoured(self):
+        """A numeric string coerces to a real timestamp rather than being skipped."""
+        assert self._routes([self._psidts(expires=str(self._FUTURE))]) is True
+        assert self._routes([self._psidts(expires=str(self._PAST))]) is False
+
+    def test_header_name_match_is_exact_not_substring(self):
+        """A lookalike name, or a value embedding the literal, must not satisfy the gate.
+
+        Cookie values on allowlisted domains come from Chrome and are not
+        shape-controlled by us. A substring test would let one skip a real heal.
+        """
+        lookalike = {
+            "name": "X__Secure-1PSIDTSY",
+            "value": "v",
             "domain": ".google.com",
             "path": "/",
             "expires": self._FUTURE,
         }
-        expired_regional = {
-            "name": "__Secure-1PSIDTS",
-            "value": "regional",
-            "domain": ".google.com.sg",
+        value_embeds = {
+            "name": "NID",
+            "value": "__Secure-1PSIDTS=oops",
+            "domain": ".google.com",
             "path": "/",
-            "expires": self._PAST,
+            "expires": self._FUTURE,
         }
-        for ordering in ([fresh_base, expired_regional], [expired_regional, fresh_base]):
-            names, expiry = psidts_recovery._index_recovery_cookies(_RECOVERABLE_COOKIES + ordering)
-            assert expiry["__Secure-1PSIDTS"] == self._FUTURE, ordering
-            assert psidts_recovery._psidts_needs_recovery(names, expiry) is False, ordering
+        assert self._routes([lookalike, value_embeds]) is False
+        assert self._live([lookalike, value_embeds]) is False
 
     # --- file-based recovery end-to-end ------------------------------------
 
@@ -274,7 +564,7 @@ class TestPsidtsExpiryGate:
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
 
-        rotate_requests = [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]
+        rotate_requests = _rotate_requests(httpx_mock)
         assert len(rotate_requests) == 1
         saved = json.loads(storage_path.read_text(encoding="utf-8"))
         fresh = next(c for c in saved["cookies"] if c["name"] == "__Secure-1PSIDTS")
@@ -287,7 +577,7 @@ class TestPsidtsExpiryGate:
         _write_storage(storage_path, self._with_psidts(expires=self._FUTURE))
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_present_session_cookie_skips_recovery(self, tmp_path, httpx_mock: HTTPXMock):
@@ -296,7 +586,7 @@ class TestPsidtsExpiryGate:
         _write_storage(storage_path, self._with_psidts(expires=-1))
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     # --- in-memory twin ----------------------------------------------------
 
@@ -304,9 +594,7 @@ class TestPsidtsExpiryGate:
     def test_in_memory_present_but_expired_fires_recovery(self, httpx_mock: HTTPXMock):
         now = time.time()
         cookies = [
-            {"name": "SID", "value": "s", "domain": ".google.com", "path": "/"},
-            {"name": "APISID", "value": "a", "domain": ".google.com", "path": "/"},
-            {"name": "SAPISID", "value": "sa", "domain": ".google.com", "path": "/"},
+            *_rookiepy_recoverable(),
             {
                 "name": "__Secure-1PSIDTS",
                 "value": "stale",
@@ -338,9 +626,7 @@ class TestPsidtsExpiryGate:
         """
         now = time.time()
         cookies = [
-            {"name": "SID", "value": "s", "domain": ".google.com", "path": "/"},
-            {"name": "APISID", "value": "a", "domain": ".google.com", "path": "/"},
-            {"name": "SAPISID", "value": "sa", "domain": ".google.com", "path": "/"},
+            *_rookiepy_recoverable(),
             # __Secure-1PSIDTS expired → recovery fires.
             {
                 "name": "__Secure-1PSIDTS",
@@ -371,26 +657,22 @@ class TestPsidtsExpiryGate:
             assert rows[0]["value"] == rotated, f"{name} did not carry the rotated value"
 
         # The resulting storage_state must likewise hold exactly one row each.
-        from notebooklm._auth import cookies as _auth_cookies
-
-        state = _auth_cookies.convert_rookiepy_cookies_to_storage_state(cookies)
+        state = auth_cookies.convert_rookiepy_cookies_to_storage_state(cookies)
         for name in ("__Secure-1PSIDTS", "__Secure-3PSIDTS"):
             state_rows = [c for c in state["cookies"] if c["name"] == name]
             assert len(state_rows) == 1, f"{name} duplicated on disk: {state_rows}"
 
         # Auth-relevant binding cookies are all still present and correct.
         names = {c["name"]: c["value"] for c in cookies}
-        assert names["SID"] == "s"
-        assert names["APISID"] == "a"
-        assert names["SAPISID"] == "sa"
+        assert names["SID"] == "test_sid"
+        assert names["APISID"] == "test_apisid"
+        assert names["SAPISID"] == "test_sapisid"
 
     @pytest.mark.no_default_keepalive_mock
     def test_in_memory_present_and_fresh_skips_recovery(self, httpx_mock: HTTPXMock):
         now = time.time()
         cookies = [
-            {"name": "SID", "value": "s", "domain": ".google.com", "path": "/"},
-            {"name": "APISID", "value": "a", "domain": ".google.com", "path": "/"},
-            {"name": "SAPISID", "value": "sa", "domain": ".google.com", "path": "/"},
+            *_rookiepy_recoverable(),
             {
                 "name": "__Secure-1PSIDTS",
                 "value": "fresh_on_disk",
@@ -401,15 +683,13 @@ class TestPsidtsExpiryGate:
         ]
 
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_in_memory_session_cookie_skips_recovery(self, httpx_mock: HTTPXMock):
         """A session-cookie (-1) PSIDTS on the in-memory path is not expired → no POST."""
         cookies = [
-            {"name": "SID", "value": "s", "domain": ".google.com", "path": "/"},
-            {"name": "APISID", "value": "a", "domain": ".google.com", "path": "/"},
-            {"name": "SAPISID", "value": "sa", "domain": ".google.com", "path": "/"},
+            *_rookiepy_recoverable(),
             {
                 "name": "__Secure-1PSIDTS",
                 "value": "session",
@@ -420,9 +700,56 @@ class TestPsidtsExpiryGate:
         ]
 
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     # --- flock-held re-read (``_is_psidts_persisted``) ---------------------
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_stale_twin_row_does_not_block_the_heal(self, tmp_path, httpx_mock: HTTPXMock):
+        """A stale same-identity twin must not make a completed heal report failure.
+
+        End-to-end pin for a permanent failure loop. ``save_cookies_to_storage``
+        CAS-matches the FIRST stored row for an identity, so when disk carries
+        ``__Secure-1PSIDTS`` twice on ``(.google.com, /)`` the rotation lands on
+        one row and the stale twin survives the save. If ``_is_psidts_persisted``
+        treated that twin as disqualifying, every load would fire a POST, write
+        to disk, and then re-raise "Missing required cookies" — for a session
+        whose preflight passes. Issue #1523's data shape; #1523 fixed the
+        producer, not existing files.
+        """
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(
+            storage_path,
+            _RECOVERABLE_COOKIES
+            + [
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "stale_twin",
+                    "domain": ".google.com",
+                    "path": "/",
+                    "expires": 1_000_000_000,
+                },
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "rotated",
+                    "domain": ".google.com",
+                    "path": "/",
+                    "expires": 99_999_999_999,
+                },
+            ],
+        )
+        assert psidts_recovery._is_psidts_persisted(storage_path) is True
+
+        # And the whole recovery agrees. Asserting only `_is_psidts_persisted`
+        # would leave a regression in `_psidts_save_succeeded` or the
+        # `_recover_psidts_inline` wiring green, and that wiring is the thing
+        # that used to loop. Note the POST DOES fire: the routing predicate
+        # poisons the duplicated identity, which is the safe direction. What
+        # must not happen is the heal being reported as a FAILURE afterwards —
+        # that is what made it re-raise on every load, forever.
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+        assert psidts_recovery._recover_psidts_inline(storage_path) is True
+        assert len([r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]) == 1
 
     def test_is_psidts_persisted_false_for_expired_on_disk_row(self, tmp_path):
         """The held-flock re-read must NOT mistake a stale PSIDTS for a heal.
@@ -470,7 +797,7 @@ class TestRecoveryHappyPath:
 
         psidts_recovery._recover_psidts_inline(storage_path)
 
-        rotate_requests = [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]
+        rotate_requests = _rotate_requests(httpx_mock)
         assert len(rotate_requests) == 1
         cookie_header = rotate_requests[0].headers.get("cookie", "")
         # Sanity-check the request carries SID + the secondary binding.
@@ -578,38 +905,28 @@ class TestRecoveryConcurrentCasRejection:
     """
 
     @staticmethod
-    def _patch_save_with_cas_rejection(
-        monkeypatch, *, rejected_key, do_real_write: bool, seed_disk_cookie=None
-    ):
-        """Replace ``save_cookies_to_storage`` with a CAS-rejecting stand-in.
+    def _install_concurrent_write(
+        httpx_mock: HTTPXMock,
+        storage_path: Path,
+        disk_cookies: list[dict],
+        *,
+        rotate_sid: bool = False,
+    ) -> None:
+        """Write a sibling state during the POST, before the real typed merge."""
 
-        The stand-in honours ``return_result`` exactly like the real function
-        (bool projection by default, ``CookieSaveResult`` when asked) so the
-        test is faithful regardless of which signature the recovery path uses.
-        When ``do_real_write`` is set, the rotated cookies are genuinely
-        persisted first, modelling "our PSIDTS wrote through but a sibling lost".
-        ``seed_disk_cookie`` lets a test inject a sibling-written row onto disk
-        before reporting the coarse failure, modelling "a sibling persisted a
-        fresh PSIDTS first, so our delta was CAS-rejected".
-        """
-        from notebooklm._auth import storage as _auth_storage
-
-        real_save = _auth_storage.save_cookies_to_storage
-
-        def _save(cookie_jar, path=None, **kwargs):
-            return_result = kwargs.get("return_result", False)
-            if do_real_write:
-                real_save(cookie_jar, path, **{**kwargs, "return_result": True})
-            if seed_disk_cookie is not None and path is not None:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                data["cookies"].append(seed_disk_cookie)
-                path.write_text(json.dumps(data), encoding="utf-8")
-            result = _auth_storage.CookieSaveResult(
-                ok=False, cas_rejected_keys=frozenset({rejected_key})
+        def _respond(_request: httpx.Request) -> httpx.Response:
+            _write_storage(storage_path, disk_cookies)
+            response = _make_psidts_response()
+            headers = list(response["headers"])
+            if rotate_sid:
+                headers.append(("Set-Cookie", "SID=our-rotated-sid; Domain=.google.com; Path=/"))
+            return httpx.Response(
+                status_code=response["status_code"],
+                headers=headers,
+                content=response["content"],
             )
-            return result if return_result else result.ok
 
-        monkeypatch.setattr(psidts_recovery._auth_storage, "save_cookies_to_storage", _save)
+        httpx_mock.add_callback(_respond, url=_ROTATE_URL_RE)
 
     @pytest.mark.no_default_keepalive_mock
     def test_succeeds_when_sibling_cookie_cas_rejected_but_psidts_written(
@@ -622,15 +939,17 @@ class TestRecoveryConcurrentCasRejection:
         ``False`` even though the rotated PSIDTS persisted. Recovery must
         SUCCEED, not decline.
         """
-        from notebooklm._auth import storage as _auth_storage
-
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
-        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
-
-        sibling_key = _auth_storage.CookieSnapshotKey("SID", ".google.com", "/")
-        self._patch_save_with_cas_rejection(
-            monkeypatch, rejected_key=sibling_key, do_real_write=True
+        sibling_cookies = [
+            {**cookie, "value": "sibling-sid"} if cookie["name"] == "SID" else cookie
+            for cookie in _RECOVERABLE_COOKIES
+        ]
+        self._install_concurrent_write(
+            httpx_mock,
+            storage_path,
+            sibling_cookies,
+            rotate_sid=True,
         )
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
@@ -649,13 +968,8 @@ class TestRecoveryConcurrentCasRejection:
         write was the one rejected. Trusting ``cas_rejected_keys`` membership
         alone would wrongly decline here (codex review of #1273).
         """
-        from notebooklm._auth import storage as _auth_storage
-
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
-        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
-
-        psidts_key = _auth_storage.CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
         sibling_psidts = {
             "name": "__Secure-1PSIDTS",
             "value": "sibling_fresh_value",
@@ -663,11 +977,10 @@ class TestRecoveryConcurrentCasRejection:
             "path": "/",
             "expires": 99_999_999_999,  # comfortably in the future
         }
-        self._patch_save_with_cas_rejection(
-            monkeypatch,
-            rejected_key=psidts_key,
-            do_real_write=False,
-            seed_disk_cookie=sibling_psidts,
+        self._install_concurrent_write(
+            httpx_mock,
+            storage_path,
+            [*_RECOVERABLE_COOKIES, sibling_psidts],
         )
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
@@ -681,15 +994,18 @@ class TestRecoveryConcurrentCasRejection:
         Defends the false-heal direction: when no fresh PSIDTS is on disk after
         the save, recovery must keep failing rather than report success.
         """
-        from notebooklm._auth import storage as _auth_storage
-
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
-        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
-
-        psidts_key = _auth_storage.CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
-        self._patch_save_with_cas_rejection(
-            monkeypatch, rejected_key=psidts_key, do_real_write=False
+        unusable_psidts = {
+            "name": "__Secure-1PSIDTS",
+            "value": "",
+            "domain": ".google.com",
+            "path": "/",
+        }
+        self._install_concurrent_write(
+            httpx_mock,
+            storage_path,
+            [*_RECOVERABLE_COOKIES, unusable_psidts],
         )
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
@@ -703,13 +1019,8 @@ class TestRecoveryConcurrentCasRejection:
         The disk re-read mirrors the precondition gate, so an expired on-disk
         PSIDTS counts as absent and recovery must still decline.
         """
-        from notebooklm._auth import storage as _auth_storage
-
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
-        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
-
-        psidts_key = _auth_storage.CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
         expired_psidts = {
             "name": "__Secure-1PSIDTS",
             "value": "stale_value",
@@ -717,11 +1028,10 @@ class TestRecoveryConcurrentCasRejection:
             "path": "/",
             "expires": 1_000_000_000,  # 2001 — comfortably in the past
         }
-        self._patch_save_with_cas_rejection(
-            monkeypatch,
-            rejected_key=psidts_key,
-            do_real_write=False,
-            seed_disk_cookie=expired_psidts,
+        self._install_concurrent_write(
+            httpx_mock,
+            storage_path,
+            [*_RECOVERABLE_COOKIES, expired_psidts],
         )
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
@@ -755,6 +1065,38 @@ class TestLoadAuthFromStorageIntegration:
             auth_module.load_auth_from_storage(storage_path)
 
     @pytest.mark.no_default_keepalive_mock
+    def test_malformed_expires_on_a_sibling_row_keeps_the_actionable_error(
+        self, tmp_path, httpx_mock: HTTPXMock
+    ):
+        """A corrupt ``expires`` must not turn an auth diagnostic into a traceback.
+
+        Regression for a crash reachable on the pre-#2057 code: the jar builder
+        in ``_attempt_rotation`` converted every allowed-domain entry with no
+        guard, and ``http.cookiejar.Cookie.__init__`` coerces via
+        ``int(float(expires))``. One malformed sibling row — not even the PSIDTS
+        row — raised ``ValueError: could not convert string to float`` from
+        inside ``load_auth_from_storage``'s own ``except ValueError:`` handler,
+        replacing "Missing required cookies … Run 'notebooklm login'" with a
+        converter internal, after the rotation throttle slot had been claimed.
+        """
+        cookies = _RECOVERABLE_COOKIES + [
+            {
+                "name": "NID",
+                "value": "junk",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": "not-a-timestamp",
+            }
+        ]
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, cookies)
+        httpx_mock.add_response(url=_ROTATE_URL_RE, status_code=500)
+
+        with pytest.raises(ValueError, match="Missing required cookies") as excinfo:
+            auth_module.load_auth_from_storage(storage_path)
+        assert "could not convert string to float" not in str(excinfo.value)
+
+    @pytest.mark.no_default_keepalive_mock
     def test_propagates_value_error_when_recovery_post_fails(self, tmp_path, httpx_mock: HTTPXMock):
         """Recovery attempts but fails at the POST → original ValueError."""
         storage_path = tmp_path / "storage_state.json"
@@ -782,7 +1124,32 @@ class TestLoadAuthFromStorageIntegration:
             auth_module.load_auth_from_storage(None)
 
         # Crucially: no RotateCookies POST must have fired for env-var auth.
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_empty_env_var_does_not_fall_back_to_the_default_profile(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """An EMPTY ``NOTEBOOKLM_AUTH_JSON`` must not redirect recovery to a profile file.
+
+        The loader tests env-var *presence* and raises "set but empty" without
+        inspecting a cookie; ``_resolve_recovery_path`` used to test
+        *truthiness*, so an empty string fell through to the default profile.
+        Recovery would then POST and persist rotated cookies to a profile the
+        caller had explicitly bypassed by setting the variable at all.
+        """
+        default_path = tmp_path / "default_storage_state.json"
+        _write_storage(default_path, _RECOVERABLE_COOKIES)
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "")
+        monkeypatch.setattr(_nb_paths, "get_storage_path", Mock(return_value=default_path))
+
+        assert psidts_recovery._resolve_recovery_path(None) is None
+        assert psidts_recovery._recover_psidts_inline(None) is False
+        assert _rotate_requests(httpx_mock) == []
+        # The bypassed profile is untouched.
+        assert json.loads(default_path.read_text(encoding="utf-8"))["cookies"] == (
+            _RECOVERABLE_COOKIES
+        )
 
     @pytest.mark.no_default_keepalive_mock
     def test_recovers_when_path_is_none_with_no_env_var(
@@ -796,31 +1163,20 @@ class TestLoadAuthFromStorageIntegration:
         when ``NOTEBOOKLM_AUTH_JSON`` is unset — that's the most common library
         usage. The recovery must resolve the same default.
         """
-        # Point ``get_storage_path()`` at a tmp file populated with the
-        # recoverable-but-PSIDTS-missing state. Object-form patches (ADR-0007
-        # Form-2) against the live module-object seams so both
-        # ``_load_storage_state`` (module-level ``get_storage_path`` in
-        # ``_auth.cookies``, reached via the ``psidts_recovery._auth_cookies``
-        # alias) and the recovery's ``_resolve_recovery_path`` (lazy
-        # ``from ..paths import get_storage_path``, reached via the
-        # ``notebooklm.paths`` module object) see the same override.
-        default_path = tmp_path / "default_storage_state.json"
-        _write_storage(default_path, _RECOVERABLE_COOKIES)
+        # Drive both call-time default-path lookups through the documented home
+        # and profile environment instead of retaining a module patch seam.
         monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
-        fake_paths_get = Mock(return_value=default_path)
-        fake_cookies_get = Mock(return_value=default_path)
-        monkeypatch.setattr(_nb_paths, "get_storage_path", fake_paths_get)
-        monkeypatch.setattr(psidts_recovery._auth_cookies, "get_storage_path", fake_cookies_get)
+        monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "default")
+        resolved = _nb_paths.get_storage_path()
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        _write_storage(resolved, _RECOVERABLE_COOKIES)
         httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
 
         cookies = auth_module.load_auth_from_storage(None)
 
         assert cookies["__Secure-1PSIDTS"] == "fresh_psidts_value"
-        # Bite-check: both module-object seams must be the live resolution path.
-        # ``_resolve_recovery_path`` reaches ``notebooklm.paths.get_storage_path``;
-        # ``_load_storage_state`` reaches ``_auth.cookies.get_storage_path``.
-        fake_paths_get.assert_called()
-        fake_cookies_get.assert_called()
+        assert resolved == _nb_paths.get_storage_path()
 
 
 class TestBuildHttpxCookiesFromStorageIntegration:
@@ -873,43 +1229,36 @@ class TestInMemoryRecovery:
     lock / throttle because the extraction path is a single one-shot CLI run.
     """
 
-    # Rookiepy uses snake_case field names; mirror that shape here so the
-    # in-memory recovery exercises the real format produced by rookiepy.load().
-    # ``expires`` omitted = session cookie; an explicit ``int`` would be epoch
-    # seconds — small values like 9999 land in 1970 and get filtered as expired
-    # before reaching the wire.
-    @staticmethod
-    def _rookiepy_recoverable() -> list[dict]:
-        return [
-            {
-                "name": "SID",
-                "value": "test_sid",
-                "domain": ".google.com",
-                "path": "/",
-                "secure": True,
-                "http_only": False,
-            },
-            {
-                "name": "APISID",
-                "value": "test_apisid",
-                "domain": ".google.com",
-                "path": "/",
-                "secure": False,
-                "http_only": False,
-            },
-            {
-                "name": "SAPISID",
-                "value": "test_sapisid",
-                "domain": ".google.com",
-                "path": "/",
-                "secure": True,
-                "http_only": True,
-            },
+    @pytest.mark.no_default_keepalive_mock
+    def test_rotation_keeps_a_returned_lsid(self, httpx_mock: HTTPXMock):
+        """A rotated ``LSID`` must survive the write-back (#1977 review).
+
+        This path allows the POST on ``APISID``+``SAPISID`` alone, so a rotation
+        that *supplies* the missing ``LSID`` is exactly the case worth keeping —
+        without it the set still has no valid secondary binding and the recovery
+        accomplished nothing. The write-back previously kept only the two PSIDTS
+        names and dropped it silently.
+        """
+        response = _make_psidts_response()
+        response["headers"] = list(response["headers"]) + [
+            (
+                "Set-Cookie",
+                "LSID=fresh_lsid_value; Domain=accounts.google.com; "
+                "Path=/; Secure; HttpOnly; SameSite=Lax",
+            )
         ]
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **response)
+
+        cookies = _rookiepy_recoverable()
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is True
+
+        lsid = [c for c in cookies if c["name"] == "LSID"]
+        assert lsid, "a rotated LSID must be written back into the in-memory list"
+        assert lsid[0]["value"] == "fresh_lsid_value"
 
     @pytest.mark.no_default_keepalive_mock
     def test_recovers_psidts_and_mutates_list_in_place(self, httpx_mock: HTTPXMock):
-        cookies = self._rookiepy_recoverable()
+        cookies = _rookiepy_recoverable()
         httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
 
         assert psidts_recovery.recover_psidts_in_memory(cookies) is True
@@ -922,12 +1271,12 @@ class TestInMemoryRecovery:
 
     @pytest.mark.no_default_keepalive_mock
     def test_post_carries_existing_cookies(self, httpx_mock: HTTPXMock):
-        cookies = self._rookiepy_recoverable()
+        cookies = _rookiepy_recoverable()
         httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
 
         psidts_recovery.recover_psidts_in_memory(cookies)
 
-        requests = [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]
+        requests = _rotate_requests(httpx_mock)
         assert len(requests) == 1
         header = requests[0].headers.get("cookie", "")
         assert "SID=test_sid" in header
@@ -936,13 +1285,13 @@ class TestInMemoryRecovery:
 
     @pytest.mark.no_default_keepalive_mock
     def test_no_sid_returns_false_without_post(self, httpx_mock: HTTPXMock):
-        cookies = [c for c in self._rookiepy_recoverable() if c["name"] != "SID"]
+        cookies = [c for c in _rookiepy_recoverable() if c["name"] != "SID"]
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_psidts_already_present_returns_false_without_post(self, httpx_mock: HTTPXMock):
-        cookies = self._rookiepy_recoverable() + [
+        cookies = _rookiepy_recoverable() + [
             {
                 "name": "__Secure-1PSIDTS",
                 "value": "already_there",
@@ -953,15 +1302,101 @@ class TestInMemoryRecovery:
             }
         ]
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_gate_reads_rookiepy_rows_directly_not_via_conversion(
+        self, httpx_mock: HTTPXMock
+    ) -> None:
+        """Site 4 selects the rookiepy converter; it does not convert the list first.
+
+        ``_rookiepy_entry_to_cookie`` reads snake_case ``http_only`` (the
+        storage_state mirror reads camelCase ``httpOnly``), and a rookiepy
+        ``expires`` of ``None`` is a session cookie that is NOT pre-mapped to
+        ``-1`` the way ``convert_rookiepy_cookies_to_storage_state`` would. Both
+        shapes must be honoured on the raw rows.
+        """
+        session_psidts = {
+            "name": "__Secure-1PSIDTS",
+            "value": "session_value",
+            "domain": ".google.com",
+            "path": "/",
+            "secure": True,
+            "http_only": True,
+            "expires": None,
+        }
+        cookies = _rookiepy_recoverable() + [session_psidts]
+
+        # Session expiry -> live -> routes -> no POST.
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        assert _rotate_requests(httpx_mock) == []
+
+        cookie = psidts_recovery._rookiepy_entry_to_cookie(session_psidts)
+        assert cookie.expires is None
+        assert cookie.get_nonstandard_attr("HttpOnly") == ""
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_withheld_rotation_is_detected_despite_a_pre_existing_psidts(
+        self, httpx_mock: HTTPXMock
+    ):
+        """A pre-existing non-routing PSIDTS must not fake a successful mint.
+
+        Routing the gate made this path newly reachable: an app-host-only PSIDTS
+        now fires the POST, and the request jar still carries that cookie. A
+        name-only "did the response include PSIDTS?" check would therefore see
+        the caller's own pre-existing cookie and report success even when Google
+        withheld the rotation — defeating the very detection the surrounding code
+        exists for. The check asks whether a PSIDTS now ROUTES to the rotate URL,
+        which is also proof of newness: the gate only fired because nothing
+        routable was there to begin with.
+        """
+        cookies = _rookiepy_recoverable() + [
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "app_host_only",
+                "domain": ".notebooklm.google.com",
+                "path": "/",
+                "secure": True,
+                "http_only": True,
+            }
+        ]
+        # 2xx, but no Set-Cookie for PSIDTS — Google withholding the rotation.
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response(include_psidts=False))
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        # The POST did fire — the heal was genuinely needed — but it is correctly
+        # reported as failed, and no bogus row was appended.
+        assert len([r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]) == 1
+        assert [c for c in cookies if c["name"] == "__Secure-1PSIDTS"] == [cookies[-1]]
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_app_host_only_psidts_still_fires_the_post(self, httpx_mock: HTTPXMock):
+        """A PSIDTS that never reaches ``accounts.google.com`` does not block the heal.
+
+        The ranked gate treated ``.notebooklm.google.com`` as a high-priority
+        satisfying row and skipped. It does not route to the POST's host, so the
+        session still needs the mint.
+        """
+        cookies = _rookiepy_recoverable() + [
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "app_host_only",
+                "domain": ".notebooklm.google.com",
+                "path": "/",
+                "secure": True,
+                "http_only": True,
+            }
+        ]
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is True
+        assert len(_rotate_requests(httpx_mock)) == 1
 
     @pytest.mark.no_default_keepalive_mock
     def test_missing_secondary_binding_returns_false_without_post(self, httpx_mock: HTTPXMock):
-        cookies = [
-            c for c in self._rookiepy_recoverable() if c["name"] not in {"APISID", "SAPISID"}
-        ]
+        cookies = [c for c in _rookiepy_recoverable() if c["name"] not in {"APISID", "SAPISID"}]
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_osid_satisfies_secondary_binding(self, httpx_mock: HTTPXMock):
@@ -989,7 +1424,7 @@ class TestInMemoryRecovery:
 
     @pytest.mark.no_default_keepalive_mock
     def test_4xx_response_returns_false(self, httpx_mock: HTTPXMock):
-        cookies = self._rookiepy_recoverable()
+        cookies = _rookiepy_recoverable()
         httpx_mock.add_response(url=_ROTATE_URL_RE, status_code=401)
 
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
@@ -997,7 +1432,7 @@ class TestInMemoryRecovery:
 
     @pytest.mark.no_default_keepalive_mock
     def test_200_without_psidts_returns_false(self, httpx_mock: HTTPXMock):
-        cookies = self._rookiepy_recoverable()
+        cookies = _rookiepy_recoverable()
         httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response(include_psidts=False))
 
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
@@ -1005,7 +1440,7 @@ class TestInMemoryRecovery:
 
     @pytest.mark.no_default_keepalive_mock
     def test_network_error_returns_false(self, httpx_mock: HTTPXMock):
-        cookies = self._rookiepy_recoverable()
+        cookies = _rookiepy_recoverable()
         httpx_mock.add_exception(httpx.ConnectError("simulated network failure"))
 
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
@@ -1013,7 +1448,7 @@ class TestInMemoryRecovery:
     @pytest.mark.no_default_keepalive_mock
     def test_validate_with_recovery_heals_partial_jar(self, httpx_mock: HTTPXMock):
         """End-to-end: validate-with-recovery returns (storage_state, None) after rotation."""
-        cookies = self._rookiepy_recoverable()
+        cookies = _rookiepy_recoverable()
         httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
 
         storage_state, error = psidts_recovery.validate_with_recovery(cookies)
@@ -1028,16 +1463,84 @@ class TestInMemoryRecovery:
     def test_validate_with_recovery_returns_error_on_unrecoverable(self, httpx_mock: HTTPXMock):
         """When recovery declines, the original ValueError is surfaced."""
         # No SID → recovery declines → original ValueError propagates.
-        cookies = [c for c in self._rookiepy_recoverable() if c["name"] != "SID"]
+        cookies = [c for c in _rookiepy_recoverable() if c["name"] != "SID"]
 
         storage_state, error = psidts_recovery.validate_with_recovery(cookies)
 
         assert error is not None
         assert "SID" in str(error)
         # No POST fired (recovery preconditions failed early).
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
         # storage_state still reflects the (incomplete) extraction attempt.
         assert isinstance(storage_state, dict)
+
+
+class TestMalformedExpiresAcrossLoaders:
+    """A row with an uncoercible ``expires`` must not take a whole profile down.
+
+    ``http.cookiejar.Cookie.__init__`` coerces via ``int(float(expires))``, so a
+    single corrupt row raised ``ValueError: could not convert string to float``
+    out of every loader — including from *inside* the recovery paths'
+    ``except ValueError:`` handlers, where it replaced the actionable
+    "Missing required cookies … Run 'notebooklm login'" with a converter
+    traceback. Guarding only the recovery module left
+    ``NotebookLMClient.from_storage`` still broken, and made it worse: recovery
+    would now complete, fire a POST and rewrite the file, while the strict
+    loader kept raising the same error on every load, forever.
+    """
+
+    @staticmethod
+    def _storage_with_bad_row(tmp_path: Path, *, include_psidts: bool) -> Path:
+        rows = list(_RECOVERABLE_COOKIES)
+        if include_psidts:
+            rows.append(
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "fresh",
+                    "domain": ".google.com",
+                    "path": "/",
+                    "expires": 99_999_999_999,
+                }
+            )
+        rows.append(
+            {
+                "name": "NID",
+                "value": "junk",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": "not-a-timestamp",
+            }
+        )
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, rows)
+        return storage_path
+
+    def test_strict_loader_skips_the_bad_row_and_loads(self, tmp_path):
+        """The `NotebookLMClient.from_storage` path: a healthy profile still loads."""
+        storage_path = self._storage_with_bad_row(tmp_path, include_psidts=True)
+        jar = auth_cookies.build_httpx_cookies_from_storage(storage_path)
+        names = {c.name for c in jar.jar}
+        assert "__Secure-1PSIDTS" in names and "SID" in names
+        assert "NID" not in names  # unusable row dropped, not fatal
+
+    def test_download_loader_skips_the_bad_row_and_loads(self, tmp_path):
+        storage_path = self._storage_with_bad_row(tmp_path, include_psidts=True)
+        jar = auth_cookies.load_httpx_cookies(storage_path)
+        names = {c.name for c in jar.jar}
+        assert "__Secure-1PSIDTS" in names
+        assert "NID" not in names
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_bad_row_yields_the_actionable_error_not_a_coercion_traceback(
+        self, tmp_path, httpx_mock: HTTPXMock
+    ):
+        """When the dropped row mattered, the loaders' own validation speaks."""
+        storage_path = self._storage_with_bad_row(tmp_path, include_psidts=False)
+        httpx_mock.add_response(url=_ROTATE_URL_RE, status_code=500)
+
+        with pytest.raises(ValueError, match="Missing required cookies") as excinfo:
+            auth_cookies.build_httpx_cookies_from_storage(storage_path)
+        assert "could not convert string to float" not in str(excinfo.value)
 
 
 class TestMissingCookiesHint:
@@ -1057,7 +1560,9 @@ class TestMissingCookiesHint:
     def test_missing_psidts_with_binding_suggests_rotation_or_visit(self):
         from notebooklm._auth.cookie_policy import missing_cookies_hint
 
-        hint = missing_cookies_hint({"SID", "APISID", "SAPISID"}, browser_label="firefox")
+        # LSID completes the binding (#1977); without it this set has no valid
+        # secondary binding at all and takes the other branch.
+        hint = missing_cookies_hint({"SID", "APISID", "SAPISID", "LSID"}, browser_label="firefox")
         assert "__Secure-1PSIDTS" in hint
         assert "RotateCookies recovery" in hint
         assert "firefox" in hint
@@ -1094,7 +1599,7 @@ class TestEdgeCases:
         storage_path.write_text(json.dumps({"cookies": "not-a-list"}), encoding="utf-8")
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_save_returning_false_propagates_as_failure(
@@ -1111,37 +1616,31 @@ class TestEdgeCases:
         """
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
-        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
 
-        # Force the persist step to return False (CAS rejection / I/O error / etc.).
-        # Object-form patch against the local ``_auth_storage`` module alias on
-        # ``psidts_recovery`` (ADR-0007 Form-2) — the recovery resolves
-        # ``_auth_storage.save_cookies_to_storage`` via this module's globals at
-        # call time, so patching the alias module object is the live seam.
-        fake_save = Mock(return_value=False)
-        monkeypatch.setattr(psidts_recovery._auth_storage, "save_cookies_to_storage", fake_save)
+        def _remove_destination(_request: httpx.Request) -> httpx.Response:
+            storage_path.unlink()
+            return httpx.Response(**_make_psidts_response())
+
+        httpx_mock.add_callback(_remove_destination, url=_ROTATE_URL_RE)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        # Bite-check: the recovery must actually reach the persist step.
-        fake_save.assert_called()
+        assert not storage_path.exists()
 
     @pytest.mark.no_default_keepalive_mock
     def test_save_raising_propagates_as_failure(self, tmp_path, monkeypatch, httpx_mock: HTTPXMock):
         """Unexpected exception from ``save_cookies_to_storage`` → False, not propagated."""
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
-        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
 
-        # Object-form patch against the local ``_auth_storage`` module alias on
-        # ``psidts_recovery`` (ADR-0007 Form-2) — the recovery resolves
-        # ``_auth_storage.save_cookies_to_storage`` via this module's globals at
-        # call time, so patching the alias module object is the live seam.
-        fake_save = Mock(side_effect=OSError("simulated disk-full"))
-        monkeypatch.setattr(psidts_recovery._auth_storage, "save_cookies_to_storage", fake_save)
+        def _replace_destination_with_directory(_request: httpx.Request) -> httpx.Response:
+            storage_path.unlink()
+            storage_path.mkdir()
+            return httpx.Response(**_make_psidts_response())
+
+        httpx_mock.add_callback(_replace_destination_with_directory, url=_ROTATE_URL_RE)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        # Bite-check: the recovery must actually reach the persist step.
-        fake_save.assert_called()
+        assert storage_path.is_dir()
 
     @pytest.mark.no_default_keepalive_mock
     def test_cross_process_flock_held_skips_post(
@@ -1169,7 +1668,7 @@ class TestEdgeCases:
         monkeypatch.setattr(psidts_recovery, "_file_lock_try_exclusive", held_lock)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_flock_held_returns_true_when_file_already_healed(
@@ -1188,11 +1687,11 @@ class TestEdgeCases:
 
         @contextlib.contextmanager
         def held_lock(_lock_path):
+            _write_storage(storage_path, post_heal_state["cookies"])
             yield False
 
         # Two-phase view: precondition sees missing-PSIDTS state, post-flock
         # re-read (via _is_psidts_persisted) sees healed state.
-        pre_heal_state = {"cookies": _RECOVERABLE_COOKIES}
         post_heal_state = {
             "cookies": _RECOVERABLE_COOKIES
             + [
@@ -1204,21 +1703,11 @@ class TestEdgeCases:
                 }
             ]
         }
-        call_counter = {"n": 0}
-
-        def staged_load(_p):
-            call_counter["n"] += 1
-            return pre_heal_state if call_counter["n"] == 1 else post_heal_state
-
-        # Patch the local aliases on ``psidts_recovery`` (ADR-0007 object-target
-        # form) — the recovery path resolves these symbols via this module's
-        # globals at call time.
-        monkeypatch.setattr(psidts_recovery, "_load_storage_state", staged_load)
         monkeypatch.setattr(psidts_recovery, "_file_lock_try_exclusive", held_lock)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
         # No POST — the holder already did the work.
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_post_flock_recheck_skips_post_when_file_healed_meanwhile(
@@ -1233,7 +1722,6 @@ class TestEdgeCases:
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
 
-        pre_heal_state = {"cookies": _RECOVERABLE_COOKIES}
         post_heal_state = {
             "cookies": _RECOVERABLE_COOKIES
             + [
@@ -1245,20 +1733,16 @@ class TestEdgeCases:
                 }
             ]
         }
-        call_counter = {"n": 0}
-
-        def staged_load(_p):
-            call_counter["n"] += 1
-            return pre_heal_state if call_counter["n"] == 1 else post_heal_state
-
-        # Patch the local alias on ``psidts_recovery`` (ADR-0007 object-target
-        # form) — the recovery path resolves ``_load_storage_state`` via this
-        # module's globals at call time.
-        monkeypatch.setattr(psidts_recovery, "_load_storage_state", staged_load)
+        _stage_storage_reads(
+            monkeypatch,
+            storage_path,
+            _RECOVERABLE_COOKIES,
+            post_heal_state["cookies"],
+        )
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
         # Crucial: no POST — recheck saw the heal before we fired.
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
 
     @pytest.mark.no_default_keepalive_mock
     def test_post_flock_recheck_re_validates_full_preconditions(
@@ -1273,19 +1757,50 @@ class TestEdgeCases:
 
         # Pre-heal: precondition gate passes. Post-heal: SID got dropped by a
         # concurrent process (e.g. logout, profile switch).
-        pre_heal_state = {"cookies": _RECOVERABLE_COOKIES}
         post_heal_state = {"cookies": [c for c in _RECOVERABLE_COOKIES if c["name"] != "SID"]}
-        call_counter = {"n": 0}
-
-        def staged_load(_p):
-            call_counter["n"] += 1
-            return pre_heal_state if call_counter["n"] == 1 else post_heal_state
-
-        # Patch the local alias on ``psidts_recovery`` (ADR-0007 object-target
-        # form) — the recovery path resolves ``_load_storage_state`` via this
-        # module's globals at call time.
-        monkeypatch.setattr(psidts_recovery, "_load_storage_state", staged_load)
+        _stage_storage_reads(
+            monkeypatch,
+            storage_path,
+            _RECOVERABLE_COOKIES,
+            post_heal_state["cookies"],
+        )
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         # No POST — recheck saw the broken state and aborted before firing.
-        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        assert _rotate_requests(httpx_mock) == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_post_flock_recheck_healed_branch_returns_before_sid_is_rechecked(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """The "healed by another process" branch returns BEFORE the SID recheck.
+
+        Pins a deliberate asymmetry. The PSIDTS check precedes the ``SID`` and
+        secondary-binding rechecks, so a concurrent write that lands a routable
+        PSIDTS *and* drops ``SID`` takes the early ``return True`` without
+        revalidating the rest. That is sound rather than a hole: the caller
+        simply retries its preflight, which then fails honestly on the missing
+        ``SID`` — no POST is fired and nothing is written. Firing here instead
+        would send a request Google is guaranteed to reject.
+        """
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, _RECOVERABLE_COOKIES)
+
+        healed_but_sid_lost = [c for c in _RECOVERABLE_COOKIES if c["name"] != "SID"] + [
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "healed_by_sibling",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": 99_999_999_999,
+            }
+        ]
+        _stage_storage_reads(
+            monkeypatch,
+            storage_path,
+            _RECOVERABLE_COOKIES,
+            healed_but_sid_lost,
+        )
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is True
+        assert _rotate_requests(httpx_mock) == []

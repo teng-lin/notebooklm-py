@@ -16,10 +16,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from ....auth import (
-    GOOGLE_REGIONAL_CCTLDS,
-    OPTIONAL_COOKIE_DOMAINS_BY_LABEL,
-    REQUIRED_COOKIE_DOMAINS,
+from ...._app.login_cookie import (
+    CookieDomainFailure,
+    parse_cookie_domain_labels,
+    resolve_cookie_domains,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,23 +44,18 @@ def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
             :data:`notebooklm.auth.OPTIONAL_COOKIE_DOMAINS_BY_LABEL` keys
             (or the literal ``"all"``).
     """
-    labels: set[str] = set()
-    for raw in values:
-        for part in raw.split(","):
-            label = part.strip().lower()
-            if not label:
-                continue
-            labels.add(label)
-    if not labels:
-        return labels
-    valid = set(OPTIONAL_COOKIE_DOMAINS_BY_LABEL) | {_INCLUDE_DOMAINS_ALL}
-    bad = labels - valid
-    if bad:
-        supported = ", ".join(sorted(valid))
-        raise IncludeDomainsParseError(
-            f"unknown --include-domains label(s): {', '.join(sorted(bad))}. Supported: {supported}."
-        )
-    return labels
+    selection = None
+    try:
+        selection = parse_cookie_domain_labels(values)
+        if isinstance(selection, CookieDomainFailure):
+            raise IncludeDomainsParseError(
+                "unknown --include-domains label(s): "
+                f"{', '.join(selection.invalid_labels)}. "
+                f"Supported: {', '.join(selection.supported_labels)}."
+            )
+        return set(selection.labels)
+    finally:
+        del values, selection
 
 
 def _warn_missing_optional_domains(
@@ -68,31 +63,42 @@ def _warn_missing_optional_domains(
     *,
     warn: Callable[[str], None] | None = None,
 ) -> str | None:
-    """Build or emit the migration warning for the minimum-cookies default.
+    """Build or emit the migration warning for the reduced request default.
 
     The cookie-domain split narrows the default extraction set to
     :data:`REQUIRED_COOKIE_DOMAINS`. Users upgrading from the prior
-    behavior need a heads-up that YouTube / Docs / myaccount / Mail
-    cookies are no longer scraped at login.
+    behavior need a heads-up that sibling hosts are no longer explicitly
+    requested at login. Trusted Google-root cookies returned by the extractor
+    are still retained for compatibility; distinct roots such as YouTube are
+    excluded unless opted in.
 
     ``warn`` is injected by the command layer for interactive CLI runs so
     this service module does not import presentation helpers.
     """
-    if include_domains:
-        return None
-    supported = ", ".join(sorted(OPTIONAL_COOKIE_DOMAINS_BY_LABEL))
-    message = (
-        "[dim]Note: sibling-product cookies not included by default. "
-        f"Pass --include-domains=<{supported}> (or =all) to extract them.[/dim]"
-    )
-    if warn is not None:
-        warn(message)
-    logger.info(
-        "Login extracting REQUIRED_COOKIE_DOMAINS only (cookie-domain split default). "
-        "Pass --include-domains=%s (or =all) to include sibling cookies.",
-        supported,
-    )
-    return message
+    selection = supported = message = None
+    try:
+        if include_domains:
+            return None
+        selection = resolve_cookie_domains(set())
+        supported = ", ".join(
+            label for label in selection.supported_labels if label != _INCLUDE_DOMAINS_ALL
+        )
+        message = (
+            "[dim]Note: sibling-product domains are not explicitly requested by default. "
+            "Cookies under trusted Google roots may still be retained for compatibility. "
+            f"Pass --include-domains=<{supported}> (or =all) to request them.[/dim]"
+        )
+        if warn is not None:
+            warn(message)
+        logger.info(
+            "Login explicitly requesting REQUIRED_COOKIE_DOMAINS only. Trusted Google-root "
+            "subdomains returned by the extractor remain compatible. Pass --include-domains=%s "
+            "(or =all) to request known sibling hosts.",
+            supported,
+        )
+        return message
+    finally:
+        del include_domains, warn, selection, supported, message
 
 
 def _resolve_optional_cookie_domains(labels: set[str]) -> frozenset[str]:
@@ -105,18 +111,12 @@ def _resolve_optional_cookie_domains(labels: set[str]) -> frozenset[str]:
     this function; the dict lookup below is
     therefore unguarded by design.
     """
-    if not labels:
-        return frozenset()
-    if _INCLUDE_DOMAINS_ALL in labels:
-        return frozenset().union(*OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values())
-    selected: set[str] = set()
-    for label in labels:
-        # ``_parse_include_domains`` guarantees ``label`` is a valid key
-        # (or ``"all"``, handled above). Unguarded lookup is intentional —
-        # a KeyError here would be a bug in our own validation, not user
-        # input.
-        selected.update(OPTIONAL_COOKIE_DOMAINS_BY_LABEL[label])
-    return frozenset(selected)
+    selection = None
+    try:
+        selection = resolve_cookie_domains(labels)
+        return selection.optional_domains
+    finally:
+        del labels, selection
 
 
 def _build_google_cookie_domains(
@@ -127,8 +127,8 @@ def _build_google_cookie_domains(
     """Return the cookie-domain list fed to extractors (rookiepy / Firefox).
 
     Defaults to :data:`REQUIRED_COOKIE_DOMAINS` plus all known regional
-    ``.google.<ccTLD>`` variants. Sibling-product cookies (YouTube, Docs,
-    myaccount, Mail) are excluded unless the caller opts in via
+    ``.google.<ccTLD>`` variants. Sibling-product hosts (YouTube, Docs,
+    myaccount, Mail) are not explicitly requested unless the caller opts in via
     ``include_optional=True`` or a non-empty ``include_domains`` label
     set.
 
@@ -143,20 +143,13 @@ def _build_google_cookie_domains(
             accepted as a shortcut for every label.
 
     Returns:
-        List of cookie-domain strings (suitable for ``rookiepy.load(
+        Sorted cookie-domain strings (suitable for ``rookiepy.load(
         domains=...)`` or :func:`extract_firefox_container_cookies`).
     """
-    selected_optional: frozenset[str]
-    if include_domains:
-        selected_optional = _resolve_optional_cookie_domains(include_domains)
-    elif include_optional:
-        selected_optional = frozenset().union(*OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values())
-    else:
-        selected_optional = frozenset()
-
-    domains: list[str] = list(REQUIRED_COOKIE_DOMAINS | selected_optional)
-    for cctld in GOOGLE_REGIONAL_CCTLDS:
-        domain = f".google.{cctld}"
-        if domain not in domains:
-            domains.append(domain)
-    return domains
+    labels = selection = None
+    try:
+        labels = include_domains if include_domains is not None else set()
+        selection = resolve_cookie_domains(labels, include_optional=include_optional)
+        return list(selection.extraction_domains)
+    finally:
+        del include_domains, labels, selection

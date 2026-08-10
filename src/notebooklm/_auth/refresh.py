@@ -1,16 +1,4 @@
-"""Refresh-cmd coordination + token-fetch entry points for authentication.
-
-This private module owns the ``NOTEBOOKLM_REFRESH_CMD`` subprocess flow, the
-per-loop coalescing of refresh attempts, and the public ``fetch_tokens`` /
-``fetch_tokens_with_domains`` entry points. ``notebooklm.auth`` re-exports
-compatibility names, but production no longer mirrors facade-level rebindings;
-tests that substitute moved refresh bodies should patch
-``notebooklm._auth.refresh`` directly.
-
-Logger name is pinned to ``"notebooklm.auth"`` (NOT ``__name__``) so existing
-``caplog`` assertions targeting ``notebooklm.auth`` keep matching the records
-emitted from the moved bodies.
-"""
+"""Refresh-command coordination and the canonical token-acquisition ladder."""
 
 from __future__ import annotations
 
@@ -19,37 +7,33 @@ import logging
 import os
 import shlex
 import subprocess
-import threading
-import weakref
+from collections.abc import Callable, Coroutine
+from contextlib import AbstractContextManager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
 from .._env import get_base_url
-from .._url_utils import is_google_auth_redirect
 from ..paths import get_storage_path, resolve_profile
 from . import cookies as _auth_cookies
 from . import extraction as _auth_extraction
-from . import headers as _auth_headers
 from . import keepalive as _keepalive
 from . import paths as _auth_paths
+from . import recovery as _auth_recovery
+from . import single_flight as _single_flight
 from . import storage as _auth_storage
 from .account import authuser_query
+from .cookie_types import CookieJar
+from .paths import resolve_auth_json_env
+from .profile_store import ProfileStore
+from .storage import get_account_email_for_storage, get_authuser_for_storage
 
 logger = logging.getLogger("notebooklm.auth")
 
-# --- Names aliased from sibling modules --------------------------------------
-# The moved bodies historically resolved these names against ``notebooklm.auth``
-# when they lived there. They are now local aliases in this module; tests that
-# need to substitute one of these dependencies should patch the alias on
-# ``notebooklm._auth.refresh`` directly.
 build_httpx_cookies_from_storage = _auth_cookies.build_httpx_cookies_from_storage
-# No-recovery loader: validates and raises on missing cookies, but never fires
-# the inline ``RotateCookies`` PSIDTS recovery (network POST + disk write) that
-# ``build_httpx_cookies_from_storage`` does. Used by the passive probe so it
-# stays strictly read-only (issue #1569).
 _build_httpx_cookies_from_storage_strict = _auth_cookies._build_httpx_cookies_from_storage_strict
 _replace_cookie_jar = _auth_cookies._replace_cookie_jar
 _cookie_map_from_jar = _auth_cookies._cookie_map_from_jar
@@ -57,17 +41,47 @@ build_cookie_jar = _auth_cookies.build_cookie_jar
 flatten_cookie_map = _auth_cookies.flatten_cookie_map
 _update_cookie_input = _auth_cookies._update_cookie_input
 snapshot_cookie_jar = _auth_storage.snapshot_cookie_jar
-save_cookies_to_storage = _auth_storage.save_cookies_to_storage
 extract_csrf_from_html = _auth_extraction.extract_csrf_from_html
 extract_session_id_from_html = _auth_extraction.extract_session_id_from_html
-_safe_url = _auth_extraction._safe_url
-_resolve_token_route_kwargs = _auth_headers._resolve_token_route_kwargs
+# Shared URL-only failure classifier — the single source of truth for the
+# gate -> cookie-mismatch -> auth-redirect precedence used by both this module's
+# pre-check and the extractors themselves. It supersedes the former ``_safe_url``
+# / ``_cookie_mismatch_message`` aliases here: those existed only for the
+# hand-rolled pre-check this module used to carry, and message formatting now
+# lives entirely behind the classifier.
+_url_only_extraction_failure = _auth_extraction._url_only_extraction_failure
 
 # Env-var names live in ``_auth.paths``; aliased so the refresh bodies can
 # reference them without an extra hop.
 NOTEBOOKLM_REFRESH_CMD_ENV = _auth_paths.NOTEBOOKLM_REFRESH_CMD_ENV
 NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV = _auth_paths.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV
+NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV = _auth_paths.NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV
+NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT_ENV = _auth_paths.NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT_ENV
 _REFRESH_ATTEMPTED_ENV = _auth_paths._REFRESH_ATTEMPTED_ENV
+
+# First-party secret / credential-equivalent env vars scrubbed from the refresh
+# command's subprocess environment before spawn (audit refresh-6). The refresh
+# command inherits the parent env so it can find PATH/HOME/proxy config and
+# re-invoke this library, but MUST NOT inherit our own credential material:
+#   * NOTEBOOKLM_AUTH_JSON        — inline Playwright storage_state (the child
+#                                   gets the on-disk path instead; #1274).
+#   * NOTEBOOKLM_SERVER_TOKEN     — REST server bearer token.
+#   * NOTEBOOKLM_SERVER_TOKEN_FILE — path to the REST server bearer token file.
+#   * NOTEBOOKLM_MCP_TOKEN        — MCP server bearer token.
+#   * NOTEBOOKLM_MCP_OAUTH_PASSWORD — MCP OAuth static password.
+# These matter especially once the rung fires MID-SESSION in a long-lived
+# server (the server's own auth secret would otherwise leak into every refresh
+# subprocess and its grandchildren, visible via ``/proc/<pid>/environ``).
+_REFRESH_CMD_SCRUBBED_SECRET_ENV = (
+    "NOTEBOOKLM_AUTH_JSON",
+    "NOTEBOOKLM_SERVER_TOKEN",
+    "NOTEBOOKLM_SERVER_TOKEN_FILE",
+    "NOTEBOOKLM_MCP_TOKEN",
+    "NOTEBOOKLM_MCP_OAUTH_PASSWORD",
+    # Pointer to the 0600 file holding issued OAuth tokens + the client
+    # registry — same secret-file-pointer class as SERVER_TOKEN_FILE above.
+    "NOTEBOOKLM_MCP_OAUTH_STATE_PATH",
+)
 
 # ``_poke_session`` lives in ``_auth.keepalive``; aliased here as a local bare
 # name because refresh bodies call it directly. Tests that need to substitute it
@@ -81,159 +95,310 @@ _poke_session = _keepalive._poke_session
 _REFRESH_ATTEMPTED_CONTEXT: ContextVar[bool] = ContextVar(
     "_REFRESH_ATTEMPTED_CONTEXT", default=False
 )
-# In-process state for refresh coordination, keyed per resolved storage path.
-#
-# Two layers of protection are required:
-#
-# - ``_REFRESH_STATE_LOCK`` (sync ``threading.Lock``) makes the
-#   ``_REFRESH_GENERATIONS`` check-and-update atomic ACROSS event loops.
-#   Two loops sharing a storage path each hold their own ``asyncio.Lock``
-#   (see below), so the asyncio lock alone cannot serialize the generation
-#   bump.
-#
-# - ``_REFRESH_LOCKS_BY_LOOP`` mirrors the keepalive ``_POKE_LOCKS_BY_LOOP``
-#   pattern: ``asyncio.Lock`` is loop-bound, so a per-loop / per-resolved-
-#   storage-path registry avoids the cross-loop / cross-thread hazard of a
-#   module-global ``asyncio.Lock`` that binds to the first event loop that
-#   uses it. The outer ``WeakKeyDictionary`` is keyed on the loop object so
-#   the inner dict is reclaimed when the loop is garbage-collected.
-_REFRESH_STATE_LOCK = threading.Lock()
-_REFRESH_LOCKS_BY_LOOP: weakref.WeakKeyDictionary[Any, dict[Path | None, asyncio.Lock]] = (
-    weakref.WeakKeyDictionary()
-)
-_REFRESH_GENERATIONS: dict[str, int] = {}
 
-# In-flight ``asyncio.Future`` registry for refresh-cmd coalescing.
-#
-# Same-loop concurrent callers that both encounter auth-expiry coalesce on a
-# single in-flight subprocess by sharing a per-resolved-storage-path
-# ``asyncio.Future``. The future is keyed per-loop because ``asyncio.Future``
-# is loop-bound; cross-loop coordination falls back to the
-# ``_REFRESH_GENERATIONS`` counter guarded by ``_REFRESH_STATE_LOCK``.
-#
-# The strong-ref ``_REFRESH_INFLIGHT_TASKS`` set keeps the shielded subprocess
-# Tasks alive so the asyncio GC does not collect them. The task self-removes
-# via ``add_done_callback(set.discard)`` once settled.
-_REFRESH_INFLIGHT_BY_LOOP: weakref.WeakKeyDictionary[Any, dict[str, asyncio.Future[None]]] = (
-    weakref.WeakKeyDictionary()
-)
-# Strong-ref set keyed by task identity. ``set.add`` / ``set.discard`` are
-# atomic under CPython's GIL (individual bytecode mutations on the underlying
-# hash table cannot interleave), so concurrent ``add`` / ``discard`` calls
-# from different event-loop threads are safe without an explicit lock. This is
-# implementation-specific to CPython; non-CPython runtimes would need a
-# ``threading.Lock`` here.
-_REFRESH_INFLIGHT_TASKS: set[asyncio.Task[None]] = set()
+# Cross-loop coalescing + the per-path success epoch now live in
+# ``notebooklm._auth.single_flight`` (c-PR2). The old per-loop future maps and
+# module-level generation dict (``_REFRESH_INFLIGHT_BY_LOOP`` /
+# ``_REFRESH_GENERATIONS`` / ``_REFRESH_LOCKS_BY_LOOP`` / ``_get_refresh_lock``)
+# were deleted in the same PR that introduced the shared core; there is no
+# revert-hazard split. A single refresh-cmd "rung policy" discriminator keys the
+# flight; the success epoch is keyed per canonical PATH only (see
+# ``single_flight.py``).
+_REFRESH_FLIGHT_POLICY = "refresh-cmd"
+
+# Cap on how many times a single caller FOLLOWS a failing refresh-cmd leader
+# before surfacing the failure, so a persistently-failing command cannot make one
+# caller wait out an unbounded chain of other callers' subprocesses (CodeRabbit).
+# A direct leader-failure and the success-epoch reload short-circuit before this.
+_MAX_REFRESH_FOLLOW_RETRIES = 3
+
+# Bounded async wait for another process's refresh flock to release (flock-loser
+# reloads-fresh-not-stale fix); lives next to the flock primitive in ``keepalive``.
+_wait_for_refresh_holder = _keepalive._wait_for_refresh_holder
+canonical_storage_key = _auth_paths.canonical_storage_key
 
 
-def _get_inflight_registry() -> dict[str, asyncio.Future[None]]:
-    """Return the per-loop in-flight refresh-cmd future registry.
+# --- Injected collaborators (plan §7 deps record) -----------------------------
+# ``_file_lock_try_exclusive = _keepalive._file_lock_try_exclusive`` and
+# ``_refresh_lock_path = _auth_paths._refresh_lock_path`` used to sit here as
+# module-scope aliases whose only *documented* purpose was "tests substitute
+# this by patching the bare name on this module". That patching protocol is
+# replaced by the record below: the three collaborators the refresh-cmd rung's
+# tests actually replace — the subprocess runner, the flock acquirer, and the
+# lock-path deriver — are threaded keyword-only from the entry points down to
+# the leader body, so a test constructs a record instead of mutating module
+# state that pytest may or may not restore.
 
-    Mirrors ``_get_refresh_lock``: ``asyncio.Future`` is loop-bound, so we
-    need a per-loop registry. ``_REFRESH_STATE_LOCK`` makes the lookup /
-    insert atomic across threads (different loops on different threads can
-    each populate their own per-loop dict concurrently).
+
+class _RefreshFlock(Protocol):
+    """Non-blocking exclusive flock: a context manager yielding "acquired?"."""
+
+    def __call__(self, lock_path: Path) -> AbstractContextManager[bool]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshCmdDeps:
+    """Collaborators of the refresh-cmd rung, injectable per call.
+
+    Every field is optional and ``None`` means "use production". The production
+    value is resolved **late**, through this module's namespace, at the moment
+    of use (:meth:`runner`, :meth:`flock`, :meth:`lock_path`) — deliberately
+    NOT captured into a field default at import time. Two reasons:
+
+    1. a frozen record built at import time would freeze the function objects,
+       silently defeating the module-attribute patch seam the whitebox
+       concurrency suites still use for the collaborators this record does not
+       carry; and
+    2. it keeps a partially-specified record useful — ``RefreshCmdDeps(
+       run_refresh_cmd=fake)`` overrides one collaborator and leaves the other
+       two on production, which is how nearly every test wants to use it.
     """
-    loop = asyncio.get_running_loop()
-    with _REFRESH_STATE_LOCK:
-        per_loop = _REFRESH_INFLIGHT_BY_LOOP.get(loop)
-        if per_loop is None:
-            per_loop = {}
-            _REFRESH_INFLIGHT_BY_LOOP[loop] = per_loop
-        return per_loop
+
+    run_refresh_cmd: Callable[[Path, str | None], Coroutine[Any, Any, None]] | None = None
+    acquire_refresh_flock: _RefreshFlock | None = None
+    derive_refresh_lock_path: Callable[[Path | None], Path | None] | None = None
+
+    def runner(self) -> Callable[[Path, str | None], Coroutine[Any, Any, None]]:
+        """The ``NOTEBOOKLM_REFRESH_CMD`` subprocess runner."""
+        if self.run_refresh_cmd is not None:
+            return self.run_refresh_cmd
+        return _run_refresh_cmd
+
+    def flock(self) -> _RefreshFlock:
+        """The cross-process refresh flock acquirer ([refresh-2])."""
+        if self.acquire_refresh_flock is not None:
+            return self.acquire_refresh_flock
+        return _keepalive._file_lock_try_exclusive
+
+    def lock_path(self) -> Callable[[Path | None], Path | None]:
+        """The per-storage-path refresh lock-file deriver."""
+        if self.derive_refresh_lock_path is not None:
+            return self.derive_refresh_lock_path
+        return _auth_paths._refresh_lock_path
+
+
+# One shared empty record, so the default path allocates nothing per call. It
+# carries no captured functions (every field is ``None``), so it cannot stale.
+_PRODUCTION_REFRESH_CMD_DEPS = RefreshCmdDeps()
+
+
+async def _refresh_cmd_leader_body(
+    path_key: str,
+    resolved_storage_path: Path,
+    profile: str | None,
+    *,
+    deps: RefreshCmdDeps = _PRODUCTION_REFRESH_CMD_DEPS,
+) -> None:
+    """Leader-only body: run ``_run_refresh_cmd`` under a cross-process flock.
+
+    Runs as the single-flight leader's ``asyncio.Task``. In-process coalescing
+    already guarantees one subprocess per process; the per-path flock adds the
+    CROSS-process exclusion that closes the refresh-cmd stampede ([refresh-2]),
+    mirroring the keepalive rotation flock. Re-mint rungs deliberately take NO
+    such flock (each cross-process re-mint owns its own browser — §c.5/§c.7).
+
+    On a genuine cross-process contention (another process holds the flock and
+    is refreshing) the subprocess is skipped and — rather than reload the STALE
+    file immediately (the holder has not finished writing yet) — the loser WAITS
+    (bounded) for the holder to release, then the caller reloads the fresh
+    cookies it wrote (:func:`_wait_for_refresh_holder`). The success epoch is
+    bumped ONLY after our OWN subprocess actually exits zero, so a skipped
+    (wait-then-reload) or failed attempt leaves waiters retrying (single_flight
+    guarantee 2).
+    """
+    lock_path = deps.lock_path()(resolved_storage_path)
+    if lock_path is None:
+        await deps.runner()(resolved_storage_path, profile)
+        _single_flight.note_success(path_key)
+        return
+    with deps.flock()(lock_path) as acquired:
+        if acquired:
+            await deps.runner()(resolved_storage_path, profile)
+            _single_flight.note_success(path_key)
+            return
+    # Lost the cross-process flock: another process holds it and is refreshing
+    # right now. Wait (bounded) for it to finish writing, THEN return so the
+    # caller reloads the FRESH file rather than the stale one it would otherwise
+    # re-read immediately. No subprocess runs and the epoch is NOT bumped here.
+    logger.debug(
+        "%s: %s held by another process; waiting for it to finish",
+        NOTEBOOKLM_REFRESH_CMD_ENV,
+        lock_path,
+    )
+    await _wait_for_refresh_holder(lock_path)
 
 
 async def _coalesced_run_refresh_cmd(
     refresh_key: str,
     resolved_storage_path: Path,
     profile: str | None,
+    *,
+    deps: RefreshCmdDeps = _PRODUCTION_REFRESH_CMD_DEPS,
 ) -> None:
-    """Run ``_run_refresh_cmd`` once per ``refresh_key`` on this event loop.
+    """Run the refresh-cmd once across all loops for ``refresh_key``.
 
-    Same-loop concurrent callers that hit this function while a refresh is
-    in flight will await the same underlying ``asyncio.Future`` rather than
-    spawning their own subprocess.
+    Delegates coalescing + the success-epoch skip to
+    :mod:`notebooklm._auth.single_flight`. Preserves the historical None/raise
+    contract: returns ``None`` when the storage is (or has just been) refreshed
+    and the caller should reload; raises the subprocess exception when the
+    refresh genuinely failed and no concurrent flight succeeded; propagates
+    ``CancelledError`` on caller-side cancellation (after settling the shared
+    subprocess).
 
-    Cancel-safety design:
+    Preserved single-flight guarantees:
 
-    - The subprocess is driven by a strongly-referenced background
-      ``asyncio.Task`` (registered in ``_REFRESH_INFLIGHT_TASKS``) so it
-      survives cancellation of any individual awaiter.
-    - Each awaiter wraps the future in ``asyncio.shield`` so local
-      cancellation of the awaiter does NOT cancel the shared subprocess —
-      mirrors the ``AuthRefreshCoordinator.await_refresh`` pattern used
-      for the RPC refresh path.
-    - The caller in ``_fetch_tokens_with_refresh`` keeps re-awaiting the
-      shielded future under the per-loop asyncio lock so the lock is not
-      released until the subprocess settles. This prevents a duplicate
-      subprocess from being spawned if the lock is released mid-refresh
-      and a second caller observes a partially-completed state.
+    1. **Late-waiter skip (compare-under-exclusion)** — the success epoch is
+       captured BEFORE waiting, and the epoch compare + the flight claim happen
+       under a SINGLE owner ``_lock`` hold via
+       ``single_flight.claim_if_epoch_current``. A caller whose ``epoch_before``
+       is already stale (a sibling succeeded and prompt-popped its flight in the
+       meantime) gets a skip signal and reloads instead of spawning a redundant
+       subprocess.
+    2. **Bump on subprocess success only** — the leader body bumps the epoch
+       exclusively after ``_run_refresh_cmd`` exits zero; a failed (or
+       flock-skipped) attempt leaves the epoch untouched so waiters retry.
+    3. **Cancel/settle race** — ``await_flight`` settles the shared subprocess
+       before propagating caller cancellation; a subprocess that fails while the
+       caller is cancelled never bumps the epoch (the body raised before the
+       bump).
+    4. **No phantom bump on cancel-before-work** — only the leader body bumps,
+       and only after real work; a caller cancelled before/while awaiting never
+       bumps, and neither does a follower.
     """
-    loop = asyncio.get_running_loop()
-    registry = _get_inflight_registry()
-    with _REFRESH_STATE_LOCK:
-        existing = registry.get(refresh_key)
-        leader = existing is None or existing.done()
-        if leader:
-            future: asyncio.Future[None] = loop.create_future()
-            registry[refresh_key] = future
+    # ``refresh_key`` is already the canonical ``str(resolved_storage_path)``
+    # computed by the caller; reuse it as the per-path success-epoch key rather
+    # than recomputing.
+    path_key = refresh_key
+    flight_key = (path_key, _REFRESH_FLIGHT_POLICY)
+    # Capture the epoch BEFORE any wait (guarantee 1). A concurrent flight that
+    # SUCCEEDS while we wait bumps past this baseline, letting us skip.
+    epoch_before = _single_flight.read_success_epoch(path_key)
+
+    def _factory() -> Coroutine[Any, Any, None]:
+        return _refresh_cmd_leader_body(path_key, resolved_storage_path, profile, deps=deps)
+
+    # A PERSISTENTLY failing refresh-cmd with N concurrent waiters would run up to
+    # N sequential leader subprocesses (each failed leader's follower becomes a
+    # fresh leader). The first success bumps the epoch and remaining waiters skip.
+    # The follow-then-fail retries are capped at ``_MAX_REFRESH_FOLLOW_RETRIES`` so
+    # one caller cannot wait out an unbounded chain; direct leader-failure
+    # propagation and the success-epoch reload are preserved.
+    follow_failures = 0
+    while True:
+        claimed = _single_flight.claim_if_epoch_current(
+            flight_key, _factory, path_key=path_key, epoch_before=epoch_before
+        )
+        if claimed is None:
+            # Compare-under-exclusion skip: a sibling already succeeded (epoch
+            # advanced) — reload the fresh storage instead of refreshing.
+            return
+        is_leader, flight = claimed
+        try:
+            await _single_flight.await_flight(flight)
+        except asyncio.CancelledError:
+            raise
+        except BaseException:  # noqa: BLE001 - inspect epoch / leadership below
+            if _single_flight.read_success_epoch(path_key) > epoch_before:
+                # A concurrent flight succeeded even though the one we awaited
+                # failed — reload rather than propagate.
+                return
+            if is_leader:
+                # Our own subprocess failed and nobody else refreshed —
+                # propagate so the caller surfaces the failure.
+                raise
+            # We followed a leader whose subprocess failed. Retry as a fresh
+            # leader, but bound the chain (see ``_MAX_REFRESH_FOLLOW_RETRIES``).
+            follow_failures += 1
+            if follow_failures >= _MAX_REFRESH_FOLLOW_RETRIES:
+                raise
+            continue
         else:
-            future = existing  # type: ignore[assignment]
-
-    if leader:
-        task = asyncio.create_task(_run_refresh_cmd(resolved_storage_path, profile))
-        # Strong-ref pattern: without ``add_done_callback`` the task can be
-        # collected by the asyncio GC before completion if no awaiter is
-        # holding a reference.
-        _REFRESH_INFLIGHT_TASKS.add(task)
-        task.add_done_callback(_REFRESH_INFLIGHT_TASKS.discard)
-
-        def _settle(t: asyncio.Task[None]) -> None:
-            # ``Future.set_*`` is loop-affine; the callback runs on the owning
-            # loop (same loop that created the future and the task), so direct
-            # ``set_result`` / ``set_exception`` is safe.
-            if not future.done():
-                if t.cancelled():
-                    future.cancel()
-                else:
-                    exc = t.exception()
-                    if exc is not None:
-                        future.set_exception(exc)
-                    else:
-                        future.set_result(None)
-            # Intentionally LEAVE the (now-done) future in the registry so the
-            # caller's CancelledError handler in ``_fetch_tokens_with_refresh``
-            # can still inspect ``inflight.exception()`` after a cancel/settle
-            # race. The leader-check at the
-            # get-or-create site (``existing is None or existing.done()``)
-            # treats a done future as overwritable, so the next refresh
-            # cycle's leader replaces this slot — no accumulation.
-
-        task.add_done_callback(_settle)
-
-    # All callers (leader + followers) await the shared future under shield.
-    # Re-raises subprocess exception to every awaiter.
-    await asyncio.shield(future)
+            # Flight succeeded (leader bumped the epoch) — caller reloads.
+            return
 
 
-def _get_refresh_lock(resolved_storage_path: Path | None) -> asyncio.Lock:
-    """Return the ``asyncio.Lock`` for ``(running event loop, resolved storage path)``.
+def _midsession_refresh_cmd_enabled() -> bool:
+    """True iff the L2.5 refresh-cmd rung may fire in the MID-SESSION ladder.
 
-    Mirrors ``_get_poke_lock``. Keyed on the RESOLVED storage path so callers
-    passing ``(None, profile="foo")`` share the lock with callers passing the
-    explicit profile-resolved path.
+    Gated on BOTH the refresh command being configured (``NOTEBOOKLM_REFRESH_CMD``)
+    AND the one-release opt-in ``NOTEBOOKLM_REFRESH_CMD_MIDSESSION=1`` (audit
+    refresh-4). The opt-in defaults OFF for one release to de-risk operators
+    whose commands assume cold-start-only invocation; a later release flips it
+    default-on. The same recursion guards as the cold path
+    (:func:`_should_try_refresh`) apply so a refresh command that re-invokes
+    this library cannot spawn a nested refresh subprocess.
     """
-    loop = asyncio.get_running_loop()
-    with _REFRESH_STATE_LOCK:
-        per_loop = _REFRESH_LOCKS_BY_LOOP.get(loop)
-        if per_loop is None:
-            per_loop = {}
-            _REFRESH_LOCKS_BY_LOOP[loop] = per_loop
-        lock = per_loop.get(resolved_storage_path)
-        if lock is None:
-            lock = asyncio.Lock()
-            per_loop[resolved_storage_path] = lock
-        return lock
+    if _REFRESH_ATTEMPTED_CONTEXT.get() or os.environ.get(_REFRESH_ATTEMPTED_ENV) == "1":
+        return False
+    if not os.environ.get(NOTEBOOKLM_REFRESH_CMD_ENV):
+        return False
+    return os.environ.get(NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV) == "1"
+
+
+async def try_refresh_cmd_reauth(
+    *,
+    storage_path: Path | None,
+    cookie_jar: httpx.Cookies,
+    profile: str | None = None,
+    deps: RefreshCmdDeps = _PRODUCTION_REFRESH_CMD_DEPS,
+) -> bool:
+    """L2.5 mid-session rung: run ``NOTEBOOKLM_REFRESH_CMD`` and reload cookies.
+
+    Client-neutral adapter mirroring :func:`notebooklm._auth.recovery.try_headless_reauth`
+    / :func:`~notebooklm._auth.recovery.try_master_token_reauth` so the
+    mid-session ladder (``_auth/session.py:refresh_auth_session``) can slot the
+    refresh-cmd rung between L2 (RotateCookies) and L3 (headless re-mint). It
+    REUSES the same cold-start machinery — the ``single_flight``-coalesced
+    :func:`_coalesced_run_refresh_cmd` and the per-path refresh flock
+    ([refresh-2]) — rather than forking a second implementation, and honours the
+    same env contract (command string, ``NOTEBOOKLM_REFRESH_CMD_USE_SHELL``
+    opt-in, timeout, secret-scrub).
+
+    Opt-in for one release via ``NOTEBOOKLM_REFRESH_CMD_MIDSESSION=1`` (default
+    OFF — see :func:`_midsession_refresh_cmd_enabled`).
+
+    Returns ``True`` when the command ran (or a concurrent flight refreshed the
+    storage) and fresh cookies were reloaded into ``cookie_jar`` — the caller
+    retries the homepage GET once. Returns ``False`` when the rung is
+    unavailable (no opt-in / no command / no storage file) or the command
+    failed; the caller's original dead-cookie error then stands, exactly as when
+    the rung is off (byte-identical default behaviour).
+    """
+    if storage_path is None:
+        return False
+    if not _midsession_refresh_cmd_enabled():
+        return False
+    canonical_path = canonical_storage_key(storage_path)
+    assert canonical_path is not None  # narrowed non-None above
+    refresh_key = str(canonical_path)
+    # In-process recursion guard, same discipline as the cold path. It is set for
+    # the DURATION of the coalesced run and reset in the ``finally`` BEFORE this
+    # function returns, so it guards only re-entry WHILE the subprocess is in
+    # flight (a refresh command re-invoking this library on the same task), NOT
+    # the caller's later retried GET (which runs after the reset). That later GET
+    # is safe regardless: the ladder invokes each rung once per refresh run.
+    refresh_token = _REFRESH_ATTEMPTED_CONTEXT.set(True)
+    try:
+        # Coalesced across loops + serialized across processes by the flock.
+        await _coalesced_run_refresh_cmd(refresh_key, canonical_path, profile, deps=deps)
+        fresh_jar = await asyncio.to_thread(build_httpx_cookies_from_storage, canonical_path)
+    except asyncio.CancelledError:
+        raise
+    except (RuntimeError, OSError, ValueError) as exc:
+        logger.warning(
+            "Mid-session %s rung failed (%s); authentication error stands.",
+            NOTEBOOKLM_REFRESH_CMD_ENV,
+            type(exc).__name__,
+        )
+        return False
+    finally:
+        _REFRESH_ATTEMPTED_CONTEXT.reset(refresh_token)
+    _replace_cookie_jar(cookie_jar, fresh_jar)
+    logger.info(
+        "Mid-session %s rung succeeded; reloaded refreshed cookies for retry.",
+        NOTEBOOKLM_REFRESH_CMD_ENV,
+    )
+    return True
 
 
 _AUTH_ERROR_SIGNALS = (
@@ -310,28 +475,40 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
     Environment forwarding:
         The refresh command inherits the **full parent environment** (so it
         can find ``PATH``, ``HOME``, proxy settings, and any custom config the
-        operator relies on), with three deliberate adjustments:
+        operator relies on), with these deliberate adjustments:
 
-        * ``NOTEBOOKLM_AUTH_JSON`` is **scrubbed** — it carries a
-          credential-equivalent storage_state payload the child never needs
-          (the child gets the on-disk storage path via
-          ``NOTEBOOKLM_REFRESH_STORAGE_PATH`` instead). It is the only
-          first-party storage_state credential payload we forward, so it is the
-          one var we can scrub without risking the refresh contract.
+        * A fixed set of **first-party secret / credential-equivalent** env
+          vars is **scrubbed** (see :data:`_REFRESH_CMD_SCRUBBED_SECRET_ENV`):
+          ``NOTEBOOKLM_AUTH_JSON`` (inline storage_state — the child gets the
+          on-disk path via ``NOTEBOOKLM_REFRESH_STORAGE_PATH`` instead),
+          ``NOTEBOOKLM_SERVER_TOKEN`` / ``NOTEBOOKLM_SERVER_TOKEN_FILE`` (REST
+          server bearer token), ``NOTEBOOKLM_MCP_TOKEN``,
+          ``NOTEBOOKLM_MCP_OAUTH_PASSWORD`` (MCP server auth), and
+          ``NOTEBOOKLM_MCP_OAUTH_STATE_PATH`` (pointer to the 0600 issued-token /
+          client-registry file). None of these is needed by a refresh command,
+          and none should leak down the process tree.
         * ``_NOTEBOOKLM_REFRESH_ATTEMPTED`` is injected as the recursion guard.
         * ``NOTEBOOKLM_REFRESH_PROFILE`` / ``NOTEBOOKLM_REFRESH_STORAGE_PATH``
           are injected so the command refreshes the right profile in place.
 
-        SECURITY: only ``NOTEBOOKLM_AUTH_JSON`` is scrubbed. We deliberately do
-        **not** impose an allowlist, because a refresh command commonly
-        re-invokes this library and legitimately needs much of the inherited
-        env. As a consequence, **any other secret in the launching shell**
-        (e.g. ``GOOGLE_*`` tokens, CI secrets, API keys — and any token the
-        operator embeds in ``NOTEBOOKLM_REFRESH_CMD`` itself) is inherited by
-        the refresh command and every grandchild it spawns, and is visible via
-        ``/proc/<pid>/environ`` to the same UID. Operators MUST NOT keep
-        unrelated secrets in the environment that launches the refresh command;
-        scope secrets to the processes that need them.
+        SECURITY: only the first-party secrets above are scrubbed. We
+        deliberately do **not** impose a hard allowlist, because a refresh
+        command commonly re-invokes this library and legitimately needs much of
+        the inherited env. As a consequence, **any other secret in the
+        launching shell** (e.g. ``GOOGLE_*`` tokens, CI secrets, API keys — and
+        any token the operator embeds in ``NOTEBOOKLM_REFRESH_CMD`` itself) is
+        inherited by the refresh command and every grandchild it spawns, and is
+        visible via ``/proc/<pid>/environ`` to the same UID. Operators MUST NOT
+        keep unrelated secrets in the environment that launches the refresh
+        command; scope secrets to the processes that need them.
+
+        SERVER CONTEXT: this function can now fire MID-SESSION inside a
+        long-lived REST/MCP server (the L2.5 rung — see
+        :func:`try_refresh_cmd_reauth`). Scrubbing the server's own auth
+        secrets (``NOTEBOOKLM_SERVER_TOKEN`` etc.) closes the path by which a
+        mid-session refresh would otherwise hand the server's credential to an
+        operator-supplied subprocess. The redaction of captured stdout/stderr
+        (below) likewise limits what a mid-session refresh writes to logs.
 
     Raises:
         RuntimeError: If the refresh command is missing, parses to an empty
@@ -346,19 +523,24 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
     # forwarding" section of this function's docstring for the SECURITY note
     # on why a hard allowlist is deliberately avoided (issue #1274).
     refresh_env = os.environ.copy()
-    # ``NOTEBOOKLM_AUTH_JSON`` carries the full Playwright storage_state — a
-    # credential-equivalent payload. Forwarding it via ``os.environ.copy()``
-    # into the refresh subprocess would inherit it down the tree (visible via
-    # ``/proc/<pid>/environ`` to the same UID) and into any grandchild the
-    # refresh command spawns. The refresh command already receives the
-    # canonical on-disk storage path via ``NOTEBOOKLM_REFRESH_STORAGE_PATH``
-    # (set just below), so the in-env JSON is not needed by the child. It is the
-    # only first-party storage_state credential payload we forward (audited
-    # #1274); the rest (PROFILE/HOME/BASE_URL/...) are config the child may
-    # legitimately consume when it re-invokes this library, so they stay. Any
-    # token an operator embeds in ``NOTEBOOKLM_REFRESH_CMD`` is intentionally
-    # inherited — see this function's docstring SECURITY note.
-    refresh_env.pop("NOTEBOOKLM_AUTH_JSON", None)
+    # Scrub the first-party secret / credential-equivalent env vars before
+    # spawn (audit refresh-6). ``NOTEBOOKLM_AUTH_JSON`` carries the full
+    # Playwright storage_state; ``NOTEBOOKLM_SERVER_TOKEN`` /
+    # ``NOTEBOOKLM_SERVER_TOKEN_FILE`` / ``NOTEBOOKLM_MCP_TOKEN`` /
+    # ``NOTEBOOKLM_MCP_OAUTH_PASSWORD`` / ``NOTEBOOKLM_MCP_OAUTH_STATE_PATH`` are
+    # our own server auth secrets (the last a pointer to the 0600 token file).
+    # Forwarding any of them via ``os.environ.copy()`` would inherit them down
+    # the tree (visible via ``/proc/<pid>/environ`` to the same UID) and into
+    # any grandchild the refresh command spawns — a real exposure now that this
+    # rung can fire mid-session inside a long-lived server. None is needed by
+    # the child: it receives the canonical on-disk storage path via
+    # ``NOTEBOOKLM_REFRESH_STORAGE_PATH`` (set just below). The rest
+    # (PROFILE/HOME/BASE_URL/...) are config the child may legitimately consume
+    # when it re-invokes this library, so they stay. Any token an operator
+    # embeds in ``NOTEBOOKLM_REFRESH_CMD`` is intentionally inherited — see this
+    # function's docstring SECURITY note.
+    for _secret_var in _REFRESH_CMD_SCRUBBED_SECRET_ENV:
+        refresh_env.pop(_secret_var, None)
     refresh_env[_REFRESH_ATTEMPTED_ENV] = "1"
     refresh_env["NOTEBOOKLM_REFRESH_PROFILE"] = resolve_profile(profile)
     refresh_env["NOTEBOOKLM_REFRESH_STORAGE_PATH"] = str(
@@ -428,19 +610,102 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
             executable_basename = os.path.basename(run_target.split()[0])
         else:
             executable_basename = "shell"
+        # Default DEBUG line is metadata-only (audit refresh-8): basename +
+        # exit code + byte counts, never the raw captured output. A refresh
+        # command commonly prints bearer tokens / cookies / credentials-dir
+        # paths, and the redaction filter only collapses KNOWN credential
+        # shapes — so dumping raw ``%r`` here would surface anything the filter
+        # doesn't recognise. This matters more now the rung can fire
+        # mid-session in a long-lived server whose DEBUG log is retained.
+        stdout_bytes = len((result.stdout or "").encode("utf-8", "replace"))
+        stderr_bytes = len((result.stderr or "").encode("utf-8", "replace"))
         logger.debug(
-            "%s exited %d. stdout=%r stderr=%r",
+            "%s exited %d (executable=%s, stdout=%d bytes, stderr=%d bytes)",
             NOTEBOOKLM_REFRESH_CMD_ENV,
             result.returncode,
-            result.stdout,
-            result.stderr,
+            executable_basename,
+            stdout_bytes,
+            stderr_bytes,
         )
+        # Full captured output is available ONLY behind an explicit opt-in env
+        # (``NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT=1``). It still flows through the
+        # package's redacting DEBUG logger (credential SHAPES collapse to
+        # ``***``); the opt-in exists for local diagnosis and defaults OFF so a
+        # server operator does not passively accumulate command output in logs.
+        if os.environ.get(NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT_ENV) == "1":
+            logger.debug(
+                "%s captured output (%s=1): stdout=%r stderr=%r",
+                NOTEBOOKLM_REFRESH_CMD_ENV,
+                NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT_ENV,
+                result.stdout,
+                result.stderr,
+            )
         raise RuntimeError(
             f"{NOTEBOOKLM_REFRESH_CMD_ENV} exited {result.returncode} "
             f"(executable: {executable_basename}). "
-            f"Run with --verbose to see captured stdout/stderr in the debug log."
+            f"Set {NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT_ENV}=1 and re-run with -vv to see "
+            "the command's captured stdout/stderr in the debug log."
         )
     logger.info("NotebookLM cookies refreshed via %s", NOTEBOOKLM_REFRESH_CMD_ENV)
+
+
+# --- Token-route resolution (absorbed from _auth/headers.py) -----------------
+# Most authuser helpers live in :mod:`notebooklm._auth.account` (wire formatters)
+# and :mod:`notebooklm._auth.storage` (record readers). What follows is the *routing*
+# glue that combines them for the token-fetch entry points below, preserving
+# explicit caller intent vs. resolved-from-storage defaults. It used to live in
+# a 68-line ``_auth/headers.py`` whose only three call sites are in this module;
+# ADR-0033's sanctioned merge folded it in.
+
+
+def _resolve_token_route_kwargs(
+    storage_path: Path | None,
+    *,
+    authuser: int | None,
+    account_email: str | None,
+) -> dict[str, Any]:
+    """Resolve token-fetch routing while preserving explicit caller intent."""
+    explicit_authuser = authuser is not None
+    env_auth_present = storage_path is None and resolve_auth_json_env() is not None
+    env_authuser = 0
+    env_account_email: str | None = None
+    if env_auth_present and authuser is None:
+        from .cookies import _load_storage_state
+
+        try:
+            state = _load_storage_state(None)
+            metadata = _auth_storage.read_account_metadata_from_storage_state(state)
+        except (OSError, ValueError, TypeError):
+            metadata = {}
+        raw_authuser = metadata.get("authuser")
+        raw_email = metadata.get("email")
+        if type(raw_authuser) is int and raw_authuser >= 0:
+            env_authuser = raw_authuser
+        if isinstance(raw_email, str) and raw_email.strip():
+            env_account_email = raw_email.strip()
+
+    resolved_authuser = (
+        authuser
+        if authuser is not None
+        else env_authuser
+        if env_auth_present
+        else get_authuser_for_storage(storage_path)
+    )
+    if account_email is not None:
+        resolved_account_email = account_email
+    elif explicit_authuser:
+        resolved_account_email = None
+    else:
+        resolved_account_email = (
+            env_account_email if env_auth_present else get_account_email_for_storage(storage_path)
+        )
+
+    route_kwargs: dict[str, Any] = {"authuser": resolved_authuser}
+    if resolved_account_email is not None:
+        route_kwargs["account_email"] = resolved_account_email
+    if explicit_authuser:
+        route_kwargs["force_authuser_query"] = True
+    return route_kwargs
 
 
 async def _fetch_tokens_with_refresh(
@@ -448,238 +713,216 @@ async def _fetch_tokens_with_refresh(
     storage_path: Path | None = None,
     profile: str | None = None,
     *,
-    authuser: int = 0,
+    authuser: int | None = None,
     account_email: str | None = None,
     force_authuser_query: bool = False,
+    allow_headless: bool = False,
+    env_auth: bool = False,
+    deps: RefreshCmdDeps = _PRODUCTION_REFRESH_CMD_DEPS,
 ) -> tuple[str, str, bool, _auth_storage.CookieSnapshot | None]:
-    """Fetch tokens, optionally running NOTEBOOKLM_REFRESH_CMD on auth expiry.
+    """Compatibility four-tuple projection over the one complete token ladder."""
+    explicit_authuser = (
+        authuser if authuser is not None and (authuser != 0 or force_authuser_query) else None
+    )
 
-    Returns ``(csrf, session_id, refreshed, post_refresh_snapshot)``.
+    async def resolve_route(path: Path | None) -> dict[str, Any]:
+        return _resolve_token_route_kwargs(
+            path,
+            authuser=explicit_authuser,
+            account_email=account_email,
+        )
 
-    When ``refreshed`` is ``True``, ``post_refresh_snapshot`` is a snapshot
-    captured **immediately after** ``_replace_cookie_jar`` swaps in the
-    refresh-cmd output and **before** the retry token fetch can mutate the
-    jar with redirect Set-Cookies. Callers must use that snapshot as the
-    save baseline; re-snapshotting the jar after this function returns
-    would include the retry's rotations in the baseline (so they would
-    never reach disk on the subsequent save).
+    async def load_replacement(
+        path: Path,
+    ) -> tuple[httpx.Cookies, _auth_storage.CookieSnapshot, CookieJar | None]:
+        live = await asyncio.to_thread(build_httpx_cookies_from_storage, path)
+        return live, snapshot_cookie_jar(live), None
 
-    When ``refreshed`` is ``False`` the snapshot is ``None`` (no refresh
-    happened; caller's pre-fetch snapshot is still the right baseline).
-    """
+    result = await _fetch_tokens_with_refresh_core(
+        cookie_jar,
+        storage_path,
+        profile,
+        resolve_route=resolve_route,
+        load_replacement=load_replacement,
+        initial_baseline=None,
+        env_auth=env_auth,
+        allow_headless=allow_headless,
+        deps=deps,
+    )
+    return result[0], result[1], result[2], result[3]
+
+
+async def _fetch_tokens_with_exact_baseline(
+    cookie_jar: httpx.Cookies,
+    storage_path: Path | None,
+    profile: str | None,
+    *,
+    initial_baseline: CookieJar,
+    resolve_route: Callable[[Path | None], Coroutine[Any, Any, dict[str, Any]]],
+    allow_headless: bool,
+    env_auth: bool,
+) -> tuple[str, str, CookieJar]:
+    """Typed projection retaining the exact raw-sample replacement baseline."""
+
+    async def load_replacement(
+        path: Path,
+    ) -> tuple[httpx.Cookies, _auth_storage.CookieSnapshot, CookieJar | None]:
+        pair = await asyncio.to_thread(_auth_cookies._build_cookie_pair_from_storage, path)
+        return pair.live, snapshot_cookie_jar(pair.live), pair.baseline
+
+    result = await _fetch_tokens_with_refresh_core(
+        cookie_jar,
+        storage_path,
+        profile,
+        resolve_route=resolve_route,
+        load_replacement=load_replacement,
+        initial_baseline=initial_baseline,
+        env_auth=env_auth,
+        allow_headless=allow_headless,
+    )
+    baseline = result[4]
+    if baseline is None:  # pragma: no cover - typed initial baseline is always retained
+        raise AssertionError("typed token load lost its persistence baseline")
+    return result[0], result[1], baseline
+
+
+async def _fetch_tokens_with_refresh_core(
+    cookie_jar: httpx.Cookies,
+    storage_path: Path | None,
+    profile: str | None,
+    *,
+    resolve_route: Callable[[Path | None], Coroutine[Any, Any, dict[str, Any]]],
+    load_replacement: Callable[
+        [Path],
+        Coroutine[
+            Any,
+            Any,
+            tuple[httpx.Cookies, _auth_storage.CookieSnapshot, CookieJar | None],
+        ],
+    ],
+    initial_baseline: CookieJar | None,
+    env_auth: bool,
+    allow_headless: bool,
+    deps: RefreshCmdDeps = _PRODUCTION_REFRESH_CMD_DEPS,
+) -> tuple[str, str, bool, _auth_storage.CookieSnapshot | None, CookieJar | None]:
+    """Own the sole initial/L2.5/L3/L4 token acquisition ladder."""
     try:
-        route_kwargs: dict[str, Any] = {"authuser": authuser}
-        if account_email is not None:
-            route_kwargs["account_email"] = account_email
-        if force_authuser_query:
-            route_kwargs["force_authuser_query"] = True
-        csrf, session_id = await _fetch_tokens_with_jar(cookie_jar, storage_path, **route_kwargs)
-        return csrf, session_id, False, None
+        csrf, session_id = await _fetch_tokens_with_jar(
+            cookie_jar,
+            storage_path,
+            **await resolve_route(storage_path),
+        )
+        return csrf, session_id, False, None, initial_baseline
     except ValueError as err:
-        if not _should_try_refresh(err):
-            raise
+        return await _cold_fallbacks(
+            err,
+            cookie_jar,
+            storage_path,
+            profile,
+            env_auth=env_auth,
+            allow_headless=allow_headless,
+            resolve_route=resolve_route,
+            load_replacement=load_replacement,
+            baseline=initial_baseline,
+            deps=deps,
+        )
+
+
+async def _cold_fallbacks(
+    err: ValueError,
+    cookie_jar: httpx.Cookies,
+    storage_path: Path | None,
+    profile: str | None,
+    *,
+    env_auth: bool,
+    allow_headless: bool,
+    resolve_route: Callable[[Path | None], Coroutine[Any, Any, dict[str, Any]]],
+    load_replacement: Callable[
+        [Path],
+        Coroutine[
+            Any,
+            Any,
+            tuple[httpx.Cookies, _auth_storage.CookieSnapshot, CookieJar | None],
+        ],
+    ],
+    baseline: CookieJar | None,
+    deps: RefreshCmdDeps = _PRODUCTION_REFRESH_CMD_DEPS,
+) -> tuple[str, str, bool, _auth_storage.CookieSnapshot | None, CookieJar | None]:
+    """Run the L2.5 refresh command, then the coalesced L3/L4 recovery."""
+
+    def should_try_refresh(initial_error: Exception, is_env_auth: bool) -> bool:
+        eligible = _should_try_refresh(initial_error)
+        if eligible and is_env_auth:
+            logger.debug("Skipping %s: env auth has no file", NOTEBOOKLM_REFRESH_CMD_ENV)
+            return False
+        return eligible
+
+    def resolve_refresh_path(initial_error: ValueError) -> Path:
         logger.warning(
             "NotebookLM auth failed (%s). Running %s to refresh cookies.",
-            err,
+            initial_error,
             NOTEBOOKLM_REFRESH_CMD_ENV,
         )
-        # Canonicalize the storage path so different representations of the
-        # same physical file (relative vs absolute, with or without symlinks,
-        # ``~`` shorthand) hash to the same lock-registry / generation key.
-        # ``get_storage_path`` already returns a resolved path, but a
-        # caller-supplied ``storage_path`` may be relative or a symlink.
-        refresh_storage_path = (
-            (storage_path or get_storage_path(profile=profile)).expanduser().resolve()
-        )
-        refresh_key = str(refresh_storage_path)
-        # Snapshot the generation BEFORE acquiring the async lock so we can
-        # detect whether a concurrent refresh (potentially on a different
-        # event loop) bumped it while we were waiting. ``_REFRESH_STATE_LOCK``
-        # makes this read atomic with the later check-and-update below.
-        with _REFRESH_STATE_LOCK:
-            refresh_generation = _REFRESH_GENERATIONS.get(refresh_key, 0)
+        refresh_path = canonical_storage_key(storage_path or get_storage_path(profile=profile))
+        assert refresh_path is not None
+        return refresh_path
+
+    async def run_refresh_attempt(
+        path: Path,
+    ) -> tuple[str, str, _auth_storage.CookieSnapshot, CookieJar | None]:
         refresh_token = _REFRESH_ATTEMPTED_CONTEXT.set(True)
         try:
-            async with _get_refresh_lock(refresh_storage_path):
-                # Bump generation ONLY after the current-attempt subprocess
-                # succeeds — never eagerly. An earlier implementation bumped
-                # the generation BEFORE ``_run_refresh_cmd``; when the
-                # subprocess failed, the phantom bump made concurrent waiters
-                # short-circuit and proceed with stale storage. The bump
-                # itself happens just below, immediately before
-                # ``build_httpx_cookies_from_storage`` reloads the freshly-
-                # written disk state.
-                #
-                # Re-check under the sync state lock so the read is atomic
-                # ACROSS event loops. The per-loop asyncio lock only
-                # serializes within a single loop; a second loop sharing this
-                # storage path holds its own asyncio.Lock.
-                with _REFRESH_STATE_LOCK:
-                    current_generation = _REFRESH_GENERATIONS.get(refresh_key, 0)
-                    # ``current > refresh_generation`` means another caller
-                    # (any loop) has SUCCESSFULLY refreshed since we observed
-                    # auth-expiry — we can skip ``_run_refresh_cmd`` and just
-                    # reload the freshly-written storage.
-                    should_run_refresh = current_generation <= refresh_generation
-                if should_run_refresh:
-                    # Cancel-safety: drive the subprocess through the shared
-                    # in-flight future. Same-loop concurrent callers coalesce
-                    # on the same subprocess. If THIS caller is cancelled
-                    # while the subprocess is in flight, we keep awaiting the
-                    # shielded future so the asyncio lock is NOT released
-                    # until the subprocess settles — otherwise a second
-                    # caller could spawn a duplicate concurrent refresh by
-                    # observing the mid-flight lock release.
-                    caller_cancelled = False
-                    # ``observed_inflight`` distinguishes "current-attempt
-                    # subprocess actually ran" from "cancellation arrived
-                    # before any subprocess registered for THIS attempt"
-                    # (issue #816). Only when we have proof of the current
-                    # attempt do we have license to bump the generation.
-                    observed_inflight = False
-                    subprocess_exc: BaseException | None = None
-                    # Snapshot the inflight registry slot BEFORE entering
-                    # the await. The ``_settle`` callback intentionally
-                    # leaves done futures in the registry so the
-                    # cancel/settle race fix can still inspect
-                    # ``inflight.exception()``; that
-                    # retention also means the registry may still hold a
-                    # STALE done future from a previous refresh cycle when
-                    # our await starts. We distinguish that stale slot
-                    # from a current-attempt future so the
-                    # cancel-before-register narrow window (issue #816)
-                    # does not attribute a prior cycle's success to this
-                    # caller's no-op attempt.
-                    registry = _get_inflight_registry()
-                    with _REFRESH_STATE_LOCK:
-                        prior_inflight = registry.get(refresh_key)
-                    # A pre-existing registry entry that was already done
-                    # at capture time is stale leftover from a prior cycle.
-                    # A pre-existing entry that was still active is a
-                    # sibling leader's current-cycle future — same-loop
-                    # coalescing means we legitimately follow it.
-                    prior_was_active = prior_inflight is not None and not prior_inflight.done()
-                    while True:
-                        try:
-                            await _coalesced_run_refresh_cmd(
-                                refresh_key, refresh_storage_path, profile
-                            )
-                            # Normal return only happens when the shielded
-                            # future resolved with success — i.e. a
-                            # current-attempt subprocess ran to completion.
-                            observed_inflight = True
-                            break
-                        except asyncio.CancelledError:
-                            # Caller-side cancellation. Re-enter the await
-                            # so the shielded subprocess can settle while we
-                            # still hold the asyncio lock.
-                            caller_cancelled = True
-                            with _REFRESH_STATE_LOCK:
-                                inflight = registry.get(refresh_key)
-                            # Determine whether the registry slot belongs
-                            # to the CURRENT refresh attempt. Two cases
-                            # mean "yes":
-                            #   (a) the slot was overwritten during our
-                            #       await (``inflight is not prior_inflight``
-                            #       — a new leader inserted a fresh future);
-                            #   (b) the slot already held an actively-
-                            #       running sibling leader at capture time
-                            #       (``prior_was_active``) — same-loop
-                            #       coalescing means we legitimately follow
-                            #       its subprocess.
-                            # Otherwise the slot is either empty or a
-                            # stale done future that ``_settle``
-                            # intentionally left behind from a prior cycle
-                            # (PR #621 cancel/settle race retention).
-                            # Treating that stale entry as proof of our
-                            # attempt would re-bump generation against an
-                            # outdated result — the warm-registry variant
-                            # of #816.
-                            if inflight is None or (
-                                inflight is prior_inflight and not prior_was_active
-                            ):
-                                # No current-attempt future to wait on
-                                # (issue #816 narrow window: cancellation
-                                # arrived before the registry insert).
-                                break
-                            observed_inflight = True
-                            if inflight.done():
-                                # Current attempt already settled and we
-                                # absorbed the cancellation. ``_settle``
-                                # left the done future in the registry so
-                                # this branch can inspect its terminal
-                                # state (PR #621 cancel/settle race).
-                                if inflight.cancelled():
-                                    # Subprocess itself was cancelled —
-                                    # treat as failure (do not bump gen).
-                                    subprocess_exc = asyncio.CancelledError()
-                                else:
-                                    subprocess_exc = inflight.exception()
-                                break
-                            # Otherwise (current-attempt future still in
-                            # flight) loop and re-await the shielded
-                            # future so the asyncio lock is not released
-                            # until the subprocess settles.
-                        except BaseException as exc:  # noqa: BLE001
-                            subprocess_exc = exc
-                            break
-
-                    if subprocess_exc is not None:
-                        # Subprocess failed — DO NOT bump generation.
-                        # Concurrent / subsequent waiters re-attempt the
-                        # refresh instead of short-circuiting on a phantom
-                        # bump.
-                        if caller_cancelled:
-                            # Caller cancellation takes priority for THIS
-                            # caller.
-                            raise asyncio.CancelledError() from subprocess_exc
-                        raise subprocess_exc
-
-                    if observed_inflight:
-                        # Subprocess succeeded AND we're about to reload
-                        # storage. Bump the generation now so other callers
-                        # (any loop) see the success and skip their own
-                        # subprocess. The bump is atomic across loops via
-                        # ``_REFRESH_STATE_LOCK``.
-                        with _REFRESH_STATE_LOCK:
-                            # ``max(...)`` defends against the rare
-                            # interleaving where another loop's pre-lock
-                            # capture was AFTER ours and bumped past us.
-                            existing = _REFRESH_GENERATIONS.get(refresh_key, 0)
-                            _REFRESH_GENERATIONS[refresh_key] = max(
-                                existing, refresh_generation + 1
-                            )
-
-                    if caller_cancelled:
-                        # Generation handling depends on whether a subprocess
-                        # actually ran:
-                        # * observed_inflight=True: subprocess succeeded (the
-                        #   failure branch already raised above); the bump
-                        #   above persists for other callers' benefit.
-                        # * observed_inflight=False: no subprocess ever
-                        #   registered, so generation stays at the pre-fetch
-                        #   baseline (issue #816) — concurrent / subsequent
-                        #   waiters re-attempt the refresh instead of
-                        #   short-circuiting on a phantom bump.
-                        # Either way THIS caller propagates cancellation
-                        # rather than completing the retry.
-                        raise asyncio.CancelledError()
-                fresh_jar = build_httpx_cookies_from_storage(refresh_storage_path)
+            try:
+                await _coalesced_run_refresh_cmd(str(path), path, profile, deps=deps)
+                fresh_jar, snapshot, new_baseline = await load_replacement(path)
                 _replace_cookie_jar(cookie_jar, fresh_jar)
-                # Capture the baseline NOW — after the wholesale replacement
-                # but before the retry fetch can mutate the jar.
-                post_refresh_snapshot = snapshot_cookie_jar(cookie_jar)
-            route_kwargs = {"authuser": authuser}
-            if account_email is not None:
-                route_kwargs["account_email"] = account_email
-            if force_authuser_query:
-                route_kwargs["force_authuser_query"] = True
-            csrf, session_id = await _fetch_tokens_with_jar(
-                cookie_jar, refresh_storage_path, **route_kwargs
-            )
-            return csrf, session_id, True, post_refresh_snapshot
+                route = await resolve_route(path)
+                csrf, session_id = await _fetch_tokens_with_jar(cookie_jar, path, **route)
+                return csrf, session_id, snapshot, new_baseline
+            except (RuntimeError, OSError, ValueError) as rung_error:
+                logger.warning(
+                    "%s rung failed (%s); falling through to the re-mint rungs.",
+                    NOTEBOOKLM_REFRESH_CMD_ENV,
+                    rung_error,
+                )
+                raise
         finally:
             _REFRESH_ATTEMPTED_CONTEXT.reset(refresh_token)
+
+    async def validate_recovered(jar: httpx.Cookies) -> None:
+        await _fetch_tokens_with_jar(jar, storage_path, **await resolve_route(storage_path))
+
+    async def fetch_recovered(jar: httpx.Cookies) -> tuple[str, str]:
+        return await _fetch_tokens_with_jar(jar, storage_path, **await resolve_route(storage_path))
+
+    coordinator = _auth_recovery.ColdRecoveryCoordinator(
+        state=_auth_recovery.ColdRecoveryState.process_default(),
+        single_flight=_single_flight.SingleFlight.process_default(),
+        should_try_refresh=should_try_refresh,
+        resolve_refresh_path=resolve_refresh_path,
+        run_refresh_attempt=run_refresh_attempt,
+        load_cookie_pair=lambda path: _auth_cookies._build_cookie_pair_from_storage(path),
+        run_headless_attempt=lambda path, headless: _auth_recovery._try_headless_reauth_result(
+            storage_path=path,
+            allow_headless=headless,
+        ),
+        run_master_token_attempt=lambda path: _auth_recovery._try_master_token_reauth_result(
+            storage_path=path
+        ),
+        validate_recovered=validate_recovered,
+        fetch_recovered=fetch_recovered,
+        replace_cookie_jar=lambda target, source: _replace_cookie_jar(target, source),
+        snapshot_cookie_jar=lambda jar: _auth_storage.snapshot_cookie_jar(jar),
+        clone_cookie_jar=lambda jar: _auth_cookies._clone_cookie_jar(jar),
+    )
+    return await coordinator.recover(
+        initial_error=err,
+        cookie_jar=cookie_jar,
+        storage_path=storage_path,
+        env_auth=env_auth,
+        allow_headless=allow_headless,
+        baseline=baseline,
+    )
 
 
 async def _fetch_tokens_with_jar(
@@ -744,17 +987,32 @@ async def _fetch_tokens_with_jar(
         response.raise_for_status()
 
         final_url = str(response.url)
+        # Redirect hops, in order. Google's ``/CookieMismatch`` interstitial 302s
+        # onward to a support.google.com help article, so it is only ever visible
+        # here — never in ``final_url``. (The curl_cffi transport rebuilds a
+        # synthetic response and reports an empty history; that path simply
+        # loses this one classification rather than misreporting it.)
+        redirect_urls = tuple(str(hop.url) for hop in response.history)
 
-        # Check if we were redirected to login
-        if is_google_auth_redirect(final_url):
-            raise ValueError(
-                "Authentication expired or invalid. "
-                "Redirected to: " + _safe_url(final_url) + "\n"
-                "Run 'notebooklm login' to re-authenticate."
-            )
+        # Classify everything decidable from the URLs BEFORE touching the body.
+        # This is not an optimisation: Google's sign-in page carries its own
+        # ``WIZ_global_data`` with its own ``SNlM0e``/``FdrFJe`` (live-captured;
+        # see ``_url_only_extraction_failure`` for the exact request), and the
+        # extractors never check which host answered — so handing a sign-in page
+        # to ``extract_csrf_from_html`` returns *that* page's token instead of
+        # raising. Delegating to the shared classifier (instead of
+        # re-implementing the checks here) keeps the gate -> cookie-mismatch ->
+        # auth-redirect precedence identical on both paths; hand-rolling it here
+        # is exactly how this path once let a mismatch hop preempt the #1630
+        # region gate (#2038).
+        url_failure = _url_only_extraction_failure(final_url, redirect_urls)
+        if url_failure is not None:
+            raise url_failure
 
-        csrf = extract_csrf_from_html(response.text, final_url)
-        session_id = extract_session_id_from_html(response.text, final_url)
+        csrf = extract_csrf_from_html(response.text, final_url, redirect_urls=redirect_urls)
+        session_id = extract_session_id_from_html(
+            response.text, final_url, redirect_urls=redirect_urls
+        )
 
         # httpx copies the input Cookies object into the client. Copy any
         # redirect Set-Cookie updates back to the caller's jar before it is
@@ -775,7 +1033,7 @@ async def fetch_tokens(
 ) -> tuple[str, str]:
     """Fetch tokens from a cookie mapping. For backward compatibility.
 
-    Prefer AuthTokens.from_storage() which preserves cookie domains. If
+    Prefer NotebookLMClient.from_storage(), which preserves cookie domains. If
     ``NOTEBOOKLM_REFRESH_CMD`` is set and auth has expired, the command is run
     with ``shell=False`` by default (or via the platform shell when
     ``NOTEBOOKLM_REFRESH_CMD_USE_SHELL=1``), cookies are reloaded from
@@ -800,19 +1058,33 @@ async def fetch_tokens(
         ValueError: If tokens cannot be extracted from response
         RuntimeError: If ``NOTEBOOKLM_REFRESH_CMD`` is set but fails
     """
-    jar = build_cookie_jar(cookies=cookies, storage_path=storage_path)
-    route_kwargs = _resolve_token_route_kwargs(
+    jar = await asyncio.to_thread(build_cookie_jar, cookies=cookies, storage_path=storage_path)
+    csrf, session_id, refreshed, _post_refresh_snapshot = await _fetch_tokens_with_refresh(
+        jar,
         storage_path,
+        profile,
         authuser=authuser,
         account_email=account_email,
-    )
-    csrf, session_id, refreshed, _post_refresh_snapshot = await _fetch_tokens_with_refresh(
-        jar, storage_path, profile, **route_kwargs
+        force_authuser_query=authuser is not None,
     )
     if refreshed:
         fresh = _cookie_map_from_jar(jar)
         _update_cookie_input(cookies, fresh)
     return csrf, session_id
+
+
+def _merge_domain_fetch_observation(
+    store: ProfileStore,
+    observation: CookieJar,
+    baseline: CookieJar,
+) -> CookieJar:
+    result = store.merge_cookie_observation(observation, baseline=baseline)
+    if not result.advances_ordering:
+        return baseline
+    next_baseline = result.next_baseline
+    if next_baseline is None:  # pragma: no cover - result invariant
+        raise AssertionError("advancing refresh merge must provide a baseline")
+    return next_baseline
 
 
 async def fetch_tokens_with_domains(
@@ -821,51 +1093,40 @@ async def fetch_tokens_with_domains(
     *,
     authuser: int | None = None,
     account_email: str | None = None,
+    allow_headless: bool = False,
 ) -> tuple[str, str]:
-    """Fetch tokens with domain-preserving cookies from storage.
+    """Fetch tokens with domain-preserving cookies and persist their observation."""
+    storage_path = _auth_cookies.resolve_auth_storage_path(path, profile)
+    pair = await asyncio.to_thread(_auth_cookies._build_cookie_pair_from_storage, storage_path)
+    live = pair.live
 
-    Used by CLI helpers. Loads storage, builds jar, fetches tokens, optionally
-    runs NOTEBOOKLM_REFRESH_CMD on auth expiry, and persists any refreshed
-    cookies back.
+    async def resolve_route(route_path: Path | None) -> dict[str, Any]:
+        return _resolve_token_route_kwargs(
+            route_path,
+            authuser=authuser,
+            account_email=account_email,
+        )
 
-    Args:
-        path: Path to storage_state.json. If provided, takes precedence over env vars.
-        profile: Optional profile name exposed to the refresh command.
-        authuser: Optional explicit Google account index. Defaults to the
-            persisted profile value, or 0 when none exists.
-        account_email: Optional explicit Google account email. When provided,
-            it is used as the auth routing value instead of the integer index.
-
-    Returns:
-        Tuple of (csrf_token, session_id)
-
-    Raises:
-        FileNotFoundError: If storage file doesn't exist.
-        httpx.HTTPError: If request fails.
-        ValueError: If tokens cannot be extracted from response.
-        RuntimeError: If ``NOTEBOOKLM_REFRESH_CMD`` is set but fails.
-    """
-    if path is None and (profile is not None or "NOTEBOOKLM_AUTH_JSON" not in os.environ):
-        path = get_storage_path(profile=profile)
-    jar = build_httpx_cookies_from_storage(path)
-    route_kwargs = _resolve_token_route_kwargs(path, authuser=authuser, account_email=account_email)
-    # Capture the open-time snapshot before any rotation could fire. The
-    # snapshot is the input to the dirty-flag/delta merge that closes the
-    # stale-overwrite-fresh race (docs/auth-cookie-lifecycle.md §3.4.1).
-    snapshot = snapshot_cookie_jar(jar)
-    csrf, session_id, refreshed, post_refresh_snapshot = await _fetch_tokens_with_refresh(
-        jar, path, profile, **route_kwargs
+    csrf, session_id, selected_baseline = await _fetch_tokens_with_exact_baseline(
+        live,
+        storage_path,
+        profile,
+        initial_baseline=pair.baseline,
+        resolve_route=resolve_route,
+        allow_headless=allow_headless,
+        env_auth=storage_path is None,
     )
-    if refreshed and post_refresh_snapshot is not None:
-        # NOTEBOOKLM_REFRESH_CMD replaced the jar wholesale. Use the snapshot
-        # captured immediately after the replacement (before the retry fetch
-        # added redirect Set-Cookies); re-snapshotting here would let those
-        # retry rotations be absorbed into the baseline and never reach disk.
-        snapshot = post_refresh_snapshot
-    # Offload the blocking storage save to a worker thread so the
-    # atomic-replace + fsync + flock can't stall the event loop on
-    # slow filesystems.
-    await asyncio.to_thread(save_cookies_to_storage, jar, path, original_snapshot=snapshot)
+    if storage_path is None:
+        logger.debug("Skipping cookie sync: Auth loaded from NOTEBOOKLM_AUTH_JSON env var")
+        return csrf, session_id
+    store = ProfileStore(storage_path)
+    observation = CookieJar.from_httpx(live)
+    selected_baseline = await asyncio.to_thread(
+        _merge_domain_fetch_observation,
+        store,
+        observation,
+        selected_baseline,
+    )
     return csrf, session_id
 
 
@@ -912,13 +1173,11 @@ async def fetch_tokens_passive(
         httpx.HTTPError: If request fails.
         ValueError: If tokens cannot be extracted (e.g. redirected to sign-in).
     """
-    if path is None and (profile is not None or "NOTEBOOKLM_AUTH_JSON" not in os.environ):
-        path = get_storage_path(profile=profile)
+    path = _auth_cookies.resolve_auth_storage_path(path, profile)
     # Strict (no-recovery) loader: a missing/expired PSIDTS raises ``ValueError``
-    # here rather than triggering the inline ``RotateCookies`` rotation + save
-    # that ``build_httpx_cookies_from_storage`` would. A readiness probe reports
-    # "not authenticated" — it does not heal cookies.
-    jar = _build_httpx_cookies_from_storage_strict(path)
+    # rather than triggering the inline ``RotateCookies`` rotation + save. A
+    # readiness probe reports "not authenticated"; it does not heal. Offloaded.
+    jar = await asyncio.to_thread(_build_httpx_cookies_from_storage_strict, path)
     route_kwargs = _resolve_token_route_kwargs(path, authuser=authuser, account_email=account_email)
     # poke=False + no save_cookies_to_storage ⇒ zero side effects on disk or
     # on the server-side cookie rotation state.

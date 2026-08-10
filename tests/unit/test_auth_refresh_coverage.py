@@ -16,13 +16,21 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import subprocess
-from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
 from notebooklm._auth import refresh as _auth_refresh
+from notebooklm._auth import single_flight as _single_flight
+
+
+@pytest.fixture(autouse=True)
+def _reset_single_flight():
+    """Keep the process-global single-flight core hermetic per test."""
+    _single_flight._reset_for_tests()
+    yield
+    _single_flight._reset_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -234,48 +242,57 @@ class TestSplitRefreshCmdWindowsBranch:
 
 
 class TestSettleCallbackCancel:
-    """``_settle`` propagates task cancellation to the future ."""
+    """A cancelled leader task surfaces ``CancelledError`` to the flight awaiter.
+
+    c-PR2: the leader task is driven + strong-ref'd by
+    ``single_flight`` (``_LEADER_TASKS``), and its terminal state is mirrored
+    into the flight bridge by ``single_flight._mirror``. Cancelling the leader
+    task must surface ``CancelledError`` to any ``await_flight`` waiter — here
+    the driving ``_coalesced_run_refresh_cmd`` call.
+    """
 
     @pytest.mark.asyncio
-    async def test_cancelled_task_cancels_future(self, monkeypatch):
-        # Drive ``_coalesced_run_refresh_cmd`` where the underlying
-        # ``_run_refresh_cmd`` task is cancelled mid-flight. ``_settle`` must
-        # call ``future.cancel()`` , surfacing CancelledError to the
-        # awaiter.
+    async def test_cancelled_leader_task_surfaces_cancel(self, monkeypatch, tmp_path):
+        storage = tmp_path / "storage_state.json"
+        storage.write_text("{}", encoding="utf-8")
         started = asyncio.Event()
 
         async def _slow_refresh(storage_path=None, profile=None):
             started.set()
             await asyncio.sleep(10)
 
-        monkeypatch.setattr(_auth_refresh, "_run_refresh_cmd", _slow_refresh)
+        # Injected, not monkeypatched (plan §7 deps record).
+        deps = _auth_refresh.RefreshCmdDeps(run_refresh_cmd=_slow_refresh)
 
         async def _drive():
             await _auth_refresh._coalesced_run_refresh_cmd(
-                "cancel-key", Path("/tmp/storage_state.json"), None
+                str(storage.expanduser().resolve()),
+                storage.expanduser().resolve(),
+                None,
+                deps=deps,
             )
 
         task = asyncio.create_task(_drive())
         await started.wait()
-        # Cancel the leader subprocess task directly so ``_settle`` runs the
-        # ``t.cancelled()`` → ``future.cancel()`` branch.
-        inflight = list(_auth_refresh._REFRESH_INFLIGHT_TASKS)
-        assert inflight, "expected an in-flight refresh task"
+        # Cancel the leader task directly so ``_mirror`` runs the
+        # ``t.cancelled()`` branch (bridge.set_exception(CancelledError)).
+        inflight = list(_single_flight.SingleFlight.process_default()._leader_tasks)
+        assert inflight, "expected an in-flight leader task"
         for t in inflight:
             t.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
 
 
-class TestFetchTokensCancelSettleRace:
-    """Caller-cancel + already-settled in-flight future race .
-    When ``_coalesced_run_refresh_cmd`` raises ``CancelledError`` (caller-side
-    cancellation) but the underlying subprocess future is already ``done()``
-    and left in the registry by ``_settle``, ``_fetch_tokens_with_refresh``
-    inspects the future's terminal state: a cancelled future yields a synthetic
-    ``CancelledError`` (575->578); a failed future yields its exception
-    (580); either way the loop breaks (581) and the caller propagates
-    ``CancelledError``.
+class TestFetchTokensCancelPropagation:
+    """``_fetch_tokens_with_refresh`` propagates caller-side cancellation.
+
+    c-PR2 removed the hand-rolled cancel/settle inspection dance from
+    ``_fetch_tokens_with_refresh`` (the observed_inflight / prior_inflight
+    machinery). Cancellation handling now lives entirely in
+    ``single_flight.await_flight`` (settle-before-propagate); the fetch path
+    simply lets ``CancelledError`` raised by ``_coalesced_run_refresh_cmd``
+    propagate, and no success epoch is bumped for a cancelled attempt.
     """
 
     def _common_patches(self, monkeypatch, storage):
@@ -287,61 +304,19 @@ class TestFetchTokensCancelSettleRace:
         monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
 
     @pytest.mark.asyncio
-    async def test_done_future_with_exception_propagates_cancel(self, monkeypatch, tmp_path):
+    async def test_cancel_propagates_without_epoch_bump(self, monkeypatch, tmp_path):
         storage = tmp_path / "storage_state.json"
         storage.write_text("{}", encoding="utf-8")
         self._common_patches(monkeypatch, storage)
-        refresh_key = str(storage.expanduser().resolve())
+        path_key = str(storage.expanduser().resolve())
 
-        async def fake_coalesced(key, resolved_storage_path, profile):
-            # Insert a DONE future carrying an exception into the per-loop
-            # registry, then raise CancelledError to simulate caller-side
-            # cancellation arriving after the subprocess settled with failure.
-            loop = asyncio.get_running_loop()
-            fut: asyncio.Future[None] = loop.create_future()
-            fut.set_exception(RuntimeError("subprocess boom"))
-            registry = _auth_refresh._get_inflight_registry()
-            with _auth_refresh._REFRESH_STATE_LOCK:
-                registry[key] = fut
+        async def fake_coalesced(key, resolved_storage_path, profile, *, deps=None):
             raise asyncio.CancelledError()
 
         monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", fake_coalesced)
         with pytest.raises(asyncio.CancelledError):
             await _auth_refresh._fetch_tokens_with_refresh(httpx.Cookies(), storage, None)
-        # Clean up the leftover registry entry so other tests start clean.
-        registry = _auth_refresh._get_inflight_registry()
-        with _auth_refresh._REFRESH_STATE_LOCK:
-            registry.pop(refresh_key, None)
-
-    @pytest.mark.asyncio
-    async def test_done_future_cancelled_propagates_cancel(self, monkeypatch, tmp_path):
-        storage = tmp_path / "storage_state2.json"
-        storage.write_text("{}", encoding="utf-8")
-        self._common_patches(monkeypatch, storage)
-        refresh_key = str(storage.expanduser().resolve())
-
-        async def fake_coalesced(key, resolved_storage_path, profile):
-            # Insert a DONE *cancelled* future, then raise CancelledError. This
-            # drives the ``inflight.cancelled()`` branch (575 -> 578).
-            loop = asyncio.get_running_loop()
-            fut: asyncio.Future[None] = loop.create_future()
-            fut.cancel()
-            # Allow the cancellation to settle the future as cancelled.
-            try:
-                await asyncio.sleep(0)
-            except asyncio.CancelledError:
-                pass
-            registry = _auth_refresh._get_inflight_registry()
-            with _auth_refresh._REFRESH_STATE_LOCK:
-                registry[key] = fut
-            raise asyncio.CancelledError()
-
-        monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", fake_coalesced)
-        with pytest.raises(asyncio.CancelledError):
-            await _auth_refresh._fetch_tokens_with_refresh(httpx.Cookies(), storage, None)
-        registry = _auth_refresh._get_inflight_registry()
-        with _auth_refresh._REFRESH_STATE_LOCK:
-            registry.pop(refresh_key, None)
+        assert _single_flight.read_success_epoch(path_key) == 0
 
 
 class TestPostRefreshRetryRouteKwargs:
@@ -363,7 +338,7 @@ class TestPostRefreshRetryRouteKwargs:
             calls.append(route_kwargs)
             return "csrf_after", "sess_after"
 
-        async def fake_coalesced(refresh_key, resolved_storage_path, profile):
+        async def fake_coalesced(refresh_key, resolved_storage_path, profile, *, deps=None):
             return None
 
         def fake_build_jar(path):

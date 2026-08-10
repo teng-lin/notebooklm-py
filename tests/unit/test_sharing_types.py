@@ -128,7 +128,7 @@ class TestShareStatus:
         assert status.view_level == ShareViewLevel.FULL_NOTEBOOK
         assert len(status.shared_users) == 1
         assert status.shared_users[0].email == "owner@example.com"
-        assert status.share_url == "https://notebooklm.google.com/notebook/notebook-123"
+        assert status.share_url == "https://notebook.google.com/notebook/notebook-123"
 
     def test_from_api_response_private(self):
         """Test parsing private/restricted notebook."""
@@ -425,14 +425,14 @@ class TestShareStatusDefaultValues:
         """Test share URL is correctly formatted."""
         data = [[], [True], 1000]
         status = ShareStatus.from_api_response(data, "abc-123-xyz")
-        assert status.share_url == "https://notebooklm.google.com/notebook/abc-123-xyz"
+        assert status.share_url == "https://notebook.google.com/notebook/abc-123-xyz"
 
     def test_share_url_quotes_notebook_id(self):
         """Reserved characters in notebook IDs must be percent-encoded."""
         data = [[], [True], 1000]
         status = ShareStatus.from_api_response(data, "foo bar/baz?x")
 
-        assert status.share_url == "https://notebooklm.google.com/notebook/foo%20bar%2Fbaz%3Fx"
+        assert status.share_url == "https://notebook.google.com/notebook/foo%20bar%2Fbaz%3Fx"
         assert "foo bar/baz?x" not in status.share_url
 
     def test_share_url_none_when_private(self):

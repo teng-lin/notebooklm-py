@@ -93,10 +93,59 @@ class ReqidCounter(LoopBoundPrimitive):
         # ``_bound_loop`` (the loop-affinity guard consulted by
         # :meth:`next_reqid` before touching the lazy ``_lock``) and
         # ``set_bound_loop`` are provided by the
-        # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base. This
-        # counter only stores the binding, so it uses the default no-op
-        # ``_on_loop_rebind`` (the lazy ``Lock`` is never held across
-        # ``open()`` and is rebuilt implicitly per ``open()``).
+        # :class:`~notebooklm._loop_bound.LoopBoundPrimitive` base. The
+        # counter overrides ``_on_loop_rebind`` (and exposes
+        # ``reset_after_open``) to discard the lazy ``Lock`` on a loop
+        # change / reopen — the lock is NOT rebuilt implicitly per
+        # ``open()``; once cached it survives close→reopen and would be
+        # reused on the new loop (#2106). ``_value`` always survives so
+        # reqid monotonicity holds across reopen.
+
+    def _on_loop_rebind(
+        self,
+        old: asyncio.AbstractEventLoop | None,
+        new: asyncio.AbstractEventLoop | None,
+    ) -> None:
+        """Discard the cached lazy lock when the bound loop changes.
+
+        Fires from :meth:`~notebooklm._loop_bound.LoopBoundPrimitive.set_bound_loop`
+        only on a real loop change (and before ``_bound_loop`` is updated), so
+        ``set_bound_loop`` is self-consistent even if called independently of
+        :meth:`reset_after_open`: a stale lock bound to the old loop must
+        never be reused after a rebind.
+
+        Currently a latent (not active) hazard (#2106): the critical section
+        in :meth:`next_reqid` is purely synchronous, and ``asyncio.Lock``
+        binds its loop only on the *contended* acquire path, so a stale lock
+        cannot actually trip the cross-loop ``RuntimeError`` today. The
+        discard brings the counter in line with its clear-on-rebind siblings
+        so any future ``await`` under the lock cannot activate the trap.
+
+        ``_value`` is deliberately preserved — reqid monotonicity must
+        survive close→reopen (Google's chat backend relies on strictly
+        increasing ``_reqid`` values per client).
+        """
+        self._lock = None
+
+    def reset_after_open(self) -> None:
+        """Discard the lazy lock so a reopened client rebinds it.
+
+        Called from :meth:`ClientLifecycle.open` (alongside the
+        per-collaborator ``set_bound_loop`` propagation) so a client that was
+        closed and reopened on a *different* event loop builds a fresh
+        ``asyncio.Lock`` on the new loop instead of reusing the stale one
+        bound to the old (now-dead) loop. On Python 3.10/3.11 a stale lock
+        raises "bound to a different event loop" on the contended acquire
+        path; today that path is unreachable here (no ``await`` runs under
+        the lock — see :meth:`_on_loop_rebind`), so this is a consistency
+        hardening, not an active-bug fix (#2106).
+
+        Mirrors :meth:`ClientComposed.reset_after_open`. Deliberately narrow:
+        dropping the reference is enough because the lock is reallocated
+        lazily on the next :meth:`next_reqid` call from inside the new loop.
+        ``_value`` is left untouched so reqid monotonicity survives reopen.
+        """
+        self._lock = None
 
     @property
     def value(self) -> int:

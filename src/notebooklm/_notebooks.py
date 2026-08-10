@@ -319,13 +319,32 @@ class NotebooksAPI:
                 )
                 return source_ids
 
-            sources = (
-                safe_index(
-                    notebook_info, 1, method_id=method_id, source="NotebooksAPI.get_source_ids"
+            if len(notebook_info) <= 1:
+                # The sources slot is *absent*, which is not the same thing as
+                # present-and-null below: a healthy envelope carries the slot
+                # (the #2131 report shows ``len=11`` on an empty notebook), so a
+                # response too short to hold one is a truncated shape worth
+                # surfacing.
+                logger.warning(
+                    "get_source_ids: notebook_info has no sources slot for %s "
+                    "(schema drift?). len=%d",
+                    notebook_id,
+                    len(notebook_info),
                 )
-                if len(notebook_info) > 1
-                else None
+                return source_ids
+
+            sources = safe_index(
+                notebook_info, 1, method_id=method_id, source="NotebooksAPI.get_source_ids"
             )
+            if sources is None:
+                # Slot present, explicitly null: a genuinely empty notebook
+                # elides its sources as ``None`` rather than ``[]``. A valid
+                # empty state, not a malformed response, so it must not reach
+                # the drift warning below (#2131). This is the same split the
+                # sibling walk over this slot already makes — reject the short
+                # envelope first, then accept a present ``None``
+                # (``_source/listing.py``, issue #1159).
+                return source_ids
             if not isinstance(sources, list):
                 logger.warning(
                     "get_source_ids: notebook_info[1] not list for %s (schema drift?). len=%d",
@@ -608,11 +627,12 @@ class NotebooksAPI:
                 )
             return None
 
-        return await idempotent_create(
+        result = await idempotent_create(
             _create,
             _probe,
             label=f"notebooks.create[{title!r}]",
         )
+        return result.value
 
     async def _raise_quota_error_if_detected(self, error: RPCError) -> None:
         """Convert CREATE_NOTEBOOK invalid-argument failures into quota errors."""
@@ -758,8 +778,12 @@ class NotebooksAPI:
             no longer enters its block.
         """
         logger.debug("Deleting notebook: %s", notebook_id)
-        # DELETE_NOTEBOOK is the live ``DeleteProjects`` (batch-capable: the
-        # leading slot is a list of ids); we delete a single notebook per call.
+        # DELETE_NOTEBOOK is the live ``DeleteProjects``. Despite the plural
+        # name, it is single-id here: the leading slot takes exactly one id.
+        # Live-probed batch variants — [[id1,id2,id3],[2]], [ids,[2,2,2]],
+        # [[[id],[2]]…], [[[id1],[id2],[id3]],[2]] — all return rpc_code=3
+        # (invalid argument). Delete one notebook per call. (Contrast
+        # DELETE_SOURCE / ADD_SOURCE / DELETE_NOTE, which ARE batch-capable.)
         params = [[notebook_id], [2]]
         await self._rpc.rpc_call(RPCMethod.DELETE_NOTEBOOK, params)
 

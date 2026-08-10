@@ -16,11 +16,11 @@ interactions:
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED;
         _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: GET
-    uri: https://notebooklm.google.com/
+    uri: https://notebook.google.com/
   response:
     body:
       string: "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><base href=\"https://notebooklm.google.com/\"><link
@@ -1878,11 +1878,11 @@ interactions:
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED;
         _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=I3xc3c&source-path=%2Fnotebook%2Fbe2a98a8-5897-4634-bc7c-05d29e493ae8&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=I3xc3c&source-path=%2Fnotebook%2Fbe2a98a8-5897-4634-bc7c-05d29e493ae8&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ")]}'\n\n1441\n[[\"wrb.fr\",\"I3xc3c\",\"[[[\\\"Guides and Features\\\",[[\\\"709f1ab1-aaa3-450b-960c-c7d91eb572f6\\\"],[\\\"9e71e434-4f7e-44b2-8c19-2c35a78899c9\\\"],[\\\"add4c998-12b1-4f63-ae29-72ac2df30ae4\\\"]],\\\"03588753-6b58-4a4b-a254-0066d13461e3\\\",\\\"\\\"],[\\\"SCRUBBED_NAME\\\",[[\\\"19c7594a-af4b-4505-a1e9-c77a9fb5b469\\\"],[\\\"4e1d2980-319f-4251-a1ef-40d3c45a58ed\\\"],[\\\"962898f6-292d-42e2-be2b-74466b6f6b5a\\\"],[\\\"aa4c10dd-7895-404f-a1cc-b042a0a2a789\\\"],[\\\"eb8a1a5b-3996-40e6-9b2f-f639227fa763\\\"]],\\\"0941f990-5ccf-4927-9a97-8dfbaeef87d1\\\",\\\"\\\"],[\\\"SCRUBBED_NAME\\\",[[\\\"b6f3339f-e0a9-4887-8535-be2cdda205bd\\\"],[\\\"b8473bdd-5046-4e2c-80f4-84da3b733053\\\"],[\\\"ed320af2-a065-4015-91b1-c4e63896f0ce\\\"],[\\\"ee51cb09-a1d8-490a-9f08-5909b47508f7\\\"]],\\\"0a7a32de-35bd-46b6-8a76-18a109c3835c\\\",\\\"\\\"],[\\\"Development\\\",[[\\\"dc58b6a2-fdcf-42fa-b969-8306f0f7e71c\\\"]],\\\"66327bde-a191-4682-83fa-204680da3120\\\",\\\"\\\"],[\\\"Renamed\\\",[[\\\"36fb80a1-7f3b-4fed-8e17-21d105273edf\\\"]],\\\"fdfc8ac4-3237-4f2a-8a79-3e24297a7040\\\",\\\"\U0001F680\\\"],[\\\"SCRUBBED_NAME\\\",[[\\\"49f28115-3bf1-4dca-9d39-5799d56db7f2\\\"],[\\\"914a99bb-72f9-45eb-b1a5-0e52396ea5d7\\\"],[\\\"e20f762b-93ab-4aa8-8956-fc3bcc155b3e\\\"]],\\\"b8828ab8-e736-4f0c-84e7-2d81fc0553dd\\\",\\\"\\\"],[\\\"AI
@@ -1966,11 +1966,11 @@ interactions:
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED;
         _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=GyzE7e&source-path=%2Fnotebook%2Fbe2a98a8-5897-4634-bc7c-05d29e493ae8&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=GyzE7e&source-path=%2Fnotebook%2Fbe2a98a8-5897-4634-bc7c-05d29e493ae8&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''

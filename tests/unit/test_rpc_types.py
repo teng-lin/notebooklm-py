@@ -81,9 +81,7 @@ def test_rpc_override_import_order_smoke() -> None:
 class TestRPCConstants:
     def test_batchexecute_url(self):
         """Test batchexecute URL is correct."""
-        assert (
-            BATCHEXECUTE_URL == "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute"
-        )
+        assert BATCHEXECUTE_URL == "https://notebook.google.com/_/LabsTailwindUi/data/batchexecute"
 
     def test_query_url(self):
         """Test query URL for streaming chat."""

@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from notebooklm._auth.session import refresh_auth_session
+from notebooklm._env import get_base_host
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
@@ -178,7 +179,7 @@ async def test_refresh_auth_session_default_account_uses_bare_base_url() -> None
 
         refreshed_auth = await _invoke(bundle)
 
-    assert requests == [httpx.URL("https://notebooklm.google.com/")]
+    assert requests == [httpx.URL("https://notebook.google.com/")]
     assert refreshed_auth is bundle.auth
     assert refreshed_auth.csrf_token == "new_csrf_token_123"
     assert refreshed_auth.session_id == "new_session_id_456"
@@ -200,7 +201,7 @@ async def test_refresh_auth_session_selected_account_uses_account_email_url() ->
 
         await _invoke(bundle)
 
-    assert requests == [httpx.URL("https://notebooklm.google.com/?authuser=bob%40example.com")]
+    assert requests == [httpx.URL("https://notebook.google.com/?authuser=bob%40example.com")]
 
 
 @pytest.mark.asyncio
@@ -217,13 +218,13 @@ async def test_refresh_auth_session_selected_account_uses_authuser_url() -> None
 
         await _invoke(bundle)
 
-    assert requests == [httpx.URL("https://notebooklm.google.com/?authuser=2")]
+    assert requests == [httpx.URL("https://notebook.google.com/?authuser=2")]
 
 
 @pytest.mark.asyncio
 async def test_refresh_auth_session_detects_login_redirect() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "notebooklm.google.com":
+        if request.url.host == get_base_host():
             return httpx.Response(
                 302,
                 headers={"Location": "https://accounts.google.com/signin/v2/identifier"},

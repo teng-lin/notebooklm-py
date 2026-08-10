@@ -58,6 +58,38 @@ def mock_auth():
 
 
 class TestSourceList:
+    def test_source_list_composes_cli_service_and_client_boundary(self, runner, mock_auth):
+        """The CLI list path reaches the client-backed source-list service.
+
+        Output assertions alone could pass if the command fabricated a
+        response or bypassed the client. Invoke the real Click command and
+        service pipeline, then verify the client calls that supplied its
+        envelope.
+        """
+        mock_client = create_mock_client()
+        mock_client.sources.list = AsyncMock(
+            return_value=[Source(id="src_1", title="Source One", url="https://example.com")]
+        )
+        mock_client.notebooks.get = AsyncMock(return_value=MagicMock(title="Test Notebook"))
+
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["source", "list", "-n", "nb_123", "--json"],
+                obj=inject_client(mock_client),
+            )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["notebook_id"] == "nb_123"
+        assert payload["count"] == 1
+        assert payload["sources"][0]["id"] == "src_1"
+        mock_client.sources.list.assert_awaited_once_with("nb_123")
+        mock_client.notebooks.get.assert_awaited_once_with("nb_123")
+
     @pytest.mark.parametrize("output_mode", ["text", "json"])
     def test_source_list(self, runner, mock_auth, output_mode):
         mock_client = create_mock_client()

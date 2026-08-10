@@ -7,8 +7,9 @@ option block and dispatch shape; the only axes of variation are captured
 here as ``DownloadTypeSpec`` rows. The ``register_download_command`` factory
 in :mod:`notebooklm.cli.download_cmd` builds each Click leaf from one row.
 
-Adding a new download type is a single registry edit + a corresponding
-``ArtifactsAPI.download_<name>`` coroutine on the client.
+The behavioural rows come from :mod:`notebooklm._app.download_specs`; this
+adapter adds only Click help prose and the legacy ``slide_format`` parameter
+name. Adding a type or format never requires repeating its extension or MIME.
 
 See also:
     - :mod:`notebooklm._app.download` — the transport-neutral plan / executor
@@ -19,13 +20,15 @@ See also:
 
 from __future__ import annotations
 
-from ..types import ArtifactType
+from dataclasses import replace
+
+from .._app.download_specs import DOWNLOAD_SPECS_BY_NAME as SHARED_DOWNLOAD_SPECS
 
 # The dataclass + format-extension table live in the transport-neutral
 # ``_app.download`` core and are re-exported by ``cli.services.download``.
 # Import through the service adapter to preserve the historical CLI import
 # surface while keeping this file data-only.
-from .services.download import FORMAT_EXTENSIONS, DownloadTypeSpec
+from .services.download import DownloadTypeSpec
 
 
 # Help-example fragments share enough structure that we build them
@@ -68,142 +71,78 @@ def _stock_examples(name: str, ext: str, default_dir: str, extra: str = "") -> s
     return body
 
 
+_HELP_SUMMARY_OVERRIDES: dict[str, str] = {
+    "audio": "Download audio overview(s) to file.",
+    "video": "Download video overview(s) to file.",
+    "slide-deck": "Download slide deck(s) as PDF or PPTX.",
+    "infographic": "Download infographic(s) to file.",
+    "report": "Download report(s) as markdown files.",
+    "mind-map": "Download mind map(s) as JSON files.",
+    "data-table": "Download data table(s) as CSV files.",
+    "quiz": "Download quiz questions.",
+    "flashcards": "Download flashcard deck.",
+}
+
+
+def _format_help(spec: DownloadTypeSpec) -> str:
+    """Render Click's format help from the shared legal-value axis."""
+    if not spec.format_choices:
+        return ""
+    values = [f"{spec.format_default} (default)", *spec.format_choices[1:]]
+    if len(values) == 2:
+        choices = " or ".join(values)
+    else:
+        choices = f"{', '.join(values[:-1])}, or {values[-1]}"
+    label = "Download format" if spec.name == "slide-deck" else "Output format"
+    return f"{label}: {choices}"
+
+
+def _extra_examples(spec: DownloadTypeSpec) -> str:
+    """Return the small Click-only example residue for format-bearing leaves."""
+    alternatives = spec.format_choices[1:]
+    if spec.name == "slide-deck" and alternatives:
+        output_format = alternatives[0]
+        return (
+            f"    # Download as {output_format.upper()}\n"
+            f"    notebooklm download slide-deck --format {output_format}"
+        )
+    if spec.name in {"quiz", "flashcards"} and alternatives:
+        stem = "quiz" if spec.name == "quiz" else "cards"
+        commands = "\n".join(
+            f"    notebooklm download {spec.name} --format {output_format} "
+            f"{stem}{spec.format_extension_map[output_format]}"
+            for output_format in alternatives
+        )
+        return (
+            f"    # Download as {' or '.join(alternatives)}\n"
+            f"{commands}\n\n"
+            "    # Machine-readable output\n"
+            f"    notebooklm download {spec.name} --json"
+        )
+    return ""
+
+
+def _cli_spec(spec: DownloadTypeSpec) -> DownloadTypeSpec:
+    """Add Click-only fields to one shared behavioural spec."""
+    return replace(
+        spec,
+        help_summary=_HELP_SUMMARY_OVERRIDES.get(
+            spec.name, f"Download {spec.name} artifact(s) to file."
+        ),
+        help_examples=_stock_examples(
+            spec.name,
+            spec.extension,
+            spec.default_dir,
+            extra=_extra_examples(spec),
+        ),
+        format_help=_format_help(spec),
+        # Public compatibility residue from the original hand-written Click leaf.
+        format_param_name="slide_format" if spec.name == "slide-deck" else "output_format",
+    )
+
+
 DOWNLOAD_SPECS: list[DownloadTypeSpec] = [
-    DownloadTypeSpec(
-        name="audio",
-        kind=ArtifactType.AUDIO,
-        extension=".mp3",
-        default_dir="./audio",
-        download_attr="download_audio",
-        help_summary="Download audio overview(s) to file.",
-        help_examples=_stock_examples("audio", ".mp3", "./audio"),
-    ),
-    DownloadTypeSpec(
-        name="video",
-        kind=ArtifactType.VIDEO,
-        extension=".mp4",
-        default_dir="./video",
-        download_attr="download_video",
-        help_summary="Download video overview(s) to file.",
-        help_examples=_stock_examples("video", ".mp4", "./video"),
-    ),
-    DownloadTypeSpec(
-        name="slide-deck",
-        kind=ArtifactType.SLIDE_DECK,
-        extension=".pdf",
-        default_dir="./slide-decks",
-        download_attr="download_slide_deck",
-        format_choices=("pdf", "pptx"),
-        format_default="pdf",
-        format_help="Download format: pdf (default) or pptx",
-        format_extension_map={"pdf": ".pdf", "pptx": ".pptx"},
-        format_kwarg="output_format",
-        # Click param name is the legacy ``slide_format`` (not ``output_format``)
-        # because the original hand-written leaf used that variable name. Kept
-        # to avoid churning ``download_cmd.py`` kwargs flowing through the
-        # factory.
-        format_param_name="slide_format",
-        # Slide-deck only binds output_format when the user picks pptx —
-        # keep that wiring so the underlying API call stays correct.
-        forward_format_only_if_set=True,
-        help_summary="Download slide deck(s) as PDF or PPTX.",
-        help_examples=_stock_examples(
-            "slide-deck",
-            ".pdf",
-            "./slide-decks",
-            extra=("    # Download as PPTX\n    notebooklm download slide-deck --format pptx"),
-        ),
-    ),
-    DownloadTypeSpec(
-        name="infographic",
-        kind=ArtifactType.INFOGRAPHIC,
-        extension=".png",
-        default_dir="./infographic",
-        download_attr="download_infographic",
-        help_summary="Download infographic(s) to file.",
-        help_examples=_stock_examples("infographic", ".png", "./infographic"),
-    ),
-    DownloadTypeSpec(
-        name="report",
-        kind=ArtifactType.REPORT,
-        extension=".md",
-        default_dir="./reports",
-        download_attr="download_report",
-        help_summary="Download report(s) as markdown files.",
-        help_examples=_stock_examples("report", ".md", "./reports"),
-    ),
-    DownloadTypeSpec(
-        name="mind-map",
-        kind=ArtifactType.MIND_MAP,
-        extension=".json",
-        default_dir="./mind-maps",
-        download_attr="download_mind_map",
-        help_summary="Download mind map(s) as JSON files.",
-        help_examples=_stock_examples("mind-map", ".json", "./mind-maps"),
-    ),
-    DownloadTypeSpec(
-        name="data-table",
-        kind=ArtifactType.DATA_TABLE,
-        extension=".csv",
-        default_dir="./data-tables",
-        download_attr="download_data_table",
-        help_summary="Download data table(s) as CSV files.",
-        help_examples=_stock_examples("data-table", ".csv", "./data-tables"),
-    ),
-    DownloadTypeSpec(
-        name="quiz",
-        kind=ArtifactType.QUIZ,
-        extension=".json",
-        default_dir="./quizzes",
-        download_attr="download_quiz",
-        format_choices=("json", "markdown", "html"),
-        format_default="json",
-        format_help="Output format: json (default), markdown, or html",
-        format_extension_map=dict(FORMAT_EXTENSIONS),
-        format_kwarg="output_format",
-        # Quiz/flashcards always forward the format kwarg so the underlying
-        # API serializes the requested representation regardless of default.
-        forward_format_only_if_set=False,
-        help_summary="Download quiz questions.",
-        help_examples=_stock_examples(
-            "quiz",
-            ".json",
-            "./quizzes",
-            extra=(
-                "    # Download as markdown or html\n"
-                "    notebooklm download quiz --format markdown quiz.md\n"
-                "    notebooklm download quiz --format html quiz.html\n\n"
-                "    # Machine-readable output\n"
-                "    notebooklm download quiz --json"
-            ),
-        ),
-    ),
-    DownloadTypeSpec(
-        name="flashcards",
-        kind=ArtifactType.FLASHCARDS,
-        extension=".json",
-        default_dir="./flashcards",
-        download_attr="download_flashcards",
-        format_choices=("json", "markdown", "html"),
-        format_default="json",
-        format_help="Output format: json (default), markdown, or html",
-        format_extension_map=dict(FORMAT_EXTENSIONS),
-        format_kwarg="output_format",
-        forward_format_only_if_set=False,
-        help_summary="Download flashcard deck.",
-        help_examples=_stock_examples(
-            "flashcards",
-            ".json",
-            "./flashcards",
-            extra=(
-                "    # Download as markdown or html\n"
-                "    notebooklm download flashcards --format markdown cards.md\n"
-                "    notebooklm download flashcards --format html cards.html\n\n"
-                "    # Machine-readable output\n"
-                "    notebooklm download flashcards --json"
-            ),
-        ),
-    ),
+    _cli_spec(spec) for spec in SHARED_DOWNLOAD_SPECS.values()
 ]
 
 

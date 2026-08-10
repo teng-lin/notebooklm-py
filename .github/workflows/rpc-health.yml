@@ -63,7 +63,7 @@ jobs:
     concurrency:
       group: rpc-health-${{ needs.resolve-branch.outputs.branch }}
       cancel-in-progress: true
-    # Secret-bearing job. ``NOTEBOOKLM_AUTH_JSON`` and friends live only in
+    # Secret-bearing job. ``NOTEBOOKLM_MASTER_TOKEN_JSON`` and friends live only in
     # the ``protected-readonly`` GitHub Environment (issue #1009: relying on
     # repo-level fallback for the scheduled-cron branch broke when those
     # secrets were migrated env-only). Binding the env unconditionally is
@@ -84,7 +84,7 @@ jobs:
         persist-credentials: false
 
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
         cache: 'pip'
@@ -96,13 +96,15 @@ jobs:
       # `uv sync --frozen` reproduces the lockfile-pinned dep tree. The RPC
       # health script (`scripts/check_rpc_health.py`) only needs the core
       # runtime deps — no `[browser]`/`[dev]`/`[markdown]` extras required.
+      # `--extra headless` = gpsoauth, required for the layer-4 master-token
+      # re-mint that the materialized auth profile below relies on.
       # Retried to ride out transient registry/network blips: a real lockfile
       # problem fails all 3 attempts identically, so this only absorbs flakes
       # — it never masks a genuine resolution error.
       shell: bash
       run: |
         attempt=1; max=3
-        until uv sync --frozen; do
+        until uv sync --frozen --extra headless; do
           if [ "$attempt" -ge "$max" ]; then
             echo "::error::uv sync failed after $max attempts" >&2
             exit 1
@@ -112,39 +114,128 @@ jobs:
           attempt=$((attempt + 1))
         done
 
-    # Fail-fast preflight. The script itself rejects empty
-    # NOTEBOOKLM_AUTH_JSON downstream, but checking at the workflow layer
-    # surfaces ``::error::`` annotations linked to the secret-config
-    # misconfig before the ``continue-on-error`` step swallows the exit
-    # code (issue #1009).
-    - name: Verify auth secret is present
+    # Fail-fast preflight + profile materialization. The empty-secret check
+    # surfaces ``::error::`` annotations linked to the secret-config misconfig
+    # before the ``continue-on-error`` step swallows the exit code (issue
+    # #1009). The write-to-disk part replaces the old inline-env auth: env-var
+    # auth never engages the layer-4 master-token re-mint (it only fires when
+    # master_token.json sits BESIDE the profile's storage_state.json —
+    # src/notebooklm/_auth/session.py), so a rotated cookie secret used to
+    # hard-fail the run. The master token is now MANDATORY (empty secret or
+    # 3 failed mints both exit 1) — it is the only credential shipped, so
+    # there is no snapshot to degrade onto.
+    - name: Materialize auth profile
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
       shell: bash
       run: |
-        if [ -z "${NOTEBOOKLM_AUTH_JSON:-}" ]; then
-          echo "::error::NOTEBOOKLM_AUTH_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
+        if [ -z "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
+          echo "::error::NOTEBOOKLM_MASTER_TOKEN_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
           exit 1
         fi
         if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
           echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID resolved to empty."
           exit 1
         fi
+        umask 077
+        mkdir -p ~/.notebooklm/profiles/default
+        printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
+        chmod 600 ~/.notebooklm/profiles/default/master_token.json
+        # The master token is now the ONLY credential shipped. A cookie
+        # snapshot cannot be: Google supersedes __Secure-1PSIDTS on a ~600 s
+        # cadence and a superseded value is rejected shortly after, so a
+        # secret minted on a workstation is routinely dead before the run
+        # starts. A master token does not rotate, so it cannot go stale.
+        # The health/drift scripts fetch tokens eagerly, which is exactly why
+        # the mint runs here rather than relying on in-run recovery; it also
+        # bootstraps storage_state.json when none exists. `unset` is
+        # load-bearing: `login` refuses to run while inline env auth is set,
+        # and the secret is already on disk.
+        unset NOTEBOOKLM_MASTER_TOKEN_JSON
+        minted=""
+        for attempt in 1 2 3; do
+          if uv run notebooklm login --master-token-refresh; then
+            minted=1
+            break
+          fi
+          echo "::warning::master-token mint attempt ${attempt} failed."
+          if [ "$attempt" -lt 3 ]; then
+            # Jitter: nightly's ubuntu/windows legs mint concurrently from the
+            # same token, so a fixed backoff would have them retry in lockstep
+            # and collide again on whatever throttled the first attempt.
+            sleep $((attempt * 15 + RANDOM % 20))
+          fi
+        done
+        # Fatal, unlike before: there is no cookie snapshot left to fall back
+        # to, so a failed mint means the job has no credentials at all.
+        if [ -z "$minted" ]; then
+          echo "::error::master-token mint failed after 3 attempts — no auth available."
+          exit 1
+        fi
+        echo "Auth profile materialized (master token; fresh cookies minted)."
+
+    # Rebrand-host lane state, carried between nightly runs so the lane can
+    # report a *state change* rather than re-announcing the same observation
+    # forever. Restore-only + a run-scoped save key, because cache entries are
+    # immutable: a fixed key would pin the first night's answer permanently.
+    #
+    # On a cache miss, ``load_rebrand_state`` falls back to the checkout's
+    # last-acknowledged status for each capability. A transition acknowledged
+    # in that checked-in baseline is not replayed merely because the cache
+    # disappeared; a contrary live observation is still reported as new.
+    - name: Restore rebrand-host lane state
+      uses: actions/cache/restore@v6
+      continue-on-error: true
+      with:
+        path: rebrand-state.json
+        key: rpc-rebrand-state-${{ needs.resolve-branch.outputs.branch }}-
+        restore-keys: |
+          rpc-rebrand-state-${{ needs.resolve-branch.outputs.branch }}-
+
+    # The restored document is the PREVIOUS run's, and it carries a run-scoped
+    # ``changed`` flag. Move it into its own slot so it can never be read as
+    # tonight's result: the health script writes ``rebrand-state.json`` fresh,
+    # so from here on that filename existing MEANS this run produced it. Without
+    # this, a script that exits early (``load_auth`` exiting 2 on an auth
+    # failure writes no state at all) would leave yesterday's document in place
+    # and the detect step would replay yesterday's transition (#2062).
+    - name: Move restored rebrand state into the previous-run slot
+      shell: bash
+      run: |
+        if [ -f rebrand-state.json ]; then
+          mv rebrand-state.json rebrand-state-prev.json
+        fi
 
     - name: Run RPC Health Check
       id: health
+      # Auth comes from the profile materialized above (no inline env-var
+      # credential is shipped at all) so the layer-4 re-mint can engage.
+      #
+      # The rebrand-host lane reads its previous state from the restored-and-
+      # renamed ``rebrand-state-prev.json`` and writes this run's state to
+      # ``rebrand-state.json``, stamped with ``GITHUB_RUN_ID``. Separate paths
+      # plus the stamp are what let the detect step below prove the document it
+      # reads is tonight's. The lane is exit-code-free by construction, so it
+      # cannot change ``exit_code`` here — see the "Rebrand host" steps below
+      # for its own, separately-deduped issues.
+      #
+      # No ``--base-url``: the nightly stays on the default host so the main,
+      # exit-coded signal exercises the host users receive. The flag exists for
+      # manual investigation.
       continue-on-error: true
       shell: bash
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
         TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
       run: |
         echo "Testing branch: $TARGET_BRANCH"
         set +e
-        uv run python scripts/check_rpc_health.py --full 2>&1 | tee health-report.txt
+        uv run python scripts/check_rpc_health.py --full \
+          --rebrand-state-file rebrand-state.json \
+          --rebrand-previous-state-file rebrand-state-prev.json \
+          --rebrand-run-id "${GITHUB_RUN_ID}" 2>&1 | tee health-report.txt
         exit_code=${PIPESTATUS[0]}
         echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
         exit "$exit_code"
@@ -200,10 +291,14 @@ jobs:
     # so a drift hit files an issue rather than red-failing the canary outright.
     - name: Run bundle drift monitor
       id: bundle
+      # Reads auth from the profile materialized above
+      # (build_httpx_cookies_from_storage falls back to the storage_state.json
+      # file when the env var is absent). It must stay the DOMAIN-PRESERVING
+      # loader: a flat name->value mapping handed to httpx.get(cookies=...)
+      # carries no domain, so every cookie is sent to every host in the
+      # redirect chain regardless of which auth source fed it — issue #2019.
       continue-on-error: true
       shell: bash
-      env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
       run: |
         set +e
         uv run python scripts/capture_rpc_registry.py --check --check-enums 2>&1 \
@@ -408,6 +503,201 @@ jobs:
         title: "Studio customization cohort flipped — re-capture VideoStyle codes"
         content-filepath: health-report.txt
         labels: rpc-breakage, automated
+
+    # Exit code 5 = the pinned frontend build label (``_env.DEFAULT_BL``) trails
+    # the label the app shell serves by more than the freshness window. Chat is
+    # not broken by this — the server does not validate the value today — but the
+    # constant has gone unattended, which is how it reached five months of drift
+    # unnoticed (#2073). Bumping it clears the signal; ordinary week-to-week drift
+    # exits 0 and never reaches this branch.
+    - name: Check for existing stale-build-label issue
+      if: steps.health.outputs.exit_code == '5'
+      id: dup_build_label
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if ! count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+          --state open --label automated --label rpc-breakage \
+          --search 'in:title "Pinned frontend build label is stale"' \
+          --json number --jq 'length'); then
+          echo "::warning::Stale-build-label dedup probe failed; allowing issue creation"
+          count=0
+        fi
+        echo "open=${count}" >> "$GITHUB_OUTPUT"
+
+    - name: Create Issue on stale build label
+      if: |
+        steps.health.outputs.exit_code == '5'
+        && steps.dup_build_label.outputs.open == '0'
+      uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710  # @ v6.0.0
+      with:
+        title: "Pinned frontend build label is stale — bump DEFAULT_BL"
+        content-filepath: health-report.txt
+        labels: rpc-breakage, automated
+
+    # ------------------------------------------------------------------
+    # Rebrand-host lane (notebook.google.com) — SEPARATE from everything
+    # above. It has no exit code: the script keeps its probes out of
+    # ``compute_exit_code`` entirely. That separation is the whole point.
+    # The main "Non-transient ERROR detected" issue is deduped by TITLE
+    # ALONE, so a rebrand probe reported through it would open one issue on
+    # the first failing night and then suppress every main-lane degradation
+    # issue after it — disabling the very gate this lane feeds.
+    #
+    # This lane therefore has: its own titles, its own PER-CAPABILITY dedup
+    # keys, and a state-change trigger (for example, PRESENT -> ABSENT) rather
+    # than a recurring error. An unchanged capability files nothing.
+    #
+    # Step order matters: detect -> report -> save. The cached state is the
+    # baseline the NEXT run compares against, so it may only be advanced once
+    # every transition it absorbs has actually been reported.
+    # ------------------------------------------------------------------
+    - name: Detect rebrand-host state change
+      id: rebrand
+      if: always()
+      shell: bash
+      run: |
+        if [ ! -f rebrand-state.json ]; then
+          echo "::warning::rebrand-state.json not produced; rebrand lane reported nothing."
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        # A malformed state file must not fail the job: this lane is advisory.
+        if ! uv run python - <<'PY' >> "$GITHUB_OUTPUT"
+        import json
+        import os
+        from pathlib import Path
+
+        state = json.loads(Path("rebrand-state.json").read_text(encoding="utf-8"))
+        stamp = state.get("run_id")
+        expected = os.environ["GITHUB_RUN_ID"]
+        if stamp != expected:
+            # Belt-and-braces with the previous-run slot rename above: the
+            # ``changed`` flag is RUN-SCOPED, so only a document this run wrote
+            # may be read as this run's result. A restored-but-not-rewritten
+            # file would otherwise replay a transition that did not happen.
+            # stdout is the step's output file here, so the annotation is
+            # handed back to bash to emit.
+            Path("rebrand-detect-warning.txt").write_text(
+                f"::warning::rebrand-state.json is stamped {stamp!r}, not this "
+                f"run ({expected!r}); treating the lane as unchanged.\n",
+                encoding="utf-8",
+            )
+            print("changed=false")
+        else:
+            print(f"changed={'true' if state.get('changed') else 'false'}")
+        PY
+        then
+          echo "::warning::rebrand-state.json unreadable; treating the lane as unchanged."
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        fi
+        if [ -s rebrand-detect-warning.txt ]; then
+          cat rebrand-detect-warning.txt
+        fi
+        {
+          echo "## Rebrand-host lane"
+          echo ""
+          grep '^REBRAND' health-report.txt || echo "(no rebrand lane output)"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    # One issue PER CAPABILITY, and a comment when that capability's issue is
+    # already open. A single shared dedup key would let a ``chat`` transition be
+    # suppressed by an open ``batchexecute`` issue — and because the new state
+    # becomes the cached baseline, the next run would see no change, so the
+    # suppressed transition would never be reported at all. Commenting rather
+    # than dropping keeps that true even for a repeat transition on the same
+    # capability. ``gh`` rather than the pinned create-issue action because the
+    # title is per-capability and the update path needs ``issue comment``.
+    - name: Report rebrand-host state changes
+      id: rebrand_report
+      if: always() && steps.rebrand.outputs.changed == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set -uo pipefail
+        failed=false
+        if ! uv run python - <<'PY' > rebrand-transitions.tsv
+        import json
+        from pathlib import Path
+
+        doc = json.loads(Path("rebrand-state.json").read_text(encoding="utf-8"))
+        for transition in doc.get("transitions", []):
+            row = [str(transition.get(key, "?")) for key in ("capability", "from", "to")]
+            print("\t".join(cell.replace("\t", " ") for cell in row))
+        PY
+        then
+          # Unreadable here but readable in the detect step means a race or a
+          # truncated write. Fail loudly rather than advancing the baseline past
+          # transitions we never enumerated.
+          echo "::warning::Could not read rebrand transitions; nothing reported."
+          failed=true
+        fi
+        while IFS=$'\t' read -r capability from_state to_state; do
+          [ -n "$capability" ] || continue
+          TITLE="Rebrand host RPC availability changed: ${capability}"
+          {
+            echo "## Rebrand host (notebook.google.com): \`${capability}\` ${from_state} -> ${to_state}"
+            echo ""
+            echo "**Commit:** ${GITHUB_SHA}"
+            echo ""
+            echo "This is the rebrand-host lane of the nightly RPC health check. It"
+            echo "carries NO exit code and is independent of the exit-coded main signal;"
+            echo "the main lane's issues are unaffected by anything reported here."
+            echo ""
+            grep '^REBRAND' health-report.txt || echo "(no rebrand lane output)"
+            echo ""
+            echo "### Still unanswered"
+            echo ""
+            echo "The \`/upload/_/\` (Scotty) sub-question is NOT probed by this"
+            echo "workflow: \`check_rpc_health.py\` exercises \`ADD_SOURCE_FILE\` as an"
+            echo "RPC only and issues no upload POST anywhere. Answering it needs a"
+            echo "manual authenticated capture (upload-session start only, no bytes),"
+            echo "scrubbed via \`tests/cassette_patterns.py\` before it leaves the machine."
+            echo ""
+            echo "A PRESENT verdict is evidence the host served the endpoint from these"
+            echo "credentials. ABSENT means a non-auth, non-transient response did not"
+            echo "demonstrate it. Neither verdict alone is a reason to change any default."
+          } > rebrand-issue-body.md
+          if ! existing=$(TITLE="$TITLE" gh issue list --repo "$GITHUB_REPOSITORY" \
+            --state open --label automated \
+            --search 'in:title "Rebrand host RPC availability changed"' \
+            --json number,title \
+            --jq 'map(select(.title == env.TITLE)) | .[0].number // empty'); then
+            echo "::warning::Rebrand-host dedup probe failed for ${capability}; creating a new issue"
+            existing=""
+          fi
+          if [ -n "$existing" ]; then
+            echo "Rebrand issue #${existing} already open for ${capability}; commenting."
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+              --body-file rebrand-issue-body.md || failed=true
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
+              --label automated --body-file rebrand-issue-body.md || failed=true
+          fi
+        done < rebrand-transitions.tsv
+        if [ "$failed" = true ]; then
+          echo "::warning::A rebrand-host transition could not be reported; not advancing the cached baseline."
+        fi
+        echo "report_failed=${failed}" >> "$GITHUB_OUTPUT"
+
+    # Saved LAST, and only when this run both produced a state document and
+    # managed to report whatever it observed. Caching an unreported transition
+    # would bake it into the baseline and lose it permanently.
+    - name: Save rebrand-host lane state
+      if: |
+        always()
+        && hashFiles('rebrand-state.json') != ''
+        && steps.rebrand_report.outputs.report_failed != 'true'
+        && steps.rebrand_report.outcome != 'failure'
+      uses: actions/cache/save@v6
+      continue-on-error: true
+      with:
+        path: rebrand-state.json
+        # Run-scoped key: cache entries are immutable, so a fixed key would
+        # freeze the first night's answer forever. The restore step matches
+        # this by prefix and picks the most recent.
+        key: rpc-rebrand-state-${{ needs.resolve-branch.outputs.branch }}-${{ github.run_id }}
 
     - name: Upload Report
       if: always()

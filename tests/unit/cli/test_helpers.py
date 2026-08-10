@@ -1064,6 +1064,29 @@ class TestGetClient:
         assert csrf == "csrf"
         assert session == "session"
 
+    def test_fetches_tokens_before_loading_cookies_so_recovery_is_visible(self):
+        ctx = MagicMock()
+        ctx.obj = {"storage_path": "/custom/path", "profile": "agent"}
+        events = []
+
+        async def fetch_tokens(*args):
+            events.append("fetch")
+            return "csrf", "session"
+
+        def load_cookies(path):
+            events.append("load")
+            return {"SID": "healed", "__Secure-1PSIDTS": "fresh"}
+
+        with (
+            patch.object(helpers_module, "load_auth_from_storage", side_effect=load_cookies),
+            patch.object(auth_module, "fetch_tokens_with_domains", new=fetch_tokens),
+        ):
+            cookies, csrf, session = auth_runtime_module.get_client(ctx)
+
+        assert events == ["fetch", "load"]
+        assert cookies["SID"] == "healed"
+        assert (csrf, session) == ("csrf", "session")
+
 
 class TestGetAuthTokens:
     def test_returns_auth_tokens_object(self):

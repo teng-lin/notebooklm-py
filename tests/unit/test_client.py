@@ -8,6 +8,10 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
+from notebooklm._auth import tokens as _auth_tokens
+from notebooklm._auth.cookie_types import CookieJar
+from notebooklm._auth.profile_store import ProfileStore
+from notebooklm._cookie_persistence import ReadyBaseline
 from notebooklm._runtime.helpers import is_auth_error
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -127,7 +131,7 @@ class TestFromStorage:
         # Mock token fetch
         html = '"SNlM0e":"csrf_token_abc" "FdrFJe":"session_id_xyz"'
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=html.encode(),
         )
 
@@ -183,7 +187,7 @@ class TestFromStorage:
 
         html = '"SNlM0e":"csrf" "FdrFJe":"sess"'
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=html.encode(),
         )
 
@@ -208,14 +212,16 @@ class TestFromStorage:
         explicit_path = tmp_path / "storage_state.json"
         calls = []
 
-        async def fake_from_storage(path=None, profile=None):
+        async def fake_load_stored_auth(*, path, profile, policy, auth_type):
             calls.append((path, profile))
-            return self._auth(path)
+            auth = self._auth(path)
+            assert path is not None
+            return _auth_tokens.FileLoadedAuth(auth, ProfileStore(path), CookieJar())
 
         def fail_get_storage_path(*args, **kwargs):
             raise AssertionError("from_storage should use auth.storage_path")
 
-        monkeypatch.setattr(AuthTokens, "from_storage", staticmethod(fake_from_storage))
+        monkeypatch.setattr(_auth_tokens, "_load_stored_auth", fake_load_stored_auth)
         monkeypatch.setattr(paths_mod, "get_storage_path", fail_get_storage_path)
 
         client = await self.CapturingClient.from_storage(str(explicit_path))._build()
@@ -233,14 +239,17 @@ class TestFromStorage:
         profile_storage_path = tmp_path / "profiles" / "work" / "storage_state.json"
         calls = []
 
-        async def fake_from_storage(path=None, profile=None):
+        async def fake_load_stored_auth(*, path, profile, policy, auth_type):
             calls.append((path, profile))
-            return self._auth(profile_storage_path)
+            auth = self._auth(profile_storage_path)
+            return _auth_tokens.FileLoadedAuth(
+                auth, ProfileStore(profile_storage_path), CookieJar()
+            )
 
         def fail_get_storage_path(*args, **kwargs):
             raise AssertionError("from_storage should not re-resolve profile storage")
 
-        monkeypatch.setattr(AuthTokens, "from_storage", staticmethod(fake_from_storage))
+        monkeypatch.setattr(_auth_tokens, "_load_stored_auth", fake_load_stored_auth)
         monkeypatch.setattr(paths_mod, "get_storage_path", fail_get_storage_path)
 
         client = await self.CapturingClient.from_storage(profile="work")._build()
@@ -250,6 +259,33 @@ class TestFromStorage:
         assert client.captured_kwargs["storage_path"] == profile_storage_path
 
     @pytest.mark.asyncio
+    async def test_from_storage_registers_exact_file_store_and_baseline(
+        self, tmp_path, monkeypatch
+    ):
+        """A normal client consumes the closed FileLoadedAuth pair without rereading it."""
+        explicit_path = tmp_path / "storage_state.json"
+        auth = self._auth(explicit_path)
+        store = ProfileStore(explicit_path)
+        baseline = CookieJar()
+
+        async def fake_load_stored_auth(*, path, profile, policy, auth_type):
+            assert path == explicit_path
+            assert profile is None
+            return _auth_tokens.FileLoadedAuth(auth, store, baseline)
+
+        monkeypatch.setattr(_auth_tokens, "_load_stored_auth", fake_load_stored_auth)
+
+        client = await NotebookLMClient.from_storage(str(explicit_path))._build()
+        persistence = client._collaborators.cookie_persistence
+        state = persistence._states[store.ordering_key]
+
+        assert persistence._default_store is store
+        assert isinstance(state.baseline, ReadyBaseline)
+        assert state.baseline.value == baseline
+        assert persistence.loaded_cookie_snapshot == {}
+        assert client.auth is auth
+
+    @pytest.mark.asyncio
     async def test_from_storage_preserves_none_storage_path_for_auth_json(self, monkeypatch):
         """Inline auth JSON remains fileless."""
         import notebooklm.paths as paths_mod
@@ -257,14 +293,14 @@ class TestFromStorage:
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies": []}')
         calls = []
 
-        async def fake_from_storage(path=None, profile=None):
+        async def fake_load_stored_auth(*, path, profile, policy, auth_type):
             calls.append((path, profile))
-            return self._auth(None)
+            return _auth_tokens.InlineLoadedAuth(self._auth(None))
 
         def fail_get_storage_path(*args, **kwargs):
             raise AssertionError("from_storage should not resolve file paths for auth JSON")
 
-        monkeypatch.setattr(AuthTokens, "from_storage", staticmethod(fake_from_storage))
+        monkeypatch.setattr(_auth_tokens, "_load_stored_auth", fake_load_stored_auth)
         monkeypatch.setattr(paths_mod, "get_storage_path", fail_get_storage_path)
 
         client = await self.CapturingClient.from_storage()._build()
@@ -297,7 +333,7 @@ class TestRefreshAuth:
         </html>
         """
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=html.encode(),
         )
 
@@ -328,7 +364,7 @@ class TestRefreshAuth:
         client = NotebookLMClient(mock_auth)
         html = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=html.encode(),
         )
         calls: list[tuple[str, str]] = []
@@ -363,7 +399,7 @@ class TestRefreshAuth:
         client = NotebookLMClient(auth)
         html = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/?authuser=bob%40example.com",
+            url="https://notebook.google.com/?authuser=bob%40example.com",
             content=html.encode(),
         )
 
@@ -384,7 +420,7 @@ class TestRefreshAuth:
         # by providing a response that doesn't contain the expected tokens
         html = "<html><body>Please sign in</body></html>"  # No tokens
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=html.encode(),
         )
 
@@ -400,7 +436,7 @@ class TestRefreshAuth:
         # Mock response without CSRF token
         html = '"FdrFJe":"session_only"'  # Missing SNlM0e
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=html.encode(),
         )
 
@@ -416,13 +452,132 @@ class TestRefreshAuth:
         # Mock response without session ID
         html = '"SNlM0e":"csrf_only"'  # Missing FdrFJe
         httpx_mock.add_response(
-            url="https://notebooklm.google.com/",
+            url="https://notebook.google.com/",
             content=html.encode(),
         )
 
         async with client:
             with pytest.raises(ValueError, match="Failed to extract session ID"):
                 await client.refresh_auth()
+
+    @pytest.mark.asyncio
+    async def test_refresh_auth_wider_policy_reruns_with_l3_on_join_failure(
+        self, mock_auth, monkeypatch
+    ):
+        """A wider-policy caller joining a failed base flight re-runs with L3.
+
+        c-PR4 join-then-rerun (caller-side): ``refresh_auth(allow_headless=True)``
+        first JOINS the coordinator's single-flight (which runs the base-policy
+        ``allow_headless=False`` callback). If that base flight FAILS it must NOT
+        silently lose its L3 rung — it re-runs its own flight with the full
+        ``allow_headless=True`` policy.
+        """
+        client = NotebookLMClient(mock_auth)
+        calls: list[bool] = []
+
+        async def fake_session(*, allow_headless, auth, **_kwargs):
+            calls.append(allow_headless)
+            if not allow_headless:
+                # Base-policy flight cannot recover dead cookies.
+                raise ValueError("Authentication expired. Run 'notebooklm login'.")
+            return auth
+
+        import notebooklm.client as client_mod
+
+        monkeypatch.setattr(client_mod, "refresh_auth_session", fake_session)
+
+        async with client:
+            result = await client.refresh_auth(allow_headless=True)
+
+        # Joined the base flight (False, failed) then re-ran with the L3 rung (True).
+        assert calls == [False, True]
+        assert result is client._auth
+
+    @pytest.mark.asyncio
+    async def test_refresh_auth_wider_policy_returns_when_base_flight_succeeds(
+        self, mock_auth, monkeypatch
+    ):
+        """When the joined base flight succeeds, the wider caller does NOT re-run."""
+        client = NotebookLMClient(mock_auth)
+        calls: list[bool] = []
+
+        async def fake_session(*, allow_headless, auth, **_kwargs):
+            calls.append(allow_headless)
+            return auth
+
+        import notebooklm.client as client_mod
+
+        monkeypatch.setattr(client_mod, "refresh_auth_session", fake_session)
+
+        async with client:
+            result = await client.refresh_auth(allow_headless=True)
+
+        # Base flight (False) succeeded → no L3 re-run.
+        assert calls == [False]
+        assert result is client._auth
+
+    @pytest.mark.asyncio
+    async def test_refresh_auth_wider_policy_propagates_incidental_runtimeerror(
+        self, mock_auth, monkeypatch
+    ):
+        """An incidental (non-auth) RuntimeError from the joined base flight
+        PROPAGATES rather than triggering a second headless-capable refresh.
+
+        Finding #4: the base flight's only L3-remediable failure is a ValueError
+        (dead-cookie 302 / token extraction). refresh-cmd swallows its own
+        RuntimeError internally, so a RuntimeError reaching the join is incidental
+        (e.g. "Client not initialized" from ``get_http_client``). Re-running with
+        the headless rung for that would be wrong — it must surface instead.
+        """
+        client = NotebookLMClient(mock_auth)
+        calls: list[bool] = []
+
+        async def fake_session(*, allow_headless, auth, **_kwargs):
+            calls.append(allow_headless)
+            if not allow_headless:
+                raise RuntimeError("Client not initialized. Use 'async with' context.")
+            return auth
+
+        import notebooklm.client as client_mod
+
+        monkeypatch.setattr(client_mod, "refresh_auth_session", fake_session)
+
+        async with client:
+            with pytest.raises(RuntimeError, match="Client not initialized"):
+                await client.refresh_auth(allow_headless=True)
+
+        # Only the base flight ran; no headless (True) re-run was attempted.
+        assert calls == [False]
+
+    @pytest.mark.asyncio
+    async def test_refresh_auth_base_policy_does_not_route_through_coordinator(
+        self, mock_auth, monkeypatch
+    ):
+        """Default ``refresh_auth()`` performs the base refresh directly (no recursion).
+
+        The base branch is BOTH the coordinator's single-flight callback body and
+        what a default call performs, so it must call ``refresh_auth_session``
+        directly rather than re-entering ``await_refresh`` (which would recurse
+        through the callback).
+        """
+        client = NotebookLMClient(mock_auth)
+        calls: list[bool] = []
+
+        async def fake_session(*, allow_headless, auth, **_kwargs):
+            calls.append(allow_headless)
+            return auth
+
+        import notebooklm.client as client_mod
+
+        monkeypatch.setattr(client_mod, "refresh_auth_session", fake_session)
+        # If the default path routed through the coordinator, await_refresh would
+        # invoke the callback (refresh_auth) and we'd see a nested call; assert it
+        # runs exactly once with the base policy.
+        async with client:
+            result = await client.refresh_auth()
+
+        assert calls == [False]
+        assert result is client._auth
 
 
 # =============================================================================

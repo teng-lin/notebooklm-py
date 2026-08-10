@@ -1,7 +1,7 @@
 # CLI Reference
 
 **Status:** Active
-**Last Updated:** 2026-06-11
+**Last Updated:** 2026-08-05
 
 Complete command reference for the `notebooklm` CLI—providing full programmatic access to all NotebookLM features, including capabilities not exposed in the web UI.
 
@@ -40,7 +40,7 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 - **Session commands** - Authentication and context management
 - **Notebook commands** - CRUD operations on notebooks
 - **Chat commands** - Querying and conversation management
-- **Grouped commands** - `source`, `label`, `artifact`, `agent`, `generate`, `download`, `note`, `share`, `research`, `language`, `skill`, `auth`, `profile`, `mcp`
+- **Grouped commands** - `source`, `label`, `collection`, `artifact`, `agent`, `generate`, `download`, `note`, `share`, `research`, `language`, `skill`, `auth`, `profile`, `mcp`
 - **Utility commands** - `metadata`, `doctor`
 
 ---
@@ -158,6 +158,7 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | `list` | - | `--json`, `--limit N`, `--no-truncate` | `source list --limit 20 --no-truncate` |
 | `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--allow-internal` (URL sources only), `--json` (file-source `--mime-type` overrides extension inference — see [detailed section](#source-add-mime-type-file-sources)) | `source add "https://..." --timeout 90` |
 | `add-drive <id> <title>` | Drive file ID, title | `--mime-type [google-doc\|google-slides\|google-sheets\|pdf]`, `--json` | `source add-drive abc123 "Doc" --mime-type google-slides` |
+| `add-drive-file <id>` | Drive file ID or share URL | `--title`, `--wait`, `--json` | `source add-drive-file abc123 --title "Notes" --wait` |
 | `add-research [query]` | Search query (or `--prompt-file -` for stdin) | `--mode [fast\|deep]`, `--from [web\|drive]`, `--import-all`, `--cited-only`, `--no-wait`, `--timeout`, `--prompt-file PATH` | `source add-research "AI" --mode deep --no-wait` |
 | `get <id>` | Source ID | `--json` | `source get src123` |
 | `fulltext <id>` | Source ID | `--json`, `-o FILE`, `--force`, `--no-clobber`, `-f [text\|markdown]` | `source fulltext src123 -f markdown -o out.md` (`-f markdown` requires the `markdown` extra: `pip install "notebooklm-py[markdown]"` — full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)) |
@@ -201,6 +202,22 @@ Source labels group a notebook's sources into topic buckets. A `<id|name>` argum
 All `label` subcommands accept `-n/--notebook ID` (resolves via flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
 
 `label generate --scope all` (wipes and regenerates every label with new ids) and `label delete` are destructive and require `-y/--yes` to confirm (or an interactive prompt). `label generate --scope unlabeled` (the default) only labels currently-unlabeled sources and needs no confirmation. `label add` appends sources (existing members survive; labels may overlap) and `label remove` un-assigns sources from the label only — the sources stay in the notebook (and in any other label). `label delete` removes the label only — its sources become unlabeled, not deleted. `source_id` arguments to `label add`/`label remove` accept partial-prefix matching like every other source-id command.
+
+### Collection Commands (`notebooklm collection <cmd>`)
+
+Collections group whole **notebooks** into named, account-level buckets (playlist-style) — the sibling of `label`, which groups sources *within* a notebook. A notebook can belong to multiple collections. A `<id|name>` argument accepts a collection id (or partial prefix) **or** an exact collection name; an ambiguous name lists the matching ids so you can disambiguate.
+
+| Command | Arguments | Options | Example |
+|---------|-----------|---------|---------|
+| `list` | - | `--json` | `collection list` |
+| `notebooks <id\|name>` | Collection id or name | `--json` | `collection notebooks "Research Q3"` |
+| `create <name>` | Collection name | `--json` | `collection create "Research Q3"` |
+| `rename <id\|name> <new_name>` | Collection ref, new name | `--json` | `collection rename "Research Q3" "Research Q4"` |
+| `add <id\|name> <notebook_id>...` | Collection ref, one+ notebook ids | `--json` | `collection add "Research Q3" nb123 nb456` |
+| `remove <id\|name> <notebook_id>...` | Collection ref, one+ notebook ids | `--json` | `collection remove "Research Q3" nb123` |
+| `delete <id\|name>...` | One+ collection refs | `-y/--yes`, `--json` | `collection delete "Research Q3" -y` |
+
+Collections are account-level, so — unlike `label` — the `collection` commands take **no** `-n/--notebook` option; their membership arguments *are* notebooks. `collection add` appends notebooks (existing members survive; a notebook may belong to multiple collections) and `collection remove` un-assigns a notebook from that collection only — the notebook is not deleted and stays in any other collection. `collection delete` (destructive, requires `-y/--yes`) removes the collection only, never its member notebooks. `notebook_id` arguments to `collection add`/`collection remove` accept partial-prefix matching like every other notebook-id command.
 
 ### Research Commands (`notebooklm research <cmd>`)
 
@@ -401,13 +418,13 @@ These CLI capabilities are not available in NotebookLM's web interface:
 
 Authenticate with Google NotebookLM via browser.
 
-> **Python equivalent:** load saved credentials with [`AuthTokens.from_storage()` / `NotebookLMClient.from_storage(...)`](python-api.md#authentication). The CLI's interactive browser-login flow has no Python counterpart — run `notebooklm login` once to seed `storage_state.json`, then drive the API from Python.
+> **Python equivalent:** load saved credentials with [`NotebookLMClient.from_storage(...)`](python-api.md#authentication) and use it as an async context manager. The CLI's interactive browser-login flow has no Python counterpart — run `notebooklm login` once to seed `storage_state.json`, then drive the API from Python.
 
 ```bash
 notebooklm login [OPTIONS]
 ```
 
-By default, opens a Chromium browser with a persistent profile. Complete the Google login in the browser window — the CLI detects the redirect back to `notebooklm.google.com` and saves the session automatically (no terminal keystroke required). The wait window is 5 minutes; if login is not detected before then, the command exits with a retry hint. Use `--browser msedge` for Microsoft Edge, or `--browser-cookies <browser>` to import cookies from an already-logged-in browser without launching Playwright.
+By default, opens a Chromium browser with a persistent profile. Complete the Google login in the browser window — the CLI detects the redirect back to either personal host (`notebook.google.com` or `notebooklm.google.com`) and saves the session automatically (no terminal keystroke required). The wait window is 5 minutes; if login is not detected before then, the command exits with a retry hint. Use `--browser msedge` for Microsoft Edge, or `--browser-cookies <browser>` to import cookies from an already-logged-in browser without launching Playwright.
 
 **Options:**
 - `--storage PATH` - Where to save storage_state.json (default: `$NOTEBOOKLM_HOME/profiles/<profile>/storage_state.json`)
@@ -415,13 +432,14 @@ By default, opens a Chromium browser with a persistent profile. Complete the Goo
 - `--browser-cookies <auto|chrome|edge|firefox|safari|brave|arc|...>` - Read cookies from an installed browser instead of launching Playwright. Pass an explicit browser name, or `auto` to let rookiepy auto-detect. For Chromium-family user profiles, use `chrome::<profile-name-or-directory>` (for example `chrome::Profile 1` or `brave::Work`) to extract from one profile explicitly. For Firefox Multi-Account Containers, use `firefox::<container-name>` to extract from a single container, or `firefox::none` for the no-container default — unscoped `firefox` merges every container's cookies (and emits a warning when that's happening). Requires `pip install "notebooklm-py[cookies]"` (full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)).
 - `--account EMAIL` - Pick a signed-in Google account by email when several are present in the browser. Saves to the active profile by default; use `--profile-name` for a separate named profile or `--storage` for an exact path. Only valid with `--browser-cookies`.
 - `--all-accounts` - Extract every Google account signed in to the browser into separate profiles named from each account email. Only valid with `--browser-cookies`.
+- `--update` - With `--all-accounts`: when an account's natural profile name (e.g. `alice` for `alice@gmail.com`) already exists but has no account metadata, update that profile in place instead of creating a suffixed `alice-2`. Profiles that already bind a different email still get a suffix to avoid clobbering. Only valid with `--all-accounts`.
 - `--profile-name NAME` - Write a targeted `--account` import to this named profile instead of the active profile. Only valid with `--browser-cookies`.
-- `--fresh` - Start with a clean browser session (deletes the cached browser profile). Use to switch Google accounts. Has no effect with `--browser-cookies`.
+- `--fresh` - Start with a clean browser session (deletes the cached browser profile). Use to switch Google accounts. With explicit `--storage`, a pre-existing browser sidecar is deleted only when it carries NotebookLM's ownership marker or is the canonical legacy/named-profile layout; arbitrary unowned directories are refused. Has no effect with `--browser-cookies`.
 - `--include-domains LABEL[,LABEL...]` - Opt in to extracting sibling-product cookies (default: required Google auth/Drive cookies only). Supported labels: `youtube`, `docs`, `myaccount`, `mail`, `all`. Pass labels comma-separated or repeat the flag.
 
 **Master-token (headless) options** — mint/refresh web cookies from a durable Google master token, no per-session browser. Requires `pip install "notebooklm-py[headless]"`. Full guide: [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).
 - `--master-token` - Bootstrap headless auth. Requires `--account EMAIL`. A visible browser opens Google's EmbeddedSetup to capture the single-use `oauth_token` (needs `[browser]`), or pass it with `--oauth-token`. Exchanges it for a durable master token (saved `0600` at `master_token.json`), mints cookies into `storage_state.json`, and verifies by listing notebooks.
-- `--master-token-refresh` - Re-mint cookies from the stored master token, no prompt (for recovery / cron). Replaces `storage_state.json` cookies, preserving CLI context.
+- `--master-token-refresh` - Legacy forced re-mint; prefer `notebooklm auth refresh`. It still unconditionally replaces `storage_state.json` from the stored master token and preserves CLI context.
 - `--oauth-token VALUE` - Provide the single-use EmbeddedSetup `oauth_token` manually (headless boxes without `[browser]`).
 - `--cdp-url URL` - Capture `oauth_token` by attaching to a running Chrome over CDP (e.g. `http://localhost:9222`) instead of launching a browser.
 - `--android-id HEX` - Override the per-install Android id (default: generated and persisted with the token). ⚠️ The master token is a **full-account, durable** credential — use a dedicated/throwaway account only.
@@ -461,7 +479,7 @@ notebooklm login --fresh
 # Headless master-token auth (one browser sign-in, then no per-session browser)
 notebooklm login --master-token --account you@gmail.com
 notebooklm login --master-token --account you@gmail.com --oauth-token "$OAUTH_TOKEN"  # headless box
-notebooklm login --master-token-refresh   # re-mint cookies from the stored token
+notebooklm login --master-token-refresh   # legacy: force a re-mint unconditionally
 ```
 
 **Notes on `--browser-cookies`:**
@@ -482,7 +500,7 @@ notebooklm auth import-cookies JSON_PATH [OPTIONS]
 
 Accepts either a Playwright `storage_state` object (`{"cookies": [...]}`) or a bare JSON list of cookie objects (the shape most browser cookie-export tools produce). Use `-` to read JSON from stdin. Common export fields are normalized (e.g. `expirationDate` → `expires`), `__Secure-`/`__Host-` cookies are forced `Secure`, and any `storage_state` `origins` (localStorage/sessionStorage) are dropped.
 
-Imported cookies are filtered through the **same domain allowlist** used by browser login, validated locally for the NotebookLM-required cookies (and a usable secondary binding — `OSID`, or `APISID`+`SAPISID`), and written atomically with private (`0o600`) permissions. Invalid input never overwrites an existing session, and an existing `storage_state.json` is first copied to `storage_state.json.bak` so a stale import can be rolled back (one step — each run overwrites the previous `.bak`).
+Imported cookies are filtered through the **same domain allowlist** used by browser login and validated locally for the Tier 1 NotebookLM-required cookies. The required `__Secure-1PSIDTS` entry must also be live and RFC 6265-routable to the `accounts.google.com/RotateCookies` endpoint. If any secondary-binding cookie is present, the supplied set must form a usable binding — `OSID`, or `APISID`+`SAPISID` together with bare `LSID`; a completely absent Tier 2 set is preserved after a warning for compatibility with unablated account flows. The result is written atomically with private (`0o600`) permissions. Invalid input never overwrites an existing session, and an existing `storage_state.json` is first copied to `storage_state.json.bak` so a stale import can be rolled back (one step — each run overwrites the previous `.bak`).
 
 Incompatible with `NOTEBOOKLM_AUTH_JSON`: unset that env var first, or the command exits with an error (it does not silently fall back to the env auth).
 
@@ -729,7 +747,7 @@ notebooklm auth check --json
 **Checks performed:**
 1. Storage file exists and is readable
 2. JSON structure is valid
-3. Required cookies (`SID` + `__Secure-1PSIDTS`) are present (the Tier 1 `MINIMUM_REQUIRED_COOKIES` set; either `OSID` or the `APISID`+`SAPISID` pair is also needed for the secondary-binding check — see [auth-cookie-lifecycle.md](auth-cookie-lifecycle.md) §3.5)
+3. Required cookies (`SID` + `__Secure-1PSIDTS`) are present (the Tier 1 `MINIMUM_REQUIRED_COOKIES` set). The loader also evaluates the warning-only secondary-binding check — `OSID`, or `APISID`+`SAPISID` together with bare `LSID` — but `auth check` does not mark a Tier 2 warning as failure; see [auth-cookie-lifecycle.md](auth-cookie-lifecycle.md#33-empirical-cookie-requirements)
 4. Cookie domains are correct (.google.com vs regional)
 5. (With `--test`) Token fetch succeeds
 
@@ -755,25 +773,28 @@ table). To gate readiness on a real token fetch, run `notebooklm auth check
 
 ### Authentication: `auth refresh`
 
-One-shot keepalive: open a session, trigger the layer-1 SIDTS rotation poke against `accounts.google.com`, persist the rotated cookies to `storage_state.json`, and exit. When a file-backed Playwright storage state has cookies but lacks in-band `notebooklm.account` metadata, `auth refresh` also repairs that metadata if account discovery is unambiguous. It does not replace existing metadata; use `login --browser-cookies <browser> --account EMAIL` to re-bind a profile that already points at the wrong account. Designed to be invoked by the OS scheduler (launchd / systemd / cron / Task Scheduler / k8s CronJob) so an otherwise-idle profile does not stale out between user-driven calls.
+One-shot keepalive and recovery: open a file-backed session, trigger the layer-1 SIDTS rotation poke against `accounts.google.com`, persist rotated cookies, and exit. If storage is absent but the exact sibling `master_token.json` exists, it mints the initial file and passively validates it once; `--verify` reuses that result. Existing cookies that redirect to Google sign-in automatically try a sibling master-token re-mint; `--allow-headless` permits layer-3 browser recovery first. Healthy storage stays on the cheap path. When a Playwright storage state lacks in-band `notebooklm.account` metadata, `auth refresh` also repairs it if account discovery is unambiguous. It does not replace existing metadata; use `login --browser-cookies <browser> --account EMAIL` to re-bind a profile that already points at the wrong account. Designed for direct use or OS scheduling (launchd / systemd / cron / Task Scheduler / k8s CronJob).
 
 ```bash
 notebooklm auth refresh [OPTIONS]
 ```
 
 **Options:**
-- `--browser-cookies <browser>`, `--browser-cookie <browser>` - Re-extract cookies from an installed browser and match the current profile's account from `context.json`. This repairs account routing when browser account order changes after another account logs out. Accepts the same scoped syntax as `login`: `chrome::<profile-name-or-directory>` for one Chromium profile, and `firefox::<container-name>` or `firefox::none` for one Firefox container.
+- `--browser-cookies <browser>`, `--browser-cookie <browser>` - Re-extract cookies from an installed browser and match the current profile's account (the unified in-band `storage_state.json` record — a pre-v0.5.0 profile's account, if it's still only in the legacy sibling `context.json`, is promoted in-band automatically on read). This repairs account routing when browser account order changes after another account logs out. Accepts the same scoped syntax as `login`: `chrome::<profile-name-or-directory>` for one Chromium profile, and `firefox::<container-name>` or `firefox::none` for one Firefox container.
 - `--include-domains LABEL[,LABEL...]` - Forward to the browser-cookie reader (only meaningful with `--browser-cookies`). Same syntax as `notebooklm login --include-domains`.
 - `--quiet`, `-q` - Suppress success output; print only on error (cron-friendly)
-- `--verify` - After refreshing, run a read-only passive token fetch to confirm the resulting cookies actually authenticate; exit non-zero if they still fail. A successful refresh command alone does not prove the post-refresh cookies work — they may still redirect to sign-in. Especially valuable with `--browser-cookies`, which rewrites the cookie jar but does not otherwise verify it.
+- `--verify` - After refreshing, run a read-only passive token fetch to confirm the resulting cookies actually authenticate; exit non-zero if they still fail. A missing-storage master-token bootstrap always performs this validation and `--verify` reuses its result. Especially valuable with `--browser-cookies`, which rewrites the cookie jar but does not otherwise verify it.
+- `--allow-headless` - Permit layer-3 browser recovery for this invocation when stored cookies are fully expired. Uses the storage-bound persisted browser profile or loopback `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL`, and does not launch or attach unless the ordinary refresh fails. Incompatible with `--browser-cookies`.
+- `--json` - Emit one structured success or error document. On success the keys are `status`, `storage_path`, and `verified`.
 
 **Cadence:** 15-20 minutes is the recommended interval. Tighter is wasteful (the 60 s mtime guard would skip it anyway); significantly looser may cross the `__Secure-1PSIDTS` server-side validity window for your account/region.
 
-**Requires file-backed authentication.** `auth refresh` refuses to run when `NOTEBOOKLM_AUTH_JSON` is set, because the inline-JSON auth mode has no writable backing store to persist rotated cookies into. Use a profile-backed `storage_state.json` (the default) or set `NOTEBOOKLM_HOME` / `--profile` to point at one.
+**Requires file-backed authentication.** `auth refresh` refuses `NOTEBOOKLM_AUTH_JSON` because inline JSON has no writable backing store. A root `--storage PATH` is an explicit file-backed override and wins over that environment variable for the invocation.
 
 **Exit codes:**
 - `0` - the auth path completed without raising. The rotation POST is **best-effort**: exit 0 also covers (a) the 60 s mtime guard skipping the POST, (b) `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1` being set, (c) another process holding the cross-process rotate lock, and (d) a transient `httpx` error during the POST being caught and logged at DEBUG. Treat exit 0 as "no error" rather than "rotation occurred." For verification, enable `NOTEBOOKLM_LOG_LEVEL=DEBUG` and check for the `RotateCookies` log line.
-- `1` - a fatal error reached the CLI layer (e.g. `NOTEBOOKLM_AUTH_JSON` set, missing `storage_state.json`, invalid profile, `httpx.RequestError` not swallowed by the rotate guard), **or** `--verify` was passed and the post-refresh passive token fetch failed. The OS scheduler's next firing is the retry mechanism; this command does not retry in-process.
+- `1` - a typed command failure occurred (for example, an incompatible option, a failed master-token mint, or a failed post-refresh passive token fetch). The OS scheduler's next firing is the retry mechanism; this command does not retry in-process.
+- `2` - an unexpected error occurred. Missing storage without a sibling token and malformed existing storage retain this existing contract; neither bootstraps.
 
 **Examples:**
 ```bash
@@ -782,6 +803,9 @@ notebooklm auth refresh
 
 # Refresh a named profile (works with --profile / NOTEBOOKLM_PROFILE)
 notebooklm --profile work auth refresh
+
+# Permit browser-backed L3 only if ordinary recovery reaches a login redirect
+notebooklm --profile work auth refresh --allow-headless
 
 # Re-extract from Chrome and repair account routing if browser account order changed
 notebooklm --profile work auth refresh --browser-cookies chrome
@@ -819,7 +843,7 @@ notebooklm auth inspect --browser firefox --json
 
 ### Authentication: `auth logout`
 
-Log out by clearing saved authentication. Removes both the saved cookie file (`storage_state.json`) and the cached browser profile. After logout, run `notebooklm login` to authenticate with a different Google account.
+Log out by clearing saved authentication. Removes both the saved cookie file (`storage_state.json`) and the cached browser profile. With explicit `--storage`, an arbitrary unowned browser sidecar is left intact; canonical managed profile layouts are still removed. After logout, run `notebooklm login` to authenticate with a different Google account.
 
 ```bash
 notebooklm auth logout
@@ -1308,7 +1332,7 @@ notebooklm download <type> [OUTPUT_PATH] [OPTIONS]
 
 | Type | Default Extension | Description |
 |------|-------------------|-------------|
-| `audio` | `.mp3` | Audio overview (podcast) as MP3 |
+| `audio` | `.m4a` | Audio overview (podcast) — AAC audio in an MP4 container |
 | `video` | `.mp4` | Video overview |
 | `slide-deck` | `.pdf` or `.pptx` | Slide deck as PDF (default) or PowerPoint |
 | `infographic` | `.png` | Infographic image |
@@ -1331,7 +1355,7 @@ notebooklm download <type> [OUTPUT_PATH] [OPTIONS]
 **Examples:**
 ```bash
 # Download the latest podcast
-notebooklm download audio ./podcast.mp3
+notebooklm download audio ./podcast.m4a
 
 # Download all infographics
 notebooklm download infographic --all
@@ -1457,10 +1481,10 @@ notebooklm profile <list|create|switch|delete|rename> [OPTIONS]
 | Subcommand | Required arguments | Options |
 |---|---|---|
 | `list` | (none) | `--json` |
-| `create` | `NAME` | — |
-| `switch` | `NAME` | — |
-| `delete` | `NAME` | `--yes`/`-y` (skip prompt; `--confirm` is a deprecated alias; the active default profile cannot be deleted) |
-| `rename` | `OLD_NAME NEW_NAME` | — |
+| `create` | `NAME` | `--json` |
+| `switch` | `NAME` | `--json` |
+| `delete` | `NAME` | `--yes`/`-y` (skip prompt; `--confirm` is a deprecated alias; the active default profile cannot be deleted), `--json` |
+| `rename` | `OLD_NAME NEW_NAME` | `--json` |
 
 **Examples:**
 ```bash
@@ -1559,7 +1583,7 @@ Codex does not consume the `skill` subcommand. In this repository it reads the r
 
 Add a Google Drive document, slide deck, sheet, or PDF as a source. The Drive `--mime-type` selects which Drive document type to import (Google Doc / Slides / Sheets / PDF). This is distinct from the file-source `--mime-type` documented above, which sets the resumable-upload content-type for a locally-uploaded file.
 
-> **By-reference vs upload-only:** NotebookLM's Drive import only ingests Google-native Docs/Slides/Sheets + PDF by reference — the four `--mime-type` choices above. An upload-only file that merely *lives* in Drive (e.g. `epub`/`docx`/`txt`/`md`/`rtf`/`odt`/`csv`) cannot be imported this way; download it and add it with `source add <path> --type file` instead.
+> **By-reference vs upload-only:** NotebookLM's Drive import only ingests Google-native Docs/Slides/Sheets + PDF by reference — the four `--mime-type` choices above. An upload-only file that merely *lives* in Drive (e.g. `epub`/`docx`/`txt`/`md`/`rtf`/`odt`/`csv`/`tsv`) cannot be imported this way; use `source add-drive-file <id>` instead, which downloads it server-side (using your session) and uploads it — no local download step needed.
 >
 > **Python equivalent:** [`client.sources.add_drive(nb_id, file_id, title, mime_type=...)`](python-api.md#sourcesapi-clientsources).
 
@@ -1582,6 +1606,29 @@ notebooklm source add-drive 1AbcD...XyZ "Quarterly Deck" --mime-type google-slid
 
 # Import a Drive-hosted PDF
 notebooklm source add-drive 1AbcD...XyZ "Whitepaper" --mime-type pdf --json
+```
+
+### Source: `add-drive-file`
+
+Add an upload-only Google Drive file (`epub`/`docx`/`txt`/`md`/`rtf`/`odt`/`csv`/`tsv`/`pdf`) by id or share URL. NotebookLM's native Drive import (`source add-drive`) only ingests Google-native Docs/Slides/Sheets + PDF by reference; for every other Drive-hosted file type, this command downloads the file server-side (using your session) and uploads it through the resumable-upload path — a Drive PDF can go either way.
+
+```bash
+notebooklm source add-drive-file [OPTIONS] DOCUMENT_ID
+```
+
+**Options:**
+- `-n, --notebook ID` - Notebook ID (uses current if not set; supports partial IDs)
+- `--title TEXT` - Custom title (default: the file's Drive name)
+- `--wait` - Wait for processing to finish
+- `--json` - Output as JSON
+
+**Examples:**
+```bash
+# Download + upload an upload-only Drive file (e.g. a .docx)
+notebooklm source add-drive-file 1AbcD...XyZ
+
+# Custom title, wait for processing to complete
+notebooklm source add-drive-file 1AbcD...XyZ --title "Meeting Notes" --wait
 ```
 
 ### Source: `stale`, `clean`
@@ -1646,7 +1693,7 @@ notebooklm source add-research "climate change policy 2024" --mode deep --import
 notebooklm generate audio "Focus on policy solutions and future outlook" --format debate --wait
 
 # 5. Download the result
-notebooklm download audio ./climate-podcast.mp3
+notebooklm download audio ./climate-podcast.m4a
 ```
 
 ### Research → Podcast (Non-blocking with Subagent)

@@ -82,6 +82,8 @@ async def test_mcp_chat_ask_with_references_over_vcr(legacy_vcr_follow_up_probe)
     answer = structured["answer"]
     assert isinstance(answer, str) and answer.strip(), "expected a non-empty recorded answer"
     assert structured["conversation_id"], "expected a server-recorded conversation id"
+    assert structured["is_follow_up"] is True
+    assert structured["turn_number"] == 2
     references = structured["references"]
     assert isinstance(references, list)
     assert references, "expected at least one recorded citation (references cassette)"

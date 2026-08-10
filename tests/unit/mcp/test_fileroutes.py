@@ -97,8 +97,11 @@ def test_download_good_token_streams_bytes_no_bearer(monkeypatch, mock_client, c
     assert resp.status_code == 200
     assert resp.content == b"AUDIO"
     # The Content-Disposition uses the artifact title + the real extension, NOT
-    # the core's internal "artifact.mp3" (RFC 5987 percent-encodes the space).
-    assert "My%20Podcast.mp3" in resp.headers.get("content-disposition", "")
+    # the core's internal "artifact.m4a" (RFC 5987 percent-encodes the space).
+    # ``.m4a`` / ``audio/mp4``, not ``.mp3`` / ``audio/mpeg``: an Audio Overview is
+    # AAC in an MP4 container (#2034).
+    assert "My%20Podcast.m4a" in resp.headers.get("content-disposition", "")
+    assert "audio/mp4" in resp.headers["content-type"]
     assert resp.headers["cache-control"] == "no-store"
 
 

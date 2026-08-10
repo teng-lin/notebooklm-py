@@ -37,11 +37,13 @@ with zero ``src/`` change and must stay green across PR-2.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
 import time
 from contextlib import ExitStack
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
@@ -54,6 +56,9 @@ import notebooklm.auth as auth_module
 import notebooklm.cli.services.playwright_login as _pl
 import notebooklm.cli.session_cmd as session_cmd_module
 import notebooklm.paths as paths_module
+from notebooklm._auth import account as _auth_account
+from notebooklm._auth import cookies as _auth_cookies
+from notebooklm._env import PERSONAL_BASE_HOST
 from notebooklm.notebooklm_cli import cli
 from tests._fixtures import patch_session_login_dual
 
@@ -67,6 +72,16 @@ from tests._fixtures import patch_session_login_dual
 _STORAGE = "/x/storage.json"
 _PROFILE = "/x/profile"
 _PROFILE_NAME = "default"
+
+# The host ``_drive_login`` pins ``get_base_host`` to, and therefore the host a
+# simulated page must land on for the "already on the app host" fast path to
+# fire. Named once so the pin and the landing URL can never disagree: pinning
+# the configured host here while landing the page on the legacy alias made the
+# fast path depend on the alias-accept in ``accepted_login_hosts`` rather than
+# on the configured host, so a regression that stopped accepting the configured
+# host would have left every test in this file green.
+_BASE_HOST = PERSONAL_BASE_HOST
+_BASE_URL = f"https://{_BASE_HOST}"
 
 
 @pytest.fixture(autouse=True)
@@ -151,7 +166,7 @@ def _drive_login(
     runner,
     *,
     args: list[str] | None = None,
-    page_url: str = "https://notebooklm.google.com/",
+    page_url: str = f"{_BASE_URL}/",
     goto_side: Any = None,
     wait_side: Any = None,
     wire: Any = None,
@@ -167,6 +182,7 @@ def _drive_login(
     profile_dir: str = _PROFILE,
     fresh_profile_exists: bool = False,
     rmtree_side: Any = None,
+    storage_path: Path | None = None,
 ):
     """Drive the real ``login`` command with a mocked Playwright + fixed paths.
     Returns ``(result, page)`` where ``page`` is the mocked initial ``Page`` so
@@ -186,7 +202,7 @@ def _drive_login(
     the Playwright service's own render lines.
     """
     if storage_state is None:
-        storage_state = {"cookies": [], "origins": []}
+        storage_state = _required_cookie_state()
     with ExitStack() as stack:
         if patch_ensure:
             stack.enter_context(patch.object(_pl, "ensure_chromium_installed"))
@@ -224,9 +240,8 @@ def _drive_login(
         # so its consuming binding now lives on ``_bc`` (#browser-capture-core).
         stack.enter_context(patch.object(_bc, "time", _wrapped_module(time, sleep=MagicMock())))
         mock_pw = stack.enter_context(patch("playwright.sync_api.sync_playwright"))
-        stack.enter_context(
-            patch.object(_pl, "get_storage_path", return_value=_fake_path(_STORAGE))
-        )
+        effective_storage = storage_path if storage_path is not None else _fake_path(_STORAGE)
+        stack.enter_context(patch.object(_pl, "get_storage_path", return_value=effective_storage))
         stack.enter_context(
             patch.object(
                 _pl,
@@ -242,17 +257,24 @@ def _drive_login(
         # host regardless of any env var set in the test runner. ``get_base_host``
         # is consumed by the URL helpers that moved into the neutral
         # browser-capture core, so patch its ``_bc`` binding.
-        stack.enter_context(
-            patch.object(_bc, "get_base_host", return_value="notebooklm.google.com")
-        )
+        stack.enter_context(patch.object(_bc, "get_base_host", return_value=_BASE_HOST))
         stack.enter_context(patch_session_login_dual("_sync_server_language_to_config"))
         if patch_repair:
             stack.enter_context(patch.object(_pl, "repair_playwright_account_metadata"))
         # The synthetic ``_STORAGE`` path is never created on disk; stub the
-        # atomic write so the success paths don't touch the filesystem. The
-        # persist step moved into the neutral browser-capture core, so its
-        # ``atomic_write_json`` binding now lives on ``_bc``.
-        stack.enter_context(patch.object(_bc, "atomic_write_json"))
+        # persist so the success paths don't touch the filesystem. The persist
+        # step moved into the neutral browser-capture core and now routes through
+        # ``storage.replace_from_remint`` (b-PR2); stub that, returning an
+        # OK outcome so the lock-unavailable fail-closed branch is not taken.
+        from notebooklm._auth import storage as _sw
+
+        stack.enter_context(
+            patch.object(
+                _sw,
+                "replace_from_remint",
+                return_value=_sw.WriteOutcome(_sw.WriteStatus.OK),
+            )
+        )
         mock_context = MagicMock()
         page = MagicMock()
         page.url = page_url
@@ -279,7 +301,13 @@ def _drive_login(
     return result, page
 
 
-def _drive_refresh(runner, *, enumerate_accounts: Any, args: list[str]):
+def _drive_refresh(
+    runner,
+    *,
+    enumerate_accounts: Any,
+    args: list[str],
+    storage_path: Path,
+):
     """Drive the real ``auth refresh`` keepalive path against synthetic storage.
     The keepalive-only path (no ``--browser-cookies``) fetches tokens, then —
     when the on-disk account metadata is missing / malformed — runs the real
@@ -291,7 +319,8 @@ def _drive_refresh(runner, *, enumerate_accounts: Any, args: list[str]):
     nothing is read from / written to disk. Only ``enumerate_accounts`` varies
     per test to drive the repair branches.
     """
-    storage = _fake_path(_STORAGE, exists=True)
+    storage_path.write_text(json.dumps(_required_cookie_state()), encoding="utf-8")
+    storage = storage_path
     with ExitStack() as stack:
         stack.enter_context(patch.object(_pl, "get_storage_path", return_value=storage))
         stack.enter_context(
@@ -302,14 +331,21 @@ def _drive_refresh(runner, *, enumerate_accounts: Any, args: list[str]):
         )
         mock_fetch.return_value = ("csrf_ok", "session_ok")
         stack.enter_context(patch.object(auth_module, "read_account_metadata", return_value={}))
-        # Repair collaborators (file-touching) stubbed; only enumeration varies.
-        stack.enter_context(patch.object(auth_module, "enumerate_accounts", new=enumerate_accounts))
+        # Retain the historical network seams while exercising the real typed
+        # profile store against a temporary storage document.
         stack.enter_context(
-            patch.object(auth_module, "build_httpx_cookies_from_storage", return_value=MagicMock())
+            patch.object(_auth_account, "enumerate_accounts", new=enumerate_accounts)
         )
-        stack.enter_context(patch.object(auth_module, "write_account_metadata"))
-        stack.enter_context(patch.object(auth_module, "clear_account_metadata"))
-        stack.enter_context(patch.object(auth_module, "extract_email_from_html", return_value=None))
+        stack.enter_context(
+            patch.object(
+                _auth_cookies,
+                "build_httpx_cookies_from_storage",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch.object(_auth_account, "extract_email_from_html", return_value=None)
+        )
         return runner.invoke(cli, args)
 
 
@@ -394,17 +430,17 @@ class TestPreflightPrepareFresh:
 # Reached through the real ``login`` command's chromium pre-flight by patching
 # ``subprocess.run`` rather than stubbing out the helper.
 # ---------------------------------------------------------------------------
-def _dry_run_says_missing(stdout="chromium will download to ...") -> SimpleNamespace:
-    return SimpleNamespace(stdout=stdout, stderr="", returncode=0)
+def _probe_says_missing() -> SimpleNamespace:
+    return SimpleNamespace(stdout=_pl.CHROMIUM_MISSING_MARKER, stderr="", returncode=0)
 
 
 class TestEnsureChromiumInstalled:
     @pytest.mark.requires_playwright
     def test_install_success_banner_then_login(self, runner):
         def fake_run(cmd, **_):
-            if "--dry-run" in cmd:
-                return _dry_run_says_missing()
-            return SimpleNamespace(stdout="", stderr="", returncode=0)
+            if "install" in cmd:
+                return SimpleNamespace(stdout="", stderr="", returncode=0)
+            return _probe_says_missing()
 
         result, _ = _drive_login(runner, subprocess_run=fake_run, patch_ensure=False)
         assert result.exit_code == 0
@@ -429,9 +465,9 @@ class TestEnsureChromiumInstalled:
         """
 
         def fake_run(cmd, **_):
-            if "--dry-run" in cmd:
-                return _dry_run_says_missing()
-            return SimpleNamespace(stdout="", stderr="install boom [err]", returncode=1)
+            if "install" in cmd:
+                return SimpleNamespace(stdout="", stderr="install boom [err]", returncode=1)
+            return _probe_says_missing()
 
         result, _ = _drive_login(
             runner, subprocess_run=fake_run, patch_ensure=False, python_executable="/py"
@@ -531,7 +567,7 @@ class TestLoginProgressSuccess:
     def test_not_logged_in_instructions_then_login_detected(self, runner):
         def wire(page):
             def wait_succeeds(url, **kwargs):
-                page.url = "https://notebooklm.google.com/"
+                page.url = f"{_BASE_URL}/"
 
             page.wait_for_url.side_effect = wait_succeeds
 
@@ -561,7 +597,7 @@ class TestLoginProgressSuccess:
         from playwright.sync_api import Error as PlaywrightError
 
         recovered = MagicMock()
-        recovered.url = "https://notebooklm.google.com/"
+        recovered.url = f"{_BASE_URL}/"
         recovered.goto.return_value = None
         calls = {"n": 0}
 
@@ -607,7 +643,7 @@ class TestLoginProgressSuccess:
         )
 
     @pytest.mark.requires_playwright
-    def test_single_account_metadata_is_written(self, runner):
+    def test_single_account_metadata_is_written(self, runner, tmp_path):
         """End-to-end success including the real metadata-repair render lines.
         The repair runs for real (``patch_repair=False``) so its
         ``Identifying Google account...`` / ``Account: <email>`` lines are
@@ -619,17 +655,23 @@ class TestLoginProgressSuccess:
         async def _enum(*args, **kwargs):
             return [Account(authuser=0, email="alice@example.com", is_default=True)]
 
+        storage = tmp_path / "storage.json"
+        storage.write_text(json.dumps(_required_cookie_state()), encoding="utf-8")
         with (
-            patch.object(auth_module, "enumerate_accounts", new=_enum),
-            patch.object(auth_module, "build_httpx_cookies_from_storage", return_value=MagicMock()),
-            patch.object(auth_module, "write_account_metadata"),
-            patch.object(auth_module, "extract_email_from_html", return_value=None),
+            patch.object(_auth_account, "enumerate_accounts", new=_enum),
+            patch.object(
+                _auth_cookies,
+                "build_httpx_cookies_from_storage",
+                return_value=MagicMock(),
+            ),
+            patch.object(_auth_account, "extract_email_from_html", return_value=None),
         ):
             result, _ = _drive_login(
                 runner,
                 patch_repair=False,
                 page_content="<html></html>",
                 storage_state=_required_cookie_state(),
+                storage_path=storage,
             )
         assert result.exit_code == 0
         assert result.output == (
@@ -640,7 +682,7 @@ class TestLoginProgressSuccess:
             "Identifying Google account...\n"
             "Account: alice@example.com\n"
             "\n"
-            f"Authentication saved to: {_STORAGE}\n"
+            f"Authentication saved to: {storage}\n"
         )
 
 
@@ -668,7 +710,7 @@ class TestLoginErrorRender:
             "Failed to connect to NotebookLM after multiple retries.\n"
             "This may be caused by:\n"
             "  • Network connectivity issues\n"
-            "  • Firewall or VPN blocking notebooklm.google.com\n"
+            "  • Firewall or VPN blocking notebook.google.com\n"
             "  • Corporate proxy interfering with the connection\n"
             "  • Google rate limiting (too many login attempts)\n"
             "\n"
@@ -676,7 +718,7 @@ class TestLoginErrorRender:
             "  1. Check your internet connection\n"
             "  2. Disable VPN/proxy temporarily\n"
             "  3. Wait a few minutes before retrying\n"
-            "  4. Check if notebooklm.google.com is accessible in your browser\n"
+            "  4. Check if notebook.google.com is accessible in your browser\n"
         )
 
     @pytest.mark.requires_playwright
@@ -684,7 +726,7 @@ class TestLoginErrorRender:
         from playwright.sync_api import Error as PlaywrightError
 
         recovered = MagicMock()
-        recovered.url = "https://notebooklm.google.com/"
+        recovered.url = f"{_BASE_URL}/"
         recovered.goto.side_effect = PlaywrightError(
             "Target page, context or browser has been closed"
         )
@@ -770,10 +812,10 @@ class TestLoginErrorRender:
     def test_unexpected_url_after_login_drift(self, runner):
         def wire(page):
             def wait_succeeds(url, **kwargs):
-                page.url = "https://notebooklm.google.com/"
+                page.url = f"{_BASE_URL}/"
 
             def goto_drifts(url, **kwargs):
-                if "notebooklm" in url:
+                if _BASE_HOST in url:
                     page.url = "https://accounts.google.com/AccountChooser"
 
             page.wait_for_url.side_effect = wait_succeeds
@@ -811,7 +853,7 @@ class TestLoginErrorRender:
         from playwright.sync_api import Error as PlaywrightError
 
         recovered = MagicMock()
-        recovered.url = "https://notebooklm.google.com/"
+        recovered.url = f"{_BASE_URL}/"
         recovered.goto.side_effect = PlaywrightError(
             "Target page, context or browser has been closed"
         )
@@ -897,31 +939,40 @@ class TestLoginErrorRender:
 # ambiguous-clear / exception-clear), driven at the command boundary.
 # ---------------------------------------------------------------------------
 class TestAuthRefreshRepair:
-    def test_repair_success_writes_account_line(self, runner):
+    def test_repair_success_writes_account_line(self, runner, tmp_path):
         from notebooklm.auth import Account
 
         async def _enum(*args, **kwargs):
             return [Account(authuser=0, email="alice@example.com", is_default=True)]
 
-        result = _drive_refresh(runner, enumerate_accounts=_enum, args=["auth", "refresh"])
+        storage = tmp_path / "storage.json"
+        result = _drive_refresh(
+            runner,
+            enumerate_accounts=_enum,
+            args=["auth", "refresh"],
+            storage_path=storage,
+        )
         assert result.exit_code == 0
         assert result.output == (
-            f"Identifying Google account...\nAccount: alice@example.com\nok refreshed: {_STORAGE}\n"
+            f"Identifying Google account...\nAccount: alice@example.com\nok refreshed: {storage}\n"
         )
 
-    def test_repair_quiet_silences_all_output(self, runner):
+    def test_repair_quiet_silences_all_output(self, runner, tmp_path):
         from notebooklm.auth import Account
 
         async def _enum(*args, **kwargs):
             return [Account(authuser=0, email="alice@example.com", is_default=True)]
 
         result = _drive_refresh(
-            runner, enumerate_accounts=_enum, args=["auth", "refresh", "--quiet"]
+            runner,
+            enumerate_accounts=_enum,
+            args=["auth", "refresh", "--quiet"],
+            storage_path=tmp_path / "storage.json",
         )
         assert result.exit_code == 0
         assert result.output == ""
 
-    def test_repair_ambiguous_clears_metadata_with_warning(self, runner):
+    def test_repair_ambiguous_clears_metadata_with_warning(self, runner, tmp_path):
         from notebooklm.auth import Account
 
         async def _enum(*args, **kwargs):
@@ -930,7 +981,13 @@ class TestAuthRefreshRepair:
                 Account(authuser=1, email="b@example.com", is_default=False),
             ]
 
-        result = _drive_refresh(runner, enumerate_accounts=_enum, args=["auth", "refresh"])
+        storage = tmp_path / "storage.json"
+        result = _drive_refresh(
+            runner,
+            enumerate_accounts=_enum,
+            args=["auth", "refresh"],
+            storage_path=storage,
+        )
         assert result.exit_code == 0
         assert result.output == (
             "Identifying Google account...\n"
@@ -938,14 +995,20 @@ class TestAuthRefreshRepair:
             "were discovered but the active page email was unavailable. Run "
             "notebooklm auth inspect --browser chrome -v or notebooklm login "
             "--browser-cookies chrome --account EMAIL.\n"
-            f"ok refreshed: {_STORAGE}\n"
+            f"ok refreshed: {storage}\n"
         )
 
-    def test_repair_exception_clears_metadata_with_warning(self, runner):
+    def test_repair_exception_clears_metadata_with_warning(self, runner, tmp_path):
         async def _enum(*args, **kwargs):
             raise RuntimeError("network down")
 
-        result = _drive_refresh(runner, enumerate_accounts=_enum, args=["auth", "refresh"])
+        storage = tmp_path / "storage.json"
+        result = _drive_refresh(
+            runner,
+            enumerate_accounts=_enum,
+            args=["auth", "refresh"],
+            storage_path=storage,
+        )
         assert result.exit_code == 0
         assert result.output == (
             "Identifying Google account...\n"
@@ -953,5 +1016,5 @@ class TestAuthRefreshRepair:
             "saved, but multi-account routing may fall back to authuser=0. Run "
             "notebooklm auth inspect --browser chrome -v or notebooklm login "
             "--browser-cookies chrome --account EMAIL. Details: network down\n"
-            f"ok refreshed: {_STORAGE}\n"
+            f"ok refreshed: {storage}\n"
         )

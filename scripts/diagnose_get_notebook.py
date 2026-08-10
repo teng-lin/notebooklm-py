@@ -25,12 +25,14 @@ from urllib.parse import urlencode
 
 import httpx
 
-from notebooklm.auth import AuthTokens, fetch_tokens, load_auth_from_storage
+from notebooklm._auth.cookies import _load_storage_state
+from notebooklm._auth.refresh import _fetch_tokens_with_jar
+from notebooklm.auth import AuthTokens, build_cookie_jar, extract_cookies_with_domains
 from notebooklm.rpc import (
-    BATCHEXECUTE_URL,
     RPCMethod,
     build_request_body,
     encode_rpc_request,
+    get_batchexecute_url,
 )
 from notebooklm.rpc.decoder import (
     collect_rpc_ids,
@@ -40,10 +42,22 @@ from notebooklm.rpc.decoder import (
 )
 
 
-def load_auth() -> dict[str, str]:
-    """Load auth cookies from storage."""
+def load_auth() -> dict[tuple[str, str, str], str]:
+    """Load auth cookies from storage with their domains intact.
+
+    Deliberately **not** ``load_auth_from_storage()``: that returns a flat
+    ``name -> value`` map, and ``AuthTokens`` then widens every entry to
+    ``.google.com`` -- so the jar would broadcast the accounts-scoped ``LSID``
+    and an arbitrary ``OSID`` to the app host, which is the defect this script
+    exists to help diagnose (#2054).
+
+    Also not ``build_httpx_cookies_from_storage()``: that fires PSIDTS
+    recovery (a network POST and a disk write) exactly when auth is
+    incomplete -- i.e. it would heal the state a diagnostic is trying to
+    observe.
+    """
     try:
-        return load_auth_from_storage()
+        return extract_cookies_with_domains(_load_storage_state(None))
     except FileNotFoundError:
         print(
             "ERROR: No authentication found.\n"
@@ -72,16 +86,12 @@ async def make_rpc_request(
             "rt": "c",
         }
     )
-    url = f"{BATCHEXECUTE_URL}?{query}"
+    url = f"{get_batchexecute_url()}?{query}"
 
     rpc_request = encode_rpc_request(method, params)
     body = build_request_body(rpc_request, auth.csrf_token)
 
-    cookie_header = "; ".join(f"{k}={v}" for k, v in auth.cookies.items())
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": cookie_header,
-    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
     response = await client.post(url, content=body, headers=headers)
     response.raise_for_status()
@@ -138,16 +148,25 @@ async def run_diagnosis(notebook_id: str | None = None) -> None:
     cookies = load_auth()
 
     print("Fetching auth tokens...")
+    # Fetch through a jar we keep, rather than `fetch_tokens(cookies)`. That
+    # helper builds a jar internally and copies it back only when
+    # NOTEBOOKLM_REFRESH_CMD ran, so on the ordinary path a Set-Cookie from the
+    # sign-in redirect -- a rotated host-scoped OSID, say -- is discarded, and
+    # the RPCs below would then be rejected despite token extraction having
+    # succeeded. `poke=False` keeps this read-only: no RotateCookies POST.
+    jar = build_cookie_jar(cookies=cookies)
     try:
-        csrf_token, session_id = await fetch_tokens(cookies)
+        csrf_token, session_id = await _fetch_tokens_with_jar(jar, None, poke=False)
     except (ValueError, httpx.HTTPError) as e:
         print(f"ERROR: Failed to fetch auth tokens: {e}")
         print("Try running: notebooklm login")
         sys.exit(1)
-    auth = AuthTokens(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
+    auth = AuthTokens(cookies=cookies, csrf_token=csrf_token, session_id=session_id, cookie_jar=jar)
     print(f"Auth OK (CSRF length: {len(auth.csrf_token)})")
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=60.0)) as client:
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(10.0, read=60.0), cookies=auth.cookie_jar
+    ) as client:
         # 1. LIST_NOTEBOOKS
         print("\n--- LIST_NOTEBOOKS ---")
         list_raw = await make_rpc_request(client, auth, RPCMethod.LIST_NOTEBOOKS, [])
