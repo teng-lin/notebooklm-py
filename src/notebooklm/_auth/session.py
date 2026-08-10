@@ -120,9 +120,8 @@ async def refresh_auth_session(
                 # to sample an available disk profile even when the response
                 # mutated another cookie. With no profile, retain the second
                 # response mutation as the only local recovery evidence.
-                rejected_cookie_jar=(
-                    None if _attempt == 1 and auth.storage_path is not None else rejected_cookie_jar
-                ),
+                rejected_cookie_jar=rejected_cookie_jar,
+                force_disk_read=_attempt == 1 and auth.storage_path is not None,
             ):
                 break
             extracted = await _get_and_extract()
@@ -171,6 +170,7 @@ async def _try_storage_cookie_reload(
     kernel: Kernel,
     cookie_persistence: CookiePersistence,
     rejected_cookie_jar: CookieJar | None,
+    force_disk_read: bool = False,
 ) -> bool:
     """Reload newer/different file-backed cookies without external recovery."""
     cookie_jar = kernel.get_http_client().cookies
@@ -179,6 +179,7 @@ async def _try_storage_cookie_reload(
             storage_path=auth.storage_path,
             cookie_jar=cookie_jar,
             rejected_cookie_jar=rejected_cookie_jar,
+            force_disk_read=force_disk_read,
             adopt_baseline=lambda path, baseline: cookie_persistence._adopt_reloaded_baseline(
                 path,
                 baseline,

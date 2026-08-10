@@ -455,6 +455,84 @@ async def test_refresh_forces_disk_sample_after_repeated_response_cookie_changes
 
 
 @pytest.mark.asyncio
+async def test_refresh_retries_completed_live_and_disk_rotation_after_second_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A sampled live+disk rotation remains retryable when B has not been sent."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "stale-a", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "stale-a-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    live = httpx.Cookies()
+    live.set("SID", "stale-a", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "stale-a-ts", domain=".google.com", path="/")
+    requests: list[str] = []
+    client_holder: list[httpx.AsyncClient] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == get_base_host():
+            cookie = request.headers.get("cookie", "")
+            requests.append(cookie)
+            if "SID=rotated-b" in cookie:
+                return httpx.Response(200, text=REFRESH_HTML, request=request)
+            if len(requests) == 1:
+                return httpx.Response(
+                    302,
+                    headers={
+                        "Location": "https://accounts.google.com/signin/v2/identifier",
+                        "Set-Cookie": "NID=intermediate; Domain=.google.com; Path=/",
+                    },
+                    request=request,
+                )
+
+            authoritative = client_holder[0].cookies
+            authoritative.set("SID", "rotated-b", domain=".google.com", path="/")
+            authoritative.set("__Secure-1PSIDTS", "rotated-b-ts", domain=".google.com", path="/")
+            storage.write_text(
+                json.dumps(CookieJar.from_httpx(authoritative).to_storage_state()),
+                encoding="utf-8",
+            )
+            return httpx.Response(
+                302,
+                headers={"Location": "https://accounts.google.com/signin/v2/identifier"},
+                request=request,
+            )
+        return httpx.Response(200, text="<html>Please sign in</html>", request=request)
+
+    monkeypatch.delenv("NOTEBOOKLM_REFRESH_CMD_MIDSESSION", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH", raising=False)
+    auth = _auth(storage_path=storage, cookie_jar=live)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        cookies=live,
+        follow_redirects=True,
+    ) as http_client:
+        client_holder.append(http_client)
+        bundle = RecordingRefreshBundle(auth, http_client)
+        assert await _invoke(bundle) is auth
+
+    assert len(requests) == 3
+    assert "SID=stale-a" in requests[0]
+    assert "NID=intermediate" in requests[1]
+    assert "SID=rotated-b" in requests[2]
+
+
+@pytest.mark.asyncio
 async def test_refresh_retries_second_response_cookie_change_without_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -809,6 +887,64 @@ async def test_storage_cookie_reload_preserves_live_jar_changed_during_disk_read
 
     assert await reload_task is True
     assert live.get("SID", domain=".google.com", path="/") == "keepalive-new"
+
+
+@pytest.mark.asyncio
+async def test_forced_storage_read_retries_matching_untried_live_jar(tmp_path: Path) -> None:
+    """A completed live+disk rotation is sampled and still retried."""
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "rotated-b", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "rotated-b-ts",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ],
+                "origins": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    live = _load_cookie_pair_pure(storage, require_routable=False).live
+    rejected = httpx.Cookies()
+    rejected.set("SID", "rejected-a", domain=".google.com", path="/")
+    rejected.set("__Secure-1PSIDTS", "rejected-a-ts", domain=".google.com", path="/")
+    loads = 0
+
+    async def recording_load(path: Path):  # type: ignore[no-untyped-def]
+        nonlocal loads
+        loads += 1
+        return _load_cookie_pair_pure(path, require_routable=False)
+
+    assert await try_storage_cookie_reload(
+        storage_path=storage,
+        cookie_jar=live,
+        rejected_cookie_jar=CookieJar.from_httpx(rejected),
+        force_disk_read=True,
+        load_cookie_pair=recording_load,
+    )
+    assert loads == 1
+    assert live.get("SID", domain=".google.com", path="/") == "rotated-b"
+
+    async def failing_load(path: Path):  # type: ignore[no-untyped-def]
+        nonlocal loads
+        del path
+        loads += 1
+        raise OSError("profile temporarily unavailable")
+
+    assert await try_storage_cookie_reload(
+        storage_path=storage,
+        cookie_jar=live,
+        rejected_cookie_jar=CookieJar.from_httpx(rejected),
+        force_disk_read=True,
+        load_cookie_pair=failing_load,
+    )
+    assert loads == 2
 
 
 @pytest.mark.asyncio

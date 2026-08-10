@@ -398,6 +398,7 @@ async def try_storage_cookie_reload(
     storage_path: Path | None,
     cookie_jar: httpx.Cookies,
     rejected_cookie_jar: CookieJar | None = None,
+    force_disk_read: bool = False,
     load_cookie_pair: Callable[[Path], Awaitable[_LoadedCookiePair]] | None = None,
     adopt_baseline: Callable[[Path, CookieJar], Awaitable[None]] | None = None,
 ) -> bool:
@@ -409,17 +410,22 @@ async def try_storage_cookie_reload(
     disk read with no browser, subprocess, RotateCookies POST, or write. A jar
     changed after the rejected request or during the read is preserved and
     reported as retryable instead of being overwritten by the disk sample.
-    After an accepted replacement, an optional callback adopts the paired
-    baseline for following cookie saves.
+    ``force_disk_read`` still samples storage after a post-request change, but
+    remembers that the current live state has not yet been tried. After an
+    accepted replacement, an optional callback adopts the paired baseline for
+    following cookie saves.
     """
     from .cookies import _load_cookie_pair_pure, _replace_cookie_jar
 
     live_before = CookieJar.from_httpx(cookie_jar)
-    if rejected_cookie_jar is not None and live_before != rejected_cookie_jar:
+    live_changed_since_rejection = (
+        rejected_cookie_jar is not None and live_before != rejected_cookie_jar
+    )
+    if live_changed_since_rejection and not force_disk_read:
         logger.info("Stored-cookie reload left a post-request jar change in place.")
         return True
     if storage_path is None:
-        return False
+        return live_changed_since_rejection
 
     try:
         if load_cookie_pair is None:
@@ -436,7 +442,9 @@ async def try_storage_cookie_reload(
             storage_path,
             type(exc).__name__,
         )
-        return False
+        # A forced sample is best-effort. If it fails, the post-request live
+        # state is still untried and remains the only safe local retry.
+        return live_changed_since_rejection
 
     live_after = CookieJar.from_httpx(cookie_jar)
     if live_after != live_before:
@@ -459,6 +467,13 @@ async def try_storage_cookie_reload(
             logger.info(
                 "Stored-cookie reload left a live jar changed during baseline adoption "
                 "in place for %s.",
+                storage_path,
+            )
+            return True
+        if live_changed_since_rejection:
+            logger.info(
+                "Stored-cookie reload sampled an unchanged profile but retained an untried "
+                "post-request jar for %s.",
                 storage_path,
             )
             return True
