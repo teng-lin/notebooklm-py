@@ -49,14 +49,9 @@ _POLL_SOURCE = "_research.poll"
 _POLL_METHOD_ID = RPCMethod.POLL_RESEARCH.value
 
 
-def extract_legacy_report_chunks(src: list[Any]) -> str:
-    """Join legacy deep-research report chunks stored in ``src[6]``."""
-    chunks = [
-        chunk
-        for chunk in ResearchResultRow(src).legacy_report_chunks
-        if isinstance(chunk, str) and chunk
-    ]
-    return "\n\n".join(chunks)
+def extract_report_markdown(src: list[Any]) -> str:
+    """Return markdown from the kind-3 content block stored in ``src[6]``."""
+    return ResearchResultRow(src).report_markdown
 
 
 def _extract_task_id(task_data: Any) -> str | None:
@@ -226,14 +221,14 @@ def _parse_source_row(
     source_report = ""
 
     # Fast research: [url, title, desc, type, ...]
-    # Deep research (legacy): [None, title, None, type, ..., [report_markdown]]
-    # Deep research (current): [None, [title, report_markdown], None, type, ...]
+    # Deep research (captured): [None, title, None, type, ..., content_block]
+    # Deep research (compat): [None, [title, report_markdown], None, type, ...]
     # src[3] is the authoritative result_type when present.
     result_type = (
         parse_result_type(row.result_type_slot) if row.has_result_type else RESEARCH_RESULT_TYPE_WEB
     )
     if row.url_slot is None and row.length > 1:
-        # Deep-research (current) packs ``[title, report_markdown]`` at ``src[1]``;
+        # A compatibility shape packs ``[title, report_markdown]`` at ``src[1]``;
         # ``ResearchResultRow.deep_payload`` unpacks that exact shape (a 2+-length
         # list of two strings) and returns ``None`` for the legitimate
         # alternatives (bare-string title, or neither), which fall through to the
@@ -265,7 +260,7 @@ def _parse_source_row(
 
     report = source_report
     if not report and not report_found:
-        report = extract_legacy_report_chunks(src)
+        report = extract_report_markdown(src)
     if report and parsed_source is not None:
         parsed_source = parsed_source.with_report_markdown(report)
 

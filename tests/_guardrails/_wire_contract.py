@@ -407,25 +407,8 @@ UNMAPPED: tuple[Unmapped, ...] = (
     Unmapped("research", "ResearchTaskInfoRow", "_QUERY_SOURCE_TYPE_POS", _SHAPE_UNKNOWN),
     Unmapped("research", "ResearchTaskInfoRow", "_SOURCES_POS", _NESTED_LOCAL),
     Unmapped("research", "ResearchTaskInfoRow", "_SUMMARY_POS", _NESTED_LOCAL),
-    Unmapped(
-        "research",
-        "ResearchResultRow",
-        "_LEGACY_CHUNKS_POS",
-        "MAPPED AND MIS-MODELLED, not merely unverified. src[6] is a structured "
-        "content block with a FIXED schema shared by both row types:\n"
-        "    [ text|None, kind:int, text|None, None, int|None, structured_doc|None ]\n"
-        "  report row: ['# ...', 3, None, None, None, [doc tree]]   (len 6)\n"
-        "  web row:    [None,     1, 'snippet...', None, 13]        (len 5)\n"
-        "src[6][1] is the discriminator: 3 = report, 1/2 = web snippet (live "
-        "distribution over 63 rows: {1:41, 2:21, 3:1}). Stable across two captures "
-        "14 months apart. But `extract_legacy_report_chunks` never reads chunks — it "
-        "harvests EVERY string in the block and joins them, working only because each "
-        "row type happens to hold exactly one (report at [0], snippet at [2]). "
-        "Correct today only because the report row arrives at index 0 and shields the "
-        "rest; 62/62 web rows carry a populated src[6]. Reordering the live payload "
-        "drops a 35,773-char report for a 4,020-char tardigrade blurb, silently. "
-        "FIX: gate on src[6][1] == 3 and read src[6][0].",
-    ),
+    Unmapped("research", "ResearchResultRow", "_CONTENT_TEXT_POS", _NESTED_LOCAL),
+    Unmapped("research", "ResearchResultRow", "_CONTENT_KIND_POS", _NESTED_LOCAL),
     Unmapped("research", "ResearchResultRow", "_PAYLOAD_TITLE_POS", _NESTED_LOCAL),
     Unmapped("research", "ResearchResultRow", "_PAYLOAD_REPORT_POS", _NESTED_LOCAL),
     Unmapped("research", "ResearchStartRow", "_TASK_ID_POS", _SHAPE_UNKNOWN),
@@ -493,6 +476,15 @@ PINNED: tuple[Pinned, ...] = (
         "ChatHistoryMessage tag 3 — role, values {1, 2}",
         "56/56 turns populated; role 1 rows carry userQueryText (tag 4) and role 2 "
         "rows carry actOnSourcesResponse (tag 5), 28/28 each",
+    ),
+    Pinned(
+        "research",
+        "ResearchResultRow",
+        "_CONTENT_BLOCK_POS",
+        6,
+        "DiscoveredSource tag 7 — typed content block",
+        "Two deep-research captures 14 months apart: report rows carry kind 3 with "
+        "markdown at block[0]; 62/62 web rows carry kind 1/2 snippets at block[2]",
     ),
 )
 

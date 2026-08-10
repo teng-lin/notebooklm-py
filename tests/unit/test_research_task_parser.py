@@ -14,7 +14,7 @@ from notebooklm._research_task_parser import (
     _extract_task_id,
     _extract_task_info,
     _status_from_code,
-    extract_legacy_report_chunks,
+    extract_report_markdown,
     parse_research_task_models,
     parse_research_tasks,
     parse_result_type,
@@ -51,30 +51,31 @@ class TestParseResultType:
         assert parse_result_type([]) == 1
 
 
-class TestExtractLegacyReportChunks:
-    """Tests for legacy deep-research report chunk extraction."""
+class TestExtractReportMarkdown:
+    """Tests for typed deep-research content-block extraction."""
 
     def test_missing_index_6(self):
-        assert extract_legacy_report_chunks([None, "t", None, 5, None, None]) == ""
+        assert extract_report_markdown([None, "t", None, 5, None, None]) == ""
 
     def test_index_6_not_list(self):
-        assert extract_legacy_report_chunks([None, "t", None, 5, None, None, "str"]) == ""
+        assert extract_report_markdown([None, "t", None, 5, None, None, "str"]) == ""
 
-    def test_single_chunk(self):
-        assert extract_legacy_report_chunks([None, "t", None, 5, None, None, ["chunk"]]) == (
-            "chunk"
-        )
+    def test_short_content_block(self):
+        assert extract_report_markdown([None, "t", None, 5, None, None, ["# Report"]]) == ""
 
-    def test_multiple_chunks_joined(self):
-        src = [None, "t", None, 5, None, None, ["a", "b", "c"]]
-        assert extract_legacy_report_chunks(src) == "a\n\nb\n\nc"
+    def test_current_captured_report_content_block(self):
+        src = [None, "t", None, 5, None, None, ["# Report", 3, None, None, None, []]]
+        assert extract_report_markdown(src) == "# Report"
 
-    def test_filters_non_string_and_empty(self):
-        src = [None, "t", None, 5, None, None, ["real", None, "", 42, "also_real"]]
-        assert extract_legacy_report_chunks(src) == "real\n\nalso_real"
+    @pytest.mark.parametrize("kind", [1, 2])
+    def test_web_snippet_content_blocks_are_not_reports(self, kind):
+        src = [None, "t", None, 5, None, None, [None, kind, "web snippet", None, 13]]
+        assert extract_report_markdown(src) == ""
 
-    def test_all_empty_returns_empty(self):
-        assert extract_legacy_report_chunks([None, "t", None, 5, None, None, ["", None]]) == ""
+    @pytest.mark.parametrize("text", [None, 42, ""])
+    def test_report_content_requires_non_empty_text(self, text):
+        src = [None, "t", None, 5, None, None, [text, 3]]
+        assert extract_report_markdown(src) == ""
 
 
 class TestExtractTaskId:
@@ -313,27 +314,51 @@ class TestParseResearchTasks:
             }
         ]
 
-    def test_legacy_deep_research_report_source(self):
-        sources = [[None, "Legacy Report", None, "report", None, None, ["a", "b"]]]
-        task_info = [None, ["deep query"], None, [sources], 6]
-
-        tasks = parse_research_tasks([[["task_legacy", task_info]]])
-
-        assert tasks[0]["report"] == "a\n\nb"
-        assert tasks[0]["sources"][0]["report_markdown"] == "a\n\nb"
-
-    def test_legacy_report_chunks_after_current_report_are_not_attached(self):
+    def test_captured_deep_research_report_source(self):
         sources = [
-            [None, ["Current Report", "# Current"], None, 1],
-            [None, "Legacy Later", None, "report", None, None, ["legacy"]],
+            [
+                None,
+                "Deep Report",
+                None,
+                5,
+                None,
+                None,
+                ["# Report markdown", 3, None, None, None, ["structured doc"]],
+            ]
         ]
         task_info = [None, ["deep query"], None, [sources], 6]
 
-        tasks = parse_research_tasks([[["task_mixed", task_info]]])
+        tasks = parse_research_tasks([[["task_deep", task_info]]])
 
-        assert tasks[0]["report"] == "# Current"
-        assert tasks[0]["sources"][0]["report_markdown"] == "# Current"
+        assert tasks[0]["report"] == "# Report markdown"
+        assert tasks[0]["sources"][0]["report_markdown"] == "# Report markdown"
+
+    def test_web_rows_before_report_do_not_win(self):
+        sources = [
+            ["https://one.example", "One", "desc", 1, None, None, [None, 1, "snippet"]],
+            ["https://two.example", "Two", "desc", 1, None, None, [None, 2, "snippet"]],
+            [None, "Deep Report", None, 5, None, None, ["# Actual report", 3]],
+        ]
+        task_info = [None, ["deep query"], None, [sources], 6]
+
+        tasks = parse_research_tasks([[["task_reordered", task_info]]])
+
+        assert tasks[0]["report"] == "# Actual report"
+        assert "report_markdown" not in tasks[0]["sources"][0]
         assert "report_markdown" not in tasks[0]["sources"][1]
+        assert tasks[0]["sources"][2]["report_markdown"] == "# Actual report"
+
+    def test_web_rows_without_report_do_not_fabricate_one(self):
+        sources = [
+            ["https://one.example", "One", "desc", 1, None, None, [None, 1, "snippet"]],
+            ["https://two.example", "Two", "desc", 1, None, None, [None, 2, "snippet"]],
+        ]
+        task_info = [None, ["deep query"], None, [sources], 6]
+
+        task = parse_research_tasks([[["task_no_report", task_info]]])[0]
+
+        assert task["report"] == ""
+        assert all("report_markdown" not in source for source in task["sources"])
 
 
 class TestExtractSourceType:

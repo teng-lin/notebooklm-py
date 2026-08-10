@@ -50,7 +50,7 @@ Position contracts (pinned by ``tests/unit/test_research_row_adapter.py``):
   0      URL (str) for fast research; ``None`` sentinel for deep research
   1      title (str) — or, for current deep research, ``[title, report]``
   3      authoritative result-type tag
-  6      legacy deep-research report chunks (list of str)
+  6      typed content block; kind 3 carries report markdown at position 0
   =====  ============================================================
 """
 
@@ -223,7 +223,7 @@ class ResearchResultRow:
     The source row carries three shapes the historical parser handled inline:
 
     * fast research — ``[url, title, desc, type, ...]``
-    * deep research (legacy) — ``[None, title, None, type, ..., [report_md]]``
+    * deep research (captured) — ``[None, title, None, type, ..., content_block]``
     * deep research (current) — ``[None, [title, report_md], None, type, ...]``
 
     Every field is routinely-optional (a deep-research row omits its URL; a
@@ -239,7 +239,7 @@ class ResearchResultRow:
     _URL_POS: ClassVar[int] = 0
     _TITLE_POS: ClassVar[int] = 1
     _RESULT_TYPE_POS: ClassVar[int] = 3
-    _LEGACY_CHUNKS_POS: ClassVar[int] = 6
+    _CONTENT_BLOCK_POS: ClassVar[int] = 6
     # A source row must carry at least ``[url/sentinel, title]`` to be usable —
     # mirrors the historical ``len(src) < 2`` early return.
     _MIN_LEN: ClassVar[int] = 2
@@ -249,6 +249,13 @@ class ResearchResultRow:
     _PAYLOAD_TITLE_POS: ClassVar[int] = 0
     _PAYLOAD_REPORT_POS: ClassVar[int] = 1
     _PAYLOAD_MIN_LEN: ClassVar[int] = 2
+
+    # Captured ``src[6]`` content block:
+    # [text | None, kind, snippet | None, ..., structured_document | None]
+    _CONTENT_TEXT_POS: ClassVar[int] = 0
+    _CONTENT_KIND_POS: ClassVar[int] = 1
+    _CONTENT_MIN_LEN: ClassVar[int] = 2
+    _REPORT_CONTENT_KIND: ClassVar[int] = 3
 
     @property
     def is_well_formed(self) -> bool:
@@ -298,12 +305,24 @@ class ResearchResultRow:
         return self.length > self._RESULT_TYPE_POS
 
     @property
-    def legacy_report_chunks(self) -> list[Any]:
-        """Legacy deep-research report chunks at ``src[6]`` — ``[]`` when absent/non-list."""
-        if self.length <= self._LEGACY_CHUNKS_POS:
+    def content_block(self) -> list[Any]:
+        """Typed content block at ``src[6]`` — ``[]`` when absent or malformed."""
+        if self.length <= self._CONTENT_BLOCK_POS:
             return []
-        value = self._raw[self._LEGACY_CHUNKS_POS]
+        value = self._raw[self._CONTENT_BLOCK_POS]
         return value if isinstance(value, list) else []
+
+    @property
+    def report_markdown(self) -> str:
+        """Report markdown from a kind-3 content block, otherwise ``""``."""
+        block = self.content_block
+        if (
+            len(block) < self._CONTENT_MIN_LEN
+            or block[self._CONTENT_KIND_POS] != self._REPORT_CONTENT_KIND
+        ):
+            return ""
+        text = block[self._CONTENT_TEXT_POS]
+        return text if isinstance(text, str) and text else ""
 
     @staticmethod
     def deep_payload(payload: Any) -> tuple[str, str] | None:

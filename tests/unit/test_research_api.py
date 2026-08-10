@@ -421,7 +421,7 @@ class TestPollEdgeCases:
                                     5,
                                     None,
                                     None,
-                                    ["# Deep Report\nContent here"],
+                                    ["# Deep Report\nContent here", 3],
                                 ],
                             ],
                             "Deep summary",

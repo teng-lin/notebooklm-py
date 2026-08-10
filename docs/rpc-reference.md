@@ -2165,11 +2165,15 @@ await rpc_call(
 # Fast research web source:
 # [url, title, desc, type, ...]
 #
-# Deep research report source (current shape):
-# [None, [title, report_markdown], None, type, ...]
+# Deep research report source (captured shape):
+# [None, title, None, type, None, None,
+#  [report_markdown, 3, None, None, None, structured_document]]
 #
-# Deep research report source (legacy shape):
-# [None, title, None, type, None, None, [chunk1, chunk2, ...]]
+# Deep research web source content blocks use kind 1 or 2 and carry their
+# snippet at position 2; they are not report rows.
+#
+# Compatibility shape accepted by the parser (not seen in captures):
+# [None, [title, report_markdown], None, type, ...]
 #
 # Notes:
 # - The RPC returns all research tasks for the notebook, not just the latest one.

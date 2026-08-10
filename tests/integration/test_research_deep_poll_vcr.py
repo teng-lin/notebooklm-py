@@ -566,6 +566,16 @@ class TestDeepResearchPollReplay:
             "state. Re-record with NOTEBOOKLM_VCR_RECORD=1."
         )
 
+        # The recorded terminal payload carries the report in src[6]'s typed
+        # content block (kind 3), followed by web rows whose kind-1/2 blocks
+        # contain snippets. Only the report row may supply report markdown.
+        final_task = tasks[0]
+        report_sources = [source for source in final_task.sources if source.report_markdown]
+        assert final_task.report
+        assert len(report_sources) == 1
+        assert report_sources[0].is_report
+        assert report_sources[0].report_markdown == final_task.report
+
 
 @pytest.mark.allow_no_vcr
 def test_cassette_under_size_cap() -> None:
