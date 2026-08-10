@@ -109,6 +109,7 @@ from .exceptions import (
     ServerError,
     # Domain: Sources
     SourceAddError,
+    SourceAddPartialError,
     SourceError,
     SourceNotFoundError,
     SourceProcessingError,
@@ -268,6 +269,7 @@ __all__ = [
     # Domain Exceptions: Sources
     "SourceError",
     "SourceAddError",
+    "SourceAddPartialError",
     "SourceProcessingError",
     "SourceTimeoutError",
     "SourceNotFoundError",

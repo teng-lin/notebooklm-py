@@ -106,6 +106,7 @@ __all__ = [
     # Domain: Sources
     "SourceError",
     "SourceAddError",
+    "SourceAddPartialError",
     "SourceNotFoundError",
     "SourceProcessingError",
     "SourceTimeoutError",
@@ -899,30 +900,29 @@ class SourceError(NotebookLMError):
 
 
 class SourceAddError(SourceError):
-    """Failed to add a source.
+    """Failed to add a source, with its identifier and optional underlying cause."""
 
-    Attributes:
-        url: The URL or identifier that failed.
-        cause: The underlying exception.
-    """
-
-    def __init__(
-        self,
-        url: str,
-        cause: Exception | None = None,
-        message: str | None = None,
-    ):
-        self.url = url
-        self.cause = cause
+    def __init__(self, url: str, cause: Exception | None = None, message: str | None = None):
+        self.url, self.cause = url, cause
         msg = message or (
-            f"Failed to add source: {url}\n"
-            "Possible causes:\n"
-            "  - URL is invalid or inaccessible\n"
+            f"Failed to add source: {url}\nPossible causes:\n  - URL is invalid or inaccessible\n"
             "  - Content is behind a paywall or requires authentication\n"
-            "  - Page content is empty or could not be parsed\n"
-            "  - Rate limiting or quota exceeded"
+            "  - Page content is empty or could not be parsed\n  - Rate limiting or quota exceeded"
         )
         super().__init__(msg)
+
+
+# The two HTTP boundaries after the source registration RPC has succeeded.
+SourceAddStage = Literal["start_session", "upload_finalize"]
+
+
+class SourceAddPartialError(SourceAddError):
+    """A source was registered, but its upload did not complete; the row is retained."""
+
+    def __init__(self, filename: str, *, source_id: str, stage: SourceAddStage, cause: Exception):
+        self.source_id, self.stage = source_id, stage
+        message = f"Source {source_id} was registered for {filename!r}; {stage} failed"
+        super().__init__(filename, cause=cause, message=message)
 
 
 class SourceNotFoundError(NotFoundError, RPCError, SourceError):

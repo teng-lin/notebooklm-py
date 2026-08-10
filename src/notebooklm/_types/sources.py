@@ -48,6 +48,7 @@ _warned_source_types: set[int] = set()
 
 
 _SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
+    0: SourceType.UNKNOWN,
     1: SourceType.GOOGLE_DOCS,
     2: SourceType.GOOGLE_SLIDES,  # Was GOOGLE_OTHER, now more specific
     3: SourceType.PDF,

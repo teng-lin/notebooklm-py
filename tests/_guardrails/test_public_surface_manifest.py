@@ -311,6 +311,7 @@ _TOP_LEVEL_TYPE_EXPORTS = [
 _TYPES_EXCEPTION_REEXPORTS = [
     "SourceError",
     "SourceAddError",
+    "SourceAddPartialError",
     "SourceProcessingError",
     "SourceTimeoutError",
     "SourceNotFoundError",
@@ -373,6 +374,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "RPCTimeoutError",
     "ServerError",
     "SourceAddError",
+    "SourceAddPartialError",
     "SourceError",
     "SourceNotFoundError",
     "SourceProcessingError",

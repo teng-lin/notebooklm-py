@@ -21,7 +21,7 @@ from notebooklm import NotebookLMClient, Source, SourceType
 from notebooklm._source.add import SourceAddService
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
-from notebooklm.types import SourceAddError, SourceNotFoundError
+from notebooklm.types import SourceAddError, SourceAddPartialError, SourceNotFoundError
 
 pytestmark = pytest.mark.allow_no_vcr
 
@@ -2808,8 +2808,15 @@ class TestStartResumableUploadError:
         )
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(SourceAddError, match="Failed to get upload URL"):
+            with pytest.raises(SourceAddPartialError) as exc_info:
                 await client.sources.add_file("nb_123", test_file)
+
+        error = exc_info.value
+        assert error.source_id == "file_src_001"
+        assert error.stage == "start_session"
+        assert isinstance(error.cause, SourceAddError)
+        assert "Failed to get upload URL" in str(error.cause)
+        assert error.__cause__ is error.cause
 
 
 class TestWaitUntilReadyPolling:

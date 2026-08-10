@@ -34,7 +34,7 @@ from ..exceptions import (
 )
 from ..rpc import RPCError, RPCMethod, get_upload_url
 from ..rpc.types import SourceStatus
-from ..types import Source, SourceAddError
+from ..types import Source, SourceAddError, SourceAddPartialError
 
 # Decode/validation helpers live in ``_upload_decode``; re-exported here so the
 # historical ``notebooklm._source.upload.<helper>`` import surface (and the
@@ -400,22 +400,31 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     registration = await self._register_file_source_for_upload(
                         notebook_id, filename
                     )
-                    source_id = registration.value
-                    upload_url = await self.start_resumable_upload(
-                        notebook_id,
-                        filename,
-                        file_size,
-                        source_id,
-                        content_type,
-                    )
-                    handed_off = True
-                    await self.upload_file_streaming(
-                        upload_url,
-                        file_obj,
-                        filename=filename,
-                        on_progress=on_progress,
-                        total_bytes=file_size,
-                    )
+                    source_id, stage = registration.value, "start_session"
+                    try:
+                        upload_url = await self.start_resumable_upload(
+                            notebook_id,
+                            filename,
+                            file_size,
+                            source_id,
+                            content_type,
+                        )
+                        stage = "upload_finalize"
+                        handed_off = True
+                        await self.upload_file_streaming(
+                            upload_url,
+                            file_obj,
+                            filename=filename,
+                            on_progress=on_progress,
+                            total_bytes=file_size,
+                        )
+                    except Exception as exc:  # noqa: BLE001 - preserve all post-register failures
+                        raise SourceAddPartialError(
+                            filename,
+                            source_id=source_id,
+                            stage=stage,
+                            cause=exc,
+                        ) from exc
                 finally:
                     if not handed_off:
                         file_obj.close()

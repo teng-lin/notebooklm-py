@@ -80,6 +80,7 @@ from .exceptions import (
     LabelError,
     LabelNotFoundError,
     SourceAddError,
+    SourceAddPartialError,
     SourceError,
     SourceNotFoundError,
     SourceProcessingError,
@@ -185,6 +186,7 @@ __all__ = [
     # Exceptions
     "SourceError",
     "SourceAddError",
+    "SourceAddPartialError",
     "SourceProcessingError",
     "SourceTimeoutError",
     "SourceNotFoundError",

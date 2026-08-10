@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
+import io
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -24,6 +26,7 @@ from notebooklm.exceptions import (
     NetworkError,
     RateLimitError,
     ServerError,
+    SourceAddPartialError,
     ValidationError,
 )
 from notebooklm.rpc import RPCError, RPCMethod
@@ -474,6 +477,144 @@ async def test_add_file_uses_pipeline_steps_and_finishes_transport(
     start_resumable_upload.assert_awaited_once_with(
         "nb_123", "report.pdf", 5, "src_123", "application/pdf"
     )
+
+
+@pytest.mark.parametrize(
+    ("failing_step", "expected_stage"),
+    [
+        ("start", "start_session"),
+        ("upload", "upload_finalize"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_add_file_surfaces_registered_source_when_upload_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    failing_step: str,
+    expected_stage: str,
+) -> None:
+    file_path = tmp_path / "report.pdf"
+    file_path.write_bytes(b"hello")
+    service = make_pipeline()
+    failure = ValidationError(f"{failing_step} failed")
+    uploaded_file = None
+    opened_files = []
+    real_open = builtins.open
+
+    def tracked_open(*args, **kwargs):
+        file_obj = real_open(*args, **kwargs)
+        opened_files.append(file_obj)
+        return file_obj
+
+    async def upload_file_streaming(_upload_url, file_obj, **_kwargs):
+        nonlocal uploaded_file
+        uploaded_file = file_obj
+        try:
+            if failing_step == "upload":
+                raise failure
+        finally:
+            file_obj.close()
+
+    monkeypatch.setattr(service, "register_file_source", AsyncMock(return_value="src_123"))
+    monkeypatch.setattr(builtins, "open", tracked_open)
+    monkeypatch.setattr(
+        service,
+        "start_resumable_upload",
+        AsyncMock(
+            side_effect=failure if failing_step == "start" else None,
+            return_value="https://notebooklm.google.com/upload/_/?upload_id=session",
+        ),
+    )
+    monkeypatch.setattr(service, "upload_file_streaming", upload_file_streaming)
+
+    with pytest.raises(SourceAddPartialError) as exc_info:
+        await service.add_file("nb_123", file_path)
+
+    error = exc_info.value
+    assert isinstance(error, SourceAddError)
+    assert error.source_id == "src_123"
+    assert error.stage == expected_stage
+    assert error.cause is failure
+    assert error.__cause__ is failure
+    assert opened_files and opened_files[0].closed
+    if uploaded_file is not None:
+        assert uploaded_file.closed
+
+
+@pytest.mark.asyncio
+async def test_add_file_does_not_wrap_registration_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    file_path = tmp_path / "report.pdf"
+    file_path.write_bytes(b"hello")
+    service = make_pipeline()
+    failure = SourceAddError("report.pdf", message="registration failed")
+    monkeypatch.setattr(service, "register_file_source", AsyncMock(side_effect=failure))
+    start = AsyncMock()
+    monkeypatch.setattr(service, "start_resumable_upload", start)
+
+    with pytest.raises(SourceAddError) as exc_info:
+        await service.add_file("nb_123", file_path)
+
+    assert exc_info.value is failure
+    assert not isinstance(exc_info.value, SourceAddPartialError)
+    start.assert_not_awaited()
+
+
+@pytest.mark.parametrize("cancel_stage", ["start", "upload"])
+@pytest.mark.asyncio
+async def test_add_file_does_not_wrap_cancellation_after_registration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, cancel_stage: str
+) -> None:
+    file_path = tmp_path / "report.pdf"
+    file_path.write_bytes(b"hello")
+    service = make_pipeline()
+    cancelled = asyncio.CancelledError()
+    monkeypatch.setattr(service, "register_file_source", AsyncMock(return_value="src_123"))
+    monkeypatch.setattr(
+        service,
+        "start_resumable_upload",
+        AsyncMock(
+            side_effect=cancelled if cancel_stage == "start" else None,
+            return_value="https://notebooklm.google.com/upload/_/?upload_id=session",
+        ),
+    )
+
+    async def cancel_upload(_upload_url, file_obj, **_kwargs):
+        file_obj.close()
+        if cancel_stage == "upload":
+            raise cancelled
+
+    monkeypatch.setattr(service, "upload_file_streaming", cancel_upload)
+
+    with pytest.raises(asyncio.CancelledError) as exc_info:
+        await service.add_file("nb_123", file_path)
+
+    assert exc_info.value is cancelled
+
+
+@pytest.mark.asyncio
+async def test_upload_failure_closes_caller_owned_file_object() -> None:
+    request = httpx.Request("POST", "https://notebooklm.google.com/upload/_/")
+    response = httpx.Response(400, request=request)
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=response)
+    client_cm = AsyncMock()
+    client_cm.__aenter__.return_value = client
+    client_factory = MagicMock(return_value=client_cm)
+    runtime = HttpRuntime()
+    service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
+    file_obj = io.BytesIO(b"hello")
+
+    with pytest.raises(ValidationError):
+        await service.upload_file_streaming(
+            "https://notebooklm.google.com/upload/_/?upload_id=session",
+            file_obj,
+            filename="report.pdf",
+            total_bytes=5,
+        )
+
+    assert file_obj.closed
 
 
 @pytest.mark.parametrize(
