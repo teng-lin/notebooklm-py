@@ -44,6 +44,7 @@ import pytest
 # ``NotebookLMClient`` so the walk needs no auth, event loop, or network.
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat.api import ChatAPI
+from notebooklm._collections import CollectionsAPI
 from notebooklm._labels import LabelsAPI
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notebooks import NotebooksAPI
@@ -62,6 +63,7 @@ NAMESPACES: dict[str, type] = {
     "notes": NotesAPI,
     "mind_maps": MindMapsAPI,
     "labels": LabelsAPI,
+    "collections": CollectionsAPI,
     "chat": ChatAPI,
     "research": ResearchAPI,
     "sharing": SharingAPI,
@@ -73,7 +75,9 @@ NAMESPACES: dict[str, type] = {
 # are intentionally absent — they expose none of the three. Pinned so a rename or
 # removal that makes a method silently undiscoverable fails loudly rather than
 # shrinking the parametrisation to a still-green subset.
-LOOKUP_NAMESPACES = frozenset({"notebooks", "sources", "artifacts", "notes", "mind_maps", "labels"})
+LOOKUP_NAMESPACES = frozenset(
+    {"notebooks", "sources", "artifacts", "notes", "mind_maps", "labels", "collections"}
+)
 
 # Empty as of #1247: every namespace ``get()`` now returns a non-Optional type
 # and raises its ``*NotFoundError`` on a miss. The set can never gain an entry.

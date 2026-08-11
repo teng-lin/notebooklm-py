@@ -9,7 +9,7 @@ from dataclasses import replace
 from typing import Any
 from urllib.parse import parse_qs
 
-from .._idempotency import idempotent_create
+from .._idempotency import _CreateResultKind, _IdempotentCreateResult, idempotent_create
 from .._runtime.contracts import RpcCaller
 from ..exceptions import (
     AuthError,
@@ -78,6 +78,23 @@ async def honor_requested_title(
     return replace(source, title=(renamed.title if renamed else None) or requested)
 
 
+async def honor_requested_title_if_fresh(
+    rename: RenameSource,
+    notebook_id: str,
+    result: Source | _IdempotentCreateResult[Source],
+    requested_title: str | None,
+    logger: logging.Logger,
+) -> Source:
+    """Apply a requested title only to a source created by this call."""
+    if isinstance(result, _IdempotentCreateResult):
+        if result.kind is _CreateResultKind.PROBED:
+            return result.value
+        source = result.value
+    else:
+        source = result
+    return await honor_requested_title(rename, notebook_id, source, requested_title, logger)
+
+
 class SourceAddService:
     """URL, YouTube, text, and Drive source creation behavior."""
 
@@ -95,7 +112,8 @@ class SourceAddService:
         extract_youtube_video_id: Callable[[str], str | None],
         is_youtube_url: YoutubeDetector,
         logger: logging.Logger,
-    ) -> Source:
+        return_result: bool = False,
+    ) -> Source | _IdempotentCreateResult[Source]:
         """Add a URL source to a notebook."""
         logger.debug("Adding URL source to notebook %s: %s", notebook_id, url[:80])
         video_id = extract_youtube_video_id(url)
@@ -149,16 +167,18 @@ class SourceAddService:
                     return source
             return None
 
-        source = await idempotent_create(
+        result = await idempotent_create(
             _create,
             _probe,
             label=f"sources.add_url[{url[:40]}]",
         )
+        source = result.value
 
         if wait:
-            return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            result = replace(result, value=source)
 
-        return source
+        return result if return_result else source
 
     async def add_text(
         self,
@@ -238,7 +258,8 @@ class SourceAddService:
         list_sources: ListSources,
         wait_until_ready: WaitUntilReady,
         logger: logging.Logger,
-    ) -> Source:
+        return_result: bool = False,
+    ) -> Source | _IdempotentCreateResult[Source]:
         """Add a Google Drive document as a source.
 
         Drive sources go through the same probe-then-create idempotency
@@ -346,16 +367,18 @@ class SourceAddService:
                     return source
             return None
 
-        source = await idempotent_create(
+        result = await idempotent_create(
             _create,
             _probe,
             label=f"sources.add_drive[{file_id}]",
         )
+        source = result.value
 
         if wait:
-            return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            result = replace(result, value=source)
 
-        return source
+        return result if return_result else source
 
     def extract_youtube_video_id(
         self,

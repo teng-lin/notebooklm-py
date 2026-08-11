@@ -99,6 +99,52 @@ async def test_markdown_mode_uses_html_rpc_shape_and_converts_html() -> None:
 
 
 @pytest.mark.asyncio
+async def test_markdown_mode_preserves_hybrid_markdown_source() -> None:
+    pytest.importorskip("markdownify")
+    rpc = RecordingRpc(
+        [
+            ["src_md", "Markdown Source", [None, None, None, None, 8]],
+            None,
+            None,
+            None,
+            [
+                None,
+                "<p>| A | B |<br>| --- | --- |<br>| x <br> y | z |</p>",
+            ],
+        ]
+    )
+    renderer = SourceContentRenderer(rpc)
+
+    fulltext = await renderer.get_fulltext("nb_1", "src_md", output_format="markdown")
+
+    assert "| x <br> y | z |" in fulltext.content
+    assert "| A | B |  \n" not in fulltext.content
+
+
+@pytest.mark.asyncio
+async def test_markdown_mode_repairs_latex_emphasis_overlap() -> None:
+    pytest.importorskip("markdownify")
+    rpc = RecordingRpc(
+        [
+            ["src_math", "Math Source", [None, None, None, None, 5]],
+            None,
+            None,
+            None,
+            [
+                None,
+                "<p><strong>(B)</strong> <strong>membrane-bound</strong> "
+                "<strong>$LT\\alpha_1\\beta_2</strong>$</p>",
+            ],
+        ]
+    )
+    renderer = SourceContentRenderer(rpc)
+
+    fulltext = await renderer.get_fulltext("nb_1", "src_math", output_format="markdown")
+
+    assert fulltext.content == "**(B)** **membrane-bound** $LT\\alpha_1\\beta_2$"
+
+
+@pytest.mark.asyncio
 async def test_markdown_mode_missing_dependency_fails_before_rpc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

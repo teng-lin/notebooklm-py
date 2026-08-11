@@ -15,9 +15,9 @@ rationale for the post-parse `ClickException` rules called out below.
 
 For the canonical implementation, see the `handle_errors` context manager in
 [`src/notebooklm/cli/error_handler.py`](../src/notebooklm/cli/error_handler.py)
-— the policy table lives in its docstring and the `KeyboardInterrupt` clause
-sits immediately below (at the time of writing, around lines 64-67 and :81;
-rely on the symbol names rather than the line numbers if they drift).
+— the policy table lives in its docstring (around lines 215-218 at the time of
+writing) and the `KeyboardInterrupt` clause sits a few lines below it (around
+line 232); rely on the symbol names rather than the line numbers if they drift.
 
 ## Standard exit codes
 
@@ -216,7 +216,7 @@ command exits `0` on success regardless of freshness.
 
 Implemented by `source_wait` in
 [`src/notebooklm/cli/source_cmd.py`](../src/notebooklm/cli/source_cmd.py) (the
-exit-code table is in the command's docstring, around lines 1080-1084 at
+exit-code table is in the command's docstring, around lines 815-820 at
 the time of writing).
 
 | Exit | Meaning |

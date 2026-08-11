@@ -13,6 +13,7 @@ from notebooklm.rpc.decoder import (
     RPCError,
     RPCErrorCode,
     UnknownRPCMethodError,
+    _contains_user_displayable_error,
     byte_count_mismatch_total,
     collect_rpc_ids,
     decode_response,
@@ -1189,6 +1190,182 @@ class TestMalformedChunkResilience:
         # there.
         with pytest.raises(RPCError, match="empty result"):
             decode_response(raw, rpc_id)
+
+
+class TestDeepNestingRecursionGuard:
+    """Server-controlled nesting depth must never raise RecursionError (#2107).
+
+    ``_contains_user_displayable_error`` recurses over the ``error_info``
+    payload at index 5 of ``wrb.fr`` frames, and ``parse_chunked_response``
+    feeds raw server JSON to ``json.loads`` — both inputs are entirely
+    server-controlled, so pathological nesting depth must degrade gracefully
+    instead of overflowing the interpreter stack.
+    """
+
+    RPC_ID = RPCMethod.LIST_NOTEBOOKS.value
+    MARKER = (
+        "type.googleapis.com/google.internal.labs.tailwind.orchestration.v1.UserDisplayableError"
+    )
+
+    @staticmethod
+    def _nest_list(value, depth: int):
+        """Wrap ``value`` in ``depth`` levels of single-element lists."""
+        for _ in range(depth):
+            value = [value]
+        return value
+
+    @staticmethod
+    def _frame_body(payload: str) -> str:
+        """Wrap a JSON payload in anti-XSSI prefix + chunked framing."""
+        return f")]}}'\n{len(payload.encode('utf-8'))}\n{payload}\n"
+
+    def test_marker_found_at_shallow_list_depth(self):
+        """Regression guard: marker inside a few list levels is still found."""
+        assert _contains_user_displayable_error(self._nest_list(self.MARKER, 3))
+
+    def test_marker_found_at_shallow_dict_depth(self):
+        """Regression guard: marker inside nested dicts is still found."""
+        obj = {"outer": {"inner": {"type": self.MARKER}}}
+        assert _contains_user_displayable_error(obj)
+
+    def test_marker_found_just_under_depth_cap(self):
+        """A marker at the deepest reachable level (cap - 1) is detected."""
+        assert _contains_user_displayable_error(self._nest_list(self.MARKER, 19))
+
+    def test_nesting_over_depth_cap_returns_false_and_warns(self, caplog):
+        """Past the cap the marker is treated as absent and a warning fires."""
+        obj = self._nest_list(self.MARKER, 25)
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
+            assert _contains_user_displayable_error(obj) is False
+
+        assert any(
+            r.name == "notebooklm.rpc.decoder"
+            and "Max recursion depth reached in UserDisplayableError detection" in r.message
+            for r in caplog.records
+        )
+
+    def test_wide_container_at_depth_boundary_warns_once(self, caplog):
+        """A wide container at the cap logs one warning, not one per child."""
+        # 19 wrapper levels put the wide list exactly at the depth boundary
+        # (max_depth == 1); its 50 children must not be visited individually.
+        obj = self._nest_list([self.MARKER] * 50, 19)
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
+            assert _contains_user_displayable_error(obj) is False
+
+        depth_warnings = [
+            r
+            for r in caplog.records
+            if r.name == "notebooklm.rpc.decoder"
+            and "Max recursion depth reached in UserDisplayableError detection" in r.message
+        ]
+        assert len(depth_warnings) == 1
+
+    def test_decode_response_deep_error_info_raises_rpc_error(self):
+        """~800-deep error_info must map to RPCError, never RecursionError.
+
+        Depth 800 parses fine in ``json.loads`` (one recursion unit per
+        level, under the default limit of 1000) but previously overflowed in
+        ``_contains_user_displayable_error`` (~2 frames per level). With the
+        depth cap, the payload is treated as carrying no displayable-error
+        marker and falls through to the regular null-result handling.
+        """
+        deep = json.dumps(self._nest_list([], 800))
+        payload = f'[["wrb.fr","{self.RPC_ID}",null,null,null,{deep}]]'
+
+        with pytest.raises(RPCError, match="empty result"):
+            decode_response(self._frame_body(payload), self.RPC_ID)
+
+    def test_decode_response_deep_error_info_allow_null_returns_none(self):
+        """Same deep payload with allow_null=True returns None gracefully."""
+        deep = json.dumps(self._nest_list([], 800))
+        payload = f'[["wrb.fr","{self.RPC_ID}",null,null,null,{deep}]]'
+
+        result = decode_response(self._frame_body(payload), self.RPC_ID, allow_null=True)
+        assert result is None
+
+    def test_parse_chunked_response_recursion_error_chunk_treated_as_malformed(
+        self, caplog, monkeypatch
+    ):
+        """A chunk whose json.loads raises RecursionError is skipped as malformed.
+
+        The depth at which ``json.loads`` overflows varies by interpreter
+        version (3.12+ raised the effective C recursion headroom), so the
+        overflow is injected deterministically instead of relying on a magic
+        nesting depth.
+        """
+        import notebooklm.rpc.decoder as decoder_module
+
+        poisoned = '[["poisoned"]]'
+        real_loads = json.loads
+
+        def fake_loads(s, *args, **kwargs):
+            if s == poisoned:
+                raise RecursionError("maximum recursion depth exceeded")
+            return real_loads(s, *args, **kwargs)
+
+        monkeypatch.setattr(decoder_module.json, "loads", fake_loads)
+
+        valid_chunks = [json.dumps([f"valid{i}"]) for i in range(10)]
+        valid_parts = "\n".join(f"{len(c)}\n{c}" for c in valid_chunks)
+        response = f"{valid_parts}\n{len(poisoned)}\n{poisoned}\n"
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
+            chunks = parse_chunked_response(response)
+
+        assert chunks == [[f"valid{i}"] for i in range(10)]
+        assert any(
+            r.name == "notebooklm.rpc.decoder" and "malformed" in r.message.lower()
+            for r in caplog.records
+        )
+
+    def test_parse_chunked_response_extreme_depth_never_raises(self):
+        """Genuinely deep JSON must never propagate RecursionError.
+
+        Whether a given depth overflows ``json.loads`` is interpreter-
+        dependent: it does on 3.10/3.11 (recursion-limit based) but parses
+        fine on 3.12+ (larger C recursion headroom). The contract under test
+        is only that ``parse_chunked_response`` completes either way — the
+        chunk is parsed or skipped as malformed, never raised through.
+        """
+        # Built textually: json.dumps itself cannot serialize this depth.
+        deep_json = "[" * 2000 + "]" * 2000
+        valid_chunks = [json.dumps([f"valid{i}"]) for i in range(10)]
+        valid_parts = "\n".join(f"{len(c)}\n{c}" for c in valid_chunks)
+        response = f"{valid_parts}\n{len(deep_json)}\n{deep_json}\n"
+
+        chunks = parse_chunked_response(response)
+
+        assert chunks[:10] == [[f"valid{i}"] for i in range(10)]
+        # Trailing deep chunk is either absent (skipped as malformed) or the
+        # parsed nested list — both acceptable; RecursionError is not.
+        assert len(chunks) in (10, 11)
+
+    def test_extract_rpc_result_recursion_error_in_result_data_falls_back_to_raw(self, monkeypatch):
+        """result_data whose inner json.loads overflows falls back to the raw string.
+
+        ``extract_rpc_result`` re-parses string result_data; a server-
+        controlled deeply nested JSON string there must degrade to the
+        existing unparseable-payload fallback (raw string) instead of
+        propagating RecursionError out of decode_response.
+        """
+        import notebooklm.rpc.decoder as decoder_module
+
+        poisoned_inner = "[" * 40 + "]" * 40
+        real_loads = json.loads
+
+        def fake_loads(s, *args, **kwargs):
+            if s == poisoned_inner:
+                raise RecursionError("maximum recursion depth exceeded")
+            return real_loads(s, *args, **kwargs)
+
+        monkeypatch.setattr(decoder_module.json, "loads", fake_loads)
+
+        payload = json.dumps([["wrb.fr", self.RPC_ID, poisoned_inner]])
+        result = decode_response(self._frame_body(payload), self.RPC_ID)
+
+        assert result == poisoned_inner
 
 
 class TestGetErrorMessageForCode:

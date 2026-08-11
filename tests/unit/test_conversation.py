@@ -121,7 +121,7 @@ class TestAsk:
         assert result2.conversation_id == "conv-x"
 
     @pytest.mark.asyncio
-    async def test_ask_follow_up(self, auth_tokens, httpx_mock):
+    async def test_ask_follow_up(self, auth_tokens, httpx_mock, build_rpc_response):
         _TEST_CONV_ID = "a1b2c3d4-0000-0000-0000-000000000002"
         inner_json = json.dumps(
             [
@@ -137,7 +137,19 @@ class TestAsk:
         chunk_json = json.dumps([["wrb.fr", None, inner_json]])
         response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
 
-        httpx_mock.add_response(content=response_body.encode(), method="POST")
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=response_body.encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*rpcids=khqZz.*"),
+            content=build_rpc_response(
+                RPCMethod.GET_CONVERSATION_TURNS,
+                [[[None, None, 1, "Q1"]]],
+            ).encode(),
+            method="POST",
+        )
 
         async with NotebookLMClient(auth_tokens) as client:
             # Seed cache via the public helper (cache moved off Session).

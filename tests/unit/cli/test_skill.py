@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -113,6 +114,9 @@ class TestSkillInstall:
 
     def test_skill_install_chmods_scripts_executable(self, runner, tmp_path):
         """Files under scripts/ land 0o755 (executable) after install."""
+        if sys.platform == "win32":
+            pytest.skip("POSIX executable bit has no meaning on Windows")
+
         home = tmp_path / "home"
         mock_files = {
             "SKILL.md": "---\nname: notebooklm\n---\n# Test",

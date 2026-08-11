@@ -73,6 +73,10 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from .._cookie_persistence import (
+    _canonical_cookie_saver_is_current,
+    _default_cookie_saver,
+)
 from .._kernel import Kernel
 from ..auth import AuthTokens
 from .config import CORE_LOGGER_NAME
@@ -118,29 +122,6 @@ CookieSaver = Callable[..., "bool | CookieSaveResult"]
 CookieRotator = Callable[..., Awaitable[None]]
 
 
-def _default_cookie_saver(*args: Any, **kwargs: Any) -> bool | CookieSaveResult:
-    """Default ``cookie_saver``: late-bind to ``_auth.storage.save_cookies_to_storage``.
-
-    The import lives INSIDE the function body (intentionally, NOT at
-    module top) so any
-    ``monkeypatch.setattr("notebooklm._auth.storage.save_cookies_to_storage", …)``
-    swap is observed at call time. A top-level import would capture the
-    original reference at module-import time and silently ignore later
-    patches. The historical ``notebooklm._core`` indirection was removed
-    in v0.5.0 when the ``_core`` compatibility shim was deleted.
-
-    ``def`` (not ``async def``) is load-bearing: this wrapper is invoked
-    INSIDE ``asyncio.to_thread(_save)`` in
-    :meth:`CookiePersistence._save`. ``save_cookies_to_storage`` itself is
-    a sync writer in ``notebooklm._auth.storage``. Making this wrapper ``async``
-    would surface as a ``TypeError`` at runtime when ``to_thread`` tries
-    to call the coroutine in a worker thread.
-    """
-    from .._auth.storage import save_cookies_to_storage
-
-    return save_cookies_to_storage(*args, **kwargs)
-
-
 async def _default_cookie_rotator(*args: Any, **kwargs: Any) -> None:
     """Default ``cookie_rotator``: late-bind to ``_auth.keepalive._rotate_cookies``.
 
@@ -184,6 +165,8 @@ class ClientLifecycle:
         limits: ConnectionLimits,
         keepalive_interval: float | None,
         keepalive_storage_path: Path | None,
+        auth: AuthTokens | None = None,
+        cookie_persistence_path: Path | None = None,
         kernel: Kernel | None = None,
         cookie_saver: CookieSaver | None = None,
         cookie_rotator: CookieRotator | None = None,
@@ -201,6 +184,8 @@ class ClientLifecycle:
         # branching stays in one place — the seam helper.
         self._keepalive_interval: float | None = keepalive_interval
         self._keepalive_storage_path: Path | None = keepalive_storage_path
+        self._cookie_persistence_path: Path | None = cookie_persistence_path
+        self._auth: AuthTokens | None = auth
         # The live HTTP client is owned by ``self._kernel``. The
         # ``_http_client`` property below preserves the historical lifecycle
         # attribute for tests and private callers that probe it directly.
@@ -213,6 +198,7 @@ class ClientLifecycle:
         # (host integrations that want to bypass the monkeypatch surface).
         # ``or`` (not ``if x is not None else``) is fine here: ``None`` is
         # the only documented sentinel and any other callable is truthy.
+        self._uses_default_cookie_saver = cookie_saver is None
         self._cookie_saver: CookieSaver = cookie_saver or _default_cookie_saver
         self._cookie_rotator: CookieRotator = cookie_rotator or _default_cookie_rotator
 
@@ -368,6 +354,33 @@ class ClientLifecycle:
         # ``_get_conversation_lock`` / ``_get_new_conversation_lock`` call from
         # inside the new loop.
         chat.reset_after_open()
+        # Same close→reopen reset for the reqid counter's lazy lock so a
+        # reopened client rebuilds it on the new loop instead of reusing the
+        # stale one bound to the prior (now-dead) loop (#2106). Latent-hazard
+        # hardening rather than an active bug: the critical section under the
+        # lock is purely synchronous, so the stale lock cannot be contended
+        # (and thus cannot trip the 3.10/3.11 cross-loop RuntimeError) today —
+        # this keeps the counter consistent with its clear-on-rebind siblings
+        # above. Narrow by design — the lock is reconstructed lazily on the
+        # next ``next_reqid`` call from inside the new loop; ``_value`` is
+        # untouched so reqid monotonicity survives reopen.
+        reqid.reset_after_open()
+        # Same close→reopen reset for the auth coordinator's two lazy locks
+        # (refresh single-flight + auth snapshot) so a reopened client
+        # rebuilds them on the new loop instead of reusing stale ones bound to
+        # the prior (now-dead) loop (#2106). Same latent-hazard rationale as
+        # the reqid reset above. Narrow by design — both locks are
+        # reconstructed lazily via ``get_refresh_lock`` /
+        # ``get_auth_snapshot_lock`` from inside the new loop;
+        # ``_refresh_task`` and ``_refresh_callback`` are untouched (the task
+        # slot-preservation invariant in ``cancel_inflight_refresh`` still
+        # holds).
+        auth_coord.reset_after_open()
+
+        await cookie_persistence._prepare_open_baseline(
+            self._cookie_persistence_path,
+            to_thread=asyncio.to_thread,
+        )
 
         # Delegate HTTP-client construction and open-time cookie baseline
         # capture to the concrete transport kernel. The lifecycle still owns
@@ -379,6 +392,8 @@ class ClientLifecycle:
             limits=self._limits,
             capture_cookie_snapshot=cookie_persistence.capture_open_snapshot,
         )
+        if self._auth is not None:
+            self._auth.cookie_snapshot = cookie_persistence.loaded_cookie_snapshot
 
         # Spawn the keepalive task once the client is ready.
         if self._keepalive_interval is not None:
@@ -412,12 +427,22 @@ class ClientLifecycle:
         pass the collaborator they already hold rather than a broad host
         wrapper.
         """
-        await cookie_persistence.save(
-            jar,
-            path,
-            save_cookies_to_storage=self._cookie_saver,
-            to_thread=asyncio.to_thread,
-        )
+        effective_path = path if path is not None else self._cookie_persistence_path
+        if self._uses_default_cookie_saver and _canonical_cookie_saver_is_current():
+            await cookie_persistence._save_canonical(
+                jar,
+                effective_path,
+                to_thread=asyncio.to_thread,
+            )
+        else:
+            await cookie_persistence.save(
+                jar,
+                effective_path,
+                save_cookies_to_storage=self._cookie_saver,
+                to_thread=asyncio.to_thread,
+            )
+        if self._auth is not None:
+            self._auth.cookie_snapshot = cookie_persistence.loaded_cookie_snapshot
 
     async def close(
         self,

@@ -31,6 +31,18 @@ The "would a headless server call this?" test decides. Presentation/interactive 
 - `cli/resolve.py` stays a rich **adapter** over the pure `_app/resolve.py` **core** — it adds `ClickException` (not `ValidationError`), console `emit_status`, `entity_name`/`list_command` message hints, the `allow_full_id_passthrough` flag, and a pluggable `error_factory`. It is a justified adapter/core split, not duplication, so it was **not** collapsed.
 - `agent show` stays pure presentation (no neutral core — nothing a headless caller would invoke).
 
+*Amended (master-token relocation, #2103 PR-2):* the same "would a headless
+server call this?" test, applied outside `_app/` proper — the master-token
+bootstrap / re-mint / ownership-guard transaction relocated into the private
+client-runtime package `_auth/master_token.py` (a headless server or a
+direct library caller of `notebooklm.auth.master_token_bootstrap` needs the
+whole transaction, not just its own copy), while `capture_oauth_token`
+(launching a *visible*, interactive browser for Directive B's sign-in step)
+stayed in `cli/services/login/master_token.py` — no headless caller could
+ever invoke it. Confirms the test generalizes past `_app/` specifically: it
+is about what a caller needs, not which package happens to be the
+relocation target.
+
 ## Consequences
 
 - Additional front-ends reuse the neutral core directly. MCP and REST routes now import `_app.serialize.to_jsonable` / `source_summary` instead of maintaining private serializers.

@@ -33,6 +33,7 @@ TRACKED_GROUPS = (
     "chat",
     "note",
     "label",
+    "collection",
     "share",
     "research",
 )
@@ -47,6 +48,7 @@ CLICK_GROUPS = (
     "profile",
     "note",
     "label",
+    "collection",
     "share",
     "research",
     "skill",

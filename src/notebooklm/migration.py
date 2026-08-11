@@ -6,7 +6,9 @@ Handles transparent migration of ~/.notebooklm/ files into
 The migration is:
 - Automatic: triggered by ensure_profiles_dir() on CLI startup
 - Idempotent: safe to run multiple times
-- Crash-safe: uses copy-then-delete with marker file
+- Crash-safe: uses copy-then-delete with marker file; each copy lands via
+  temp-name + atomic rename, so a crash mid-copy can never leave a torn
+  file/dir at its final destination name
 - Non-destructive: originals kept until all copies succeed
 - Single-writer: cross-process ``filelock`` serializes concurrent CLI
   invocations so a container start-up race cannot interleave copies.
@@ -14,6 +16,7 @@ The migration is:
 
 import json
 import logging
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -21,7 +24,7 @@ from typing import Any
 
 from filelock import FileLock, Timeout
 
-from ._atomic_io import atomic_update_json
+from ._atomic_io import atomic_update_json, replace_file_atomically
 from .paths import get_config_path, get_home_dir
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,19 @@ _MIGRATION_LOCK_TIMEOUT = 30.0
 # Legacy files that should be moved into profiles/default/
 _LEGACY_FILES = ["storage_state.json", "context.json"]
 _LEGACY_DIRS = ["browser_profile"]
+
+# Copies land under a dot-prefixed temp name first and are renamed into place
+# only once complete, so a path at its *final* name is always a complete copy.
+_MIGRATION_TMP_SUFFIX = ".migrating"
+
+# Credential-equivalent files get 0o600 on the migrated copy regardless of the
+# legacy file's (possibly world-readable) mode. POSIX only.
+_SECRET_LEGACY_FILES = frozenset({"storage_state.json"})
+
+
+def _migration_tmp_path(dst: Path) -> Path:
+    """Deterministic temp sibling for ``dst`` (single writer via migration lock)."""
+    return dst.parent / f".{dst.name}{_MIGRATION_TMP_SUFFIX}"
 
 
 class MigrationLockTimeoutError(RuntimeError):
@@ -146,24 +162,39 @@ def _migrate_to_profiles_locked(home: Path) -> bool:
     logger.info("Migrating legacy layout to profiles/default/")
 
     # Copy files — overwrite if source is newer (e.g., login wrote fresh
-    # cookies to the legacy root path after a previous migration).
+    # cookies to the legacy root path after a previous migration). Copies go
+    # through a temp name + os.replace so an interrupted copy can never leave
+    # a torn file at the final name: a dst that exists here is complete, and
+    # its mtime (preserved from src by copy2 + rename) is trustworthy.
     for src in legacy_files:
         dst = default_dir / src.name
+        tmp = _migration_tmp_path(dst)
+        tmp.unlink(missing_ok=True)  # stale partial from a prior interrupted run
         if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
             logger.debug("Skipping %s (profile copy is same age or newer)", src.name)
         else:
-            shutil.copy2(src, dst)
+            shutil.copy2(src, tmp)
             if sys.platform != "win32":
-                dst.chmod(src.stat().st_mode)
+                # Secrets never inherit a loose legacy mode (e.g. 0o644).
+                if src.name in _SECRET_LEGACY_FILES:
+                    tmp.chmod(0o600)
+                else:
+                    tmp.chmod(src.stat().st_mode)
+            replace_file_atomically(tmp, dst)
             logger.debug("Copied %s → %s", src.name, dst)
 
-    # Copy directories (skip if destination already exists)
+    # Copy directories — same temp + rename discipline, so a dst dir that
+    # exists at its final name was created by a completed copytree.
     for src in legacy_dirs:
         dst = default_dir / src.name
+        tmp = _migration_tmp_path(dst)
+        if tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)  # stale partial from a prior run
         if dst.exists():
             logger.debug("Skipping %s/ (already exists in profile)", src.name)
         else:
-            shutil.copytree(src, dst)
+            shutil.copytree(src, tmp)
+            os.replace(tmp, dst)
             logger.debug("Copied %s/ → %s/", src.name, dst)
 
     # Remove originals (copies already in place as fallback). Tolerate
@@ -182,6 +213,27 @@ def _migrate_to_profiles_locked(home: Path) -> bool:
 
     # Update config.json with default_profile
     _set_default_profile_in_config()
+
+    # Promote a legacy account record in-band while we are here, so the layout
+    # migration finishes the whole job (layout AND account unified) in one
+    # pass rather than leaving the account half for the next reader.
+    #
+    # This is a completeness nicety, not a correctness requirement, and NOT a
+    # general durable-promotion backstop for anyone else: this function only
+    # runs for a pre-v0.5.0 two-file HOME layout, so profiles created after
+    # that (and the ``NOTEBOOKLM_AUTH_JSON`` env-auth path) never reach it.
+    # Durable promotion for every other profile hangs off the read path itself
+    # (``storage._schedule_legacy_promotion``); correctness for all of them
+    # hangs off neither, because ``read_account_metadata`` derives the same
+    # record read-only. Best-effort — never fails the migration.
+    migrated_storage = default_dir / "storage_state.json"
+    if migrated_storage.exists():
+        from ._auth.storage import promote_legacy_account  # local: keep import cost off startup
+
+        try:
+            promote_legacy_account(migrated_storage)
+        except Exception as e:  # noqa: BLE001 — migration must not fail on promotion
+            logger.debug("legacy account promotion during migration skipped: %s", e)
 
     # Write marker LAST — signals that migration is fully complete.
     # If the process dies before this point, next run retries (safe because

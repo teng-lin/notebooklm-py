@@ -10,7 +10,8 @@ RPC fan-out per command
 ``ask`` uses the **streamed** chat backend (``_chat.wire`` / a ``_reqid``-bearing
 streaming POST), preceded by a ``GET_LAST_CONVERSATION_ID`` lookup:
 
-* ``ask``     -> ``hPTbtc`` (GET_LAST_CONVERSATION_ID) then ``rLM`` (streamed ask).
+* ``ask``     -> ``hPTbtc`` (GET_LAST_CONVERSATION_ID), ``khqZz`` (authoritative
+  prior-turn count), then ``rLM`` (streamed ask).
 * ``history`` -> ``hPTbtc`` (GET_LAST_CONVERSATION_ID) then ``khqZz``
   (GET_CONVERSATION_TURNS).
 
@@ -40,14 +41,18 @@ class TestAskCommand:
     """Test ``notebooklm ask`` (streamed chat backend)."""
 
     @notebooklm_vcr.use_cassette("chat_ask.yaml")
-    def test_ask_question(self, runner, mock_auth_for_vcr, mock_context):
+    def test_ask_question(
+        self, runner, mock_auth_for_vcr, mock_context, legacy_vcr_follow_up_probe
+    ):
         """``ask`` streams an answer and prints it under the Answer header."""
         result = runner.invoke(cli, ["ask", "What is this notebook about?"])
         assert result.exit_code == 0, result.output
         assert "Answer:" in result.output
 
     @notebooklm_vcr.use_cassette("chat_ask.yaml")
-    def test_ask_question_json(self, runner, mock_auth_for_vcr, mock_context):
+    def test_ask_question_json(
+        self, runner, mock_auth_for_vcr, mock_context, legacy_vcr_follow_up_probe
+    ):
         """``ask --json`` emits the chat-response envelope (answer + references)."""
         result = runner.invoke(cli, ["ask", "--json", "What is this notebook about?"])
         assert result.exit_code == 0, result.output

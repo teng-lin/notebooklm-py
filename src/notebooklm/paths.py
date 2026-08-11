@@ -35,6 +35,7 @@ Usage:
     set_active_profile("work")
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -42,6 +43,11 @@ import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Explicit-storage browser dirs created by login carry this marker. Profile and
+# legacy layouts are owned by their enclosing profile and do not need it.
+BROWSER_PROFILE_OWNERSHIP_MARKER = ".notebooklm-owned"
+_MAX_PATH_COMPONENT_BYTES = 255
 
 # Public surface (ADR-0012). Underscore-prefixed helpers like
 # ``_read_default_profile`` and ``_reset_config_cache`` remain importable for
@@ -264,6 +270,14 @@ def _legacy_fallback(profile_path: Path, legacy_name: str, resolved_profile: str
     if not profile_path.exists() and resolved_profile == "default":
         legacy_path = get_home_dir() / legacy_name
         if legacy_path.exists():
+            from ._deprecation import warn_deprecated  # local: paths is a low-level leaf
+
+            warn_deprecated(
+                f"Reading {legacy_name} from the pre-profiles home-root layout "
+                f"({legacy_path}) is deprecated; run any `notebooklm` command to "
+                "migrate it into profiles/default/, or move the file there manually.",
+                removal="1.0",
+            )
             logger.debug(
                 "Using legacy path %s (profile path %s not found)",
                 legacy_path,
@@ -302,11 +316,110 @@ def get_storage_path(profile: str | None = None) -> Path:
     return _legacy_fallback(profile_path, "storage_state.json", resolved)
 
 
+def profile_from_storage_path(storage_path: Path | None) -> str | None:
+    """Best-effort reverse of :func:`get_storage_path`: the profile owning a file.
+
+    Returns ``<name>`` for a storage path shaped like
+    ``<home>/profiles/<name>/storage_state.json``; otherwise ``None`` — an
+    explicit ``--storage <arbitrary path>`` or the legacy home-root file carries
+    no profile name, and callers fall back to path-based routing (the storage
+    path itself still identifies the file).
+
+    Used so a mid-session ``NOTEBOOKLM_REFRESH_CMD`` refreshes the SAME profile
+    the client was built for (e.g. ``from_storage(profile="work")``) rather than
+    the process-wide default, which would refresh the wrong profile while the
+    parent reloads the work path.
+    """
+    if storage_path is None:
+        return None
+    try:
+        resolved = Path(storage_path).resolve()
+        profiles_root = (get_home_dir() / "profiles").resolve()
+    except OSError:
+        return None
+    if not resolved.is_relative_to(profiles_root):
+        return None
+    rel = resolved.relative_to(profiles_root)
+    if not rel.parts:
+        return None
+    return rel.parts[0]
+
+
+def master_token_path_for(storage_path: Path) -> Path:
+    """Return the ``master_token.json`` sibling of a storage path.
+
+    The SOLE derivation site for the master-token sibling invariant
+    (issue #2103 structural follow-up — PR-1 of the master-token relocation).
+    Before this, four sites derived the sibling independently and disagreed on
+    canonicalization: ``_auth/recovery.py``'s L4 rung resolved via
+    ``canonical_storage_key`` (``expanduser().resolve()``), ``_app/auth_check.py``
+    and the (pre-#2104) CLI login writer used unresolved ``with_name``, and
+    ``cli/services/auth_refresh.py`` used a raw ``.parent`` join — so a
+    symlinked or relative ``--storage`` alias could derive a DIFFERENT sibling
+    at each site, silently breaking the invariant #2103/#2104 fixed for one
+    site at a time. All four now call this one function.
+
+    Canonicalizes via ``expanduser().resolve()`` (matching
+    ``_auth.paths.canonical_storage_key``, duplicated inline rather than
+    imported to keep this public, top-level module free of any dependency on
+    the private ``_auth`` package — this module is reachable from both `cli/`
+    and `_app/`, and importing a private sibling from either would violate
+    their respective boundary guardrails; a public chokepoint needs no
+    ledger entry for either caller).
+
+    ``resolve()`` degrades to a best-effort (non-canonicalized) path on a
+    circular symlink rather than raising: on Python 3.13+ this is
+    ``Path.resolve()``'s own non-strict behavior, and on 3.10-3.12 — where a
+    symlink loop instead raises ``RuntimeError`` (not ``OSError``; a CPython
+    pathlib behavior change, fixed in 3.13) — this function catches it
+    itself, so every supported Python version behaves the same way here: a
+    stale or circular profile symlink degrades a lookup, it does not crash
+    ``auth check`` or bootstrap (#2103 PR-1 review).
+
+    Args:
+        storage_path: Path to ``storage_state.json`` (any form — absolute,
+            relative, ``~``-prefixed, or through a symlink).
+
+    Returns:
+        The resolved, canonical sibling ``master_token.json`` path — or a
+        best-effort, non-canonicalized sibling if resolution is impossible
+        (e.g. a circular symlink).
+    """
+    expanded = storage_path.expanduser()
+    try:
+        resolved = expanded.resolve()
+    except (OSError, RuntimeError):
+        resolved = expanded
+    return resolved.with_name("master_token.json")
+
+
 def get_master_token_path(profile: str | None = None) -> Path:
     """Get the master_token.json path for a profile (headless master-token auth).
 
     Sibling of storage_state.json. Holds the durable ``aas_et/`` master token at
     mode 0600; cookies minted from it are written to storage_state.json.
+
+    Thin wrapper over :func:`master_token_path_for` — this derives the sibling
+    from ``get_storage_path(profile=profile)`` rather than
+    ``get_profile_dir(profile)`` directly, so it agrees with the legacy
+    home-root fallback :func:`get_storage_path` applies for the ``"default"``
+    profile (``get_profile_dir`` has no such fallback and would derive a
+    different, profile-dir-only answer).
+
+    This agreement relies on an invariant this function does not itself
+    enforce: a master token is only ever WRITTEN by ``login --master-token``
+    (CLI-only), and every CLI invocation calls ``ensure_profiles_dir()``
+    (idempotent, safe on every run) before any subcommand runs — so by the
+    time a token could be written, a legacy home-root ``storage_state.json``
+    has already been migrated into ``profiles/<name>/``. There is
+    consequently no code path today that leaves a real master token sitting
+    at the OLD ``get_profile_dir``-derived location while storage is still at
+    the home root (neither ``mcp`` nor ``server`` read or write a master
+    token at all, as of this writing). If a future caller ever reaches a
+    master-token path without first going through ``ensure_profiles_dir``,
+    this function would silently fail to find an existing legacy-location
+    token rather than erroring — a reviewed, currently-unreachable case
+    (#2103 PR-1 review).
 
     Args:
         profile: Profile name. If None, uses the active profile.
@@ -314,7 +427,7 @@ def get_master_token_path(profile: str | None = None) -> Path:
     Returns:
         Path to master_token.json (may not exist).
     """
-    return get_profile_dir(resolve_profile(profile)) / "master_token.json"
+    return master_token_path_for(get_storage_path(profile=profile))
 
 
 def get_context_path(
@@ -348,21 +461,81 @@ def get_context_path(
     return _legacy_fallback(profile_path, "context.json", resolved)
 
 
-def get_browser_profile_dir(profile: str | None = None) -> Path:
-    """Get browser profile directory for a profile.
+def get_browser_profile_dir(
+    profile: str | None = None,
+    *,
+    storage_path: Path | None = None,
+) -> Path:
+    """Get browser profile directory for a profile or storage file.
 
-    Falls back to legacy home-root path for the "default" profile if the
-    profile-based path doesn't exist (pre-migration compatibility).
+    An explicit storage path gets its own sibling browser profile. The
+    conventional ``storage_state.json`` name keeps the existing
+    ``browser_profile`` sibling name; other filenames preserve their full
+    name and append ``.browser_profile``. If that component would exceed 255
+    bytes, a stable hash of the canonical storage path keeps it filesystem-safe
+    and makes relative/absolute aliases converge. Without an explicit storage
+    path, this falls back to the existing profile and legacy-path behavior.
+    Keeping the conventional name preserves the established profile layout;
+    suffixing custom names prevents same-directory storage files from sharing
+    a browser session.
 
     Args:
         profile: Profile name. If None, uses the active profile.
+        storage_path: Explicit storage path from ``--storage``. When set, it
+            takes precedence over profile resolution.
 
     Returns:
         Path to browser_profile/ directory.
     """
+    if storage_path is not None:
+        if storage_path.name == "storage_state.json":
+            return storage_path.parent / "browser_profile"
+        candidate = storage_path.with_suffix(storage_path.suffix + ".browser_profile")
+        if len(os.fsencode(candidate.name)) <= _MAX_PATH_COMPONENT_BYTES:
+            return candidate
+        canonical_storage = storage_path.expanduser().resolve()
+        digest = hashlib.sha256(os.fsencode(canonical_storage)).hexdigest()[:16]
+        return canonical_storage.parent / f"storage-{digest}.browser_profile"
     resolved = resolve_profile(profile)
     profile_path = get_profile_dir(resolved) / "browser_profile"
     return _legacy_fallback(profile_path, "browser_profile", resolved)
+
+
+def browser_profile_is_owned(storage_path: Path, browser_profile: Path) -> bool:
+    """Return whether a browser-profile directory is safe for NotebookLM to remove.
+
+    A marker explicitly owns any storage-specific sidecar created by NotebookLM.
+    Unmarked directories are owned only when their canonical paths match the
+    legacy layout or one direct child of ``NOTEBOOKLM_HOME/profiles``. Resolving
+    paths before comparison prevents a symlinked profile entry from claiming a
+    directory outside the NotebookLM home.
+    """
+    if (browser_profile / BROWSER_PROFILE_OWNERSHIP_MARKER).is_file():
+        return True
+
+    try:
+        home = get_home_dir().resolve()
+        canonical_storage = storage_path.expanduser().resolve()
+        canonical_browser = browser_profile.expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+    if (
+        canonical_storage == home / "storage_state.json"
+        and canonical_browser == home / "browser_profile"
+    ):
+        return True
+
+    profiles_dir = home / "profiles"
+    try:
+        relative_storage = canonical_storage.relative_to(profiles_dir)
+    except ValueError:
+        return False
+    return (
+        len(relative_storage.parts) == 2
+        and relative_storage.name == "storage_state.json"
+        and canonical_browser == canonical_storage.parent / "browser_profile"
+    )
 
 
 def get_config_path() -> Path:
@@ -385,9 +558,10 @@ def get_path_info(
 
     Args:
         profile: Profile name. If None, uses the active profile.
-        storage_path: Explicit ``--storage`` override. When set, ``storage_path``
-            and ``context_path`` in the result reflect the sibling-context
-            layout rather than the profile path.
+        storage_path: Explicit ``--storage`` override. When set, the
+            ``storage_path``, ``context_path``, and ``browser_profile_dir`` in
+            the result reflect the storage-specific sibling layout rather than
+            profile paths.
 
     Returns:
         Dict with path information and sources.
@@ -395,11 +569,8 @@ def get_path_info(
     home_from_env = os.environ.get("NOTEBOOKLM_HOME")
     resolved = resolve_profile(profile)
 
-    # Determine profile source. When --storage is set, profile resolution is
-    # effectively bypassed for the auth + context paths — but we still resolve
-    # ``profile`` because consumers may want to know what profile *would* be
-    # active otherwise. Make the override clear in the label so ``status
-    # --paths`` doesn't claim "CLI flag (--storage)" set the profile.
+    # --storage bypasses the profile for auth, context, and browser paths. Resolve
+    # it anyway so diagnostics can show which profile would otherwise be active.
     other_profile_set = (
         profile
         or _active_profile
@@ -435,5 +606,5 @@ def get_path_info(
         "storage_path": resolved_storage,
         "context_path": resolved_context,
         "config_path": str(get_config_path()),
-        "browser_profile_dir": str(get_browser_profile_dir(resolved)),
+        "browser_profile_dir": str(get_browser_profile_dir(resolved, storage_path=storage_path)),
     }

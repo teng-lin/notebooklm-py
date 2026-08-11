@@ -1,0 +1,858 @@
+{
+  "edges": [
+    {
+      "scope": "module",
+      "source": "_browser_cookie_filter",
+      "target": "storage"
+    },
+    {
+      "scope": "module",
+      "source": "account",
+      "target": "account_repair"
+    },
+    {
+      "scope": "module",
+      "source": "account",
+      "target": "account_types"
+    },
+    {
+      "scope": "module",
+      "source": "account_repair",
+      "target": "account_types"
+    },
+    {
+      "scope": "function",
+      "source": "account_repair",
+      "target": "cookies"
+    },
+    {
+      "scope": "function",
+      "source": "account_repair",
+      "target": "keepalive"
+    },
+    {
+      "scope": "module",
+      "source": "account_repair",
+      "target": "profile_account"
+    },
+    {
+      "scope": "module",
+      "source": "account_repair",
+      "target": "profile_migration"
+    },
+    {
+      "scope": "module",
+      "source": "account_repair",
+      "target": "profile_store"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "browser_launch_errors"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "cookie_policy"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "cookies"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "psidts_recovery"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
+      "target": "storage"
+    },
+    {
+      "scope": "module",
+      "source": "browser_cookie_recovery",
+      "target": "psidts_recovery"
+    },
+    {
+      "scope": "module",
+      "source": "browser_state_validation",
+      "target": "browser_capture"
+    },
+    {
+      "scope": "module",
+      "source": "cookie_filter",
+      "target": "cookie_policy"
+    },
+    {
+      "scope": "module",
+      "source": "cookie_filter",
+      "target": "cookie_semantics"
+    },
+    {
+      "scope": "module",
+      "source": "cookie_merge",
+      "target": "cookie_policy"
+    },
+    {
+      "scope": "module",
+      "source": "cookie_merge",
+      "target": "cookie_semantics"
+    },
+    {
+      "scope": "module",
+      "source": "cookie_merge",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "cookie_merge",
+      "target": "profile_document"
+    },
+    {
+      "scope": "module",
+      "source": "cookie_types",
+      "target": "cookie_policy"
+    },
+    {
+      "scope": "module",
+      "source": "cookie_types",
+      "target": "cookie_semantics"
+    },
+    {
+      "scope": "module",
+      "source": "cookies",
+      "target": "cookie_policy"
+    },
+    {
+      "scope": "module",
+      "source": "cookies",
+      "target": "cookie_semantics"
+    },
+    {
+      "scope": "module",
+      "source": "cookies",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "cookies",
+      "target": "paths"
+    },
+    {
+      "scope": "function",
+      "source": "cookies",
+      "target": "psidts_recovery"
+    },
+    {
+      "scope": "module",
+      "source": "headless_reauth",
+      "target": "browser_capture"
+    },
+    {
+      "scope": "module",
+      "source": "keepalive",
+      "target": "mint_service"
+    },
+    {
+      "scope": "module",
+      "source": "keepalive",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "keepalive",
+      "target": "storage_lock"
+    },
+    {
+      "scope": "module",
+      "source": "login_wait_trace",
+      "target": "browser_capture"
+    },
+    {
+      "scope": "function",
+      "source": "master_token",
+      "target": "cookies"
+    },
+    {
+      "scope": "module",
+      "source": "master_token",
+      "target": "master_token_bootstrap"
+    },
+    {
+      "scope": "module",
+      "source": "master_token",
+      "target": "master_token_file"
+    },
+    {
+      "scope": "module",
+      "source": "master_token",
+      "target": "master_token_types"
+    },
+    {
+      "scope": "module",
+      "source": "master_token",
+      "target": "mint_service"
+    },
+    {
+      "scope": "module",
+      "source": "master_token",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "master_token",
+      "target": "profile_store"
+    },
+    {
+      "scope": "function",
+      "source": "master_token",
+      "target": "storage"
+    },
+    {
+      "scope": "module",
+      "source": "master_token_bootstrap",
+      "target": "cookie_semantics"
+    },
+    {
+      "scope": "module",
+      "source": "master_token_bootstrap",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "master_token_bootstrap",
+      "target": "master_token_types"
+    },
+    {
+      "scope": "module",
+      "source": "master_token_bootstrap",
+      "target": "mint_service"
+    },
+    {
+      "scope": "module",
+      "source": "master_token_bootstrap",
+      "target": "profile_store"
+    },
+    {
+      "scope": "module",
+      "source": "master_token_file",
+      "target": "credential_io"
+    },
+    {
+      "scope": "module",
+      "source": "master_token_file",
+      "target": "master_token_types"
+    },
+    {
+      "scope": "module",
+      "source": "master_token_file",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "master_token_file",
+      "target": "storage_lock"
+    },
+    {
+      "scope": "module",
+      "source": "mint_service",
+      "target": "master_token_types"
+    },
+    {
+      "scope": "module",
+      "source": "profile_account",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "profile_document",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "profile_document",
+      "target": "profile_account"
+    },
+    {
+      "scope": "module",
+      "source": "profile_migration",
+      "target": "profile_account"
+    },
+    {
+      "scope": "module",
+      "source": "profile_migration",
+      "target": "profile_store"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "cookie_filter"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "cookie_merge"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "cookie_policy"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "credential_io"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "master_token_file"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "master_token_types"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "profile_account"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "profile_document"
+    },
+    {
+      "scope": "module",
+      "source": "profile_store",
+      "target": "storage_lock"
+    },
+    {
+      "scope": "module",
+      "source": "psidts_recovery",
+      "target": "cookie_merge"
+    },
+    {
+      "scope": "module",
+      "source": "psidts_recovery",
+      "target": "cookie_policy"
+    },
+    {
+      "scope": "module",
+      "source": "psidts_recovery",
+      "target": "cookie_semantics"
+    },
+    {
+      "scope": "module",
+      "source": "psidts_recovery",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "psidts_recovery",
+      "target": "keepalive"
+    },
+    {
+      "scope": "module",
+      "source": "psidts_recovery",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "psidts_recovery",
+      "target": "profile_document"
+    },
+    {
+      "scope": "module",
+      "source": "psidts_recovery",
+      "target": "profile_store"
+    },
+    {
+      "scope": "module",
+      "source": "recovery",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "function",
+      "source": "recovery",
+      "target": "cookies"
+    },
+    {
+      "scope": "module",
+      "source": "recovery",
+      "target": "cookies"
+    },
+    {
+      "scope": "function",
+      "source": "recovery",
+      "target": "extraction"
+    },
+    {
+      "scope": "module",
+      "source": "recovery",
+      "target": "extraction"
+    },
+    {
+      "scope": "function",
+      "source": "recovery",
+      "target": "headless_reauth"
+    },
+    {
+      "scope": "function",
+      "source": "recovery",
+      "target": "master_token"
+    },
+    {
+      "scope": "module",
+      "source": "recovery",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "recovery",
+      "target": "single_flight"
+    },
+    {
+      "scope": "function",
+      "source": "recovery",
+      "target": "storage"
+    },
+    {
+      "scope": "module",
+      "source": "recovery",
+      "target": "storage"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "account"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "function",
+      "source": "refresh",
+      "target": "cookies"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "cookies"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "extraction"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "keepalive"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "profile_store"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "recovery"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "single_flight"
+    },
+    {
+      "scope": "module",
+      "source": "refresh",
+      "target": "storage"
+    },
+    {
+      "scope": "module",
+      "source": "session",
+      "target": "account"
+    },
+    {
+      "scope": "module",
+      "source": "session",
+      "target": "extraction"
+    },
+    {
+      "scope": "module",
+      "source": "session",
+      "target": "recovery"
+    },
+    {
+      "scope": "module",
+      "source": "session",
+      "target": "refresh"
+    },
+    {
+      "scope": "module",
+      "source": "session",
+      "target": "tokens"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "cookie_filter"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "cookie_merge"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "cookies"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "master_token_file"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "master_token_types"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "profile_account"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "profile_document"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "profile_migration"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "profile_store"
+    },
+    {
+      "scope": "module",
+      "source": "storage",
+      "target": "storage_lock"
+    },
+    {
+      "scope": "module",
+      "source": "storage_transaction",
+      "target": "storage"
+    },
+    {
+      "scope": "module",
+      "source": "storage_writer",
+      "target": "storage"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "account"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "cookie_types"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "cookies"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "paths"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "profile_account"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "profile_document"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "profile_migration"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "profile_store"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "psidts_recovery"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "refresh"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
+      "target": "storage"
+    }
+  ],
+  "modules": [
+    {
+      "lines": 19,
+      "name": "__init__",
+      "path": "src/notebooklm/_auth/__init__.py"
+    },
+    {
+      "lines": 29,
+      "name": "_browser_cookie_filter",
+      "path": "src/notebooklm/_auth/_browser_cookie_filter.py"
+    },
+    {
+      "lines": 252,
+      "name": "account",
+      "path": "src/notebooklm/_auth/account.py"
+    },
+    {
+      "lines": 132,
+      "name": "account_repair",
+      "path": "src/notebooklm/_auth/account_repair.py"
+    },
+    {
+      "lines": 50,
+      "name": "account_types",
+      "path": "src/notebooklm/_auth/account_types.py"
+    },
+    {
+      "lines": 1251,
+      "name": "browser_capture",
+      "path": "src/notebooklm/_auth/browser_capture.py"
+    },
+    {
+      "lines": 37,
+      "name": "browser_cookie_recovery",
+      "path": "src/notebooklm/_auth/browser_cookie_recovery.py"
+    },
+    {
+      "lines": 151,
+      "name": "browser_launch_errors",
+      "path": "src/notebooklm/_auth/browser_launch_errors.py"
+    },
+    {
+      "lines": 21,
+      "name": "browser_state_validation",
+      "path": "src/notebooklm/_auth/browser_state_validation.py"
+    },
+    {
+      "lines": 96,
+      "name": "cookie_filter",
+      "path": "src/notebooklm/_auth/cookie_filter.py"
+    },
+    {
+      "lines": 448,
+      "name": "cookie_merge",
+      "path": "src/notebooklm/_auth/cookie_merge.py"
+    },
+    {
+      "lines": 887,
+      "name": "cookie_policy",
+      "path": "src/notebooklm/_auth/cookie_policy.py"
+    },
+    {
+      "lines": 254,
+      "name": "cookie_semantics",
+      "path": "src/notebooklm/_auth/cookie_semantics.py"
+    },
+    {
+      "lines": 396,
+      "name": "cookie_types",
+      "path": "src/notebooklm/_auth/cookie_types.py"
+    },
+    {
+      "lines": 961,
+      "name": "cookies",
+      "path": "src/notebooklm/_auth/cookies.py"
+    },
+    {
+      "lines": 23,
+      "name": "credential_io",
+      "path": "src/notebooklm/_auth/credential_io.py"
+    },
+    {
+      "lines": 453,
+      "name": "extraction",
+      "path": "src/notebooklm/_auth/extraction.py"
+    },
+    {
+      "lines": 886,
+      "name": "headless_reauth",
+      "path": "src/notebooklm/_auth/headless_reauth.py"
+    },
+    {
+      "lines": 438,
+      "name": "keepalive",
+      "path": "src/notebooklm/_auth/keepalive.py"
+    },
+    {
+      "lines": 30,
+      "name": "login_wait_trace",
+      "path": "src/notebooklm/_auth/login_wait_trace.py"
+    },
+    {
+      "lines": 455,
+      "name": "master_token",
+      "path": "src/notebooklm/_auth/master_token.py"
+    },
+    {
+      "lines": 373,
+      "name": "master_token_bootstrap",
+      "path": "src/notebooklm/_auth/master_token_bootstrap.py"
+    },
+    {
+      "lines": 89,
+      "name": "master_token_file",
+      "path": "src/notebooklm/_auth/master_token_file.py"
+    },
+    {
+      "lines": 68,
+      "name": "master_token_types",
+      "path": "src/notebooklm/_auth/master_token_types.py"
+    },
+    {
+      "lines": 194,
+      "name": "mint_service",
+      "path": "src/notebooklm/_auth/mint_service.py"
+    },
+    {
+      "lines": 239,
+      "name": "paths",
+      "path": "src/notebooklm/_auth/paths.py"
+    },
+    {
+      "lines": 90,
+      "name": "profile_account",
+      "path": "src/notebooklm/_auth/profile_account.py"
+    },
+    {
+      "lines": 162,
+      "name": "profile_document",
+      "path": "src/notebooklm/_auth/profile_document.py"
+    },
+    {
+      "lines": 311,
+      "name": "profile_migration",
+      "path": "src/notebooklm/_auth/profile_migration.py"
+    },
+    {
+      "lines": 814,
+      "name": "profile_store",
+      "path": "src/notebooklm/_auth/profile_store.py"
+    },
+    {
+      "lines": 1222,
+      "name": "psidts_recovery",
+      "path": "src/notebooklm/_auth/psidts_recovery.py"
+    },
+    {
+      "lines": 530,
+      "name": "recovery",
+      "path": "src/notebooklm/_auth/recovery.py"
+    },
+    {
+      "lines": 1184,
+      "name": "refresh",
+      "path": "src/notebooklm/_auth/refresh.py"
+    },
+    {
+      "lines": 174,
+      "name": "session",
+      "path": "src/notebooklm/_auth/session.py"
+    },
+    {
+      "lines": 268,
+      "name": "single_flight",
+      "path": "src/notebooklm/_auth/single_flight.py"
+    },
+    {
+      "lines": 1127,
+      "name": "storage",
+      "path": "src/notebooklm/_auth/storage.py"
+    },
+    {
+      "lines": 242,
+      "name": "storage_lock",
+      "path": "src/notebooklm/_auth/storage_lock.py"
+    },
+    {
+      "lines": 32,
+      "name": "storage_transaction",
+      "path": "src/notebooklm/_auth/storage_transaction.py"
+    },
+    {
+      "lines": 56,
+      "name": "storage_writer",
+      "path": "src/notebooklm/_auth/storage_writer.py"
+    },
+    {
+      "lines": 821,
+      "name": "tokens",
+      "path": "src/notebooklm/_auth/tokens.py"
+    }
+  ],
+  "sccs": {
+    "all_scopes": [],
+    "module_level": []
+  },
+  "summary": {
+    "function_local_edges": 11,
+    "module_edges": 117,
+    "modules": 40,
+    "total_lines": 15265,
+    "unique_edges": 128
+  },
+  "version": 1
+}

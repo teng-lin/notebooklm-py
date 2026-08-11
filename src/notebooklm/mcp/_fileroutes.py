@@ -55,6 +55,7 @@ from ._filelink import FileLinkError, FileTransferConfig
 from .tools._studio_download import (
     _DOWNLOAD_SPECS,
     _resolve_artifact_id,
+    download_extension,
     download_filename,
     download_mime_type,
 )
@@ -361,7 +362,14 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     status_code=500,
                     headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
                 )
-            temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
+            fmt = payload.get("fmt")
+            # Name the spool file for the extension the REQUESTED format resolves to.
+            # The served name + Content-Type below come from the format-aware
+            # ``download_filename`` / ``download_mime_type``, so this is invisible to
+            # the client either way — but keeping the on-disk name honest means the
+            # rule holds uniformly with the REST ``/download`` route, where the spool
+            # name IS what gets served (#2034).
+            temp_path = os.path.join(temp_dir, f"artifact{download_extension(spec, fmt)}")
             try:
                 args: dict[str, object] = {
                     "notebook_id": payload.get("nb"),
@@ -370,7 +378,6 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 }
                 if aid is not None:
                     args["artifact_id"] = aid
-                fmt = payload.get("fmt")
                 if fmt is not None:
                     args[spec.format_param_name] = fmt
                 plan = download_core.build_download_plan(spec, args, cwd=Path.cwd())

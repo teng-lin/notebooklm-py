@@ -4,7 +4,8 @@ These tests target branches not exercised by the existing
 * :func:`_select_playwright_account` ambiguity-reason branches.
 * :func:`repair_playwright_account_metadata` clear-metadata-failure path.
 * :func:`windows_playwright_event_loop` win32 policy swap.
-* :func:`ensure_chromium_installed` timeout + generic-exception pre-flight
+* :func:`ensure_chromium_installed` detection contract (present / missing /
+  unreadable probe answer) plus its timeout + generic-exception pre-flight
   failures.
 * :func:`recover_page` TargetClosed + non-TargetClosed PlaywrightError paths.
 * :func:`validate_login_flag_conflicts` remaining mutual-exclusion gates.
@@ -18,6 +19,7 @@ with stub/mocked collaborators so no real browser / network is required.
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -25,14 +27,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import notebooklm.auth as auth_module
+from notebooklm._auth import account as _auth_account
+from notebooklm._auth import cookies as _auth_cookies
+from notebooklm._auth.account import _select_playwright_account
+from notebooklm._env import get_base_host
 from notebooklm.cli.playwright_login_io import make_login_io
 from notebooklm.cli.services import playwright_login
 from notebooklm.cli.services.playwright_login import (
+    CHROMIUM_MISSING_MARKER,
+    CHROMIUM_PRESENT_MARKER,
+    CHROMIUM_PROBE_SOURCE,
     Conflict,
     PathError,
     PreparedPaths,
-    _select_playwright_account,
     ensure_chromium_installed,
     prepare_login_paths,
     recover_page,
@@ -63,6 +70,22 @@ class _FakeLoginIO:
         import asyncio
 
         return asyncio.run(coro)
+
+
+def _required_capture_state() -> dict[str, Any]:
+    """Return the minimal authenticated state accepted by real capture."""
+    return {
+        "cookies": [
+            {"name": "SID", "value": "sid", "domain": ".google.com", "path": "/"},
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "psidts",
+                "domain": ".google.com",
+                "path": "/",
+            },
+        ],
+        "origins": [{"origin": "https://notebooklm.google.com", "localStorage": []}],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -123,18 +146,19 @@ def test_repair_metadata_clear_failure_is_logged(tmp_path, caplog) -> None:
     import logging
 
     storage_path = tmp_path / "storage.json"
+    storage_path.write_bytes(b"\xff")
 
     def _boom_build(_path):
         raise ValueError("bad storage state")
 
-    def _boom_clear(_path):
-        raise OSError("cannot clear")
-
     with (
-        patch.object(auth_module, "build_httpx_cookies_from_storage", side_effect=_boom_build),
-        patch.object(auth_module, "clear_account_metadata", side_effect=_boom_clear),
-        patch.object(auth_module, "extract_email_from_html", return_value=None),
-        caplog.at_level(logging.WARNING, logger="notebooklm.cli.services.playwright_login"),
+        patch.object(
+            _auth_cookies,
+            "build_httpx_cookies_from_storage",
+            side_effect=_boom_build,
+        ),
+        patch.object(_auth_account, "extract_email_from_html", return_value=None),
+        caplog.at_level(logging.WARNING, logger="notebooklm.auth"),
     ):
         result = repair_playwright_account_metadata(
             storage_path, _FakeLoginIO(), page_html=None, quiet=True
@@ -142,6 +166,30 @@ def test_repair_metadata_clear_failure_is_logged(tmp_path, caplog) -> None:
     assert result is False
     assert any(
         "Failed to clear stale account metadata" in rec.getMessage() for rec in caplog.records
+    )
+
+
+def test_repair_metadata_degrades_on_run_async_runtime_error(tmp_path) -> None:
+    """A ``RuntimeError`` from ``io.run_async`` itself (e.g. the nested-event-loop
+    guard) must degrade to the same best-effort warning as an error from inside
+    the coroutine, not abort the caller (review finding on PR #2139: the
+    consolidation moved the try/except inside the coroutine, which does not
+    cover a ``run_async`` scheduling failure happening outside it)."""
+
+    class _RaisingRunAsyncIO(_FakeLoginIO):
+        def run_async(self, coro: Any) -> Any:
+            coro.close()
+            raise RuntimeError("cannot run_async from a running event loop")
+
+    storage_path = tmp_path / "storage.json"
+    io = _RaisingRunAsyncIO()
+
+    result = repair_playwright_account_metadata(storage_path, io, page_html=None, quiet=False)
+
+    assert result is False
+    assert any(
+        "account metadata was not written" in str(args) and "Details:" in str(args)
+        for args, _ in io.emitted
     )
 
 
@@ -183,6 +231,161 @@ def test_windows_event_loop_noop_off_win32(monkeypatch) -> None:
     monkeypatch.setattr(playwright_login.sys, "platform", "linux")
     with windows_playwright_event_loop():
         pass  # no exception, nothing swapped
+
+
+# ---------------------------------------------------------------------------
+# ensure_chromium_installed — detection contract (#2031)
+# ---------------------------------------------------------------------------
+def _record_subprocess(
+    monkeypatch, probe_stdout: str, probe_returncode: int = 0
+) -> list[list[str]]:
+    """Stub ``subprocess.run``: probe returns ``probe_stdout``, install succeeds."""
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **_):
+        calls.append(cmd)
+        if "install" in cmd:
+            return SimpleNamespace(stdout="", stderr="", returncode=0)
+        return SimpleNamespace(stdout=probe_stdout, stderr="", returncode=probe_returncode)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    return calls
+
+
+def test_probe_is_programmatic_not_dry_run_output_scraping(monkeypatch) -> None:
+    """The probe runs :data:`CHROMIUM_PROBE_SOURCE`, never ``install --dry-run``.
+
+    ``playwright install --dry-run`` prints the same block whether or not the
+    browser is on disk, so its output can never answer this question (#2031).
+    """
+    calls = _record_subprocess(monkeypatch, CHROMIUM_PRESENT_MARKER)
+    ensure_chromium_installed(make_login_io())
+
+    assert calls == [[sys.executable, "-c", CHROMIUM_PROBE_SOURCE]]
+    assert "--dry-run" not in calls[0]
+
+
+def test_both_subprocess_calls_stay_timeout_bounded(monkeypatch) -> None:
+    """30 s probe / 300 s install: an unbounded call could hang ``notebooklm login``."""
+    timeouts: list[Any] = []
+
+    def fake_run(cmd, **kwargs):
+        timeouts.append(kwargs.get("timeout"))
+        if "install" in cmd:
+            return SimpleNamespace(stdout="", stderr="", returncode=0)
+        return SimpleNamespace(stdout=CHROMIUM_MISSING_MARKER, stderr="", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    ensure_chromium_installed(make_login_io())
+
+    assert timeouts == [30, 300]
+
+
+def test_present_marker_skips_install(monkeypatch, capsys) -> None:
+    """A present answer installs nothing and prints nothing."""
+    calls = _record_subprocess(monkeypatch, CHROMIUM_PRESENT_MARKER)
+    ensure_chromium_installed(make_login_io())
+
+    assert len(calls) == 1  # probe only
+    assert capsys.readouterr().out == ""
+
+
+def test_missing_marker_runs_the_install(monkeypatch, capsys) -> None:
+    """A missing answer triggers ``playwright install chromium`` (the #2031 bug)."""
+    calls = _record_subprocess(monkeypatch, f"{CHROMIUM_MISSING_MARKER}\n")
+    ensure_chromium_installed(make_login_io())
+
+    assert calls[1] == [sys.executable, "-m", "playwright", "install", "chromium"]
+    out = capsys.readouterr().out
+    assert "Chromium browser not installed" in out
+    assert "installed successfully" in out
+
+
+@pytest.mark.parametrize(
+    "probe_stdout",
+    [
+        pytest.param("", id="empty"),
+        pytest.param("Traceback (most recent call last): ...", id="crashed"),
+        pytest.param(f"{CHROMIUM_PRESENT_MARKER}{CHROMIUM_MISSING_MARKER}", id="both-markers"),
+    ],
+)
+def test_unreadable_probe_answer_does_not_install(monkeypatch, capsys, probe_stdout) -> None:
+    """An ambiguous answer must not install — guessing re-downloads every login."""
+    calls = _record_subprocess(monkeypatch, probe_stdout)
+    ensure_chromium_installed(make_login_io())
+
+    assert len(calls) == 1  # probe only, no install
+    assert capsys.readouterr().out == ""
+
+
+def test_missing_marker_from_failed_probe_does_not_install(monkeypatch, capsys) -> None:
+    """A non-zero probe exit is unreadable even when the marker reached stdout.
+
+    A probe that dies after writing the marker (or a wrapper that echoes it)
+    must not be trusted to start a download.
+    """
+    calls = _record_subprocess(monkeypatch, CHROMIUM_MISSING_MARKER, probe_returncode=1)
+    ensure_chromium_installed(make_login_io())
+
+    assert len(calls) == 1  # probe only, no install
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.reality
+@pytest.mark.requires_playwright
+def test_probe_source_detects_both_states_against_real_playwright(tmp_path, monkeypatch) -> None:
+    """The probe source answers correctly against REAL Playwright (#2031).
+
+    Regression guard for the class of bug this replaced: the previous
+    pre-flight scraped ``playwright install --dry-run chromium`` for a
+    ``"will download"`` marker no Playwright release emits, and every unit test
+    fed ``subprocess.run`` fabricated output — so the probe was never once
+    checked against the real tool. This test runs the actual probe source.
+    """
+    browsers_dir = tmp_path / "browsers"
+    browsers_dir.mkdir()
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(browsers_dir))
+
+    def run_source(source: str) -> str:
+        result = subprocess.run(
+            [sys.executable, "-c", source], capture_output=True, text=True, timeout=120
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    # Empty browsers dir → the bundled build is genuinely absent.
+    assert run_source(CHROMIUM_PROBE_SOURCE) == CHROMIUM_MISSING_MARKER
+
+    # Materialise the exact executable Playwright resolves → detected present.
+    resolved = Path(
+        run_source(
+            "import sys\n"
+            "from playwright.sync_api import sync_playwright\n"
+            "with sync_playwright() as playwright:\n"
+            "    sys.stdout.write(playwright.chromium.executable_path)\n"
+        )
+    )
+    assert browsers_dir in resolved.parents
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    resolved.touch()
+
+    assert run_source(CHROMIUM_PROBE_SOURCE) == CHROMIUM_PRESENT_MARKER
+
+
+@pytest.mark.reality
+@pytest.mark.requires_chromium
+def test_chromium_launches_headless_against_real_playwright() -> None:
+    """A package import and executable path are not proof that Chromium launches."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content("<title>reality probe</title>")
+            assert page.title() == "reality probe"
+        finally:
+            browser.close()
 
 
 # ---------------------------------------------------------------------------
@@ -332,7 +535,126 @@ def test_prepare_login_paths_explicit_storage(tmp_path, monkeypatch) -> None:
     assert outcome.fresh_cleared is False
     # Explicit ``--storage`` short-circuits the path resolver entirely.
     fake_storage_path.assert_not_called()
-    fake_browser_profile_dir.assert_called_once_with()
+    fake_browser_profile_dir.assert_called_once_with(storage_path=tmp_path / "explicit.json")
+
+
+def test_prepare_login_paths_isolates_custom_storage_profiles(tmp_path) -> None:
+    """Different custom storage files use different persistent browser profiles."""
+    storage_a = tmp_path / "A.json"
+    storage_b = tmp_path / "B.json"
+
+    outcome_a = prepare_login_paths(profile="work", storage=str(storage_a), fresh=False)
+    outcome_b = prepare_login_paths(profile="work", storage=str(storage_b), fresh=False)
+
+    assert isinstance(outcome_a, PreparedPaths)
+    assert isinstance(outcome_b, PreparedPaths)
+    assert outcome_a.browser_profile == tmp_path / "A.json.browser_profile"
+    assert outcome_b.browser_profile == tmp_path / "B.json.browser_profile"
+
+
+def test_prepare_login_paths_marks_new_custom_profile_as_owned(tmp_path) -> None:
+    """A browser directory created for explicit storage carries an ownership marker."""
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(tmp_path / "A.json"),
+        fresh=False,
+    )
+
+    assert isinstance(outcome, PreparedPaths)
+    assert (outcome.browser_profile / ".notebooklm-owned").is_file()
+
+
+def test_prepare_login_paths_fresh_refuses_unmarked_custom_profile(tmp_path) -> None:
+    """--fresh never recursively deletes a pre-existing unowned sidecar."""
+    browser_profile = tmp_path / "A.json.browser_profile"
+    browser_profile.mkdir()
+    payload = browser_profile / "keep-me"
+    payload.write_text("external")
+
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(tmp_path / "A.json"),
+        fresh=True,
+    )
+
+    assert isinstance(outcome, PathError)
+    assert "Refusing to delete" in outcome.message
+    assert payload.read_text() == "external"
+
+
+def test_prepare_login_paths_fresh_refuses_arbitrary_conventional_profile(
+    tmp_path, monkeypatch
+) -> None:
+    """A conventional filename outside NOTEBOOKLM_HOME is still unowned."""
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path / "home"))
+    external = tmp_path / "external"
+    external.mkdir()
+    browser_profile = external / "browser_profile"
+    browser_profile.mkdir()
+    payload = browser_profile / "keep-me"
+    payload.write_text("external")
+
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(external / "storage_state.json"),
+        fresh=True,
+    )
+
+    assert isinstance(outcome, PathError)
+    assert payload.read_text() == "external"
+
+
+def test_prepare_login_paths_fresh_accepts_explicit_named_profile_without_marker(
+    tmp_path, monkeypatch
+) -> None:
+    """An explicit path to a managed profile has the same ownership as ``-p``."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(home))
+    profile_dir = home / "profiles" / "work"
+    profile_dir.mkdir(parents=True)
+    storage = profile_dir / "storage_state.json"
+    storage.write_text("{}")
+    browser_profile = profile_dir / "browser_profile"
+    browser_profile.mkdir()
+    payload = browser_profile / "stale"
+    payload.write_text("session")
+
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(storage),
+        fresh=True,
+    )
+
+    assert isinstance(outcome, PreparedPaths)
+    assert outcome.fresh_cleared is True
+    assert not payload.exists()
+
+
+def test_prepare_login_paths_fresh_clears_only_matching_custom_profile(tmp_path) -> None:
+    """--fresh resets only the browser profile bound to the selected storage file."""
+    browser_a = tmp_path / "A.json.browser_profile"
+    browser_b = tmp_path / "B.json.browser_profile"
+    browser_a.mkdir()
+    browser_b.mkdir()
+    ownership_a = browser_a / ".notebooklm-owned"
+    ownership_a.touch()
+    payload_a = browser_a / "payload"
+    payload_a.write_text("A")
+    marker_b = browser_b / "marker"
+    marker_b.write_text("B")
+
+    outcome = prepare_login_paths(
+        profile=None,
+        storage=str(tmp_path / "A.json"),
+        fresh=True,
+    )
+
+    assert isinstance(outcome, PreparedPaths)
+    assert outcome.fresh_cleared is True
+    assert browser_a.is_dir()
+    assert ownership_a.is_file()
+    assert not payload_a.exists()
+    assert marker_b.read_text() == "B"
 
 
 def test_prepare_login_paths_with_profile(tmp_path, monkeypatch) -> None:
@@ -351,7 +673,7 @@ def test_prepare_login_paths_with_profile(tmp_path, monkeypatch) -> None:
     assert outcome.browser_profile == browser_profile
     # The profile branch forwards the profile name to the storage resolver.
     fake_storage_path.assert_called_once_with(profile="work")
-    fake_browser_profile_dir.assert_called_once_with()
+    fake_browser_profile_dir.assert_called_once_with(profile="work")
 
 
 # ---------------------------------------------------------------------------
@@ -367,10 +689,10 @@ def test_run_playwright_login_capture_html_error_is_swallowed(tmp_path) -> None:
     browser_dir = tmp_path / "profile"
     mock_context = MagicMock()
     mock_page = MagicMock()
-    mock_page.url = "https://notebooklm.google.com/"
+    mock_page.url = f"https://{get_base_host()}/"
     mock_page.content.side_effect = PlaywrightError("cannot read content")
     mock_context.pages = [mock_page]
-    mock_context.storage_state.return_value = {"cookies": [], "origins": []}
+    mock_context.storage_state.return_value = _required_capture_state()
     mock_playwright = MagicMock()
     mock_playwright.chromium.launch_persistent_context.return_value = mock_context
 
@@ -418,7 +740,7 @@ def test_run_playwright_login_cookie_forcing_inner_recovery_reraises(tmp_path) -
     browser_dir = tmp_path / "profile"
     mock_context = MagicMock()
     mock_page_stale = MagicMock()
-    mock_page_stale.url = "https://notebooklm.google.com/"
+    mock_page_stale.url = f"https://{get_base_host()}/"
     goto_count = 0
 
     def stale_goto(url, **kwargs):
@@ -432,13 +754,13 @@ def test_run_playwright_login_cookie_forcing_inner_recovery_reraises(tmp_path) -
 
     mock_page_stale.goto.side_effect = stale_goto
     mock_page_recovered = MagicMock()
-    mock_page_recovered.url = "https://notebooklm.google.com/"
+    mock_page_recovered.url = f"https://{get_base_host()}/"
     # The recovered page's goto raises a NON-target-closed, NON-navigation
     # PlaywrightError, which must propagate.
     mock_page_recovered.goto.side_effect = PlaywrightError("net::ERR_SOMETHING_ELSE while loading")
     mock_context.pages = [mock_page_stale]
     mock_context.new_page.return_value = mock_page_recovered
-    mock_context.storage_state.return_value = {"cookies": [], "origins": []}
+    mock_context.storage_state.return_value = _required_capture_state()
     mock_playwright = MagicMock()
     mock_playwright.chromium.launch_persistent_context.return_value = mock_context
 
@@ -478,28 +800,6 @@ def test_redact_subprocess_output_skips_non_string_env_value() -> None:
     out = playwright_login.redact_subprocess_output("leak supersecretvalue here", env=env)
     assert "<redacted>" in out
     assert "supersecretvalue" not in out
-
-
-# ---------------------------------------------------------------------------
-# ensure_chromium_installed — install success path
-# ---------------------------------------------------------------------------
-def test_ensure_chromium_install_success(monkeypatch, capsys) -> None:
-    """When the dry-run reports a missing browser and install succeeds, the
-    success banner is printed ."""
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, **_):
-        calls.append(cmd)
-        if "--dry-run" in cmd:
-            return SimpleNamespace(stdout="chromium will download to ...", stderr="", returncode=0)
-        # The real install call.
-        return SimpleNamespace(stdout="", stderr="", returncode=0)
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    ensure_chromium_installed(make_login_io())
-    out = capsys.readouterr().out
-    assert "installed successfully" in out
-    assert len(calls) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -582,7 +882,7 @@ def test_run_playwright_login_wait_for_url_other_error_reraises(tmp_path) -> Non
     mock_page.goto.return_value = None
     mock_page.wait_for_url.side_effect = PlaywrightError("net::ERR_WEIRD other failure")
     mock_context.pages = [mock_page]
-    mock_context.storage_state.return_value = {"cookies": [], "origins": []}
+    mock_context.storage_state.return_value = _required_capture_state()
     mock_playwright = MagicMock()
     mock_playwright.chromium.launch_persistent_context.return_value = mock_context
 
@@ -637,7 +937,7 @@ def test_run_playwright_login_io_fail_inside_block_still_closes_context(tmp_path
     mock_page.url = "https://accounts.google.com/AccountChooser"
     mock_page.goto.return_value = None
     mock_context.pages = [mock_page]
-    mock_context.storage_state.return_value = {"cookies": [], "origins": []}
+    mock_context.storage_state.return_value = _required_capture_state()
     mock_playwright = MagicMock()
     mock_playwright.chromium.launch_persistent_context.return_value = mock_context
 

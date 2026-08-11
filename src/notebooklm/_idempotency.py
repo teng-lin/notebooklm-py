@@ -41,7 +41,7 @@ import time
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, TypeVar
+from typing import Any, Generic, TypeVar
 
 from .exceptions import (
     IdempotencyVariantError,
@@ -54,6 +54,29 @@ from .rpc.types import RPCMethod
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+class _CreateResultKind(str, Enum):
+    """How an idempotent create obtained its result."""
+
+    CREATED = "created"
+    PROBED = "probed"
+
+
+@dataclass(frozen=True)
+class _IdempotentCreateResult(Generic[T]):
+    """Private provenance carrier for idempotent create callers."""
+
+    value: T
+    kind: _CreateResultKind
+
+
+def _coerce_create_result(value: T | _IdempotentCreateResult[T]) -> _IdempotentCreateResult[T]:
+    """Attach fresh-create provenance to a legacy value-only result."""
+    if isinstance(value, _IdempotentCreateResult):
+        return value
+    return _IdempotentCreateResult(value=value, kind=_CreateResultKind.CREATED)
+
 
 # The translated exception types that ``rpc_call`` raises when the
 # request fails in a way that *might* have committed the write on the
@@ -80,7 +103,7 @@ async def idempotent_create(
     *,
     max_attempts: int = 2,
     label: str = "create",
-) -> T:
+) -> _IdempotentCreateResult[T]:
     """Probe-then-retry wrapper for mutating create RPCs.
 
     Args:
@@ -100,8 +123,9 @@ async def idempotent_create(
         label: Diagnostic label embedded in log messages.
 
     Returns:
-        The result of a successful ``create()`` call, or the value
-        returned by ``probe()`` after a transient transport failure.
+        A private result carrying the value and whether it came from a
+        successful create or a probe match. Callers must unwrap ``value``
+        before returning it from a public API.
 
     Raises:
         Whatever ``create()`` raises on the final attempt if the probe
@@ -121,7 +145,7 @@ async def idempotent_create(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            return await create()
+            return _IdempotentCreateResult(value=await create(), kind=_CreateResultKind.CREATED)
         except _RETRYABLE_TRANSPORT_ERRORS as exc:
             last_error = exc
             logger.warning(
@@ -140,7 +164,7 @@ async def idempotent_create(
                     label,
                     attempt,
                 )
-                return existing
+                return _IdempotentCreateResult(value=existing, kind=_CreateResultKind.PROBED)
             # Probe returned None: the create did not land. Loop and
             # retry as long as we have attempts remaining.
             logger.debug(

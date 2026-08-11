@@ -17,6 +17,7 @@ parsing.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -25,11 +26,18 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import notebooklm.auth as auth_module
+from notebooklm._app import auth_check as auth_check_module
+from notebooklm._app import master_token as master_token_module
 from notebooklm._app.auth_check import (
     AuthCheckPlan,
     AuthCheckResult,
     run_auth_check,
 )
+from notebooklm._app.master_token import MasterTokenStatus
+
+
+class _Abort(BaseException):
+    pass
 
 
 def _plan(
@@ -255,7 +263,7 @@ async def test_token_fetch_env_auth_passes_none_path(tmp_path: Path) -> None:
         )
 
     assert result.checks["token_fetch"] is True
-    fetch.assert_awaited_once_with(None, "work")
+    fetch.assert_awaited_once_with(None, None)
 
 
 @pytest.mark.asyncio
@@ -378,6 +386,110 @@ async def test_master_token_present_and_account_read(tmp_path: Path) -> None:
     assert mt["present"] is True
     assert mt["account"] == "owner@gmail.com"
     assert mt["path"] == str(storage.with_name("master_token.json"))
+
+
+@pytest.mark.asyncio
+async def test_master_token_status_is_late_bound_once_and_projected_exactly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    storage = tmp_path / "storage_state.json"
+    storage.write_text(json.dumps(_valid_storage_state()), encoding="utf-8")
+    account = {"permissive": object()}
+    calls: list[tuple[Path, bool]] = []
+
+    def inspect_status(path: Path, *, has_env_auth: bool) -> MasterTokenStatus:
+        calls.append((path, has_env_auth))
+        return MasterTokenStatus(
+            present=True,
+            path=tmp_path / "master_token.json",
+            account=account,
+            unreadable_error_type="UnicodeDecodeError",
+        )
+
+    monkeypatch.setattr(master_token_module, "inspect_master_token_status", inspect_status)
+    with caplog.at_level("DEBUG", logger=auth_check_module.__name__):
+        result = await run_auth_check(
+            _plan(storage_path=storage), read_env_auth_json=_never_read_env
+        )
+
+    assert calls == [(storage, False)]
+    assert result.details["master_token"] == {
+        "present": True,
+        "path": str(tmp_path / "master_token.json"),
+        "account": account,
+    }
+    assert "master_token.json present but unreadable: UnicodeDecodeError" in caplog.messages
+
+
+@pytest.mark.parametrize(
+    "error", [RuntimeError("ordinary"), asyncio.CancelledError(), _Abort("abort")]
+)
+def test_master_token_status_preserves_collaborator_error_and_scrubs_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error: BaseException,
+) -> None:
+    def fail(_path: Path, *, has_env_auth: bool) -> MasterTokenStatus:
+        assert has_env_auth is False
+        raise error
+
+    monkeypatch.setattr(master_token_module, "inspect_master_token_status", fail)
+    caught: BaseException | None = None
+    try:
+        auth_check_module._master_token_status(_plan(storage_path=tmp_path / "storage.json"))
+    except BaseException as exc:
+        caught = exc
+    assert caught is error
+    frames = []
+    traceback = caught.__traceback__
+    while traceback is not None:
+        if traceback.tb_frame.f_code.co_name == "_master_token_status":
+            frames.append(traceback.tb_frame)
+        traceback = traceback.tb_next
+    assert len(frames) == 1
+    assert "status" not in frames[0].f_locals
+
+
+@pytest.mark.asyncio
+async def test_master_token_status_resolves_through_symlinked_storage_dir(tmp_path: Path) -> None:
+    """#2103 PR-1 review: proves the CALL-SITE WIRING in ``_master_token_status``
+    (``_app/auth_check.py``), not just ``master_token_path_for`` in isolation
+    (already covered by ``test_paths.py``). ``AuthCheckPlan.storage_path`` is
+    documented as pre-resolved by ``AuthSource.from_click_context``
+    (``expanduser().resolve()``), so a wiring bug here — passing the wrong
+    field, or a future caller that stops pre-resolving — would be the one
+    place nothing else catches it: a symlinked profile directory must still
+    resolve to the SAME sibling as its real target."""
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    storage = real_dir / "storage_state.json"
+    storage.write_text(json.dumps(_valid_storage_state("APISID", "SAPISID")), encoding="utf-8")
+    auth_module.write_master_token(
+        real_dir / "master_token.json",
+        email="owner@gmail.com",
+        master_token="aas_et/secret",
+        android_id="0123456789abcdef",
+    )
+    alias_dir = tmp_path / "alias"
+    try:
+        alias_dir.symlink_to(real_dir, target_is_directory=True)
+    except (OSError, NotImplementedError):  # pragma: no cover - Windows without privilege
+        pytest.skip("platform cannot create directory symlinks")
+    aliased_storage = alias_dir / "storage_state.json"
+
+    result = await run_auth_check(
+        _plan(storage_path=aliased_storage), read_env_auth_json=_never_read_env
+    )
+
+    mt = result.details["master_token"]
+    assert mt["present"] is True
+    assert mt["account"] == "owner@gmail.com"
+    # The reported path is the RESOLVED sibling (real_dir), not a sibling of
+    # the alias — proving master_token_path_for's resolve is actually applied
+    # through this call site's wiring, not just in the shared helper's tests.
+    assert mt["path"] == str(real_dir / "master_token.json")
 
 
 @pytest.mark.asyncio

@@ -32,6 +32,29 @@ def test_public_shim_is_same_callable() -> None:
     assert atomic_write_json is atomic_write_json_private
 
 
+def test_atomic_write_json_rejects_storage_state_paths(tmp_path: Path) -> None:
+    """b-PR3: the public ``atomic_write_json`` refuses ``storage_state.json``
+    paths (like ``atomic_update_json`` since #1215) so a bare atomic write can't
+    skip the canonical dotted lock and re-open the lost-update race."""
+    target = tmp_path / "storage_state.json"
+    with pytest.raises(ValueError, match="notebooklm._auth.storage"):
+        atomic_write_json(target, {"cookies": [], "origins": []})
+    assert not target.exists()  # nothing written
+    # Case-insensitive variant is rejected too (macOS/NTFS resolve to same file).
+    with pytest.raises(ValueError):
+        atomic_write_json(tmp_path / "Storage_State.json", {})
+
+
+def test_atomic_write_json_bypass_writes_storage_state(tmp_path: Path) -> None:
+    """The module-private bypass (used only by ``_auth/storage.py``) skips the guard so
+    the canonical writer can still land ``storage_state.json``."""
+    from notebooklm._atomic_io import _atomic_write_json_unchecked
+
+    target = tmp_path / "storage_state.json"
+    _atomic_write_json_unchecked(target, {"cookies": [], "origins": []})
+    assert json.loads(target.read_text()) == {"cookies": [], "origins": []}
+
+
 def test_roundtrip_dict(tmp_path: Path) -> None:
     target = tmp_path / "state.json"
     payload = {"cookies": [{"name": "SID", "value": "abc"}], "origins": []}

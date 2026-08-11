@@ -43,6 +43,22 @@ PLACEHOLDER_SOURCE_ID = "fdfc8ac4-3237-4f2a-8a79-3e24297a7040"
 CHAT_NOTEBOOK_ID = "f59447f4-2a13-4d64-9df8-bc89c615c7bd"
 ARTIFACT_NOTEBOOK_ID = "f7d1e2b6-2334-4016-b81d-aded7b3fa9b6"
 
+# --- Collection placeholders ------------------------------------------------
+# Unlike PLACEHOLDER_NOTEBOOK_ID/PLACEHOLDER_SOURCE_ID above,
+# ``resolve_collection_id`` disables full-id passthrough (a UUID-shaped *name*
+# must not be blindly accepted as an id), so a collection ``<ref>`` argument in
+# test_collection.py is always an exact NAME literal (e.g. "VCR Test Add"), not
+# an id constant here — pinning a real id would break on re-record against a
+# different account/collection (a re-record only needs same-named live
+# collections to exist, no id-hunting afterward). See test_collection.py's
+# module docstring for the full recording-order rationale.
+#
+# Notebook-ref resolution (`resolve_partial_id_in_items`), by contrast, DOES
+# have full-id passthrough, so this one id is a recording-safety choice (a
+# real notebook exercises a genuine UPDATE_LABEL mutation) rather than a
+# replay requirement.
+COLLECTION_MEMBER_NOTEBOOK_ID = "6b9229e9-973d-4ac6-91b7-4628a0a53c60"
+
 # --- Generate / mind-map placeholders -------------------------------------
 GENERATE_NOTEBOOK_ID = "bb00c9e3-656c-4fd2-b890-2b71e1cf3814"
 GENERATE_SOURCE_ID = "466b9ee3-c1ce-45ef-861c-1d4bfcd939ad"
@@ -71,6 +87,7 @@ VCR_SHARE_NOTEBOOK_ID = MUTATION_NOTEBOOK_ID
 __all__ = [
     "ARTIFACT_NOTEBOOK_ID",
     "CHAT_NOTEBOOK_ID",
+    "COLLECTION_MEMBER_NOTEBOOK_ID",
     "DELETE_NOTEBOOK_ID",
     "DELETE_SOURCE_ID",
     "GENERATE_NOTEBOOK_ID",

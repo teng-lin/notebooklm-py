@@ -8,7 +8,10 @@ import pytest
 
 from notebooklm._url_utils import (
     contains_google_auth_redirect,
+    find_cookie_mismatch_hop,
+    is_cookie_mismatch_redirect,
     is_google_auth_redirect,
+    is_notebooklm_app_host,
     is_notebooklm_unavailable_redirect,
     is_youtube_url,
     notebooklm_unavailable_location,
@@ -188,6 +191,12 @@ class TestUrlParsingExceptionPaths:
     def test_is_notebooklm_unavailable_redirect_swallows_parse_error(self):
         assert is_notebooklm_unavailable_redirect(self.MALFORMED_IPV6) is False
 
+    def test_is_notebooklm_app_host_swallows_parse_error(self):
+        assert is_notebooklm_app_host(self.MALFORMED_IPV6) is False
+
+    def test_is_cookie_mismatch_redirect_swallows_parse_error(self):
+        assert is_cookie_mismatch_redirect(self.MALFORMED_IPV6) is False
+
     def test_notebooklm_unavailable_location_swallows_parse_error(self):
         assert notebooklm_unavailable_location(self.MALFORMED_IPV6) is None
 
@@ -323,3 +332,108 @@ class TestPdfUrlDisplayTitle:
     @pytest.mark.parametrize("bad", [None, 123, ["x"]])
     def test_non_string_input_returns_none(self, bad):
         assert pdf_url_display_title(bad) is None
+
+
+class TestIsNotebookLMAppHost:
+    """Tests for is_notebooklm_app_host() — "did we actually reach the app?" (#2038)."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://notebooklm.google.com/",
+            "https://notebooklm.google.com/notebook/abc",
+            "https://NotebookLM.Google.COM/",  # host comparison is case-insensitive
+            "https://notebooklm.cloud.google.com/",  # enterprise host
+            # Post-rebrand personal alias. Omitting it would make a genuine app
+            # response report as "the request never reached the app".
+            "https://notebook.google.com/",
+        ],
+    )
+    def test_app_hosts(self, url: str):
+        assert is_notebooklm_app_host(url) is True
+
+    def test_alias_host_agrees_with_browser_capture(self):
+        """The alias must match the one ``browser_capture`` already recognises.
+
+        ``_auth/browser_capture.url_matches_base_host`` treats
+        ``notebook.google.com`` as the personal-app alias. Two independent
+        notions of "is this the app?" that disagree is how a valid app response
+        gets reported as an environment problem, so pin them together.
+        """
+        from notebooklm._auth.browser_capture import url_matches_base_host
+
+        url = "https://notebook.google.com/"
+        assert url_matches_base_host(url) is True
+        assert is_notebooklm_app_host(url) is True
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            # The marketing/gate host is a DIFFERENT host (no ``.com``) — the
+            # exact-match rule is what keeps #1630's gate out of the app set.
+            "https://notebooklm.google/?location=unsupported",
+            "https://support.google.com/accounts/answer/32050",
+            "https://accounts.google.com/signin",
+            # Subdomains do not serve the app shell.
+            "https://x.notebooklm.google.com/",
+            # Substring-bypass shapes (CodeQL py/incomplete-url-substring-sanitization).
+            "https://notebooklm.google.com.evil.com/",
+            "https://evil.com/notebooklm.google.com/",
+            "",
+            "not-a-url",
+        ],
+    )
+    def test_non_app_hosts(self, url: str):
+        assert is_notebooklm_app_host(url) is False
+
+
+class TestCookieMismatchRedirect:
+    """Tests for the ``accounts.google.com/CookieMismatch`` interstitial (#2038)."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://accounts.google.com/CookieMismatch",
+            "https://accounts.google.com/CookieMismatch/",
+            "https://accounts.google.com/cookiemismatch",  # path match is case-insensitive
+            "https://accounts.google.com/CookieMismatch?continue=https%3A%2F%2Fx",
+        ],
+    )
+    def test_matches(self, url: str):
+        assert is_cookie_mismatch_redirect(url) is True
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            # Right host, different page — a plain login redirect, not a mismatch.
+            "https://accounts.google.com/signin",
+            "https://accounts.google.com/",
+            # Right path, wrong host — must not be spoofable.
+            "https://evil.com/CookieMismatch",
+            "https://accounts.google.com.evil.com/CookieMismatch",
+            # Not a prefix/suffix match on the path segment.
+            "https://accounts.google.com/CookieMismatchFoo",
+            "https://accounts.google.com/b/0/CookieMismatch",
+            "",
+        ],
+    )
+    def test_non_matches(self, url: str):
+        assert is_cookie_mismatch_redirect(url) is False
+
+    def test_find_hop_returns_first_match_in_chain(self):
+        chain = (
+            "https://notebooklm.google.com/",
+            "https://accounts.google.com/CookieMismatch?continue=x",
+            "https://support.google.com/accounts/answer/32050",
+        )
+        assert find_cookie_mismatch_hop(chain) == chain[1]
+
+    def test_find_hop_returns_none_for_clean_chain(self):
+        chain = (
+            "https://notebooklm.google.com/",
+            "https://accounts.google.com/signin",
+        )
+        assert find_cookie_mismatch_hop(chain) is None
+
+    def test_find_hop_handles_empty_chain(self):
+        assert find_cookie_mismatch_hop(()) is None

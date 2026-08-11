@@ -3,7 +3,9 @@
 This test scans every ``.py`` file under ``tests/`` for the forbidden
 patterns documented in
 ``docs/adr/0007-test-monkeypatch-policy.md`` and fails if any file *not*
-on the shrinking allowlist contains a match.
+on the relevant allowlist contains a match. All three allowlists in this
+module are now empty and guarded there (see "Allowlist" below), so in
+practice every match is a failure.
 
 Forbidden patterns
 ------------------
@@ -53,8 +55,9 @@ Forbidden patterns
    (issue #1377 follow-up; see also the 2026-06-08 ``#1481`` post-mortem:
    moving a CLI command body to a sibling module silently no-ops these
    patches). The two regexes are deliberately **disjoint** — (4) owns the
-   drained-to-zero ``_ALLOWLIST``; (5) owns the baselined
-   ``_DEEP_LEAF_ALLOWLIST`` below.
+   ``_ALLOWLIST``; (5) owns the ``_DEEP_LEAF_ALLOWLIST`` below. Both are
+   drained to zero and guarded there, but they remain separate structures
+   so each pattern's population stays independently accountable.
 
    .. code-block:: python
 
@@ -85,12 +88,14 @@ D1 PR-2 (auth-side migration) and D1 PR-3 (CLI-side migration) retired
 offenders; it is now **empty and must stay empty**
 (:func:`test_allowlist_stays_empty`).
 
-Patterns (5) and (6) each carry their own *baselined* file-level
-allowlist (``_DEEP_LEAF_ALLOWLIST`` / ``_PATCH_OBJECT_PRIVATE_ATTR_ALLOWLIST``)
-holding the offenders measured when the pattern landed. Unlike
-``_ALLOWLIST`` they start populated and drain *opportunistically* — there
-is no stays-empty guard, only the standard stale-entry checks (a cleaned
-or deleted file must be removed) and a hard block on new files.
+Patterns (5) and (6) each carry their own file-level allowlist
+(``_DEEP_LEAF_ALLOWLIST`` / ``_PATCH_OBJECT_PRIVATE_ATTR_ALLOWLIST``).
+Both landed *baselined* with the offenders measured when the pattern
+landed and drained opportunistically; both have since reached zero and
+are now held there by :func:`test_baselined_allowlists_stay_empty`,
+alongside the standard stale-entry checks (a cleaned or deleted file must
+be removed) and the hard block on new files. Every exemption structure in
+this module is therefore empty: the lint is a global invariant.
 
 The allowlist is file-level, not site-level (line-number-level), so it
 survives rebases and reorderings without spurious churn. See
@@ -217,9 +222,11 @@ _PATTERN_MOCK_PATCH_OBJECT_PRIVATE = re.compile(
 #     before the first ``_``-prefixed one, which makes (d) and (f) **disjoint
 #     by construction**: ``patch("notebooklm._x")`` matches only (d), and
 #     ``patch("notebooklm.cli._x")`` matches only (f). Disjointness matters
-#     because the two populations have different allowlist regimes — (d) is
-#     drained-to-zero (``_ALLOWLIST`` + stays-empty guard), (f) is baselined
-#     (``_DEEP_LEAF_ALLOWLIST``, drains opportunistically). Prefix handling
+#     because the two populations are accounted separately — (d) against
+#     ``_ALLOWLIST``, (f) against ``_DEEP_LEAF_ALLOWLIST``. Both are drained to
+#     zero and pinned there by their own stays-empty guards; they landed under
+#     different regimes ((d) drained-to-zero from the start, (f) baselined then
+#     drained), which is why the two structures stay separate. Prefix handling
 #     (``mock.patch`` / ``unittest.mock.patch`` / keyword ``target=`` / string
 #     prefixes) mirrors (d).
 _PATTERN_MOCK_PATCH_DEEP_PRIVATE = re.compile(
@@ -308,22 +315,25 @@ _ALLOWLIST: frozenset[str] = frozenset()
 
 
 # ---------------------------------------------------------------------------
-# Baselined allowlists for patterns (f) and (g) — measured at gate-landing
-# time (2026-06-10), file-level for the same rebase-stability reasons as
-# ``_ALLOWLIST`` (ADR-0007 "Alternatives considered: per-site allowlist
-# entries"). Both FILE SETS may only drain: the stale-entry checks force
-# removal of cleaned/deleted files, and the gates block any file not listed
-# here. Being file-level, the lists do not cap site counts *inside* an
-# allowlisted file — for pattern (f) that growth is still capped externally,
-# because every (f) site is also a string-target ``patch("notebooklm…")``
-# site counted by ``tests/_guardrails/test_string_patch_ratchet.py``'s
-# per-file ceilings; pattern (g) sites have no count cap (accepted file-level
-# trade-off, same as the original ``_ALLOWLIST`` during its drain).
-# There is deliberately NO stays-empty guard — these start populated and
-# shrink opportunistically as files migrate to constructor injection.
+# Allowlists for patterns (f) and (g) — DRAINED TO ZERO (issue #1376 follow-up).
 #
-# DO NOT add entries. A new offending file must be migrated, not allowlisted;
-# see the remediation text in the gate assertions below.
+# Both landed *baselined* (2026-06-10) holding the offenders measured at
+# gate-landing time, file-level for the same rebase-stability reasons as
+# ``_ALLOWLIST`` (ADR-0007 "Alternatives considered: per-site allowlist
+# entries"), and drained opportunistically as files migrated to constructor
+# injection. That drain is now **complete**: both are empty, so — exactly like
+# ``_ALLOWLIST`` — each gate is a *global* invariant rather than a per-file
+# exemption, and every file under ``tests/`` satisfies patterns (f) and (g)
+# with zero exemptions.
+#
+# Both MUST stay empty (:func:`test_baselined_allowlists_stay_empty`). While
+# they were draining there was deliberately no stays-empty guard; that
+# rationale expired when they reached zero. Without the guard the tier gates
+# alone do not lock the drain in — ``_assert_tier_clean`` skips any file listed
+# in its allowlist, so a contributor blocked by either gate could re-add their
+# file to the baseline in the same PR and keep CI green, silently re-opening
+# the escape hatch the drain closed. New offenders must be migrated, never
+# re-allowlisted.
 # ---------------------------------------------------------------------------
 
 # Files containing deep-leaf private string-target patches (pattern f).
@@ -584,6 +594,44 @@ def test_no_private_attr_patch_object_outside_allowlist() -> None:
         "trip patterns (d)/(f) in this file, and the overall string-patch "
         "population is growth-capped by "
         "``tests/_guardrails/test_string_patch_ratchet.py``.",
+    )
+
+
+def test_baselined_allowlists_stay_empty() -> None:
+    """Hardening guard: the pattern (f)/(g) allowlists must stay empty.
+
+    Both drained to zero, but the tier gates alone do not lock that in:
+    :func:`_assert_tier_clean` *skips* every file listed in its allowlist and
+    only reports entries that have stopped offending (the stale check). A
+    genuinely-offending file therefore satisfies both halves the moment it is
+    re-added — so a contributor blocked by either gate could re-baseline their
+    file in the same PR and keep CI green. This guard closes that path, exactly
+    as :func:`test_allowlist_stays_empty` does for ``_ALLOWLIST``: a new
+    offender must be migrated to constructor injection via
+    ``tests/_fixtures/make_fake_core(...)`` or a public-attribute
+    ``patch.object`` seam, never re-allowlisted.
+    """
+
+    # Pin the immutable type as well as the empty value: ``assert not
+    # allowlist`` would also pass for a mutable ``set()``, so a refactor that
+    # reintroduced mutability would silently weaken this guard (same reasoning
+    # as ``test_allowlist_stays_empty``).
+    unexpected = {
+        name: sorted(allowlist)
+        for name, allowlist in (
+            ("_DEEP_LEAF_ALLOWLIST", _DEEP_LEAF_ALLOWLIST),
+            ("_PATCH_OBJECT_PRIVATE_ATTR_ALLOWLIST", _PATCH_OBJECT_PRIVATE_ATTR_ALLOWLIST),
+        )
+        if not isinstance(allowlist, frozenset) or allowlist
+    }
+    assert unexpected == {}, (
+        "The baselined ADR-0007 allowlists for patterns (f) and (g) drained to "
+        "zero and must stay empty ``frozenset``s. Re-adding an entry would let "
+        "a new offender through the tier gate unchanged — migrate the test to "
+        "constructor injection via ``tests/_fixtures/make_fake_core(...)`` or "
+        "to ``patch.object`` on a PUBLIC attribute of a locally-imported alias "
+        "instead.\n\n"
+        f"Unexpected entries: {unexpected}"
     )
 
 

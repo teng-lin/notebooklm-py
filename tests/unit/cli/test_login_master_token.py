@@ -1,15 +1,26 @@
-"""CLI tests for `notebooklm login --master-token[-refresh]` (service mocked)."""
+"""CLI tests for `notebooklm login --master-token[-refresh]` (service mocked).
+
+Phase 13C: the Click driver invokes coarse ``notebooklm._app.master_token``
+operations and patches its own bound ``bootstrap_login`` / ``remint_login``
+names.  Transaction policy remains behind the app boundary; the CLI-only
+service retains just interactive ``capture_oauth_token`` browser I/O.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.cli.master_token_login as driver
 import notebooklm.cli.services.login.master_token as mt_service
+from notebooklm._app.master_token import (
+    MasterTokenLoginSuccess,
+    MasterTokenRemintSuccess,
+)
 from notebooklm._auth import browser_capture
 from notebooklm.notebooklm_cli import cli
 from notebooklm.paths import get_storage_path
@@ -32,11 +43,120 @@ def _seed_profile_account(monkeypatch, tmp_path, email):
 
 def test_master_token_refresh_calls_service(tmp_path, monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
-    with patch.object(mt_service, "refresh", new=AsyncMock()) as ref:
+    storage = get_storage_path()
+    storage.parent.mkdir(parents=True, exist_ok=True)
+    storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
+    with patch.object(
+        driver,
+        "remint_login",
+        return_value=MasterTokenRemintSuccess(storage),
+    ) as ref:
         result = CliRunner().invoke(cli, ["login", "--master-token-refresh"])
     assert result.exit_code == 0, result.output
-    assert ref.called
-    assert "Re-minted" in result.output
+    # #2103 PR-2 D2: one-path signatures — master_token_remint derives the
+    # sibling internally via master_token_path_for, so the CLI passes only
+    # storage_path (positionally); get_master_token_path() is no longer
+    # something this call site needs to compute at all.
+    ref.assert_called_once_with(storage, run_async=asyncio.run)
+    assert result.output.strip() == f"Re-minted cookies -> {storage}"
+
+
+def test_master_token_refresh_storage_override_canonicalizes_storage_path(tmp_path, monkeypatch):
+    """#2103: an explicit ``--storage`` must reach the transaction canonicalized.
+
+    (PR-2 note: the sibling-derivation invariant this test used to pin
+    end-to-end now lives entirely inside ``master_token_path_for`` — covered
+    by ``tests/unit/test_paths.py`` — since the CLI no longer computes or
+    passes ``master_token_path`` itself. What remains CLI-level behavior is
+    that ``--storage`` gets canonicalized before the transaction call.)
+    """
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    override_dir = tmp_path / "elsewhere"
+    override_dir.mkdir()
+    storage = override_dir / "foo.json"
+    storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
+    resolved = storage.resolve()
+    with patch.object(
+        driver,
+        "remint_login",
+        return_value=MasterTokenRemintSuccess(resolved),
+    ) as ref:
+        result = CliRunner().invoke(
+            cli, ["login", "--master-token-refresh", "--storage", str(storage)]
+        )
+    assert result.exit_code == 0, result.output
+    # The driver canonicalizes an explicit --storage (matching auth_source), so a
+    # symlink/relative alias selects the same sibling the L4 recovery rung derives.
+    ref.assert_called_once_with(resolved, run_async=asyncio.run)
+
+
+def test_master_token_refresh_storage_symlink_canonicalizes_to_target(tmp_path, monkeypatch):
+    """#2104 review: a symlinked ``--storage`` alias resolves to the target.
+
+    The L4 recovery rung resolves the storage path (``canonical_storage_key``)
+    before deriving ``master_token.json``, so the writer must canonicalize too —
+    otherwise login writes the token beside the alias while recovery looks
+    beside the real file.
+    """
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    storage = real_dir / "foo.json"
+    storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
+    alias_dir = tmp_path / "alias"
+    try:
+        alias_dir.symlink_to(real_dir, target_is_directory=True)
+    except (OSError, NotImplementedError):  # pragma: no cover - Windows without privilege
+        pytest.skip("platform cannot create directory symlinks")
+    resolved = storage.resolve()  # tmp_path itself may be a symlink (macOS /tmp)
+    with patch.object(
+        driver,
+        "remint_login",
+        return_value=MasterTokenRemintSuccess(resolved),
+    ) as ref:
+        result = CliRunner().invoke(
+            cli, ["login", "--master-token-refresh", "--storage", str(alias_dir / "foo.json")]
+        )
+    assert result.exit_code == 0, result.output
+    ref.assert_called_once_with(resolved, run_async=asyncio.run)
+
+
+def test_master_token_login_storage_override_canonicalizes_path(tmp_path, monkeypatch):
+    """#2103: the bootstrap call must honor a canonicalized ``--storage``."""
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    storage = tmp_path / "elsewhere" / "foo.json"
+    storage.parent.mkdir()
+    resolved = storage.resolve()
+    with patch.object(
+        driver,
+        "bootstrap_login",
+        return_value=MasterTokenLoginSuccess(7, resolved),
+    ) as boot:
+        result = CliRunner().invoke(
+            cli,
+            [
+                "login",
+                "--master-token",
+                "--account",
+                "e@x.com",
+                "--oauth-token",
+                "TOK",
+                "--storage",
+                str(storage),
+            ],
+        )
+    assert result.exit_code == 0, result.output
+    assert boot.call_args.args[0].storage_path == resolved
+    assert boot.call_args.kwargs["run_async"] is asyncio.run
+
+
+def test_master_token_refresh_help_marks_forced_route_legacy():
+    result = CliRunner().invoke(cli, ["login", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "Legacy forced re-mint; prefer 'notebooklm auth refresh'." in " ".join(
+        result.output.split()
+    )
 
 
 def test_master_token_requires_account(tmp_path, monkeypatch):
@@ -48,7 +168,12 @@ def test_master_token_requires_account(tmp_path, monkeypatch):
 
 def test_master_token_bootstrap_calls_service(tmp_path, monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
-    with patch.object(mt_service, "bootstrap", new=AsyncMock(return_value=7)) as boot:
+    storage = get_storage_path()
+    with patch.object(
+        driver,
+        "bootstrap_login",
+        return_value=MasterTokenLoginSuccess(7, storage),
+    ) as boot:
         result = CliRunner().invoke(
             cli,
             ["login", "--master-token", "--account", "e@x.com", "--oauth-token", "TOK"],
@@ -56,19 +181,78 @@ def test_master_token_bootstrap_calls_service(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert boot.called
     assert boot.call_args.kwargs["oauth_token"] == "TOK"
+    # #2103 PR-2 D5: android_id resolution moved inside the transaction — the
+    # CLI passes it through as-is (None here, since --android-id wasn't given).
+    assert boot.call_args.args[0].android_id is None
     assert "7 notebooks" in result.output
 
 
 def test_master_token_bootstrap_browser_capture_when_no_oauth(tmp_path, monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+
+    def bootstrap(plan, **kwargs):
+        token = kwargs["oauth_token"] or kwargs["capture_oauth_token"](
+            browser=kwargs["browser"], cdp_url=kwargs["cdp_url"]
+        )
+        assert token == "CAPTOK"
+        return MasterTokenLoginSuccess(3, plan.storage_path)
+
     with (
         patch.object(mt_service, "capture_oauth_token", return_value="CAPTOK") as cap,
-        patch.object(mt_service, "bootstrap", new=AsyncMock(return_value=3)) as boot,
+        patch.object(driver, "bootstrap_login", side_effect=bootstrap) as boot,
     ):
         result = CliRunner().invoke(cli, ["login", "--master-token", "--account", "e@x.com"])
     assert result.exit_code == 0, result.output
     assert cap.called
-    assert boot.call_args.kwargs["oauth_token"] == "CAPTOK"
+    assert boot.call_args.kwargs["oauth_token"] is None
+    assert boot.call_args.kwargs["capture_oauth_token"] is cap
+
+
+@pytest.mark.parametrize(
+    ("browser", "expected_fragment"),
+    [
+        # Playwright's REAL spawn-veto text (utils/processLauncher.js builds
+        # `new Error("Failed to launch: " + error)`), on both the bundled build
+        # and a system channel.
+        ("chromium", "refused to start the browser"),
+        ("chrome", "refused to start the browser"),
+    ],
+)
+@pytest.mark.requires_playwright
+def test_master_token_bootstrap_explains_a_launch_veto(
+    tmp_path, monkeypatch, browser, expected_fragment
+):
+    """`login --master-token` spawns a headed browser, so it hits the same veto.
+
+    docs/troubleshooting.md routes #2004 readers here as a workaround, so this
+    path must not answer with the raw "This may be a bug" handler either.
+    """
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    with patch("playwright.sync_api.sync_playwright") as mock_pw:
+        mock_pw.return_value.__enter__.return_value.chromium.launch.side_effect = Exception(
+            "Failed to launch: Error: spawn UNKNOWN"
+        )
+        result = CliRunner().invoke(
+            cli, ["login", "--master-token", "--account", "e@x.com", "--browser", browser]
+        )
+
+    assert result.exit_code == 1
+    assert expected_fragment in result.output
+    assert "This may be a bug" not in result.output
+
+
+@pytest.mark.requires_playwright
+def test_master_token_bootstrap_reraises_an_unclassified_launch_failure(tmp_path, monkeypatch):
+    """Unrecognized failures must keep propagating rather than get a wrong hint."""
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+    with patch("playwright.sync_api.sync_playwright") as mock_pw:
+        mock_pw.return_value.__enter__.return_value.chromium.launch.side_effect = Exception(
+            "Timeout 30000ms exceeded"
+        )
+        result = CliRunner().invoke(cli, ["login", "--master-token", "--account", "e@x.com"])
+
+    assert result.exit_code == 2
+    assert "This may be a bug" in result.output
 
 
 class _ReachedPlaywright(RuntimeError):
@@ -151,10 +335,15 @@ def test_master_token_refuses_clobber_via_token_owner_only(tmp_path, monkeypatch
 
 def test_master_token_force_overwrites_other_account(tmp_path, monkeypatch):
     _seed_profile_account(monkeypatch, tmp_path, "other@x.com")
-    with patch.object(mt_service, "bootstrap", new=AsyncMock(return_value=4)) as boot:
+    storage = get_storage_path()
+    with patch.object(
+        driver,
+        "bootstrap_login",
+        return_value=MasterTokenLoginSuccess(4, storage),
+    ) as boot:
         result = CliRunner().invoke(
             cli,
             ["login", "--master-token", "--account", "e@x.com", "--oauth-token", "T", "--force"],
         )
     assert result.exit_code == 0, result.output
-    assert boot.call_args.kwargs["force"] is True
+    assert boot.call_args.args[0].force is True

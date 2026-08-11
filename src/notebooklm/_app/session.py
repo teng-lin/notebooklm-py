@@ -269,11 +269,14 @@ class LogoutOutcome:
             this logout (file-based artifacts removed but the env var survives).
         failure: ``None`` on success; a :class:`LogoutFailure` when one of the
             three filesystem steps raised :class:`OSError`.
+        browser_profile_preserved: Existing unowned browser directory skipped
+            by policy, or ``None`` when no browser directory was preserved.
     """
 
     removed_any: bool
     env_auth_remains: bool
     failure: LogoutFailure | None = None
+    browser_profile_preserved: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -301,6 +304,8 @@ class LogoutInputs:
             storage/browser teardown runs.
         env_auth_remains: ``True`` when env-supplied auth survives this logout.
         rmtree: Recursive directory remover (the CLI passes ``shutil.rmtree``).
+        remove_browser_profile: Whether the resolved browser directory is safe
+            to remove. Explicit-storage adapters set this only for owned dirs.
     """
 
     storage_path: Path
@@ -309,18 +314,20 @@ class LogoutInputs:
     context_path: Callable[[], Path]
     env_auth_remains: bool
     rmtree: Callable[[Path], Any]
+    remove_browser_profile: bool = True
 
 
 def execute_logout(inputs: LogoutInputs) -> LogoutOutcome:
     """Execute ``auth logout`` end-to-end as a pure-typed-outcome operation.
 
-    Removes the resolved storage file, the cached browser profile, and the
-    per-context cache file. Returns a :class:`LogoutOutcome` carrying whichever
-    step (if any) raised an :class:`OSError`; the adapter owns all presentation
-    and exit-code policy. The order matches the legacy implementation:
+    Removes the resolved storage file, the cached browser profile when the
+    adapter marks it safe to remove, and the per-context cache file. Returns a
+    :class:`LogoutOutcome` carrying whichever step (if any) raised an
+    :class:`OSError`; the adapter owns all presentation and exit-code policy.
+    The order matches the legacy implementation:
 
     1. Storage file (the credential itself).
-    2. Browser profile (the persistent SSO cache).
+    2. Browser profile (the persistent SSO cache), when enabled.
     3. Context cache (notebook + account routing).
 
     Each step is independent — a failure short-circuits the rest of the pipeline
@@ -335,6 +342,11 @@ def execute_logout(inputs: LogoutInputs) -> LogoutOutcome:
     line on stderr requires.
     """
     removed_any = False
+    browser_profile_preserved = (
+        inputs.browser_profile_dir
+        if not inputs.remove_browser_profile and inputs.browser_profile_dir.exists()
+        else None
+    )
 
     if inputs.storage_path.exists():
         try:
@@ -347,6 +359,7 @@ def execute_logout(inputs: LogoutInputs) -> LogoutOutcome:
             return LogoutOutcome(
                 removed_any=removed_any,
                 env_auth_remains=inputs.env_auth_remains,
+                browser_profile_preserved=browser_profile_preserved,
                 failure=LogoutFailure(
                     kind="storage",
                     path=inputs.storage_path,
@@ -354,7 +367,7 @@ def execute_logout(inputs: LogoutInputs) -> LogoutOutcome:
                 ),
             )
 
-    if inputs.browser_profile_dir.exists():
+    if inputs.remove_browser_profile and inputs.browser_profile_dir.exists():
         try:
             inputs.rmtree(inputs.browser_profile_dir)
             removed_any = True
@@ -367,6 +380,7 @@ def execute_logout(inputs: LogoutInputs) -> LogoutOutcome:
             return LogoutOutcome(
                 removed_any=removed_any,
                 env_auth_remains=inputs.env_auth_remains,
+                browser_profile_preserved=browser_profile_preserved,
                 failure=LogoutFailure(
                     kind="browser_profile",
                     path=inputs.browser_profile_dir,
@@ -395,6 +409,7 @@ def execute_logout(inputs: LogoutInputs) -> LogoutOutcome:
         return LogoutOutcome(
             removed_any=removed_any,
             env_auth_remains=inputs.env_auth_remains,
+            browser_profile_preserved=browser_profile_preserved,
             failure=LogoutFailure(
                 kind="context",
                 path=context_path,
@@ -405,6 +420,7 @@ def execute_logout(inputs: LogoutInputs) -> LogoutOutcome:
     return LogoutOutcome(
         removed_any=removed_any,
         env_auth_remains=inputs.env_auth_remains,
+        browser_profile_preserved=browser_profile_preserved,
         failure=None,
     )
 

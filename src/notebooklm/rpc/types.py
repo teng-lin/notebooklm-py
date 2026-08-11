@@ -75,7 +75,7 @@ class RPCMethod(str, Enum):
     CREATE_NOTEBOOK = "CCqFvf"  # -> CreateProject
     GET_NOTEBOOK = "rLM1Ne"  # -> GetProject
     RENAME_NOTEBOOK = "s0tc2d"  # -> MutateProject (generic notebook mutator; see note below)
-    DELETE_NOTEBOOK = "WWINqb"  # -> DeleteProjects (batch-capable; we send a single id)
+    DELETE_NOTEBOOK = "WWINqb"  # -> DeleteProjects (single id; batch shapes probed & rejected, see _notebooks.delete)
 
     # Source operations
     ADD_SOURCE = "izAoDd"  # -> AddSources (batch-capable; we send a single source)
@@ -91,7 +91,10 @@ class RPCMethod(str, Enum):
     CHECK_SOURCE_FRESHNESS = "yR9Yof"  # -> CheckSourceFreshness
     UPDATE_SOURCE = "b7Wfje"  # -> MutateSource
 
-    # Source label operations (AI topic grouping)
+    # Source label operations (AI topic grouping).
+    # NOTE: account-level *collections* (notebook grouping) reuse these four
+    # methods verbatim — a collection is a type-3 label with a null notebook
+    # parent. See notebooklm._collection.params for the collection wire shapes.
     # -> CreateLabel. Multi-mode: AI auto-group (generate) AND manual create
     CREATE_LABEL = "agX4Bc"
     LIST_LABELS = "I3xc3c"  # -> GetLabels
@@ -107,7 +110,7 @@ class RPCMethod(str, Enum):
     # -> CreateArtifact. Generate any artifact (audio, video, report, quiz, etc.)
     CREATE_ARTIFACT = "R7cb6c"
     LIST_ARTIFACTS = "gArtLc"  # -> ListArtifacts. List all artifacts in a notebook
-    DELETE_ARTIFACT = "V5N4be"  # -> DeleteArtifact
+    DELETE_ARTIFACT = "V5N4be"  # -> DeleteArtifact (single id; batch shapes probed & rejected)
     # -> UpdateArtifact (generic artifact updater; we only set the title)
     RENAME_ARTIFACT = "rc3d8d"
     # -> ExportToDrive (Google Drive only; Docs/Sheets are Drive destinations)

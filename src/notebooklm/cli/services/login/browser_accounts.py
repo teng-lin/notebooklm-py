@@ -47,7 +47,7 @@ from .outcomes import (
 from .rookiepy_errors import _handle_rookiepy_error
 
 if TYPE_CHECKING:
-    from ....auth import Account
+    from ...._app.login_cookie import Account
     from .io_seam import LoginIO
 
 
@@ -67,6 +67,7 @@ def _enumerate_browser_accounts(
     *,
     verbose: bool = True,
     include_domains: set[str] | None = None,
+    validate_before_probe: bool = True,
     io: LoginIO | None = None,
 ) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]] | BrowserCookieOutcome:
     """Read cookies from ``browser_name`` and discover signed-in accounts.
@@ -87,6 +88,9 @@ def _enumerate_browser_accounts(
         include_domains: Forwarded to :func:`_read_browser_cookies` to
             broaden the extraction set with sibling-product cookies. See
             :func:`_parse_include_domains`.
+        validate_before_probe: Run route-aware cookie validation before the
+            account probe when true. ``auth inspect`` disables this so a
+            transport failure keeps its historical precedence.
         io: Optional caller-injected :class:`.io_seam.LoginIO` sink (resolved
             to the command-layer default when ``None``) threaded to the
             chromium / firefox readers for their verbose progress lines.
@@ -108,55 +112,104 @@ def _enumerate_browser_accounts(
         the unknown-browser dispatch); the command layer — or
         ``refresh._exit_on_outcome`` — renders ``outcome.message`` and exits.
     """
-    io = resolve_login_io(io)
-    chromium_profiles = _chromium_profiles_module()
+    resolved_io = chromium_profiles = scoped_chromium = scoped_browser = None
+    profile_selector = scoped_result = profile = raw_cookies = result = profiles = None
+    cookies_result = enum_result = read_scoped = enumerate_jar = fanout = read_browser = None
+    try:
+        resolved_io = resolve_login_io(io)
+        chromium_profiles = _chromium_profiles_module()
+        read_scoped = _read_chromium_profile_cookies_from_selector
+        enumerate_jar = _enumerate_one_jar
+        fanout = _enumerate_chromium_profiles_fanout
+        read_browser = _read_browser_cookies
 
-    scoped_chromium = _split_chromium_profile_browser_spec(browser_name)
-    if scoped_chromium is not None:
-        scoped_browser, profile_selector = scoped_chromium
-        scoped_result = _read_chromium_profile_cookies_from_selector(
-            io,
-            scoped_browser,
-            profile_selector,
-            verbose=verbose,
-            include_domains=include_domains,
-        )
-        if isinstance(scoped_result, BrowserCookieOutcome):
-            return scoped_result
-        profile, raw_cookies = scoped_result
-        result = _enumerate_one_jar(
-            raw_cookies,
-            profile.browser,
-            browser_profile=profile.directory_name,
-            io=io,
-        )
-        if isinstance(result, BrowserCookieOutcome):
-            return result
-        return {profile.directory_name: raw_cookies}, result
-
-    # Chromium multi-profile fan-out — only kicks in when discovery surfaces
-    # >1 populated profile. Single-profile installs and non-chromium browsers
-    # take the legacy path below so all existing rookiepy mocks keep working.
-    if chromium_profiles.is_chromium_browser(browser_name):
-        profiles = chromium_profiles.discover_chromium_profiles(browser_name)
-        if len(profiles) > 1:
-            return _enumerate_chromium_profiles_fanout(
-                io,
-                browser_name,
-                profiles,
+        scoped_chromium = _split_chromium_profile_browser_spec(browser_name)
+        if scoped_chromium is not None:
+            scoped_browser, profile_selector = scoped_chromium
+            scoped_result = read_scoped(
+                resolved_io,
+                scoped_browser,
+                profile_selector,
                 verbose=verbose,
                 include_domains=include_domains,
             )
+            if isinstance(scoped_result, BrowserCookieOutcome):
+                return scoped_result
+            profile, raw_cookies = scoped_result
+            result = enumerate_jar(
+                raw_cookies,
+                profile.browser,
+                browser_profile=profile.directory_name,
+                validate_before_probe=validate_before_probe,
+                io=resolved_io,
+            )
+            if isinstance(result, BrowserCookieOutcome):
+                return result
+            return {profile.directory_name: raw_cookies}, result
 
-    cookies_result = _read_browser_cookies(
-        browser_name, verbose=verbose, include_domains=include_domains, io=io
+        if chromium_profiles.is_chromium_browser(browser_name):
+            profiles = chromium_profiles.discover_chromium_profiles(browser_name)
+            if len(profiles) > 1:
+                return fanout(
+                    resolved_io,
+                    browser_name,
+                    profiles,
+                    verbose=verbose,
+                    include_domains=include_domains,
+                    validate_before_probe=validate_before_probe,
+                )
+
+        cookies_result = read_browser(
+            browser_name,
+            verbose=verbose,
+            include_domains=include_domains,
+            io=resolved_io,
+        )
+        if isinstance(cookies_result, BrowserCookieOutcome):
+            return cookies_result
+        enum_result = enumerate_jar(
+            cookies_result,
+            browser_name,
+            browser_profile=None,
+            validate_before_probe=validate_before_probe,
+            io=resolved_io,
+        )
+        if isinstance(enum_result, BrowserCookieOutcome):
+            return enum_result
+        return {None: cookies_result}, enum_result
+    finally:
+        del browser_name, verbose, include_domains, validate_before_probe, io
+        del resolved_io, chromium_profiles, scoped_chromium, scoped_browser, profile_selector
+        del scoped_result, profile, raw_cookies, result, profiles, cookies_result, enum_result
+        del read_scoped, enumerate_jar, fanout, read_browser
+
+
+def _inspect_browser_accounts(
+    browser_name: str,
+    *,
+    verbose: bool = True,
+    include_domains: set[str] | None = None,
+    io: LoginIO | None = None,
+) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]] | BrowserCookieOutcome:
+    """``auth inspect`` variant of :func:`_enumerate_browser_accounts`.
+
+    Identical except that it probes before validating the local cookie set.
+    ``auth inspect`` is a diagnostic: when the network is down, "could not
+    reach Google" is the honest answer, and reporting a cookie-validation
+    failure instead would blame the profile for an unrelated outage. The
+    login/refresh paths keep validate-then-probe, so a heal can still repair
+    the set before the probe that depends on it.
+
+    Lives here rather than at the command so ``session_cmd`` states which
+    flow it wants, not how the flag is spelled.
+    """
+    return _enumerate_browser_accounts(
+        browser_name,
+        verbose=verbose,
+        include_domains=include_domains,
+        validate_before_probe=False,
+        io=io,
     )
-    if isinstance(cookies_result, BrowserCookieOutcome):
-        return cookies_result
-    enum_result = _enumerate_one_jar(cookies_result, browser_name, browser_profile=None, io=io)
-    if isinstance(enum_result, BrowserCookieOutcome):
-        return enum_result
-    return {None: cookies_result}, enum_result
 
 
 def _read_browser_cookies(

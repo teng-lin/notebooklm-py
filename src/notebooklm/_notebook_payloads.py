@@ -15,8 +15,8 @@ from .rpc import nest_source_ids
 
 # The required ``C0`` "mode/surface" enum (field 4 of the SUGGEST_PROMPTS request).
 # ``0`` / omitted -> gRPC INTERNAL; ``1..10`` return a populated suggestion list;
-# ``11+`` -> INTERNAL. Two complementary LIVE investigations characterize it — full
-# map + method in ``docs/notes/otmp3b-suggest-modes.md``:
+# ``11+`` -> INTERNAL. Two complementary LIVE investigations characterize it; the
+# full map and the method each was established by are inlined below:
 #
 # SURFACE axis (#1726, headless-browser + real web captures, 2026-07-01): each studio
 # Customize dialog SENDS a specific mode for its format's prompt suggestions.

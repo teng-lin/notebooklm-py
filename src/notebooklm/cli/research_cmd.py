@@ -130,6 +130,24 @@ def _render_status_result(result: ResearchStatusResult) -> None:
         console.print("\n[dim]Use 'research wait --import-all' to import sources[/dim]")
     else:
         console.print(f"[yellow]Status: {result.status}[/yellow]")
+        # A terminal run that found nothing is not a broken run — say which it
+        # was and what to do next (issue #1964). ``--json`` output is
+        # deliberately untouched: it emits the byte-stable
+        # ``ResearchTask.to_public_dict()`` payload, the same reason
+        # ``status_code`` was kept out of it in #1922.
+        _print_failure_reason(result.reason_message, result.hint)
+
+
+def _print_failure_reason(reason_message: str | None, hint: str | None) -> None:
+    """Print the differentiated termination reason + remediation, when present.
+
+    Shared by the ``research status`` / ``research wait`` text renderers so the
+    two cannot drift in how they explain a non-success run (issue #1964).
+    """
+    if reason_message:
+        console.print(reason_message)
+    if hint:
+        console.print(f"[dim]{hint}[/dim]")
 
 
 @research.command("cancel")
@@ -292,12 +310,20 @@ def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> N
                 failed_payload["sources_found"] = result.sources_count
             if result.report:
                 failed_payload["report"] = result.report
+            # Unlike ``research status --json`` (byte-stable public dict), this
+            # payload is CLI-owned, so the reason travels on the machine
+            # surface too (issue #1964).
+            if result.reason_message:
+                failed_payload["reason_message"] = result.reason_message
+            if result.hint:
+                failed_payload["hint"] = result.hint
             json_output_response(failed_payload)
         else:
             if result.query:
                 console.print(f"[red]Research failed:[/red] {result.query}")
             else:
                 console.print("[red]Research failed[/red]")
+            _print_failure_reason(result.reason_message, result.hint)
         exit_with_code(1)
 
     # outcome == "completed"

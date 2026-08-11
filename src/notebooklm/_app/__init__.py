@@ -69,6 +69,18 @@ from .chat import (
     save_answer_as_note,
     validate_ask_flags,
 )
+from .collections import (
+    CollectionMembershipResult,
+    CollectionResolutionError,
+    execute_collection_add_notebooks,
+    execute_collection_create,
+    execute_collection_delete,
+    execute_collection_list,
+    execute_collection_notebooks,
+    execute_collection_remove_notebooks,
+    execute_collection_rename,
+    resolve_collection_id,
+)
 from .doctor import DoctorPaths, DoctorReport, run_checks
 from .download import (
     FORMAT_EXTENSIONS,
@@ -346,6 +358,17 @@ __all__ = [
     "generate_with_retry",
     "generation_outcome_from_status",
     "handle_generation_result",
+    # collections
+    "CollectionMembershipResult",
+    "CollectionResolutionError",
+    "execute_collection_add_notebooks",
+    "execute_collection_create",
+    "execute_collection_delete",
+    "execute_collection_list",
+    "execute_collection_notebooks",
+    "execute_collection_remove_notebooks",
+    "execute_collection_rename",
+    "resolve_collection_id",
     # labels
     "LabelGenerateResult",
     "LabelMembershipResult",

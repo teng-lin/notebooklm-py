@@ -76,6 +76,7 @@ __all__ = [
     "ValidationError",
     "ConfigurationError",
     "MissingDependencyError",
+    "LockUnavailableError",
     # Headless re-auth (layer-3 auth recovery)
     "HeadlessReauthError",
     "HeadlessLoginRequiredError",
@@ -133,6 +134,9 @@ __all__ = [
     # Domain: Source labels
     "LabelError",
     "LabelNotFoundError",
+    # Domain: Collections
+    "CollectionError",
+    "CollectionNotFoundError",
 ]
 
 
@@ -257,6 +261,27 @@ class MissingDependencyError(ConfigurationError):
     :func:`notebooklm._app.errors.classify` routes it to the more specific
     ``DEPENDENCY`` category so adapters surface an *install the extra* hint rather
     than the auth/storage one (#1959).
+    """
+
+
+class LockUnavailableError(NotebookLMError, TimeoutError):
+    """The canonical ``storage_state.json`` lock could not be acquired.
+
+    Raised by the fail-closed storage writers (account-metadata and master-token
+    persistence in :mod:`notebooklm._auth.storage`) when the unified
+    storage-sentinel lock stays unavailable for the whole bounded acquire window
+    (default 90 s) — either sustained contention or an infrastructure failure
+    (read-only directory, NFS without flock support, fd exhaustion). See
+    ADR-0029.
+
+    It mixes in the built-in :class:`TimeoutError` (itself an :class:`OSError`),
+    exactly mirroring the ``filelock.Timeout`` MRO it replaces, so existing
+    ``except OSError`` / ``except TimeoutError`` arms around those writers keep
+    catching a lock failure unchanged (the 10 s→90 s bound and the type change
+    are the only observable differences). It is also a :class:`NotebookLMError`,
+    so it is catchable via the library umbrella and
+    :func:`notebooklm._app.errors.classify` folds it into the ``LIBRARY``
+    category (rendered as ``NOTEBOOKLM_ERROR`` by the CLI/MCP/server adapters).
     """
 
 
@@ -1519,6 +1544,56 @@ class LabelNotFoundError(NotFoundError, RPCError, LabelError):
         self.label_id = label_id
         super().__init__(
             f"Label not found: {label_id}",
+            method_id=method_id,
+            raw_response=raw_response,
+        )
+
+
+# =============================================================================
+# Domain: Collections (account-level notebook groups)
+# =============================================================================
+
+
+class CollectionError(NotebookLMError):
+    """Base for collection operations.
+
+    Gives the collection domain a catchable base mirroring :class:`LabelError`
+    (collections are the account-level sibling of source labels).
+    :class:`CollectionNotFoundError` inherits from it.
+    """
+
+
+class CollectionNotFoundError(NotFoundError, RPCError, CollectionError):
+    """Collection not found in the account.
+
+    Raised by ``client.collections.get`` and the collection mutation paths
+    (``rename`` / ``add_notebooks`` / ``remove_notebooks`` / ``notebooks``) on a
+    missing target. Absence is detected via a collection list lookup, not a
+    transport 404 (the ``LIST_LABELS`` payload simply omits the id). The
+    idempotent ``delete`` interprets the same absence as a no-op returning
+    ``None`` (ADR-0019); ``get_or_none`` returns ``None``.
+
+    Inherits from :class:`NotFoundError` (cross-domain umbrella),
+    :class:`RPCError` (transport-level catchability), and :class:`CollectionError`
+    (domain base), mirroring :class:`LabelNotFoundError`.
+
+    Attributes:
+        collection_id: The ID that was not found.
+        method_id: The RPC method ID (inherited from :class:`RPCError`).
+        raw_response: First 80 chars of the raw response, if any
+            (``NOTEBOOKLM_DEBUG=1`` preserves the full body).
+    """
+
+    def __init__(
+        self,
+        collection_id: str,
+        *,
+        method_id: str | None = None,
+        raw_response: str | None = None,
+    ):
+        self.collection_id = collection_id
+        super().__init__(
+            f"Collection not found: {collection_id}",
             method_id=method_id,
             raw_response=raw_response,
         )

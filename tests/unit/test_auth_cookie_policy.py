@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 import pytest
 
+from notebooklm._auth.cookie_policy import _has_valid_secondary_binding
 from notebooklm._auth.cookies import load_httpx_cookies
 from notebooklm._auth.storage import save_cookies_to_storage, snapshot_cookie_jar
 from notebooklm.auth import (
@@ -324,19 +325,14 @@ class TestIsAllowedAuthDomain:
         assert _is_allowed_auth_domain(".not-google.com.sg") is False
         assert _is_allowed_auth_domain(".google.zz") is False  # Invalid ccTLD
 
-    def test_requires_leading_dot_for_regional(self):
-        """Test regional domains require leading dot.
-
-        Regional ccTLDs like ``google.com.sg`` (no leading dot) are not in
-        ALLOWED_COOKIE_DOMAINS and are not accepted by ``_is_google_domain``
-        (which requires the leading dot for regional patterns) or by the
-        suffix paths (which require the leading-dot suffix).
-        """
+    def test_accepts_host_scoped_regional_domains(self):
+        """Host-only regional roots and subdomains follow the trusted-root policy."""
         from notebooklm.auth import _is_allowed_auth_domain
 
-        assert _is_allowed_auth_domain("google.com.sg") is False
-        assert _is_allowed_auth_domain("google.co.uk") is False
-        assert _is_allowed_auth_domain("google.de") is False
+        assert _is_allowed_auth_domain("google.com.sg") is True
+        assert _is_allowed_auth_domain("accounts.google.com.hk") is True
+        assert _is_allowed_auth_domain("lh3.google.co.uk") is True
+        assert _is_allowed_auth_domain("google.de") is True
 
 
 class TestAuthDomainPriority:
@@ -348,8 +344,10 @@ class TestAuthDomainPriority:
             (".google.com", 4),
             (".notebooklm.google.com", 3),
             (".notebooklm.cloud.google.com", 3),
+            (".notebook.google.com", 3),
             ("notebooklm.google.com", 2),
             ("notebooklm.cloud.google.com", 2),
+            ("notebook.google.com", 2),
             (".google.de", 1),
             (".google.com.sg", 1),
             (".google.co.uk", 1),
@@ -363,8 +361,15 @@ class TestAuthDomainPriority:
 
         assert _auth_domain_priority(domain) == expected
 
-    def test_priority_strict_ordering(self):
-        """Higher tiers strictly outrank lower tiers — no ties between named tiers."""
+    def test_priority_ordering_within_this_sample(self):
+        """These five domains descend strictly — but that is a fact about the sample.
+
+        It holds exactly one domain per tier, so of course no two tie. Read as
+        the general "no ties between named tiers" guarantee its old name
+        claimed, it would be false: tiers 3, 2 and 0 are each shared by several
+        domains (see ``test_named_tiers_are_shared_not_unique``). Renamed in
+        #2054 to say what it can actually check.
+        """
         from notebooklm.auth import _auth_domain_priority
 
         priorities = [
@@ -376,6 +381,65 @@ class TestAuthDomainPriority:
         ]
         assert priorities == sorted(priorities, reverse=True)
         assert len(set(priorities)) == len(priorities)
+
+    def test_gemini_notebook_rebrand_host_matches_app_host_tiers(self):
+        """The Gemini Notebook rebrand host ``notebook.google.com`` shares the
+        same priority tiers as the legacy ``notebooklm.google.com`` host so a
+        same-name cookie (e.g. ``OSID``) set on either resolves consistently.
+
+        See issue #2013 / the July 2026 NotebookLM -> Gemini Notebook rebrand:
+        Google now sets the per-product binding cookies (``OSID``,
+        ``__Secure-OSID``) on ``notebook.google.com`` in addition to
+        ``notebooklm.google.com``. The dotted and bare variants must mirror
+        the legacy host's tier split (3 / 2) so neither host is ranked below
+        the other at load time.
+
+        Note what the equality does **not** buy: because the tiers are equal
+        rather than ordered, a name carried by both hosts with different values
+        — the ordinary post-rebrand state for ``OSID`` — resolves by
+        ``storage_state`` iteration order, not by host. This docstring described
+        the equality as preventing starvation until #2054; measurement showed
+        the tie is itself the ambiguity, and #2057 removed the ranking from the
+        PSIDTS gate rather than re-ordering these tiers.
+        """
+        from notebooklm.auth import _auth_domain_priority
+
+        assert _auth_domain_priority(".notebook.google.com") == _auth_domain_priority(
+            ".notebooklm.google.com"
+        )
+        assert _auth_domain_priority("notebook.google.com") == _auth_domain_priority(
+            "notebooklm.google.com"
+        )
+
+    def test_named_tiers_are_shared_not_unique(self):
+        """Several *named* domains share a tier, so ranking cannot disambiguate them.
+
+        Pinned because three docstrings and a comment claimed the opposite until
+        #2054/#2057, and code was written trusting them. If a future change ever
+        makes the tiers a total order this fails — which is the moment to ask
+        whether the remaining callers still need a global winner, not to update
+        the expected numbers.
+        """
+        from notebooklm.auth import _auth_domain_priority
+
+        assert (
+            _auth_domain_priority(".notebooklm.google.com")
+            == _auth_domain_priority(".notebook.google.com")
+            == _auth_domain_priority(".notebooklm.cloud.google.com")
+        )
+        assert (
+            _auth_domain_priority("notebooklm.google.com")
+            == _auth_domain_priority("notebook.google.com")
+            == _auth_domain_priority("notebooklm.cloud.google.com")
+        )
+        # Tier 0 is a catch-all holding the sign-in host that the PSIDTS
+        # rotation POST targets -- ranked below hosts it never reaches, which
+        # is why #2057 replaced that gate's ranking with RFC 6265 routing.
+        assert (
+            _auth_domain_priority("accounts.google.com")
+            == _auth_domain_priority("myaccount.google.com")
+            == _auth_domain_priority("drive.google.com")
+        )
 
 
 class TestIsAllowedCookieDomainRegional:
@@ -627,6 +691,7 @@ class TestLoadHttpxCookiesRegional:
                 {"name": "SID", "value": "sid_from_uk", "domain": ".google.co.uk"},
                 {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.co.uk"},
                 {"name": "HSID", "value": "hsid_val", "domain": ".google.co.uk"},
+                {"name": "__Secure-1PSIDTS", "value": "routed_1psidts", "domain": ".google.com"},
             ]
         }
 
@@ -643,6 +708,7 @@ class TestLoadHttpxCookiesRegional:
             "cookies": [
                 {"name": "SID", "value": "sid_de", "domain": ".google.de"},
                 {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.de"},
+                {"name": "__Secure-1PSIDTS", "value": "routed_1psidts", "domain": ".google.com"},
             ]
         }
         storage_file = tmp_path / "storage.json"
@@ -1385,3 +1451,60 @@ class TestAllowedCookieDomains:
 # =============================================================================
 # REGIONAL GOOGLE DOMAIN TESTS (Issue #20 fix)
 # =============================================================================
+
+
+class TestSecondaryBindingRequiresLsidWithoutOsid:
+    """The XSSI branch also needs bare ``LSID`` (#1977).
+
+    Three-way ablation on two unrelated live accounts, 2026-08-04. The original
+    pair-wise ablation only varied ``OSID`` and the ``APISID``/``SAPISID`` pair;
+    those two are ``.google.com``-scoped so they survived every domain filter,
+    which left the XSSI branch never tested without them and hid the ``LSID``
+    dependency.
+    """
+
+    def test_osid_alone_is_sufficient(self) -> None:
+        """Row 1: verified with every accounts.google.com cookie stripped."""
+        assert _has_valid_secondary_binding({"OSID"})
+
+    def test_osid_wins_without_lsid(self) -> None:
+        """``LSID`` is required only when ``OSID`` is absent, never alongside it."""
+        assert _has_valid_secondary_binding({"OSID", "APISID", "SAPISID"})
+
+    def test_xssi_pair_with_lsid_is_sufficient(self) -> None:
+        assert _has_valid_secondary_binding({"APISID", "SAPISID", "LSID"})
+
+    def test_xssi_pair_without_lsid_is_rejected(self) -> None:
+        """The row this predicate used to get wrong: reported valid, failed live."""
+        assert not _has_valid_secondary_binding({"APISID", "SAPISID"})
+
+    def test_host_prefixed_lsid_does_not_substitute(self) -> None:
+        """``__Host-1PLSID``/``__Host-3PLSID`` are not interchangeable with bare ``LSID``."""
+        assert not _has_valid_secondary_binding(
+            {"APISID", "SAPISID", "__Host-1PLSID", "__Host-3PLSID"}
+        )
+
+    def test_lsid_alone_is_not_sufficient(self) -> None:
+        """Without ``OSID`` *or* the XSSI pair, ``LSID`` on its own does not bind."""
+        assert not _has_valid_secondary_binding({"LSID"})
+
+
+class TestBindingDiagnosticsNameLsid:
+    """Every strict-binding diagnostic must name ``LSID`` (#1977 review).
+
+    The predicate and the messages drifted apart once already: the rule gained
+    its ``LSID`` conjunct while the hints still told users ``APISID``+``SAPISID``
+    was enough, which is advice that walks them back into the same failure.
+    """
+
+    def test_missing_binding_hint_names_lsid(self) -> None:
+        from notebooklm._auth.cookie_policy import missing_cookies_hint
+
+        hint = missing_cookies_hint({"SID", "__Secure-1PSIDTS"}, browser_label="chrome")
+        assert "LSID" in hint
+
+    def test_missing_binding_and_psidts_hint_names_lsid(self) -> None:
+        from notebooklm._auth.cookie_policy import missing_cookies_hint
+
+        hint = missing_cookies_hint({"SID"}, browser_label="chrome")
+        assert "LSID" in hint

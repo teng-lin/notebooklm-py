@@ -41,7 +41,7 @@ from notebooklm import NotebookLMClient, ReportFormat
 
 # type -> (download attribute name, default output extension, default timeout seconds)
 _ARTIFACT_SPECS: dict[str, tuple[str, str, float]] = {
-    "audio": ("download_audio", ".mp3", 1200.0),
+    "audio": ("download_audio", ".m4a", 1200.0),
     "video": ("download_video", ".mp4", 1800.0),
     "cinematic-video": ("download_video", ".mp4", 3600.0),
     "report": ("download_report", ".md", 300.0),

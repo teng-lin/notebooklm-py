@@ -63,7 +63,7 @@ An opt-in single-tenant REST server (`server` extra, console script `notebooklm-
 
 ## Testing
 
-Unit (`tests/unit/`, no network; includes `_app`, CLI, server, and guardrail tests) · integration (`tests/integration/`, VCR cassette replay) · e2e (`tests/e2e/`, real API, `@pytest.mark.e2e`). VCR cassettes match on `rpcids` + decoded body shape. Details: [docs/development.md](docs/development.md).
+Unit (`tests/unit/`, no network; includes `_app`, CLI, server, and guardrail tests) · integration (`tests/integration/`, VCR cassette replay) · e2e (`tests/e2e/`, real API, `@pytest.mark.e2e`). VCR cassettes match on the full tuple `["method", "scheme", "host", "port", "path", "rpcids", "freq"]` (`tests/vcr_config.py`) — note that `host` is part of the match, so replay is pinned to the host a cassette was recorded against, and `freq` compares the decoded `f.req` form body. Details: [docs/development.md](docs/development.md).
 
 ## Docs
 

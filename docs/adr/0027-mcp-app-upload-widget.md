@@ -52,9 +52,19 @@ tool-count / schema-char budgets) unless a deployment enables it.
 - The `ui.domain` gate is computed per-process from the public URL; a deployment behind a
   different URL than configured will not render (fails closed, silently — the link flow remains).
 - CORS on `/files/ul` is now permissive-origin; acceptable given token-only auth.
-- Follow-ups (not in the first cut): a progress bar, the fallback ladder
-  (`window.openai.uploadFile` → direct-PUT → link), and auto-wiring `await_upload` so the model
-  confirms the add without a second prompt.
+- **Auto-confirm without a second prompt (#1891).** The upload completes client-side, in a later
+  turn, *after* `source_add_widget` has already returned (the host renders the widget from the tool
+  result, so the tool cannot block-and-wait) — there is no active model turn when a file lands. So
+  the confirmation must be *triggered by the widget*, not the tool. `source_add_widget` returns a
+  machine-readable `confirm: {tool: "await_upload", arg: "upload_link", values: upload_urls}`
+  contract, and on each successful `/files/ul` POST the widget invokes it host-appropriately —
+  `window.openai.callTool` on ChatGPT, a `tools/call` postMessage on claude.ai — passing the link it
+  just uploaded to. The host runs `await_upload`, whose result flows to the model as confirmation.
+  Purely additive and best-effort: a host that does not run a widget-initiated call simply leaves
+  the model on the manual `await_upload` / `source_list` fallback. The exact claude.ai widget→host
+  invocation shape is host-specific and undocumented, so it is verified live, not headlessly.
+- Follow-ups still deferred: a progress bar and the fallback ladder
+  (`window.openai.uploadFile` → direct-PUT → link).
 - **Requires stateless HTTP.** An MCP-Apps host reads the `ui://` widget resource on a connection
   without the chat `Mcp-Session-Id`; a stateful FastMCP server rejects that ("Missing session ID"
   → "fail to fetch app content"). Enabling the widget therefore auto-enables

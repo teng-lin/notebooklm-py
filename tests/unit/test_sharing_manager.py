@@ -9,7 +9,7 @@ from notebooklm._sharing_manager import ShareManager, build_share_url
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.fake_core import make_fake_core
 
-BASE_URL = "https://notebooklm.google.com"
+BASE_URL = "https://notebook.google.com"
 
 
 def _make_rpc() -> AsyncMock:
@@ -23,13 +23,13 @@ def _make_manager() -> tuple[ShareManager, AsyncMock]:
 
 
 def test_build_share_url_without_artifact() -> None:
-    assert build_share_url(BASE_URL, "nb_123") == "https://notebooklm.google.com/notebook/nb_123"
+    assert build_share_url(BASE_URL, "nb_123") == "https://notebook.google.com/notebook/nb_123"
 
 
 def test_build_share_url_with_artifact() -> None:
     assert (
         build_share_url(BASE_URL, "nb_123", "art_456")
-        == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
+        == "https://notebook.google.com/notebook/nb_123?artifactId=art_456"
     )
 
 
@@ -58,7 +58,7 @@ async def test_share_public_with_artifact_sends_legacy_payload_and_returns_deep_
 
     assert result == {
         "public": True,
-        "url": "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456",
+        "url": "https://notebook.google.com/notebook/nb_123?artifactId=art_456",
         "artifact_id": "art_456",
     }
     rpc.assert_awaited_once_with(
@@ -77,7 +77,7 @@ async def test_share_public_without_artifact_returns_notebook_url() -> None:
 
     assert result == {
         "public": True,
-        "url": "https://notebooklm.google.com/notebook/nb_123",
+        "url": "https://notebook.google.com/notebook/nb_123",
         "artifact_id": None,
     }
     rpc.assert_awaited_once_with(
@@ -123,7 +123,7 @@ def test_get_share_url_is_sync_and_does_not_call_rpc() -> None:
 
     url = manager.get_share_url("nb_123", artifact_id="art_456")
 
-    assert url == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
+    assert url == "https://notebook.google.com/notebook/nb_123?artifactId=art_456"
     rpc.assert_not_called()
 
 
@@ -148,7 +148,7 @@ async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_
 
     result = await api._share_manager.share("nb_123", public=True, artifact_id="art_456")
 
-    assert result["url"] == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
+    assert result["url"] == "https://notebook.google.com/notebook/nb_123?artifactId=art_456"
     replacement_rpc.assert_awaited_once_with(
         RPCMethod.SHARE_ARTIFACT,
         [[1], "nb_123", "art_456"],

@@ -26,6 +26,13 @@ shrink:
 3. **No stale entries.** Every baselined path must still exist; a rename or
    delete must update the baseline.
 
+The baseline has since **drained to zero**: all 52 originally-pinned files
+migrated to a sanctioned seam, so ``STRING_PATCH_CEILINGS`` is empty and rule
+(1)'s zero budget applies to *every* file — the shrink-only ratchet has become
+a flat ban. ``test_ceilings_stay_empty`` keeps it that way: rules (1)-(3) are
+all satisfied by re-adding a file at its current count, so without that guard
+the reclaimed ground could be re-accreted one re-baseline at a time.
+
 Scope: string-target ``patch("notebooklm…")`` forms only (bare ``patch(``,
 ``mock.patch(`` / ``unittest.mock.patch(``, the ``target=`` keyword spelling,
 and string-literal prefixes, including multi-line forms). ``patch.object`` is
@@ -90,15 +97,18 @@ _PATTERN_STRING_PATCH = re.compile(
     r"(?<![\w.])(?:[\w]+\.)*patch\(\s*(?:target\s*=\s*)?[rRfFuUbB]*[\"']notebooklm\."
 )
 
-# Every test file with at least one string-target ``patch("notebooklm…")``
-# site, pinned at its MEASURED count (2026-06-10 baseline: 52 files, 768
-# sites). Paths are POSIX-relative to the repository root. The map can only
-# shrink (entries removed as files reach zero) and ceilings can only tighten.
+# Per-file ceilings on string-target ``patch("notebooklm…")`` sites — DRAINED
+# TO ZERO. The 2026-06-10 baseline pinned 52 files at their MEASURED counts
+# (768 sites total), keyed by POSIX-relative repository path, and could only
+# shrink. Every one of those files has since migrated to a sanctioned seam, so
+# the map is **empty** and the unbaselined-file budget of zero now applies
+# everywhere: the ratchet has become a flat ban on string-target patches
+# anywhere under ``tests/``.
 #
-# DO NOT raise a ceiling or add an entry to make room for a new string patch —
-# use ``patch.object`` on a PUBLIC attribute of a locally-imported alias, or
+# The map MUST stay empty (:func:`test_ceilings_stay_empty`). DO NOT add an
+# entry or raise a ceiling to make room for a new string patch — use
+# ``patch.object`` on a PUBLIC attribute of a locally-imported alias, or
 # constructor injection via ``tests/_fixtures/make_fake_core(...)``.
-# DO lower a ceiling when a file sheds sites (the gate prints the value).
 STRING_PATCH_CEILINGS: dict[str, int] = {}
 
 # Shared remediation tail for the growth-side failures: the gate must steer
@@ -225,6 +235,24 @@ def test_ceilings_have_no_stale_entries() -> None:
     assert missing == [], (
         "STRING_PATCH_CEILINGS entries point at files that no longer exist in "
         f"the scanned tests tree (renamed or deleted). Remove them: {missing}"
+    )
+
+
+def test_ceilings_stay_empty() -> None:
+    """Hardening guard: the ceiling map drained to zero and must stay empty.
+
+    The three checks above do not lock the drain in. Re-adding an entry at a
+    file's *current* site count satisfies all of them simultaneously — not
+    grown (count == ceiling), not slack (count == ceiling), not stale (the path
+    exists) — so a contributor blocked by the growth gate could re-baseline
+    their file in the same PR and keep CI green. Pinning the map at ``{}``
+    closes that path: reclaimed ground stays reclaimed.
+    """
+    assert STRING_PATCH_CEILINGS == {}, (
+        "STRING_PATCH_CEILINGS drained to zero and must stay empty — every "
+        "file's budget is zero. Re-baselining a file is NOT the fix for a "
+        "growth-gate failure. " + _REMEDIATION + f"\n\nUnexpected entries: "
+        f"{STRING_PATCH_CEILINGS}"
     )
 
 

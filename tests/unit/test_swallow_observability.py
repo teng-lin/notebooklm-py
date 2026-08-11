@@ -77,6 +77,52 @@ async def test_get_source_ids_happy_path_no_warning(caplog):
     assert warnings == []
 
 
+@pytest.mark.asyncio
+async def test_get_source_ids_empty_notebook_emits_no_drift_warning(caplog):
+    """An empty notebook elides the sources slot — a valid empty state, not drift (#2131).
+
+    Live shape on a freshly created, genuinely empty notebook: the envelope is
+    healthy (the observed report was ``len=11``) but ``notebook_info[1]`` is
+    ``None`` rather than ``[]``. Warning here fires on every empty notebook and
+    erodes the one signal that must stay trustworthy — ``schema drift?`` is how
+    an operator learns the positional payload shape really did change.
+    """
+    from notebooklm._notebooks import NotebooksAPI
+    from tests._fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(rpc_call=AsyncMock(return_value=[[None] * 11]))
+    api = NotebooksAPI(core)
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm"):
+        result = await api.get_source_ids("nb_empty")
+
+    assert result == []
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
+@pytest.mark.asyncio
+async def test_get_source_ids_warns_when_the_sources_slot_is_absent(caplog):
+    """An *absent* sources slot is drift; only a present-and-null one is empty (#2131).
+
+    Pins the boundary the carve-out must not cross. ``[[None]]`` is too short to
+    hold slot 1 at all — a truncated envelope, not an empty notebook, whose
+    reported shape carries a full ``len=11``. Written because the obvious
+    implementation ("return quietly whenever the slot expression is ``None``")
+    folds this case in and silently drops the warning it used to emit.
+    """
+    from notebooklm._notebooks import NotebooksAPI
+    from tests._fixtures.fake_core import make_fake_core
+
+    core = make_fake_core(rpc_call=AsyncMock(return_value=[[None]]))
+    api = NotebooksAPI(core)
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm"):
+        result = await api.get_source_ids("nb_short")
+
+    assert result == []
+    assert any("schema drift" in r.message and "nb_short" in r.message for r in caplog.records)
+
+
 def test_qa_pairs_raises_on_unguarded_shape():
     """_chat/api.py: QA-pair parser raises when next_turn[4] is not indexable.
 
@@ -192,20 +238,29 @@ def test_auth_corrupt_legacy_context_does_not_block_in_band_write(tmp_path):
     """auth.py — corrupt legacy ``context.json`` no longer blocks account writes.
 
     Pre-P1-20, account metadata was written into ``context.json`` itself, so
-    a corrupt file there had to be recoverable inline. P1-20 moves the write
+    a corrupt file there had to be recoverable inline. P1-20 moved the write
     target into ``storage_state.json`` under the ``notebooklm`` namespace key,
-    so a corrupt sibling ``context.json`` is now irrelevant to the write
-    path — it's only consulted by the read fallback and skipped on
-    JSONDecodeError. This test pins the new contract: the in-band write
-    completes successfully even when the legacy sibling is unreadable.
+    so a corrupt sibling ``context.json`` is irrelevant to the write path.
+
+    Since the master-token-relocation PR-0 (#2103), ``read_account_metadata``
+    no longer returns a raw pass-through of the legacy sibling — closing the
+    wrong-account hazard a missed legacy ``authuser`` created. The sole
+    remaining legacy consumer, ``promote_legacy_account`` (called from
+    ``read_account_metadata`` itself whenever in-band is absent), independently
+    skips a malformed sibling on ``JSONDecodeError`` (same corruption tolerance
+    ``_read_legacy_account`` always had) rather than raising. This test pins
+    that the in-band write completes successfully even when the legacy sibling
+    is unreadable, and that promotion does not touch (let alone repair) a file
+    it cannot parse.
     """
     import json as _json
 
     import notebooklm.auth as auth
+    from notebooklm._auth.storage import promote_legacy_account
 
     storage = tmp_path / "storage.json"
     storage.write_text("{}")
-    ctx_path = auth._account_context_path(storage)
+    ctx_path = storage.with_name("context.json")
     ctx_path.write_text("{ malformed ")
 
     auth.write_account_metadata(storage, authuser=0, email=None)
@@ -213,9 +268,12 @@ def test_auth_corrupt_legacy_context_does_not_block_in_band_write(tmp_path):
     # The in-band record landed in storage_state.json.
     storage_data = _json.loads(storage.read_text(encoding="utf-8"))
     assert storage_data["notebooklm"]["account"]["authuser"] == 0
-    # The corrupt legacy file is untouched (we don't try to recover what we
-    # no longer write to) — readers' fallback path silently treats it as
-    # empty via the ``read_account_metadata`` corruption-tolerance branch.
+    # The corrupt legacy file is untouched by the write path.
+    assert ctx_path.read_text(encoding="utf-8") == "{ malformed "
+
+    # Promotion (the sole remaining legacy consumer) also tolerates it: no
+    # raise, and — since in-band already has a record — nothing to promote.
+    assert promote_legacy_account(storage) is False
     assert ctx_path.read_text(encoding="utf-8") == "{ malformed "
 
 

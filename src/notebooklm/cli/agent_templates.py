@@ -1,8 +1,15 @@
 """Shared agent instruction loading helpers."""
 
 from importlib import resources
-from importlib.abc import Traversable
 from pathlib import Path
+
+try:
+    # Python 3.11+: the documented home; `importlib.abc.Traversable` is a
+    # deprecated alias here and is removed entirely in 3.14.
+    from importlib.resources.abc import Traversable
+except ImportError:
+    # Python 3.10: `importlib.resources.abc` doesn't exist yet.
+    from importlib.abc import Traversable
 
 AGENT_TEMPLATE_FILES = {
     "claude": "skill/SKILL.md",

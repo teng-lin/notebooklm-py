@@ -2,11 +2,9 @@
 
 Adapters over the transport-neutral generate / download / artifacts cores and
 the public ``client.artifacts`` namespace. The generation-kind defaults / option
-choices and the download specs are rebuilt here from the neutral ``_app``
-registries (``_app.generate_plans.GenerationKind`` + ``build_generation_plan``;
-``_app.download.DownloadTypeSpec``) — never imported from the CLI's
-``cli/_download_specs.py`` (which this layer must not touch) nor from the MCP
-adapter's own re-derivation.
+choices come from the neutral generation core, and download specs are consumed
+directly from the canonical ``_app.download_specs`` registry — never imported
+from another adapter.
 
 Generation is non-blocking: ``POST .../artifacts`` runs ``execute_generation``
 with ``wait=False``, records the returned ``task_id`` in the pending registry,
@@ -33,6 +31,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -43,13 +42,14 @@ from starlette.types import Receive, Scope, Send
 
 from ..._app import artifacts as artifact_core
 from ..._app import download as download_core
+from ..._app import download_specs as download_specs_core
 from ..._app import generate as generate_core
 from ..._app.language import is_supported_language
 from ..._app.resolve import FULL_ID_PATTERN
 from ..._app.serialize import to_jsonable
 from ...client import NotebookLMClient
 from ...exceptions import ValidationError
-from ...types import ArtifactType, GenerationState
+from ...types import GenerationState
 from .._context import get_client, get_pending, limit_download, limit_generation
 from .._errors import safe_detail
 from .._pagination import MAX_LIMIT, paginate_envelope
@@ -191,115 +191,10 @@ _KIND_OPTIONS: dict[str, dict[str, tuple[str, ...] | None]] = {
 }
 
 
-def _download_specs() -> dict[str, download_core.DownloadTypeSpec]:
-    """Build the download-type registry from the neutral ``_app.download`` types.
-
-    Each row mirrors the corresponding CLI ``DownloadTypeSpec`` (artifact kind /
-    extension / download method / optional format axis). Rebuilt here so this
-    layer never imports the Click-coupled ``cli/_download_specs.py``.
-    """
-    spec = download_core.DownloadTypeSpec
-    fmt = dict(download_core.FORMAT_EXTENSIONS)
-    return {
-        "audio": spec(
-            name="audio",
-            kind=ArtifactType.AUDIO,
-            extension=".mp3",
-            default_dir="./audio",
-            download_attr="download_audio",
-            help_summary="",
-            help_examples="",
-        ),
-        "video": spec(
-            name="video",
-            kind=ArtifactType.VIDEO,
-            extension=".mp4",
-            default_dir="./video",
-            download_attr="download_video",
-            help_summary="",
-            help_examples="",
-        ),
-        "slide-deck": spec(
-            name="slide-deck",
-            kind=ArtifactType.SLIDE_DECK,
-            extension=".pdf",
-            default_dir="./slide-decks",
-            download_attr="download_slide_deck",
-            format_choices=("pdf", "pptx"),
-            format_default="pdf",
-            format_extension_map={"pdf": ".pdf", "pptx": ".pptx"},
-            format_kwarg="output_format",
-            forward_format_only_if_set=True,
-            help_summary="",
-            help_examples="",
-        ),
-        "infographic": spec(
-            name="infographic",
-            kind=ArtifactType.INFOGRAPHIC,
-            extension=".png",
-            default_dir="./infographic",
-            download_attr="download_infographic",
-            help_summary="",
-            help_examples="",
-        ),
-        "report": spec(
-            name="report",
-            kind=ArtifactType.REPORT,
-            extension=".md",
-            default_dir="./reports",
-            download_attr="download_report",
-            help_summary="",
-            help_examples="",
-        ),
-        "mind-map": spec(
-            name="mind-map",
-            kind=ArtifactType.MIND_MAP,
-            extension=".json",
-            default_dir="./mind-maps",
-            download_attr="download_mind_map",
-            help_summary="",
-            help_examples="",
-        ),
-        "data-table": spec(
-            name="data-table",
-            kind=ArtifactType.DATA_TABLE,
-            extension=".csv",
-            default_dir="./data-tables",
-            download_attr="download_data_table",
-            help_summary="",
-            help_examples="",
-        ),
-        "quiz": spec(
-            name="quiz",
-            kind=ArtifactType.QUIZ,
-            extension=".json",
-            default_dir="./quizzes",
-            download_attr="download_quiz",
-            format_choices=("json", "markdown", "html"),
-            format_default="json",
-            format_extension_map=fmt,
-            format_kwarg="output_format",
-            help_summary="",
-            help_examples="",
-        ),
-        "flashcards": spec(
-            name="flashcards",
-            kind=ArtifactType.FLASHCARDS,
-            extension=".json",
-            default_dir="./flashcards",
-            download_attr="download_flashcards",
-            format_choices=("json", "markdown", "html"),
-            format_default="json",
-            format_extension_map=fmt,
-            format_kwarg="output_format",
-            help_summary="",
-            help_examples="",
-        ),
-    }
-
-
-#: Download-type registry (built once at import).
-DOWNLOAD_SPECS: dict[str, download_core.DownloadTypeSpec] = _download_specs()
+#: Shared immutable projection. REST adds no per-adapter fields.
+DOWNLOAD_SPECS: Mapping[str, download_core.DownloadTypeSpec] = (
+    download_specs_core.DOWNLOAD_SPECS_BY_NAME
+)
 
 
 class ArtifactGenerate(BaseModel):
@@ -591,17 +486,25 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
     # ``finally`` below.
     success = False
     try:
-        temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
+        if body.output_format is not None and not spec.format_choices:
+            raise ValidationError(f"type {body.type!r} does not support an output_format option")
+        # Name the spool file for the extension the REQUESTED format resolves to, not
+        # the spec default: this route serves ``os.path.basename(served)`` as the
+        # download name and derives Content-Type from its suffix, so ``spec.extension``
+        # would hand a ``--format pptx`` deck out as ``artifact.pdf`` /
+        # ``application/pdf`` and a markdown quiz as ``artifact.json``. (The MCP
+        # ``/files/dl`` route already resolves both format-aware; this brings the REST
+        # surface in line.)
+        temp_path = os.path.join(
+            temp_dir,
+            f"artifact{download_core.resolve_extension(spec, body.output_format)}",
+        )
         args: dict[str, Any] = {
             "notebook_id": notebook_id,
             "output_path": temp_path,
             "latest": True,
         }
         if body.output_format is not None:
-            if not spec.format_choices:
-                raise ValidationError(
-                    f"type {body.type!r} does not support an output_format option"
-                )
             args[spec.format_param_name] = body.output_format
         plan = download_core.build_download_plan(spec, args, cwd=Path.cwd())
         result = await download_core.execute_download(
@@ -627,8 +530,20 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
         served = result.output_path or temp_path
         if Path(temp_dir).resolve() not in Path(served).resolve().parents:
             raise ValidationError("Download produced an unexpected output path")
+        # ``media_type`` comes EXPLICITLY from the shared ``_app`` table — the same
+        # one the MCP surfaces read, so the two servers stay in lockstep. Left to
+        # guess, ``FileResponse`` falls back to
+        # ``guess_type(...)[0] or "application/octet-stream"``, and ``.m4a`` is NOT in
+        # ``mimetypes``' builtin table (``.mp3`` is) — it resolves only when the host
+        # ships a mime database such as ``/etc/mime.types``. So on a slim container an
+        # audio download would be served as ``application/octet-stream``, which defeats
+        # inline playback and any client that dispatches on MIME. Passing it explicitly
+        # also makes the header independent of the runner's mime database (#2034).
         response = _CleanupFileResponse(
-            served, filename=os.path.basename(served), temp_dir=temp_dir
+            served,
+            filename=os.path.basename(served),
+            media_type=download_core.mime_type_for_extension(Path(served).suffix),
+            temp_dir=temp_dir,
         )
         success = True
         return response

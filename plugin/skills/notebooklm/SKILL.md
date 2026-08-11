@@ -97,7 +97,7 @@ Full per-command rationale: [references/setup.md](references/setup.md) and [refe
 | Generate podcast | `notebooklm generate audio "instructions"` |
 | List artifacts / check status | `notebooklm artifact list` |
 | Wait for artifact | `notebooklm artifact wait <artifact_id>` |
-| Download audio | `notebooklm download audio ./output.mp3` |
+| Download audio | `notebooklm download audio ./output.m4a` |
 | Download report | `notebooklm download report ./report.md` |
 | Set language | `notebooklm language set zh_Hans` |
 | Health check | `notebooklm doctor` |

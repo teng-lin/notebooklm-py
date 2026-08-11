@@ -16,7 +16,7 @@ they actually are:
 * **One permanent back-compat shim** — ``save_cookies_to_storage`` without
   ``original_snapshot`` — was a category error. It is not a scheduled removal;
   it is a runtime safety advisory about the stale-overwrite-fresh race
-  (docs/auth-cookie-lifecycle.md §3.4.1). It is now a ``RuntimeWarning`` emitted
+  (docs/auth-cookie-lifecycle.md Appendix A2). It is now a ``RuntimeWarning`` emitted
   inline, outside ADR-0018's scope: NOT gated by ``NOTEBOOKLM_QUIET_DEPRECATIONS``.
 
 The structural recurrence guard lives in

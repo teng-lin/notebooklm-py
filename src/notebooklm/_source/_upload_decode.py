@@ -18,6 +18,7 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 import httpx
 
+from .._env import PERSONAL_APP_HOSTS
 from .._transport_errors import parse_retry_after
 from ..exceptions import AuthError, RateLimitError, ServerError, ValidationError
 from ..rpc import get_upload_url
@@ -94,13 +95,66 @@ def _redact_upload_url(upload_url: str) -> str:
     return f"{parsed.scheme}://{authority}{parsed.path}{suffix}"
 
 
+def _accepted_upload_hosts(configured_host: str | None) -> set[str | None]:
+    """Return the hosts a resumable upload URL may name, given the configured host.
+
+    Host-**relative**, never a constant. The personal app is served from two
+    interchangeable hosts after Google's "Gemini Notebook" rebrand
+    (:data:`notebooklm._env.PERSONAL_APP_HOSTS`), and Google's Scotty frontend
+    picks which one it names in the ``X-Goog-Upload-URL`` response header — so a
+    personal client must accept either or a legitimate upload is rejected.
+
+    An enterprise (or any other allowed) host stays pinned to **exactly itself**.
+    Widening to a constant ``PERSONAL_APP_HOSTS`` set would be a data-boundary
+    bug: an enterprise-configured client that received
+    ``X-Goog-Upload-URL: https://notebooklm.google.com/upload/_/…`` would pass
+    validation and stream enterprise file bytes to the consumer service, driven
+    by a response header, for a user who opted into nothing.
+    """
+    if configured_host in PERSONAL_APP_HOSTS:
+        return set(PERSONAL_APP_HOSTS)
+    return {configured_host}
+
+
+def _upload_url_origin(validated_upload_url: str) -> str:
+    """Return the ``scheme://host[:port]`` origin of a **validated** upload URL.
+
+    ``Origin`` / ``Referer`` on the Scotty upload requests must name the host the
+    bytes actually go to, not the configured base URL: once
+    :func:`_accepted_upload_hosts` lets the two personal hosts stand in for each
+    other, those can legitimately diverge, and Google's origin-bound auth checks
+    reject a POST to host B carrying ``Origin: https://hostA``.
+
+    Callers must pass the **return value** of
+    :func:`_validate_resumable_upload_url`, never its argument — this helper
+    performs no trust check of its own and would happily echo an attacker-named
+    host into an outbound header.
+    """
+    parsed = urlsplit(validated_upload_url)
+    host = parsed.hostname or ""
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    port = parsed.port
+    port_suffix = "" if port in (None, _default_port_for_scheme(parsed.scheme)) else f":{port}"
+    return f"{parsed.scheme}://{host}{port_suffix}"
+
+
 def _validate_resumable_upload_url(upload_url: str) -> str:
     """Validate that a resumable upload URL targets the configured upload endpoint."""
     try:
         parsed = urlsplit(upload_url)
-        actual_port = parsed.port or _default_port_for_scheme(parsed.scheme)
+        # ``or`` would fold an explicit ``:0`` into the scheme default, since
+        # ``urlsplit`` returns the int 0 and 0 is falsy — an explicitly stated
+        # port must stay distinct from an absent one so ``:0`` is rejected.
+        actual_port = (
+            parsed.port if parsed.port is not None else _default_port_for_scheme(parsed.scheme)
+        )
         expected = urlsplit(get_upload_url())
-        expected_port = expected.port or _default_port_for_scheme(expected.scheme)
+        expected_port = (
+            expected.port
+            if expected.port is not None
+            else _default_port_for_scheme(expected.scheme)
+        )
     except ValueError as exc:
         raise ValidationError("Upload URL is not valid") from exc
 
@@ -110,7 +164,10 @@ def _validate_resumable_upload_url(upload_url: str) -> str:
         raise ValidationError("Upload URL must not contain credentials")
     if parsed.hostname is None:
         raise ValidationError("Upload URL must include a host")
-    if parsed.hostname != expected.hostname or actual_port != expected_port:
+    if (
+        parsed.hostname not in _accepted_upload_hosts(expected.hostname)
+        or actual_port != expected_port
+    ):
         raise ValidationError("Upload URL host is not trusted")
     if _normalize_upload_path(parsed.path) != _normalize_upload_path(expected.path):
         raise ValidationError("Upload URL path is not trusted")

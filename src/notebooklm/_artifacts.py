@@ -656,7 +656,7 @@ class ArtifactsAPI:
             no longer enters its block.
         """
         logger.debug("Deleting artifact %s from notebook %s", artifact_id, notebook_id)
-        params = [[2], artifact_id]
+        params = [[2], artifact_id]  # Single-id only; live batch-shape probes failed.
         await self._rpc.rpc_call(
             RPCMethod.DELETE_ARTIFACT,
             params,

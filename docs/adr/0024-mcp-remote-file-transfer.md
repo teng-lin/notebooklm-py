@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed.
+Accepted. Implemented (`mcp/_filelink.py`, `mcp/_fileroutes.py`,
+`mcp/_uploadwidget.py`); referenced as Accepted from
+[architecture.md](../architecture.md).
 
 ## Context
 

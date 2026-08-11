@@ -459,7 +459,14 @@ def register_file_tools(mcp: Any) -> None:
     so the sources domain keeps a single manifest entry point while this module holds
     the file-specific overflow (ADR-0008 size budget)."""
 
-    @mcp.tool(annotations=READ_ONLY)
+    @mcp.tool(
+        annotations=READ_ONLY,
+        # ChatGPT (Apps SDK) gates component-initiated tool calls behind this opt-in
+        # (``openai/widgetAccessible`` defaults to false), so the upload widget's auto-confirm
+        # ``window.openai.callTool("await_upload", …)`` is rejected without it (#1891). Harmless
+        # on other hosts / when the widget is off — it's a read-only completion poll.
+        meta={"openai/widgetAccessible": True},
+    )
     async def await_upload(ctx: Context, upload_link: str, timeout: float = 45.0) -> dict[str, Any]:
         """Wait for a file uploaded via a ``source_add(source_type="file")`` link to land.
 

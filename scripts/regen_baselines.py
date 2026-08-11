@@ -2,8 +2,9 @@
 """Regenerate the committed test baselines from live code (ADR-0022).
 
 A *baseline* is a committed snapshot of a value the code already derives — e.g.
-``notebooklm.types.__all__``, the collected public surface of the ungated public
-modules, or the CLI command tree. They live in ``tests/fixtures/baselines/`` (plus
+``notebooklm.types.__all__``, the auth patch/import audits, the collected public
+surface of the ungated public modules, or the CLI command tree. They live in
+``tests/fixtures/baselines/`` (plus
 the pre-existing ``tests/fixtures/cli_contract_baseline.json``) and are registered
 in ``tests/_baselines/registry.py``.
 

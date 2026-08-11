@@ -6,6 +6,7 @@ helpers live in ``_session_helpers.py``; the proxy-block-aware
 ``patch_session_login_dual`` lives in ``tests/_fixtures``.
 """
 
+import ast
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -20,6 +21,207 @@ import notebooklm.cli.session_cmd as session_cmd_module
 from notebooklm.notebooklm_cli import cli
 
 from .conftest import create_mock_client, inject_client
+
+_LOGIN_PARAMETERS = {
+    "ctx",
+    "storage",
+    "browser",
+    "browser_cookies",
+    "account_email",
+    "all_accounts",
+    "update",
+    "profile_name",
+    "fresh",
+    "include_domains_raw",
+    "master_token",
+    "master_token_refresh",
+    "oauth_token",
+    "android_id",
+    "cdp_url",
+    "force",
+}
+_LOGIN_DERIVED = {
+    "run_master_token_login",
+    "include_domains",
+    "active_profile",
+    "confirm_overwrite",
+    "profile",
+    "storage_path",
+    "browser_profile",
+}
+_LOGIN_SCRUB = _LOGIN_PARAMETERS | _LOGIN_DERIVED
+
+
+class _Abort(BaseException):
+    pass
+
+
+def _assert_login_scrub_contract(source: str) -> None:
+    tree = ast.parse(source)
+    login = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "login"
+    )
+    outer_tries = [node for node in login.body if isinstance(node, ast.Try) and node.finalbody]
+    assert len(outer_tries) == 1
+    outer = outer_tries[0]
+    assert len(outer.body) == 1 and isinstance(outer.body[0], ast.With)
+
+    preinitialized: set[str] = set()
+    for statement in login.body[: login.body.index(outer)]:
+        if (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and isinstance(statement.value, ast.Constant)
+            and statement.value.value is None
+        ):
+            preinitialized.add(statement.target.id)
+            continue
+        if not isinstance(statement, ast.Assign) or not isinstance(statement.value, ast.Constant):
+            continue
+        if statement.value.value is None:
+            preinitialized.update(
+                target.id for target in statement.targets if isinstance(target, ast.Name)
+            )
+    assert preinitialized == _LOGIN_DERIVED
+
+    deleted = {
+        target.id
+        for statement in outer.finalbody
+        if isinstance(statement, ast.Delete)
+        for target in statement.targets
+        if isinstance(target, ast.Name)
+    }
+    assert deleted == _LOGIN_SCRUB
+
+
+def _assert_login_frame_scrubbed(error: BaseException) -> None:
+    frames = []
+    traceback = error.__traceback__
+    while traceback is not None:
+        frame = traceback.tb_frame
+        if (
+            frame.f_code.co_name == "login"
+            and frame.f_code.co_filename == session_cmd_module.__file__
+        ):
+            frames.append(frame)
+        traceback = traceback.tb_next
+    assert len(frames) == 1
+    assert _LOGIN_SCRUB.isdisjoint(frames[0].f_locals)
+
+
+def test_login_scrub_ast_contract_is_exact_and_fail_closed() -> None:
+    source = Path(session_cmd_module.__file__).read_text(encoding="utf-8")
+    _assert_login_scrub_contract(source)
+    weakened = source.replace(
+        "include_domains = active_profile = None",
+        "include_domains = None",
+        1,
+    )
+    with pytest.raises(AssertionError):
+        _assert_login_scrub_contract(weakened)
+
+
+def test_login_scrubs_earliest_failure_frame(runner, monkeypatch: pytest.MonkeyPatch) -> None:
+    error = _Abort("env lookup failed")
+
+    def fail() -> bool:
+        raise error
+
+    monkeypatch.setattr(session_cmd_module, "has_env_auth_json", fail)
+    with pytest.raises(_Abort) as excinfo:
+        runner.invoke(cli, ["login"])
+    assert excinfo.value is error
+    _assert_login_frame_scrubbed(error)
+
+
+def test_login_scrubs_master_token_and_driver_frames(
+    runner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from notebooklm.cli import master_token_login as driver
+
+    error = _Abort("master-token adapter failed")
+
+    def fail(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(session_cmd_module, "has_env_auth_json", lambda: False)
+    monkeypatch.setattr(driver, "bootstrap_login", fail)
+    with pytest.raises(_Abort) as excinfo:
+        runner.invoke(
+            cli,
+            [
+                "login",
+                "--master-token",
+                "--account",
+                "owner@example.com",
+                "--oauth-token",
+                "oauth-secret",
+            ],
+        )
+    assert excinfo.value is error
+    _assert_login_frame_scrubbed(error)
+    driver_frames = []
+    traceback = error.__traceback__
+    while traceback is not None:
+        if traceback.tb_frame.f_code.co_name == "run_master_token_login":
+            driver_frames.append(traceback.tb_frame)
+        traceback = traceback.tb_next
+    assert len(driver_frames) == 1
+    assert {
+        "ctx",
+        "storage",
+        "browser",
+        "account_email",
+        "oauth_token",
+        "android_id",
+        "cdp_url",
+        "refresh",
+        "force",
+        "profile",
+        "storage_path",
+        "plan",
+        "capture_oauth_token",
+        "run_async",
+        "login_result",
+        "remint_result",
+    }.isdisjoint(driver_frames[0].f_locals)
+
+
+def test_login_scrubs_browser_cookie_failure_frame(runner, monkeypatch: pytest.MonkeyPatch) -> None:
+    error = _Abort("browser cookie adapter failed")
+
+    def fail(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(session_cmd_module, "has_env_auth_json", lambda: False)
+    monkeypatch.setattr(session_cmd_module, "_login_browser_cookies_single", fail)
+    with pytest.raises(_Abort) as excinfo:
+        runner.invoke(cli, ["login", "--browser-cookies", "chrome"])
+    assert excinfo.value is error
+    _assert_login_frame_scrubbed(error)
+
+
+def test_login_scrubs_playwright_failure_frame(
+    runner, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    error = _Abort("playwright adapter failed")
+
+    def fail(**_kwargs):
+        raise error
+
+    monkeypatch.setattr(session_cmd_module, "has_env_auth_json", lambda: False)
+    monkeypatch.setattr(
+        session_cmd_module,
+        "prepare_paths_or_exit",
+        lambda *_args: (tmp_path / "storage.json", tmp_path / "browser"),
+    )
+    monkeypatch.setattr(session_cmd_module, "_run_playwright_login", fail)
+    with pytest.raises(_Abort) as excinfo:
+        runner.invoke(cli, ["login"])
+    assert excinfo.value is error
+    _assert_login_frame_scrubbed(error)
 
 
 class TestSessionEdgeCases:
@@ -228,29 +430,78 @@ class TestLoginWindowsPermissions:
         chmod_700 = [c for c in chmod_calls if c["args"] == (0o700,)]
         assert len(chmod_700) >= 2, f"Expected ≥2 chmod(0o700) calls on Unix, got {len(chmod_700)}"
 
-    def test_windows_storage_chmod_skipped(self, _patch_login_deps):
-        """On Windows, storage_state.json chmod(0o600) is also skipped.
+    def test_windows_storage_chmod_skipped(self, tmp_path, monkeypatch):
+        """On Windows the canonical writer skips all POSIX permission mutation.
 
-        The ``storage_state.json`` save path runs through
-        ``services.login.cookie_writes._write_extracted_cookies`` and
-        ``services.login.refresh._login_with_browser_cookies`` (D1 PR-3
-        cutover moved the body out of session.py; P3.T4 split the single
-        ``services/login.py`` module into a package). We verify the
-        Windows guard exists by grepping the source of those submodules —
-        fragile compared to a behaviour assertion, but the writers are
-        wrapped in ``atomic_write_json`` which intentionally hides the
-        platform-dependent ``chmod`` from observers.
+        Behavior test (not a source grep): since b-PR3 the ``storage_state.json``
+        save path funnels through ``_auth.storage``, whose parent-dir
+        ``0700`` and backup ``0600`` chmods (and the file-mode ``fchmod``) are
+        POSIX-only and guarded on ``sys.platform``. With the platform forced to
+        ``win32`` a real ``storage_state.json`` write through the canonical
+        ``replace_from_login`` performs NO ``os.chmod``/``os.fchmod`` — and still
+        writes the file correctly. The ``backup=True`` ``.bak`` chmod is NOT
+        covered here (see the note at the ``replace_from_login`` call below).
         """
-        import inspect
+        import os
 
-        from notebooklm.cli.services.login import cookie_writes, refresh
+        from notebooklm._atomic_io import _atomic_write_json_unchecked
+        from notebooklm._auth import profile_store
+        from notebooklm._auth import storage as storage_mod
+        from notebooklm._auth.storage_lock import LockState
 
-        # The pattern: ``if sys.platform != "win32": storage_path.parent.chmod(0o700)``.
-        # Either quote style is acceptable so the assertion survives style changes.
-        for module in (cookie_writes, refresh):
-            source = inspect.getsource(module)
-            assert 'sys.platform != "win32"' in source or "sys.platform != 'win32'" in source, (
-                f"Missing Windows guard for storage_state.json chmod in "
-                f"{module.__name__} (moved from session.py in D1 PR-3, "
-                "split into login/ package in P3.T4)"
-            )
+        chmod_calls: list[tuple] = []
+        real_chmod = os.chmod
+
+        def _spy_chmod(*args, **kwargs):
+            chmod_calls.append(args)
+            return real_chmod(*args, **kwargs)
+
+        fchmod_calls: list[tuple] = []
+        real_fchmod = os.fchmod if hasattr(os, "fchmod") else None
+
+        def _spy_fchmod(*args, **kwargs):
+            fchmod_calls.append(args)
+            return real_fchmod(*args, **kwargs)
+
+        # ``sys`` is process-global, so use an always-held manager stub while
+        # the permission branches are forced through their win32 paths.
+        class HeldLocks:
+            def acquire(self, request):
+                import contextlib
+
+                return contextlib.nullcontext(LockState.HELD)
+
+        monkeypatch.setattr(profile_store, "_STORAGE_LOCKS", HeldLocks())
+        monkeypatch.setattr(os, "chmod", _spy_chmod)
+        if real_fchmod is not None:
+            monkeypatch.setattr(os, "fchmod", _spy_fchmod)
+        monkeypatch.setattr(storage_mod.sys, "platform", "win32")
+
+        path = tmp_path / "storage_state.json"
+        # Pre-existing target so the writer takes its overwrite path (the
+        # ``os.replace`` onto an existing inode), not a first-write path.
+        _atomic_write_json_unchecked(path, {"cookies": [], "origins": []})
+        chmod_calls.clear()
+        fchmod_calls.clear()
+
+        state = {
+            "cookies": [
+                {"name": "SID", "value": "s", "domain": ".google.com", "path": "/"},
+                {"name": "__Secure-1PSIDTS", "value": "p", "domain": ".google.com", "path": "/"},
+            ],
+            "origins": [],
+        }
+        # ``backup`` deliberately omitted: shutil.copy2 replicates the source mode
+        # via its OWN os.chmod (unrelated to the writer's win32-guarded chmod),
+        # which would be noise here. The parent-dir 0700 chmod and the file-mode
+        # fchmod are the writer/_atomic_io permission bits under test.
+        outcome = storage_mod.replace_from_login(path, state, include_domains=None)
+
+        assert outcome.ok, outcome
+        assert path.exists()  # the write still succeeded under the win32 guard
+        assert chmod_calls == [], (
+            f"os.chmod (parent-dir 0700) must be skipped on win32, got {chmod_calls}"
+        )
+        assert fchmod_calls == [], (
+            f"os.fchmod (file 0600) must be skipped on win32, got {fchmod_calls}"
+        )

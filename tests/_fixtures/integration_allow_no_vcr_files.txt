@@ -38,3 +38,4 @@ tests/integration/test_sharing_integration.py # existing mock-only integration e
 tests/integration/test_side_effects_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_rpc_seam_matrix.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

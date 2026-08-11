@@ -3,6 +3,7 @@
 import pytest
 
 from notebooklm import NoteNotFoundError
+from notebooklm._env import get_base_url
 
 from .conftest import requires_auth
 
@@ -157,7 +158,7 @@ class TestSaveAnswerAsNote:
 
             print(
                 f"\n[Manual hover-anchor check] Open "
-                f"https://notebooklm.google.com/notebook/{temp_notebook.id}, "
+                f"{get_base_url()}/notebook/{temp_notebook.id}, "
                 f"find note '{note.title}' (id={note.id[:8]}...), hover any "
                 f"[N] marker, confirm the popup shows the cited passage."
             )

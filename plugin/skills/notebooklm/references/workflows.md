@@ -13,7 +13,7 @@ audio → download) in one call:
 
 ```bash
 uv run <skill-dir>/scripts/research_to_podcast.py "renewable energy trends 2024"
-uv run <skill-dir>/scripts/research_to_podcast.py "AI safety" --mode deep --max-sources 15 --output podcast.mp3
+uv run <skill-dir>/scripts/research_to_podcast.py "AI safety" --mode deep --max-sources 15 --output podcast.m4a
 ```
 
 It prints progress to stderr and a single JSON summary line to stdout (exit 0
@@ -30,7 +30,7 @@ mix, or the script's assumptions don't fit.
 4. `notebooklm generate audio "Focus on [specific angle]"` (confirm when asked) — *if rate limited: wait 5 min, retry once*
 5. Note the artifact ID returned
 6. Check `notebooklm artifact list` later for status
-7. `notebooklm download audio ./podcast.mp3` when complete (confirm when asked)
+7. `notebooklm download audio ./podcast.m4a` when complete (confirm when asked)
 
 ### Manual: Research to Podcast (Automated with Subagent)
 **Time:** 5-10 minutes, but continues in background
@@ -46,7 +46,7 @@ canned script isn't a fit:
    Task(
      prompt="Wait for artifact {task_id} in notebook {notebook_id} to complete, then download.
              Use: notebooklm artifact wait {task_id} -n {notebook_id} --timeout 1200
-             Then: notebooklm download audio ./podcast.mp3 -a {task_id} -n {notebook_id}",
+             Then: notebooklm download audio ./podcast.m4a -a {task_id} -n {notebook_id}",
      subagent_type="general-purpose"
    )
    ```

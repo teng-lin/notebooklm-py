@@ -12,8 +12,8 @@
 # targets do this for you.
 #
 # The notebooklm-mcp service runs under either profile; exactly one tunnel sidecar
-# is selected. No host ports are published — the ONLY way in is through the chosen
-# tunnel, which terminates TLS at its edge (no CA cert for you to manage). See README.md.
+# is selected. The loopback-only host port also lets a host-networked shared tunnel
+# reach it without exposing the origin publicly.
 services:
   notebooklm-mcp:
     # Pull the published image. Default tag is `latest` = the latest STABLE release
@@ -82,7 +82,8 @@ services:
       # profile keeps registered clients. Pre-create the host dir as yourself (the `make`
       # targets do; direct `docker compose up` users: `mkdir -p ./oauth-state && chmod 700 ./oauth-state`).
       - "${NOTEBOOKLM_OAUTH_STATE_DIR:-./oauth-state}:/data/oauth:rw"
-    # No `ports:` — not reachable except via the tunnel.
+    ports:
+      - "127.0.0.1:${NOTEBOOKLM_MCP_HOST_PORT:-9420}:9420"
 
   # --- Tunnel option A: Cloudflare (needs a domain in your Cloudflare account) ----
   cloudflared:

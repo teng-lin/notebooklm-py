@@ -15,11 +15,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: GET
-    uri: https://notebooklm.google.com/
+    uri: https://notebook.google.com/
   response:
     body:
       string: "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><base href=\"https://notebooklm.google.com/\"><link
@@ -1876,11 +1876,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=wXbhsf&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=wXbhsf&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ")]}'\n\n62235\n[[\"wrb.fr\",\"wXbhsf\",\"[[[\\\"VCR Generation Notebook
@@ -2155,11 +2155,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=CCqFvf&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=CCqFvf&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''
@@ -2252,11 +2252,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=izAoDd&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=izAoDd&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''
@@ -2350,11 +2350,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=izAoDd&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=izAoDd&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''
@@ -2448,11 +2448,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=izAoDd&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=izAoDd&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''
@@ -2546,11 +2546,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=QA9ei&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=QA9ei&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''
@@ -2643,11 +2643,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=e3bVqc&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=e3bVqc&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''
@@ -2741,11 +2741,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=e3bVqc&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=e3bVqc&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''
@@ -2839,11 +2839,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=e3bVqc&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=e3bVqc&source-path=%2Fnotebook%2Ffb02eaba-813b-489f-9b97-e750a7fe0f2a&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ")]}'\n\n404768\n[[\"wrb.fr\",\"e3bVqc\",\"[[[\\\"e87d7bbe-4c25-4f69-aa17-ba0f8724c8c2\\\",[\\\"fb02eaba-813b-489f-9b97-e750a7fe0f2a\\\",[\\\"Compare
@@ -5000,11 +5000,11 @@ interactions:
         SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED; _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=WWINqb&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=WWINqb&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c
   response:
     body:
       string: ')]}''

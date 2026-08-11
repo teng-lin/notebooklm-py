@@ -96,7 +96,7 @@ def _multiaccount_rookiepy_mock() -> MagicMock:
             "value": f"{name}-value",
             "path": "/",
             "secure": True,
-            "expires": 9999,
+            "expires": 4102444800,
             "http_only": False,
         }
         for name in ("SID", "HSID", "SSID", "APISID", "SAPISID", "__Secure-1PSIDTS")
@@ -159,7 +159,7 @@ def _chromium_fanout_setup(
                 "value": f"SID-from-{dir_name}",
                 "path": "/",
                 "secure": True,
-                "expires": 9999,
+                "expires": 4102444800,
                 "http_only": False,
             },
             {
@@ -168,7 +168,7 @@ def _chromium_fanout_setup(
                 "value": f"SIDTS-from-{dir_name}",
                 "path": "/",
                 "secure": True,
-                "expires": 9999,
+                "expires": 4102444800,
                 "http_only": False,
             },
         ]

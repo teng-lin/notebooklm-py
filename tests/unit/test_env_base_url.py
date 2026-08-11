@@ -2,7 +2,15 @@
 
 import pytest
 
-from notebooklm._env import get_base_host, get_base_url
+from notebooklm._env import (
+    _ALLOWED_BASE_HOSTS,
+    ENTERPRISE_BASE_HOST,
+    PERSONAL_APP_HOSTS,
+    PERSONAL_BASE_HOST,
+    PERSONAL_LEGACY_HOST,
+    get_base_host,
+    get_base_url,
+)
 from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
@@ -15,8 +23,8 @@ from tests._helpers.client_factory import build_client_shell_for_tests
 def test_default_base_url_is_personal(monkeypatch):
     monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
 
-    assert get_base_url() == "https://notebooklm.google.com"
-    assert get_base_host() == "notebooklm.google.com"
+    assert get_base_url() == "https://notebook.google.com"
+    assert get_base_host() == "notebook.google.com"
 
 
 def test_enterprise_base_url_via_env(monkeypatch):
@@ -24,6 +32,35 @@ def test_enterprise_base_url_via_env(monkeypatch):
 
     assert get_base_url() == "https://notebooklm.cloud.google.com"
     assert get_base_host() == "notebooklm.cloud.google.com"
+
+
+def test_rebrand_alias_base_url_via_env(monkeypatch):
+    """The post-rebrand personal host is selectable (undocumented, on purpose).
+
+    Without a selectable rebrand host the login-landing and upload-host seams
+    that must cope with *either* personal host cannot be exercised at all.
+    """
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{PERSONAL_LEGACY_HOST}/")
+
+    assert get_base_url() == f"https://{PERSONAL_LEGACY_HOST}"
+    assert get_base_host() == PERSONAL_LEGACY_HOST
+
+
+def test_personal_app_hosts_holds_both_personal_hosts():
+    """Both literals, not one.
+
+    Deriving this set from ``PERSONAL_BASE_HOST`` alone collapses it to a
+    single element and silently reverts #2015/#2020/#2038, whose whole point is
+    that the app answers on two hosts at once.
+    """
+    assert {PERSONAL_BASE_HOST, PERSONAL_LEGACY_HOST} == PERSONAL_APP_HOSTS
+    assert len(PERSONAL_APP_HOSTS) == 2
+    assert ENTERPRISE_BASE_HOST not in PERSONAL_APP_HOSTS
+
+
+def test_allowed_base_hosts_is_personal_app_hosts_plus_enterprise():
+    assert PERSONAL_APP_HOSTS | {ENTERPRISE_BASE_HOST} == _ALLOWED_BASE_HOSTS
+    assert isinstance(_ALLOWED_BASE_HOSTS, frozenset)
 
 
 def test_base_url_normalizes_mixed_case_and_whitespace(monkeypatch):
@@ -35,7 +72,7 @@ def test_base_url_normalizes_mixed_case_and_whitespace(monkeypatch):
 def test_empty_base_url_env_falls_back_to_default(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "")
 
-    assert get_base_url() == "https://notebooklm.google.com"
+    assert get_base_url() == "https://notebook.google.com"
 
 
 @pytest.mark.parametrize(
@@ -48,6 +85,17 @@ def test_empty_base_url_env_falls_back_to_default(monkeypatch):
         "https://notebooklm.google.com/path",
         "https://notebooklm.google.com?x=1",
         "https://notebooklm.google.com/#fragment",
+        # The newly accepted alias host is subject to the identical rules --
+        # widening the host set must not weaken any of them.
+        "http://notebook.google.com",
+        "https://notebook.google.com:443",
+        "https://user:notsecret@notebook.google.com",
+        "https://notebook.google.com/path",
+        "https://notebook.google.com?x=1",
+        "https://notebook.google.com/#fragment",
+        # Neither may it accept lookalikes of the alias.
+        "https://notebook.google.com.evil.example.com",
+        "https://evil-notebook.google.com",
     ],
 )
 def test_base_url_validation_rejects_unsafe_values(monkeypatch, value):

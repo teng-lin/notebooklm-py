@@ -14,6 +14,8 @@ from urllib.parse import urlsplit
 
 import pytest
 
+from notebooklm._env import get_base_url
+
 if TYPE_CHECKING:
     from notebooklm.client import NotebookLMClient
 
@@ -663,7 +665,7 @@ def read_only_notebook_id():
             "\n\nERROR: NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID environment variable is not set.\n\n"
             "E2E tests require YOUR OWN test notebook with content.\n\n"
             "Setup instructions:\n"
-            "  1. Create a notebook at https://notebooklm.google.com\n"
+            f"  1. Create a notebook at {get_base_url()}\n"
             "  2. Add sources (text, URL, PDF, etc.)\n"
             "  3. Generate some artifacts (audio, quiz, etc.)\n"
             "  4. Copy notebook ID from URL and run:\n"

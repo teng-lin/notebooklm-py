@@ -1,7 +1,7 @@
 # Configuration
 
 **Status:** Active
-**Last Updated:** 2026-07-04
+**Last Updated:** 2026-08-05
 
 This guide covers storage locations, environment settings, and configuration options for `notebooklm-py`.
 
@@ -69,10 +69,10 @@ Contains the authentication data extracted from your browser session:
 }
 ```
 
-**Cookie requirements** (empirically validated via single- and pair-wise ablation, see `auth-cookie-lifecycle.md` §3.5; enforced by `_validate_required_cookies()` in `auth.py`):
+**Cookie requirements** (empirically validated via single-, pair-, and three-way ablation; see [auth-cookie-lifecycle.md](auth-cookie-lifecycle.md#33-empirical-cookie-requirements); enforced by `_validate_required_cookies()` in `_auth/cookie_policy.py`):
 
-- **Tier 1 — strictly required (raises on absence):** `SID` AND `__Secure-1PSIDTS`. `SID` is the only individually-required cookie (`__Secure-1PSIDTS` is removable on its own because Google can re-mint it via `RotateCookies`), but the pair-wise check uncovered that as soon as `__Secure-1PSIDTS` and any one other auth cookie are both missing, Google rejects with `Authentication expired or invalid`. The library therefore enforces both up-front. Authoritative value: `MINIMUM_REQUIRED_COOKIES` in `auth.py`.
-- **Tier 2 — secondary binding (logs a warning if absent):** either `OSID` is present, or both `APISID` and `SAPISID` are present. Without this, even valid Tier 1 cookies can't authenticate the homepage GET. Logged rather than raised so unverified edge-case flows (e.g. Workspace SSO) aren't broken by a too-strict client check.
+- **Tier 1 — strictly required (raises on absence):** `SID` AND `__Secure-1PSIDTS`. `SID` is the only individually-required cookie (`__Secure-1PSIDTS` is removable on its own because Google can re-mint it via `RotateCookies`), but the pair-wise check uncovered that as soon as `__Secure-1PSIDTS` and any one other auth cookie are both missing, Google rejects with `Authentication expired or invalid`. The library therefore enforces both up-front. Authoritative value: `MINIMUM_REQUIRED_COOKIES` in `_auth/cookie_policy.py`.
+- **Tier 2 — secondary binding (logs a warning if absent):** either `OSID` is present, or `APISID` and `SAPISID` are present **together with bare `LSID`** (the `LSID` conjunct is required — the pair alone fails, per the three-way ablation in #1977). Without this, even valid Tier 1 cookies can't authenticate the homepage GET. Logged rather than raised so unverified edge-case flows (e.g. Workspace SSO) aren't broken by a too-strict client check.
 
 In practice: extract the full cookie set via `notebooklm login` and don't try to subset it. Partial extractions (a known failure mode of browser-cookies tooling under Chrome 127+ App-Bound Encryption) are the leading suspect for "auth expires immediately" reports — see [#371](https://github.com/teng-lin/notebooklm-py/issues/371).
 
@@ -107,7 +107,7 @@ Stores the current CLI context, such as the active notebook:
 Field summary:
 
 - `notebook_id` — currently selected notebook, written by `notebooklm use` and read by every command that takes `-n/--notebook`.
-- `title`, `is_owner`, `created_at` — optional notebook metadata captured at selection time so `status` / display commands don't need an extra round-trip. Omitted when the CLI didn't have the values to write (see `src/notebooklm/cli/helpers.py:623-651`).
+- `title`, `is_owner`, `created_at` — optional notebook metadata captured at selection time so `status` / display commands don't need an extra round-trip. Omitted when the CLI didn't have the values to write (see `set_current_notebook` in `src/notebooklm/cli/context.py`).
 
 This file is managed automatically by `notebooklm use`, `notebooklm clear`, and the `auth` commands.
 
@@ -119,13 +119,36 @@ A persistent Chromium user data directory used during `notebooklm login`.
 
 **To reset:** Delete the `browser_profile/` directory and run `notebooklm login` again.
 
+With `--storage <path>`, the browser profile is isolated with that storage file.
+The conventional `storage_state.json` uses a `browser_profile/` directory beside
+it; any normal-length custom filename uses `<path>.browser_profile`. For example,
+`A.json` and `B.json` use `A.json.browser_profile/` and
+`B.json.browser_profile/` respectively. If that filename would exceed the
+255-byte component limit, the canonical storage path maps to a short stable
+`storage-<hash>.browser_profile/` name; relative and absolute aliases map to the
+same directory.
+
+Browser directories newly created for explicit storage contain a
+`.notebooklm-owned` marker. `login --fresh` refuses to recursively delete an
+unowned sidecar, and `auth logout` skips it and reports the preserved path.
+Canonical named-profile and legacy browser directories remain managed even when
+their `storage_state.json` is selected explicitly with `--storage`; an arbitrary
+same-named directory outside `NOTEBOOKLM_HOME` remains unowned. A marker-only
+directory does not count as a reusable L3 browser session.
+
+> **Upgrading:** Existing custom-storage browser sessions are not migrated. You
+> may need one interactive sign-in per storage file. Do not copy or delete the
+> old shared browser profile unless its account/profile ownership is known.
+
 ### Master Token (`master_token.json`)
 
 Written only by `notebooklm login --master-token` (the `[headless]` extra). Holds
 a durable Google master token (mode `0600`) that mints/refreshes the profile's
 `storage_state.json` cookies with no per-session browser. When present beside a
 profile's `storage_state.json`, an expired session re-mints from it
-automatically.
+automatically. If storage is absent, `notebooklm auth refresh` mints it from the
+exact sibling token and passively validates once. The legacy login refresh flag
+remains an unconditional forced re-mint.
 
 ```json
 {"version": 1, "email": "...", "android_id": "<hex>", "master_token": "aas_et/..."}
@@ -144,8 +167,8 @@ automatically.
 | `NOTEBOOKLM_AUTH_JSON` | Inline authentication JSON (for CI/CD) | - |
 | `NOTEBOOKLM_NOTEBOOK` | Default notebook ID for commands without `-n/--notebook` | - |
 | `NOTEBOOKLM_HL` | Default interface/output language code (e.g. `en`, `ja`, `zh_Hans`) | `en` |
-| `NOTEBOOKLM_BASE_URL` | NotebookLM base URL. Constrained to `https://notebooklm.google.com` (personal) or `https://notebooklm.cloud.google.com` (enterprise) | `https://notebooklm.google.com` |
-| `NOTEBOOKLM_BL` | `bl` (build label) URL parameter for the chat streaming endpoint; override when chasing a regression tied to a specific frontend build snapshot | built-in default in `_env.DEFAULT_BL` |
+| `NOTEBOOKLM_BASE_URL` | Gemini Notebook base URL. Constrained to `https://notebook.google.com` (default) or `https://notebooklm.google.com` (pre-rebrand personal, still served) or `https://notebooklm.cloud.google.com` (enterprise) | `https://notebook.google.com` |
+| `NOTEBOOKLM_BL` | `bl` (build label) URL parameter for the chat streaming endpoint; override when chasing a regression tied to a specific frontend build snapshot | built-in default in `_env.DEFAULT_BL` (drift-monitored nightly) |
 | `NOTEBOOKLM_TRANSPORT` | HTTP transport backend: `httpx` (default) or `curl_cffi` (opt-in browser-TLS impersonation; requires the `curl_cffi` package). Use `curl_cffi` where the default transport is TLS-fingerprint-blocked. | `httpx` |
 | `NOTEBOOKLM_LOG_LEVEL` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` | `WARNING` |
 | `NOTEBOOKLM_DEBUG_RPC` | Legacy: Enable RPC debug logging (use `LOG_LEVEL=DEBUG` instead) | `false` |
@@ -154,10 +177,12 @@ automatically.
 | `NOTEBOOKLM_RPC_OVERRIDES` | JSON object mapping `RPCMethod` enum names to RPC ID strings (community self-patch when Google rotates a method ID; e.g. `{"LIST_NOTEBOOKS":"AbC123"}`) | - |
 | `NOTEBOOKLM_REFRESH_CMD` | Optional command (argv list, or shell string with `_USE_SHELL=1`) invoked when auth refresh is required. Must exit `0` after writing a refreshed `storage_state.json`; the parent reloads from disk | - |
 | `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` | Opt the `NOTEBOOKLM_REFRESH_CMD` subprocess back into `shell=True` execution. Default `shell=False` (argv list) — set to the literal `1` (only `"1"` is honored — not `true`/`yes`/`on`) when the refresh command requires shell metacharacters | `0` |
+| `NOTEBOOKLM_REFRESH_CMD_MIDSESSION` | Opt in (literal `1`) to running `NOTEBOOKLM_REFRESH_CMD` **mid-session** (the L2.5 rung), not only at cold start. Off by default for one release so operators whose commands assume cold-start-only invocation are not surprised inside long-lived servers; flips to default-on a later release ([ADR-0030](adr/0030-one-recovery-ladder.md)) | `0` |
+| `NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT` | Opt in (literal `1`) to routing the refresh command's captured `stdout`/`stderr` to the redacting **DEBUG** logger. Off by default — the default DEBUG line carries only basename + exit code + byte counts, so promoting the rung into long-lived servers does not widen exposure of whatever the command prints | `0` |
 | `NOTEBOOKLM_REFRESH_PROFILE` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; names the resolved profile being refreshed | resolved profile |
 | `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; path to the `storage_state.json` file the command must rewrite | resolved storage path |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | Disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry | `0` |
-| `NOTEBOOKLM_HEADLESS_REAUTH` | Opt in to layer-3 headless re-auth during automatic refresh paths. Explicit `client.refresh_auth(allow_headless=True)` does not require this env var. | `0` |
+| `NOTEBOOKLM_HEADLESS_REAUTH` | Opt in to layer-3 headless re-auth during cold construction and automatic refresh paths. Explicit `from_storage(allow_headless=True)`, `client.refresh_auth(allow_headless=True)`, or `auth refresh --allow-headless` does not require this env var. | `0` |
 | `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` | Optional loopback Chrome DevTools endpoint for layer-3 headless re-auth, e.g. `http://127.0.0.1:9222`. Non-loopback endpoints are ignored for credential safety. | - |
 | `NOTEBOOKLM_MCP_TRANSPORT` | MCP server transport for `notebooklm-mcp`: `stdio` or `http` | `stdio` |
 | `NOTEBOOKLM_MCP_HOST` | MCP HTTP transport bind host; non-loopback refused unless `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1` | `127.0.0.1` |
@@ -216,15 +241,17 @@ be audited from one location.
 | `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress the project's public-API `DeprecationWarning`s — the one-off warnings routed through `src/notebooklm/_deprecation.py::warn_deprecated` (e.g. awaiting `from_storage(...)`). Set to a truthy value (`1` / `true` / `yes` / `on`) to silence them. See `docs/deprecations.md`. | (warnings emitted) | `_deprecation._deprecations_quiet` / `deprecations_quiet` |
 | `NOTEBOOKLM_FUTURE_ERRORS` | **Retired (removed in v0.8.0; ignored).** It was the v0.7.0 forward-compat preview gate for the v0.8.0 error contract (ADR-0019 / umbrella [#1346](https://github.com/teng-lin/notebooklm-py/issues/1346)). Now that every break it staged — `get()` raising `*NotFoundError`, the attribute-only typed returns, the removed `interval=` alias, the bool→`None` returns, the refusal-raises, and the mutate-existing fail-loud — is the default, the flag is a **no-op**: setting it has no effect. See `docs/deprecations.md`. | (ignored) | — |
 | `NOTEBOOKLM_STRICT_DECODE` | **Retired (ignored since v0.7.0).** Strict decoding is the only mode — `safe_index` always raises `UnknownRPCMethodError` on schema drift. The former `0` warn-and-fallback opt-out was removed; setting the variable has no effect. | (ignored) | — |
-| `NOTEBOOKLM_BASE_URL` | NotebookLM base URL. Constrained to `https://notebooklm.google.com` (personal) or `https://notebooklm.cloud.google.com` (enterprise); other schemes/hosts/paths raise `ValueError`. | Process env on every base-URL lookup. | `_env.get_base_url` |
-| `NOTEBOOKLM_BL` | `bl` (build label) URL parameter sent on the chat streaming endpoint (`ChatAPI.ask`). Pins the frontend build the request is attributed to. | Process env on every chat stream call; whitespace-only falls back to `_env.DEFAULT_BL`. | `_env.get_default_bl` |
+| `NOTEBOOKLM_BASE_URL` | Gemini Notebook base URL. Constrained to `https://notebook.google.com` (default) or `https://notebooklm.google.com` (pre-rebrand personal host, still served — the documented rollback lever; if auth fails after switching, re-run `notebooklm login --fresh`) or `https://notebooklm.cloud.google.com` (enterprise); other schemes/hosts/paths raise `ValueError`. | Process env on every base-URL lookup. | `_env.get_base_url` |
+| `NOTEBOOKLM_BL` | `bl` (build label) URL parameter sent on the chat streaming endpoint (`ChatAPI.ask`). Pins the frontend build the request is attributed to. The built-in `_env.DEFAULT_BL` is watched by the nightly canary's [build-label lane](rpc-development.md#build-label-lane-bl--_envdefault_bl), which compares it against the label Google actually serves; an override here does not change that verdict. | Process env on every chat stream call; whitespace-only falls back to `_env.DEFAULT_BL`. | `_env.get_default_bl` |
 | `NOTEBOOKLM_DEBUG` | When `1`, RPC error messages include the **full** untruncated response body instead of the default 80-char preview. Verbose; intended for deep debugging only. | Process env on each error formatting call. | `exceptions._truncate_response_preview` |
 | `NOTEBOOKLM_REFRESH_CMD` | Optional command invoked when auth refresh is required. Must exit `0` after writing a refreshed `storage_state.json`; the parent reloads cookies from disk. Stdout/stderr are not parsed (only surfaced in the non-zero-exit error message). Parsing honors `NOTEBOOKLM_REFRESH_CMD_USE_SHELL`. | Process env on each refresh subprocess spawn. | `auth` refresh-spawn helper (constant `NOTEBOOKLM_REFRESH_CMD_ENV` in `notebooklm.auth`) |
 | `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` | Opt the optional `NOTEBOOKLM_REFRESH_CMD` subprocess back into `shell=True`. Default `shell=False` parses the command with `shlex.split` and invokes it as an argv list (safer; resists shell-injection footguns when the env var is sourced from CI configs or container env files). | Process env on each refresh subprocess spawn. | `auth` refresh-spawn helper (constant `NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV` in `notebooklm.auth`) |
+| `NOTEBOOKLM_REFRESH_CMD_MIDSESSION` | Opt in (literal `1`) to firing `NOTEBOOKLM_REFRESH_CMD` mid-session (the L2.5 rung of the unified ladder), not just at cold start. Default off **for one release** — the rung was cold-start-only before, and enabling it inside a long-lived server changes when the operator's command runs; flips to default-on a later release. See [ADR-0030](adr/0030-one-recovery-ladder.md). | Read on the mid-session recovery path. | `auth._run_refresh_cmd` (constant `NOTEBOOKLM_REFRESH_CMD_MIDSESSION_ENV` in `notebooklm.auth`) |
+| `NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT` | Opt in (literal `1`) to routing the refresh command's captured `stdout`/`stderr` into the redacting DEBUG logger. Default off: because the mid-session promotion widens exposure of whatever the command prints inside long-lived servers, the default DEBUG line carries only basename + exit code + byte counts. | Process env / logging path on each refresh subprocess spawn. | `auth._run_refresh_cmd` (constant `NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT_ENV` in `notebooklm.auth`) |
 | `NOTEBOOKLM_REFRESH_PROFILE` | Child env var injected into `NOTEBOOKLM_REFRESH_CMD`; names the resolved NotebookLM profile that is being refreshed. Refresh scripts may read it, but setting it in the parent shell does not select the profile. | Set by `auth` refresh-spawn helper from the resolved profile. | `auth._run_refresh_cmd` |
 | `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child env var injected into `NOTEBOOKLM_REFRESH_CMD`; points to the `storage_state.json` file the command must rewrite before exiting `0`. Refresh scripts may read it, but setting it in the parent shell does not select storage. | Set by `auth` refresh-spawn helper from the explicit storage path or profile-aware storage path. | `auth._run_refresh_cmd` |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | When `1`, disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry. Useful when running behind a proxy that rejects the extra request, or in offline test fixtures. | Process env on every keepalive check. | `auth` keepalive guards (constant `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV` in `notebooklm.auth`) |
-| `NOTEBOOKLM_HEADLESS_REAUTH` | Opt in to layer-3 headless re-auth for automatic refresh paths. `client.refresh_auth(allow_headless=True)` is the explicit Python API opt-in and does not require the env var. | Literal `1` enables; all other values disabled. | `_auth.headless_reauth.headless_reauth_env_enabled` |
+| `NOTEBOOKLM_HEADLESS_REAUTH` | Opt in to layer-3 headless re-auth for cold construction and automatic refresh paths. Explicit Python/CLI `allow_headless` flags do not require the env var. | Literal `1` enables; all other values disabled. | `_auth.headless_reauth.headless_reauth_env_enabled` |
 | `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` | Optional Chrome DevTools Protocol endpoint for layer-3 headless re-auth. Must be loopback (`127.0.0.1`, `::1`, or `localhost`); remote endpoints are ignored because CDP is account-equivalent. | Explicit function argument → env var → no CDP arm. | `_auth.headless_reauth.resolve_cdp_url` |
 | `NOTEBOOKLM_MCP_TRANSPORT` | Default transport for `notebooklm-mcp`: `stdio` or `http`. CLI `--transport` wins. | `--transport` flag → env var → `stdio` | `mcp.__main__._build_parser` |
 | `NOTEBOOKLM_MCP_HOST` | HTTP bind host for `notebooklm-mcp --transport http`. Non-loopback refused unless `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1`. | `--host` flag → env var → `127.0.0.1` | `mcp.__main__._build_parser` / `_serving.check_bind_allowed` |
@@ -338,6 +365,21 @@ profile name.
 
 See also `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` to opt back into `shell=True`
 parsing.
+
+By default the command fires only at **active cold start** — client construction
+/ `AuthTokens.from_storage`, which run the recovery ladder when the stored
+cookies are dead. **Passive readiness probes do NOT invoke it**: `auth check
+--test --passive` (and other passive token fetches) use the strict, no-recovery
+loader and never enter the refresh path, so a passive check reports expiry
+without spawning the command. Set `NOTEBOOKLM_REFRESH_CMD_MIDSESSION=1` to also
+fire it **mid-session** (the L2.5 rung of the unified recovery ladder), e.g.
+inside a long-lived server that has been running past cookie expiry. This is **opt-in for
+one release** and flips to default-on afterward; enable it only once you have
+confirmed your command is safe to invoke while the client is live. When you need
+to see what the command printed, set `NOTEBOOKLM_REFRESH_CMD_LOG_OUTPUT=1` to
+route its captured `stdout`/`stderr` into the redacting DEBUG logger — the
+default DEBUG line records only the command basename, exit code, and byte
+counts. See [ADR-0030](adr/0030-one-recovery-ladder.md) for the ladder design.
 
 ### NOTEBOOKLM_HL
 
@@ -473,16 +515,17 @@ notebooklm status --paths
 
 Output:
 ```
-                Configuration Paths
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
-┃ File            ┃ Path                                     ┃ Source    ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
-│ Profile         │ default                                  │ active    │
-│ Home Directory  │ /home/user/.notebooklm                   │ default   │
-│ Storage State   │ .../profiles/default/storage_state.json  │           │
-│ Context         │ .../profiles/default/context.json        │           │
-│ Browser Profile │ .../profiles/default/browser_profile     │           │
-└─────────────────┴──────────────────────────────────────────┴───────────┘
+                 Configuration Paths
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ File             ┃ Path                                     ┃ Source    ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ Profile          │ default                                  │ default   │
+│ Home Directory   │ /home/user/.notebooklm                   │ default   │
+│ Profile Directory│ /home/user/.notebooklm/profiles/default  │           │
+│ Storage State    │ .../profiles/default/storage_state.json  │           │
+│ Context          │ .../profiles/default/context.json        │           │
+│ Browser Profile  │ .../profiles/default/browser_profile     │           │
+└──────────────────┴──────────────────────────────────────────┴───────────┘
 ```
 
 ## Session Management
@@ -557,9 +600,16 @@ they are NOT the same file:
   index and optional `email`) lives in-band inside the selected
   `storage_state.json`. This keeps copied files and `NOTEBOOKLM_AUTH_JSON`
   secrets bound to the same Google account route as the original profile.
+- **Persistent browser state** lives beside the selected storage file. A path
+  named `storage_state.json` uses `browser_profile/`; other filenames append
+  `.browser_profile` to the full filename when it fits, or use a stable
+  canonical-path hash when it does not. Login, headless re-auth, doctor's L3
+  readiness row, `status --paths`, and logout all resolve the same
+  storage-specific directory. Recursive deletion by `login --fresh` or logout
+  requires either the ownership marker or a canonical managed profile layout.
 
 Run `notebooklm --storage <path> status --paths` to see exactly which
-context file is being used for notebook selection.
+storage, context, and browser-profile paths are in use.
 
 ## CI/CD Configuration
 

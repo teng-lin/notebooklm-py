@@ -109,6 +109,7 @@ EXCLUDED_FROM_REQUIRED: dict[str, str] = {
     # domain wrapper translating these is a deliberate per-callsite contract
     # decision, not the transient-transport swallow this gate targets.
     "ArtifactNotFoundError": "semantic not-found, not transient transport",
+    "CollectionNotFoundError": "semantic not-found, not transient transport",
     "LabelNotFoundError": "semantic not-found, not transient transport",
     "MindMapNotFoundError": "semantic not-found, not transient transport",
     "NoteNotFoundError": "semantic not-found, not transient transport",

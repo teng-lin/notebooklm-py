@@ -36,7 +36,7 @@ async def main():
         # Generate a podcast
         status = await client.artifacts.generate_audio(nb.id)
         await client.artifacts.wait_for_completion(nb.id, status.task_id)
-        output_path = await client.artifacts.download_audio(nb.id, "podcast.mp3")
+        output_path = await client.artifacts.download_audio(nb.id, "podcast.m4a")
         print(f"Audio saved to: {output_path}")
 
 asyncio.run(main())
@@ -100,20 +100,30 @@ async with NotebookLMClient.from_storage("/path/to/storage_state.json") as clien
 async with NotebookLMClient.from_storage(profile="work") as client:
     ...
 
+# Permit one cold-start L3 browser recovery if cookies are fully expired.
+# A sibling master_token.json can recover automatically without this flag.
+async with NotebookLMClient.from_storage(profile="work", allow_headless=True) as client:
+    ...
+
 # Headless: mint cookies from a durable master token (the [headless] extra),
 # then drive the normal client. No per-session browser; expired sessions
 # re-mint automatically when master_token.json sits beside storage_state.json.
 # (One-time bootstrap: `notebooklm login --master-token --account you@gmail.com`.)
-import json
-from notebooklm.auth import mint_cookies, persist_minted_jar, read_master_token
-from notebooklm.paths import get_master_token_path, get_storage_path
+from notebooklm.auth import master_token_remint
+from notebooklm.paths import get_storage_path
 
-rec = read_master_token(get_master_token_path())            # {email, android_id, master_token}
-jar = await mint_cookies(rec["email"], rec["master_token"], rec["android_id"])
-persist_minted_jar(get_storage_path(), jar, email=rec["email"])
-async with NotebookLMClient.from_storage() as client:       # inline PSIDTS recovery heals the jar
+await master_token_remint(get_storage_path())               # read -> mint -> persist -> reload
+async with NotebookLMClient.from_storage() as client:
     ...
 # ⚠️ The master token is a full-account, durable credential — dedicated account only.
+#
+# The lower-level primitives (read_master_token / mint_cookies /
+# persist_minted_jar / write_master_token / generate_android_id /
+# exchange_master_token) remain importable from notebooklm.auth for callers
+# that need to assemble a custom transaction, but master_token_remint is the
+# audited, recommended path — it also enforces the account-ownership guard
+# (refuses to overwrite a DIFFERENT account's session) that assembling the
+# primitives yourself bypasses.
 
 # From AuthTokens directly
 from notebooklm import AuthTokens
@@ -124,9 +134,17 @@ auth = AuthTokens(
 )
 client = NotebookLMClient(auth)
 
-# AuthTokens also supports profiles (AuthTokens.from_storage is async)
-auth = await AuthTokens.from_storage(profile="work")
 ```
+
+`AuthTokens.from_storage(...)` remains available as a v0.x compatibility loader,
+but it is deprecated in v0.9.0 and emits `DeprecationWarning` when awaited. Use
+the managed `NotebookLMClient.from_storage(...)` examples above and access
+`client.auth` while the client is open. It is scheduled for removal in v1.0.
+
+Constructing `AuthTokens(..., storage_path=..., cookie_jar=None)` also remains
+compatible through v0.x, but its implicit synchronous storage/recovery I/O is
+deprecated on the same schedule. Prefer the managed client; low-level callers
+that already own a live jar should pass `cookie_jar=` explicitly.
 
 **Building a storage state from existing browser cookies (`[cookies]` extra):**
 
@@ -199,7 +217,7 @@ The library respects these environment variables for authentication:
 2. `NOTEBOOKLM_AUTH_JSON` environment variable
 3. Explicit `profile` argument to `from_storage(profile="work")`
 4. `NOTEBOOKLM_PROFILE` environment variable (resolves to `~/.notebooklm/profiles/<name>/storage_state.json`)
-5. Active profile from `~/.notebooklm/active_profile`
+5. Active profile from `default_profile` in `~/.notebooklm/config.json`
 6. `~/.notebooklm/profiles/default/storage_state.json`
 7. `~/.notebooklm/storage_state.json` (legacy fallback)
 
@@ -551,7 +569,7 @@ follow-up context.
 
 **Cookies in storage are eventually-consistent across processes.** When
 multiple processes share a storage path, an OS-level file lock plus a
-snapshot/delta merge (see `docs/auth-cookie-lifecycle.md` §3.4) keep concurrent
+snapshot/delta merge (see `docs/auth-cookie-lifecycle.md` Appendix A2) keep concurrent
 writers from corrupting the file. They may, however, observe brief
 staleness — a write committed by process A may not be visible to a
 sibling read in process B until the next refresh cycle. Within a single
@@ -815,6 +833,7 @@ class NotebookLMClient:
     settings: SettingsAPI      # User settings (language, etc.)
     sharing: SharingAPI        # Notebook sharing
     labels: LabelsAPI          # Source labels (topic grouping)
+    collections: CollectionsAPI # Account-level notebook collections
     auth: AuthTokens           # Current authentication tokens
     is_connected: bool         # Connection state
 
@@ -832,6 +851,9 @@ class NotebookLMClient:
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
         chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,                   # 180
+        chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES, # 256 MiB
+        *,
+        allow_headless: bool = False,
     ) -> "_FromStorageContext":
         # Returns an awaitable async-context-manager wrapper. Use as
         # `async with NotebookLMClient.from_storage(...) as client:`.
@@ -853,6 +875,7 @@ class NotebookLMClient:
         cookie_saver: CookieSaver | None = None,
         cookie_rotator: CookieRotator | None = None,
         chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,                   # 180
+        chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES, # 256 MiB
     ):
 
     async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:
@@ -1002,7 +1025,7 @@ print(metadata.title)
 
 # Enable public sharing and fetch the URL
 await client.sharing.set_public(nb.id, public=True)
-url = await client.notebooks.get_share_url(nb.id)
+url = client.notebooks.get_share_url(nb.id)  # sync — formats the URL, no RPC
 print(url)
 ```
 
@@ -1026,7 +1049,7 @@ print(url)
 | `add_url(notebook_id, url, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
-| `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). **`title` is ignored** by NotebookLM for native Drive imports — the backend re-derives the display title from live Drive metadata; call `rename(...)` after the add if you need a specific title. |
+| `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). NotebookLM's backend re-derives the display title from live Drive metadata for native Drive imports, discarding the requested `title`; the method now issues an automatic best-effort follow-up `rename()` so an explicit `title` still wins (non-fatal — a rename failure logs a warning and keeps the added source under its upstream title; issue #1960). |
 | `rename(notebook_id, source_id, new_title, *, return_object=True)` | `str, str, str` | `Source \| None` | Rename source (prefers the `UPDATE_SOURCE` echo, else re-fetched; raises `SourceNotFoundError` if missing). `return_object=False` returns `None` without hydrating. |
 | `refresh(notebook_id, source_id)` | `str, str` | `None` | Refresh URL/Drive source |
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
@@ -1034,6 +1057,7 @@ print(url)
 | `wait_until_ready(notebook_id, source_id, timeout=120.0, ...)` | `str, str, float, ...` | `Source` | Poll until `status == READY` (fully processed). Raises `SourceTimeoutError`/`SourceProcessingError`/`SourceNotFoundError`. |
 | `wait_until_registered(notebook_id, source_id, timeout=30.0, ...)` | `str, str, float, ...` | `Source` | Poll until the source is visible server-side (any non-ERROR status). Completes quickly (seconds for typical sources); intended for narrow follow-up RPCs (e.g. `UPDATE_SOURCE`) that only require registration, not full processing. |
 | `wait_for_sources(notebook_id, source_ids, timeout=120.0, **kwargs)` | `str, list[str], float, ...` | `list[Source]` | Wait for multiple sources to become ready **in parallel**. Per-source timeout; `**kwargs` are forwarded to `wait_until_ready`. |
+| `wait_all_until_ready(notebook_id, source_ids, timeout=120.0, initial_interval=1.0, max_interval=10.0, backoff_factor=1.5, transient_error_types=None)` | `str, list[str], float, ...` | `list[SourceWaitResult]` | Wait for many sources with **one notebook snapshot per poll tick** (cheaper than `wait_for_sources`'s per-source polling for large batches). Terminal per-source failures (`SourceNotFoundError` / `SourceProcessingError` / `SourceTimeoutError`) are **returned**, not raised — one result per id, in input order. |
 
 **Example:**
 ```python
@@ -1393,7 +1417,7 @@ except ArtifactTimeoutError as exc:
     raise
 
 if final.is_complete:
-    path = await client.artifacts.download_audio(nb_id, "podcast.mp3")
+    path = await client.artifacts.download_audio(nb_id, "podcast.m4a")
     print(f"Saved to: {path}")
 else:
     print(f"Failed or timed out: {final.status}")
@@ -1555,6 +1579,27 @@ async def poll(notebook_id: str, task_id: str | None = None) -> ResearchTask:
       - summary:   str            — summary text when present
       - report:    str            — deep-research report markdown when present
       - tasks:     tuple[ResearchTask, ...] — ALL parsed tasks visible at this poll
+      - status_code: int | None    — raw backend code (task_info[4]) preserved verbatim
+      - source_type: int | None    — search source echoed by the backend (1=web, 2=drive)
+      - termination_reason: ResearchTerminationReason | None
+                                   — WHY the run ended, differentiating the coarse
+                                     status: NO_RESULTS | CANCELLED | COMPLETED |
+                                     IN_PROGRESS | UNKNOWN. `status` flattens the first
+                                     two and UNKNOWN all into FAILED, so branch on this
+                                     to tell an empty search from a real error.
+                                     None when the poll carried no status code.
+      - reason_message: str | None — human-readable explanation, set only when the run
+                                     did not succeed
+      - hint:      str | None      — remediation matched to the reason and the search
+                                     source (an empty Drive search suggests the exact
+                                     filename / document id; an empty web search
+                                     suggests broadening the query)
+      - is_drive_search / is_web_search: bool — whether the search source is KNOWN to be
+                                     Drive / web (both False when the tag is absent or
+                                     unrecognised, in which case the wording and hint
+                                     stay source-agnostic)
+
+    Backend status codes are documented in docs/rpc-reference.md (POLL_RESEARCH).
 
     Each ResearchSource exposes:
       - url, title
@@ -1931,6 +1976,59 @@ await client.labels.delete(nb_id, papers.id)
 > label it belongs to). Both issue one `UPDATE_LABEL` per id (the wire honours
 > only the first id per call) and are not atomic across ids.
 
+### CollectionsAPI (`client.collections`)
+
+**CLI equivalent:** [Collection Commands](cli-reference.md#collection-commands-notebooklm-collection-cmd) — `notebooklm collection list`, `notebooks`, `create`, `rename`, `add`, `remove`, `delete`.
+
+Collections group whole **notebooks** into named, account-level buckets
+(playlist-style) — the account-level sibling of `LabelsAPI` (which groups
+sources *within* a notebook). Membership is many-to-many (a notebook can belong
+to multiple collections), and a collection owns a list of notebook IDs — the
+notebook carries no back-reference. The dataclass is `Collection` (importable as
+`from notebooklm import Collection`). On the wire a collection is a type-3 source
+label with a null notebook parent, so the same four label RPCs back it.
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `list()` | - | `list[Collection]` | List all collections in the account (with notebook membership) |
+| `get(collection_id)` | `str` | `Collection` | Get a collection by id; raises `CollectionNotFoundError` on a miss |
+| `get_or_none(collection_id)` | `str` | `Collection \| None` | Get a collection by id, returning `None` when absent |
+| `notebooks(collection_id)` | `str` | `list[Notebook]` | Expand a collection to its `Notebook` objects; raises `CollectionNotFoundError` if absent |
+| `create(name)` | `str` | `Collection` | Create an empty, named collection. Locates the new collection by id-diff; raises `CollectionError` on an ambiguous concurrent create |
+| `rename(collection_id, name, *, return_object=True)` | `str, str, *, bool` | `Collection \| None` | Rename a collection (preserves the existing emoji). Raises `CollectionNotFoundError` if missing |
+| `add_notebooks(collection_id, notebook_ids, *, return_object=True)` | `str, list[str], *, bool` | `Collection \| None` | Add notebook(s) to a collection. **Appends** — existing members survive and a notebook may belong to multiple collections. One RPC per id (deduped); not atomic across ids. Raises `ValueError` on an empty list |
+| `remove_notebooks(collection_id, notebook_ids, *, return_object=True)` | `str, list[str], *, bool` | `Collection \| None` | Un-assign notebook(s) from a collection only — the notebooks are not deleted and stay in any other collection. One RPC per id (deduped). Raises `ValueError` on an empty list |
+| `delete(collection_ids)` | `str \| list[str]` | `None` | Delete one or more collections (batch). Idempotent — an absent target is a no-op returning `None`. Deleting a collection does not delete its member notebooks |
+
+Collections carry no emoji at creation (the wire has no emoji slot); an emoji set
+in the web UI is preserved by `rename`. `return_object=False` always returns `None`
+without re-hydrating the collection, but the two mutating families differ on
+*when* a missing target is caught: `rename` preflights with `get_or_none` and
+raises `CollectionNotFoundError` before issuing the RPC, skipping its post-write
+fetch entirely when `return_object=False`; `add_notebooks`/`remove_notebooks`
+have no preflight — they issue every membership RPC first, then always call
+`get_or_none` afterward (regardless of `return_object`) and raise
+`CollectionNotFoundError` there if the collection is gone. So `return_object=False`
+never turns into a cheaper existence-only check for `add_notebooks`/`remove_notebooks`.
+
+**Example:**
+```python
+from notebooklm import Collection
+
+# Create an account-level collection and group notebooks into it
+research = await client.collections.create("Research Q3")
+await client.collections.add_notebooks(research.id, [nb_id])
+
+# List collections and expand one to its member notebooks
+for coll in await client.collections.list():
+    print(f"{coll.id}: {coll.emoji or ''}{coll.name} ({len(coll.notebook_ids)} notebooks)")
+members = await client.collections.notebooks(research.id)
+
+# Un-assign a notebook (it is NOT deleted) then delete the collection
+await client.collections.remove_notebooks(research.id, [nb_id])
+await client.collections.delete(research.id)  # notebooks survive
+```
+
 ---
 
 ## Data Types
@@ -2026,6 +2124,7 @@ class Artifact:
     created_at: Optional[datetime]
     url: Optional[str]
     _variant: int | None = None     # Internal variant for type-4 artifacts (1=flashcards, 2=quiz, 4=interactive mind map).
+    generation_prompt: str | None = None  # Free-text prompt this artifact was generated from, if any (see get_prompt()).
 
     @property
     def kind(self) -> ArtifactType:
@@ -2186,8 +2285,8 @@ if final.is_complete and final.url:
 class AskResult:
     answer: str                        # The answer text with inline citations [1], [2], etc.
     conversation_id: str               # ID for follow-up questions
-    turn_number: int                   # Turn number in conversation
-    is_follow_up: bool                 # Whether this was a follow-up question
+    turn_number: int                   # Server-derived turn number in conversation
+    is_follow_up: bool                 # Explicit ID => True; implicit => prior server turns exist
     references: list[ChatReference]    # Source references cited in the answer
     raw_response: str                  # First 1000 chars of raw API response
 
@@ -2560,7 +2659,7 @@ async with NotebookLMClient.from_storage() as client:
     # source_path; mirror the higher-level APIs when in doubt.
     result = await client.rpc_call(
         RPCMethod.CREATE_NOTEBOOK,
-        params=["My Notebook", None, None, [2], [1]],
+        params=["My Notebook", None, None, [2, None, None, [1, None, None, None, None, None, None, None, None, None, [1]]]],
     )
 ```
 

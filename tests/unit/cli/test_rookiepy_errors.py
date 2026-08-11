@@ -42,6 +42,9 @@ def test_decryption_branch(error_text):
     msg = _handle_rookiepy_error(RuntimeError(error_text), "edge")
     assert "Could not decrypt edge cookies" in msg
     assert "Keychain access" in msg
+    assert "Windows" in msg
+    assert "App-Bound Encryption (ABE)" in msg
+    assert "--browser-cookies firefox" in msg
 
 
 def test_generic_branch_includes_original_message():

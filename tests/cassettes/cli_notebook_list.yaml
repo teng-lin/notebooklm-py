@@ -16,11 +16,11 @@ interactions:
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED;
         _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: GET
-    uri: https://notebooklm.google.com/?authuser=SCRUBBED_EMAIL%40example.com
+    uri: https://notebook.google.com/?authuser=SCRUBBED_EMAIL%40example.com
   response:
     body:
       string: "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><base href=\"https://notebooklm.google.com/\"><link
@@ -1878,11 +1878,11 @@ interactions:
         __Secure-OSID=SCRUBBED; _gcl_au=SCRUBBED; _ga=SCRUBBED;
         _ga_W0LDH41ZCB=SCRUBBED
       Host:
-      - notebooklm.google.com
+      - notebook.google.com
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=wXbhsf&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c&authuser=SCRUBBED_EMAIL%40example.com
+    uri: https://notebook.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=wXbhsf&source-path=%2F&f.sid=SCRUBBED&hl=en&rt=c&authuser=SCRUBBED_EMAIL%40example.com
   response:
     body:
       string: ")]}'\n\n207110\n[[\"wrb.fr\",\"wXbhsf\",\"[[[\\\"E2E-Generation-4b733b3b\\\",[[[\\\"f8cb3722-8518-4c33-b744-8eb435f3ad32\\\"],\\\"SCRUBBED_NAME\\\",[null,161,[1779504513,922019000],[\\\"b609f7b9-6312-4e95-b6ad-3ff940f561a8\\\",[1779504513,701660000]],8,null,1,null,347,null,null,null,null,null,[1779504514,458707000]],[null,2]]],\\\"f7d1e2b6-2334-4016-b81d-aded7b3fa9b6\\\",\\\"\U0001F916\\\",null,[1,false,true,null,null,[1780152878,31144000],1,false,[1779504513,624470000],null,null,null,false,true,1,false,null,true,1],null,null,null,[true,true,true],[6,500,300,500000,2]],[\\\"Pinduoduo

@@ -34,29 +34,20 @@ if TYPE_CHECKING:
     from .rpc import RPCMethod
     from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
-# The construction wiring lives in ``_client_assembly`` (the seam shared
-# with the canonical test factory), but the names below stay runtime
-# imports on purpose:
-#
-# - the feature-API / collaborator types annotate the class-level
-#   attribute block, and keeping them importable at runtime keeps
-#   ``typing.get_type_hints(NotebookLMClient)`` working for downstream
-#   introspection;
-# - this module's attribute surface (``notebooklm.client.SourcesAPI``
-#   etc.) predates the assembly split and is kept byte-compatible so
-#   external tooling/imports against it don't break. The F401-suppressed
-#   names are exactly the previously-importable names the annotations no
-#   longer reference.
+# Keep feature/collaborator types importable for runtime type-hint introspection.
 from ._artifacts import ArtifactsAPI
-from ._auth.account import _probe_authuser, get_account_email_for_storage, write_account_metadata
+from ._auth import tokens as _auth_tokens
+from ._auth.account import _probe_authuser
 from ._auth.account import authuser_query as authuser_query
 from ._auth.extraction import extract_wiz_field as extract_wiz_field
 from ._auth.session import refresh_auth_session
+from ._auth.storage import get_account_email_for_storage, write_account_metadata
 from ._chat import ChatAPI
 from ._client_assembly import _assemble_client
 from ._client_composed import ClientComposed
 from ._client_seams import ClientSeams
 from ._client_seams import resolve_client_seams as resolve_client_seams  # noqa: F401
+from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
 from ._labels import LabelsAPI
@@ -105,6 +96,7 @@ class NotebookLMClient:
     - settings: Manage user settings (output language, etc.)
     - sharing: Manage notebook sharing and permissions
     - labels: AI-group sources into topic labels (auto-label / reorganize)
+    - collections: Group notebooks into account-level collections
 
     Usage:
         # Create from saved authentication (canonical idiom)
@@ -127,6 +119,7 @@ class NotebookLMClient:
         settings: SettingsAPI for user settings
         sharing: SharingAPI for notebook sharing
         labels: LabelsAPI for source labels (topic grouping)
+        collections: CollectionsAPI for account-level notebook collections
         auth: The AuthTokens used for authentication
     """
 
@@ -153,6 +146,7 @@ class NotebookLMClient:
     settings: SettingsAPI
     sharing: SharingAPI
     labels: LabelsAPI
+    collections: CollectionsAPI
 
     def __init__(
         self,
@@ -607,6 +601,8 @@ class NotebookLMClient:
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
         chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
+        *,
+        allow_headless: bool = False,
     ) -> _FromStorageContext:
         """Create a client from Playwright storage state file.
 
@@ -669,6 +665,9 @@ class NotebookLMClient:
                 full semantics.
             on_rpc_event: Optional sync or async callback invoked after each
                 logical RPC succeeds or fails.
+            allow_headless: Permit one cold-start layer-3 browser recovery when
+                stored cookies are fully expired. A sibling master token can
+                recover automatically without enabling browser recovery.
 
         Returns:
             ``_FromStorageContext`` — an awaitable async-context-manager
@@ -708,6 +707,7 @@ class NotebookLMClient:
             chat_response_max_bytes=chat_response_max_bytes,
             upload_timeout=upload_timeout,
             on_rpc_event=on_rpc_event,
+            allow_headless=allow_headless,
         )
 
     async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:
@@ -747,6 +747,24 @@ class NotebookLMClient:
                 credential (a live Google session). L3 is local-unattended-only
                 and must NOT be the auth path for a remote / hosted MCP server.
 
+        Coordinator single-flight + join-then-rerun (caller-side):
+
+            The base-policy refresh (``allow_headless=False``) is BOTH the
+            coordinator's single-flight callback (the mid-RPC 401 path runs it
+            via :meth:`AuthRefreshCoordinator.await_refresh`) and what a default
+            ``refresh_auth()`` performs directly — so the callback path never
+            re-routes into the coordinator and there is no recursion.
+
+            A wider-policy caller (``allow_headless=True``) instead JOINS
+            whatever base-policy flight the coordinator has in progress (or
+            starts one) via ``await_refresh``. If that shared flight SUCCEEDS
+            the tokens are already re-minted and it returns. If it FAILS, the
+            base flight lacked the L3 rung, so this caller RE-RUNS its own
+            refresh with the full rung policy (``allow_headless=True``) — it
+            never silently loses its L3 rung to a narrower flight it joined.
+            The coordinator's internals (its single unkeyed task slot) are not
+            modified; the join-then-rerun is entirely caller-side.
+
         Returns:
             Updated AuthTokens.
 
@@ -755,14 +773,37 @@ class NotebookLMClient:
                 changed), or if cookies are dead and L3 is unavailable / also
                 fails (the persisted profile's Google session is expired too).
         """
-        return await refresh_auth_session(
-            auth=self._auth,
-            kernel=self._collaborators.kernel,
-            auth_coord=self._collaborators.auth_coord,
-            lifecycle=self._collaborators.lifecycle,
-            cookie_persistence=self._collaborators.cookie_persistence,
-            allow_headless=allow_headless,
-        )
+        coord = self._collaborators.auth_coord
+        if not allow_headless or not coord.has_refresh_callback:
+            # Base policy — also the coordinator's single-flight callback body,
+            # so this branch must NOT re-enter await_refresh (that would recurse
+            # through the callback). No coordinator wired ⇒ same direct path.
+            return await refresh_auth_session(
+                auth=self._auth,
+                kernel=self._collaborators.kernel,
+                auth_coord=coord,
+                lifecycle=self._collaborators.lifecycle,
+                cookie_persistence=self._collaborators.cookie_persistence,
+                allow_headless=allow_headless,
+            )
+        # Wider policy: join the in-flight base refresh (join-then-rerun).
+        try:
+            await coord.await_refresh()
+        except ValueError:
+            # Narrow by design: the L3-remediable base-flight failure surfaces as
+            # ValueError (dead-cookie 302 / token extraction). refresh-cmd swallows
+            # its RuntimeError internally (returns bool), so a RuntimeError here is
+            # incidental (e.g. "Client not initialized") and must propagate, not
+            # trigger a second headless refresh; transport 5xx propagates too.
+            return await refresh_auth_session(
+                auth=self._auth,
+                kernel=self._collaborators.kernel,
+                auth_coord=coord,
+                lifecycle=self._collaborators.lifecycle,
+                cookie_persistence=self._collaborators.cookie_persistence,
+                allow_headless=True,
+            )
+        return self._auth
 
     def get_account_authuser(self) -> int:
         """Return the ``authuser`` index of the signed-in account (0 = default).
@@ -865,18 +906,9 @@ class _FromStorageContext:
         self._owns_close = False
 
     async def _build(self) -> NotebookLMClient:
-        """Load auth and instantiate the client (no session open).
+        """Load auth and instantiate a cached, not-yet-open client.
 
-        Idempotent on success: subsequent calls return the cached
-        instance so awaiting the wrapper and then entering it as a
-        context manager — or vice versa — never re-runs the auth load.
-
-        Partial failure: if ``AuthTokens.from_storage(...)`` succeeds
-        but the ``NotebookLMClient(...)`` constructor raises, the cache
-        stays unset and a retry re-runs the auth load. That's
-        intentional — the constructor only raises on programmer error
-        (cross-validated kwargs) so the extra I/O on retry is
-        acceptable.
+        Constructor failure leaves the cache empty, so retry reloads auth.
         """
         if self._client is not None:
             return self._client
@@ -885,10 +917,20 @@ class _FromStorageContext:
         path = kwargs["path"]
         profile = kwargs["profile"]
 
-        auth = await AuthTokens.from_storage(Path(path) if path else None, profile=profile)
+        loaded = await _auth_tokens._load_stored_auth(
+            path=Path(path) if path else None,
+            profile=profile,
+            policy=_auth_tokens.LoadPolicy(allow_headless=kwargs["allow_headless"]),
+            auth_type=AuthTokens,
+        )
+        match loaded:
+            case _auth_tokens.InlineLoadedAuth(auth=auth):
+                pass
+            case _auth_tokens.FileLoadedAuth(auth=auth):
+                pass
         storage_path = auth.storage_path
 
-        self._client = self._cls(
+        client = self._cls(
             auth,
             timeout=kwargs["timeout"],
             storage_path=storage_path,
@@ -904,7 +946,12 @@ class _FromStorageContext:
             upload_timeout=kwargs["upload_timeout"],
             on_rpc_event=kwargs["on_rpc_event"],
         )
-        return self._client
+        if isinstance(loaded, _auth_tokens.FileLoadedAuth) and hasattr(client, "_collaborators"):
+            client._collaborators.cookie_persistence.register_open_baseline(
+                loaded.store, loaded.persistence_baseline
+            )
+        self._client = client
+        return client
 
     def __await__(self) -> Generator[Any, None, NotebookLMClient]:
         """Legacy await path — returns a built-but-unentered client.

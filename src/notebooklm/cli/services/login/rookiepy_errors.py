@@ -34,6 +34,10 @@ def _handle_rookiepy_error(e: Exception, browser_name: str) -> str:
     if "keychain" in msg or "decrypt" in msg:
         return (
             f"[red]Could not decrypt {browser_name} cookies.[/red]\n"
-            "On macOS, allow Keychain access when prompted, or try a different browser."
+            "On macOS, allow Keychain access when prompted. On Windows, Chrome 127+ and "
+            "current Edge protect the cookie database with App-Bound Encryption (ABE): the "
+            "key is bound to the browser process via a Windows service, so no external "
+            "process can read it and no flag bypasses it. Use Firefox as the cookie source "
+            "instead (plain SQLite, no ABE): notebooklm login --browser-cookies firefox"
         )
     return f"[red]Failed to read cookies from {browser_name}:[/red] {e}"

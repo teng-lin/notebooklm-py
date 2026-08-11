@@ -20,8 +20,11 @@ the broader stability policy (semver promise, supported Python versions, the
 
 | Deprecated | Replacement | Since | Removal | Notes |
 |------------|-------------|-------|---------|-------|
+| `AuthTokens.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` then use `client.auth` inside the managed lifecycle | v0.9.0 | v1.0 | The compatibility loader keeps its signature, return, error, and cancellation behavior through v0.x but now emits `DeprecationWarning` when awaited. |
+| `AuthTokens(..., storage_path=..., cookie_jar=None)` synchronous storage fallback | Use `NotebookLMClient.from_storage(...)`, or supply `cookie_jar=` when constructing tokens directly | v0.9.0 | v1.0 | Only the implicit synchronous-I/O branch warns; construction without `storage_path`, with a supplied jar, or failing cookie normalization stays silent. |
 | Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | v0.5.0 | v1.0 | The `__await__` form still works. Warning emitted via `src/notebooklm/_deprecation.py::warn_deprecated`; suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1` ([#1369](https://github.com/teng-lin/notebooklm-py/issues/1369)) |
 | MCP `research_status(task_id=…)` / `research_import(task_id=…)` / `research_cancel(run_id=…)` | The same value under `poll_task_id=…` on all three | v0.8.0 | v0.9.0 | The three tools each accept the id that `research_start` / `research_status` surface as `poll_task_id` — renamed so the value copies verbatim between tools. The old `task_id` / `run_id` param names still work as aliases but emit a `DeprecationWarning` (via `warn_deprecated`) and add a `deprecation` note to the tool result; passing both names with different values is a validation error. ([#1789](https://github.com/teng-lin/notebooklm-py/issues/1789)) |
+| Pre-profiles home-root layout (`~/.notebooklm/storage_state.json`, `context.json`, `browser_profile/` read directly at the home root, outside `profiles/<name>/`) | `profiles/<name>/…` — run any `notebooklm` command once to migrate automatically | v0.9.0 | v1.0 | Only reached when the profile-dir path doesn't exist AND the resolved profile is `"default"` (`paths.py::_legacy_fallback`); one `notebooklm` invocation triggers `migrate_to_profiles()` and the fallback is never hit again. Emits a `DeprecationWarning` (via `warn_deprecated`) on each read; suppress with `NOTEBOOKLM_QUIET_DEPRECATIONS=1`. ([#2103](https://github.com/teng-lin/notebooklm-py/issues/2103)) |
 
 > The v0.8.0 error-contract runways (`get()`-returns-`None`, the
 > `wait_for_completion(interval=...)` alias, the dict-subscript bridge,
@@ -120,16 +123,21 @@ migration for each is in
 * Default-shape calls remain silent. A deprecation only fires when the
   caller actually passes the deprecated argument or surface.
 * `NOTEBOOKLM_QUIET_DEPRECATIONS=1` suppresses **every** deprecation warning
-  this project emits — the one-off warnings routed through
-  `src/notebooklm/_deprecation.py::warn_deprecated` (e.g. awaiting
-  `from_storage(...)`). All mechanics live in `_deprecation.py`; ADR-0018 forbids
-  inline `warnings.warn(..., DeprecationWarning)` elsewhere and a lint
+  this project emits. The two auth-storage runways are immutable
+  `DeprecationSpec` entries routed through `warn_registered_deprecation`; other
+  one-off warnings use `warn_deprecated`. All mechanics live in
+  `src/notebooklm/_deprecation.py`; ADR-0018 forbids inline
+  `warnings.warn(..., DeprecationWarning)` elsewhere and a lint
   (`tests/_guardrails/test_no_inline_deprecation_warnings.py`) enforces it. See
   `docs/configuration.md`.
+* `scripts/check_deprecation_targets.py` validates the registry without
+  importing it: spec keys and callsites must match, versions must be literal
+  semantic versions, removal cannot equal the shipping release, and every
+  replacement must resolve structurally on the source tree.
 * Not every inline `warnings.warn(...)` is a deprecation. The
   `save_cookies_to_storage(original_snapshot=None)` legacy full-merge path is a
   *permanent* public-API back-compat shim (see
-  `docs/auth-cookie-lifecycle.md` §3.4.1), not a scheduled removal, so it emits
+  `docs/auth-cookie-lifecycle.md` Appendix A2), not a scheduled removal, so it emits
   a **`RuntimeWarning`** safety advisory about the stale-overwrite-fresh race —
   outside ADR-0018's scope and intentionally **not** silenced by
   `NOTEBOOKLM_QUIET_DEPRECATIONS`.

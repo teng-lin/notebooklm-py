@@ -43,6 +43,31 @@ DELETE_NOTEBOOK_ID = "fc9cc125-fc20-439b-9f3d-d801c5b0de38"  # notebooks_delete.
 
 
 @pytest.mark.asyncio
+@notebooklm_vcr.use_cassette("notebooks_list.yaml")
+async def test_mcp_notebook_list_crosses_adapter_to_client_boundary() -> None:
+    """A representative MCP composition path reaches the real client and decoder.
+
+    This is driven through the in-memory FastMCP client and a real
+    ``NotebookLMClient``. VCR only replaces HTTP, so the test fails if the MCP
+    tool skips the client namespace, sends the wrong RPC, or fabricates output.
+    The existing cassette keeps the check deterministic and credential-free.
+    """
+    async with build_mcp_client() as mcp_client:
+        result = await mcp_client.call_tool("notebook_list", {})
+
+    structured = result.structured_content
+    assert isinstance(structured, dict)
+    notebooks = structured["notebooks"]
+    assert isinstance(notebooks, list) and notebooks
+    assert isinstance(notebooks[0], dict)
+    assert notebooks[0]["id"] == "f66923f0-1df4-4ffe-9822-3ed63c558b1c"
+    assert (
+        notebooks[0]["title"]
+        == "GENERATION: Claude Code Deep Dive: Skills, Agents, Commands & Plugins"
+    )
+
+
+@pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("notebooks_create.yaml")
 async def test_mcp_notebook_create_over_vcr() -> None:
     """``notebook_create`` returns the created notebook with non-null timestamps.

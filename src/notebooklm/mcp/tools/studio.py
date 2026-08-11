@@ -16,9 +16,9 @@ Thin adapters over the transport-neutral artifact cores:
   ``type`` selects a :class:`~notebooklm._app.download.DownloadTypeSpec` row and
   ``build_download_plan`` + ``execute_download`` run with pass-through resolvers.
 
-This module imports NO ``click`` / ``rich`` / ``cli`` — the ``DownloadTypeSpec``
-registry rows are rebuilt here from the neutral ``_app.download`` types rather
-than imported from ``cli/_download_specs.py``.
+This module imports NO ``click`` / ``rich`` / ``cli`` — its download rows come
+from the canonical neutral ``_app.download_specs`` registry through
+``_studio_download``, rather than from ``cli/_download_specs.py``.
 """
 
 from __future__ import annotations
@@ -52,6 +52,7 @@ from ._studio_download import (
     _DOWNLOAD_SPECS,
     _INLINE_TEXT_TYPES,
     _KIND_TO_DOWNLOAD_KEY,
+    DownloadFormat,
     DownloadType,
     _broker_download,
     _is_http_transport,
@@ -527,7 +528,7 @@ def register(mcp: Any) -> None:
         artifact: str | None = None,
         artifact_type: DownloadType | None = None,
         path: str | None = None,
-        output_format: Literal["pdf", "pptx", "json", "markdown", "html"] | None = None,
+        output_format: DownloadFormat | None = None,
         artifact_id: str | None = None,
     ) -> Any:
         """Download a generated artifact. Accepts a notebook name or ID.
@@ -535,13 +536,12 @@ def register(mcp: Any) -> None:
         Target the artifact in ONE of two ways (exactly one):
         * ``artifact`` — a name-or-id ref (title / id / unique-id-prefix), the form the
           other ``artifact_*`` tools take; resolves to its type + id.
-        * ``artifact_type`` — one of audio|video|slide-deck|infographic|report|
-          mind-map|data-table|quiz|flashcards, optionally with ``artifact_id``
-          (full or unique-prefix) for a specific one; omit ``artifact_id`` to get
-          the latest artifact of that type.
+        * ``artifact_type`` — a registry-advertised type, optionally with
+          ``artifact_id`` (full or unique-prefix) for a specific one; omit
+          ``artifact_id`` to get the latest artifact of that type.
 
-        ``output_format`` overrides the default file format where supported:
-        slide-deck → pdf|pptx; quiz/flashcards → json|markdown|html.
+        ``output_format`` overrides the default where the selected artifact type
+        supports it. The tool schema advertises the current type and format enums.
 
         Over **stdio** the artifact is written to ``path`` (required). Over the
         **remote (http) connector** the server filesystem is unreachable, so the tool

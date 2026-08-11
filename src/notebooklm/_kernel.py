@@ -85,6 +85,11 @@ class Kernel:
         )
         self._timeout = timeout
         self._connect_timeout = connect_timeout
+        # Bootstrap seed only (ADR-0032): this is the ONE legitimate internal
+        # read of auth's cookie fields — it seeds the client's live jar at open,
+        # after which the client (kernel) owns the jar and auth's copy is a
+        # public-compat shadow. This read becomes ``auth.initial_cookies`` when
+        # the fields are removed (Phase B).
         cookies = (
             auth.cookie_jar
             if auth.cookie_jar is not None

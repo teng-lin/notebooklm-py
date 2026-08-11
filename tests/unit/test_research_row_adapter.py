@@ -41,10 +41,12 @@ class TestResearchTaskInfoRowPositionContract:
     def test_positions_pinned(self) -> None:
         assert (
             ResearchTaskInfoRow._QUERY_TEXT_POS,
+            ResearchTaskInfoRow._QUERY_SOURCE_TYPE_POS,
+            ResearchTaskInfoRow._QUERY_SOURCE_TYPE_MIN_LEN,
             ResearchTaskInfoRow._SOURCES_POS,
             ResearchTaskInfoRow._SUMMARY_POS,
             ResearchTaskInfoRow._SUMMARY_MIN_LEN,
-        ) == (0, 0, 1, 2)
+        ) == (0, 1, 2, 0, 1, 2)
 
 
 class TestResearchResultRowPositionContract:
@@ -107,6 +109,18 @@ class TestResearchTaskInfoRow:
 
     def test_query_text_empty_returns_none(self) -> None:
         assert ResearchTaskInfoRow.query_text([]) is None
+
+    def test_query_source_type_reads_the_tag(self) -> None:
+        # Live-captured shapes (#1964): drive echoes 2, web echoes 1.
+        assert ResearchTaskInfoRow.query_source_type(["notes", 2]) == 2
+        assert ResearchTaskInfoRow.query_source_type(["python asyncio", 1]) == 1
+
+    def test_query_source_type_absent_soft_degrades(self) -> None:
+        # A text-only query block legitimately omits the tag — a soft read like
+        # every other optional slot in this adapter, never an IndexError.
+        assert ResearchTaskInfoRow.query_source_type(["query only"]) is None
+        assert ResearchTaskInfoRow.query_source_type([]) is None
+        assert ResearchTaskInfoRow.query_source_type(None) is None
 
     def test_bundle_sources_returns_first(self) -> None:
         assert ResearchTaskInfoRow.bundle_sources([["a", "b"], "summary"]) == ["a", "b"]

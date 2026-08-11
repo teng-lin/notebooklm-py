@@ -1,6 +1,6 @@
 # Installation
 
-**Last Updated:** 2026-07-11
+**Last Updated:** 2026-08-05
 
 This is the canonical installation guide for `notebooklm-py`. The README has a quickstart; everything else lives here.
 
@@ -233,16 +233,37 @@ print(notebooklm.__version__)
    scp ~/.notebooklm/profiles/default/storage_state.json \
        user@server:~/.notebooklm/profiles/default/storage_state.json
    ```
-   or stuff the contents into a CI / deployment env var (preferred for ephemeral runners):
-   <!-- not mirrored: headless-server bootstrap step 2b (env var); not part of contributor flow -->
+   **For CI, ship the master token — not a cookie snapshot.** A cookie snapshot
+   is superseded by any other active client within ~10 minutes and is rejected
+   shortly after (see [auth-cookie-lifecycle.md §2.5](auth-cookie-lifecycle.md#25-four-timers-people-confuse)),
+   so a secret exported on a workstation is routinely dead before the run starts.
+   A master token does not rotate. Write it to a file and mint a session per run:
+
+   <!-- not mirrored: headless-server bootstrap step 2b (CI secret); not part of contributor flow -->
    ```bash
-   export NOTEBOOKLM_AUTH_JSON="$(cat ~/.notebooklm/profiles/default/storage_state.json)"
+   # one-off, on the workstation: mint the master token, then ship it.
+   # Plain `notebooklm login` (step 1) does NOT create master_token.json.
+   pip install "notebooklm-py[headless]"
+   notebooklm login --master-token   # writes ~/.notebooklm/profiles/default/master_token.json
+   gh secret set NOTEBOOKLM_MASTER_TOKEN_JSON < ~/.notebooklm/profiles/default/master_token.json
+
+   # in the job, before anything that authenticates.
+   # [headless] pulls gpsoauth, without which the mint below cannot run.
+   pip install "notebooklm-py[headless]"
+   umask 077
+   mkdir -p ~/.notebooklm/profiles/default
+   printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
+   chmod 600 ~/.notebooklm/profiles/default/master_token.json
+   unset NOTEBOOKLM_MASTER_TOKEN_JSON     # `login` refuses to run while inline env auth is set
+   notebooklm login --master-token-refresh   # bootstraps storage_state.json from the token
    ```
 
-   > **CI env-var notes:**
-   > - `storage_state.json` is typically 4–15 KB — well under GitHub Actions' 48 KB single-secret cap.
-   > - Watch for trailing newlines: pipe with `tr -d '\n'` if your secret-set tool adds one (`cat ... | tr -d '\n' | gh secret set NOTEBOOKLM_AUTH_JSON`).
-   > - For **ephemeral runners** (GitHub Actions, GitLab CI — no persistent disk between runs), the layer-5 in-process refresh from [troubleshooting.md](troubleshooting.md#authentication-errors) cannot persist rotated cookies. Run `notebooklm auth refresh` periodically on a workstation cron and push the refreshed file with `gh secret set NOTEBOOKLM_AUTH_JSON < ~/.notebooklm/profiles/default/storage_state.json`.
+   > **CI notes:**
+   > - The mint **bootstraps** `storage_state.json` when none exists, so the token is the only credential you ship. Layer-4 then covers mid-run expiry.
+   > - `master_token.json` is a **full-account credential** — it mints OAuth for many Google services and does not rotate. **It survives a password change**: the only remediation for a leaked token is explicit revocation (Google Account → Security → Your devices → remove the device/session), so do not treat a password reset as containment. Use a dedicated/throwaway account, keep it in a protected environment, `0600` on disk, and `unset` it from the environment once written (a file is not inherited by child processes; an env var is). See the security warning under [master-token auth](#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry).
+   > - Requires the `[headless]` extra (`gpsoauth`) on the runner.
+   > - This repo's four secret-bearing workflows all use exactly this shape and ship no cookie snapshot ([development.md](development.md#setting-up-nightly-e2e-tests)).
+   > - Inline `NOTEBOOKLM_AUTH_JSON` still works for a single short-lived invocation, but it never engages the layer-4 re-mint and cannot persist a rotation, so it is not suitable for scheduled or long-lived jobs. See [master-token auth](#alternative-master-token-auth-no-cookie-file-to-ship-survives-expiry).
 3. **On the server**, run any non-`login` command:
    <!-- not mirrored: headless-server smoke test; not part of contributor flow -->
    ```bash
@@ -277,16 +298,21 @@ notebooklm login --master-token --account you@gmail.com
 scp ~/.notebooklm/profiles/default/master_token.json \
     user@server:~/.notebooklm/profiles/default/master_token.json
 
-# On the server, just run commands — cookies are minted/refreshed as needed:
+# Mint initial storage if only the token was shipped; --verify reuses the
+# mandatory passive validation.
+notebooklm auth refresh --verify
+
+# Then run commands normally; dead existing sessions re-mint as needed.
 notebooklm list
-# Force a re-mint by hand (or from cron) any time:
+
+# Legacy escape hatch: force a re-mint unconditionally.
 notebooklm login --master-token-refresh
 ```
 
-When a `master_token.json` sits beside a profile's `storage_state.json`, an
-expired session is recovered by re-minting from the master token in-process
-(after the normal homepage/RotateCookies/headless ladder is exhausted) — so
-long-lived headless workers self-heal.
+When storage is absent, `auth refresh` mints it from the exact sibling token and
+passively validates once. When both files exist, cold or mid-session loading
+re-mints only after the homepage/RotateCookies/headless ladder is exhausted.
+The legacy login flag remains the unconditional forced route.
 
 > ⚠️ **Security:** the master token is **full-account, durable, and
 > infostealer-grade** — a materially larger blast radius than an expiring
@@ -314,7 +340,7 @@ pre-commit install
 
 **Why `uv sync --frozen` and not `uv pip install -e ".[all]"`:** the repo has a checked-in `uv.lock`. `uv sync --frozen` enforces the lockfile and fails fast on drift; `uv pip install` ignores the lockfile and re-resolves transitively (will silently get newer versions of `playwright`, `ruff`, etc.).
 
-**Why three extras and not `[all]`:** `[all]` is `pip` extras semantics. `uv sync --extra X` is the `uv` equivalent. The three extras here are the contributor subset of `[all]` = `[browser, dev, markdown, mcp, server]`. `cookies` is intentionally excluded (`rookiepy` build issues on Python 3.13+), and `mcp` / `server` are omitted from the default contributor flow because those adapters are not needed for the standard local suite; opt in via `--extra cookies` / `--extra mcp` / `--extra server` if needed.
+**Why three extras and not `[all]`:** `[all]` is `pip` extras semantics. `uv sync --extra X` is the `uv` equivalent. `[all]` itself expands to six extras — `[browser, dev, headless, markdown, mcp, server]` — but the command above installs only three of them (`browser, dev, markdown`), the contributor subset. `cookies` is intentionally excluded from both (`rookiepy` build issues on Python 3.13+); `headless` / `mcp` / `server` are the other three `[all]` extras, omitted from the default contributor flow because those adapters are not needed for the standard local suite. Opt in via `--extra headless` / `--extra cookies` / `--extra mcp` / `--extra server` if needed.
 
 **Why `browser` is part of the contributor install:** the default local test suite includes unit tests that import and patch `playwright.sync_api`, even though they do not launch a real browser. `uv sync --frozen --extra dev` installs pytest/ruff/mypy but not Playwright, so `uv run pytest` will fail with `ModuleNotFoundError: No module named 'playwright'`. Use the full contributor command above before running the default test suite.
 
@@ -365,9 +391,9 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 | `headless` | `gpsoauth>=1.1.0` | `notebooklm login --master-token` — headless auth that mints/refreshes web cookies from a durable master token, no per-session browser. Pure-Python (in `all`). See [§ D](#d-headless-server-or-ci). | `pip install "notebooklm-py[headless]"` | `uv add "notebooklm-py[headless]"` |
 | `impersonate` | `curl_cffi>=0.11` | **Experimental.** Browser TLS/JA3 impersonation transport — set `NOTEBOOKLM_TRANSPORT=curl_cffi` to route the authenticated API surface through a Chrome-fingerprinted connection (insurance vs TLS fingerprint-gating); override the profile with `NOTEBOOKLM_IMPERSONATE` (default `chrome`, e.g. `safari`, `chrome131`). Native wheels. | `pip install "notebooklm-py[impersonate]"` | `uv add "notebooklm-py[impersonate]"` |
 | `markdown` | `markdownify>=0.14.1` | `notebooklm source fulltext -f markdown`. | `pip install "notebooklm-py[markdown]"` | `uv add "notebooklm-py[markdown]"` |
-| `mcp` | `fastmcp>=2.14` | Run the MCP server (`notebooklm-mcp`) so an MCP client/agent can drive NotebookLM as tools. | `pip install "notebooklm-py[mcp]"` | `uv add "notebooklm-py[mcp]"` |
+| `mcp` | `fastmcp==3.4.2` (exact pin) | Run the MCP server (`notebooklm-mcp`) so an MCP client/agent can drive NotebookLM as tools. | `pip install "notebooklm-py[mcp]"` | `uv add "notebooklm-py[mcp]"` |
 | `server` | `fastapi`, `uvicorn[standard]`, `python-multipart` | The localhost REST API server (`notebooklm-server`, experimental). See [§ REST API server](#rest-api-server). | `pip install "notebooklm-py[server]"` | `uv add "notebooklm-py[server]"` |
-| `dev` | pytest stack, mypy, ruff (`==0.15.15` exact pin), pre-commit (`>=4.5.1`), vcrpy | Contributor tooling only. Not sufficient for this repo's default `uv run pytest`; add `browser` too because some unit tests import Playwright. | `pip install "notebooklm-py[dev]"` | `uv add "notebooklm-py[dev]"` (in your project) — but contributors *to this repo* use the [Persona E](#e-contributor) `uv sync` flow instead |
+| `dev` | pytest stack, mypy, ruff (`==0.16.1` exact pin), pre-commit (`>=4.5.1`), vcrpy | Contributor tooling only. Not sufficient for this repo's default `uv run pytest`; add `browser` too because some unit tests import Playwright. | `pip install "notebooklm-py[dev]"` | `uv add "notebooklm-py[dev]"` (in your project) — but contributors *to this repo* use the [Persona E](#e-contributor) `uv sync` flow instead |
 | `all` | Resolves to `browser` + `dev` + `headless` + `markdown` + `mcp` + `server` (**not `cookies`**) | Contributors who do not need `rookiepy`. | `pip install "notebooklm-py[all]"` | `uv add "notebooklm-py[all]"` (in your project) — see [All vs All-Extras](#all-vs-all-extras) |
 
 > **Note on `uv` columns:** the `uv (in your project)` column is for users adding `notebooklm-py` as a dependency in **their own** project (requires a `pyproject.toml` in that project). Contributors working inside *this* repo use the Persona E flow (`uv sync --frozen --extra ...`), governed by this repo's `uv.lock`. Do not run `uv sync` outside a project — it errors with `No pyproject.toml found`.
@@ -443,7 +469,7 @@ curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
      -d '{"type":"quiz"}' $BASE/v1/notebooks/<id>/artifacts        # → {"task_id": ...}
 curl -H "Authorization: Bearer $TOKEN" $BASE/v1/notebooks/<id>/artifacts/<task_id>  # poll
 curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-     -d '{"type":"audio"}' $BASE/v1/notebooks/<id>/artifacts/download -o out.mp3     # download
+     -d '{"type":"audio"}' $BASE/v1/notebooks/<id>/artifacts/download -o out.m4a     # download
 # File upload is multipart (the original filename + content-type are preserved):
 curl -H "Authorization: Bearer $TOKEN" -F 'file=@./notes.pdf' \
      $BASE/v1/notebooks/<id>/sources/file
@@ -579,7 +605,7 @@ rm -rf ~/.notebooklm                          # optional: remove auth state
 
 > ⚠️  **`pip install ".[all]"` and `uv sync --all-extras` are not equivalent.**
 >
-> - `pyproject.toml` defines: `all = ["notebooklm-py[browser,dev,markdown,mcp,server]"]` — a self-referential extras string that resolves to **browser + dev + markdown + mcp + server only**. It deliberately excludes `cookies` because `rookiepy` has install issues on Python 3.13+ ([CHANGELOG `[0.4.1]`](../CHANGELOG.md)).
+> - `pyproject.toml` defines: `all = ["notebooklm-py[browser,dev,headless,markdown,mcp,server]"]` — a self-referential extras string that resolves to **browser + dev + headless + markdown + mcp + server only**. It deliberately excludes `cookies` because `rookiepy` has install issues on Python 3.13+ ([CHANGELOG `[0.4.1]`](../CHANGELOG.md)).
 > - `uv sync --all-extras` installs **every** extra including `cookies`, and may fail on Python 3.13/3.14.
 > - In this repo, prefer `uv sync --frozen --extra browser --extra dev --extra markdown`.
 

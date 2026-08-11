@@ -919,7 +919,6 @@ def test_resumable_upload_start_request_matches_golden_payload() -> None:
         file_size=4096,
         source_id="src_payload",
         content_type="application/pdf",
-        base_url="https://notebooklm.google.com",
         upload_url="https://notebooklm.google.com/_/upload",
         authuser_query="authuser=1",
         authuser_header="1",

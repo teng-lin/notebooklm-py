@@ -74,7 +74,7 @@ class _CmdSpec:
 
 
 _LEAF_COMMANDS: list[_CmdSpec] = [
-    _CmdSpec("audio", 1, ".mp3", "download_audio"),
+    _CmdSpec("audio", 1, ".m4a", "download_audio"),  # AAC/MP4, not MP3 (#2034)
     _CmdSpec("video", 3, ".mp4", "download_video"),
     _CmdSpec("infographic", 7, ".png", "download_infographic"),
     _CmdSpec("slide-deck", 8, ".pdf", "download_slide_deck"),

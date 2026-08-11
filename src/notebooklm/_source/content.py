@@ -53,12 +53,13 @@ class SourceContentRenderer:
 
         if output_format == "markdown":
             try:
-                from markdownify import markdownify as md
+                import markdownify  # noqa: F401  # presence guard; conversion is below
             except ImportError:
                 raise ImportError(
                     "The 'markdown' format requires the 'markdownify' package. "
                     "Install it with: pip install 'notebooklm-py[markdown]'"
                 ) from None
+            from .markdown import html_to_markdown
 
         params = [[source_id], [3], [3]] if output_format == "markdown" else [[source_id], [2], [2]]
 
@@ -120,7 +121,7 @@ class SourceContentRenderer:
             # rendition" (warned + empty below).
             html_content = fulltext_row.html_content
             if html_content is not None:
-                content = md(html_content, heading_style="ATX")
+                content = html_to_markdown(html_content, source_type=source_type)
             else:
                 self._logger.warning(
                     "Source %s (type=%s) has no HTML rendition for output_format='markdown'; "

@@ -30,11 +30,11 @@ class TestSourceOperations:
     @pytest.mark.asyncio
     async def test_add_url_source(self, client, temp_notebook):
         """Test adding a URL source to an owned notebook."""
-        source = await client.sources.add_url(temp_notebook.id, "https://httpbin.org/html")
+        source = await client.sources.add_url(temp_notebook.id, "https://example.com")
         assert isinstance(source, Source)
         assert source.id is not None
         # URL may or may not be returned in response
-        # assert source.url == "https://httpbin.org/html"
+        # assert source.url == "https://example.com"
 
     @pytest.mark.asyncio
     async def test_add_youtube_source(self, client, temp_notebook):
@@ -139,7 +139,7 @@ class TestSourceMutations:
     async def test_refresh_source(self, client, temp_notebook):
         """Test refreshing a URL source."""
         # Add a URL source
-        source = await client.sources.add_url(temp_notebook.id, "https://httpbin.org/html")
+        source = await client.sources.add_url(temp_notebook.id, "https://example.com")
         assert source.id is not None
 
         # Refresh it
@@ -153,7 +153,7 @@ class TestSourceMutations:
     async def test_check_freshness(self, client, temp_notebook):
         """Test checking source freshness."""
         # Add a URL source
-        source = await client.sources.add_url(temp_notebook.id, "https://httpbin.org/html")
+        source = await client.sources.add_url(temp_notebook.id, "https://example.com")
         assert source.id is not None
 
         await asyncio.sleep(2)  # Wait for processing

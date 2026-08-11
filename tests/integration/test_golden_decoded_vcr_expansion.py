@@ -55,6 +55,7 @@ from notebooklm import ReportFormat
 from notebooklm.types import (
     MindMapKind,
     ResearchStatus,
+    ResearchTerminationReason,
     SharePermission,
     SourceStatus,
 )
@@ -608,6 +609,35 @@ class TestResearchGoldenDecoded:
         )
         assert_decoded_equals(result.status, ResearchStatus.NOT_FOUND, field="research_poll.status")
         assert_decoded_equals(result.sources, (), field="research_poll.sources")
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("research_poll.yaml")
+    async def test_poll_decodes_source_type_and_reason_golden(self):
+        """Pin the ``task_info[1][1]`` search-source tag against a cassette (#1964).
+
+        The tag drives the source-specific remediation hint, and the VCR matcher
+        never compares response leaves — so a wrong-value-right-slot decode
+        replays green. The recorded request is an UNFILTERED poll
+        (``[null, null, "<nb_id>"]``; the task pin is applied client-side), so
+        polling without a task id replays against the same cassette and reaches
+        the recorded row rather than the NOT_FOUND sentinel above.
+        """
+        async with vcr_client() as client:
+            result = await client.research.poll(MUTABLE_NOTEBOOK_ID)
+
+        assert_decoded_equals(
+            result.query, "Python programming best practices", field="research_poll.query"
+        )
+        # 1 = web, as recorded.
+        assert_decoded_equals(result.source_type, 1, field="research_poll.source_type")
+        assert_decoded_equals(result.is_drive_search, False, field="research_poll.is_drive_search")
+        assert_decoded_equals(result.is_web_search, True, field="research_poll.is_web_search")
+        assert_decoded_equals(
+            result.termination_reason,
+            ResearchTerminationReason.IN_PROGRESS,
+            field="research_poll.termination_reason",
+        )
 
 
 # =============================================================================

@@ -1,32 +1,26 @@
 """Unit tests for the Playwright storage-state domain filter (P1-17).
 
-The Playwright login flow (``cli.session._run_playwright_login``) writes
-``storage_state.json`` directly from ``context.storage_state()``. Without
-filtering, that captures every cookie Playwright observed during the login —
-including sibling Google products the user happens to be signed into in the
-same browser session (``mail.google.com``, ``myaccount.google.com``,
-``docs.google.com``, ``.youtube.com``, …). Those cookies are not exercised
-by any NotebookLM code path and inflate the blast radius if
-``storage_state.json`` is ever leaked.
+The Playwright login flow captures a complete browser storage state. The
+filter keeps trusted Google cookie roots with boundary-aware suffix matching
+for compatibility, rejects unrelated/lookalike domains, and clears origin
+storage that cookie authentication never consumes.
 
 The rookiepy / ``--browser-cookies`` path has applied this extraction-time
 filter since the cookie-domain split landed (#360). This test suite locks in
 parity for the Playwright path:
 
-1. Cookies whose domain is in ``REQUIRED_COOKIE_DOMAINS`` are kept.
-2. Cookies whose domain matches a regional ``.google.com.<ccTLD>`` variant
-   are kept.
-3. Cookies on optional sibling-product domains (mail, myaccount, docs,
-   youtube) are rejected by default.
-4. ``--include-domains=mail`` (etc.) opts them back in.
-5. ``--include-domains=all`` opts in every optional label.
-6. The ``origins`` array is left untouched — it carries localStorage / IndexedDB
-   keys per origin and is not part of the cookie blast-radius reduction.
+1. ``*.google.com``, ``*.googleusercontent.com``, and subdomains of every
+   explicitly listed regional Google root are kept.
+2. Label-boundary lookalikes and unrelated domains are rejected.
+3. Non-Google optional products such as YouTube still require opt-in.
+4. The ``origins`` array is cleared so localStorage / IndexedDB cannot bypass
+   the cookie-domain policy.
 """
 
 from __future__ import annotations
 
 import copy
+import logging
 from typing import Any
 
 import pytest
@@ -105,19 +99,31 @@ def test_keeps_regional_cctld_cookies() -> None:
     assert _names(out) == {"REG_SG", "REG_UK", "REG_DE"}
 
 
-def test_rejects_mail_google_com_by_default() -> None:
-    """Acceptance criterion (P1-17): mail.google.com is dropped by default."""
+def test_keeps_google_com_subdomains_for_compatibility() -> None:
+    """Known and unknown ``*.google.com`` hosts survive the compatibility policy."""
     state = _state(
         [
             {"name": "MAIL_SID", "value": "v1", "domain": "mail.google.com", "path": "/"},
             {"name": "MAIL_SID2", "value": "v2", "domain": ".mail.google.com", "path": "/"},
+            {
+                "name": "DRIVE_DOWNLOAD",
+                "value": "v3",
+                "domain": "drive.usercontent.google.com",
+                "path": "/",
+            },
+            {
+                "name": "FUTURE",
+                "value": "v4",
+                "domain": "future-service.google.com",
+                "path": "/",
+            },
         ]
     )
     out = _filter()(state)
-    assert _names(out) == set()
+    assert _names(out) == {"MAIL_SID", "MAIL_SID2", "DRIVE_DOWNLOAD", "FUTURE"}
 
 
-def test_rejects_other_sibling_product_domains_by_default() -> None:
+def test_keeps_google_siblings_but_rejects_youtube_by_default() -> None:
     state = _state(
         [
             {"name": "Y_SID", "value": "v1", "domain": ".youtube.com", "path": "/"},
@@ -126,7 +132,33 @@ def test_rejects_other_sibling_product_domains_by_default() -> None:
         ]
     )
     out = _filter()(state)
-    assert _names(out) == set()
+    assert _names(out) == {"MYA_SID", "DOCS_SID"}
+
+
+def test_keeps_regional_and_googleusercontent_subdomains() -> None:
+    state = _state(
+        [
+            {
+                "name": "HK_ACCOUNT",
+                "value": "v1",
+                "domain": "accounts.google.com.hk",
+                "path": "/",
+            },
+            {
+                "name": "UK_MEDIA",
+                "value": "v2",
+                "domain": "lh3.google.co.uk",
+                "path": "/",
+            },
+            {
+                "name": "GUC_HOST",
+                "value": "v3",
+                "domain": "lh3.googleusercontent.com",
+                "path": "/",
+            },
+        ]
+    )
+    assert _names(_filter()(state)) == {"HK_ACCOUNT", "UK_MEDIA", "GUC_HOST"}
 
 
 def test_rejects_lookalike_domains() -> None:
@@ -135,21 +167,24 @@ def test_rejects_lookalike_domains() -> None:
         [
             {"name": "EVIL", "value": "v1", "domain": "evil-google.com", "path": "/"},
             {"name": "EVIL2", "value": "v2", "domain": "google.com.evil.com", "path": "/"},
+            {"name": "EVIL3", "value": "v3", "domain": "evilgoogle.com", "path": "/"},
+            {"name": "EVIL4", "value": "v4", "domain": "google.uk.co", "path": "/"},
+            {"name": "EVIL5", "value": "v5", "domain": "google.co.uk.evil.com", "path": "/"},
         ]
     )
     out = _filter()(state)
     assert _names(out) == set()
 
 
-def test_include_domains_mail_opts_in_mail_google_com() -> None:
+def test_include_domains_youtube_opts_in_youtube_only() -> None:
     state = _state(
         [
             {"name": "MAIL_SID", "value": "v1", "domain": "mail.google.com", "path": "/"},
             {"name": "Y_SID", "value": "v2", "domain": ".youtube.com", "path": "/"},
         ]
     )
-    out = _filter()(state, include_domains={"mail"})
-    assert _names(out) == {"MAIL_SID"}  # mail in, youtube still out
+    out = _filter()(state, include_domains={"youtube"})
+    assert _names(out) == {"MAIL_SID", "Y_SID"}
 
 
 def test_include_domains_all_opts_in_every_optional_label() -> None:
@@ -165,7 +200,7 @@ def test_include_domains_all_opts_in_every_optional_label() -> None:
     assert _names(out) == {"MAIL_SID", "Y_SID", "MYA_SID", "DOCS_SID"}
 
 
-def test_origins_array_preserved_verbatim() -> None:
+def test_origins_array_cleared() -> None:
     state = _state(
         [{"name": "SID", "value": "v1", "domain": ".google.com", "path": "/"}],
         origins=[
@@ -176,7 +211,8 @@ def test_origins_array_preserved_verbatim() -> None:
         ],
     )
     out = _filter()(state)
-    assert out["origins"] == state["origins"]
+    assert out["origins"] == []
+    assert state["origins"]  # input is not mutated
 
 
 def test_empty_storage_state_round_trips() -> None:
@@ -204,21 +240,8 @@ def test_filter_does_not_mutate_input() -> None:
     assert state["cookies"] == original_cookies
 
 
-@pytest.mark.parametrize(
-    "domain",
-    [
-        "mail.google.com",
-        ".mail.google.com",
-        "myaccount.google.com",
-        ".myaccount.google.com",
-        "docs.google.com",
-        ".docs.google.com",
-        ".youtube.com",
-        "youtube.com",
-        "accounts.youtube.com",
-    ],
-)
-def test_acceptance_sibling_domains_all_rejected_by_default(domain: str) -> None:
+@pytest.mark.parametrize("domain", [".youtube.com", "youtube.com", "accounts.youtube.com"])
+def test_non_google_optional_domains_rejected_by_default(domain: str) -> None:
     state = _state([{"name": "C", "value": "v", "domain": domain, "path": "/"}])
     out = _filter()(state)
     assert _names(out) == set()
@@ -441,3 +464,35 @@ def test_no_duplicates_well_formed_passthrough_unchanged() -> None:
     ]
     out = _filter()(_state(cookies))
     assert out["cookies"] == cookies
+
+
+def test_domainless_rows_drop_silently(caplog: pytest.LogCaptureFixture) -> None:
+    """A row with no usable ``domain`` is dropped without any warning.
+
+    This branch had no coverage: line-level measurement showed the silent-return
+    in the malformed-row handler was never executed by any test in the repo, and
+    the behavior is deliberately quiet, so nothing would have failed loudly if a
+    later edit started warning on every domain-less row a browser exports.
+
+    Note the diagnostic is quieter than it once was, not merely unchanged: the
+    shared row predicate rejects an empty ``domain`` up front, whereas the old
+    inline chain checked ``domain`` last and let such a row fall through to the
+    ``expires`` check, which did warn. Rows dropped are identical either way.
+    """
+    caplog.set_level(logging.WARNING, logger="notebooklm.auth")
+    state = _state(
+        [
+            {"name": "SID", "value": "v", "domain": ".google.com", "path": "/"},
+            {"name": "X", "value": "v", "path": "/"},  # domain absent
+            {"name": "Y", "value": "v", "domain": "", "path": "/"},  # domain empty
+            {"name": "Z", "value": "v", "expires": "never"},  # domain absent + bad expires
+        ]
+    )
+    filtered = _filter()(copy.deepcopy(state))
+
+    assert _names(filtered) == {"SID"}
+    domain_warnings = [r for r in caplog.records if "domain" in r.getMessage()]
+    assert domain_warnings == [], f"domain-less rows must drop silently: {domain_warnings}"
+    assert [r for r in caplog.records if "expires" in r.getMessage()] == [], (
+        "a domain-less row's expires defect is swallowed by the silent drop too"
+    )

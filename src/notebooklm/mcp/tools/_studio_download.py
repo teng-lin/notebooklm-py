@@ -8,9 +8,8 @@ to serve a brokered download URL — keeping them in the tool module made it a
 de-facto shared module. Split out to honor the ADR-0008 1000-line cap and to name
 the coupling.
 
-This module imports NO ``click`` / ``rich`` / ``cli``: the ``DownloadTypeSpec``
-rows are rebuilt from the neutral ``_app.download`` types rather than imported
-from ``cli/_download_specs.py``.
+This module imports NO ``click`` / ``rich`` / ``cli``: it consumes the canonical
+neutral registry from ``_app.download_specs`` directly.
 """
 
 from __future__ import annotations
@@ -20,18 +19,19 @@ import os
 import shutil
 import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
+from typing import TYPE_CHECKING, Annotated, Any, NamedTuple, TypeAlias, cast
 
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.tools.tool import ToolResult
 from mcp.types import ResourceLink, TextContent
-from pydantic import AnyUrl
+from pydantic import AnyUrl, BeforeValidator, WithJsonSchema
 
 from ..._app import download as download_core
+from ..._app import download_specs as download_specs_core
 from ..._app.resolve import resolve_ref
 from ...exceptions import NotebookLMError, ValidationError
-from ...types import ArtifactType
 from .._filelink import DOWNLOAD_TTL, FileTransferConfig
 
 if TYPE_CHECKING:
@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "INLINE_TEXT_MAX_CHARS",
+    "DownloadFormat",
     "DownloadType",
     "_DOWNLOAD_SPECS",
     "_INLINE_TEXT_TYPES",
@@ -122,119 +123,38 @@ def _read_bounded_text(path: str) -> tuple[str, int, bool]:
     return content, len(content) + remainder, remainder > 0
 
 
-#: The downloadable artifact-type keys (the ``artifact_type`` param's enum).
-DownloadType = Literal[
-    "audio",
-    "video",
-    "slide-deck",
-    "infographic",
-    "report",
-    "mind-map",
-    "data-table",
-    "quiz",
-    "flashcards",
+def _validate_download_type(value: Any) -> str:
+    choices = download_specs_core.DOWNLOAD_SPECS_BY_NAME
+    if not isinstance(value, str) or value not in choices:
+        raise ValueError(f"expected one of {sorted(choices)}")
+    return value
+
+
+def _validate_download_format(value: Any) -> str:
+    choices = download_specs_core.DOWNLOAD_FORMAT_NAMES
+    if not isinstance(value, str) or value not in choices:
+        raise ValueError(f"expected one of {list(choices)}")
+    return value
+
+
+#: MCP schema aliases derived from the canonical registry. ``WithJsonSchema``
+#: keeps the same compact enums that the old hand-written ``Literal`` aliases
+#: advertised, while ``BeforeValidator`` preserves boundary validation.
+DownloadType: TypeAlias = Annotated[
+    str,
+    BeforeValidator(_validate_download_type),
+    WithJsonSchema({"type": "string", "enum": list(download_specs_core.DOWNLOAD_SPECS_BY_NAME)}),
+]
+DownloadFormat: TypeAlias = Annotated[
+    str,
+    BeforeValidator(_validate_download_format),
+    WithJsonSchema({"type": "string", "enum": list(download_specs_core.DOWNLOAD_FORMAT_NAMES)}),
 ]
 
-#: Download type registry, rebuilt from the neutral ``_app.download`` types so this
-#: module never imports the Click-coupled ``cli/_download_specs.py``. Each row
-#: mirrors the corresponding CLI ``DownloadTypeSpec`` (name / kind / extension /
-#: download method / optional ``--format`` wiring).
-_DOWNLOAD_SPECS: dict[str, download_core.DownloadTypeSpec] = {
-    "audio": download_core.DownloadTypeSpec(
-        name="audio",
-        kind=ArtifactType.AUDIO,
-        extension=".mp3",
-        default_dir="./audio",
-        download_attr="download_audio",
-        help_summary="",
-        help_examples="",
-    ),
-    "video": download_core.DownloadTypeSpec(
-        name="video",
-        kind=ArtifactType.VIDEO,
-        extension=".mp4",
-        default_dir="./video",
-        download_attr="download_video",
-        help_summary="",
-        help_examples="",
-    ),
-    "slide-deck": download_core.DownloadTypeSpec(
-        name="slide-deck",
-        kind=ArtifactType.SLIDE_DECK,
-        extension=".pdf",
-        default_dir="./slide-decks",
-        download_attr="download_slide_deck",
-        format_choices=("pdf", "pptx"),
-        format_default="pdf",
-        format_extension_map={"pdf": ".pdf", "pptx": ".pptx"},
-        format_kwarg="output_format",
-        forward_format_only_if_set=True,
-        help_summary="",
-        help_examples="",
-    ),
-    "infographic": download_core.DownloadTypeSpec(
-        name="infographic",
-        kind=ArtifactType.INFOGRAPHIC,
-        extension=".png",
-        default_dir="./infographic",
-        download_attr="download_infographic",
-        help_summary="",
-        help_examples="",
-    ),
-    "report": download_core.DownloadTypeSpec(
-        name="report",
-        kind=ArtifactType.REPORT,
-        extension=".md",
-        default_dir="./reports",
-        download_attr="download_report",
-        help_summary="",
-        help_examples="",
-    ),
-    "mind-map": download_core.DownloadTypeSpec(
-        name="mind-map",
-        kind=ArtifactType.MIND_MAP,
-        extension=".json",
-        default_dir="./mind-maps",
-        download_attr="download_mind_map",
-        help_summary="",
-        help_examples="",
-    ),
-    "data-table": download_core.DownloadTypeSpec(
-        name="data-table",
-        kind=ArtifactType.DATA_TABLE,
-        extension=".csv",
-        default_dir="./data-tables",
-        download_attr="download_data_table",
-        help_summary="",
-        help_examples="",
-    ),
-    "quiz": download_core.DownloadTypeSpec(
-        name="quiz",
-        kind=ArtifactType.QUIZ,
-        extension=".json",
-        default_dir="./quizzes",
-        download_attr="download_quiz",
-        format_choices=("json", "markdown", "html"),
-        format_default="json",
-        format_extension_map=dict(download_core.FORMAT_EXTENSIONS),
-        format_kwarg="output_format",
-        help_summary="",
-        help_examples="",
-    ),
-    "flashcards": download_core.DownloadTypeSpec(
-        name="flashcards",
-        kind=ArtifactType.FLASHCARDS,
-        extension=".json",
-        default_dir="./flashcards",
-        download_attr="download_flashcards",
-        format_choices=("json", "markdown", "html"),
-        format_default="json",
-        format_extension_map=dict(download_core.FORMAT_EXTENSIONS),
-        format_kwarg="output_format",
-        help_summary="",
-        help_examples="",
-    ),
-}
+#: Shared immutable projection. MCP adds no per-adapter fields.
+_DOWNLOAD_SPECS: Mapping[str, download_core.DownloadTypeSpec] = (
+    download_specs_core.DOWNLOAD_SPECS_BY_NAME
+)
 
 #: Reverse of ``_DOWNLOAD_SPECS`` — an artifact's ``ArtifactType`` (``.kind``) → the
 #: download-type key. Lets ``studio_download`` derive ``artifact_type`` from an
@@ -243,40 +163,16 @@ _KIND_TO_DOWNLOAD_KEY: dict[Any, DownloadType] = {
     spec.kind: cast(DownloadType, key) for key, spec in _DOWNLOAD_SPECS.items()
 }
 
-#: The ONE file-extension → MIME-type table. Both the ``studio_download`` tool
-#: payload (:func:`_broker_download`) and the ``/files/dl`` route derive their
-#: Content-Type from this via :func:`download_mime_type`, so the advertised
-#: ``mime_type`` and the byte stream's ``Content-Type`` can never drift. Keyed by
-#: the extension the spec+format already resolve to, so a new download type only
-#: needs its extension mapped here.
-_EXTENSION_MIME_TYPES: dict[str, str] = {
-    ".mp3": "audio/mpeg",
-    ".mp4": "video/mp4",
-    ".pdf": "application/pdf",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".png": "image/png",
-    ".md": "text/markdown",
-    ".json": "application/json",
-    ".csv": "text/csv",
-    ".html": "text/html",
-}
-
-#: Fallback when an extension isn't in the table (unreachable for minted tokens —
-#: every spec extension is mapped — but keeps the helpers total).
-_DEFAULT_MIME = "application/octet-stream"
-
 
 def download_extension(spec: download_core.DownloadTypeSpec, output_format: str | None) -> str:
     """The file extension a download of ``spec`` in ``output_format`` will carry.
 
-    ``output_format`` selects the extension for the format-bearing types
-    (slide-deck pdf/pptx; quiz/flashcards json/markdown/html) via the spec's
-    ``format_extension_map``; ``None`` (or a leaf with no format axis) yields the
-    spec's default ``extension`` (which is already the default format's extension).
+    Thin alias for :func:`~notebooklm._app.download.resolve_extension`, kept for
+    this module's established name (it is in ``__all__`` and read by
+    ``_fileroutes``); the rule itself lives in the neutral core so the REST
+    ``/download`` route resolves extensions identically.
     """
-    if output_format:
-        return spec.format_extension_map.get(output_format, spec.extension)
-    return spec.extension
+    return download_core.resolve_extension(spec, output_format)
 
 
 def download_filename(
@@ -294,8 +190,14 @@ def download_filename(
 
 
 def download_mime_type(spec: download_core.DownloadTypeSpec, output_format: str | None) -> str:
-    """The MIME type for a download of ``spec`` in ``output_format`` (central table)."""
-    return _EXTENSION_MIME_TYPES.get(download_extension(spec, output_format), _DEFAULT_MIME)
+    """The MIME type for a download of ``spec`` in ``output_format``.
+
+    Both the ``studio_download`` tool payload (:func:`_broker_download`) and the
+    ``/files/dl`` route derive their Content-Type from here, so they read the one
+    :data:`~notebooklm._app.download.EXTENSION_MIME_TYPES` table the REST
+    ``/download`` response uses and can never drift from it.
+    """
+    return download_core.mime_type_for_extension(download_extension(spec, output_format))
 
 
 async def _passthrough_download_notebook(notebook_id: str) -> str:
@@ -416,7 +318,12 @@ async def _do_read_inline_artifact_text(
     # before the result is assigned, orphaning it past the ``finally`` cleanup.
     temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-inline-")
     try:
-        temp_path = os.path.join(temp_dir, f"artifact{spec.extension}")
+        # Format-resolved like every other spool site, so the invariant "a spooled
+        # download is named by ``resolve_extension``" holds everywhere and greps
+        # clean. Today's inline kinds (report / data-table) have no format axis, so
+        # this is identical to ``spec.extension`` — it is the future format-bearing
+        # text type that would otherwise reintroduce the #2034 mislabel here.
+        temp_path = os.path.join(temp_dir, f"artifact{download_extension(spec, output_format)}")
         args: dict[str, Any] = {
             "notebook_id": notebook_id,
             "output_path": temp_path,

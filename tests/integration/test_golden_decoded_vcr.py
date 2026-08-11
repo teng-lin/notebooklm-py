@@ -123,14 +123,14 @@ class TestChatGoldenDecoded:
         # Conversation id + turn metadata. The cassette's pre-POST hPTbtc
         # resolve returns a current conversation id (bc0666c8), so this null ask
         # resumes the notebook's existing conversation → is_follow_up is True
-        # (#1965). turn_number is 1 because this fresh client has no locally
-        # cached turns for that conversation yet.
+        # (#1965). The fixture supplies its one prior server turn, so even this
+        # fresh client reports the coherent server-derived ordinal (#1976).
         assert_decoded_equals(
             result.conversation_id,
             "bc0666c8-34b5-4bf8-817f-554867ea6ee8",
             field="chat_ask.conversation_id",
         )
-        assert_decoded_equals(result.turn_number, 1, field="chat_ask.turn_number")
+        assert_decoded_equals(result.turn_number, 2, field="chat_ask.turn_number")
         assert_decoded_equals(result.is_follow_up, True, field="chat_ask.is_follow_up")
 
         # References: pin (citation_number, source_id, start_char, end_char) for

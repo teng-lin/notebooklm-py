@@ -29,6 +29,7 @@
     "MindMapResult",
     "Note",
     "Label",
+    "Collection",
     "ConversationTurn",
     "ChatReference",
     "AskResult",
@@ -39,6 +40,7 @@
     "ResearchSource",
     "ResearchTask",
     "ResearchStart",
+    "ResearchTerminationReason",
     "SharedUser",
     "ShareStatus",
     "resolve_chat_reference_passage",
@@ -89,6 +91,8 @@
     "MindMapNotFoundError",
     "LabelError",
     "LabelNotFoundError",
+    "CollectionError",
+    "CollectionNotFoundError",
     "WaitTimeoutError",
     "UnknownTypeWarning",
     "SourceType",
@@ -138,6 +142,7 @@
     "ValidationError",
     "ConfigurationError",
     "MissingDependencyError",
+    "LockUnavailableError",
     "HeadlessReauthError",
     "HeadlessLoginRequiredError",
     "NetworkError",
@@ -182,7 +187,9 @@
     "MindMapError",
     "MindMapNotFoundError",
     "LabelError",
-    "LabelNotFoundError"
+    "LabelNotFoundError",
+    "CollectionError",
+    "CollectionNotFoundError"
   ],
   "notebooklm.io": [
     "atomic_update_json",

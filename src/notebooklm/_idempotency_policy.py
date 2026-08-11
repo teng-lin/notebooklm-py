@@ -514,3 +514,31 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "final state — retry-safe set-op semantics like DELETE_SOURCE"
         ),
     )
+    # Collections reuse UPDATE_LABEL (le8sX) for account-level notebook membership.
+    # Distinct variants (not the source-scoped keys above) so the registry notes stay
+    # honest about what is being mutated.
+    registry.register(
+        RPCMethod.UPDATE_LABEL,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        variant="add_notebooks",
+        notes=(
+            "add_notebooks APPENDS a notebook id to a collection via the membership "
+            "fieldmask, with no client-token slot; like add_sources, whether a blind "
+            "retry that lands twice dedupes server-side is unverified, so surface the "
+            "first failure rather than risk a double-append"
+        ),
+    )
+    registry.register(
+        RPCMethod.UPDATE_LABEL,
+        IdempotencyPolicy.IDEMPOTENT_SET_OP,
+        variant="remove_notebooks",
+        notes=(
+            "remove_notebooks UN-ASSIGNS a notebook from a collection via the "
+            "wire-captured remove fieldmask group (PR #2009, live-confirmed on "
+            "four independent accounts, thanks to tomihe0720 and "
+            "erricklong85-tech); removing an already-absent member is a "
+            "confirmed silent no-op (live-verified), so a blind transport retry "
+            "that lands twice leaves the same final state — retry-safe set-op "
+            "semantics like remove_sources"
+        ),
+    )

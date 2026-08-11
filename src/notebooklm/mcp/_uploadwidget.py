@@ -88,7 +88,25 @@ _WIDGET_HTML = """<!doctype html>
  const oai=window.openai;               // ChatGPT/Grok inject this; claude.ai does not
  const hasNative=!!(oai&&typeof oai.uploadFile==="function");  // OpenAI native upload (interop signal)
  let initialized=false, uploadUrls=null;  // a POOL of single-use tokens, one per file
+ let confirmSpec=null;  // {tool,arg,values}: the auto-confirm contract fired after a successful upload
+ let cfSeq=0;  // strictly-monotonic JSON-RPC id counter — unique per confirm even for same-ms completions
  const geturls=o=>o&&((Array.isArray(o.upload_urls)&&o.upload_urls.length&&o.upload_urls)||(o.upload_url&&[o.upload_url]))||null;
+ // Auto-confirm (#1891): after a file lands, ask the host to run await_upload on the link we just
+ // used, so the model confirms the add with no second user prompt. Host-appropriate + best-effort:
+ // ChatGPT exposes window.openai.callTool; claude.ai/MCP-Apps takes a tools/call over postMessage.
+ // A host that ignores it just leaves the model on the manual await_upload/source_list path.
+ // SECURITY: confirmSpec arrives via the un-origin-checked postMessage handler below, so a spoofed
+ // message could set confirmSpec.tool to any name — HARD-ALLOWLIST the one tool the backend ever
+ // sends so a spoofed message can never redirect which tool we invoke (the link is always our own
+ // just-uploaded signed token, so the args aren't attacker-controlled either).
+ const CONFIRM_TOOL="await_upload";
+ function confirmUpload(link){ if(!confirmSpec||confirmSpec.tool!==CONFIRM_TOOL||!link)return;
+   const args={}; args[confirmSpec.arg||"upload_link"]=link;
+   try{
+     if(oai&&typeof oai.callTool==="function"){oai.callTool(CONFIRM_TOOL,args).catch(()=>{});return;}
+     post({jsonrpc:"2.0",id:"cf"+(++cfSeq),method:"tools/call",params:{name:CONFIRM_TOOL,arguments:args}});
+   }catch(e){}
+ }
  function ready(h){if(initialized)return;initialized=true;
    sub.textContent=(h||(oai?"ChatGPT":"host"))+" · ready"+(hasNative?" · native upload available":"");
    post({jsonrpc:"2.0",method:"ui/notifications/initialized",params:{}});}  // claude.ai render gate
@@ -106,14 +124,17 @@ _WIDGET_HTML = """<!doctype html>
      try{const parsed=JSON.parse(c.text);if(geturls(parsed))d=parsed}catch(e){}}
    if(!geturls(d)&&geturls(p))d=p;
    const urls=geturls(d);
-   if(urls&&!uploadUrls){uploadUrls=urls;document.getElementById('f').disabled=false;
+   if(urls&&!uploadUrls){uploadUrls=urls;confirmSpec=d.confirm||null;document.getElementById('f').disabled=false;
      sub.textContent="pick file(s) to add"+(d.notebook?" to "+d.notebook:"");}
  }
  // claude.ai / Grok: tool result arrives via postMessage. We deliberately don't allowlist
- // ev.origin (host origin differs per platform — claude.ai / chatgpt.com / Grok): the only thing
- // a message can influence is uploadUrl, and (a) the resource CSP connect-src pins uploads to
- // config.base_url and (b) /files/ul requires a server-signed single-use token, so a spoofed URL
- // can't exfiltrate or add anything. CSP + signed token are the guard, not the frame origin.
+ // ev.origin (host origin differs per platform — claude.ai / chatgpt.com / Grok). A spoofed
+ // message can influence two things: (1) uploadUrl — but the resource CSP connect-src pins uploads
+ // to config.base_url and /files/ul requires a server-signed single-use token, so a spoofed URL
+ // can't exfiltrate or add anything; and (2) confirmSpec (the #1891 auto-confirm contract) — but
+ // confirmUpload hard-allowlists the tool name (CONFIRM_TOOL) and only ever passes our own
+ // just-uploaded signed token, so a spoofed message can't redirect which tool runs or with what.
+ // CSP + signed token + the tool allowlist are the guard, not the frame origin.
  window.addEventListener("message",ev=>{let d=ev.data;if(d==null)return;
    if(typeof d==="string"){try{d=JSON.parse(d)}catch(e){return}}
    if(d.result&&!d.method){ready(d.result.hostInfo&&d.result.hostInfo.name);
@@ -147,7 +168,7 @@ _WIDGET_HTML = """<!doctype html>
          {method:"POST",headers:{"Accept":"application/json","Content-Type":file.type||"application/octet-stream"},body:file});
        const text=await res.text();
        log("["+res.status+"] "+file.name+": "+text.slice(0,160));
-       if(res.ok){ok++;uploadUrls[i]=null;}              // burn locally on success so a retry click skips it
+       if(res.ok){ok++;uploadUrls[i]=null;confirmUpload(tok);} // burn locally + auto-confirm the add (#1891)
        else failed++;                                    // non-2xx: token uncommitted → still valid for retry
      }catch(e){log("❌ "+file.name+": upload failed (CSP/CORS/network): "+e);failed++;} // transient → retryable
    }
@@ -200,10 +221,12 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
     async def source_add_widget(ctx: Context, notebook: str) -> dict[str, Any]:
         """Open an in-app file picker to add one or more files to a notebook (experimental mobile
         upload widget). Renders inline in MCP-Apps hosts (e.g. claude.ai); the user picks file(s)
-        and the widget uploads each to its own token in ``upload_urls``. To confirm, call
-        ``await_upload`` on a specific ``upload_urls`` entry (``upload_url`` is just the first), or
-        ``source_list`` to verify the whole batch — the first file may be skipped while later ones
-        land, so don't rely on ``upload_url`` alone for a multi-file add."""
+        and the widget uploads each to its own token in ``upload_urls``. On a successful upload the
+        widget auto-invokes ``await_upload`` (per the ``confirm`` contract in the result) so the add
+        is confirmed WITHOUT a second prompt (#1891). If a host does not run that widget-initiated
+        call, fall back to calling ``await_upload`` on a specific ``upload_urls`` entry
+        (``upload_url`` is just the first), or ``source_list`` to verify the whole batch — the first
+        file may be skipped while later ones land, so don't rely on ``upload_url`` alone."""
         with mcp_errors():
             cfg = get_file_transfer(ctx)
             if cfg is None:
@@ -233,4 +256,12 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
                 "upload_url": first,
                 "notebook_id": nb_id,
                 "notebook": notebook,
+                # Auto-confirm contract (#1891): after each successful /files/ul POST the widget
+                # invokes this tool host-appropriately (window.openai.callTool on ChatGPT; a
+                # tools/call postMessage on claude.ai), passing the link it just uploaded to as
+                # ``arg`` — so the model confirms the add with NO second user prompt. ``values``
+                # mirrors ``upload_urls`` (one link per file). Purely additive: a host that does not
+                # run the widget-initiated call just leaves the model on the manual await_upload /
+                # source_list path (the docstring's fallback).
+                "confirm": {"tool": "await_upload", "arg": "upload_link", "values": urls},
             }

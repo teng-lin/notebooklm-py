@@ -47,6 +47,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._collections import CollectionsAPI
 from notebooklm._labels import LabelsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
@@ -56,6 +57,7 @@ from notebooklm._notes import NotesAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
+    CollectionNotFoundError,
     LabelNotFoundError,
     MindMapNotFoundError,
     NotebookNotFoundError,
@@ -138,6 +140,14 @@ def _make_labels_api() -> LabelsAPI:
     # (``labels.get`` scans ``self.list``), so the rpc collaborator and
     # ``list_sources`` are never called on the miss path.
     return LabelsAPI(MagicMock(), list_sources=AsyncMock(return_value=[]))
+
+
+def _make_collections_api() -> CollectionsAPI:
+    # Account-level sibling of labels: ``collections.get`` scans ``self.list()``
+    # (no notebook scope), so ``_arrange_list_miss`` stubbing ``list`` to ``[]`` is
+    # the same backend-agnostic miss lever; the rpc collaborator and
+    # ``list_notebooks`` are never reached on the miss path.
+    return CollectionsAPI(MagicMock(), list_notebooks=AsyncMock(return_value=[]))
 
 
 def _make_notebooks_api() -> NotebooksAPI:
@@ -270,6 +280,15 @@ LOOKUP_CASES: tuple[LookupCase, ...] = (
         resource="label",
         not_found_error=LabelNotFoundError,
         get_warns=False,  # v0.8.0: labels.get raises LabelNotFoundError on a miss
+    ),
+    LookupCase(
+        namespace="collections",
+        factory=_make_collections_api,
+        arrange_miss=_arrange_list_miss,
+        get_args=("missing",),  # account-level: single id arg (no notebook scope)
+        resource="collection",
+        not_found_error=CollectionNotFoundError,
+        get_warns=False,  # collections.get raises CollectionNotFoundError on a miss
     ),
 )
 

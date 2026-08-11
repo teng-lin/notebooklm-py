@@ -15,8 +15,7 @@ import httpx
 
 from .._auth.account import authuser_query, format_authuser_value
 from .._callbacks import maybe_await_callback
-from .._env import get_base_url
-from .._idempotency import idempotent_create
+from .._idempotency import _coerce_create_result, _IdempotentCreateResult, idempotent_create
 from .._loop_bound import LoopBoundPrimitive
 from .._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
@@ -77,6 +76,7 @@ from ._upload_decode import (  # noqa: F401
     _source_context_names,
     _transient_error_types_for_upload,
     _unwrap_singleton_envelope,
+    _upload_url_origin,
     _validate_resumable_upload_url,
     _validate_upload_file_supported,
     raise_for_upload_status,
@@ -397,7 +397,10 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 file_obj, file_size = await asyncio.to_thread(_open_and_stat, file_path)
                 handed_off = False
                 try:
-                    source_id = await self.register_file_source(notebook_id, filename)
+                    registration = await self._register_file_source_for_upload(
+                        notebook_id, filename
+                    )
+                    source_id = registration.value
                     upload_url = await self.start_resumable_upload(
                         notebook_id,
                         filename,
@@ -468,16 +471,46 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         get_source_limit: GetSourceLimit | None = None,
         rpc_call: RpcCallback | None = None,
     ) -> str:
-        """Register a file source intent and get SOURCE_ID.
+        """Register a file source intent and return its source ID."""
+        return (
+            await self._register_file_source_result(
+                notebook_id,
+                filename,
+                list_sources=list_sources,
+                logger=logger,
+                get_source_limit=get_source_limit,
+                rpc_call=rpc_call,
+            )
+        ).value
 
-        Uses the same probe-then-create idempotency pattern as ``add_url`` /
-        ``add_drive`` (the ADD_SOURCE_FILE RPC is mutating, so a 5xx/network
-        failure between commit and response could duplicate on a naive retry).
-        Because filenames are NOT identity-bearing (two uploads of ``report.pdf``
-        are legitimately distinct), the probe captures a baseline of source IDs
-        BEFORE the first create and only matches IDs new since then; an ambiguous
-        match (>1 new source, e.g. a concurrent uploader) raises ``SourceAddError``
-        rather than guessing.
+    async def _register_file_source_for_upload(
+        self, notebook_id: str, filename: str
+    ) -> _IdempotentCreateResult[str]:
+        """Normalize built-in and legacy registration seams for ``add_file``."""
+        register = self.register_file_source
+        registration: str | _IdempotentCreateResult[str]
+        if getattr(register, "__func__", None) is SourceUploadPipeline.register_file_source:
+            registration = await self._register_file_source_result(notebook_id, filename)
+        else:
+            # Preserve injected and overridden legacy seams that only accept
+            # the historical (notebook_id, filename) call shape.
+            registration = await register(notebook_id, filename)
+        return _coerce_create_result(registration)
+
+    async def _register_file_source_result(
+        self,
+        notebook_id: str,
+        filename: str,
+        *,
+        list_sources: ListSources | None = None,
+        logger: Any | None = None,
+        get_source_limit: GetSourceLimit | None = None,
+        rpc_call: RpcCallback | None = None,
+    ) -> _IdempotentCreateResult[str]:
+        """Register a file source intent and retain create/probe provenance.
+
+        Filenames are not identity-bearing, so the probe matches only source IDs
+        that appeared after the pre-create baseline and rejects ambiguity.
         """
         params = build_register_file_source_params(filename, notebook_id)
         if rpc_call is None:
@@ -745,7 +778,6 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             file_size=file_size,
             source_id=source_id,
             content_type=content_type,
-            base_url=get_base_url(),
             upload_url=get_upload_url(),
             authuser_query=self._authuser_query(),
             authuser_header=self._authuser_header(),
@@ -796,14 +828,17 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         close_wired = False
         try:
             upload_url = _validate_resumable_upload_url(upload_url)
-            base_url = get_base_url()
+            # Origin/Referer track the *validated* upload URL, never the configured
+            # base URL: the two personal hosts stand in for each other, and an
+            # Origin naming the other host fails Google's origin-bound auth checks.
+            origin = _upload_url_origin(upload_url)
             auth_route = self._authuser_header()
             headers = {
                 "Accept": "*/*",
                 "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
                 "x-goog-authuser": auth_route,
-                "Origin": base_url,
-                "Referer": f"{base_url}/",
+                "Origin": origin,
+                "Referer": f"{origin}/",
                 "x-goog-upload-command": "upload, finalize",
                 "x-goog-upload-offset": "0",
             }
@@ -888,7 +923,6 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                         asyncio.create_task(
                             self.cancel_upload_session(
                                 upload_url,
-                                base_url,
                                 auth_route,
                                 logger=logger,
                             )
@@ -914,22 +948,27 @@ class SourceUploadPipeline(LoopBoundPrimitive):
     async def cancel_upload_session(
         self,
         upload_url: str,
-        base_url: str,
         auth_route: str,
         *,
         logger: Any,
     ) -> None:
-        """Best-effort POST a Scotty resumable-upload cancel command."""
-        headers = {
-            "Accept": "*/*",
-            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-            "x-goog-authuser": auth_route,
-            "Origin": base_url,
-            "Referer": f"{base_url}/",
-            "x-goog-upload-command": "cancel",
-        }
+        """Best-effort POST a Scotty resumable-upload cancel command.
+
+        The headers are built *below* the validation call on purpose:
+        ``Origin``/``Referer`` are derived from the validated upload URL, so an
+        untrusted server-named host must never reach an outbound header.
+        """
         try:
             upload_url = _validate_resumable_upload_url(upload_url)
+            origin = _upload_url_origin(upload_url)
+            headers = {
+                "Accept": "*/*",
+                "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+                "x-goog-authuser": auth_route,
+                "Origin": origin,
+                "Referer": f"{origin}/",
+                "x-goog-upload-command": "cancel",
+            }
             async with self._client_factory()(
                 timeout=httpx.Timeout(10.0, read=10.0),
                 cookies=self._live_cookies(),

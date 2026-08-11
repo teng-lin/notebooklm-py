@@ -240,9 +240,10 @@ async def test_cancel_upload_session_delegates_to_pipeline() -> None:
     # ``_cancel_upload_session`` awaits the pipeline without returning its
     # value (its public contract is ``-> None``), so assert on the recorded
     # call rather than the return value.
+    # No base-URL argument: the pipeline derives ``Origin``/``Referer`` from the
+    # *validated* upload URL, so there is nothing for this wrapper to forward.
     result = await api._cancel_upload_session(
         "https://upload.example/resumable",
-        "https://notebooklm.example",
         "0",
     )
 
@@ -250,7 +251,6 @@ async def test_cancel_upload_session_delegates_to_pipeline() -> None:
     args, kwargs = pipeline.calls["cancel_upload_session"]
     assert args == (
         "https://upload.example/resumable",
-        "https://notebooklm.example",
         "0",
     )
     assert "logger" in kwargs

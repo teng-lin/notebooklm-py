@@ -295,7 +295,7 @@ def test_get_share_url_remains_sync_url_formatter(monkeypatch: pytest.MonkeyPatc
     url = api.get_share_url("nb_123", artifact_id="art_456")
 
     assert isinstance(url, str)
-    assert url == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
+    assert url == "https://notebook.google.com/notebook/nb_123?artifactId=art_456"
 
 
 def _set_account_limit(api: NotebooksAPI, limit: int | None) -> AsyncMock:

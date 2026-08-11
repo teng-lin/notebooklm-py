@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 import click
 import httpx
 
+from ..auth import MasterTokenError as _MasterTokenError
 from ..exceptions import AuthError, NotebookNotFoundError
 from ..paths import get_storage_path
 
@@ -54,9 +55,12 @@ from .error_handler import _output_error, exit_with_code, handle_errors
 from .playwright_login_io import (
     _verify_token_fetch_after_refresh,
     prepare_paths_or_exit,
-    repair_after_refresh,
+    refresh_stored_session,
     run_login,
     validate_flags_or_exit,
+)
+from .playwright_login_io import (
+    repair_after_refresh as repair_after_refresh,
 )
 from .rendering import console, json_error_response, json_output_response
 from .resolve import resolve_notebook_id
@@ -69,7 +73,7 @@ from .services.auth_source import AUTH_JSON_ENV_NAME, auth_source_from_ctx, has_
 
 # Direct imports replace the D1-PR-3-retired forwarding wrappers; see ADR-0008.
 from .services.login import (
-    _enumerate_browser_accounts,
+    _inspect_browser_accounts,
     _login_all_accounts_from_browser,
     _login_browser_cookies_single,
     _refresh_from_browser_cookies,
@@ -119,16 +123,6 @@ def _click_exception_from(exc: LoginConfigurationError) -> click.ClickException:
     return click.ClickException(
         exc.message
     )  # cli-input-validation: login profile-name validation translation
-
-
-def _is_valid_account_metadata(metadata: dict[str, Any]) -> bool:
-    raw_authuser = metadata.get("authuser")
-    if type(raw_authuser) is not int or raw_authuser < 0:
-        return False
-    raw_email = metadata.get("email")
-    if raw_email is None:
-        return True
-    return isinstance(raw_email, str) and bool(raw_email.strip())
 
 
 # Legacy thin alias kept for the small set of session-cmd-internal helpers
@@ -260,8 +254,8 @@ def register_session_commands(cli):
         multiple=True,
         default=(),
         help=(
-            "Opt in to extracting sibling-product cookies (default: required "
-            "Google auth/Drive cookies only). Pass labels comma-separated or "
+            "Explicitly request known sibling hosts. Trusted Google-root subdomains "
+            "returned by the browser are retained for compatibility. Pass labels or "
             "repeat the flag: --include-domains=youtube,docs OR "
             "--include-domains=youtube --include-domains=docs. Supported "
             "labels: youtube, docs, myaccount, mail, all."
@@ -285,7 +279,7 @@ def register_session_commands(cli):
         "master_token_refresh",
         is_flag=True,
         default=False,
-        help="Re-mint web cookies from the stored master token (no prompt). For recovery / cron.",
+        help="Legacy forced re-mint; prefer 'notebooklm auth refresh'.",
     )
     @click.option(
         "--oauth-token",
@@ -342,98 +336,98 @@ def register_session_commands(cli):
         Note: Cannot be used when the env-var auth fast path is active
         (use file-based auth or unset the env var first).
         """
-        # Wrap entire body in handle_errors so unexpected failures (e.g.
-        # Playwright internal crashes) emit a friendly 'Unexpected error:
-        # <msg>' line + exit 2 instead of a Python traceback. Existing
-        # ``exit_with_code(N)`` calls inside the body propagate unchanged.
-        with handle_errors():
-            if has_env_auth_json():
-                console.print(
-                    f"[red]Error: Cannot run 'login' when {AUTH_JSON_ENV_NAME} is set.[/red]\n"
-                    f"The {AUTH_JSON_ENV_NAME} environment variable provides inline authentication,\n"
-                    "which conflicts with browser-based login that saves to a file.\n\n"
-                    "Either:\n"
-                    f"  1. Unset {AUTH_JSON_ENV_NAME} and run 'login' again\n"
-                    f"  2. Continue using {AUTH_JSON_ENV_NAME} for authentication"
-                )
-                exit_with_code(1)
-
-            if master_token or master_token_refresh:
-                from .master_token_login import run_master_token_login
-
-                run_master_token_login(
-                    ctx,
-                    storage=storage,
-                    browser=browser,
-                    account_email=account_email,
-                    oauth_token=oauth_token,
-                    android_id=android_id,
-                    cdp_url=cdp_url,
-                    refresh=master_token_refresh,
-                    force=force,
-                )
-                return
-
-            validate_flags_or_exit(
-                browser_cookies=browser_cookies,
-                account_email=account_email,
-                all_accounts=all_accounts,
-                update=update,
-                profile_name=profile_name,
-                storage=storage,
-            )
-
-            include_domains = _parse_include_domains(include_domains_raw)
-
-            # rookiepy fast-path: skip Playwright entirely
-            if browser_cookies is not None:
-                if fresh:
+        run_master_token_login: Any = None
+        include_domains = active_profile = None
+        confirm_overwrite = profile = storage_path = browser_profile = None
+        try:
+            with handle_errors():
+                if has_env_auth_json():
                     console.print(
-                        "[yellow]Warning: --fresh has no effect with --browser-cookies "
-                        "(no browser profile is used).[/yellow]"
+                        f"[red]Error: Cannot run 'login' when {AUTH_JSON_ENV_NAME} is set.[/red]\n"
+                        f"The {AUTH_JSON_ENV_NAME} environment variable provides inline authentication,\n"
+                        "which conflicts with browser-based login that saves to a file.\n\n"
+                        "Either:\n"
+                        f"  1. Unset {AUTH_JSON_ENV_NAME} and run 'login' again\n"
+                        f"  2. Continue using {AUTH_JSON_ENV_NAME} for authentication"
                     )
-                _warn_missing_optional_domains(include_domains)
-                if all_accounts:
-                    _login_all_accounts_from_browser(
-                        browser_cookies,
-                        update=update,
-                        include_domains=include_domains,
+                    exit_with_code(1)
+
+                if master_token or master_token_refresh:
+                    from .master_token_login import run_master_token_login
+
+                    run_master_token_login(
+                        ctx,
+                        storage=storage,
+                        browser=browser,
+                        account_email=account_email,
+                        oauth_token=oauth_token,
+                        android_id=android_id,
+                        cdp_url=cdp_url,
+                        refresh=master_token_refresh,
+                        force=force,
                     )
                     return
-                active_profile = ctx.obj.get("profile") if ctx.obj else None
-                # Inject ``click.confirm`` as the overwrite confirmer so the
-                # login service stays Click-free (ADR-0015 Pattern B). The
-                # service defaults ``confirm=None`` to "auto-accept" for
-                # non-interactive callers; production CLI runs always inject
-                # an actual prompt here.
-                confirm_overwrite = functools.partial(click.confirm, default=False)
-                try:
-                    _login_browser_cookies_single(
-                        browser_cookies,
-                        storage=storage,
-                        account_email=account_email,
-                        profile_name=profile_name,
-                        active_profile=active_profile,
-                        include_domains=include_domains,
-                        confirm=confirm_overwrite,
-                    )
-                except LoginConfigurationError as exc:
-                    raise _click_exception_from(exc) from None
-                return
 
-            profile = ctx.obj.get("profile") if ctx.obj else None
-            storage_path, browser_profile = prepare_paths_or_exit(profile, storage, fresh)
-            _run_playwright_login(
-                browser=browser,
-                browser_profile=browser_profile,
-                storage_path=storage_path,
-                include_domains=include_domains,
-            )
-            console.print(f"\n[green]Authentication saved to:[/green] {storage_path}")
+                validate_flags_or_exit(
+                    browser_cookies=browser_cookies,
+                    account_email=account_email,
+                    all_accounts=all_accounts,
+                    update=update,
+                    profile_name=profile_name,
+                    storage=storage,
+                )
 
-            # Sync server language setting to local config so generate commands
-            # respect the user's global language preference (fixes #121).
-            _sync_server_language_to_config(storage_path=storage_path, profile=profile)
+                include_domains = _parse_include_domains(include_domains_raw)
+
+                if browser_cookies is not None:
+                    if fresh:
+                        console.print(
+                            "[yellow]Warning: --fresh has no effect with --browser-cookies "
+                            "(no browser profile is used).[/yellow]"
+                        )
+                    _warn_missing_optional_domains(include_domains)
+                    if all_accounts:
+                        _login_all_accounts_from_browser(
+                            browser_cookies,
+                            update=update,
+                            include_domains=include_domains,
+                        )
+                        return
+                    active_profile = ctx.obj.get("profile") if ctx.obj else None
+                    # The production CLI always injects an actual overwrite prompt.
+                    confirm_overwrite = functools.partial(click.confirm, default=False)
+                    try:
+                        _login_browser_cookies_single(
+                            browser_cookies,
+                            storage=storage,
+                            account_email=account_email,
+                            profile_name=profile_name,
+                            active_profile=active_profile,
+                            include_domains=include_domains,
+                            confirm=confirm_overwrite,
+                        )
+                    except LoginConfigurationError as exc:
+                        raise _click_exception_from(exc) from None
+                    return
+
+                profile = ctx.obj.get("profile") if ctx.obj else None
+                storage_path, browser_profile = prepare_paths_or_exit(profile, storage, fresh)
+                _run_playwright_login(
+                    browser=browser,
+                    browser_profile=browser_profile,
+                    storage_path=storage_path,
+                    include_domains=include_domains,
+                )
+                console.print(f"\n[green]Authentication saved to:[/green] {storage_path}")
+
+                # Keep the local language in sync with the server (fixes #121).
+                _sync_server_language_to_config(storage_path=storage_path, profile=profile)
+        finally:
+            del ctx, storage, browser, browser_cookies, account_email
+            del all_accounts, update, profile_name, fresh, include_domains_raw
+            del master_token, master_token_refresh, oauth_token, android_id, cdp_url, force
+            del run_master_token_login, include_domains, active_profile, confirm_overwrite
+            del profile, storage_path, browser_profile
 
     @cli.command("use")
     @click.argument("notebook_id")
@@ -670,7 +664,7 @@ def register_session_commands(cli):
         """
         include_domains = _parse_include_domains(include_domains_raw)
         try:
-            enum_result = _enumerate_browser_accounts(
+            enum_result = _inspect_browser_accounts(
                 browser_name, verbose=not json_output, include_domains=include_domains
             )
         except httpx.RequestError as e:
@@ -694,10 +688,10 @@ def register_session_commands(cli):
         multiple=True,
         default=(),
         help=(
-            "Opt in to persisting sibling-product cookies. Same syntax as "
+            "Explicitly request known sibling-product hosts. Trusted Google-root "
+            "subdomains returned by the browser are retained for compatibility. Syntax: "
             "'notebooklm login --include-domains': youtube, docs, myaccount, "
-            "mail, all. By default, only required Google auth/Drive/NotebookLM "
-            "cookie domains are kept."
+            "mail, all. Distinct unrequested roots are discarded by default."
         ),
     )
     @click.option(
@@ -868,15 +862,27 @@ def register_session_commands(cli):
             "passive probe). Exit non-zero if the post-refresh cookies still fail."
         ),
     )
+    @click.option(
+        "--allow-headless",
+        is_flag=True,
+        default=False,
+        help=(
+            "Permit layer-3 browser recovery when stored cookies are fully expired. "
+            "Uses the persisted browser profile (or NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL). "
+            "Does not launch or attach to a browser unless ordinary refresh fails."
+        ),
+    )
     @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
     @click.pass_context
-    def auth_refresh(ctx, browser_cookies, include_domains_raw, quiet, verify, json_output):
+    def auth_refresh(
+        ctx, browser_cookies, include_domains_raw, quiet, verify, allow_headless, json_output
+    ):
         """Refresh stored cookies by exercising the auth path once or reading browser cookies.
 
         Default mode is a one-shot keepalive: opens a session, runs the
         layer-1 poke against ``accounts.google.com`` to elicit
         ``__Secure-1PSIDTS`` rotation, fetches CSRF + session ID from
-        ``notebooklm.google.com`` (discarded; their side effect is the cookie
+        the configured app host (discarded; their side effect is the cookie
         jar), and persists the rotated jar to ``storage_state.json`` on close.
 
         With ``--browser-cookies``, re-extracts cookies from the selected
@@ -920,7 +926,8 @@ def register_session_commands(cli):
             exit_with_code(1)
 
         with handle_errors(json_output=json_output):
-            if has_env_auth_json():
+            auth_source = auth_source_from_ctx(ctx)
+            if auth_source.has_env_auth:
                 _fail(
                     "auth_json_env_conflict",
                     f"'auth refresh' is incompatible with {AUTH_JSON_ENV_NAME}. "
@@ -946,13 +953,18 @@ def register_session_commands(cli):
                     "default keepalive refresh with --json instead.",
                 )
 
+            if allow_headless and browser_cookies is not None:
+                _fail(
+                    "headless_unsupported_with_browser_cookies",
+                    "--allow-headless only applies to the stored-session refresh path; "
+                    "omit --browser-cookies.",
+                )
             # --json suppresses human status lines (like --quiet); a verify failure
             # emits the error envelope on stdout in --json mode, else on stderr.
             quiet = quiet or json_output
 
-            profile = ctx.obj.get("profile") if ctx.obj else None
-            storage_path = get_storage_path(profile=profile)
-
+            profile = auth_source.profile
+            storage_path = auth_source.storage_override or get_storage_path(profile=profile)
             if browser_cookies is not None:
                 _refresh_from_browser_cookies(
                     browser_cookies,
@@ -962,19 +974,19 @@ def register_session_commands(cli):
                     include_domains=include_domains,
                 )
             else:
-                run_async(fetch_tokens_with_domains(storage_path, profile))
-
-                from ..auth import read_account_metadata
-
-                if storage_path.exists():
-                    metadata = read_account_metadata(storage_path)
-                    if not _is_valid_account_metadata(metadata):
-                        repair_after_refresh(storage_path, quiet=quiet)
-
-                if not quiet:
-                    console.print(f"[green]ok[/green] refreshed: {storage_path}")
-
-            if verify:
+                try:
+                    refresh_stored_session(
+                        storage_path,
+                        profile,
+                        allow_headless=allow_headless,
+                        quiet=quiet,
+                        verify=verify,
+                        json_output=json_output,
+                        fetch_tokens=fetch_tokens_with_domains,
+                    )
+                except _MasterTokenError as exc:
+                    _fail("master_token_refresh_failed", str(exc))
+            if verify and browser_cookies is not None:
                 _verify_token_fetch_after_refresh(
                     storage_path, profile, quiet=quiet, json_output=json_output
                 )
@@ -985,6 +997,4 @@ def register_session_commands(cli):
                 )
 
 
-# Backward-compat constant kept at module scope for tests that import it
-# directly. The Playwright service owns the canonical definition.
 GOOGLE_ACCOUNTS_URL = "https://accounts.google.com/"

@@ -73,9 +73,17 @@ def _build_get_conversation_id_response_body(conversation_id: str) -> str:
     return f")]}}'\n{len(chunk)}\n{chunk}\n"
 
 
-def _build_get_conversation_turns_response_body() -> str:
-    """Build a minimal ``khqZz`` response containing one existing turn."""
-    inner = json.dumps([[[None, None, 1, "Existing question?"]]])
+def _build_get_conversation_turns_response_body(prior_turn_count: int) -> str:
+    """Build a newest-first ``khqZz`` response for ``prior_turn_count`` Q&A turns."""
+    turns = []
+    for turn_number in range(prior_turn_count, 0, -1):
+        turns.extend(
+            [
+                [None, None, 2, None, [[f"Existing answer {turn_number}."]]],
+                [None, None, 1, f"Existing question {turn_number}?"],
+            ]
+        )
+    inner = json.dumps([turns])
     chunk = json.dumps(["wrb.fr", RPCMethod.GET_CONVERSATION_TURNS.value, inner, None, None])
     return f")]}}'\n{len(chunk)}\n{chunk}\n"
 
@@ -119,6 +127,14 @@ def _extract_source_path_notebook_id(request: httpx.Request) -> str:
     return source_path.rsplit("/", 1)[-1] if source_path.startswith("/notebook/") else ""
 
 
+def _extract_turns_conversation_id(request: httpx.Request) -> str:
+    """Decode the conversation id from a ``khqZz`` batchexecute request."""
+    body = parse_qs(request.content.decode("utf-8"), keep_blank_values=True)
+    f_req = json.loads(unquote(body["f.req"][0]))
+    params = json.loads(f_req[0][0][1])
+    return params[3]
+
+
 class _SerializingChatTransport(httpx.AsyncBaseTransport):
     """Mock transport that delays each chat response and records request bodies.
 
@@ -138,12 +154,14 @@ class _SerializingChatTransport(httpx.AsyncBaseTransport):
         response_delay: float = 0.1,
         response_delays_by_question: dict[str, float] | None = None,
         conversation_ids_by_notebook: dict[str, str] | None = None,
+        prior_turn_counts_by_conversation: dict[str, int] | None = None,
     ) -> None:
         self._delay = response_delay
         self._response_delays_by_question = response_delays_by_question or {}
         self._captured: list[httpx.Request] = []
         self._answer_for_question: dict[str, str] = {}
         self._conversation_ids_by_notebook = conversation_ids_by_notebook or {}
+        self._prior_turn_counts_by_conversation = prior_turn_counts_by_conversation or {}
         self._chat_inflight = 0
         self._peak_chat_inflight = 0
         self._events: list[tuple[str, str, str | None]] = []
@@ -165,9 +183,12 @@ class _SerializingChatTransport(httpx.AsyncBaseTransport):
             notebook_id = _extract_source_path_notebook_id(request)
             if "rpcids=khqZz" in str(request.url):
                 self._events.append(("khqzz", notebook_id, None))
+                conversation_id = _extract_turns_conversation_id(request)
                 return httpx.Response(
                     200,
-                    text=_build_get_conversation_turns_response_body(),
+                    text=_build_get_conversation_turns_response_body(
+                        self._prior_turn_counts_by_conversation.get(conversation_id, 0)
+                    ),
                     request=request,
                 )
             self._events.append(("hptbtc", notebook_id, None))
@@ -203,6 +224,13 @@ class _SerializingChatTransport(httpx.AsyncBaseTransport):
         self._peak_chat_inflight = max(self._peak_chat_inflight, self._chat_inflight)
         try:
             await asyncio.sleep(delay)
+            server_conversation_id = params[4] or self._conversation_ids_by_notebook.get(
+                notebook_id,
+                f"conv-for-{notebook_id}",
+            )
+            self._prior_turn_counts_by_conversation[server_conversation_id] = (
+                self._prior_turn_counts_by_conversation.get(server_conversation_id, 0) + 1
+            )
             return httpx.Response(
                 200,
                 text=_build_chat_response_body(answer, conversation_id),
@@ -250,7 +278,10 @@ async def test_concurrent_follow_ups_serialize_on_conversation_id(auth_tokens) -
     cid = "conv_t7f1"
     notebook_id = "nb_t7f1"
 
-    transport = _SerializingChatTransport(response_delay=0.1)
+    transport = _SerializingChatTransport(
+        response_delay=0.1,
+        prior_turn_counts_by_conversation={cid: 1},
+    )
     transport.set_answer("q2", "answer-2")
     transport.set_answer("q3", "answer-3")
 
@@ -339,7 +370,10 @@ async def test_different_conversation_ids_run_in_parallel(auth_tokens) -> None:
     cid_b = "conv_t7f1_b"
     notebook_id = "nb_t7f1"
 
-    transport = _SerializingChatTransport(response_delay=0.1)
+    transport = _SerializingChatTransport(
+        response_delay=0.1,
+        prior_turn_counts_by_conversation={cid_a: 1, cid_b: 1},
+    )
     transport.set_answer("qA", "answer-A")
     transport.set_answer("qB", "answer-B")
 
@@ -482,6 +516,7 @@ async def test_new_conversation_cache_update_waits_for_resolved_conversation_loc
             "q-follow": 0.2,
         },
         conversation_ids_by_notebook={notebook_id: conversation_id},
+        prior_turn_counts_by_conversation={conversation_id: 1},
     )
     transport.set_answer("q-new", "answer-new")
     transport.set_answer("q-follow", "answer-follow")
@@ -538,6 +573,7 @@ async def test_null_ask_serializes_with_explicit_current_conversation(auth_token
     transport = _SerializingChatTransport(
         response_delay=0.1,
         conversation_ids_by_notebook={notebook_id: conversation_id},
+        prior_turn_counts_by_conversation={conversation_id: 1},
     )
     transport.set_answer("q-null", "answer-null")
     transport.set_answer("q-follow", "answer-follow")
@@ -585,6 +621,7 @@ async def test_null_ask_parallel_with_followup_on_other_conversation(auth_tokens
     transport = _SerializingChatTransport(
         response_delay=0.1,
         conversation_ids_by_notebook={notebook_id: conversation_x},
+        prior_turn_counts_by_conversation={conversation_y: 1},
     )
     transport.set_answer("q-null", "answer-null")
     transport.set_answer("q-other", "answer-other")

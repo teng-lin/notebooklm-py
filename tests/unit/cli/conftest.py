@@ -133,6 +133,12 @@ def research_task(spec: dict | None = None, **overrides: Any) -> ResearchTask:
         summary=data.get("summary", "") if isinstance(data.get("summary"), str) else "",
         report=report if isinstance(report, str) else "",
         tasks=tasks,
+        # Raw wire fields backing the differentiated termination reason
+        # (#1922 status_code, #1964 source_type). Absent from legacy specs, so
+        # they default to None and the reason/hint stay empty — which is what
+        # every pre-existing characterization snapshot expects.
+        status_code=data.get("status_code"),
+        source_type=data.get("source_type"),
     )
 
 

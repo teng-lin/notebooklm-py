@@ -99,7 +99,7 @@ jobs:
     #    secret-bearing steps below are belt-and-suspenders so the gate
     #    stays visible if the job-level guard is ever loosened.
     # 2. ``environment: protected-readonly`` (unconditional). The secrets
-    #    this job consumes (``NOTEBOOKLM_AUTH_JSON`` and friends) live only
+    #    this job consumes (``NOTEBOOKLM_MASTER_TOKEN_JSON`` and friends) live only
     #    in that environment, so the binding has to be unconditional —
     #    issue #1009 surfaced the scheduled cron failing when the previous
     #    conditional (``workflow_dispatch``-only) form fell back to
@@ -154,7 +154,7 @@ jobs:
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
         cache: 'pip'
@@ -177,8 +177,10 @@ jobs:
         # test_cli_live.py) actually RUNS instead of importorskip-ping fastmcp.
         # --extra server so the REST live e2e suite (tests/e2e/test_server_live.py)
         # RUNS instead of importorskip-ping fastapi.
+        # --extra headless = gpsoauth, required for the layer-4 master-token
+        # re-mint that the materialized auth profile below relies on.
         attempt=1; max=3
-        until uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra mcp --extra server; do
+        until uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra mcp --extra server --extra headless; do
           if [ "$attempt" -ge "$max" ]; then
             echo "::error::uv sync failed after $max attempts" >&2
             exit 1
@@ -216,25 +218,66 @@ jobs:
       if: runner.os == 'Linux'
       run: uv run playwright install-deps chromium
 
-    # Fail-fast preflight. Without this, an empty NOTEBOOKLM_AUTH_JSON
-    # (env-binding misconfig, missing repo-level fallback, etc.) lets the
-    # E2E suite proceed; pytest then skips every auth-requiring test
-    # silently and the job lands green with 0 tests run (issue #1009).
-    - name: Verify auth secret is present
+    # Fail-fast preflight + profile materialization. The empty-secret check
+    # keeps the issue #1009 guarantee: without it, an empty auth secret lets
+    # the E2E suite proceed; pytest then skips every auth-requiring test
+    # silently and the job lands green with 0 tests run. The write-to-disk part
+    # replaces the old inline-env auth: env-var auth never engages the layer-4
+    # master-token re-mint (it only fires when master_token.json sits BESIDE
+    # the profile's storage_state.json — src/notebooklm/_auth/session.py), so
+    # a rotated cookie secret used to hard-fail the run. The master token is
+    # now MANDATORY (empty secret or 3 failed mints both exit 1) — it is the
+    # only credential shipped, so there is no snapshot to degrade onto.
+    - name: Materialize auth profile
       if: needs.resolve-branch.outputs.is_standard == 'true'
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
       shell: bash
       run: |
-        if [ -z "${NOTEBOOKLM_AUTH_JSON:-}" ]; then
-          echo "::error::NOTEBOOKLM_AUTH_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
+        if [ -z "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
+          echo "::error::NOTEBOOKLM_MASTER_TOKEN_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
           exit 1
         fi
         if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
           echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID resolved to empty."
           exit 1
         fi
+        umask 077
+        mkdir -p ~/.notebooklm/profiles/default
+        printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
+        chmod 600 ~/.notebooklm/profiles/default/master_token.json
+        # The master token is now the ONLY credential shipped. A cookie
+        # snapshot cannot be: Google supersedes __Secure-1PSIDTS on a ~600 s
+        # cadence and a superseded value is rejected shortly after, so a
+        # secret minted on a workstation is routinely dead before the run
+        # starts. A master token does not rotate, so it cannot go stale.
+        # The mint below bootstraps storage_state.json from it (verified: the
+        # command creates the file when none exists); layer-4 then covers
+        # mid-run expiry. `unset` is load-bearing: `login` refuses to run
+        # while inline env auth is set, and the secret is already on disk.
+        unset NOTEBOOKLM_MASTER_TOKEN_JSON
+        minted=""
+        for attempt in 1 2 3; do
+          if uv run notebooklm login --master-token-refresh; then
+            minted=1
+            break
+          fi
+          echo "::warning::master-token mint attempt ${attempt} failed."
+          if [ "$attempt" -lt 3 ]; then
+            # Jitter: nightly's ubuntu/windows legs mint concurrently from the
+            # same token, so a fixed backoff would have them retry in lockstep
+            # and collide again on whatever throttled the first attempt.
+            sleep $((attempt * 15 + RANDOM % 20))
+          fi
+        done
+        # Fatal, unlike before: there is no cookie snapshot left to fall back
+        # to, so a failed mint means the job has no credentials at all.
+        if [ -z "$minted" ]; then
+          echo "::error::master-token mint failed after 3 attempts — no auth available."
+          exit 1
+        fi
+        echo "Auth profile materialized (master token; fresh cookies minted)."
 
     - name: Run E2E tests
       id: e2e
@@ -247,9 +290,10 @@ jobs:
       if: needs.resolve-branch.outputs.is_standard == 'true'
       # Don't fail the job here — the retry step below gets a 10-min cool-down
       # shot at any failures, and its exit code is what marks the job red.
+      # Auth comes from the profile materialized above (no inline env-var
+      # credential is shipped at all) so the layer-4 re-mint can engage.
       continue-on-error: true
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
         # Enforce the live coverage floors on the nightly only (fresh quota): if a
@@ -304,7 +348,6 @@ jobs:
         needs.resolve-branch.outputs.is_standard == 'true'
         && steps.e2e.outcome == 'failure'
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
         # Enforce here too: a marked test that failed on the main run and turns into
@@ -327,7 +370,7 @@ jobs:
         # Pin ``tests/e2e`` so pyproject's ``addopts = --ignore=tests/e2e``
         # doesn't drop every lastfailed entry; otherwise pytest's default
         # ``--last-failed-no-failures=all`` would expand to the full non-e2e
-        # suite under NOTEBOOKLM_AUTH_JSON. ``=none`` makes a missing cache
+        # suite with live credentials on disk. ``=none`` makes a missing cache
         # fail fast instead.
         uv run pytest tests/e2e --last-failed --last-failed-no-failures=none -s -v --tb=short
 
@@ -343,7 +386,6 @@ jobs:
         needs.resolve-branch.outputs.is_standard == 'true'
         && matrix.os == 'ubuntu-latest'
       env:
-        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
         NOTEBOOKLM_TRANSPORT: curl_cffi

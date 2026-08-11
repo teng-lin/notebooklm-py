@@ -58,7 +58,7 @@ async def main():
             print(f"  Complete! URL: {final.url}\n")
 
             # 5. Download (requires browser support)
-            # output_path = await client.artifacts.download_audio(nb.id, "./podcast.mp3")
+            # output_path = await client.artifacts.download_audio(nb.id, "./podcast.m4a")
             # print(f"  Downloaded to: {output_path}")
         else:
             print(f"  Generation status: {final.status}\n")

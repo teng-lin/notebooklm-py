@@ -152,8 +152,13 @@ class AskResult:
     Attributes:
         answer: The AI-generated answer text.
         conversation_id: UUID for this conversation (used for follow-ups).
-        turn_number: The turn number in the conversation.
-        is_follow_up: Whether this was a follow-up question.
+        turn_number: The server-derived turn number in the conversation. A
+            non-empty answer is numbered after the prior user-question turns;
+            an empty answer reports the number of prior turns unchanged.
+        is_follow_up: Whether this was a follow-up request. A caller-supplied
+            conversation ID is explicit follow-up intent even if that server
+            conversation currently has no prior question rows; an implicit
+            ask is a follow-up only when prior server turns exist.
         references: List of source references cited in the answer.
         raw_response: First 1000 chars of raw API response (for debugging).
     """

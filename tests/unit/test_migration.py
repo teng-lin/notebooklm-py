@@ -2,6 +2,8 @@
 
 import json
 import os
+import stat
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -63,6 +65,57 @@ class TestMigrateToProfiles:
         assert not (tmp_path / "storage_state.json").exists()
         assert not (tmp_path / "context.json").exists()
         assert not (tmp_path / "browser_profile").exists()
+
+    def test_promotes_legacy_account_metadata_in_band(self, tmp_path):
+        """#2103 PR-0: the startup layout migration also promotes a legacy
+        ``context.json[account]`` record in-band — a completeness nicety (the
+        ``read_account_metadata`` chokepoint retries promotion on every call
+        regardless, so this isn't load-bearing for correctness), but new
+        production code on the upgrade path that shipped with zero test
+        coverage otherwise. Deliberately does NOT call ``read_account_metadata``
+        afterward — that would mask a broken migration-side promotion behind
+        the reactive chokepoint healing it a moment later."""
+        (tmp_path / "storage_state.json").write_text(
+            json.dumps({"cookies": [{"name": "SID", "value": "v"}]})
+        )
+        (tmp_path / "context.json").write_text(
+            json.dumps(
+                {
+                    "account": {"authuser": 3, "email": "legacy@example.com"},
+                    "notebook_id": "nb-123",
+                }
+            )
+        )
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            migrate_to_profiles()
+
+        default_dir = tmp_path / "profiles" / "default"
+        storage_data = json.loads((default_dir / "storage_state.json").read_text())
+        assert storage_data["notebooklm"]["account"] == {
+            "authuser": 3,
+            "email": "legacy@example.com",
+        }
+        # Legacy key scrubbed; non-account context state (notebook_id) survives.
+        context_data = json.loads((default_dir / "context.json").read_text())
+        assert "account" not in context_data
+        assert context_data.get("notebook_id") == "nb-123"
+
+    def test_migration_without_legacy_account_metadata_is_unaffected(self, tmp_path):
+        """A profile with no legacy account record migrates exactly as before —
+        the new promotion hook must be a true no-op when there's nothing to
+        promote, not just when it happens to succeed."""
+        (tmp_path / "storage_state.json").write_text(json.dumps({"cookies": []}))
+        (tmp_path / "context.json").write_text(json.dumps({"notebook_id": "nb-456"}))
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            assert migrate_to_profiles() is True
+
+        default_dir = tmp_path / "profiles" / "default"
+        storage_data = json.loads((default_dir / "storage_state.json").read_text())
+        assert "notebooklm" not in storage_data
+        context_data = json.loads((default_dir / "context.json").read_text())
+        assert context_data == {"notebook_id": "nb-456"}
 
     def test_updates_config(self, tmp_path):
         """Sets default_profile in config.json."""
@@ -179,6 +232,74 @@ class TestMigrateToProfiles:
         # Profile copy is preserved, legacy file is cleaned up
         assert json.loads(fresh_profile.read_text()) == {"cookies": ["fresh"]}
         assert not stale_legacy.exists()
+
+    def test_stale_temp_file_is_cleaned_and_copy_completes(self, tmp_path):
+        """A torn copy from an interrupted run never becomes the migrated file.
+
+        Copies land under a dot-prefixed temp name and are renamed into place
+        only once complete, so an interrupted run can leave a partial only at
+        the temp name — with an mtime *newer* than the intact legacy source.
+        The retry must discard the stale temp (not let it satisfy any
+        freshness check) and complete the copy from the intact original.
+        """
+        src = tmp_path / "storage_state.json"
+        src.write_text('{"cookies":["intact"]}')
+        os.utime(src, (1000, 1000))
+
+        default_dir = tmp_path / "profiles" / "default"
+        default_dir.mkdir(parents=True)
+        stale_tmp = default_dir / ".storage_state.json.migrating"
+        stale_tmp.write_text('{"cook')  # truncated; mtime is "now" (newer than src)
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            migrate_to_profiles()
+
+        dst = default_dir / "storage_state.json"
+        assert json.loads(dst.read_text()) == {"cookies": ["intact"]}
+        assert not stale_tmp.exists()
+        assert not src.exists()
+
+    def test_stale_temp_dir_is_cleaned_and_copy_completes(self, tmp_path):
+        """A partial temp dir from an interrupted copytree is discarded on retry."""
+        legacy = tmp_path / "browser_profile"
+        legacy.mkdir()
+        (legacy / "data").write_text("chrome data")
+        (legacy / "prefs").write_text("prefs data")
+
+        default_dir = tmp_path / "profiles" / "default"
+        default_dir.mkdir(parents=True)
+        stale_tmp = default_dir / ".browser_profile.migrating"
+        stale_tmp.mkdir()
+        (stale_tmp / "data").write_text("chr")  # partial copy, missing "prefs"
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            migrate_to_profiles()
+
+        dst = default_dir / "browser_profile"
+        assert (dst / "data").read_text() == "chrome data"
+        assert (dst / "prefs").read_text() == "prefs data"
+        assert not stale_tmp.exists()
+        assert not legacy.exists()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+    def test_storage_state_permissions_tightened(self, tmp_path):
+        """A world-readable legacy storage_state.json migrates to a 0600 copy."""
+        src = tmp_path / "storage_state.json"
+        src.write_text('{"cookies":[]}')
+        src.chmod(0o644)
+        ctx = tmp_path / "context.json"
+        ctx.write_text('{"notebook_id":"nb1"}')
+        ctx.chmod(0o644)
+
+        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
+            migrate_to_profiles()
+
+        default_dir = tmp_path / "profiles" / "default"
+        # Secret-bearing file is tightened regardless of legacy mode
+        migrated = default_dir / "storage_state.json"
+        assert stat.S_IMODE(migrated.stat().st_mode) == 0o600
+        # Non-secret files keep the legacy mode
+        assert stat.S_IMODE((default_dir / "context.json").stat().st_mode) == 0o644
 
 
 class TestEnsureProfilesDir:

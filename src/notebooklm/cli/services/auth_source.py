@@ -84,8 +84,9 @@ class AuthSource:
         profile: The active profile name from ``--profile``/``-p`` or the
             ``NOTEBOOKLM_PROFILE`` env var. ``None`` means "use the
             default profile resolution."
-        has_env_auth: ``True`` when ``NOTEBOOKLM_AUTH_JSON`` is set to a
-            non-empty value AND no ``--storage`` override is active.
+        has_env_auth: ``True`` when ``NOTEBOOKLM_AUTH_JSON`` is present AND
+            no ``--storage`` override is active. Empty/whitespace values are
+            still selected so the loader can report the configuration error.
             Callers that need a writable file should refuse / branch.
     """
 
@@ -124,7 +125,7 @@ class AuthSource:
         the canonical ``--storage`` Path and profile name and don't want
         to round-trip through a Click context.
         """
-        has_env_auth = storage_override is None and bool(_read_env_auth_json())
+        has_env_auth = storage_override is None and _NOTEBOOKLM_AUTH_JSON_ENV in os.environ
         return cls(
             storage_override=storage_override,
             profile=profile,
@@ -200,7 +201,7 @@ def current_storage_override(ctx: click.Context | None) -> Path | None:
 
 
 def has_env_auth_json() -> bool:
-    """Return ``True`` when ``NOTEBOOKLM_AUTH_JSON`` is set to a non-empty value.
+    """Return ``True`` when ``NOTEBOOKLM_AUTH_JSON`` is present.
 
     The canonical question every CLI auth caller should ask instead of
     re-reading the env var inline. Storage override (``--storage``)
@@ -208,7 +209,7 @@ def has_env_auth_json() -> bool:
     precedence should construct an :class:`AuthSource` and read
     :attr:`AuthSource.has_env_auth`.
     """
-    return bool(_read_env_auth_json())
+    return _NOTEBOOKLM_AUTH_JSON_ENV in os.environ
 
 
 def read_env_auth_json() -> str:
