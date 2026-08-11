@@ -264,7 +264,14 @@ class Matrix:
         self.record("cookie-import-filter", proc, expect_json=True)
         if proc.returncode == 0:
             stored = json.loads(storage.read_text(encoding="utf-8"))
-            ok = not any("youtube.com" in c.get("domain", "") for c in stored.get("cookies", []))
+
+            def _is_youtube_domain(domain: str) -> bool:
+                # Anchored suffix match: a bare substring check would also
+                # flag (or miss) unrelated domains that merely contain
+                # "youtube.com" somewhere in a longer string.
+                return domain in ("youtube.com", ".youtube.com") or domain.endswith(".youtube.com")
+
+            ok = not any(_is_youtube_domain(c.get("domain", "")) for c in stored.get("cookies", []))
             self.results[-1]["filter_passed"] = ok
             if not ok:
                 self.results[-1]["status"] = "fail"

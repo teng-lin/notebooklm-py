@@ -487,7 +487,10 @@ def test_collect_manifest_captures_tracked_constant_values(script):
 
     auth_exports = manifest["modules"]["notebooklm.auth"]["exports"]
     required = auth_exports["REQUIRED_COOKIE_DOMAINS"]["constant_value"]
-    assert ".google.com" in required
+    # Match the exact quoted element, not a bare substring: `.google.com` is
+    # also a substring of `.google.com.sg`/`.google.co.uk`-style entries, so an
+    # unanchored check could pass even if the base domain itself were dropped.
+    assert "'.google.com'" in required
     # Untracked public exports stay fingerprint-free — the capture is opt-in.
     assert "constant_value" not in auth_exports["AuthTokens"]
 
