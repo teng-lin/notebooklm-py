@@ -37,8 +37,8 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm.rpc.types import ARTIFACT_STATUS_SUGGESTED_WIRE_NAME, ArtifactStatus
 import notebooklm.rpc.types as rpc_types
+from notebooklm.rpc.types import ARTIFACT_STATUS_SUGGESTED_WIRE_NAME, ArtifactStatus
 from tests._guardrails._wire_contract import (
     ENUM_BINDINGS,
     ENUM_GAPS,
