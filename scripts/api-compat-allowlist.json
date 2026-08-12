@@ -154,6 +154,9 @@
       "code": "changed-enum-value",
       "object": "notebooklm.types.ArtifactStatus.PROCESSING",
       "reason": "Value changed 1 -> 2. #2127: this client had ArtifactStatus wire codes 1 and 2 transposed relative to Google's backend enum. Code 1 is ARTIFACT_STATUS_INITIALIZED (queued; the worker has not started) and code 2 is ARTIFACT_STATUS_PROCESSING (actively generating) \u2014 confirmed by the recovered enum dump in docs/mobile/enums.txt, by two independent live traces showing 2 -> 3 on a generating artifact, and by a live probe on the fixing branch. The old integers were wrong about the wire rather than a contract worth preserving, so this is a decode correction, not an API redesign. Member NAMES and the status-string vocabulary are unchanged: PENDING has always meant 'queued' and PROCESSING 'actively generating', so callers using .is_pending / .is_processing / .status_str / GenerationState get the correct answer with no change. Only callers comparing the raw integers must flip them. Documented in CHANGELOG.md (with the timeout-exception consequence), docs/stability.md and docs/python-api.md; pinned by tests/_guardrails/_wire_contract.py ENUM_BINDINGS against the backend dump."
+    },
+    {
+      "code": "changed-enum-value",
       "object": "notebooklm.QuizQuantity.MORE",
       "reason": "QuizQuantity.MORE was a value-alias of STANDARD (2) with a docstring asserting Google's API could not distinguish the two. That is false: the backend accepts and persists cardQuantity = 3, and both QuizGenerationOptions.QuestionQuantity and FlashcardsGenerationOptions.CardQuantity declare MORE = 3 (docs/mobile/enums.txt). Live-confirmed: a flashcard set generated with quantity=MORE echoed back cardQuantity=3 from the server. Deliberate wire-value correction for #2117 -- '--quantity more' previously produced a standard-sized set with no warning. MORE no longer compares equal to STANDARD; see the ### Changed entry in CHANGELOG.md."
     },
