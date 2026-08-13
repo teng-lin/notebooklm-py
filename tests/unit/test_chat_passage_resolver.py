@@ -956,3 +956,108 @@ class TestOffsetResolution:
                 await resolve_chat_reference_passage(
                     client, notebook_id="nb_overrun", reference=reference, context_chars=0
                 )
+
+    @pytest.mark.asyncio
+    async def test_the_cross_check_is_anchored_at_the_start_of_the_range(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ) -> None:
+        """Agreeing *somewhere* in the range is not agreeing.
+
+        A re-index that inserts text at the head of a still-fitting range
+        leaves the old quote sitting further inside it. A containment test
+        accepts that — and returns a passage opening with the inserted text and
+        stopping mid-quote. Both readings start at ``start_char``, so agreement
+        has to be checked there.
+        """
+        cited_text = "The cited sentence sits here."
+        inserted = "Inserted lead-in text."
+        response, _all_text, _range = _build_block_document_response(
+            source_id="src_inserted",
+            title="Inserted ahead of the citation",
+            blocks=[[inserted], [cited_text], ["Tail matter."]],
+            build_rpc_response=build_rpc_response,
+        )
+        httpx_mock.add_response(content=response)
+
+        # The stale range still spans the same *width*, and now covers the
+        # insertion plus all but the tail of the quote — so the quote is inside
+        # it, just not at its start.
+        stale = ChatReference(
+            source_id="src_inserted",
+            cited_text=cited_text,
+            start_char=0,
+            end_char=utf16_len(inserted) + utf16_len(cited_text),
+        )
+        assert stale.end_char <= utf16_len(inserted + cited_text + "Tail matter.")
+
+        async with NotebookLMClient(auth_tokens) as client:
+            passage = await resolve_chat_reference_passage(
+                client, notebook_id="nb_inserted", reference=stale, context_chars=0
+            )
+
+        # Stood down to the search, which lands on the quote itself.
+        assert passage == cited_text
+        assert inserted not in passage
+
+    @pytest.mark.asyncio
+    async def test_a_range_made_negative_after_construction_is_not_clamped_into_a_passage(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+    ) -> None:
+        """``ChatReference`` is mutable, and its validation does not re-run.
+
+        A negative ``start_char`` assigned after construction reaches the
+        resolver, where the renderer would clamp it to 0 and hand back the head
+        of the source as though it were the citation. The range check rejects it
+        instead, so an offsets-only reference stands down rather than resolving
+        to the wrong text.
+        """
+        reference = ChatReference(source_id="src_mutated", cited_text=None)
+        # Post-construction assignment: __post_init__ validation does not re-run.
+        reference.start_char = -5
+        reference.end_char = 5
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ChatResponseParseError, match="no cited_text"):
+                await resolve_chat_reference_passage(
+                    client, notebook_id="nb_mutated", reference=reference
+                )
+
+        assert not httpx_mock.get_requests()
+
+    @pytest.mark.asyncio
+    async def test_a_negative_context_is_clamped_on_the_search_path_too(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ) -> None:
+        """The clamp belongs to the resolver, not to one of its two paths.
+
+        ``find_citation_context`` subtracts the context from the match start
+        and adds it to the end, so a negative value inverts its slice and
+        returns ``""`` for a citation it actually found — the helper would then
+        raise "could not locate" about text it had in hand.
+        """
+        cited_text = "a needle worth finding in this haystack"
+        response = _build_fulltext_response(
+            source_id="src_negsearch",
+            title="Search path",
+            content_chunks=["Some preamble. " + cited_text + " Some tail."],
+            build_rpc_response=build_rpc_response,
+        )
+        httpx_mock.add_response(content=response)
+
+        # No range at all, so the search path is the only one available.
+        reference = ChatReference(source_id="src_negsearch", cited_text=cited_text)
+
+        async with NotebookLMClient(auth_tokens) as client:
+            passage = await resolve_chat_reference_passage(
+                client, notebook_id="nb_negsearch", reference=reference, context_chars=-50
+            )
+
+        assert cited_text[:40] in passage

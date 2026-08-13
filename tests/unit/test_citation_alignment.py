@@ -486,6 +486,27 @@ class TestReadableRendering:
         )
         assert document.render() == "hello\nworld"
 
+    def test_runs_that_overlap_inside_a_block_are_trimmed_not_repeated(self) -> None:
+        """A block clamps its runs to itself, but not to each other.
+
+        Two runs claiming the same positions concatenate into a line twice as
+        wide as the positions it covers, which reads as duplicated citation
+        text. Trimmed against what the block has already rendered — the same
+        rule the offset-faithful layout applies across the document.
+        """
+        document = StructuredDocument(
+            blocks=(DocumentBlock(0, 5, (TextSpan(0, 5, "aaaaa"), TextSpan(0, 5, "bbbbb"))),)
+        )
+        assert document.text == "aaaaa"
+        assert document.render() == "aaaaa"
+        # Partial overlap: the second run contributes only the positions the
+        # first left uncovered — three of its five units, cut in UTF-16 space.
+        partial = StructuredDocument(
+            blocks=(DocumentBlock(0, 8, (TextSpan(0, 5, "aaaaa"), TextSpan(3, 8, "bbbbb"))),)
+        )
+        assert partial.render() == "aaaaabbb"
+        assert partial.render() == partial.text  # the layout reaches the same reading
+
     def test_a_half_specified_window_is_refused_rather_than_guessed(self) -> None:
         """The one place ``render`` and ``slice`` would silently disagree.
 
@@ -602,6 +623,24 @@ class TestReadableRendering:
         assert fulltext.rendered_content == ""
 
 
+def _tiles_exactly(block: DocumentBlock) -> bool:
+    """Whether ``block``'s spans cover it exactly, once each, at their declared widths.
+
+    The well-formedness predicate both adversarial invariants below are stated
+    against: a block that tiles is one the layout and the rendering have no
+    reason to normalise, so it must read back verbatim through either. Every
+    live capture tiles; the shapes that do not are the ones review invented.
+    """
+    spans = block.spans
+    return bool(
+        spans
+        and spans[0].start_index == block.start_index
+        and spans[-1].end_index == block.end_index
+        and all(later.start_index == earlier.end_index for earlier, later in pairwise(spans))
+        and all(utf16_len(span.text) == span.end_index - span.start_index for span in spans)
+    )
+
+
 #: Adversarial documents, each built to break one assumption the layout makes
 #: about wire-supplied offsets. Every entry is a shape review found (or the
 #: neighbouring shape it implied) across five rounds on #2210.
@@ -688,6 +727,14 @@ _ADVERSARIAL_DOCUMENTS: tuple[tuple[str, StructuredDocument], ...] = (
         "spans-out-of-order-within-a-block",
         lambda: StructuredDocument(
             blocks=(DocumentBlock(0, 10, (TextSpan(5, 10, "world"), TextSpan(0, 5, "hello"))),)
+        ),
+    ),
+    (
+        # A block clamps its spans to itself but not to each other, so two runs
+        # can claim the same positions. Concatenating them repeats the overlap.
+        "spans-overlap-within-a-block",
+        lambda: StructuredDocument(
+            blocks=(DocumentBlock(0, 5, (TextSpan(0, 5, "aaaaa"), TextSpan(0, 5, "bbbbb"))),)
         ),
     ),
     ("empty-document", StructuredDocument),
@@ -783,18 +830,18 @@ class TestLayoutInvariantsUnderAdversarialInput:
         The sibling assertion for :meth:`slice`, stated on the readable
         surface: every block whose spans tile it exactly must appear as its own
         line, and those lines must appear in position order however the blocks
-        arrived. Restricted to well-formed blocks because a malformed one is
-        legitimately normalised (see the width test above), and stated as a
-        subsequence so it says nothing about what the neighbours render as.
+        arrived. Restricted to blocks that tile — the same predicate the
+        ``slice`` sibling uses — because a malformed one is legitimately
+        normalised: an over-wide run is trimmed to its range, and runs that
+        overlap each other are trimmed against what the block already
+        rendered. Stated as a subsequence, so it says nothing about what the
+        neighbours render as.
         """
         document = factory()
         expected = [
             block.text
             for block in sorted(document.blocks, key=lambda b: (b.start_index, b.end_index))
-            if block.text
-            and all(
-                utf16_len(span.text) == span.end_index - span.start_index for span in block.spans
-            )
+            if block.text and _tiles_exactly(block)
         ]
         lines = iter(document.render().split("\n"))
         for text in expected:
@@ -845,16 +892,7 @@ class TestLayoutInvariantsUnderAdversarialInput:
         """
         document = factory()
         for block in document.blocks:
-            spans = block.spans
-            tiles = (
-                spans
-                and spans[0].start_index == block.start_index
-                and spans[-1].end_index == block.end_index
-                and all(
-                    later.start_index == earlier.end_index for earlier, later in pairwise(spans)
-                )
-                and all(utf16_len(span.text) == span.end_index - span.start_index for span in spans)
-            )
+            tiles = _tiles_exactly(block)
             overlapped = any(
                 other is not block
                 and other.start_index < block.end_index

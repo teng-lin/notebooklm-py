@@ -47,13 +47,17 @@ def _declared_range(reference: ChatReference) -> tuple[int, int] | None:
     "Unusable" means **absent** — a citation whose fragment decoded no blocks,
     or one from before the offsets were read — or **empty**, where the two
     bounds coincide and the range selects nothing however it is resolved.
-    ``ChatReference.__post_init__`` rejects a half-populated, negative or
-    inverted range, so only assignment *after* construction can produce one;
-    ``end <= start`` covers that case too rather than trusting the invariant to
-    hold for a value this function did not build.
+
+    Negative and inverted ranges are rejected here as well, even though
+    ``ChatReference.__post_init__`` refuses to build one: the dataclass is
+    mutable and its validation does not re-run on assignment, so a reference
+    can carry a range this function did not see built. Re-checking is what
+    keeps that from resolving to something — :meth:`StructuredDocument.render`
+    clamps a negative lower bound to ``0``, which would quietly turn a broken
+    range into the head of the source rather than a stand-down.
     """
     start, end = reference.start_char, reference.end_char
-    if start is None or end is None or end <= start:
+    if start is None or end is None or start < 0 or end <= start:
         return None
     return start, end
 
@@ -77,21 +81,29 @@ def _quotes_the_same_text(
     stands the range down and the search runs, which either finds the passage
     or reports that it could not.
 
+    **Anchored at the start of the range, not merely contained in it.** Both
+    readings begin at ``start``, so agreement means agreement *there*: text
+    inserted ahead of the citation by a re-index leaves the old quote sitting
+    further inside the range, where a containment test would accept a passage
+    that opens with the inserted text and ends mid-quote.
+
     Compares a bounded prefix rather than the whole string because the two
-    readings differ locally by design — ``cited_text`` omits positions this
-    client cannot render as text where :meth:`StructuredDocument.slice` fills
-    them with :data:`~notebooklm._types.documents._PLACEHOLDER` (imported
-    rather than re-spelled here, so a change to the filler cannot silently
-    stop this check from stripping it), and a run whose text disagrees with
-    its declared width is normalised in one and not the other. ``in`` rather
-    than ``startswith`` for the same reason.
+    readings then diverge locally by design — ``cited_text`` omits positions
+    this client cannot render as text where :meth:`StructuredDocument.slice`
+    fills them with :data:`~notebooklm._types.documents._PLACEHOLDER`, and a
+    run whose text disagrees with its declared width is normalised in one and
+    not the other. The filler is imported rather than re-spelled here, so
+    changing it cannot silently stop this check stripping it; leading
+    whitespace is discarded on both sides, since ``cited_text`` starting at a
+    block boundary routinely carries a newline the slice does not.
 
     A ``cited_text`` of nothing but whitespace leaves an empty probe, which
     matches trivially and stands the check down — correctly: it carries no
     evidence to contradict the range with.
     """
     probe = cited_text.strip()[:_AGREEMENT_PROBE_CHARS]
-    return probe in document.slice(start, end).replace(_PLACEHOLDER, "")
+    resolved = document.slice(start, end).replace(_PLACEHOLDER, "").lstrip()
+    return resolved.startswith(probe)
 
 
 def _rendered_window(
@@ -120,8 +132,8 @@ def _rendered_window(
       :func:`_quotes_the_same_text`.
 
     The window is widened by ``context_chars`` on each side in **UTF-16 code
-    units**, the unit the range itself is in; a negative value is clamped to
-    ``0`` rather than allowed to narrow the citation's own range.
+    units**, the unit the range itself is in. The caller clamps it
+    non-negative, for both paths at once.
     """
     declared = _declared_range(reference)
     if declared is None:
@@ -135,8 +147,7 @@ def _rendered_window(
         document, reference.cited_text, start, end
     ):
         return ""
-    context = max(0, context_chars)
-    return document.render(start - context, end + context)
+    return document.render(start - context_chars, end + context_chars)
 
 
 async def resolve_chat_reference_passage(
@@ -232,6 +243,12 @@ async def resolve_chat_reference_passage(
             "of structural-anchor citations whose fragment decoded no blocks "
             "at all, and which therefore have no plaintext passage to surface."
         )
+
+    # Clamped once, here, so both paths widen by the same amount. Left
+    # negative it does not merely fail to add context: the offset path narrows
+    # until the citation resolves to nothing (silently changing *which* path
+    # runs), and ``find_citation_context`` inverts its slice and returns "".
+    context_chars = max(0, context_chars)
 
     fulltext = await client.sources.get_fulltext(notebook_id, reference.source_id)
 

@@ -630,9 +630,15 @@ class StructuredDocument:
 
         A block that contributes no text is omitted rather than rendered as a
         blank line: an image or a horizontal rule has nothing to read, and
-        empty strings are dropped by the legacy rendering too. Overlapping
-        blocks (a malformed document) each render in full — :attr:`text` is the
-        surface that de-duplicates, because only it has offsets to keep true.
+        empty strings are dropped by the legacy rendering too.
+
+        Runs that overlap *inside* a block are trimmed against what the block
+        has already rendered, so no line is wider than the window that selected
+        it. Whole *blocks* that overlap each other each render in full, which
+        is the one place this rendering deliberately differs from :attr:`text`:
+        the layout de-duplicates because it must keep later offsets true, and
+        this has no offsets to keep — dropping one of two blocks that both
+        claim a range would hide text that decoded.
 
         The rendering is deliberately **marker-free**: a list item renders as
         its text, without ``list_info.glyph``, and a heading without any ``#``.
@@ -694,7 +700,18 @@ class StructuredDocument:
         for block in sorted(self.blocks, key=lambda block: (block.start_index, block.end_index)):
             if block.end_index <= lower or block.start_index >= upper:
                 continue
-            line = "".join(_clip_span(span, lower, upper) for span in block.spans)
+            # Trim each run against what the block has already rendered, the
+            # same rule :attr:`text` applies across the document. A block's
+            # spans are ordered and clamped to it but may still *overlap* each
+            # other, and concatenating them then repeats the overlap — a line
+            # wider than the window that selected it, reading as duplicated
+            # citation text.
+            parts: list[str] = []
+            cursor = lower
+            for span in block.spans:
+                parts.append(_clip_span(span, max(lower, cursor), upper))
+                cursor = max(cursor, min(span.end_index, upper))
+            line = "".join(parts)
             if line:
                 lines.append(line)
         return "\n".join(lines)
