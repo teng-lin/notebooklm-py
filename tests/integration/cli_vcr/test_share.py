@@ -82,6 +82,13 @@ class TestShareStatusCommand:
         assert data.get("notebook_id") == VCR_SHARE_NOTEBOOK_ID
         assert "is_public" in data
         assert isinstance(data.get("shared_users"), list)
+        # #2130 — decoded from the REAL recorded body, not a hand-built row: the
+        # cassette's response is the live 8-slot shape carrying 1000 and true.
+        # This is the only assertion in the suite that exercises the new fields
+        # through the whole CLI -> client -> RPC-decode stack, so it is what
+        # catches a regeneration of the cassette against a different shape.
+        assert data["max_individuals_share_limit"] == 1000
+        assert data["is_public_sharing_allowed"] is True
 
 
 class TestShareAddCommand:

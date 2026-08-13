@@ -1934,7 +1934,8 @@ collaborator cap.
 > declares only tags 2-4, so nothing names them. Exposing them would mean
 > inventing a field name, so they are recorded as deliberately-undecoded in
 > `tests/_guardrails/_wire_contract.py::UNREAD_SHARE_STATUS_SLOTS` rather than
-> surfaced (#2130).
+> surfaced. `test_unread_share_status_slots_stay_undecoded` enforces that record
+> — a constant that starts reading slot 6 or 7 fails the guardrail (#2130).
 >
 > Both decoded fields are **tri-state**: `None` means the response made no claim
 > (short responses are real — the pinned golden capture is three elements long)

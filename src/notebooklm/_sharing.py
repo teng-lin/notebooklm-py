@@ -1,6 +1,7 @@
 """Sharing operations API."""
 
 import logging
+from dataclasses import replace
 
 from ._runtime.contracts import RpcCaller
 from .rpc import RPCMethod
@@ -128,14 +129,14 @@ class SharingAPI:
         # Fetch current status and override view_level with what we just set
         # (GET_SHARE_STATUS doesn't return view_level)
         status = await self.get_status(notebook_id)
-        return ShareStatus(
-            notebook_id=status.notebook_id,
-            is_public=status.is_public,
-            access=status.access,
-            view_level=level,
-            shared_users=status.shared_users,
-            share_url=status.share_url,
-        )
+        # ``replace`` rather than a field-by-field rebuild: the old form listed
+        # six fields explicitly and silently dropped every field added to
+        # ``ShareStatus`` afterwards, so this path reported ``None`` for the
+        # collaborator cap and the public-sharing policy gate that
+        # ``get_status`` had just decoded (#2130). Copying by construction ties
+        # the set of preserved fields to the dataclass itself, so a future field
+        # cannot regress the same way.
+        return replace(status, view_level=level)
 
     @staticmethod
     def _share_params(

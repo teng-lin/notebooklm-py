@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Notebook sharing now reports the collaborator cap and the public-sharing
-  policy gate.** `GET_SHARE_STATUS` returns six populated fields and
+  policy gate.** `GET_SHARE_STATUS` returns an eight-slot response carrying six
+  known response fields — five of them non-null on every row observed, the sixth
+  (`publicSettings`) null unless the notebook is actually public — and
   `ShareStatus.from_api_response` read two of them; the parser's own docstring
   described slot 2 as the bare literal `1000` without naming it.
   `ShareStatus.max_individuals_share_limit` (`maxIndividualsShareLimit`, proto

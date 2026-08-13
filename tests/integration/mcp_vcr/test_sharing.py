@@ -73,6 +73,14 @@ async def test_mcp_share_status_over_vcr() -> None:
     assert "share_url" in structured
     # view_level is intentionally NOT surfaced by the read path.
     assert "view_level" not in structured
+    # #2130 — decoded from the REAL recorded 8-slot body through the full
+    # tool -> client -> RPC-decode stack, so the MCP surface is pinned against
+    # the wire rather than against a fake.
+    assert structured["max_individuals_share_limit"] == 1000
+    assert structured["is_public_sharing_allowed"] is True
+    # The verdict rides along so a JS consumer never has to write `!allowed`,
+    # which would also fire on the unknown case.
+    assert structured["is_public_sharing_denied"] is False
 
 
 @pytest.mark.asyncio

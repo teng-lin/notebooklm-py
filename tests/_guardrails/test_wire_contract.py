@@ -46,6 +46,7 @@ from tests._guardrails._wire_contract import (
     MODULE_LEVEL,
     PINNED,
     UNMAPPED,
+    UNREAD_SHARE_STATUS_SLOTS,
     WIRE,
     Mapping,
     Pinned,
@@ -204,6 +205,33 @@ def test_no_stale_registry_entries() -> None:
     assert not stale, (
         "The wire-contract registry references constants that no longer exist:\n"
         + "\n".join(f"  {m}.{c}.{k}" for m, c, k in stale)
+    )
+
+
+def test_unread_share_status_slots_stay_undecoded() -> None:
+    """B (extension). Nothing decodes a GET_SHARE_STATUS slot we cannot name (#2130).
+
+    Slots 6 and 7 are populated on every live response, but the recovered
+    ``GetProjectDetailsResponse`` declares no tags 7/8 — so any constant reading
+    them would necessarily be named from a guess, which is the defect class this
+    module exists to catch.
+
+    Without this assertion :data:`UNREAD_SHARE_STATUS_SLOTS` would be an inert
+    dict that documents an intention nothing enforces, and a future change could
+    decode slot 6 into an invented field name with the whole suite green.
+    """
+    offenders = [
+        f"  sharing.{cls}.{const} = {value} — collides with {UNREAD_SHARE_STATUS_SLOTS[value]}"
+        for (module, cls, const), value in sorted(_discover_constants().items())
+        if module == "sharing" and value in UNREAD_SHARE_STATUS_SLOTS
+    ]
+    assert not offenders, (
+        "A GET_SHARE_STATUS positional constant now reads a slot recorded as "
+        "deliberately-undecoded:\n"
+        + "\n".join(offenders)
+        + "\n\nThese proto tags have no name in docs/mobile/schema.proto. If a schema "
+        "re-extraction has since recovered one, add a MAPPINGS entry and remove the slot "
+        "from UNREAD_SHARE_STATUS_SLOTS in the same change — do not name it from a guess."
     )
 
 

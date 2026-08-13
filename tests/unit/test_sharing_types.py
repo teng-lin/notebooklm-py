@@ -111,6 +111,96 @@ class TestShareStatusCapacityAndPolicyFields:
 
         assert status.max_individuals_share_limit is None
 
+    @pytest.mark.asyncio
+    async def test_set_view_level_preserves_the_decoded_fields(
+        self, auth_tokens, httpx_mock: HTTPXMock, build_rpc_response
+    ):
+        """``set_view_level`` must not discard what ``get_status`` just decoded.
+
+        It re-fetches the status and overrides only ``view_level``. That rebuild
+        used to list six fields explicitly, so the cap and the policy gate came
+        back ``None`` — reporting "the backend made no claim" about values the
+        backend had, in the same call, just stated. The REST
+        ``POST /share/view-level`` route and the MCP view-level-only branch of
+        ``share_set_access`` both project this object, so the nulls reached
+        users on two adapters while every suite stayed green.
+        """
+        httpx_mock.add_response(content=build_rpc_response(RPCMethod.RENAME_NOTEBOOK, []).encode())
+        httpx_mock.add_response(
+            content=build_rpc_response(RPCMethod.GET_SHARE_STATUS, LIVE_SHARE_STATUS_ROW).encode()
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            status = await client.sharing.set_view_level("nb_123", ShareViewLevel.CHAT_ONLY)
+
+        # The point of the call still holds.
+        assert status.view_level == ShareViewLevel.CHAT_ONLY
+        # ...and nothing else was dropped on the way.
+        assert status.max_individuals_share_limit == 1000
+        assert status.is_public_sharing_allowed is True
+
+    def test_denied_predicate_fires_only_on_an_explicit_false(self):
+        """``is_public_sharing_denied`` must not fire on the unknown case.
+
+        This is the whole reason the property exists: the idiomatic
+        ``not status.is_public_sharing_allowed`` is ``True`` for ``None`` too,
+        so it reports a denial the backend never made.
+        """
+        denied = ShareStatus.from_api_response([[], None, 1000, False], "nb-1")
+        allowed = ShareStatus.from_api_response([[], None, 1000, True], "nb-1")
+        silent = ShareStatus.from_api_response([[], None, 1000], "nb-1")
+
+        assert denied.is_public_sharing_denied is True
+        assert allowed.is_public_sharing_denied is False
+        assert silent.is_public_sharing_denied is False
+        # The trap the property exists to replace: the naive spelling gets the
+        # silent case wrong, while the property gets it right.
+        assert not silent.is_public_sharing_allowed
+        assert silent.is_public_sharing_denied is False
+
+    def test_malformed_slot_warns_but_absent_slot_is_silent(self, caplog):
+        """Drift is reported; genuine absence is not.
+
+        Absence and drift share the ``None`` representation, so without a log
+        line a backend shape change in either slot would be completely
+        invisible — and shape drift is this client's #1 breakage class.
+        """
+        import logging
+
+        from notebooklm._types import sharing as sharing_mod
+
+        sharing_mod._warned_malformed_share_slots.clear()
+
+        with caplog.at_level(logging.WARNING, logger=sharing_mod.__name__):
+            ShareStatus.from_api_response([[], None, "1000", "yes"], "nb-1")
+        assert "maxIndividualsShareLimit" in caplog.text
+        assert "isPublicSharingAllowed" in caplog.text
+
+        # A short response is normal, not drift, and must stay quiet.
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger=sharing_mod.__name__):
+            ShareStatus.from_api_response([[], None], "nb-1")
+        assert caplog.text == ""
+
+        # An explicit null is absence too.
+        with caplog.at_level(logging.WARNING, logger=sharing_mod.__name__):
+            ShareStatus.from_api_response([[], None, None, None], "nb-1")
+        assert caplog.text == ""
+
+    def test_malformed_slot_warns_once_per_value(self, caplog):
+        """A polled notebook must not re-emit the same drift line every decode."""
+        import logging
+
+        from notebooklm._types import sharing as sharing_mod
+
+        sharing_mod._warned_malformed_share_slots.clear()
+
+        with caplog.at_level(logging.WARNING, logger=sharing_mod.__name__):
+            for _ in range(5):
+                ShareStatus.from_api_response([[], None, "1000", True], "nb-1")
+
+        assert caplog.text.count("maxIndividualsShareLimit") == 1
+
     def test_unnamed_trailing_slots_are_not_surfaced(self):
         """Tags 7-8 are populated live but deliberately undecoded (#2130).
 
@@ -120,8 +210,24 @@ class TestShareStatusCapacityAndPolicyFields:
         """
         status = ShareStatus.from_api_response(LIVE_SHARE_STATUS_ROW, "nb-1")
 
-        assert not [f for f in vars(status) if "tag" in f.lower()]
-        assert [3, True, True] not in vars(status).values()
+        # An exact field-set comparison, deliberately not a name heuristic or a
+        # search for the raw value. Both of those are escapable: a slot exposed
+        # under any name that does not contain "tag", or stored decomposed
+        # (``can_invite=data[6][1]``) rather than verbatim, would slip past.
+        # Pinning the whole set fails for ANY new field regardless of name or
+        # shape, which is the actual intent — a new field is then a deliberate
+        # act that updates this list and, for a wire slot, adds the naming
+        # evidence to the wire contract.
+        assert set(vars(status)) == {
+            "notebook_id",
+            "is_public",
+            "access",
+            "view_level",
+            "shared_users",
+            "share_url",
+            "max_individuals_share_limit",
+            "is_public_sharing_allowed",
+        }
 
 
 class TestSharedUser:

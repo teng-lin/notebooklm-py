@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import reprlib
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import quote
 
 from .._env import get_base_url
@@ -22,6 +22,18 @@ logger = logging.getLogger(__name__)
 # any input the old guarded code accepted; it centralises the descent and only
 # fires if the guard's invariant is somehow violated (genuine drift).
 _SHARE_METHOD_ID = RPCMethod.GET_SHARE_STATUS.value
+
+#: ``(field_name, repr(value))`` pairs already reported by
+#: :meth:`ShareStatus._warn_if_malformed`, so a polled notebook does not re-emit
+#: the same drift line on every decode. ``repr`` rather than the value itself
+#: because a drifted slot can hold an unhashable payload (e.g. a list), and
+#: because ``repr`` keeps ``1000`` and ``"1000"`` distinct.
+_warned_malformed_share_slots: set[tuple[str, str]] = set()
+
+#: Cap on the rendered drift value used as a warn-once key and logged. Long
+#: enough to identify any plausible scalar verbatim, short enough that a
+#: pathological payload cannot retain an unbounded string.
+_MAX_DRIFT_REPR_LEN: int = 120
 
 
 @dataclass
@@ -132,22 +144,24 @@ class ShareStatus:
     recovered mobile schema declares only tags 2, 3 and 4, so nothing names
     them. Guessing a name here is precisely the defect class
     ``tests/_guardrails/_wire_contract.py`` exists to prevent, so they are
-    recorded there as ``UNMAPPED`` rather than exposed under an invented name
-    (#2130).
+    recorded there in ``UNREAD_SHARE_STATUS_SLOTS`` rather than exposed under an
+    invented name. That record is enforced, not merely documentary:
+    ``test_unread_share_status_slots_stay_undecoded`` fails if any constant in
+    this module starts reading slot 6 or 7 (#2130).
     """
 
     #: ``[0]`` — the shared-user rows. Not declared in the mobile
     #: ``GetProjectDetailsResponse`` (a web-only slot), so it is pinned rather
     #: than mapped in the wire contract.
-    _USERS_POS = 0
+    _USERS_POS: ClassVar[int] = 0
     #: ``[1]`` — ``publicSettings`` (``ProjectPublicSettings``, tag 2).
-    _PUBLIC_BLOCK_POS = 1
+    _PUBLIC_BLOCK_POS: ClassVar[int] = 1
     #: ``[1][0]`` — ``ProjectPublicSettings.isPubliclyReadable`` (tag 1).
-    _IS_PUBLIC_INNER_POS = 0
+    _IS_PUBLIC_INNER_POS: ClassVar[int] = 0
     #: ``[2]`` — ``maxIndividualsShareLimit`` (tag 3).
-    _MAX_SHARE_LIMIT_POS = 2
+    _MAX_SHARE_LIMIT_POS: ClassVar[int] = 2
     #: ``[3]`` — ``isPublicSharingAllowed`` (tag 4).
-    _PUBLIC_SHARING_ALLOWED_POS = 3
+    _PUBLIC_SHARING_ALLOWED_POS: ClassVar[int] = 3
 
     notebook_id: str
     is_public: bool
@@ -170,8 +184,27 @@ class ShareStatus:
     #: "the backend said no" have opposite consequences for a caller deciding
     #: whether to attempt a public share. Callers must test
     #: ``is_public_sharing_allowed is False`` for the deny case rather than
-    #: ``not is_public_sharing_allowed``, which also catches the unknown.
+    #: ``not is_public_sharing_allowed``, which also catches the unknown — or
+    #: read :attr:`is_public_sharing_denied`, which encodes that distinction.
     is_public_sharing_allowed: bool | None = None
+
+    @property
+    def is_public_sharing_denied(self) -> bool:
+        """Whether the backend **explicitly** refused public sharing.
+
+        ``True`` only for a literal ``False`` on the wire. ``False`` therefore
+        means "no denial was reported" — for an explicit allow and for silence
+        alike — **not** "public sharing is confirmed available".
+
+        This exists because the safe reading of the tri-state is not the
+        idiomatic one: ``not status.is_public_sharing_allowed`` is ``True`` for
+        the *unknown* case too, so the obvious spelling reports a denial the
+        backend never made. Reaching for this property instead of re-deriving
+        the comparison is what keeps that bug out of each new caller — the same
+        role :attr:`notebooklm.Source.is_drive_degraded` plays for the Drive
+        tri-state.
+        """
+        return self.is_public_sharing_allowed is False
 
     @classmethod
     def from_api_response(cls, data: list[Any], notebook_id: str) -> ShareStatus:
@@ -239,14 +272,20 @@ class ShareStatus:
         limit_slot = cls._scalar_at(data, cls._MAX_SHARE_LIMIT_POS)
         # ``bool`` is an ``int`` subclass, so a JSON ``true`` here would silently
         # decode as a cap of 1; that is drift, not a limit, and must not parse.
-        max_individuals_share_limit = (
-            limit_slot if isinstance(limit_slot, int) and not isinstance(limit_slot, bool) else None
-        )
+        max_individuals_share_limit: int | None = None
+        if isinstance(limit_slot, int) and not isinstance(limit_slot, bool):
+            max_individuals_share_limit = limit_slot
+        else:
+            cls._warn_if_malformed(limit_slot, "maxIndividualsShareLimit", "int")
 
         allowed_slot = cls._scalar_at(data, cls._PUBLIC_SHARING_ALLOWED_POS)
         # Strictly ``bool``: a truthy non-bool (e.g. a drifted int or string) is
         # not a policy answer, and coercing one would invent a gate verdict.
-        is_public_sharing_allowed = allowed_slot if isinstance(allowed_slot, bool) else None
+        is_public_sharing_allowed: bool | None = None
+        if isinstance(allowed_slot, bool):
+            is_public_sharing_allowed = allowed_slot
+        else:
+            cls._warn_if_malformed(allowed_slot, "isPublicSharingAllowed", "bool")
 
         access = ShareAccess.ANYONE_WITH_LINK if is_public else ShareAccess.RESTRICTED
 
@@ -271,6 +310,39 @@ class ShareStatus:
             is_public_sharing_allowed=is_public_sharing_allowed,
         )
 
+    @staticmethod
+    def _warn_if_malformed(value: Any, field_name: str, expected: str) -> None:
+        """Log once-per-value when a slot is PRESENT but carries the wrong type.
+
+        Absence and drift both decode to ``None``, which is the one place this
+        tri-state is lossy: "the backend stated no cap" and "the backend stated
+        something we could not read" become indistinguishable to a caller. That
+        is an acceptable public contract — an ``int | None`` should not grow an
+        ``UNKNOWN`` sentinel — but it must not also be *invisible*, because this
+        decode is the only place the drift could ever be observed and shape
+        drift is this client's #1 breakage class.
+
+        So the value is dropped either way, and a present-but-wrong-typed slot
+        additionally warns. Mirrors the ``#1485`` absence-vs-malformed policy
+        already applied to the email slot in
+        :meth:`SharedUser.from_api_response`, and the warn-once keying used by
+        ``SourceRow.drive_status``. ``None`` is real absence and never warns.
+        """
+        if value is None:
+            return
+        rendered = repr(value)[:_MAX_DRIFT_REPR_LEN]
+        key = (field_name, rendered)
+        if key in _warned_malformed_share_slots:
+            return
+        _warned_malformed_share_slots.add(key)
+        logger.warning(
+            "GET_SHARE_STATUS %s slot malformed — reporting 'no claim' (expected %s, got %s: %s)",
+            field_name,
+            expected,
+            type(value).__name__,
+            rendered,
+        )
+
     @classmethod
     def _scalar_at(cls, data: list[Any], pos: int) -> Any:
         """The raw value at ``data[pos]``, or ``None`` when the slot is absent.
@@ -278,7 +350,10 @@ class ShareStatus:
         The length guard runs BEFORE the :func:`safe_index` descent, matching the
         rest of this parser: short responses are a normal shape here (the pinned
         ``GET_SHARE_STATUS`` golden capture is only three elements long), so a
-        missing trailing slot is absence, not drift, and must not warn.
+        missing trailing slot is absence, not drift, and must not **raise** —
+        :func:`safe_index` treats an out-of-range index as drift and raises
+        ``UnknownRPCMethodError``, so reaching it for a legitimately short
+        response would turn a normal shape into an error.
         """
         if len(data) <= pos:
             return None

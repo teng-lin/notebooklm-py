@@ -77,6 +77,14 @@ def share_status_view(status: ShareStatus, *, include_view_level: bool = False) 
     present — an omitted key and a ``null`` are the same thing to a JSON client,
     but a *stably* present key lets a consumer distinguish "this server does not
     report the field" from "this notebook has no value for it".
+
+    ``is_public_sharing_denied`` carries the *verdict* over that tri-state, for
+    the same reason :func:`source_view` ships ``is_drive_degraded``: it is a
+    property, so a raw serialization pass would drop it, leaving every
+    non-Python consumer to re-derive it — and the idiomatic re-derivation
+    (``!allowed`` in JS, ``not allowed`` in Python) is *wrong*, because it also
+    fires on the unknown case. Shipping the verdict is what keeps that bug out
+    of consumers rather than only out of this repo.
     """
     payload: dict[str, Any] = {
         "notebook_id": status.notebook_id,
@@ -85,6 +93,7 @@ def share_status_view(status: ShareStatus, *, include_view_level: bool = False) 
         "share_url": status.share_url,
         "max_individuals_share_limit": status.max_individuals_share_limit,
         "is_public_sharing_allowed": status.is_public_sharing_allowed,
+        "is_public_sharing_denied": status.is_public_sharing_denied,
         "shared_users": [
             {
                 "email": user.email,

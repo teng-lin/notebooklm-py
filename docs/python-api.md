@@ -2714,19 +2714,34 @@ Both are **tri-state**, and the third state matters:
 ```python
 status = await client.sharing.get_status(nb_id)
 
-if status.is_public_sharing_allowed is False:
+if status.is_public_sharing_denied:
     print("This tenant forbids public sharing.")
 elif status.is_public_sharing_allowed is None:
     print("The backend did not say; attempting anyway.")
 
 if status.max_individuals_share_limit is not None:
-    remaining = status.max_individuals_share_limit - len(status.shared_users)
+    print(f"Backend-enforced collaborator cap: {status.max_individuals_share_limit}")
 ```
 
 `None` means *the response made no claim* — it is deliberately not collapsed
 into `False` / `0`, because "the backend did not say" and "the backend said no"
-lead a caller to opposite decisions. Test `is False` explicitly rather than
-`not status.is_public_sharing_allowed`, which also catches the unknown.
+lead a caller to opposite decisions.
+
+Prefer the `is_public_sharing_denied` property over hand-writing the
+comparison. The idiomatic spelling `not status.is_public_sharing_allowed` is
+**wrong**: it is also `True` for the unknown case, so it reports a denial the
+backend never made. `is_public_sharing_denied` is `True` only for an explicit
+wire `False`; a `False` from it means "no denial was reported", not "public
+sharing is confirmed available". The MCP and REST views ship the same verdict
+as an `is_public_sharing_denied` key.
+
+> **How the cap is counted is NOT established.** `shared_users` includes the
+> **owner** (live-confirmed: an owner row is present on every notebook
+> observed), and whether the owner counts against `maxIndividualsShareLimit` was
+> never tested — no account was taken anywhere near 1000 collaborators. So
+> `max_individuals_share_limit - len(shared_users)` is plausible but unverified,
+> and plausibly off by one. Treat the cap as the backend's stated ceiling, not
+> as an operand in arithmetic this project has confirmed.
 
 > **`set_public` deliberately does not consult the gate.** Making it pre-check
 > `is_public_sharing_allowed` would add an RPC round-trip to every call and
@@ -2736,7 +2751,7 @@ lead a caller to opposite decisions. Test `is False` explicitly rather than
 > field is surfaced so a caller can make that decision with the evidence in
 > hand; wiring it into the mutation path is a separate change that needs a
 > tenant where the branch can actually be tested.
-
+>
 > **Caveat, stated plainly:** every notebook sampled (10/10, 2026-08) returned
 > `1000` and `True`. The `False` branch of `is_public_sharing_allowed` has never
 > been observed on the wire — only its decoding is pinned by tests.

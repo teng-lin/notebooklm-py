@@ -53,6 +53,17 @@ class FakeShareStatus:
     max_individuals_share_limit: int | None = None
     is_public_sharing_allowed: bool | None = None
 
+    @property
+    def is_public_sharing_denied(self) -> bool:
+        """Mirrors the real ``ShareStatus`` property, deliberately not hardcoded.
+
+        Re-deriving it from ``is_public_sharing_allowed`` here (rather than
+        returning a canned ``False``) keeps the double honest: a fake that
+        always said ``False`` would let a projection bug through on the deny
+        case.
+        """
+        return self.is_public_sharing_allowed is False
+
 
 # ---------------------------------------------------------------------------
 # _label helper
@@ -103,6 +114,36 @@ async def test_share_status_labels_enums_and_omits_view_level(mcp_call, mock_cli
     # view_level is NOT reported by the read API => must be omitted, not shipped as "full".
     assert "view_level" not in sc
     mock_client.sharing.get_status.assert_awaited_once_with(NB_ID)
+
+
+async def test_share_status_reports_absent_capacity_as_null(mcp_call, mock_client) -> None:
+    """The no-claim case reaches MCP as ``null``, not a fabricated 0/false (#2130).
+
+    Both keys stay present so an agent can tell "this server does not report the
+    field" from "this notebook has no value for it", and the verdict is ``false``
+    because nothing was denied — not because a denial was inferred from silence.
+    """
+    mock_client.sharing.get_status = AsyncMock(return_value=FakeShareStatus())
+
+    result = await mcp_call("share_status", {"notebook": NB_ID})
+    sc = result.structured_content
+
+    assert sc["max_individuals_share_limit"] is None
+    assert sc["is_public_sharing_allowed"] is None
+    assert sc["is_public_sharing_denied"] is False
+
+
+async def test_share_status_surfaces_a_policy_denial(mcp_call, mock_client) -> None:
+    """An explicit wire ``False`` reaches MCP as a denial verdict."""
+    mock_client.sharing.get_status = AsyncMock(
+        return_value=FakeShareStatus(is_public_sharing_allowed=False)
+    )
+
+    result = await mcp_call("share_status", {"notebook": NB_ID})
+    sc = result.structured_content
+
+    assert sc["is_public_sharing_allowed"] is False
+    assert sc["is_public_sharing_denied"] is True
 
 
 async def test_share_status_resolves_notebook_by_name(mcp_call, mock_client) -> None:

@@ -134,7 +134,7 @@ def share_status(ctx, notebook_id, json_output, client_auth):
             # #2130. Only rendered when the backend actually stated them: a
             # ``None`` means "no claim", and printing "Public Sharing: no" for a
             # silent response would assert a policy denial that was never made.
-            if status.is_public_sharing_allowed is False:
+            if status.is_public_sharing_denied:
                 console.print(
                     "[bold]Public Sharing:[/bold] [red]Not allowed by policy[/red] "
                     "[dim](a 'share public --enable' call may not take effect)[/dim]"
@@ -142,10 +142,14 @@ def share_status(ctx, notebook_id, json_output, client_auth):
             elif status.is_public_sharing_allowed is True:
                 console.print("[bold]Public Sharing:[/bold] [green]Allowed[/green]")
 
+            # Deliberately NOT annotated with a "N of 1000 used" style count.
+            # ``shared_users`` includes the owner, and whether the owner counts
+            # against maxIndividualsShareLimit was never tested, so pairing the
+            # two numbers would invite a subtraction this project has not
+            # verified. Report the backend's stated ceiling and nothing more.
             if status.max_individuals_share_limit is not None:
                 console.print(
-                    f"[bold]Collaborator Limit:[/bold] {status.max_individuals_share_limit} "
-                    f"[dim]({len(status.shared_users)} currently shared)[/dim]"
+                    f"[bold]Collaborator Limit:[/bold] {status.max_individuals_share_limit}"
                 )
 
             # Display shared users

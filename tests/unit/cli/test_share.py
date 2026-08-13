@@ -579,6 +579,27 @@ class TestShareJsonOutput:
         assert "Not allowed by policy" in result.output
         assert "1000" in result.output
 
+    def test_share_status_human_output_reports_the_allowed_case(self, runner, mock_auth):
+        """The ``True`` branch — what every real account hits (live: 10/10).
+
+        Covered explicitly because deleting this branch outright left the whole
+        suite green: the deny and silent cases were tested and the common one
+        was not.
+        """
+        mock_client = create_mock_client()
+        mock_client.sharing.get_status = AsyncMock(
+            return_value=create_mock_share_status(
+                max_individuals_share_limit=1000, is_public_sharing_allowed=True
+            )
+        )
+
+        result = self._invoke_status(runner, mock_client)
+
+        assert result.exit_code == 0
+        assert "Allowed" in result.output
+        assert "Not allowed by policy" not in result.output
+        assert "1000" in result.output
+
     def test_share_status_human_output_is_silent_when_no_claim(self, runner, mock_auth):
         """``None`` must print nothing — not "no".
 
