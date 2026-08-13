@@ -12,7 +12,8 @@ below for guidance on when an operator would want to override them via the
 
 from __future__ import annotations
 
-from typing import Any
+import math
+from typing import Any, cast
 
 __all__ = [
     "AUTO_READ_TIMEOUT",
@@ -27,9 +28,12 @@ __all__ = [
     "DEFAULT_MAX_CONCURRENT_RPCS",
     "DEFAULT_MAX_CONCURRENT_UPLOADS",
     "DEFAULT_TIMEOUT",
+    "MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT",
+    "assert_resolved_read_timeout",
     "compose_builtin_read_timeout",
     "normalize_max_concurrent_uploads",
     "resolve_chat_read_timeout",
+    "validate_read_timeout_kwarg",
 ]
 
 # Single source of truth for the logger name every client-runtime /
@@ -72,6 +76,15 @@ DEFAULT_CHAT_RESPONSE_MAX_BYTES = 256 * 1024 * 1024
 DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT = 60.0
 DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT = 3.0
 DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT = 240.0
+
+# Floor on the read window ``import_sources_with_verification`` will spend a
+# retry on (#2205). Equal to the connect timeout on purpose: an attempt whose
+# read window cannot outlast connection establishment can never observe its own
+# result, and IMPORT_RESEARCH is ``NON_IDEMPOTENT_NO_RETRY`` — the server can
+# still commit the sources the client never saw, duplicating them. So when less
+# than this is left of ``max_elapsed``, the loop stops instead of dispatching a
+# doomed attempt (which would also overrun its own deadline).
+MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT = DEFAULT_CONNECT_TIMEOUT
 
 # Minimum keepalive interval to avoid accidentally rate-limiting accounts.google.com
 DEFAULT_KEEPALIVE_MIN_INTERVAL = 60.0
@@ -138,9 +151,13 @@ def compose_builtin_read_timeout(builtin_window: float, base_timeout: float | No
     they may only ever raise the client-wide budget: a caller who buys
     ``timeout=600`` for every RPC is not silently cut back to 180 s / 240 s.
 
-    ``base_timeout=None`` means an explicitly infinite client (httpx treats
-    ``None`` as "no timeout"); a finite constant must not re-impose a ceiling
-    on it, so the window stays infinite.
+    Returning ``None`` means "impose no per-RPC read override, defer to the
+    client's own configured base". That is the correct answer for
+    ``base_timeout=None`` — a client built with no base read timeout at all
+    (httpx reads ``None`` as "no timeout"), where a finite constant must not
+    re-impose a ceiling the caller opted out of. It is deliberately *not* a
+    claim that the request runs unbounded: what the transport does with "no
+    override" is the transport's business (see ``Kernel.post``).
     """
     if base_timeout is None:
         return None
@@ -161,6 +178,48 @@ def resolve_chat_read_timeout(
     if chat_timeout is AUTO_READ_TIMEOUT:
         return compose_builtin_read_timeout(DEFAULT_CHAT_TIMEOUT, base_timeout)
     return chat_timeout
+
+
+def validate_read_timeout_kwarg(value: Any, *, name: str) -> float | None:
+    """Reject a per-RPC read-window kwarg that could only ever break the call.
+
+    A misconfigured window is otherwise invisible: ``httpx.Timeout`` accepts
+    ``read=0`` and ``read=-5`` without complaint, so the client would simply
+    time out instantly on every affected RPC and report a generic transport
+    timeout that names neither the kwarg nor the value (#2205). Mirrors the
+    ``chat_response_max_bytes`` / ``max_concurrent_uploads`` checks on the same
+    constructor.
+
+    ``None`` ("inherit ``timeout=``") and :data:`AUTO_READ_TIMEOUT` ("unset")
+    pass through untouched; anything else must be a positive real number.
+    """
+    if value is None or value is AUTO_READ_TIMEOUT:
+        return cast("float | None", value)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(
+            f"{name} must be a number of seconds, or None to inherit timeout= (got {value!r})"
+        )
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(
+            f"{name} must be a positive, finite number of seconds when supplied (got {value!r})"
+        )
+    return float(value)
+
+
+def assert_resolved_read_timeout(value: Any, *, name: str) -> None:
+    """Fail loudly if an unresolved :data:`AUTO_READ_TIMEOUT` reached a consumer.
+
+    The sentinel is resolved once, at the composition root. Every layer below
+    guards on ``is not None``, so a sentinel that slipped past would be handed
+    to ``httpx.Timeout`` — which accepts it without error — and only surface far
+    away, as a ``TypeError`` inside the timeout *error formatter*. This turns
+    that into an immediate, named failure at the boundary it crossed.
+    """
+    if value is AUTO_READ_TIMEOUT:
+        raise TypeError(
+            f"{name} received the unresolved AUTO_READ_TIMEOUT sentinel; it must "
+            "be resolved (resolve_chat_read_timeout) before reaching this layer"
+        )
 
 
 def normalize_max_concurrent_uploads(max_concurrent_uploads: int | None) -> int:

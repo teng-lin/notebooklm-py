@@ -14,6 +14,7 @@ delegate — its tests cover only the wiring (still in ``test_helpers.py``).
 from __future__ import annotations
 
 import asyncio
+import logging
 from itertools import chain, repeat
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,12 +30,23 @@ class _RecordingRpc:
 
     Constructor injection rather than assigning an ``AsyncMock`` onto a
     duck-typed fake's RPC attribute — ADR-0007 forbids exactly that. Queued
-    outcomes are replayed in order; an exception instance is raised rather
-    than returned.
+    outcomes are replayed in order.
+
+    Two details keep the double honest rather than merely convenient:
+
+    * a queued :class:`RPCTimeoutError` gets its ``timeout_seconds`` from the
+      window this call was actually handed, exactly as the real executor
+      derives it (``_rpc_executor.py``). Hardcoding it would hide a defect
+      where the clamp reaches the wire but the raised error still reports the
+      unclamped window;
+    * ``advance`` moves the injected clock *while the call is in flight*, so a
+      retry is late because time passed during a failed attempt — the real
+      causal chain — rather than because a positional clock stub said so.
     """
 
-    def __init__(self, outcomes: list[object]) -> None:
+    def __init__(self, outcomes: list[object], clock: dict[str, float] | None = None) -> None:
         self._outcomes = list(outcomes)
+        self._clock = clock
         self.read_timeouts: list[float | None] = []
 
     async def rpc_call(
@@ -45,11 +57,27 @@ class _RecordingRpc:
         allow_null: bool = False,
         **kwargs: object,
     ) -> object:
-        self.read_timeouts.append(kwargs.get("read_timeout"))  # type: ignore[arg-type]
+        read_timeout = kwargs.get("read_timeout")
+        self.read_timeouts.append(read_timeout)  # type: ignore[arg-type]
         outcome = self._outcomes.pop(0)
+        if isinstance(outcome, _Advance):
+            if self._clock is not None:
+                self._clock["now"] += outcome.seconds
+            outcome = outcome.then
+        if isinstance(outcome, RPCTimeoutError):
+            # Mirror the executor: the error reports the window actually used.
+            outcome = RPCTimeoutError(str(outcome), timeout_seconds=read_timeout)
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
+
+
+class _Advance:
+    """Queue entry: advance the injected clock, then produce ``then``."""
+
+    def __init__(self, seconds: float, then: object) -> None:
+        self.seconds = seconds
+        self.then = then
 
 
 def _make_research() -> tuple[ResearchAPI, MagicMock, MagicMock]:
@@ -148,22 +176,21 @@ class TestImportSourcesWithVerification:
         run its full window and blow ~4 minutes past the deadline. Asserted on
         the ``read_timeout`` handed to the RPC layer, not on the plumbing kwarg.
         """
+        clock = {"now": 0.0}
         fake_rpc = _RecordingRpc(
             [
-                RPCTimeoutError("Timed out", timeout_seconds=63.0),
+                # The first attempt burns 1750 s of the budget, then times out.
+                _Advance(1750.0, RPCTimeoutError("Timed out")),
                 [[[["src_1"], "Source 1"]]],
-            ]
+            ],
+            clock=clock,
         )
         mock_source_lister = MagicMock()
         mock_source_lister.list = AsyncMock(return_value=[])
         research = ResearchAPI(fake_rpc, source_lister=mock_source_lister)
 
-        # start=0 and the first attempt's clock read=0 (full budget), then every
-        # later read sits at 1750 s: 50 s left when the retry starts.
         with (
-            patch.object(
-                _research_mod.time, "monotonic", side_effect=chain([0.0, 0.0], repeat(1750.0))
-            ),
+            patch.object(_research_mod.time, "monotonic", side_effect=lambda: clock["now"]),
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock),
         ):
             imported = await research.import_sources_with_verification(
@@ -177,8 +204,73 @@ class TestImportSourcesWithVerification:
         first_attempt, retry_attempt = fake_rpc.read_timeouts
         # First attempt: the full batch-scaled window (60 + 3 * 1 source).
         assert first_attempt == 63.0
-        # Retry: clamped to what is left of max_elapsed instead.
+        # Retry: clamped to the 50 s left of max_elapsed instead.
         assert retry_attempt == 50.0
+
+    @pytest.mark.asyncio
+    async def test_refuses_a_retry_too_short_to_observe_its_own_result(self, caplog):
+        """#2205: an unviable remaining budget ends the loop instead of clamping.
+
+        Clamping a retry down to the last few seconds of ``max_elapsed`` looks
+        tidy but still SENDS a ``NON_IDEMPOTENT_NO_RETRY`` IMPORT_RESEARCH whose
+        result the client cannot wait for — the server may commit it anyway and
+        duplicate the sources. Running it unclamped instead would overshoot the
+        deadline the clamp exists to enforce. Both are worse than stopping.
+        """
+        clock = {"now": 0.0}
+        fake_rpc = _RecordingRpc(
+            [
+                # 1796 s of an 1800 s budget gone: 4 s left — positive (so the
+                # unguarded clamp would have dispatched) but under the floor.
+                _Advance(1796.0, RPCTimeoutError("Timed out")),
+                [[[["src_1"], "Source 1"]]],  # never reached
+            ],
+            clock=clock,
+        )
+        mock_source_lister = MagicMock()
+        mock_source_lister.list = AsyncMock(return_value=[])
+        research = ResearchAPI(fake_rpc, source_lister=mock_source_lister)
+
+        with (
+            patch.object(_research_mod.time, "monotonic", side_effect=lambda: clock["now"]),
+            patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock),
+            caplog.at_level(logging.WARNING, logger="notebooklm._research"),
+            pytest.raises(RPCTimeoutError),
+        ):
+            await research.import_sources_with_verification(
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+                max_elapsed=1800,
+            )
+
+        # Exactly one attempt was sent — the retry was never dispatched.
+        assert fake_rpc.read_timeouts == [63.0]
+        assert "minimum viable attempt window" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_first_attempt_runs_even_with_no_budget_at_all(self):
+        """``max_elapsed=0`` still means "try once", not "do nothing".
+
+        The viability gate applies to retries only; degrading the first attempt
+        into a zero-second window would turn a documented one-shot idiom into a
+        guaranteed instant timeout.
+        """
+        fake_rpc = _RecordingRpc([[[["src_1"], "Source 1"]]])
+        mock_source_lister = MagicMock()
+        mock_source_lister.list = AsyncMock(return_value=[])
+        research = ResearchAPI(fake_rpc, source_lister=mock_source_lister)
+
+        imported = await research.import_sources_with_verification(
+            "nb_123",
+            "task_123",
+            [{"url": "https://example.com", "title": "Source 1"}],
+            max_elapsed=0,
+        )
+
+        assert imported == [{"id": "src_1", "title": "Source 1"}]
+        # Unclamped: the natural batch-scaled window, not 0.
+        assert fake_rpc.read_timeouts == [63.0]
 
     @pytest.mark.asyncio
     async def test_does_not_retry_non_timeout_error(self):

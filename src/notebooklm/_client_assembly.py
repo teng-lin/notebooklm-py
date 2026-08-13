@@ -60,6 +60,7 @@ from ._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
     resolve_chat_read_timeout,
+    validate_read_timeout_kwarg,
 )
 from ._runtime.init import compose_client_internals
 from ._runtime.lifecycle import CookieRotator, CookieSaver
@@ -109,7 +110,7 @@ def _assemble_client(
     cookie_saver: CookieSaver | None = None,
     cookie_rotator: CookieRotator | None = None,
     chat_timeout: float | None = AUTO_READ_TIMEOUT,
-    import_research_timeout: float | None = None,
+    import_research_timeout: float | None = AUTO_READ_TIMEOUT,
     chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     # --- Production-default overrides (test factory only) -----------------
     # ``NotebookLMClient.__init__`` never passes these; the sentinels
@@ -238,6 +239,15 @@ def _assemble_client(
         raise ValueError(
             f"chat_response_max_bytes must be >= 1 when supplied (got {chat_response_max_bytes!r})"
         )
+    # Both per-RPC read windows are validated here, at the one seam every
+    # construction path funnels through (constructor, ``from_storage``, the
+    # canonical test factory). A zero/negative window is accepted verbatim by
+    # ``httpx.Timeout`` and would otherwise surface only as an instant,
+    # unexplained transport timeout on every affected RPC (#2205).
+    chat_timeout = validate_read_timeout_kwarg(chat_timeout, name="chat_timeout")
+    import_research_timeout = validate_read_timeout_kwarg(
+        import_research_timeout, name="import_research_timeout"
+    )
 
     # The client is the composition root: :func:`compose_client_internals`
     # binds composition state onto ``client._composed`` and returns only the

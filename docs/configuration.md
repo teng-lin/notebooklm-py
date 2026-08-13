@@ -462,9 +462,11 @@ tune it per-workload — see the `DEFAULT_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT`
 constants in `src/notebooklm/_runtime/config.py`.
 
 The chat streaming endpoint (`ChatAPI.ask`) also exposes a separate per-read
-silence window (`chat_timeout=`). It defaults to **180 seconds** because shared
-notebooks can be slow to send the first streamed chat byte; fast metadata RPCs
-stay on the normal **30-second** timeout. A chat read timeout means the server
+silence window (`chat_timeout=`). Left unset it is **`max(180 s, timeout=)`** —
+180 seconds because shared notebooks can be slow to send the first streamed chat
+byte, floored at `timeout=` so a larger configured budget still reaches chat (see
+[below](#how-the-per-rpc-windows-compose-with-timeout)); fast metadata RPCs stay
+on the normal **30-second** timeout. A chat read timeout means the server
 sent no stream bytes for that window, either before the first byte or between
 chunks; it does not mean total generation time exceeded 30 seconds. Pass
 `chat_timeout=None` to inherit the normal client timeout for chat. The CLI
@@ -493,12 +495,25 @@ they silently clamped such a client back to 180 s / 240 s — issue #2205).
 An explicitly passed `chat_timeout=` / `import_research_timeout=` is the
 caller's final word and is used as given — including a value *below* `timeout=`,
 so deliberately fast failure stays expressible. Only the untouched defaults
-compose. (`chat_timeout=None` still means "inherit `timeout=` verbatim".)
+compose. Both kwargs read identically:
+
+| value | meaning |
+| --- | --- |
+| unset | the built-in window, floored at `timeout=` |
+| a number | exactly that window, replacing the built-in and the floor |
+| `None` | inherit `timeout=` verbatim, with no per-RPC window at all |
+
+A non-positive or non-finite value for either raises `ValueError` at
+construction rather than silently producing a window that times out instantly.
 
 Independently, an IMPORT_RESEARCH attempt made by
 `import_sources_with_verification` is clamped to whatever is left of that call's
 own `max_elapsed` retry budget, so a late retry cannot run past the loop's
-deadline.
+deadline. When less than 10 seconds of that budget remains — too little for an
+attempt to outlast connection establishment — the loop stops instead of sending
+one: `IMPORT_RESEARCH` is non-idempotent, so an attempt whose result the client
+cannot observe can still commit sources server-side and duplicate them. The
+first attempt is exempt, so `max_elapsed=0` still means "try once".
 
 ### Decoder strictness
 

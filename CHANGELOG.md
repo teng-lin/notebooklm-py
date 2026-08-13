@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`NotebookLMClient(..., import_research_timeout=)`** gives the
+  `IMPORT_RESEARCH` RPC the dedicated read-window knob `chat_timeout` already
+  had ([#2205](https://github.com/teng-lin/notebooklm-py/issues/2205)). Unset it
+  keeps the batch-scaled window (60 s + 3 s per requested source, capped at
+  240 s) floored at the client's `timeout=`; a number replaces both; `None`
+  inherits `timeout=` verbatim — the same three-way reading as `chat_timeout`.
+
 - **Citations can now be aligned to both the answer and the source.** The two
   halves of that mapping were each missing a piece, and neither was usable
   without the other.

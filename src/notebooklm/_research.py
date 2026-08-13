@@ -30,7 +30,11 @@ from ._research_import import (
 )
 from ._research_task_parser import parse_research_task_models
 from ._row_adapters.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
-from ._runtime.config import DEFAULT_TIMEOUT
+from ._runtime.config import (
+    AUTO_READ_TIMEOUT,
+    DEFAULT_TIMEOUT,
+    MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
+)
 from ._runtime.contracts import RpcCaller
 from ._types.research import (
     RESEARCH_SOURCE_TYPE_DRIVE,
@@ -133,7 +137,7 @@ class ResearchAPI:
         *,
         source_lister: NotebookSourceLister | None = None,
         base_timeout: float | None = DEFAULT_TIMEOUT,
-        import_research_timeout: float | None = None,
+        import_research_timeout: float | None = AUTO_READ_TIMEOUT,
     ):
         """Initialize the research API.
 
@@ -144,9 +148,11 @@ class ResearchAPI:
                 caller's larger explicit budget is never silently shortened
                 (#2205). Standalone ``ResearchAPI(rpc)`` keeps the historical
                 behavior via the shared 30 s default.
-            import_research_timeout: Explicit per-attempt read window for
-                IMPORT_RESEARCH. ``None`` (default) keeps the batch-scaled,
-                ``base_timeout``-floored window; a value replaces both.
+            import_research_timeout: Per-attempt read window for
+                IMPORT_RESEARCH, read exactly like ``chat_timeout``: unset
+                (default) keeps the batch-scaled, ``base_timeout``-floored
+                window; a value replaces both; ``None`` inherits
+                ``base_timeout`` verbatim.
             source_lister: Optional :class:`NotebookSourceLister` used by
                 :meth:`import_sources_with_verification` to snapshot baseline
                 source IDs before the import call and probe sources on
@@ -861,27 +867,48 @@ class ResearchAPI:
                     [entry["id"] for entry in verified_imported],
                 )
 
+        last_error: RPCTimeoutError | RPCError | None = None
         while True:
             # Clamp this attempt's read window to what is left of ``max_elapsed``
             # (#2205): without it a late retry's batch-scaled window can run
-            # minutes past the loop's own deadline. A non-positive budget means
-            # the deadline already passed — the attempt still runs on its normal
-            # window (an exhausted budget must not degrade into a zero-second
-            # timeout), and the post-error ``remaining <= 0`` check below ends
-            # the loop immediately after it.
+            # minutes past the loop's own deadline.
             attempt_budget = max_elapsed - (time.monotonic() - started_at)
+            budget_is_viable = attempt_budget >= MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT
+            if last_error is not None and not budget_is_viable:
+                # A retry that cannot outlast connection establishment is worse
+                # than no retry: it would overrun ``max_elapsed`` (the very
+                # thing the clamp exists to prevent) if run unclamped, and if
+                # run clamped it still SENDS a non-idempotent IMPORT_RESEARCH
+                # whose result it cannot observe — which the server may commit
+                # anyway, duplicating sources. So stop, and say why.
+                logger.warning(
+                    "IMPORT_RESEARCH retry budget for notebook %s is exhausted "
+                    "(%.1fs of the %.0fs max_elapsed left, under the %.0fs "
+                    "minimum viable attempt window); giving up rather than "
+                    "sending an attempt whose outcome could not be observed",
+                    notebook_id,
+                    attempt_budget,
+                    max_elapsed,
+                    MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
+                )
+                _log_discarded_progress()
+                raise last_error
             try:
                 imported = await self.import_sources(
                     notebook_id,
                     task_id,
                     source_inputs,
-                    _remaining_budget=attempt_budget if attempt_budget > 0 else None,
+                    # The first attempt always runs on its natural window even
+                    # when the budget is already spent (``max_elapsed=0`` is a
+                    # documented "one shot" idiom); only retries must fit.
+                    _remaining_budget=attempt_budget if budget_is_viable else None,
                 )
                 return _imported_result(
                     _merge_imported_sources(imported, verified_imported, verified_imported_ids),
                     already_present,
                 )
             except (RPCTimeoutError, RPCError) as exc:
+                last_error = exc
                 if isinstance(exc, RPCError) and not _is_import_research_failed_precondition(exc):
                     _log_discarded_progress()
                     raise  # non-FAILED_PRECONDITION RPCErrors surface immediately (#2187)

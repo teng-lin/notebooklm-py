@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
 from ._runtime.config import (
+    AUTO_READ_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
@@ -351,7 +352,7 @@ def _import_research_read_timeout(
     source_count: int,
     *,
     base_timeout: float | None = DEFAULT_TIMEOUT,
-    override: float | None = None,
+    override: float | None = AUTO_READ_TIMEOUT,
     remaining_budget: float | None = None,
 ) -> float | None:
     """Resolve IMPORT_RESEARCH's per-attempt read timeout.
@@ -366,19 +367,24 @@ def _import_research_read_timeout(
     Composition (#2205): the scaled window is a *default*, so it is floored at
     the client's configured ``base_timeout`` — a caller who bought
     ``timeout=600`` keeps 600 s here instead of being silently capped at 240 s.
-    An explicit ``override`` (the ``import_research_timeout`` constructor kwarg)
-    is the caller's word and replaces both the scaling and the floor.
+
+    ``override`` is the ``import_research_timeout`` constructor kwarg and reads
+    exactly like ``chat_timeout`` does, so the two knobs are one rule:
+
+    * :data:`AUTO_READ_TIMEOUT` (unset) — batch-scaled, floored at ``base_timeout``;
+    * a number — the caller's word, replacing both the scaling and the floor;
+    * ``None`` — inherit ``base_timeout`` verbatim (no per-RPC override).
 
     Retry-budget clamp (#2205): ``remaining_budget`` is what is left of
     ``import_sources_with_verification``'s ``max_elapsed`` when this attempt
-    starts. Passing it stops one attempt from running minutes past the loop's
-    own deadline. Callers pass it only when it is positive; it is applied last,
-    so it also bounds an ``override`` and an infinite (``None``) window.
+    starts. Passing it stops one attempt from running past the loop's own
+    deadline. It is applied last, so it also bounds an ``override`` and an
+    inherited (``None``) window. That caller only passes a budget it has
+    already found viable — see ``MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT``, which
+    is what keeps this from producing a uselessly small window.
     """
     window: float | None
-    if override is not None:
-        window = override
-    else:
+    if override is AUTO_READ_TIMEOUT:
         window = compose_builtin_read_timeout(
             min(
                 DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
@@ -387,6 +393,8 @@ def _import_research_read_timeout(
             ),
             base_timeout,
         )
+    else:
+        window = override
     if remaining_budget is None:
         return window
     return remaining_budget if window is None else min(window, remaining_budget)

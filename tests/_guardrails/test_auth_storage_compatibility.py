@@ -354,7 +354,7 @@ EXPECTED_SIGNATURES: dict[str, SignatureDescriptor] = {
             ("cookie_rotator", P, "CookieRotator | None", "None"),
             ("chat_timeout", P, "float | None", "AUTO_READ_TIMEOUT"),
             ("chat_response_max_bytes", P, "int | None", "268435456"),
-            ("import_research_timeout", P, "float | None", "None"),
+            ("import_research_timeout", P, "float | None", "AUTO_READ_TIMEOUT"),
         ),
         None,
     ),
