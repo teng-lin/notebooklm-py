@@ -3367,6 +3367,8 @@ The following public APIs are available under the top-level `notebooklm` namespa
 
 Locates the surrounding paragraph/passage of source text for a specific `ChatReference` citation. Since chat streaming returns only the matching citation fragment, this helper performs a single round-trip to pull the full source text and extract the surrounding context.
 
+It reads the citation's own `start_char` / `end_char` range out of the source document and returns that window in the readable rendering, falling back to the `content` prefix search only when the range is unusable — absent, zero-width, past `document.extent`, or against a source whose document did not decode. A reference with neither a range nor `cited_text` raises `ChatResponseParseError` without issuing a request. See [`content` vs `document` vs `rendered_content`](#content-vs-document-vs-rendered_content).
+
 ```python
 async def resolve_chat_reference_passage(
     client: NotebookLMClient,
