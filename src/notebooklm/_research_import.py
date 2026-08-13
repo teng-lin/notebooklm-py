@@ -21,6 +21,8 @@ from ._runtime.config import (
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
+    DEFAULT_TIMEOUT,
+    compose_builtin_read_timeout,
 )
 from ._types.research import ResearchSource, ResearchSourceInput
 from .exceptions import ResearchTaskMismatchError, RPCError, ValidationError
@@ -345,20 +347,49 @@ def _partition_requested_sources(
     return new_inputs, new_models, already_present
 
 
-def _import_research_read_timeout(source_count: int) -> float:
-    """Scale IMPORT_RESEARCH's read timeout with batch size (#2187).
+def _import_research_read_timeout(
+    source_count: int,
+    *,
+    base_timeout: float | None = DEFAULT_TIMEOUT,
+    override: float | None = None,
+    remaining_budget: float | None = None,
+) -> float | None:
+    """Resolve IMPORT_RESEARCH's per-attempt read timeout.
 
-    The server ingests every entry (fetch/parse/embed) before responding to
-    one RPC, so a large deep-research batch needs materially more time than a
-    3-source fast-research one. The base term is a floor so a tiny import
-    still fails fast on a genuinely broken call; the max is a ceiling so a
-    pathologically large batch is still bounded rather than open-ended.
+    Batch scaling (#2187): the server ingests every entry (fetch/parse/embed)
+    before responding to one RPC, so a large deep-research batch needs
+    materially more time than a 3-source fast-research one. The base term is a
+    floor so a tiny import still fails fast on a genuinely broken call; the max
+    is a ceiling so a pathologically large batch is still bounded rather than
+    open-ended.
+
+    Composition (#2205): the scaled window is a *default*, so it is floored at
+    the client's configured ``base_timeout`` — a caller who bought
+    ``timeout=600`` keeps 600 s here instead of being silently capped at 240 s.
+    An explicit ``override`` (the ``import_research_timeout`` constructor kwarg)
+    is the caller's word and replaces both the scaling and the floor.
+
+    Retry-budget clamp (#2205): ``remaining_budget`` is what is left of
+    ``import_sources_with_verification``'s ``max_elapsed`` when this attempt
+    starts. Passing it stops one attempt from running minutes past the loop's
+    own deadline. Callers pass it only when it is positive; it is applied last,
+    so it also bounds an ``override`` and an infinite (``None``) window.
     """
-    return min(
-        DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
-        DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT
-        + DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT * source_count,
-    )
+    window: float | None
+    if override is not None:
+        window = override
+    else:
+        window = compose_builtin_read_timeout(
+            min(
+                DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
+                DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT
+                + DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT * source_count,
+            ),
+            base_timeout,
+        )
+    if remaining_budget is None:
+        return window
+    return remaining_budget if window is None else min(window, remaining_budget)
 
 
 def _is_import_research_failed_precondition(exc: RPCError) -> bool:

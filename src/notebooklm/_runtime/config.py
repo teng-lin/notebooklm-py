@@ -12,7 +12,10 @@ below for guidance on when an operator would want to override them via the
 
 from __future__ import annotations
 
+from typing import Any
+
 __all__ = [
+    "AUTO_READ_TIMEOUT",
     "CORE_LOGGER_NAME",
     "DEFAULT_CHAT_RESPONSE_MAX_BYTES",
     "DEFAULT_CHAT_TIMEOUT",
@@ -24,7 +27,9 @@ __all__ = [
     "DEFAULT_MAX_CONCURRENT_RPCS",
     "DEFAULT_MAX_CONCURRENT_UPLOADS",
     "DEFAULT_TIMEOUT",
+    "compose_builtin_read_timeout",
     "normalize_max_concurrent_uploads",
+    "resolve_chat_read_timeout",
 ]
 
 # Single source of truth for the logger name every client-runtime /
@@ -95,6 +100,67 @@ DEFAULT_MAX_CONCURRENT_UPLOADS = 4
 # higher account tier (or an external rate-limiter) can opt out via
 # ``max_concurrent_rpcs=None``.
 DEFAULT_MAX_CONCURRENT_RPCS = 16
+
+
+class _AutoReadTimeout:
+    """Type of :data:`AUTO_READ_TIMEOUT`; exists only for its stable ``repr``.
+
+    A bare ``object()`` renders as ``<object object at 0x...>``, and that
+    address leaks into every signature snapshot that records parameter defaults
+    (``scripts/audit_public_api_compat.py``,
+    ``tests/_guardrails/test_auth_storage_compatibility.py``), making them
+    unstable run to run.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "AUTO_READ_TIMEOUT"
+
+
+# Sentinel meaning "the caller did not speak for this RPC's read window", used
+# as the default of the per-RPC timeout kwargs (``chat_timeout``,
+# ``import_research_timeout``). It exists because a plain
+# ``chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT`` cannot distinguish
+# "left at the default" from "explicitly asked for 180 s" — and that
+# distinction is exactly what the #2205 composition rule turns on. Typed
+# ``Any`` so the public kwargs keep their honest ``float | None`` annotation:
+# the sentinel is an implementation detail of "unset", not a value callers pass.
+AUTO_READ_TIMEOUT: Any = _AutoReadTimeout()
+
+
+def compose_builtin_read_timeout(builtin_window: float, base_timeout: float | None) -> float | None:
+    """Compose a built-in per-RPC read window with the client's ``timeout=`` (#2205).
+
+    The per-RPC constants (``DEFAULT_CHAT_TIMEOUT``, IMPORT_RESEARCH's
+    batch-scaled window) exist to *lengthen* the shared 30 s metadata window
+    for RPCs that legitimately need longer. They are defaults, never caps, so
+    they may only ever raise the client-wide budget: a caller who buys
+    ``timeout=600`` for every RPC is not silently cut back to 180 s / 240 s.
+
+    ``base_timeout=None`` means an explicitly infinite client (httpx treats
+    ``None`` as "no timeout"); a finite constant must not re-impose a ceiling
+    on it, so the window stays infinite.
+    """
+    if base_timeout is None:
+        return None
+    return max(builtin_window, base_timeout)
+
+
+def resolve_chat_read_timeout(
+    chat_timeout: float | None, base_timeout: float | None
+) -> float | None:
+    """Resolve ``chat_timeout`` against the client's base ``timeout=`` (#2205).
+
+    An explicit value — including ``None``, which means "inherit ``timeout=``
+    verbatim" — is the caller's word and is honored as given, so a caller who
+    deliberately shortens chat for fast failure still gets fast failure. Only
+    the untouched default (:data:`AUTO_READ_TIMEOUT`) composes, and composing
+    can only lengthen the window.
+    """
+    if chat_timeout is AUTO_READ_TIMEOUT:
+        return compose_builtin_read_timeout(DEFAULT_CHAT_TIMEOUT, base_timeout)
+    return chat_timeout
 
 
 def normalize_max_concurrent_uploads(max_concurrent_uploads: int | None) -> int:

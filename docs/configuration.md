@@ -470,6 +470,36 @@ chunks; it does not mean total generation time exceeded 30 seconds. Pass
 `chat_timeout=None` to inherit the normal client timeout for chat. The CLI
 `ask --request-timeout N` flag overrides both values for that invocation.
 
+`IMPORT_RESEARCH` (`research.import_sources`) has a third window: the server
+ingests every requested entry before answering one RPC, so the window scales
+with batch size — **60 s + 3 s per requested source, capped at 240 s** — and is
+tunable outright via `import_research_timeout=`.
+
+#### How the per-RPC windows compose with `timeout=`
+
+`timeout=` is the *base* read budget for every RPC. The two built-in per-RPC
+windows above are **defaults, not caps**: they only ever lengthen that base,
+never shorten it. So `NotebookLMClient(auth, timeout=600)` really does buy 600
+seconds everywhere, including chat and IMPORT_RESEARCH (before this rule landed
+they silently clamped such a client back to 180 s / 240 s — issue #2205).
+
+| Construction | chat window | IMPORT_RESEARCH window (1 source) |
+| --- | --- | --- |
+| `NotebookLMClient(auth)` | 180 s | 63 s |
+| `NotebookLMClient(auth, timeout=600)` | 600 s | 600 s |
+| `NotebookLMClient(auth, timeout=600, chat_timeout=10)` | 10 s | 600 s |
+| `NotebookLMClient(auth, import_research_timeout=900)` | 180 s | 900 s |
+
+An explicitly passed `chat_timeout=` / `import_research_timeout=` is the
+caller's final word and is used as given — including a value *below* `timeout=`,
+so deliberately fast failure stays expressible. Only the untouched defaults
+compose. (`chat_timeout=None` still means "inherit `timeout=` verbatim".)
+
+Independently, an IMPORT_RESEARCH attempt made by
+`import_sources_with_verification` is clamped to whatever is left of that call's
+own `max_elapsed` retry budget, so a late retry cannot run past the loop's
+deadline.
+
 ### Decoder strictness
 
 NotebookLM's batchexecute responses are obfuscated, undocumented, and reshaped

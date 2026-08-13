@@ -30,6 +30,7 @@ from ._research_import import (
 )
 from ._research_task_parser import parse_research_task_models
 from ._row_adapters.research import ImportedSourceRow, ResearchStartRow, unwrap_import_rows
+from ._runtime.config import DEFAULT_TIMEOUT
 from ._runtime.contracts import RpcCaller
 from ._types.research import (
     RESEARCH_SOURCE_TYPE_DRIVE,
@@ -131,11 +132,21 @@ class ResearchAPI:
         rpc: RpcCaller,
         *,
         source_lister: NotebookSourceLister | None = None,
+        base_timeout: float | None = DEFAULT_TIMEOUT,
+        import_research_timeout: float | None = None,
     ):
         """Initialize the research API.
 
         Args:
             rpc: RPC dispatch surface (typically the shared client session).
+            base_timeout: The owning client's configured ``timeout=``. The
+                batch-scaled IMPORT_RESEARCH window is floored at it so a
+                caller's larger explicit budget is never silently shortened
+                (#2205). Standalone ``ResearchAPI(rpc)`` keeps the historical
+                behavior via the shared 30 s default.
+            import_research_timeout: Explicit per-attempt read window for
+                IMPORT_RESEARCH. ``None`` (default) keeps the batch-scaled,
+                ``base_timeout``-floored window; a value replaces both.
             source_lister: Optional :class:`NotebookSourceLister` used by
                 :meth:`import_sources_with_verification` to snapshot baseline
                 source IDs before the import call and probe sources on
@@ -146,6 +157,8 @@ class ResearchAPI:
         """
         self._rpc = rpc
         self._source_lister = source_lister or create_default_source_lister(self._rpc)
+        self._base_timeout = base_timeout
+        self._import_research_timeout = import_research_timeout
 
     async def _rpc_call(
         self,
@@ -599,6 +612,8 @@ class ResearchAPI:
         notebook_id: str,
         task_id: str,
         sources: Sequence[ResearchSourceInput],
+        *,
+        _remaining_budget: float | None = None,
     ) -> list[dict[str, str]]:
         """Import selected research sources into the notebook.
 
@@ -608,6 +623,12 @@ class ResearchAPI:
             sources: List of sources to import, each with 'url' and 'title'.
                 Deep research results from poll() may also include a report
                 entry with 'report_markdown' and 'research_task_id'.
+            _remaining_budget: Internal. What is left of
+                :meth:`import_sources_with_verification`'s ``max_elapsed``
+                when this attempt starts; clamps the per-attempt read timeout
+                so one attempt cannot outlive that loop's deadline (#2205).
+                Not part of the public contract — direct callers leave it
+                unset and get the full batch-scaled window.
 
         Returns:
             List of imported sources with 'id' and 'title'.
@@ -674,7 +695,12 @@ class ResearchAPI:
             RPCMethod.IMPORT_RESEARCH,
             [None, [1], effective_task_id, notebook_id, source_array],
             source_path=f"/notebook/{notebook_id}",
-            read_timeout=_import_research_read_timeout(len(source_array)),
+            read_timeout=_import_research_read_timeout(
+                len(source_array),
+                base_timeout=self._base_timeout,
+                override=self._import_research_timeout,
+                remaining_budget=_remaining_budget,
+            ),
         )
         imported = []
         # ``unwrap_import_rows`` centralises the ``[[src1, ...]]`` envelope probe
@@ -836,8 +862,21 @@ class ResearchAPI:
                 )
 
         while True:
+            # Clamp this attempt's read window to what is left of ``max_elapsed``
+            # (#2205): without it a late retry's batch-scaled window can run
+            # minutes past the loop's own deadline. A non-positive budget means
+            # the deadline already passed — the attempt still runs on its normal
+            # window (an exhausted budget must not degrade into a zero-second
+            # timeout), and the post-error ``remaining <= 0`` check below ends
+            # the loop immediately after it.
+            attempt_budget = max_elapsed - (time.monotonic() - started_at)
             try:
-                imported = await self.import_sources(notebook_id, task_id, source_inputs)
+                imported = await self.import_sources(
+                    notebook_id,
+                    task_id,
+                    source_inputs,
+                    _remaining_budget=attempt_budget if attempt_budget > 0 else None,
+                )
                 return _imported_result(
                     _merge_imported_sources(imported, verified_imported, verified_imported_ids),
                     already_present,

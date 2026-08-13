@@ -9,6 +9,7 @@ references keep resolving; importers may also reach submodules directly
 from . import auth, config, contracts, helpers, init, lifecycle, transport
 from .auth import AuthRefreshCoordinator
 from .config import (
+    AUTO_READ_TIMEOUT,
     CORE_LOGGER_NAME,
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     DEFAULT_CHAT_TIMEOUT,
@@ -20,7 +21,9 @@ from .config import (
     DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
+    compose_builtin_read_timeout,
     normalize_max_concurrent_uploads,
+    resolve_chat_read_timeout,
 )
 from .contracts import Kernel, LoopGuard, RpcCaller
 from .helpers import (
@@ -57,6 +60,7 @@ __all__ = [
     "lifecycle",
     "transport",
     "AuthRefreshCoordinator",
+    "AUTO_READ_TIMEOUT",
     "CORE_LOGGER_NAME",
     "DEFAULT_CHAT_RESPONSE_MAX_BYTES",
     "DEFAULT_CHAT_TIMEOUT",
@@ -68,7 +72,9 @@ __all__ = [
     "DEFAULT_MAX_CONCURRENT_RPCS",
     "DEFAULT_MAX_CONCURRENT_UPLOADS",
     "DEFAULT_TIMEOUT",
+    "compose_builtin_read_timeout",
     "normalize_max_concurrent_uploads",
+    "resolve_chat_read_timeout",
     "Kernel",
     "LoopGuard",
     "RpcCaller",

@@ -14,6 +14,7 @@ delegate — its tests cover only the wiring (still in ``test_helpers.py``).
 from __future__ import annotations
 
 import asyncio
+from itertools import chain, repeat
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -21,6 +22,34 @@ import pytest
 import notebooklm._research as _research_mod
 from notebooklm._research import ResearchAPI
 from notebooklm.exceptions import NetworkError, RPCError, RPCTimeoutError
+
+
+class _RecordingRpc:
+    """A minimal injected ``RpcCaller`` that records each call's read timeout.
+
+    Constructor injection rather than assigning an ``AsyncMock`` onto a
+    duck-typed fake's RPC attribute — ADR-0007 forbids exactly that. Queued
+    outcomes are replayed in order; an exception instance is raised rather
+    than returned.
+    """
+
+    def __init__(self, outcomes: list[object]) -> None:
+        self._outcomes = list(outcomes)
+        self.read_timeouts: list[float | None] = []
+
+    async def rpc_call(
+        self,
+        method: object,
+        params: object,
+        source_path: str = "/",
+        allow_null: bool = False,
+        **kwargs: object,
+    ) -> object:
+        self.read_timeouts.append(kwargs.get("read_timeout"))  # type: ignore[arg-type]
+        outcome = self._outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 def _make_research() -> tuple[ResearchAPI, MagicMock, MagicMock]:
@@ -87,14 +116,16 @@ class TestImportSourcesWithVerification:
             side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
         )
 
-        # time.monotonic is read once at start, then on each timeout. Two values
-        # cover the snapshot path plus the timeout-handling path (elapsed
-        # check). Past-budget on the second read forces the raise.
+        # time.monotonic is read at start, then once per attempt (the #2205
+        # read-timeout clamp) and again on each timeout. The first two reads sit
+        # at t=0 so the attempt runs on its full window; every read after that is
+        # past budget, forcing the raise. Chained-repeat rather than a fixed list
+        # so the test pins the *behavior*, not the number of clock reads.
         with (
             patch.object(
                 _research_mod.time,
                 "monotonic",
-                side_effect=[0.0, 1801.0],
+                side_effect=chain([0.0, 0.0], repeat(1801.0)),
             ),
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
             pytest.raises(RPCTimeoutError),
@@ -107,6 +138,47 @@ class TestImportSourcesWithVerification:
             )
 
         mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_late_retry_read_timeout_is_clamped_to_the_remaining_budget(self):
+        """#2205: one attempt must not outlive the loop's own ``max_elapsed``.
+
+        The per-attempt read window is computed from batch size alone, so
+        without a clamp a retry started 1750 s into a 1800 s budget could still
+        run its full window and blow ~4 minutes past the deadline. Asserted on
+        the ``read_timeout`` handed to the RPC layer, not on the plumbing kwarg.
+        """
+        fake_rpc = _RecordingRpc(
+            [
+                RPCTimeoutError("Timed out", timeout_seconds=63.0),
+                [[[["src_1"], "Source 1"]]],
+            ]
+        )
+        mock_source_lister = MagicMock()
+        mock_source_lister.list = AsyncMock(return_value=[])
+        research = ResearchAPI(fake_rpc, source_lister=mock_source_lister)
+
+        # start=0 and the first attempt's clock read=0 (full budget), then every
+        # later read sits at 1750 s: 50 s left when the retry starts.
+        with (
+            patch.object(
+                _research_mod.time, "monotonic", side_effect=chain([0.0, 0.0], repeat(1750.0))
+            ),
+            patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock),
+        ):
+            imported = await research.import_sources_with_verification(
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+                max_elapsed=1800,
+            )
+
+        assert imported == [{"id": "src_1", "title": "Source 1"}]
+        first_attempt, retry_attempt = fake_rpc.read_timeouts
+        # First attempt: the full batch-scaled window (60 + 3 * 1 source).
+        assert first_attempt == 63.0
+        # Retry: clamped to what is left of max_elapsed instead.
+        assert retry_attempt == 50.0
 
     @pytest.mark.asyncio
     async def test_does_not_retry_non_timeout_error(self):

@@ -52,13 +52,14 @@ from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
 from ._runtime.config import (
+    AUTO_READ_TIMEOUT,
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
-    DEFAULT_CHAT_TIMEOUT,
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
+    resolve_chat_read_timeout,
 )
 from ._runtime.init import compose_client_internals
 from ._runtime.lifecycle import CookieRotator, CookieSaver
@@ -107,7 +108,8 @@ def _assemble_client(
     on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
     cookie_saver: CookieSaver | None = None,
     cookie_rotator: CookieRotator | None = None,
-    chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,
+    chat_timeout: float | None = AUTO_READ_TIMEOUT,
+    import_research_timeout: float | None = None,
     chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     # --- Production-default overrides (test factory only) -----------------
     # ``NotebookLMClient.__init__`` never passes these; the sentinels
@@ -371,7 +373,7 @@ def _assemble_client(
         transport=client._composed.transport,
         reqid=internals.collaborators.reqid,
         loop_guard=internals.collaborators.lifecycle,
-        chat_timeout=chat_timeout,
+        chat_timeout=resolve_chat_read_timeout(chat_timeout, timeout),
         chat_response_max_bytes=chat_response_max_bytes,
         notebooks=client.notebooks,
     )
@@ -390,7 +392,11 @@ def _assemble_client(
     # Pure-RPC features (typed as ``rpc: RpcCaller``). Pass the
     # ``RpcExecutor`` collaborator directly, sourced from the composed
     # executor.
-    client.research = ResearchAPI(internals.executor)
+    client.research = ResearchAPI(
+        internals.executor,
+        base_timeout=timeout,
+        import_research_timeout=import_research_timeout,
+    )
     client.settings = SettingsAPI(internals.executor)
     client.sharing = SharingAPI(internals.executor)
     # Source labels. Takes a narrow ``list_sources`` callable (not the whole
