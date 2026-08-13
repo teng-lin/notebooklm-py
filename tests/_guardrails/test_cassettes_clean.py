@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.cassette_patterns import find_credential_leaks, is_clean
+
 pytestmark = pytest.mark.repo_lint
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -167,3 +169,54 @@ def test_guard_detects_novel_high_entropy_token(tmp_path: Path) -> None:
         f"exit 1 but no high-entropy leak reported — the entropy detector may be "
         f"dead or the guard crashed:\n{result.stdout}\n{result.stderr}"
     )
+
+
+# --- Signed blob-capability URLs (#2120 / #2215) ---------------------------
+# These must be caught in BOTH scan modes. ``--secrets-only`` reaches the
+# detector via ``_CREDENTIAL_DETECTORS``; the full cassette scan routes through
+# ``is_clean`` instead, so a detector registered in only one place leaves the
+# other gate blind. The negative cases pin the query-delimiter anchoring: a
+# ``\b`` boundary would match ``c=`` inside a *value* (``?redirect=-c=1``) and
+# reject valid content.
+_CAPABILITY_POSITIVE = [
+    pytest.param(
+        "https://contribution.usercontent.google.com/download?c=AIP70Bshort&filename=x.md",
+        id="download-capability",
+    ),
+    pytest.param("https://drive.google.com/viewer/upload?ck=a&ds=1&p=2", id="viewer-wrapper"),
+    pytest.param(
+        "/blobstore/prod/contrib_service/blobrefs/notebooklm/nos_files/x", id="blobrefs-path"
+    ),
+    pytest.param(
+        "https://contribution.usercontent.google.com/download?x=1&amp;c=AIP70B",
+        id="amp-escaped-delimiter",
+    ),
+]
+
+_CAPABILITY_NEGATIVE = [
+    pytest.param(
+        "https://contribution.usercontent.google.com/download?redirect=-c=1",
+        id="c-inside-a-value-not-a-key",
+    ),
+    pytest.param(
+        "https://drive.google.com/viewer/upload?redirect=-ds=1", id="ds-inside-a-value-not-a-key"
+    ),
+    pytest.param(
+        "https://drive.google.com/file/d/1FDW_u2QKNxpYBBvs-k03F4n039Ufuiv2/view",
+        id="benign-public-file-id",
+    ),
+]
+
+
+@pytest.mark.parametrize("text", _CAPABILITY_POSITIVE)
+def test_capability_urls_are_caught_in_both_scan_modes(text: str) -> None:
+    """A signed capability must fail --secrets-only AND the full scan."""
+    assert find_credential_leaks(text), "missed by --secrets-only (find_credential_leaks)"
+    assert not is_clean(text)[0], "missed by the full cassette scan (is_clean)"
+
+
+@pytest.mark.parametrize("text", _CAPABILITY_NEGATIVE)
+def test_capability_detector_does_not_fire_on_lookalikes(text: str) -> None:
+    """Parameter-like text inside a value is not a capability."""
+    assert not find_credential_leaks(text), "false positive in --secrets-only"
+    assert is_clean(text)[0], "false positive in the full cassette scan"

@@ -1189,10 +1189,41 @@ _DETECT_AUTHUSER_EMAIL_DOUBLE_ENCODED = re.compile(
 # fixtures, docs, source) with no per-file allowlist. This is what the
 # ``--secrets-only`` mode of ``check_cassettes_clean.py`` uses to extend leak
 # detection beyond ``tests/cassettes/`` without drowning in false positives.
+# Signed blob-capability URLs (#2120). A live source-fulltext capture embeds a
+# download URL whose query parameter carries an opaque capability addressing a
+# NotebookLM blob, plus a Drive viewer wrapper around the same blob:
+#
+#     https://contribution.usercontent.google.com/download?c=<capability>&filename=…
+#     https://drive.google.com/viewer/upload?ck=…&ds=…&dsmi=…&p=…
+#
+# These are NAME-ANCHORED on the host + path, deliberately, rather than on the
+# capability's shape. The capability is an opaque base64 blob with no prefix to
+# key on, and the existing high-entropy scan only catches it when it happens to
+# be long enough: a 117-char capability trips it, a short one does NOT (measured
+# on #2215 — a synthetic ``?c=AIP70Bshortcap123`` URL scanned clean). Anchoring
+# on the endpoint makes detection independent of capability length.
+#
+# Scoped to the two hosts actually observed carrying capabilities, so an
+# ordinary ``drive.google.com/file/d/<id>`` reference in a fixture (a public
+# document id, not a credential) does not trip the guard.
+# The parameter alternatives anchor on a real query delimiter — ``?``, ``&`` or
+# an HTML/JSON-escaped ``&amp;`` — rather than ``\b``. A word boundary is not a
+# key boundary: ``...download?redirect=-c=1`` has no ``c`` parameter at all, yet
+# ``\bc=`` matches inside the *value*, so the strict fixture hook would reject
+# valid content. Keyed delimiters make the match mean what the name says.
+_DETECT_BLOB_CAPABILITY_URL = re.compile(
+    r"https?://contribution\.usercontent\.google\.com/download"
+    r"[^\s\"'<>]*(?:\?|&|&amp;)c="
+    r"|https?://drive\.google\.com/viewer/upload"
+    r"[^\s\"'<>]*(?:\?|&|&amp;)(?:ck|ds|dsmi|p)="
+    r"|/blobstore/[^\s\"'<>]*/blobrefs/"
+)
+
 _CREDENTIAL_DETECTORS: list[tuple[str, re.Pattern[str]]] = [
     ("auth token", _DETECT_AUTH_TOKEN),
     ("Google API key", _DETECT_GOOGLE_API_KEY),
     ("double-encoded authuser email", _DETECT_AUTHUSER_EMAIL_DOUBLE_ENCODED),
+    ("signed blob-capability URL", _DETECT_BLOB_CAPABILITY_URL),
 ]
 
 
@@ -1472,6 +1503,16 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
     # match of the raw URL form here is by definition a leak.
     for match in _DETECT_AVATAR_URL.finditer(text):
         leaks.append(f"Leak (avatar URL): {match.group(0)!r}")
+
+    # --- 7b. Signed blob-capability URLs ----------------------------------
+    # Must run in BOTH modes. ``find_credential_leaks`` (``--secrets-only``)
+    # reaches this detector via :data:`_CREDENTIAL_DETECTORS`, but the full
+    # cassette scan routes through this function instead — so registering it
+    # only there would leave ``check_cassettes_clean.py --strict --recursive``,
+    # the gate CI runs over ``tests/cassettes/``, blind to a capability URL in
+    # a recorded cassette. Same detector, both paths.
+    for match in _DETECT_BLOB_CAPABILITY_URL.finditer(text):
+        leaks.append(f"Leak (signed blob-capability URL): {match.group(0)!r}")
 
     # --- 8. Catch-all Google auth-token shapes -----------------------------
     # ``g.a000-...`` / ``sidts-...`` / ``ya29....`` tokens are scrubbed to

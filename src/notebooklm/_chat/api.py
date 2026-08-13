@@ -24,7 +24,11 @@ from .._row_adapters.chat import (
     unwrap_conversation_turns,
     unwrap_last_conversation_id,
 )
-from .._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES, DEFAULT_CHAT_TIMEOUT
+from .._runtime.config import (
+    DEFAULT_CHAT_RESPONSE_MAX_BYTES,
+    DEFAULT_CHAT_TIMEOUT,
+    assert_resolved_read_timeout,
+)
 from .._runtime.contracts import LoopGuard, RpcCaller
 from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError, ValidationError
 from .deleted_tracker import RecentlyDeletedConversations
@@ -128,6 +132,12 @@ class ChatAPI(LoopBoundPrimitive):
         self._transport = transport
         self._reqid = reqid
         self._loop_guard = loop_guard
+        # ``chat_timeout`` arrives already resolved against the client's
+        # ``timeout=`` (``_client_assembly`` calls ``resolve_chat_read_timeout``).
+        # Every layer below here guards on ``is not None``, so an unresolved
+        # AUTO_READ_TIMEOUT would sail into ``httpx.Timeout`` — which accepts it
+        # — and only surface as a TypeError inside the timeout error formatter.
+        assert_resolved_read_timeout(chat_timeout, name="chat_timeout")
         self._chat_timeout = chat_timeout
         self._chat_response_max_bytes = chat_response_max_bytes
         if notebooks is None:

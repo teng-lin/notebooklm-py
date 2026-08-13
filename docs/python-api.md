@@ -790,6 +790,17 @@ a large file should not have to widen the global HTTP timeout to
 succeed; pass `upload_timeout=600.0` (or larger) to the relevant call
 sites instead.
 
+**Per-RPC read windows compose with `timeout=`.** Chat (`chat_timeout=`,
+built-in 180 s) and IMPORT_RESEARCH (`import_research_timeout=`, built-in
+batch-scaled 60 s + 3 s/source capped at 240 s) carry longer read windows than
+the shared 30 s one. Those built-ins are defaults, not caps: they only lengthen
+the configured `timeout=`, so `NotebookLMClient(auth, timeout=600)` gets 600 s
+on chat and IMPORT_RESEARCH too. Both kwargs read identically — left unset the
+built-in composes, a number wins outright (including a *shorter* one, for
+deliberately fast failure), and `None` inherits `timeout=` verbatim. A
+non-positive or non-finite value raises at construction. Full table:
+[configuration.md](configuration.md#how-the-per-rpc-windows-compose-with-timeout).
+
 ### Single-process multi-tenant guidance
 
 For a service that handles multiple NotebookLM tenants (different
@@ -918,8 +929,9 @@ class NotebookLMClient:
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,        # 16
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
-        chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,                   # 180
+        chat_timeout: float | None = ...,      # unset -> max(180, timeout)
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES, # 256 MiB
+        import_research_timeout: float | None = ...,  # unset -> batch-scaled
         *,
         allow_headless: bool = False,
     ) -> "_FromStorageContext":
@@ -942,8 +954,9 @@ class NotebookLMClient:
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
         cookie_saver: CookieSaver | None = None,
         cookie_rotator: CookieRotator | None = None,
-        chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,                   # 180
+        chat_timeout: float | None = ...,      # unset -> max(180, timeout)
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES, # 256 MiB
+        import_research_timeout: float | None = ...,  # unset -> batch-scaled
     ):
 
     async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:

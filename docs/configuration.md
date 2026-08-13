@@ -462,13 +462,63 @@ tune it per-workload — see the `DEFAULT_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT`
 constants in `src/notebooklm/_runtime/config.py`.
 
 The chat streaming endpoint (`ChatAPI.ask`) also exposes a separate per-read
-silence window (`chat_timeout=`). It defaults to **180 seconds** because shared
-notebooks can be slow to send the first streamed chat byte; fast metadata RPCs
-stay on the normal **30-second** timeout. A chat read timeout means the server
+silence window (`chat_timeout=`). Left unset it is **`max(180 s, timeout=)`** —
+180 seconds because shared notebooks can be slow to send the first streamed chat
+byte, floored at `timeout=` so a larger configured budget still reaches chat (see
+[below](#how-the-per-rpc-windows-compose-with-timeout)); fast metadata RPCs stay
+on the normal **30-second** timeout. A chat read timeout means the server
 sent no stream bytes for that window, either before the first byte or between
 chunks; it does not mean total generation time exceeded 30 seconds. Pass
 `chat_timeout=None` to inherit the normal client timeout for chat. The CLI
 `ask --request-timeout N` flag overrides both values for that invocation.
+
+`IMPORT_RESEARCH` (`research.import_sources`) has a third window: the server
+ingests every requested entry before answering one RPC, so the window scales
+with batch size — **60 s + 3 s per requested source, capped at 240 s** — and is
+tunable outright via `import_research_timeout=`.
+
+#### How the per-RPC windows compose with `timeout=`
+
+`timeout=` is the *base* read budget for every RPC. The two built-in per-RPC
+windows above are **defaults, not caps**: they only ever lengthen that base,
+never shorten it. So `NotebookLMClient(auth, timeout=600)` really does buy 600
+seconds everywhere, including chat and IMPORT_RESEARCH (before this rule landed
+they silently clamped such a client back to 180 s / 240 s — issue #2205).
+
+| Construction | chat window | IMPORT_RESEARCH window (1 source) |
+| --- | --- | --- |
+| `NotebookLMClient(auth)` | 180 s | 63 s |
+| `NotebookLMClient(auth, timeout=600)` | 600 s | 600 s |
+| `NotebookLMClient(auth, timeout=600, chat_timeout=10)` | 10 s | 600 s |
+| `NotebookLMClient(auth, import_research_timeout=900)` | 180 s | 900 s |
+
+An explicitly passed `chat_timeout=` / `import_research_timeout=` is the
+caller's final word and is used as given — including a value *below* `timeout=`,
+so deliberately fast failure stays expressible. Only the untouched defaults
+compose. Both kwargs read identically:
+
+| value | meaning |
+| --- | --- |
+| unset | the built-in window, floored at `timeout=` |
+| a number | exactly that window, replacing the built-in and the floor |
+| `None` | inherit `timeout=` verbatim, with no per-RPC window at all |
+
+A non-positive or non-finite value for either raises `ValueError` at
+construction rather than silently producing a window that times out instantly.
+
+Independently, an IMPORT_RESEARCH attempt made by
+`import_sources_with_verification` is clamped to whatever is left of that call's
+own `max_elapsed` retry budget, so a late retry cannot be *granted* a window
+larger than the budget it has left. Note what that does and does not promise:
+every timeout here is an `httpx` slot, and the read slot is an inactivity limit
+between socket reads — so `max_elapsed` bounds when a new attempt may *start*,
+not the wall-clock duration of one already in flight. Enforcing the latter would
+mean cancelling an in-flight non-idempotent POST, which risks duplicated sources
+the client can no longer see. When less than 10 seconds of that budget remains — too little for an
+attempt to outlast connection establishment — the loop stops instead of sending
+one: `IMPORT_RESEARCH` is non-idempotent, so an attempt whose result the client
+cannot observe can still commit sources server-side and duplicate them. The
+first attempt is exempt, so `max_elapsed=0` still means "try once".
 
 ### Decoder strictness
 

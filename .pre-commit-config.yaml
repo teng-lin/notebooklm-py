@@ -17,3 +17,31 @@ repos:
         language: system
         types_or: [python, pyi]
         require_serial: true
+      # Credential shapes in committed fixtures/cassettes, caught BEFORE push.
+      #
+      # The same scan already runs in CI (test.yml, "Check fixtures for
+      # credential leaks") and as a pytest guardrail, but both fire *after* the
+      # push that publishes the secret. In #2120 a live-captured fixture carrying
+      # a signed Google user-content URL and its capability token reached a public
+      # branch and was only flagged by review; scrubbing the file afterwards does
+      # not unpublish the pushed objects, which GitHub keeps fetchable by SHA.
+      # This hook closes that window — the scan is worthless once the object is
+      # public, so it has to run before the commit exists.
+      #
+      # Scoped by ``files:`` to the directories that hold committed captures, so
+      # the common Python-only commit skips it entirely. The script accepts
+      # individual paths, so pre-commit passes only the staged files.
+      # ``--strict`` disables the repair allowlist. Without it, staging a leaked
+      # fixture's basename into ``cassette_repair_allowlist.txt`` in the same
+      # commit makes the hook skip the file and exit 0 — CI catches that, but
+      # only after the push this hook exists to prevent.
+      #
+      # ``txt`` is in the file filter because ``--secrets-only`` already scans
+      # it (``_SECRETS_ONLY_EXTENSIONS``); omitting it here would let a
+      # credential-bearing ``.txt`` capture skip the hook entirely.
+      - id: fixture-secrets
+        name: fixture-secrets (no credential shapes in captures)
+        entry: uv run python tests/scripts/check_cassettes_clean.py --secrets-only --strict
+        language: system
+        files: ^tests/(cassettes|fixtures|unit/fixtures)/.*\.(json|ya?ml|html|txt)$
+        require_serial: true

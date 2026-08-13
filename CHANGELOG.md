@@ -54,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of `is_public_sharing_allowed` has never been observed on the wire; only its
   decoding is pinned by tests.
   ([#2130](https://github.com/teng-lin/notebooklm-py/issues/2130))
+- **`NotebookLMClient(..., import_research_timeout=)`** gives the
+  `IMPORT_RESEARCH` RPC the dedicated read-window knob `chat_timeout` already
+  had ([#2205](https://github.com/teng-lin/notebooklm-py/issues/2205)). Unset it
+  keeps the batch-scaled window (60 s + 3 s per requested source, capped at
+  240 s) floored at the client's `timeout=`; a number replaces both; `None`
+  inherits `timeout=` verbatim — the same three-way reading as `chat_timeout`.
 
 - **Citations can now be aligned to both the answer and the source.** The two
   halves of that mapping were each missing a piece, and neither was usable
@@ -150,6 +156,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrong — so that pair is unaffected by this.
 
 ### Fixed
+
+- **A configured `timeout=` was silently overridden for chat and
+  IMPORT_RESEARCH.** ([#2205](https://github.com/teng-lin/notebooklm-py/issues/2205))
+  Both RPCs carry a longer-than-default built-in read window — 180 s for chat,
+  and the batch-scaled 60 s + 3 s/source (capped at 240 s) added for
+  IMPORT_RESEARCH in [#2187](https://github.com/teng-lin/notebooklm-py/issues/2187)
+  — and each *replaced* the client's `timeout=` outright rather than composing
+  with it. `NotebookLMClient(auth, timeout=600)` therefore still got 180 s on
+  chat and at most 240 s on IMPORT_RESEARCH, with no opt-out short of
+  monkeypatching internals. Those built-ins are now defaults rather than caps:
+  they only ever lengthen the configured budget, so that client gets its 600 s
+  everywhere. Batch scaling is unchanged for a default client. An explicitly
+  passed `chat_timeout=` still wins outright — including a value *below*
+  `timeout=`, so deliberately fast failure stays expressible — which is why the
+  kwarg now defaults to an internal sentinel instead of the literal `180.0`;
+  every existing call passing a float or `None` behaves exactly as before. A
+  new `import_research_timeout=` kwarg gives IMPORT_RESEARCH the same dedicated
+  knob `chat_timeout` already had. Separately, an IMPORT_RESEARCH attempt made
+  by `import_sources_with_verification` is now clamped to what remains of that
+  call's own `max_elapsed` budget, so a late retry can no longer be granted
+  minutes of window against a budget with seconds left, and the loop stops
+  rather than sending an attempt too short to observe its own result. The clamp
+  bounds what an attempt is given, not the wall-clock duration of one already in
+  flight — the read slot is an inactivity limit, not a request deadline.
 
 - **`SourceFulltext.find_citation_context()` could not locate a multi-block
   citation.** Its search key is a prefix of `cited_text`, and once `cited_text`
