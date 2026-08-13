@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ._types.documents import _PLACEHOLDER
 from .exceptions import ChatResponseParseError
 
 if TYPE_CHECKING:
@@ -33,12 +34,6 @@ __all__ = ["resolve_chat_reference_passage"]
 #: survive the local disagreements the two readings legitimately have (see
 #: :func:`_quotes_the_same_text`).
 _AGREEMENT_PROBE_CHARS = 32
-
-#: Filler the document layout puts at positions whose text did not decode. The
-#: cross-check strips it, because ``cited_text`` omits those positions while
-#: :meth:`StructuredDocument.slice` holds them open — the one difference
-#: between the two readings that is by design rather than by drift.
-_PLACEHOLDER = "￼"
 
 
 def _declared_range(reference: ChatReference) -> tuple[int, int] | None:
@@ -85,9 +80,11 @@ def _quotes_the_same_text(
     Compares a bounded prefix rather than the whole string because the two
     readings differ locally by design — ``cited_text`` omits positions this
     client cannot render as text where :meth:`StructuredDocument.slice` fills
-    them (stripped here), and a run whose text disagrees with its declared
-    width is normalised in one and not the other. ``in`` rather than
-    ``startswith`` for the same reason.
+    them with :data:`~notebooklm._types.documents._PLACEHOLDER` (imported
+    rather than re-spelled here, so a change to the filler cannot silently
+    stop this check from stripping it), and a run whose text disagrees with
+    its declared width is normalised in one and not the other. ``in`` rather
+    than ``startswith`` for the same reason.
 
     A ``cited_text`` of nothing but whitespace leaves an empty probe, which
     matches trivially and stands the check down — correctly: it carries no

@@ -641,6 +641,17 @@ class StructuredDocument:
         than a change of what this returns. Read :attr:`blocks` when you want
         the structure.
 
+        A :attr:`BlockKind.TABLE` renders as **one line with its cell text
+        running together** — ``"Operating system"`` and ``"Android 10"``
+        adjacent, in this library's captured infobox. That is not a choice made
+        here: the parse flattens every row and cell into the table block's
+        spans (#2128), and a cell is several runs rather than one, so nothing
+        at this level can tell a cell boundary from a formatting change. It is
+        the same reading :attr:`DocumentBlock.text` and
+        ``ChatReference.cited_text`` already give. Giving tables their
+        boundaries back means teaching the *parse* to keep them, which is
+        `#2230 <https://github.com/teng-lin/notebooklm-py/issues/2230>`_.
+
         Args:
             start_index: Inclusive start of the range to render, in **UTF-16
                 code units** (see :func:`utf16_len`), clamped up to ``0``.

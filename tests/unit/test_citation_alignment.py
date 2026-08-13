@@ -1383,6 +1383,40 @@ class TestFragmentDescent:
         assert tables[0].text.startswith("Android2026.01.06")
         assert "Operating system" in tables[1].text
 
+    def test_a_tables_cells_run_together_because_the_parse_flattens_them(self) -> None:
+        """The readable rendering's one known blind spot, pinned (#2230).
+
+        ``render()`` joins a block's runs with no separator, which is right for
+        a paragraph and lossy for a table: the parse flattens every row and
+        cell into the table block's spans, so cell values end up adjacent.
+
+        Pinned rather than fixed because the obvious cheap fix is wrong on this
+        very capture — a single cell is *several* runs (``"Android 10"``,
+        ``"+, "``, ``"iOS 17"``, ``"+ "``, ``"[a]"`` are one cell), so
+        separating spans would split cells as often as it separated them.
+        Nothing at this level can tell a cell boundary from a formatting
+        change; the boundary has to survive the parse first.
+        """
+        elements = json.loads((FIXTURES_DIR / "citation_fragment_with_tables.json").read_text())
+        document = StructuredDocument(blocks=tuple(build_blocks(elements)))
+        table = document.blocks[1]
+        assert table.kind is BlockKind.TABLE
+        assert [span.text for span in table.spans][:5] == [
+            "Operating system",
+            "Android 10",
+            "+, ",
+            "iOS 17",
+            "+ ",
+        ]
+        rendered = document.render(table.start_index, table.end_index)
+        assert (
+            rendered
+            == "Operating systemAndroid 10+, iOS 17+ [a]Included withGeminiWebsitenotebooklm.google"
+        )
+        # ...and the same reading ``cited_text`` already gives, so this is a
+        # limitation inherited from the parse, not one introduced here.
+        assert rendered == table.text
+
     def test_absent_fragment_degrades_to_all_none(self) -> None:
         assert extract_text_passages([None, None, 0.5, [[None, 0, 5]]]) == (None, None, None)
 

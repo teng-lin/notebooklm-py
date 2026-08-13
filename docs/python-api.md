@@ -3017,7 +3017,9 @@ costs no extra request, `content` does not move, and like `content` it is
 deliberately **not** offset-addressable — its separators are its own. It is
 also marker-free: list glyphs and heading levels stay on `blocks` rather than
 being rendered, so this is the flat rendering `content` should have been, not
-a markdown one.
+a markdown one. A **table** renders as one line with its cells running
+together, because the parse flattens rows and cells into the block's spans
+([#2230](https://github.com/teng-lin/notebooklm-py/issues/2230)).
 
 With `output_format="markdown"` the two are not the same material: `content`
 is then built from the response's HTML rendition while `document` — and so

@@ -65,9 +65,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Offsets are UTF-16 code units throughout — windows, clips and the extent
   check all count in them, so a source containing an emoji resolves to the
   characters the backend meant rather than to its neighbours.
-  `rendered_content` is, like `content`, deliberately **not** offset-
-  addressable: its separators are its own. The CLI `--json` / MCP / REST
-  fulltext payloads stay pinned to their existing key sets.
+  `rendered_content` is, like `content`, deliberately **not**
+  offset-addressable: its separators are its own. The CLI `--json` / MCP /
+  REST fulltext payloads stay pinned to their existing key sets.
+
+  One known limitation, pinned by a test rather than fixed here: a **table**
+  renders as one line with its cell text running together, because the parse
+  flattens rows and cells into the block's spans and a cell is several runs.
+  Separating spans would split cells as often as it separated them, so giving
+  tables their boundaries back is a decoder change
+  ([#2230](https://github.com/teng-lin/notebooklm-py/issues/2230)).
   ([#2211](https://github.com/teng-lin/notebooklm-py/issues/2211))
 
 - **Notebook sharing now reports the collaborator cap and the public-sharing
