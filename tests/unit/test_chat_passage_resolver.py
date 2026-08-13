@@ -1022,11 +1022,19 @@ class TestOffsetResolution:
         reference.end_char = 5
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ChatResponseParseError, match="no cited_text"):
+            # The message names the range as well as the text, so this asserts
+            # the *range* was judged unusable rather than merely the text: the
+            # short-circuit fires only when both are.
+            with pytest.raises(
+                ChatResponseParseError, match="no cited_text and no character range"
+            ):
                 await resolve_chat_reference_passage(
                     client, notebook_id="nb_mutated", reference=reference
                 )
 
+        # ...and no request was issued, which is the second half of the same
+        # statement: without the negative-range check the reference reads as
+        # resolvable and the resolver fetches.
         assert not httpx_mock.get_requests()
 
     @pytest.mark.asyncio
