@@ -377,11 +377,22 @@ def _import_research_read_timeout(
 
     Retry-budget clamp (#2205): ``remaining_budget`` is what is left of
     ``import_sources_with_verification``'s ``max_elapsed`` when this attempt
-    starts. Passing it stops one attempt from running past the loop's own
-    deadline. It is applied last, so it also bounds an ``override`` and an
-    inherited (``None``) window. That caller only passes a budget it has
-    already found viable — see ``MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT``, which
-    is what keeps this from producing a uselessly small window.
+    starts, so a late retry cannot be *granted* a window larger than the budget
+    it has left — without it, a retry starting 50 s from the deadline still got
+    the full batch-scaled (or configured) window. It is applied last, so it
+    also bounds an ``override`` and an inherited (``None``) window. That caller
+    only passes a budget it has already found viable — see
+    ``MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT``, which is what keeps this from
+    producing a uselessly small window.
+
+    What this is *not*: a wall-clock deadline for the attempt. Every timeout in
+    this client is an ``httpx`` slot, and ``read`` is an inactivity limit
+    between socket reads — connect/pool waits sit outside it, and a server that
+    keeps dribbling bytes just inside the window keeps the request alive. So
+    the clamp bounds what an attempt is *given*, not how long it can take.
+    Enforcing the latter would mean cancelling an in-flight
+    ``NON_IDEMPOTENT_NO_RETRY`` POST, trading a bounded overshoot for an
+    unbounded duplicate-source risk (#808).
     """
     window: float | None
     if override is AUTO_READ_TIMEOUT:

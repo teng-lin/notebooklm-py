@@ -508,8 +508,13 @@ construction rather than silently producing a window that times out instantly.
 
 Independently, an IMPORT_RESEARCH attempt made by
 `import_sources_with_verification` is clamped to whatever is left of that call's
-own `max_elapsed` retry budget, so a late retry cannot run past the loop's
-deadline. When less than 10 seconds of that budget remains — too little for an
+own `max_elapsed` retry budget, so a late retry cannot be *granted* a window
+larger than the budget it has left. Note what that does and does not promise:
+every timeout here is an `httpx` slot, and the read slot is an inactivity limit
+between socket reads — so `max_elapsed` bounds when a new attempt may *start*,
+not the wall-clock duration of one already in flight. Enforcing the latter would
+mean cancelling an in-flight non-idempotent POST, which risks duplicated sources
+the client can no longer see. When less than 10 seconds of that budget remains — too little for an
 attempt to outlast connection establishment — the loop stops instead of sending
 one: `IMPORT_RESEARCH` is non-idempotent, so an attempt whose result the client
 cannot observe can still commit sources server-side and duplicate them. The

@@ -870,8 +870,11 @@ class ResearchAPI:
         last_error: RPCTimeoutError | RPCError | None = None
         while True:
             # Clamp this attempt's read window to what is left of ``max_elapsed``
-            # (#2205): without it a late retry's batch-scaled window can run
-            # minutes past the loop's own deadline.
+            # (#2205): without it a late retry is *granted* the full
+            # batch-scaled window — minutes of slack past a budget with seconds
+            # left. This bounds what the attempt is given, not how long it can
+            # take: ``read`` is an httpx inactivity slot, so connect/pool waits
+            # and a byte-dribbling server still sit outside it.
             attempt_budget = max_elapsed - (time.monotonic() - started_at)
             budget_is_viable = attempt_budget >= MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT
             if last_error is not None and not budget_is_viable:

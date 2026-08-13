@@ -130,8 +130,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new `import_research_timeout=` kwarg gives IMPORT_RESEARCH the same dedicated
   knob `chat_timeout` already had. Separately, an IMPORT_RESEARCH attempt made
   by `import_sources_with_verification` is now clamped to what remains of that
-  call's own `max_elapsed` budget, so a late retry can no longer run minutes
-  past the loop's deadline.
+  call's own `max_elapsed` budget, so a late retry can no longer be granted
+  minutes of window against a budget with seconds left, and the loop stops
+  rather than sending an attempt too short to observe its own result. The clamp
+  bounds what an attempt is given, not the wall-clock duration of one already in
+  flight — the read slot is an inactivity limit, not a request deadline.
 
 - **`SourceFulltext.find_citation_context()` could not locate a multi-block
   citation.** Its search key is a prefix of `cited_text`, and once `cited_text`
