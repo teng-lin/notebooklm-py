@@ -69,12 +69,22 @@ def share_status_view(status: ShareStatus, *, include_view_level: bool = False) 
     hardcodes ``FULL_NOTEBOOK``), so shipping it from a read would be
     confidently-wrong data; the only trustworthy source is ``set_view_level``'s
     own return, so the caller opts in on that path alone.
+
+    ``max_individuals_share_limit`` and ``is_public_sharing_allowed`` are
+    emitted verbatim, including ``None`` (#2130). This projection is an explicit
+    allowlist rather than a :func:`to_jsonable` pass, so a field added to the
+    dataclass reaches no adapter until it is listed here. Both keys are always
+    present — an omitted key and a ``null`` are the same thing to a JSON client,
+    but a *stably* present key lets a consumer distinguish "this server does not
+    report the field" from "this notebook has no value for it".
     """
     payload: dict[str, Any] = {
         "notebook_id": status.notebook_id,
         "is_public": status.is_public,
         "access": label(ACCESS_LABELS, status.access),
         "share_url": status.share_url,
+        "max_individuals_share_limit": status.max_individuals_share_limit,
+        "is_public_sharing_allowed": status.is_public_sharing_allowed,
         "shared_users": [
             {
                 "email": user.email,

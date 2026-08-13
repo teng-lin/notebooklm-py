@@ -1,5 +1,6 @@
 """Tests for share CLI commands."""
 
+import json
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
@@ -21,8 +22,15 @@ def create_mock_share_status(
     notebook_id: str = "nb_123",
     is_public: bool = False,
     shared_users: list | None = None,
+    max_individuals_share_limit: int | None = None,
+    is_public_sharing_allowed: bool | None = None,
 ) -> ShareStatus:
-    """Create a mock ShareStatus for testing."""
+    """Create a mock ShareStatus for testing.
+
+    The two #2130 fields default to ``None`` — the real parser's "backend made
+    no claim" — so callers must opt in to a populated value rather than
+    inheriting one the wire may not have sent.
+    """
     return ShareStatus(
         notebook_id=notebook_id,
         is_public=is_public,
@@ -30,6 +38,8 @@ def create_mock_share_status(
         view_level=ShareViewLevel.FULL_NOTEBOOK,
         shared_users=shared_users or [],
         share_url=f"https://notebooklm.google.com/notebook/{notebook_id}" if is_public else None,
+        max_individuals_share_limit=max_individuals_share_limit,
+        is_public_sharing_allowed=is_public_sharing_allowed,
     )
 
 
@@ -506,6 +516,84 @@ class TestShareJsonOutput:
         assert result.exit_code == 0
         assert '"notebook_id": "nb_123"' in result.output
         assert '"is_public": true' in result.output
+
+    def _invoke_status(self, runner, mock_client, *args):
+        mock_client.notebooks.list = AsyncMock(
+            return_value=[Notebook(id="nb_123", title="Test", created_at=datetime(2024, 1, 1))]
+        )
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            return runner.invoke(
+                cli,
+                ["share", "status", "-n", "nb_123", *args],
+                obj=inject_client(mock_client),
+            )
+
+    def test_share_status_json_carries_capacity_and_policy(self, runner, mock_auth):
+        """``share status --json`` exposes the #2130 fields.
+
+        This payload is hand-built rather than routed through
+        ``_app.views.share_status_view``, so adding a field to the dataclass does
+        NOT reach CLI users — the same narrow-serializer gap that hid two earlier
+        additions from ``source list --json``.
+        """
+        mock_client = create_mock_client()
+        mock_client.sharing.get_status = AsyncMock(
+            return_value=create_mock_share_status(
+                max_individuals_share_limit=1000, is_public_sharing_allowed=False
+            )
+        )
+
+        result = self._invoke_status(runner, mock_client, "--json")
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["max_individuals_share_limit"] == 1000
+        assert payload["is_public_sharing_allowed"] is False
+
+    def test_share_status_json_reports_absent_fields_as_null(self, runner, mock_auth):
+        """Keys stay present and ``null`` when the backend made no claim."""
+        mock_client = create_mock_client()
+        mock_client.sharing.get_status = AsyncMock(return_value=create_mock_share_status())
+
+        result = self._invoke_status(runner, mock_client, "--json")
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["max_individuals_share_limit"] is None
+        assert payload["is_public_sharing_allowed"] is None
+
+    def test_share_status_human_output_warns_when_policy_forbids_public(self, runner, mock_auth):
+        mock_client = create_mock_client()
+        mock_client.sharing.get_status = AsyncMock(
+            return_value=create_mock_share_status(
+                max_individuals_share_limit=1000, is_public_sharing_allowed=False
+            )
+        )
+
+        result = self._invoke_status(runner, mock_client)
+
+        assert result.exit_code == 0
+        assert "Not allowed by policy" in result.output
+        assert "1000" in result.output
+
+    def test_share_status_human_output_is_silent_when_no_claim(self, runner, mock_auth):
+        """``None`` must print nothing — not "no".
+
+        Rendering a policy verdict the backend never stated would be a
+        confidently-wrong claim, which is the whole reason the field is
+        tri-state.
+        """
+        mock_client = create_mock_client()
+        mock_client.sharing.get_status = AsyncMock(return_value=create_mock_share_status())
+
+        result = self._invoke_status(runner, mock_client)
+
+        assert result.exit_code == 0
+        assert "Public Sharing:" not in result.output
+        assert "Collaborator Limit:" not in result.output
 
     def test_share_public_json(self, runner, mock_auth):
         mock_client = create_mock_client()

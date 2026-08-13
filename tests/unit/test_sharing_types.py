@@ -10,6 +10,119 @@ from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from notebooklm.types import SharedUser, ShareStatus
 
+#: The full ``GET_SHARE_STATUS`` payload as CAPTURED, copied verbatim from the
+#: response body recorded in ``tests/cassettes/cli_share_status.yaml`` and
+#: re-confirmed byte-identical in shape on 10/10 notebooks in a 2026-08 live
+#: sweep. Not hand-authored: the older fixtures in this module stop at three
+#: elements, which is exactly why slots 2-3 went unread until #2130.
+LIVE_SHARE_STATUS_ROW: list[Any] = [
+    [["owner@example.com", 1, [], ["Owner", "https://avatar=s512"]]],
+    None,
+    1000,
+    True,
+    None,
+    None,
+    [3, True, True],
+    False,
+]
+
+
+class TestShareStatusCapacityAndPolicyFields:
+    """``maxIndividualsShareLimit`` / ``isPublicSharingAllowed`` decoding (#2130).
+
+    Both slots are populated on every live response and were read by nobody; the
+    parser docstring described slot 2 as the bare literal ``1000`` without naming
+    it. The absent-slot cases below are not hypothetical — the pinned golden
+    capture ``tests/fixtures/rpc_golden/GET_SHARE_STATUS.json`` is a real
+    three-element response.
+    """
+
+    def test_decodes_both_fields_from_the_captured_row(self):
+        """The live 8-slot shape yields the real cap and the real policy gate."""
+        status = ShareStatus.from_api_response(LIVE_SHARE_STATUS_ROW, "nb-1")
+
+        assert status.max_individuals_share_limit == 1000
+        assert status.is_public_sharing_allowed is True
+        # Additive: the fields this parser already read are untouched.
+        assert status.is_public is False
+        assert len(status.shared_users) == 1
+
+    def test_short_response_reports_no_claim_rather_than_zero(self):
+        """A 3-element response (the pinned golden capture's real shape).
+
+        The distinction that matters: ``None`` is "the backend said nothing",
+        not a cap of ``0`` (which would read as "you may add no collaborators")
+        and not a policy denial.
+        """
+        status = ShareStatus.from_api_response(
+            [[["owner@example.com", 1, [], ["Owner", None]]], None, 1000], "nb-1"
+        )
+
+        assert status.max_individuals_share_limit == 1000
+        assert status.is_public_sharing_allowed is None
+
+    def test_fields_absent_entirely_stay_none(self):
+        status = ShareStatus.from_api_response([[], None], "nb-1")
+
+        assert status.max_individuals_share_limit is None
+        assert status.is_public_sharing_allowed is None
+
+    def test_policy_denial_is_distinguishable_from_no_claim(self):
+        """``False`` and ``None`` must not collapse — they have opposite meanings.
+
+        A caller gating a "make public" attempt has to be able to tell "the
+        tenant forbids this" from "this response did not say".
+        """
+        denied = ShareStatus.from_api_response(
+            [[], None, 1000, False, None, None, [3, True, True], False], "nb-1"
+        )
+        silent = ShareStatus.from_api_response([[], None, 1000], "nb-1")
+
+        assert denied.is_public_sharing_allowed is False
+        assert silent.is_public_sharing_allowed is None
+        assert denied.is_public_sharing_allowed is not silent.is_public_sharing_allowed
+
+    def test_null_slots_decode_as_no_claim(self):
+        """Explicit ``null`` in either slot is absence, not a value."""
+        status = ShareStatus.from_api_response([[], None, None, None], "nb-1")
+
+        assert status.max_individuals_share_limit is None
+        assert status.is_public_sharing_allowed is None
+
+    def test_boolean_in_the_limit_slot_is_rejected(self):
+        """``bool`` is an ``int`` subclass — ``True`` must not decode as a cap of 1.
+
+        Without the explicit ``bool`` exclusion this returns ``True``, and a
+        bulk-share caller budgeting against it would stop after one user.
+        """
+        status = ShareStatus.from_api_response([[], None, True, True], "nb-1")
+
+        assert status.max_individuals_share_limit is None
+
+    @pytest.mark.parametrize("drifted", [1, "true", "yes", [True]])
+    def test_non_boolean_in_the_policy_slot_is_rejected(self, drifted: Any):
+        """A truthy non-bool is drift, not a policy verdict, and must not coerce."""
+        status = ShareStatus.from_api_response([[], None, 1000, drifted], "nb-1")
+
+        assert status.is_public_sharing_allowed is None
+
+    def test_string_in_the_limit_slot_is_rejected(self):
+        status = ShareStatus.from_api_response([[], None, "1000", True], "nb-1")
+
+        assert status.max_individuals_share_limit is None
+
+    def test_unnamed_trailing_slots_are_not_surfaced(self):
+        """Tags 7-8 are populated live but deliberately undecoded (#2130).
+
+        The mobile ``GetProjectDetailsResponse`` declares only tags 2-4, so
+        nothing names them. This pins the decision: if a future change starts
+        exposing them, it must come with a name and a wire-contract entry.
+        """
+        status = ShareStatus.from_api_response(LIVE_SHARE_STATUS_ROW, "nb-1")
+
+        assert not [f for f in vars(status) if "tag" in f.lower()]
+        assert [3, True, True] not in vars(status).values()
+
 
 class TestSharedUser:
     """Tests for SharedUser dataclass."""

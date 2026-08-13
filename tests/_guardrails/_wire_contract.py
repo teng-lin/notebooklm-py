@@ -48,6 +48,12 @@ from dataclasses import dataclass
 #: select the wire copy.
 WIRE = "orchestration.v1"
 SOURCE_SETTINGS = "tailwind.v1/source_settings"
+#: ``GET_SHARE_STATUS`` decodes the sharing service's ``GetProjectDetailsResponse``,
+#: which lives in its own package rather than the ``orchestration.v1`` wire section.
+SHARING = "labs_tailwind_sharing_service"
+#: ``ProjectPublicSettings`` (the nested ``publicSettings`` block) is declared in
+#: the shared projects package, not alongside the sharing service RPC.
+SHARING_COMMON = "common.protos/projects.pb.dart"
 #: Placeholder ``cls`` for constants declared at module scope rather than on a class.
 MODULE_LEVEL = "<module>"
 # Must include the package prefix: `tailwind_doc.pb.dart` alone also matches the
@@ -525,6 +531,54 @@ MAPPINGS: tuple[Mapping, ...] = (
         tag=3,
         note="maxSourcesPerProject — name unrecovered; verified live on both transports",
     ),
+    # ---- Share status: GetProjectDetailsResponse (#2130) -------------------
+    # GET_SHARE_STATUS decodes the sharing service's GetProjectDetailsResponse.
+    # Live shape, identical on 10/10 notebooks in a 2026-08 sweep:
+    #   [[<user rows>], null, 1000, true, null, null, [3, true, true], false]
+    Mapping(
+        "sharing",
+        "ShareStatus",
+        "_PUBLIC_BLOCK_POS",
+        "GetProjectDetailsResponse",
+        "publicSettings",
+        section=SHARING,
+        note="the long-standing data[1] descent, now named",
+    ),
+    Mapping(
+        "sharing",
+        "ShareStatus",
+        "_IS_PUBLIC_INNER_POS",
+        "ProjectPublicSettings",
+        "isPubliclyReadable",
+        section=SHARING_COMMON,
+        note="the inner data[1][0] flag behind ShareStatus.is_public",
+    ),
+    Mapping(
+        "sharing",
+        "ShareStatus",
+        "_MAX_SHARE_LIMIT_POS",
+        "GetProjectDetailsResponse",
+        "maxIndividualsShareLimit",
+        section=SHARING,
+        note=(
+            "#2130 — live 1000 on 10/10 notebooks sampled. Previously read by "
+            "nobody and described in the parser docstring as the bare literal "
+            "1000. Read by ShareStatus.max_individuals_share_limit."
+        ),
+    ),
+    Mapping(
+        "sharing",
+        "ShareStatus",
+        "_PUBLIC_SHARING_ALLOWED_POS",
+        "GetProjectDetailsResponse",
+        "isPublicSharingAllowed",
+        section=SHARING,
+        note=(
+            "#2130 — live true on 10/10 notebooks sampled. The tenant/policy "
+            "gate on making a notebook public. Read by "
+            "ShareStatus.is_public_sharing_allowed."
+        ),
+    ),
 )
 
 
@@ -691,7 +745,42 @@ UNMAPPED: tuple[Unmapped, ...] = (
         "against the proto — but the wire carries 5 elements and the live value "
         "(1=free / 2=Pro) matches _types/common.py on both transports.",
     ),
+    # sharing.py (#2130)
+    Unmapped(
+        "sharing",
+        "ShareStatus",
+        "_USERS_POS",
+        f"{_NO_SUCH_FIELD} the web GET_SHARE_STATUS response carries the shared-user "
+        "rows at index 0 (proto tag 1), but the recovered mobile "
+        "GetProjectDetailsResponse declares only tags 2-4 — it has no tag 1 at all. "
+        "The slot is unambiguous live (every row is [email, permission, [], "
+        "[name, avatar]]) and has been decoded correctly since the first release, "
+        "so this is a naming gap in the mobile schema, not a suspect read. "
+        "Recorded honestly rather than mapped to a field that does not exist.",
+    ),
 )
+
+#: ``GET_SHARE_STATUS`` slots that are POPULATED on every live response and
+#: deliberately left undecoded, so a future reader does not mistake the silence
+#: for "we checked and there is nothing there" (#2130).
+#:
+#: Not :data:`UNMAPPED` — that registry is keyed by an existing constant, and the
+#: whole point here is that no constant exists. Indices 4 and 5 are omitted: they
+#: are ``null`` on every row observed, so there is nothing to explain.
+UNREAD_SHARE_STATUS_SLOTS: dict[int, str] = {
+    6: (
+        "proto tag 7 — live [3, true, true] on 10/10 notebooks sampled 2026-08. "
+        "GetProjectDetailsResponse declares no tag 7, so nothing in the recovered "
+        "schema names it and its semantics are unresolved. Surfacing it would mean "
+        "inventing a field name, which is the exact defect class this registry "
+        "exists to catch, so #2130 left it undecoded on purpose."
+    ),
+    7: (
+        "proto tag 8 — live false on 10/10 notebooks sampled 2026-08. Unnamed in "
+        "the recovered schema for the same reason as tag 7, and a lone constant "
+        "false carries no signal a caller could act on. Left undecoded."
+    ),
+}
 
 
 PINNED: tuple[Pinned, ...] = (

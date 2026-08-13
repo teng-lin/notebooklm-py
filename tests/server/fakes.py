@@ -630,6 +630,11 @@ class FakeClient:
         self.poll_states: dict[tuple[str, str], Any] = {}
         self.public_shares: dict[str, bool] = {}
         self.share_view_levels: dict[str, ShareViewLevel] = {}
+        #: #2130 — per-notebook ``maxIndividualsShareLimit`` /
+        #: ``isPublicSharingAllowed``. Unset means the backend made no claim, so
+        #: the default matches the real parser's ``None``.
+        self.share_limits: dict[str, int | None] = {}
+        self.public_sharing_allowed: dict[str, bool | None] = {}
         self.shared_users: dict[str, dict[str, SharedUser]] = {}
         self.fulltext_store: dict[tuple[str, str], str] = {}
         self.guide_store: dict[tuple[str, str], SourceGuide] = {}
@@ -745,4 +750,6 @@ class FakeClient:
             share_url=f"https://notebooklm.google.com/notebook/{notebook_id}"
             if is_public
             else None,
+            max_individuals_share_limit=self.share_limits.get(notebook_id),
+            is_public_sharing_allowed=self.public_sharing_allowed.get(notebook_id),
         )

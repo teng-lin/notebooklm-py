@@ -111,7 +111,43 @@ class SharedUser:
 
 @dataclass
 class ShareStatus:
-    """Current sharing configuration for a notebook."""
+    """Current sharing configuration for a notebook.
+
+    Wire shape (``GET_SHARE_STATUS`` → mobile ``GetProjectDetailsResponse``),
+    live-observed identically on 10/10 notebooks in a 2026-08 sweep::
+
+        [
+          [[email, permission, [], [name, avatar]], ...],  # [0] shared users
+          null | [is_publicly_readable, is_discoverable],  # [1] publicSettings
+          1000,                                            # [2] maxIndividualsShareLimit
+          true,                                            # [3] isPublicSharingAllowed
+          null,                                            # [4] unread, always null live
+          null,                                            # [5] unread, always null live
+          [3, true, true],                                 # [6] tag 7 — UNNAMED
+          false,                                           # [7] tag 8 — UNNAMED
+        ]
+
+    Slots ``[6]`` / ``[7]`` (proto tags 7 and 8) are populated on every live row
+    but are **deliberately not surfaced**: ``GetProjectDetailsResponse`` in the
+    recovered mobile schema declares only tags 2, 3 and 4, so nothing names
+    them. Guessing a name here is precisely the defect class
+    ``tests/_guardrails/_wire_contract.py`` exists to prevent, so they are
+    recorded there as ``UNMAPPED`` rather than exposed under an invented name
+    (#2130).
+    """
+
+    #: ``[0]`` — the shared-user rows. Not declared in the mobile
+    #: ``GetProjectDetailsResponse`` (a web-only slot), so it is pinned rather
+    #: than mapped in the wire contract.
+    _USERS_POS = 0
+    #: ``[1]`` — ``publicSettings`` (``ProjectPublicSettings``, tag 2).
+    _PUBLIC_BLOCK_POS = 1
+    #: ``[1][0]`` — ``ProjectPublicSettings.isPubliclyReadable`` (tag 1).
+    _IS_PUBLIC_INNER_POS = 0
+    #: ``[2]`` — ``maxIndividualsShareLimit`` (tag 3).
+    _MAX_SHARE_LIMIT_POS = 2
+    #: ``[3]`` — ``isPublicSharingAllowed`` (tag 4).
+    _PUBLIC_SHARING_ALLOWED_POS = 3
 
     notebook_id: str
     is_public: bool
@@ -119,20 +155,45 @@ class ShareStatus:
     view_level: ShareViewLevel
     shared_users: list[SharedUser] = field(default_factory=list)
     share_url: str | None = None
+    #: ``maxIndividualsShareLimit`` — the per-notebook collaborator cap the
+    #: backend enforces (live: ``1000`` on every notebook observed). ``None``
+    #: when the response omits the slot or carries a non-integer there, i.e.
+    #: "the backend stated no cap", never a fabricated default: a wrong number
+    #: here would be worse than no number, because a bulk-share caller would
+    #: budget against it (#2130).
+    max_individuals_share_limit: int | None = None
+    #: ``isPublicSharingAllowed`` — the tenant/policy gate on making this
+    #: notebook public (live: ``True`` on every notebook observed).
+    #:
+    #: **Tri-state on purpose.** ``None`` means the response made no claim; it
+    #: is NOT collapsed into ``False``, because "the backend did not say" and
+    #: "the backend said no" have opposite consequences for a caller deciding
+    #: whether to attempt a public share. Callers must test
+    #: ``is_public_sharing_allowed is False`` for the deny case rather than
+    #: ``not is_public_sharing_allowed``, which also catches the unknown.
+    is_public_sharing_allowed: bool | None = None
 
     @classmethod
     def from_api_response(cls, data: list[Any], notebook_id: str) -> ShareStatus:
         """Parse from GET_SHARE_STATUS response.
 
-        Response format: [user_entries, public_block_or_null, 1000], where
-        user_entries is a list of [email, permission, [], [name, avatar]] rows.
+        Response format: ``[user_entries, public_block_or_null,
+        max_individuals_share_limit, is_public_sharing_allowed, ...]``, where
+        ``user_entries`` is a list of ``[email, permission, [], [name, avatar]]``
+        rows. See the class docstring for the full observed shape, including the
+        two populated-but-unnamed trailing slots.
         """
         # Parse users from [0]. ``if data`` proves slot 0 is present before the
         # ``safe_index`` descent, so the read stays as soft as the legacy
         # ``data[0]`` it replaces.
         users = []
         user_entries = (
-            safe_index(data, 0, method_id=_SHARE_METHOD_ID, source="ShareStatus.from_api_response")
+            safe_index(
+                data,
+                cls._USERS_POS,
+                method_id=_SHARE_METHOD_ID,
+                source="ShareStatus.from_api_response",
+            )
             if data
             else None
         )
@@ -150,8 +211,13 @@ class ShareStatus:
         # ``isinstance(..., list)`` check runs on the descended value so the
         # original "absent/empty block means not-public" contract is preserved.
         public_slot = (
-            safe_index(data, 1, method_id=_SHARE_METHOD_ID, source="ShareStatus.from_api_response")
-            if len(data) > 1
+            safe_index(
+                data,
+                cls._PUBLIC_BLOCK_POS,
+                method_id=_SHARE_METHOD_ID,
+                source="ShareStatus.from_api_response",
+            )
+            if len(data) > cls._PUBLIC_BLOCK_POS
             else None
         )
         public_block = public_slot if isinstance(public_slot, list) else None
@@ -160,11 +226,27 @@ class ShareStatus:
             is_public = bool(
                 safe_index(
                     public_block,
-                    0,
+                    cls._IS_PUBLIC_INNER_POS,
                     method_id=_SHARE_METHOD_ID,
                     source="ShareStatus.from_api_response",
                 )
             )
+
+        # ``maxIndividualsShareLimit`` (tag 3) and ``isPublicSharingAllowed``
+        # (tag 4). Both fail closed to ``None`` — "the backend made no claim" —
+        # rather than to a fabricated 0/False, so an absent slot can never be
+        # mistaken for a real cap of zero or a real policy denial.
+        limit_slot = cls._scalar_at(data, cls._MAX_SHARE_LIMIT_POS)
+        # ``bool`` is an ``int`` subclass, so a JSON ``true`` here would silently
+        # decode as a cap of 1; that is drift, not a limit, and must not parse.
+        max_individuals_share_limit = (
+            limit_slot if isinstance(limit_slot, int) and not isinstance(limit_slot, bool) else None
+        )
+
+        allowed_slot = cls._scalar_at(data, cls._PUBLIC_SHARING_ALLOWED_POS)
+        # Strictly ``bool``: a truthy non-bool (e.g. a drifted int or string) is
+        # not a policy answer, and coercing one would invent a gate verdict.
+        is_public_sharing_allowed = allowed_slot if isinstance(allowed_slot, bool) else None
 
         access = ShareAccess.ANYONE_WITH_LINK if is_public else ShareAccess.RESTRICTED
 
@@ -185,4 +267,21 @@ class ShareStatus:
             view_level=view_level,
             shared_users=users,
             share_url=share_url,
+            max_individuals_share_limit=max_individuals_share_limit,
+            is_public_sharing_allowed=is_public_sharing_allowed,
+        )
+
+    @classmethod
+    def _scalar_at(cls, data: list[Any], pos: int) -> Any:
+        """The raw value at ``data[pos]``, or ``None`` when the slot is absent.
+
+        The length guard runs BEFORE the :func:`safe_index` descent, matching the
+        rest of this parser: short responses are a normal shape here (the pinned
+        ``GET_SHARE_STATUS`` golden capture is only three elements long), so a
+        missing trailing slot is absence, not drift, and must not warn.
+        """
+        if len(data) <= pos:
+            return None
+        return safe_index(
+            data, pos, method_id=_SHARE_METHOD_ID, source="ShareStatus.from_api_response"
         )

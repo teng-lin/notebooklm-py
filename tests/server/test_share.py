@@ -36,6 +36,43 @@ def test_share_status_returns_current_state(
     assert "view_level" not in body
 
 
+def test_share_status_carries_capacity_and_policy(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    """REST projects the collaborator cap and the public-sharing gate (#2130).
+
+    ``_app/views.py::share_status_view`` is an explicit allowlist, not a
+    ``to_jsonable`` pass — a field added to ``ShareStatus`` reaches no adapter
+    until it is listed there. Without this the whole axis could vanish from every
+    ``/v1`` share response with the server suite still green.
+    """
+    fake_client.share_limits["nb-1"] = 1000
+    fake_client.public_sharing_allowed["nb-1"] = False
+
+    body = authed_client.get("/v1/notebooks/nb-1/share").json()
+
+    assert body["max_individuals_share_limit"] == 1000
+    assert body["is_public_sharing_allowed"] is False
+
+
+def test_share_status_reports_absent_capacity_as_null(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    """Both keys stay present and ``null`` when the backend made no claim.
+
+    A stably-present key lets a client tell "this server does not report the
+    field" from "this notebook has no value for it" — and ``null`` must not
+    become ``0`` / ``false``, which would read as a real cap of zero and a real
+    policy denial.
+    """
+    body = authed_client.get("/v1/notebooks/nb-1/share").json()
+
+    assert body["max_individuals_share_limit"] is None
+    assert body["is_public_sharing_allowed"] is None
+    assert "max_individuals_share_limit" in body
+    assert "is_public_sharing_allowed" in body
+
+
 def test_set_public_toggles_link(authed_client: TestClient) -> None:
     resp = authed_client.post("/v1/notebooks/nb-1/share/public", json={"enable": True})
 

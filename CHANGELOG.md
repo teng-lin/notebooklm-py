@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Notebook sharing now reports the collaborator cap and the public-sharing
+  policy gate.** `GET_SHARE_STATUS` returns six populated fields and
+  `ShareStatus.from_api_response` read two of them; the parser's own docstring
+  described slot 2 as the bare literal `1000` without naming it.
+  `ShareStatus.max_individuals_share_limit` (`maxIndividualsShareLimit`, proto
+  tag 3) is the per-notebook collaborator cap the backend enforces — without it
+  a bulk-share caller discovers the ceiling only as a failed RPC — and
+  `ShareStatus.is_public_sharing_allowed` (`isPublicSharingAllowed`, tag 4) is
+  the tenant/policy gate on making a notebook public. Both reach the MCP and
+  REST share views and `notebooklm share status` (`--json` and the human table,
+  which now warns when policy forbids public sharing).
+
+  **Both are tri-state on purpose.** `None` means "the response made no claim"
+  and is deliberately not collapsed into `False` / `0`: a cap of `0` reads as
+  "you may add no collaborators" and a `False` reads as a policy denial, so
+  fabricating either from silence would be worse than reporting nothing.
+  Callers must test `is_public_sharing_allowed is False` for the deny case.
+  Drifted types fail closed the same way — a `bool` in the cap slot does not
+  decode as a limit of 1 (`bool` is an `int` subclass), and a truthy non-bool in
+  the policy slot does not coerce into a verdict.
+
+  **`set_public` deliberately does not consult the gate.** Pre-checking it would
+  add an RPC round-trip to every call and change a public method's failure mode
+  on the strength of a consequence that was **not** observed — the audit records
+  the silent-no-op as *plausible*, and no tenant with public sharing disabled
+  was available to exercise it. The field is surfaced so callers can decide with
+  the evidence in hand.
+
+  **Tags 7 and 8 stay unread.** They are populated on every live row
+  (`[3, true, true]` and `false`), but the recovered mobile
+  `GetProjectDetailsResponse` declares only tags 2-4, so nothing names them.
+  Surfacing them would mean inventing a field name — the exact defect class
+  `tests/_guardrails/_wire_contract.py` exists to catch — so they are recorded
+  there as deliberately-undecoded instead. That file now also scans
+  `_types/sharing.py`, which used bare integer literals and therefore made no
+  checkable positional claim at all; its four slot reads are now named constants
+  validated against the proto.
+
+  **Evidence:** live-confirmed on 10/10 notebooks in a 2026-08 sweep, every one
+  returning `1000` and `true` with an identical 8-slot shape. The `False` branch
+  of `is_public_sharing_allowed` has never been observed on the wire; only its
+  decoding is pinned by tests.
+  ([#2130](https://github.com/teng-lin/notebooklm-py/issues/2130))
+
 - **Citations can now be aligned to both the answer and the source.** The two
   halves of that mapping were each missing a piece, and neither was usable
   without the other.

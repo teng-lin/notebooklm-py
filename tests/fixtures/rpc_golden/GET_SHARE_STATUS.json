@@ -80,6 +80,8 @@
         "avatar_url": "https://scrubbed.example.com/avatar/bob.png"
       }
     ],
-    "share_url": null
+    "share_url": null,
+    "max_individuals_share_limit": 1000,
+    "is_public_sharing_allowed": null
   }
 }

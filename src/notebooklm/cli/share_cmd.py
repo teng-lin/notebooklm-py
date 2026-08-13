@@ -98,6 +98,13 @@ def share_status(ctx, notebook_id, json_output, client_auth):
                     "access": status.access.name.lower(),
                     "view_level": status.view_level.name.lower(),
                     "share_url": status.share_url,
+                    # #2130. This payload is hand-built rather than routed
+                    # through ``_app.views.share_status_view``, so a field added
+                    # to ``ShareStatus`` stays invisible to CLI users until it is
+                    # listed here too — the same parity gap that hid two earlier
+                    # additions from ``source list --json``.
+                    "max_individuals_share_limit": status.max_individuals_share_limit,
+                    "is_public_sharing_allowed": status.is_public_sharing_allowed,
                     "shared_users": [
                         {
                             "email": u.email,
@@ -123,6 +130,23 @@ def share_status(ctx, notebook_id, json_output, client_auth):
                 f"[bold]View Level:[/bold] {_view_level_display(status.view_level)} "
                 "[dim](use 'share view-level' to change)[/dim]"
             )
+
+            # #2130. Only rendered when the backend actually stated them: a
+            # ``None`` means "no claim", and printing "Public Sharing: no" for a
+            # silent response would assert a policy denial that was never made.
+            if status.is_public_sharing_allowed is False:
+                console.print(
+                    "[bold]Public Sharing:[/bold] [red]Not allowed by policy[/red] "
+                    "[dim](a 'share public --enable' call may not take effect)[/dim]"
+                )
+            elif status.is_public_sharing_allowed is True:
+                console.print("[bold]Public Sharing:[/bold] [green]Allowed[/green]")
+
+            if status.max_individuals_share_limit is not None:
+                console.print(
+                    f"[bold]Collaborator Limit:[/bold] {status.max_individuals_share_limit} "
+                    f"[dim]({len(status.shared_users)} currently shared)[/dim]"
+                )
 
             # Display shared users
             if status.shared_users:

@@ -2693,7 +2693,56 @@ class ShareStatus:
     view_level: ShareViewLevel         # FULL_NOTEBOOK or CHAT_ONLY
     shared_users: list[SharedUser]     # List of users with access
     share_url: str | None              # Public URL if is_public=True
+    max_individuals_share_limit: int | None   # Collaborator cap; None = no claim
+    is_public_sharing_allowed: bool | None    # Policy gate; None = no claim
 ```
+
+**Collaborator cap and public-sharing policy.**
+
+`GET_SHARE_STATUS` reports two fields this client read for a long time as
+nothing at all (the parser docstring described the cap as the bare literal
+`1000`):
+
+* `max_individuals_share_limit` — the per-notebook collaborator cap the backend
+  enforces. Without it a bulk-share caller discovers the ceiling only as a
+  failed RPC.
+* `is_public_sharing_allowed` — the tenant/policy gate on making a notebook
+  public.
+
+Both are **tri-state**, and the third state matters:
+
+```python
+status = await client.sharing.get_status(nb_id)
+
+if status.is_public_sharing_allowed is False:
+    print("This tenant forbids public sharing.")
+elif status.is_public_sharing_allowed is None:
+    print("The backend did not say; attempting anyway.")
+
+if status.max_individuals_share_limit is not None:
+    remaining = status.max_individuals_share_limit - len(status.shared_users)
+```
+
+`None` means *the response made no claim* — it is deliberately not collapsed
+into `False` / `0`, because "the backend did not say" and "the backend said no"
+lead a caller to opposite decisions. Test `is False` explicitly rather than
+`not status.is_public_sharing_allowed`, which also catches the unknown.
+
+> **`set_public` deliberately does not consult the gate.** Making it pre-check
+> `is_public_sharing_allowed` would add an RPC round-trip to every call and
+> change a public method's failure mode on the strength of a consequence that
+> has **not** been observed: the audit records the silent-no-op as *plausible*,
+> and no tenant with public sharing disabled was available to exercise it. The
+> field is surfaced so a caller can make that decision with the evidence in
+> hand; wiring it into the mutation path is a separate change that needs a
+> tenant where the branch can actually be tested.
+
+> **Caveat, stated plainly:** every notebook sampled (10/10, 2026-08) returned
+> `1000` and `True`. The `False` branch of `is_public_sharing_allowed` has never
+> been observed on the wire — only its decoding is pinned by tests.
+
+The MCP and REST share views and `notebooklm share status --json` carry both
+fields under the same names.
 
 ### SharedUser
 

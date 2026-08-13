@@ -1906,10 +1906,40 @@ await rpc_call(
 #         ],
 #         # ... more users
 #     ],
-#     [true],  # [1]: is_public - [true] or [false]
-#     1000     # [2]: unknown constant (ignore)
+#     [true],  # [1]: publicSettings (tag 2) - [isPubliclyReadable, isDiscoverable]
+#     1000,    # [2]: maxIndividualsShareLimit (tag 3)
+#     true,    # [3]: isPublicSharingAllowed (tag 4)
+#     null,    # [4]: null on every row observed
+#     null,    # [5]: null on every row observed
+#     [3, true, true],  # [6]: tag 7 - UNNAMED, deliberately unread
+#     false    # [7]: tag 8 - UNNAMED, deliberately unread
 # ]
 ```
+
+**Response fields (`GetProjectDetailsResponse`).** The shape above is the full
+live response, identical on 10/10 notebooks sampled 2026-08. Index 2 was
+documented as "unknown constant (ignore)" until #2130 — it is the enforced
+collaborator cap.
+
+| Index | Proto tag | Field | Decoded as |
+|-------|-----------|-------|------------|
+| 0 | 1 | *(shared-user rows)* | `ShareStatus.shared_users` — not declared in the mobile `GetProjectDetailsResponse`, which has no tag 1; see `_wire_contract.py::UNMAPPED` |
+| 1 | 2 | `publicSettings` | `ShareStatus.is_public` (via `ProjectPublicSettings.isPubliclyReadable`) |
+| 2 | 3 | `maxIndividualsShareLimit` | `ShareStatus.max_individuals_share_limit` |
+| 3 | 4 | `isPublicSharingAllowed` | `ShareStatus.is_public_sharing_allowed` |
+| 6 | 7 | *(unnamed)* | **unread** — live `[3, true, true]` |
+| 7 | 8 | *(unnamed)* | **unread** — live `false` |
+
+> Tags 7 and 8 are populated on every live row but the recovered mobile schema
+> declares only tags 2-4, so nothing names them. Exposing them would mean
+> inventing a field name, so they are recorded as deliberately-undecoded in
+> `tests/_guardrails/_wire_contract.py::UNREAD_SHARE_STATUS_SLOTS` rather than
+> surfaced (#2130).
+>
+> Both decoded fields are **tri-state**: `None` means the response made no claim
+> (short responses are real — the pinned golden capture is three elements long)
+> and is never collapsed into `0` / `False`. `ProjectPublicSettings.isDiscoverable`
+> (tag 2 of the inner block) remains unread.
 
 ### RPC: SHARE_NOTEBOOK (QDyure)
 

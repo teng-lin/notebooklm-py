@@ -48,6 +48,10 @@ class FakeShareStatus:
     view_level: Any = ShareViewLevel.FULL_NOTEBOOK
     shared_users: list = field(default_factory=list)
     share_url: str | None = None
+    # #2130. Defaults mirror ``ShareStatus``'s own: ``None`` = "the backend made
+    # no claim", which is what a short response yields.
+    max_individuals_share_limit: int | None = None
+    is_public_sharing_allowed: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +85,8 @@ async def test_share_status_labels_enums_and_omits_view_level(mcp_call, mock_cli
             view_level=ShareViewLevel.CHAT_ONLY,  # would be a LIE if surfaced from get_status
             share_url="https://nb/share",
             shared_users=[FakeSharedUser(email="a@b.com", permission=SharePermission.EDITOR)],
+            max_individuals_share_limit=1000,
+            is_public_sharing_allowed=True,
         )
     )
     result = await mcp_call("share_status", {"notebook": NB_ID})
@@ -88,6 +94,9 @@ async def test_share_status_labels_enums_and_omits_view_level(mcp_call, mock_cli
     assert sc["is_public"] is True
     assert sc["access"] == "anyone_with_link"  # string, not int
     assert sc["share_url"] == "https://nb/share"
+    # #2130 — the collaborator cap and the tenant policy gate reach MCP.
+    assert sc["max_individuals_share_limit"] == 1000
+    assert sc["is_public_sharing_allowed"] is True
     assert sc["shared_users"] == [
         {"email": "a@b.com", "permission": "editor", "display_name": None, "avatar_url": None}
     ]
