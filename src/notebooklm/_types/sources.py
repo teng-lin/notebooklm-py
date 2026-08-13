@@ -495,7 +495,9 @@ class SourceFulltext:
             byte-identical to its pre-#2128 output so existing callers are
             unaffected, which also means **its offsets are not the backend's**:
             the joins insert separators the wire's character ranges never
-            accounted for. Use :attr:`document` when offsets matter.
+            accounted for. Use :attr:`document` when offsets matter, and
+            :attr:`rendered_content` when readability does — joining *runs*
+            rather than *blocks* splits paragraphs mid-sentence (#2211).
         url: The source URL, when it has one.
         char_count: ``len(content)`` — Python characters over the legacy flat
             rendering, **including the** ``"\\n"`` **separators that rendering
@@ -514,6 +516,9 @@ class SourceFulltext:
 
             Not emitted by the CLI ``--json`` / MCP / REST fulltext payloads,
             which stay pinned to their existing key sets.
+
+    See also :attr:`rendered_content` — the readable rendering derived from
+    :attr:`document`, and (like :attr:`document`) a Python-API surface only.
     """
 
     source_id: str
@@ -528,6 +533,38 @@ class SourceFulltext:
     def kind(self) -> SourceType:
         """Get source type as SourceType enum."""
         return _safe_source_type(self._type_code)
+
+    @property
+    def rendered_content(self) -> str:
+        """The source's text rendered for reading — one line per block.
+
+        :attr:`content` joins every text **run** with ``"\\n"``, and a run is a
+        sub-paragraph fragment: a paragraph the backend split into three runs
+        becomes three lines. That is a consequence of flattening a tree nobody
+        had parsed, not a rendering anybody chose — on this library's own test
+        source it turns 13 blocks into 17 lines. Since #2128 the tree *is*
+        parsed, so this property renders from it instead: runs joined **within**
+        a block, blocks separated
+        (:meth:`~notebooklm.types.StructuredDocument.render`).
+
+        It is derived, additive and free — the document is parsed on every
+        ``get_fulltext`` regardless of ``output_format``, so nothing extra is
+        fetched, and :attr:`content` is untouched for callers that depend on its
+        exact bytes.
+
+        Like :attr:`content` and unlike
+        :attr:`~notebooklm.types.StructuredDocument.text`, this rendering is
+        **not** offset-addressable: the separators it inserts are its own.
+        Resolve a citation's ``start_char`` / ``end_char`` with
+        ``document.slice(...)``, or get a readable window around one from
+        ``resolve_chat_reference_passage``.
+
+        ``""`` when the response carried no decodable document (a source whose
+        text arrived as bare strings), where :attr:`content` may still have
+        text — this is a strictly structural rendering, never a fallback
+        flattening.
+        """
+        return self.document.render()
 
     def find_citation_context(
         self,
@@ -556,9 +593,11 @@ class SourceFulltext:
         the complete, offset-accurate value.
 
         This remains a value-based search against a string the citation offsets
-        do not describe. Resolving by offset against :attr:`document` is exact
-        and needs no search; see
-        `#2211 <https://github.com/teng-lin/notebooklm-py/issues/2211>`_.
+        do not describe, and is now the **fallback** rather than the primary
+        path: ``resolve_chat_reference_passage`` resolves by offset against
+        :attr:`document` — exact, and needing no search — and only comes here
+        for a reference or a source without usable offsets (#2211). Prefer
+        ``document.slice()`` directly when you have a range.
         """
         if not cited_text or not self.content:
             return []

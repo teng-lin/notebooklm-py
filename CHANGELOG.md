@@ -9,6 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A readable rendering of a source, and citation resolution that reads
+  offsets instead of searching for text.** `SourceFulltext` gains
+  `rendered_content`, and `StructuredDocument` gains `render(start, end)` and
+  `extent`. This library renders a source three ways, and until now two of them
+  were missing the point:
+
+  | Surface | What it answers |
+  |---|---|
+  | `SourceFulltext.content` | what this client has always returned — unchanged, byte for byte |
+  | `SourceFulltext.document` | *where* text sits: the offset-faithful parse citations index |
+  | `SourceFulltext.rendered_content` | what the source *says*, laid out to be read |
+
+  `content` joins every text **run** with `"\n"`, and a run is a sub-paragraph
+  fragment — so a paragraph the backend split into three runs arrives as three
+  lines. That was a consequence of flattening a tree nobody had parsed, not a
+  rendering anyone chose: on this repo's captured test source it turns 13
+  blocks into 17 lines. `rendered_content` renders from the parsed tree
+  instead — runs joined *within* a block, blocks separated — so the same
+  paragraph comes back whole. It is derived, costs no extra request, and
+  leaves `content` and `char_count` exactly where they were.
+
+  **`resolve_chat_reference_passage()` now resolves by offset.** A citation
+  carries `start_char` / `end_char` into the source document, so the helper
+  reads the passage straight out of that coordinate space and returns it
+  rendered; the value-based `find_citation_context` search over `content`
+  becomes the fallback for a reference with no usable range or a source whose
+  document did not decode. That search compares `cited_text` against a string
+  that joins runs with `"\n"` while `cited_text` uses no separator at all, so
+  a key spanning a block boundary cannot match anywhere — #2210 could only
+  bound the key to keep it inside one block. Reading the range removes the
+  failure mode instead of bounding it, and picks the *cited* occurrence in a
+  source that says the same thing twice, which no search can do.
+
+  Two guards keep the rewrite honest. A reference carrying neither a range nor
+  `cited_text` still raises without issuing a request — fetching first would
+  turn a structural anchor into an RPC the helper used to avoid. And the range
+  is checked against `document.extent` before it is used, so a citation whose
+  offsets no longer fit the source (re-indexed since the answer was generated)
+  falls back to the search rather than silently returning whatever text now
+  occupies those positions.
+
+  Offsets are UTF-16 code units throughout — windows, clips and the extent
+  check all count in them, so a source containing an emoji resolves to the
+  characters the backend meant rather than to its neighbours.
+  `rendered_content` is, like `content`, deliberately **not** offset-
+  addressable: its separators are its own. The CLI `--json` / MCP / REST
+  fulltext payloads stay pinned to their existing key sets.
+  ([#2211](https://github.com/teng-lin/notebooklm-py/issues/2211))
+
 - **Notebook sharing now reports the collaborator cap and the public-sharing
   policy gate.** `GET_SHARE_STATUS` returns an eight-slot response carrying six
   known response fields — five of them non-null on every row observed, the sixth

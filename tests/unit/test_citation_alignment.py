@@ -51,6 +51,7 @@ from notebooklm.types import (
     DocumentAnnotation,
     DocumentBlock,
     ListStyle,
+    SourceFulltext,
     StructuredDocument,
     TextSpan,
     utf16_len,
@@ -337,6 +338,196 @@ class TestOffsetResolution:
         assert document.annotations_for("missing") == ()
 
 
+class TestReadableRendering:
+    """``render()`` — the readable third rendering, derived from the tree (#2211).
+
+    ``content`` joins text *runs*; ``text`` joins nothing at all because its
+    offsets forbid it. Neither reads well, and the numbers below are the
+    capture's own measure of how badly.
+    """
+
+    def test_render_reassembles_the_paragraph_the_flat_rendering_splits(
+        self, source_result: list[Any]
+    ) -> None:
+        """13 blocks read as 13 lines, where the flat rendering makes 17.
+
+        The capture's second block is one paragraph the backend emitted as
+        three runs — ``"…light energy into"``, ``" "``, ``"chemical energy."``
+        — and ``content`` puts each on its own line. That is the defect this
+        rendering exists to fix, so both numbers are asserted: a render that
+        stopped joining runs would read 17 too.
+        """
+        from notebooklm._source.content import SourceContentRenderer
+
+        document = build_document(source_result[3][0])
+        flat = "\n".join(SourceContentRenderer(None).extract_all_text(source_result[3][0]))
+
+        assert len(document.blocks) == 13
+        assert len(flat.split("\n")) == 17
+        assert len(document.render().split("\n")) == 13
+
+        # The paragraph the flat rendering broke into three lines, whole.
+        assert (
+            "Photosynthesis is the process by which green plants convert light "
+            "energy into chemical energy."
+        ) in document.render()
+        assert "light energy into\n \nchemical energy." in flat
+
+    def test_render_is_the_readable_rendering_and_not_the_addressable_one(
+        self, source_result: list[Any]
+    ) -> None:
+        """Its separators are its own, so it is deliberately not sliceable.
+
+        The distinction the issue turns on: ``text`` is laid out at the
+        backend's offsets (``slice(108, 133)`` is exactly what the backend
+        meant), while ``render()`` inserts 12 newlines of its own and so
+        answers a different question.
+        """
+        document = build_document(source_result[3][0])
+        rendered = document.render()
+
+        assert document.slice(108, 133) == "Light-dependent reactions"
+        assert rendered[108:133] != "Light-dependent reactions"
+        assert utf16_len(document.text) == document.extent == 532
+        assert utf16_len(rendered) == 532 + 12  # one separator per block boundary
+        assert "\n" not in document.text
+
+    def test_a_window_renders_only_the_part_of_a_block_inside_it(
+        self, source_result: list[Any]
+    ) -> None:
+        """A range that cuts through blocks reads as a window, not as whole blocks.
+
+        This is what lets a citation window be tight around the cited span
+        instead of spilling into the surrounding blocks entirely.
+        """
+        document = build_document(source_result[3][0])
+        # 100..200 opens mid-paragraph (block 14-108) and closes mid-sentence
+        # of the block at 183-216.
+        assert document.render(100, 200) == (
+            " energy.\nLight-dependent reactions\n"
+            "These occur in the thylakoid membrane. Key points:\nWater is split, r"
+        )
+        # Same range on the addressable surface: identical text, no separators.
+        assert document.slice(100, 200) == document.render(100, 200).replace("\n", "")
+
+    def test_a_window_is_addressed_in_utf16_units_like_every_other_offset(self) -> None:
+        """The bug class #2210 spent five rounds on, at this new surface.
+
+        With an emoji ahead of it, a window read by Python index lands a
+        character early and silently returns neighbouring text.
+        """
+        document = StructuredDocument(
+            blocks=(
+                DocumentBlock(0, 2, (TextSpan(0, 2, "\U0001f52c"),)),
+                DocumentBlock(2, 7, (TextSpan(2, 7, "hello"),)),
+                DocumentBlock(7, 12, (TextSpan(7, 12, "world"),)),
+            )
+        )
+        assert document.extent == 12
+        assert document.render(2, 7) == "hello"
+        assert document.render(7, 12) == "world"
+        # The same bounds read as Python code points land a character early:
+        # the emoji is one character and two units, so everything after it
+        # drifts by one.
+        assert document.render().replace("\n", "")[7:12] == "orld"
+
+    def test_a_window_cutting_into_a_span_cuts_it_in_utf16_units_too(self) -> None:
+        """The same unit confusion, one level down — inside a single run.
+
+        A window ending mid-block clips the run itself, and clipping by Python
+        index drifts by exactly the same amount. It survives the block-level
+        test above (which only ever selects whole runs), so it needs its own.
+        """
+        document = StructuredDocument(
+            blocks=(DocumentBlock(0, 13, (TextSpan(0, 13, "\U0001f52c alpha beta"),)),)
+        )
+        assert document.extent == 13
+        assert document.render(2, 8) == " alpha"
+        # Clipping the same run by Python index starts a character late.
+        assert "\U0001f52c alpha beta"[2:8] == "alpha "
+
+    def test_a_window_cutting_a_surrogate_pair_in_half_does_not_leak_one(self) -> None:
+        """A half-emoji must degrade to filler, not to an unencodable string.
+
+        The cut is the caller's, not the wire's, so this shape is reachable
+        from any window a caller chooses — and a lone surrogate reaching a
+        reader moves the failure to whoever next prints or serializes it.
+        """
+        document = StructuredDocument(
+            blocks=(DocumentBlock(0, 2, (TextSpan(0, 2, "\U0001f52c"),)),)
+        )
+        assert document.render(0, 1) == "￼"
+        document.render(0, 1).encode("utf-8")
+
+    def test_a_block_with_no_text_is_omitted_rather_than_rendered_blank(self) -> None:
+        """Filler holds a *position*; a reader wants neither the filler nor a gap.
+
+        ``text`` must fill an image's positions to keep later offsets true.
+        ``render()`` has no offsets to keep, so it drops the block entirely
+        instead of emitting a blank line or a ``"\\ufffc"``.
+        """
+        document = StructuredDocument(
+            blocks=(
+                DocumentBlock(0, 2, (TextSpan(0, 2, "ab"),)),
+                DocumentBlock(2, 5, kind=BlockKind.IMAGE),
+                DocumentBlock(5, 7, (TextSpan(5, 7, "cd"),)),
+            )
+        )
+        assert document.text == "ab￼￼￼cd"  # three positions held open
+        assert document.render() == "ab\ncd"
+
+    def test_render_reads_forwards_however_the_blocks_arrived(self) -> None:
+        """Container order is not authoritative anywhere else here, nor here."""
+        document = StructuredDocument(
+            blocks=(
+                DocumentBlock(5, 10, (TextSpan(5, 10, "world"),)),
+                DocumentBlock(0, 5, (TextSpan(0, 5, "hello"),)),
+            )
+        )
+        assert document.render() == "hello\nworld"
+
+    def test_an_empty_or_inverted_window_renders_nothing(self) -> None:
+        document = StructuredDocument(blocks=(DocumentBlock(0, 5, (TextSpan(0, 5, "hello"),)),))
+        assert document.render(3, 3) == ""
+        assert document.render(4, 2) == ""
+        assert document.render(9, 20) == ""
+        assert StructuredDocument().render() == ""
+        # A negative lower bound is clamped, not reinterpreted end-relative.
+        assert document.render(-4, 5) == "hello"
+
+    @pytest.mark.asyncio
+    async def test_fulltext_exposes_the_rendering_without_moving_content(
+        self, source_result: list[Any]
+    ) -> None:
+        """``SourceFulltext.rendered_content`` is additive: ``content`` is untouched."""
+        from notebooklm._source.content import SourceContentRenderer
+
+        class _StubRpc:
+            async def rpc_call(self, *args: Any, **kwargs: Any) -> Any:
+                return source_result
+
+        renderer = SourceContentRenderer(_StubRpc())
+        fulltext = await renderer.get_fulltext("nb", SOURCE_ID)
+
+        assert fulltext.content == "\n".join(renderer.extract_all_text(source_result[3][0]))
+        assert fulltext.rendered_content == fulltext.document.render()
+        assert len(fulltext.rendered_content.split("\n")) == 13
+        assert len(fulltext.content.split("\n")) == 17
+        # A size over ``content``, deliberately not recomputed for the new view.
+        assert fulltext.char_count == len(fulltext.content)
+
+    def test_rendered_content_is_empty_when_no_document_decoded(self) -> None:
+        """Strictly structural: it never falls back to flattening ``content``.
+
+        A source whose text arrived as bare strings has ``content`` and no
+        blocks; reporting ``content`` here would make the field mean two
+        different things depending on the response shape.
+        """
+        fulltext = SourceFulltext(source_id="s", title="t", content="some text", char_count=9)
+        assert fulltext.content == "some text"
+        assert fulltext.rendered_content == ""
+
+
 #: Adversarial documents, each built to break one assumption the layout makes
 #: about wire-supplied offsets. Every entry is a shape review found (or the
 #: neighbouring shape it implied) across five rounds on #2210.
@@ -461,6 +652,45 @@ class TestLayoutInvariantsUnderAdversarialInput:
         # Must not *raise*; an empty document legitimately encodes to b"".
         text.encode("utf-8")
         json.dumps(text, ensure_ascii=False)
+
+    @pytest.mark.parametrize(
+        ("label", "factory"), _ADVERSARIAL_DOCUMENTS, ids=[n for n, _ in _ADVERSARIAL_DOCUMENTS]
+    )
+    def test_render_is_exactly_the_blocks_own_text_in_position_order(
+        self, label: str, factory: Any
+    ) -> None:
+        """The readable rendering adds separators and invents nothing else.
+
+        Stated against ``DocumentBlock.text``, the surface each block already
+        guarantees (ordered, clamped, sanitized), so the rendering inherits
+        those guarantees rather than re-deriving them — including on the shapes
+        where the layout has to clamp, pad or drop something.
+        """
+        document = factory()
+        expected = [
+            block.text
+            for block in sorted(document.blocks, key=lambda b: (b.start_index, b.end_index))
+            if block.text
+        ]
+        assert document.render() == "\n".join(expected)
+
+    @pytest.mark.parametrize(
+        ("label", "factory"), _ADVERSARIAL_DOCUMENTS, ids=[n for n, _ in _ADVERSARIAL_DOCUMENTS]
+    )
+    def test_render_is_always_encodable_and_serializable(self, label: str, factory: Any) -> None:
+        """Whatever comes out must survive being printed, logged or serialized.
+
+        The same guarantee ``text`` carries: a lone surrogate reaching a reader
+        moves the failure to whoever next encodes it. Windowed as well as
+        whole, because the cut itself can manufacture one.
+        """
+        document = factory()
+        extent = document.extent
+        for start in range(extent + 2):
+            for end in range(start, extent + 2):
+                rendered = document.render(start, end)
+                rendered.encode("utf-8")
+                json.dumps(rendered, ensure_ascii=False)
 
     @pytest.mark.parametrize(
         ("label", "factory"), _ADVERSARIAL_DOCUMENTS, ids=[n for n, _ in _ADVERSARIAL_DOCUMENTS]

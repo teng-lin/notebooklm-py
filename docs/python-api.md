@@ -2777,6 +2777,25 @@ the reading that stays readable.
 flat `content`, but prefer `document.slice()`: it is exact, and it needs no
 search.
 
+`resolve_chat_reference_passage()` now does that for you
+([#2211](https://github.com/teng-lin/notebooklm-py/issues/2211)). It reads the
+passage out of the citation's own range and returns it in the readable
+rendering, falling back to the `content` search only for a reference with no
+usable range or a source whose document did not decode:
+
+```python
+from notebooklm import resolve_chat_reference_passage
+
+passage = await resolve_chat_reference_passage(client, notebook_id, ref)
+```
+
+The range is checked against `document.extent` first, so a citation whose
+offsets no longer fit the source — re-indexed since the answer was
+generated — falls back to the search instead of returning whatever text now
+occupies those positions. A reference carrying neither a range nor
+`cited_text` (a structural anchor) still raises `ChatResponseParseError`
+without issuing a request.
+
 **Tip:** Cache `fulltext` when processing multiple citations from the same source to avoid repeated API calls.
 
 ### ShareStatus
@@ -2928,6 +2947,10 @@ class SourceFulltext:
     def kind(self) -> SourceType:
         """Get source type as SourceType enum."""
 
+    @property
+    def rendered_content(self) -> str:
+        """Readable rendering derived from `document`: one line per block."""
+
     def find_citation_context(
         self,
         cited_text: str,
@@ -2940,7 +2963,7 @@ class SourceFulltext:
 > `SourceFulltext.kind`. See
 > [stability.md → Removed in v0.5.0](stability.md#removed-in-v050).
 
-#### `content` vs `document`
+#### `content` vs `document` vs `rendered_content`
 
 The backend returns a source's text as a `TailwindDoc` tree — headings, list
 structure, per-run styling, and a character offset on every node. `content` is
@@ -2971,11 +2994,36 @@ for block in fulltext.document.blocks:
 fulltext.document.slice(ref.start_char, ref.end_char)
 ```
 
+`rendered_content` is the third reading, and the one meant for a human
+([#2211](https://github.com/teng-lin/notebooklm-py/issues/2211)). `content`
+joins every text *run* with `"\n"`, and a run is a sub-paragraph fragment — so
+a paragraph the backend split into three runs becomes three lines. On this
+repo's own captured test source that turns 13 blocks into 17 lines. Since the
+tree is parsed, `rendered_content` renders from it instead: runs joined
+*within* a block, blocks separated. It costs no extra request, `content` does
+not move, and like `content` it is deliberately **not** offset-addressable —
+its separators are its own.
+
+```python
+fulltext.content            # 17 lines: "…light energy into\n \nchemical energy."
+fulltext.rendered_content   # 13 lines: "…light energy into chemical energy."
+fulltext.document.text      # 532 units, no separators at all — the offset space
+```
+
+`document`, `char_count` and `rendered_content` are Python-API surfaces: the
+CLI `--json`, MCP and REST fulltext payloads stay pinned to their existing key
+sets, and `source read --offset` keeps windowing `content` in Python
+characters.
+
 `StructuredDocument` exposes `blocks` (`DocumentBlock`: `start_index`,
 `end_index`, `spans`, `style`, `list_info`, `kind`), `annotations`
 (`DocumentAnnotation`: `object_id`, `start_index`, `end_index`), `text`,
-`slice()` and `annotations_for()`. Each `TextSpan` carries its own range plus
-`bold` / `italic` / `underline` / `url`.
+`extent`, `slice()`, `render()` and `annotations_for()`. Each `TextSpan`
+carries its own range plus `bold` / `italic` / `underline` / `url`.
+`render(start, end)` is `rendered_content` over one range — the readable
+counterpart of `slice(start, end)` — and `extent` is the document's total
+width in UTF-16 units, i.e. the upper bound of the coordinate space: a range
+is addressable exactly when `0 <= start < end <= extent`.
 
 `text` is laid out at the backend's own offsets, so `slice(n, m)` is exactly
 what the backend meant by `[n, m)`. Positions the document occupies but whose
