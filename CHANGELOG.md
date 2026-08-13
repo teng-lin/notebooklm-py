@@ -24,11 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `content` joins every text **run** with `"\n"`, and a run is a sub-paragraph
   fragment — so a paragraph the backend split into three runs arrives as three
   lines. That was a consequence of flattening a tree nobody had parsed, not a
-  rendering anyone chose: on this repo's captured test source it turns 13
-  blocks into 17 lines. `rendered_content` renders from the parsed tree
-  instead — runs joined *within* a block, blocks separated — so the same
-  paragraph comes back whole. It is derived, costs no extra request, and
-  leaves `content` and `char_count` exactly where they were.
+  rendering anyone chose: on the captured source in
+  `tests/unit/fixtures/source_fulltext_tailwind_doc.json` it turns 13 blocks
+  into 17 lines, and live on a 382-block Wikipedia source it turns those into
+  1518. `rendered_content` renders from the parsed tree instead — runs joined
+  *within* a block, blocks separated, blocks with nothing to read omitted — so
+  the same paragraph comes back whole. It is marker-free by design (list
+  glyphs and heading levels stay on `blocks`), derived, costs no extra request,
+  and leaves `content` and `char_count` exactly where they were.
 
   **`resolve_chat_reference_passage()` now resolves by offset.** A citation
   carries `start_char` / `end_char` into the source document, so the helper
@@ -42,13 +45,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure mode instead of bounding it, and picks the *cited* occurrence in a
   source that says the same thing twice, which no search can do.
 
-  Two guards keep the rewrite honest. A reference carrying neither a range nor
+  Four guards keep the rewrite honest. A reference carrying neither a range nor
   `cited_text` still raises without issuing a request — fetching first would
-  turn a structural anchor into an RPC the helper used to avoid. And the range
-  is checked against `document.extent` before it is used, so a citation whose
-  offsets no longer fit the source (re-indexed since the answer was generated)
-  falls back to the search rather than silently returning whatever text now
-  occupies those positions.
+  turn a structural anchor into an RPC the helper used to avoid. The range must
+  **fit** the document (`end <= document.extent`), must **render something on
+  its own** before any context window is added — so a citation covering only an
+  image is not handed its neighbours' prose — and, when the reference also
+  carries `cited_text`, the two must **agree**: a bounded prefix of
+  `cited_text` has to appear in `document.slice(start, end)`.
+
+  That last one is the case an extent check cannot see. Checking the bound only
+  catches a source re-indexed *shorter*; re-index one longer, or move text
+  within it, and the stale range still fits and still resolves — to the wrong
+  passage, silently. The value search this replaced detected that for free by
+  failing to match, so `cited_text` is kept as a **cross-check** (never as a
+  locator): the offsets decide where the passage is, and a disagreement stands
+  them down in favour of the search.
 
   Offsets are UTF-16 code units throughout — windows, clips and the extent
   check all count in them, so a source containing an emoji resolves to the
@@ -305,7 +317,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no decodable document keeps the previous output byte for byte, since
   the search fallback is unchanged. Callers matching on the returned string's
   exact line breaks should switch to `document.slice(ref.start_char,
-  ref.end_char)`, which returns the range and nothing else.
+  ref.end_char)`, which returns the range and nothing else. The
+  `ChatResponseParseError` message also changed: it now names only what was
+  actually attempted, so it distinguishes a range that no longer fits its
+  source from a citation that never carried one.
   ([#2211](https://github.com/teng-lin/notebooklm-py/issues/2211))
 - **Passing a non-enum `quantity` / `difficulty` to `generate_quiz()` /
   `generate_flashcards()` now raises `ValidationError`**

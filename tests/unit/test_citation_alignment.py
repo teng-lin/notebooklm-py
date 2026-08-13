@@ -486,6 +486,69 @@ class TestReadableRendering:
         )
         assert document.render() == "hello\nworld"
 
+    def test_a_half_specified_window_is_refused_rather_than_guessed(self) -> None:
+        """The one place ``render`` and ``slice`` would silently disagree.
+
+        ``slice`` takes the same optional pair and returns ``""`` when either
+        bound is absent, because a citation the answer did not annotate carries
+        ``None``. Reading a missing bound here as "unbounded" would turn a
+        substituted ``slice`` call into the whole document — the plausible
+        wrong answer this module exists to prevent — so it raises instead.
+        """
+        document = StructuredDocument(blocks=(DocumentBlock(0, 5, (TextSpan(0, 5, "hello"),)),))
+        for start, end in ((0, None), (None, 5)):
+            with pytest.raises(ValueError, match="both bounds or neither"):
+                document.render(start, end)
+        assert document.slice(None, 5) == document.slice(0, None) == ""
+        assert document.render() == "hello"
+
+    def test_a_run_wider_than_the_range_it_declares_is_trimmed_to_it(self) -> None:
+        """A rendering may not return text outside the space it renders from.
+
+        The wire has never sent this (every capture has ``utf16_len(text) ==
+        end_index - start_index``), but returning the run whole would let a
+        window come back wider than the range asked for, and make widening a
+        window by one unit multiply its answer. Trimmed, not padded: a run
+        *short* of its range renders as what decoded, since filler holds
+        positions and this rendering holds none.
+        """
+        too_long = StructuredDocument(
+            blocks=(DocumentBlock(0, 2, (TextSpan(0, 2, "much too long"),)),)
+        )
+        assert too_long.text == "mu"
+        assert too_long.render() == too_long.render(0, 2) == "mu"
+        assert too_long.render(0, 1) == "m"
+
+        too_short = StructuredDocument(blocks=(DocumentBlock(0, 10, (TextSpan(0, 10, "short"),)),))
+        assert too_short.text == "short￼￼￼￼￼"  # the layout pads to hold the positions
+        assert too_short.render() == "short"  # the rendering has none to hold
+
+    def test_list_markers_and_heading_levels_are_deliberately_not_rendered(
+        self, source_result: list[Any]
+    ) -> None:
+        """This is the flat rendering ``content`` should have been, not markdown.
+
+        The capture's numbered list carries ``ListInfo(glyph="1."…)`` and its
+        heading a ``HEADING_3`` style, and the rendering emits neither — a
+        decision worth pinning, so that adding markers is a deliberate change
+        (a keyword argument) rather than a silent one. The structure stays
+        available on ``blocks`` for callers that want to render it themselves.
+        """
+        document = build_document(source_result[3][0])
+        ordered = [block for block in document.blocks if block.is_list_item]
+        assert [block.list_info.glyph for block in ordered if block.list_info] == [
+            "•",
+            "•",
+            "•",
+            "1.",
+            "2.",
+            "3.",
+        ]
+        rendered = document.render().split("\n")
+        assert "Limiting factors" in rendered  # a HEADING_3, rendered bare
+        assert "Temperature" in rendered  # an item whose glyph is "3."
+        assert not any(line.startswith(("•", "1.", "#")) for line in rendered)
+
     def test_an_empty_or_inverted_window_renders_nothing(self) -> None:
         document = StructuredDocument(blocks=(DocumentBlock(0, 5, (TextSpan(0, 5, "hello"),)),))
         assert document.render(3, 3) == ""
@@ -509,12 +572,23 @@ class TestReadableRendering:
         renderer = SourceContentRenderer(_StubRpc())
         fulltext = await renderer.get_fulltext("nb", SOURCE_ID)
 
-        assert fulltext.content == "\n".join(renderer.extract_all_text(source_result[3][0]))
+        # The capture's own first three lines, quoted rather than re-derived
+        # from the extractor: the paragraph arrives split across two of them.
+        assert fulltext.content.startswith(
+            "Photosynthesis\n"
+            "Photosynthesis is the process by which green plants convert light energy into\n"
+            " \n"
+        )
+        assert fulltext.rendered_content.startswith(
+            "Photosynthesis\n"
+            "Photosynthesis is the process by which green plants convert light "
+            "energy into chemical energy.\n"
+        )
         assert fulltext.rendered_content == fulltext.document.render()
         assert len(fulltext.rendered_content.split("\n")) == 13
         assert len(fulltext.content.split("\n")) == 17
         # A size over ``content``, deliberately not recomputed for the new view.
-        assert fulltext.char_count == len(fulltext.content)
+        assert fulltext.char_count == len(fulltext.content) == 548
 
     def test_rendered_content_is_empty_when_no_document_decoded(self) -> None:
         """Strictly structural: it never falls back to flattening ``content``.
@@ -656,23 +730,77 @@ class TestLayoutInvariantsUnderAdversarialInput:
     @pytest.mark.parametrize(
         ("label", "factory"), _ADVERSARIAL_DOCUMENTS, ids=[n for n, _ in _ADVERSARIAL_DOCUMENTS]
     )
-    def test_render_is_exactly_the_blocks_own_text_in_position_order(
+    def test_a_window_never_renders_more_text_than_it_selects(
         self, label: str, factory: Any
     ) -> None:
-        """The readable rendering adds separators and invents nothing else.
+        """The rendering stays inside the coordinate space it renders from.
 
-        Stated against ``DocumentBlock.text``, the surface each block already
-        guarantees (ordered, clamped, sanitized), so the rendering inherits
-        those guarantees rather than re-deriving them — including on the shapes
-        where the layout has to clamp, pad or drop something.
+        No block may come back wider than the window that selected it. Without
+        this a run whose text is wider than its declared range escapes: the
+        window returns text the caller's range does not cover, and widening the
+        request by one unit can multiply the answer — the fully-covered run
+        being suddenly returned whole. That is the drift class ``_fit`` already
+        contains for :attr:`text`.
+
+        Stated per line rather than over the whole string because overlapping
+        blocks (a malformed document) each render in full, by design: the
+        rendering holds no offsets, so it has nothing to keep true by
+        de-duplicating, and dropping one of two blocks that both claim a range
+        would hide text that decoded.
+        """
+        document = factory()
+        limit = document.extent
+        for start in range(limit + 2):
+            for end in range(start, limit + 2):
+                rendered = document.render(start, end)
+                for line in rendered.split("\n") if rendered else []:
+                    assert utf16_len(line) <= end - start
+
+    @pytest.mark.parametrize(
+        ("label", "factory"), _ADVERSARIAL_DOCUMENTS, ids=[n for n, _ in _ADVERSARIAL_DOCUMENTS]
+    )
+    def test_render_never_emits_a_blank_line(self, label: str, factory: Any) -> None:
+        """A block with nothing to read is dropped, not turned into a gap.
+
+        Whole-document and windowed: a window that clips a block down to
+        nothing must drop it too, or a tight citation window fills with blank
+        lines from its neighbours.
+        """
+        document = factory()
+        for start in range(document.extent + 2):
+            for end in range(start, document.extent + 2):
+                rendered = document.render(start, end)
+                assert "" not in (rendered.split("\n") if rendered else [])
+
+    @pytest.mark.parametrize(
+        ("label", "factory"), _ADVERSARIAL_DOCUMENTS, ids=[n for n, _ in _ADVERSARIAL_DOCUMENTS]
+    )
+    def test_well_formed_blocks_read_back_verbatim_and_in_order(
+        self, label: str, factory: Any
+    ) -> None:
+        """Damage stays inside the block that carries it — the render's copy.
+
+        The sibling assertion for :meth:`slice`, stated on the readable
+        surface: every block whose spans tile it exactly must appear as its own
+        line, and those lines must appear in position order however the blocks
+        arrived. Restricted to well-formed blocks because a malformed one is
+        legitimately normalised (see the width test above), and stated as a
+        subsequence so it says nothing about what the neighbours render as.
         """
         document = factory()
         expected = [
             block.text
             for block in sorted(document.blocks, key=lambda b: (b.start_index, b.end_index))
             if block.text
+            and all(
+                utf16_len(span.text) == span.end_index - span.start_index for span in block.spans
+            )
         ]
-        assert document.render() == "\n".join(expected)
+        lines = iter(document.render().split("\n"))
+        for text in expected:
+            assert any(line == text for line in lines), (
+                f"{text!r} missing from the render, or out of position order"
+            )
 
     @pytest.mark.parametrize(
         ("label", "factory"), _ADVERSARIAL_DOCUMENTS, ids=[n for n, _ in _ADVERSARIAL_DOCUMENTS]

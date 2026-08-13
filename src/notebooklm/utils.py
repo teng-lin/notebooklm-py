@@ -28,6 +28,19 @@ if TYPE_CHECKING:
 __all__ = ["resolve_chat_reference_passage"]
 
 
+#: How much of ``cited_text`` to cross-check against the range it declares.
+#: Long enough that agreeing by accident is implausible, short enough to
+#: survive the local disagreements the two readings legitimately have (see
+#: :func:`_quotes_the_same_text`).
+_AGREEMENT_PROBE_CHARS = 32
+
+#: Filler the document layout puts at positions whose text did not decode. The
+#: cross-check strips it, because ``cited_text`` omits those positions while
+#: :meth:`StructuredDocument.slice` holds them open — the one difference
+#: between the two readings that is by design rather than by drift.
+_PLACEHOLDER = "￼"
+
+
 def _declared_range(reference: ChatReference) -> tuple[int, int] | None:
     """The reference's own ``[start_char, end_char)``, or ``None`` if unusable.
 
@@ -36,16 +49,52 @@ def _declared_range(reference: ChatReference) -> tuple[int, int] | None:
     short-circuit below has to decide whether a fetch could possibly help
     before there is a document to check the range against.
 
-    ``ChatReference`` already rejects a half-populated, negative or inverted
-    range at construction, so "unusable" here means **absent** (a citation
-    decoded before the offsets were, or one the server sent without them) or
-    **zero-width** — the anchor shape the backend emits at an insertion point,
-    which selects no text however it is resolved.
+    "Unusable" means **absent** — a citation whose fragment decoded no blocks,
+    or one from before the offsets were read — or **empty**, where the two
+    bounds coincide and the range selects nothing however it is resolved.
+    ``ChatReference.__post_init__`` rejects a half-populated, negative or
+    inverted range, so only assignment *after* construction can produce one;
+    ``end <= start`` covers that case too rather than trusting the invariant to
+    hold for a value this function did not build.
     """
     start, end = reference.start_char, reference.end_char
     if start is None or end is None or end <= start:
         return None
     return start, end
+
+
+def _quotes_the_same_text(
+    document: StructuredDocument, cited_text: str, start: int, end: int
+) -> bool:
+    """Whether ``[start, end)`` still resolves to what the citation quoted.
+
+    The range is the exact instrument; ``cited_text`` is the independent
+    reading of the same fragment, so comparing them catches the one failure
+    :attr:`StructuredDocument.extent` cannot. An extent check only notices a
+    source that *shrank*: re-index a source so that it grew, or so that text
+    moved within it, and a stale range still fits and still resolves — to the
+    wrong passage, silently. The value search this helper replaced had that
+    detection for free, by failing to match; keeping it means the offset path
+    is faster and exact *and* no blinder than what it replaced.
+
+    This is a cross-check, not a locator: it never decides *where* the passage
+    is, only whether to trust the offsets that already decided. A disagreement
+    stands the range down and the search runs, which either finds the passage
+    or reports that it could not.
+
+    Compares a bounded prefix rather than the whole string because the two
+    readings differ locally by design — ``cited_text`` omits positions this
+    client cannot render as text where :meth:`StructuredDocument.slice` fills
+    them (stripped here), and a run whose text disagrees with its declared
+    width is normalised in one and not the other. ``in`` rather than
+    ``startswith`` for the same reason.
+
+    A ``cited_text`` of nothing but whitespace leaves an empty probe, which
+    matches trivially and stands the check down — correctly: it carries no
+    evidence to contradict the range with.
+    """
+    probe = cited_text.strip()[:_AGREEMENT_PROBE_CHARS]
+    return probe in document.slice(start, end).replace(_PLACEHOLDER, "")
 
 
 def _rendered_window(
@@ -60,27 +109,37 @@ def _rendered_window(
     returning a short or empty passage as though it had resolved:
 
     * :func:`_declared_range` rejects it: an offset is absent, or the range is
-      empty or inverted (a structural-anchor citation, or a reference decoded
-      before the offsets were);
-    * the document decoded no blocks, so there is no coordinate space to index;
-    * ``end_char`` runs past :attr:`StructuredDocument.extent`, which means the
-      range and this document do not describe the same text — the source was
-      re-indexed since the citation was emitted, most likely. Slicing anyway
-      would silently return the truncated head of the range, or nothing;
-    * the range lands entirely on positions that decoded no text (an image, a
-      rule), where there is genuinely no passage to show.
+      empty (a citation whose fragment decoded no blocks, or one decoded before
+      the offsets were);
+    * ``end_char`` runs past :attr:`StructuredDocument.extent`, so the range and
+      this document do not describe the same text. A document that decoded no
+      blocks has extent ``0`` and fails here too, which is the same statement:
+      there is no coordinate space to index;
+    * the citation's own range renders nothing, because it lands entirely on
+      positions that decoded no text (an image, a rule). Tested **before** the
+      context window is applied, so a 200-unit window of neighbouring prose
+      cannot stand in for a passage the citation does not actually have;
+    * the range and ``cited_text`` disagree about what is there — see
+      :func:`_quotes_the_same_text`.
 
     The window is widened by ``context_chars`` on each side in **UTF-16 code
-    units**, the unit the range itself is in.
+    units**, the unit the range itself is in; a negative value is clamped to
+    ``0`` rather than allowed to narrow the citation's own range.
     """
     declared = _declared_range(reference)
     if declared is None:
         return ""
     start, end = declared
-    extent = document.extent
-    if extent == 0 or end > extent:
+    if end > document.extent:
         return ""
-    return document.render(start - context_chars, end + context_chars)
+    if not document.render(start, end):
+        return ""
+    if reference.cited_text and not _quotes_the_same_text(
+        document, reference.cited_text, start, end
+    ):
+        return ""
+    context = max(0, context_chars)
+    return document.render(start - context, end + context)
 
 
 async def resolve_chat_reference_passage(
@@ -135,17 +194,22 @@ async def resolve_chat_reference_passage(
             because the underlying fulltext RPC is notebook-scoped.
         reference: The chat citation to resolve. Must carry either a
             usable ``start_char`` / ``end_char`` range or a non-empty
-            ``cited_text`` — a structural-anchor citation (single-char
-            page/section markers, image refs) has neither and raises
-            :class:`ChatResponseParseError` without issuing a request.
+            ``cited_text``. A citation whose fragment decoded no blocks at
+            all — the structural anchor ``_chat.wire`` reports as
+            ``(None, None, None)`` — has neither and raises
+            :class:`ChatResponseParseError` without issuing a request. A
+            fragment holding only an image or a rule is *not* that case: it
+            decodes a block, so it carries a range, and resolving it takes
+            the fetch.
         context_chars: Approximate number of characters of surrounding
             context to return on each side of the cited span. Defaults
             to 200, which empirically lands ~1–2 sentences of context
-            on either side for prose sources. Counted in UTF-16 code
-            units on the offset path (the unit the range is in) and in
-            Python characters on the search fallback; the two differ only
-            for a source containing astral characters, and only by a
-            character or so of context either way.
+            on either side for prose sources; negative values are clamped
+            to 0. Counted in UTF-16 code units on the offset path (the
+            unit the range is in) and in Python characters on the search
+            fallback, so the same number buys one unit less context per
+            astral character inside the window — no difference at all for
+            text that stays in the Basic Multilingual Plane.
 
     Returns:
         The surrounding passage as a single string — a readable rendering
@@ -159,17 +223,17 @@ async def resolve_chat_reference_passage(
     Raises:
         ChatResponseParseError: If the reference carries neither offsets
             nor ``cited_text`` (nothing to resolve, and no request is
-            made), or if neither path locates the passage — the source may
-            have been re-indexed since the citation was emitted, leaving
-            its offsets pointing outside the current document and its
-            cited text no longer present.
+            made), or if neither path locates the passage. The message
+            names only what was actually attempted, so it distinguishes a
+            range that no longer fits its source from a citation that never
+            carried one.
     """
     if not reference.cited_text and _declared_range(reference) is None:
         raise ChatResponseParseError(
             f"ChatReference for source {reference.source_id!r} has no "
             "cited_text and no character range to resolve. This is typical "
-            "of structural-anchor citations (image/section markers) that "
-            "have no plaintext passage to surface."
+            "of structural-anchor citations whose fragment decoded no blocks "
+            "at all, and which therefore have no plaintext passage to surface."
         )
 
     fulltext = await client.sources.get_fulltext(notebook_id, reference.source_id)
@@ -190,12 +254,21 @@ async def resolve_chat_reference_passage(
             passage, _position = matches[0]
             return passage
 
+    # Report what was actually tried. Naming a failed search that never ran, or
+    # blaming a range the citation does not carry, sends the reader after the
+    # wrong cause — and the two causes have different remedies.
+    declared = _declared_range(reference)
+    attempts = [
+        f"its character range ({reference.start_char}, {reference.end_char}) did not "
+        f"resolve to text in the source's document (extent {fulltext.document.extent})"
+        if declared is not None
+        else "it carries no character range"
+    ]
+    if reference.cited_text:
+        attempts.append("its cited_text was not found in the source's flat content")
     raise ChatResponseParseError(
         f"Could not locate the cited passage in source {reference.source_id!r} "
-        f"of notebook {notebook_id!r}: its character range "
-        f"({reference.start_char}, {reference.end_char}) is not usable against "
-        f"the source's document (extent {fulltext.document.extent}), and its "
-        "cited_text was not found in the source's flat content. The source may "
-        "have been re-indexed since the citation was emitted, or the cited span "
-        "may have been transformed during chunking."
+        f"of notebook {notebook_id!r}: " + ", and ".join(attempts) + ". The source "
+        "may have been re-indexed since the citation was emitted, or the cited "
+        "span may have been transformed during chunking."
     )

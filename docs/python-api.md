@@ -2789,12 +2789,23 @@ from notebooklm import resolve_chat_reference_passage
 passage = await resolve_chat_reference_passage(client, notebook_id, ref)
 ```
 
-The range is checked against `document.extent` first, so a citation whose
-offsets no longer fit the source — re-indexed since the answer was
-generated — falls back to the search instead of returning whatever text now
-occupies those positions. A reference carrying neither a range nor
-`cited_text` (a structural anchor) still raises `ChatResponseParseError`
-without issuing a request.
+Three checks stand the range down, all of them falling back to the search
+rather than returning a passage that only looks right:
+
+- it must **fit** the document (`end <= document.extent`), which catches a
+  source re-indexed shorter;
+- it must **render something** on its own, before any context window is added,
+  so a citation covering only an image is not handed its neighbours' prose;
+- when the reference also carries `cited_text`, the two must **agree** — a
+  bounded prefix of `cited_text` has to appear in `document.slice(start, end)`.
+  This is the case `extent` cannot see: a source re-indexed *longer* leaves the
+  stale range fitting and resolving, to the wrong passage. `cited_text` is used
+  as a cross-check here, never as a locator.
+
+A reference carrying neither a range nor `cited_text` — a citation whose
+fragment decoded no blocks at all — still raises `ChatResponseParseError`
+without issuing a request. A fragment holding only an image *does* carry a
+range, so resolving it takes the fetch and then raises.
 
 **Tip:** Cache `fulltext` when processing multiple citations from the same source to avoid repeated API calls.
 
@@ -2997,12 +3008,20 @@ fulltext.document.slice(ref.start_char, ref.end_char)
 `rendered_content` is the third reading, and the one meant for a human
 ([#2211](https://github.com/teng-lin/notebooklm-py/issues/2211)). `content`
 joins every text *run* with `"\n"`, and a run is a sub-paragraph fragment — so
-a paragraph the backend split into three runs becomes three lines. On this
-repo's own captured test source that turns 13 blocks into 17 lines. Since the
-tree is parsed, `rendered_content` renders from it instead: runs joined
-*within* a block, blocks separated. It costs no extra request, `content` does
-not move, and like `content` it is deliberately **not** offset-addressable —
-its separators are its own.
+a paragraph the backend split into three runs becomes three lines. On the
+captured source in `tests/unit/fixtures/source_fulltext_tailwind_doc.json`
+that turns 13 blocks into 17 lines. Since the tree is parsed,
+`rendered_content` renders from it instead: runs joined *within* a block,
+blocks separated, blocks with nothing to read (an image, a rule) omitted. It
+costs no extra request, `content` does not move, and like `content` it is
+deliberately **not** offset-addressable — its separators are its own. It is
+also marker-free: list glyphs and heading levels stay on `blocks` rather than
+being rendered, so this is the flat rendering `content` should have been, not
+a markdown one.
+
+With `output_format="markdown"` the two are not the same material: `content`
+is then built from the response's HTML rendition while `document` — and so
+`rendered_content` — is still parsed from its text blocks.
 
 ```python
 fulltext.content            # 17 lines: "…light energy into\n \nchemical energy."
@@ -3010,10 +3029,11 @@ fulltext.rendered_content   # 13 lines: "…light energy into chemical energy."
 fulltext.document.text      # 532 units, no separators at all — the offset space
 ```
 
-`document`, `char_count` and `rendered_content` are Python-API surfaces: the
-CLI `--json`, MCP and REST fulltext payloads stay pinned to their existing key
-sets, and `source read --offset` keeps windowing `content` in Python
-characters.
+`document` and `rendered_content` are Python-API surfaces: the CLI `--json`,
+MCP and REST fulltext payloads stay pinned to their existing key sets. Those
+payloads do carry `char_count`, which counts Python characters of `content` —
+and `source read --offset` keeps windowing `content` in those same units, not
+in the document's.
 
 `StructuredDocument` exposes `blocks` (`DocumentBlock`: `start_index`,
 `end_index`, `spans`, `style`, `list_info`, `kind`), `annotations`
@@ -3021,9 +3041,12 @@ characters.
 `extent`, `slice()`, `render()` and `annotations_for()`. Each `TextSpan`
 carries its own range plus `bold` / `italic` / `underline` / `url`.
 `render(start, end)` is `rendered_content` over one range — the readable
-counterpart of `slice(start, end)` — and `extent` is the document's total
-width in UTF-16 units, i.e. the upper bound of the coordinate space: a range
-is addressable exactly when `0 <= start < end <= extent`.
+counterpart of `slice(start, end)`, though it takes both bounds or neither and
+raises on a half-specified range, where `slice` absorbs a `None` bound and
+returns `""`. `extent` is the document's total width in UTF-16 units, i.e. the
+upper bound of the coordinate space: a range is *in range* when
+`0 <= start < end <= extent`. That is necessary and not sufficient — a range
+inside it can still cover only positions that decoded no text.
 
 `text` is laid out at the backend's own offsets, so `slice(n, m)` is exactly
 what the backend meant by `[n, m)`. Positions the document occupies but whose

@@ -55,7 +55,7 @@ def _build_block_document_response(
     *,
     source_id: str,
     title: str,
-    blocks: list[list[str]],
+    blocks: list[list[str] | int],
     build_rpc_response,
 ) -> tuple[bytes, str, tuple[int, int]]:
     """A GET_SOURCE response whose ``result[3][0]`` is a real document ``Body``.
@@ -67,7 +67,8 @@ def _build_block_document_response(
 
     Each inner list is one block's **runs**: the sub-paragraph fragments the
     backend splits a paragraph into, and the reason ``content`` renders a
-    paragraph as several lines.
+    paragraph as several lines. An ``int`` in place of a list is a block that
+    occupies that many positions and decodes no text — an image or a rule.
 
     Offsets are laid out with :func:`utf16_len`, not ``len`` — the wire counts
     UTF-16 code units, so a block containing an emoji occupies one more
@@ -81,8 +82,14 @@ def _build_block_document_response(
     elements: list[object] = []
     cursor = 0
     for runs in blocks:
-        spans = []
         block_start = cursor
+        if isinstance(runs, int):
+            # A block that occupies positions and decodes no text — what an
+            # image or a horizontal rule looks like once parsed.
+            cursor += runs
+            elements.append([block_start, cursor, [[]]])
+            continue
+        spans = []
         for run in runs:
             end = cursor + utf16_len(run)
             spans.append([cursor, end, [run]])
@@ -96,7 +103,9 @@ def _build_block_document_response(
     ]
     return (
         build_rpc_response(RPCMethod.GET_SOURCE, data).encode(),
-        "".join(run for runs in blocks for run in runs),
+        # ``cited_text`` omits the positions that decode no text, exactly as
+        # ``_chat.wire.extract_text_passages`` does.
+        "".join(run for runs in blocks if not isinstance(runs, int) for run in runs),
         (0, cursor),
     )
 
@@ -612,8 +621,14 @@ class TestOffsetResolution:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ) -> None:
-        """The knob keeps working on the path that no longer searches."""
-        blocks = [["Before block."], ["The cited block."], ["After block."]]
+        """The knob keeps working on the path that no longer searches.
+
+        Every block here is split into two runs, which is what makes the
+        assertions witness the offset path rather than agree with the search:
+        the flat ``content`` the fallback windows puts each *run* on its own
+        line, so a passage it returned would carry a newline mid-sentence.
+        """
+        blocks = [["Before ", "block."], ["The cited ", "block."], ["After ", "block."]]
         response, _all_text, _range = _build_block_document_response(
             source_id="src_ctx",
             title="Context",
@@ -637,9 +652,12 @@ class TestOffsetResolution:
             wide = await resolve_chat_reference_passage(
                 client, "nb_ctx", reference, context_chars=40
             )
+            fulltext = await client.sources.get_fulltext("nb_ctx", "src_ctx")
 
         assert narrow == "The cited block."
         assert wide == "Before block.\nThe cited block.\nAfter block."
+        # What the search fallback would have had to work with, for contrast.
+        assert fulltext.content == "Before \nblock.\nThe cited \nblock.\nAfter \nblock."
 
     @pytest.mark.asyncio
     async def test_a_source_containing_an_emoji_resolves_to_the_right_characters(
@@ -655,8 +673,19 @@ class TestOffsetResolution:
         one. Nothing raises when that goes wrong — the passage simply starts a
         character early — which is why this composition needs a test of its own
         rather than a code review.
+
+        The source quotes itself, so the assertions witness the *offset* path:
+        a search for the cited text lands on the first occurrence, whose
+        neighbourhood is the heading, while the range names the second.
         """
-        blocks = [["\U0001f52c Lab notes"], ["The assay ran for six hours."], ["Inconclusive."]]
+        cited = "The assay ran for six hours."
+        blocks = [
+            ["\U0001f52c Lab notes"],
+            [cited],
+            ["Interlude."],
+            [cited],
+            ["Final remarks."],
+        ]
         response, _all_text, _range = _build_block_document_response(
             source_id="src_emoji",
             title="Lab notes",
@@ -665,27 +694,36 @@ class TestOffsetResolution:
         )
         httpx_mock.add_response(content=response, is_reusable=True)
 
-        start = utf16_len("\U0001f52c Lab notes")
-        assert start == 12  # 2 units for the emoji, 10 for " Lab notes"
+        assert utf16_len("\U0001f52c Lab notes") == 12  # 2 units for the emoji, 10 for the rest
         assert len("\U0001f52c Lab notes") == 11  # ...and 11 Python characters
+        second_start = sum(utf16_len(runs[0]) for runs in blocks[:3])
+        assert second_start == 50
 
         reference = ChatReference(
             source_id="src_emoji",
-            cited_text="The assay ran for six hours.",
-            start_char=start,
-            end_char=start + utf16_len("The assay ran for six hours."),
+            cited_text=cited,
+            start_char=second_start,
+            end_char=second_start + utf16_len(cited),
         )
 
         async with NotebookLMClient(auth_tokens) as client:
             passage = await resolve_chat_reference_passage(
                 client, notebook_id="nb_emoji", reference=reference, context_chars=0
             )
+            windowed = await resolve_chat_reference_passage(
+                client, notebook_id="nb_emoji", reference=reference, context_chars=14
+            )
             fulltext = await client.sources.get_fulltext("nb_emoji", "src_emoji")
 
-        assert passage == "The assay ran for six hours."
+        assert passage == cited
+        # The cited occurrence, not the first one a search would return.
+        assert "Final remarks." in windowed
+        assert "Lab notes" not in windowed
         # The same range read as Python code points is off by the emoji's
         # extra unit, and returns text that looks almost right.
-        assert fulltext.document.text[start : start + 28] == "he assay ran for six hours.I"
+        assert fulltext.document.text[second_start : second_start + utf16_len(cited)] == (
+            "he assay ran for six hours.F"
+        )
 
     @pytest.mark.asyncio
     async def test_an_unusable_range_with_no_cited_text_raises_with_both_readings(
@@ -722,3 +760,199 @@ class TestOffsetResolution:
                 )
 
         assert "Could not locate" in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_a_stale_range_that_still_fits_is_caught_by_the_cited_text(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ) -> None:
+        """The failure ``extent`` cannot see: a source that was re-indexed *longer*.
+
+        Checking the range against the document's extent only notices a source
+        that shrank. Grow one — a preface added ahead of the cited paragraph —
+        and the stale range still fits, still resolves, and resolves to the
+        wrong text. The search this path replaced detected that for free by
+        failing to match, so the offset path cross-checks ``cited_text`` before
+        trusting the range, and stands down when the two disagree.
+        """
+        cited_text = "The cited sentence sits here."
+        response, _all_text, _range = _build_block_document_response(
+            source_id="src_grown",
+            title="Grown since the answer",
+            blocks=[["A preface added since the answer."], [cited_text], ["Tail matter."]],
+            build_rpc_response=build_rpc_response,
+        )
+        httpx_mock.add_response(content=response)
+
+        # The offsets the citation was emitted with: block 0 of the *old*
+        # document, which is now the preface.
+        stale = ChatReference(
+            source_id="src_grown",
+            cited_text=cited_text,
+            start_char=0,
+            end_char=utf16_len(cited_text),
+        )
+        assert stale.end_char < utf16_len("A preface added since the answer.") + utf16_len(
+            cited_text
+        )  # the stale range fits the grown document, so extent cannot reject it
+
+        async with NotebookLMClient(auth_tokens) as client:
+            passage = await resolve_chat_reference_passage(
+                client, notebook_id="nb_grown", reference=stale, context_chars=0
+            )
+
+        # The search found the citation where it actually is; the stale range
+        # would have returned the preface.
+        assert cited_text in passage
+        assert "A preface added" not in passage
+
+    @pytest.mark.asyncio
+    async def test_a_range_covering_only_an_image_does_not_borrow_its_neighbours_text(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ) -> None:
+        """A citation with no text to show must not be handed the next paragraph.
+
+        The range fits the document, so ``extent`` passes it; what stands it
+        down is that the citation's *own* range renders nothing. Testing the
+        widened window instead would let 200 units of neighbouring prose stand
+        in for a passage the citation does not have — and the caller would have
+        no way to tell.
+        """
+        response, _all_text, _range = _build_block_document_response(
+            source_id="src_image",
+            title="With an image",
+            blocks=[["First paragraph."], 5, ["Third paragraph."]],
+            build_rpc_response=build_rpc_response,
+        )
+        httpx_mock.add_response(content=response)
+
+        image_start = utf16_len("First paragraph.")
+        reference = ChatReference(
+            source_id="src_image",
+            cited_text=None,
+            start_char=image_start,
+            end_char=image_start + 5,
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ChatResponseParseError, match="did not resolve to text"):
+                await resolve_chat_reference_passage(
+                    client, notebook_id="nb_image", reference=reference, context_chars=200
+                )
+
+    @pytest.mark.asyncio
+    async def test_the_error_names_only_what_was_actually_attempted(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ) -> None:
+        """A message that blames a search that never ran sends the reader wrong.
+
+        A reference with ``cited_text`` and no range, and one with a range and
+        no ``cited_text``, fail for different reasons and must say so — the
+        remedies differ (re-ask vs re-fetch the source).
+        """
+        response, _all_text, _range = _build_block_document_response(
+            source_id="src_msg",
+            title="Message",
+            blocks=[["Some quite unrelated prose."]],
+            build_rpc_response=build_rpc_response,
+        )
+        httpx_mock.add_response(content=response, is_reusable=True)
+
+        rangeless = ChatReference(source_id="src_msg", cited_text="nowhere in this source")
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ChatResponseParseError) as rangeless_error:
+                await resolve_chat_reference_passage(client, "nb_msg", rangeless)
+
+            textless = ChatReference(
+                source_id="src_msg", cited_text=None, start_char=900, end_char=1000
+            )
+            with pytest.raises(ChatResponseParseError) as textless_error:
+                await resolve_chat_reference_passage(client, "nb_msg", textless)
+
+        assert "carries no character range" in str(rangeless_error.value)
+        assert "cited_text was not found" in str(rangeless_error.value)
+        # ...and the converse: no search ran, so none is reported as failed.
+        assert "cited_text was not found" not in str(textless_error.value)
+        assert "(900, 1000)" in str(textless_error.value)
+
+    @pytest.mark.asyncio
+    async def test_a_negative_context_never_narrows_the_citations_own_range(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ) -> None:
+        """``context_chars`` adds context or none; it does not subtract text.
+
+        Left unclamped a negative value inverts the widening, shrinking the
+        window until the citation resolves to nothing and silently drops to the
+        search — a knob that quietly changes *which* path runs.
+        """
+        response, _all_text, _range = _build_block_document_response(
+            source_id="src_neg",
+            title="Negative context",
+            blocks=[["Opening."], ["The cited block."], ["Closing."]],
+            build_rpc_response=build_rpc_response,
+        )
+        httpx_mock.add_response(content=response)
+
+        start = utf16_len("Opening.")
+        reference = ChatReference(
+            source_id="src_neg",
+            cited_text="The cited block.",
+            start_char=start,
+            end_char=start + utf16_len("The cited block."),
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            passage = await resolve_chat_reference_passage(
+                client, notebook_id="nb_neg", reference=reference, context_chars=-6
+            )
+
+        assert passage == "The cited block."
+
+    @pytest.mark.asyncio
+    async def test_a_range_overrunning_the_document_is_refused_not_clamped(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ) -> None:
+        """The extent check on its own terms — no ``cited_text`` to cross-check.
+
+        A range that starts inside the document and ends past it renders
+        *something* when clamped: the tail, which is not the citation. With no
+        ``cited_text`` the range is the only evidence there is, so it has to be
+        judged on fit alone — and only a few units of overrun are needed to
+        prove the source is not the one the citation was emitted against.
+        """
+        blocks = [["Alpha block."], ["Beta block."]]
+        response, _all_text, _range = _build_block_document_response(
+            source_id="src_overrun",
+            title="Overrun",
+            blocks=blocks,
+            build_rpc_response=build_rpc_response,
+        )
+        httpx_mock.add_response(content=response)
+
+        extent = sum(utf16_len(runs[0]) for runs in blocks)
+        reference = ChatReference(
+            source_id="src_overrun",
+            cited_text=None,
+            start_char=utf16_len("Alpha block."),
+            end_char=extent + 5,
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ChatResponseParseError, match="did not resolve to text"):
+                await resolve_chat_reference_passage(
+                    client, notebook_id="nb_overrun", reference=reference, context_chars=0
+                )

@@ -536,16 +536,16 @@ class SourceFulltext:
 
     @property
     def rendered_content(self) -> str:
-        """The source's text rendered for reading — one line per block.
+        """The source's text rendered for reading — one line per text-bearing block.
 
         :attr:`content` joins every text **run** with ``"\\n"``, and a run is a
-        sub-paragraph fragment: a paragraph the backend split into three runs
+        sub-paragraph fragment, so a paragraph the backend split into three runs
         becomes three lines. That is a consequence of flattening a tree nobody
-        had parsed, not a rendering anybody chose — on this library's own test
-        source it turns 13 blocks into 17 lines. Since #2128 the tree *is*
-        parsed, so this property renders from it instead: runs joined **within**
-        a block, blocks separated
-        (:meth:`~notebooklm.types.StructuredDocument.render`).
+        had parsed, not a rendering anybody chose. Since #2128 the tree *is*
+        parsed, so this property renders from it instead — runs joined
+        **within** a block, blocks separated, blocks with nothing to read
+        omitted. :meth:`~notebooklm.types.StructuredDocument.render` carries the
+        full account, including the measurement on this repo's own capture.
 
         It is derived, additive and free — the document is parsed on every
         ``get_fulltext`` regardless of ``output_format``, so nothing extra is
@@ -561,10 +561,18 @@ class SourceFulltext:
         ``document.slice(...)``, or get a readable window around one from
         ``resolve_chat_reference_passage``.
 
+        **With** ``output_format="markdown"`` **this is not "content, made
+        readable".** That format fills :attr:`content` from the response's HTML
+        rendition while :attr:`document` is parsed from its text blocks either
+        way, so the two are then different renderings of different payload
+        slots: markdown here, plain text there. Only in the default ``"text"``
+        mode are they the same material laid out two ways.
+
         ``""`` when the response carried no decodable document (a source whose
         text arrived as bare strings), where :attr:`content` may still have
         text — this is a strictly structural rendering, never a fallback
-        flattening.
+        flattening. ``document.blocks`` tells the two apart: empty means
+        nothing decoded, rather than a source with nothing in it.
         """
         return self.document.render()
 

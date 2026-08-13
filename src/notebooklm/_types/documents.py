@@ -36,7 +36,7 @@ question: :attr:`~notebooklm.types.SourceFulltext.content` is what this client
 has always returned and stays byte-identical; :attr:`StructuredDocument.text`
 is where offsets resolve; and :meth:`StructuredDocument.render` — surfaced as
 :attr:`~notebooklm.types.SourceFulltext.rendered_content` — is the one meant to
-be read, joining runs inside a block and separating blocks.
+be read. :meth:`StructuredDocument.render` documents what separates them.
 
 The types here are transport-neutral and carry no positional knowledge; the
 ``TailwindDoc`` array positions live in
@@ -179,18 +179,30 @@ def _clip_span(span: TextSpan, lower: int, upper: int) -> str:
 
     Cutting in UTF-16 space rather than by Python index is the whole point: the
     bounds are code units, so an emoji anywhere earlier in the run would shift a
-    naive ``span.text[a:b]`` by a position per astral character. A span wholly
-    inside the window returns its own text untouched, which keeps rendering a
-    whole document allocation-free per run.
+    naive ``span.text[a:b]`` by a position per astral character.
+
+    Never wider than the positions selected. A run whose text is longer than the
+    range it declares is a wire inconsistency (:func:`_fit` normalises the same
+    shape for the layout), and letting it through untrimmed here would make a
+    window *non-monotonic*: widening the request by one unit could multiply the
+    answer, because the fully-covered run would suddenly be returned whole. It
+    is trimmed rather than padded, though — a run *shorter* than its range
+    renders as what decoded, since filler is a position-holding device and this
+    rendering holds no positions.
+
+    A run that already fits its selection is returned untouched, which keeps a
+    full-document render free of the per-run encode/decode round-trip
+    :func:`_utf16_slice` costs.
     """
     start = max(span.start_index, lower)
     end = min(span.end_index, upper)
     if end <= start:
         return ""
-    if start == span.start_index and end == span.end_index:
-        return span.text
     lead = start - span.start_index
-    return _utf16_slice(span.text, lead, lead + (end - start))
+    width = end - start
+    if lead == 0 and utf16_len(span.text) <= width:
+        return span.text
+    return _utf16_slice(span.text, lead, lead + width)
 
 
 class BlockKind(str, Enum):
@@ -576,13 +588,15 @@ class StructuredDocument:
         """The document's total width in UTF-16 units, capped for safety.
 
         This is the upper bound of the coordinate space every offset on this
-        document lives in: a range is addressable exactly when
-        ``0 <= start < end <= extent``. Checking against it is what separates
-        "this citation points into this document" from "these offsets came from
-        somewhere else", which is the difference between an exact resolution and
-        a plausible-looking wrong one — a caller that trusts an unchecked range
-        gets a short or empty string back and no signal that anything was wrong.
-        ``0`` for a document that decoded no blocks.
+        document lives in: a range is **in range** exactly when
+        ``0 <= start < end <= extent``. That is necessary, not sufficient — a
+        range inside the bound can still land on positions that decoded no text
+        — and it catches only a range that no longer *fits*, not one that fits
+        but no longer describes the same text. What it buys is the difference
+        between an exact resolution and a plausible-looking wrong one: a caller
+        that resolves an unchecked range gets a truncated or empty string back
+        with no signal that anything was wrong. ``0`` for a document that
+        decoded no blocks.
 
         The cap matters because :attr:`text` synthesizes filler from offsets the
         *server* chose: an ``int32``-scale ``start_index`` on a drifted row
@@ -602,8 +616,9 @@ class StructuredDocument:
         * :attr:`notebooklm.types.SourceFulltext.content` is the legacy flat
           rendering, frozen byte-for-byte. It joins every text **run** with
           ``"\\n"`` — and a run is a sub-paragraph fragment, so a paragraph the
-          backend split into three runs becomes three lines. On this module's
-          own test source that turns 13 blocks into 17 lines.
+          backend split into three runs becomes three lines. On the captured
+          source in ``tests/unit/fixtures/source_fulltext_tailwind_doc.json``
+          that turns 13 blocks into 17 lines, one of them a lone ``" "``.
         * :attr:`text` is the offset-faithful layout. It inserts no separators
           at all (that is what makes :meth:`slice` exact) and fills undecodable
           positions with ``"\\ufffc"``, so blocks run together and filler shows.
@@ -619,19 +634,44 @@ class StructuredDocument:
         blocks (a malformed document) each render in full — :attr:`text` is the
         surface that de-duplicates, because only it has offsets to keep true.
 
+        The rendering is deliberately **marker-free**: a list item renders as
+        its text, without ``list_info.glyph``, and a heading without any ``#``.
+        This is the flat rendering ``content`` should always have been, not a
+        markdown one; a decorated rendering is a future keyword argument rather
+        than a change of what this returns. Read :attr:`blocks` when you want
+        the structure.
+
         Args:
             start_index: Inclusive start of the range to render, in **UTF-16
                 code units** (see :func:`utf16_len`), clamped up to ``0``.
-                ``None`` renders from the start of the document.
             end_index: Exclusive end of the range, clamped down to
-                :attr:`extent`. ``None`` renders to the end of the document.
+                :attr:`extent`.
 
         Returns:
             The rendered text, or ``""`` for an empty document or a range that
             selects nothing. A partially selected block renders only the part
             inside the range, so a window around a citation reads as a window
-            rather than as whole surrounding blocks.
+            rather than as whole surrounding blocks, and the result never
+            carries more text than the range selects.
+
+        Raises:
+            ValueError: If exactly one bound is ``None``. Passing **neither**
+                renders the whole document; passing **both** renders that
+                range. A half-specified range is refused rather than guessed
+                because the obvious guess is the dangerous one: :meth:`slice`
+                takes the same optional pair and returns ``""`` when either is
+                absent (a citation the answer did not annotate), so silently
+                reading a missing bound as "unbounded" here would turn a
+                substituted ``slice`` call into the whole document — a
+                plausible-looking wrong answer, which is the failure mode this
+                module exists to prevent.
         """
+        if (start_index is None) != (end_index is None):
+            raise ValueError(
+                "StructuredDocument.render() takes both bounds or neither "
+                f"(got start_index={start_index!r}, end_index={end_index!r}); "
+                "use slice() if your range may be absent"
+            )
         lower = 0 if start_index is None else max(0, start_index)
         upper = self.extent if end_index is None else min(end_index, self.extent)
         if upper <= lower:
