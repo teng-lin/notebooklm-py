@@ -297,6 +297,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`resolve_chat_reference_passage()` returns a rendered passage on the
+  offset path.** For a source whose document decoded, the passage is now a
+  window of the readable rendering (blocks separated, runs joined) rather than
+  a window of the flat `content` (every run on its own line) — same text, laid
+  out to be read, and located exactly instead of by prefix search. A source
+  with no decodable document keeps the previous output byte for byte, since
+  the search fallback is unchanged. Callers matching on the returned string's
+  exact line breaks should switch to `document.slice(ref.start_char,
+  ref.end_char)`, which returns the range and nothing else.
+  ([#2211](https://github.com/teng-lin/notebooklm-py/issues/2211))
 - **Passing a non-enum `quantity` / `difficulty` to `generate_quiz()` /
   `generate_flashcards()` now raises `ValidationError`**
   ([#2196](https://github.com/teng-lin/notebooklm-py/issues/2196)). Previously a
