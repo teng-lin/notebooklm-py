@@ -550,7 +550,9 @@ class SourceFulltext:
         It is derived, additive and free — the document is parsed on every
         ``get_fulltext`` regardless of ``output_format``, so nothing extra is
         fetched, and :attr:`content` is untouched for callers that depend on its
-        exact bytes.
+        exact bytes. Derived on *each* access rather than cached, so that it
+        cannot go stale against a reassigned :attr:`document`; bind it to a
+        local if you read it more than once.
 
         Like :attr:`content` and unlike
         :attr:`~notebooklm.types.StructuredDocument.text`, this rendering is
