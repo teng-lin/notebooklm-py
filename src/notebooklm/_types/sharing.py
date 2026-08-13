@@ -23,11 +23,15 @@ logger = logging.getLogger(__name__)
 # fires if the guard's invariant is somehow violated (genuine drift).
 _SHARE_METHOD_ID = RPCMethod.GET_SHARE_STATUS.value
 
-#: ``(field_name, repr(value))`` pairs already reported by
+#: ``(field_name, type_name)`` pairs already reported by
 #: :meth:`ShareStatus._warn_if_malformed`, so a polled notebook does not re-emit
-#: the same drift line on every decode. ``repr`` rather than the value itself
-#: because a drifted slot can hold an unhashable payload (e.g. a list), and
-#: because ``repr`` keeps ``1000`` and ``"1000"`` distinct.
+#: the same drift line on every decode.
+#:
+#: Keyed on the value's *type* rather than the value so the set is **bounded by
+#: construction** — two field names times the handful of JSON-decodable types.
+#: Keying on the value (or its ``repr``) would grow without limit in any
+#: long-lived process, which is a memory leak on a decode path that runs on
+#: every share-status read.
 _warned_malformed_share_slots: set[tuple[str, str]] = set()
 
 #: Cap on the rendered drift value used as a warn-once key and logged. Long
@@ -330,11 +334,24 @@ class ShareStatus:
         """
         if value is None:
             return
-        rendered = repr(value)[:_MAX_DRIFT_REPR_LEN]
-        key = (field_name, rendered)
+        # Keyed on the *type*, not the value. Keying on the value would let a
+        # long-lived process (the REST server, an MCP session) accumulate one
+        # cache entry per distinct malformed payload forever — an unbounded set
+        # on a hot decode path. ``field_name`` ranges over two constants and
+        # ``type(...).__name__`` over the handful of JSON-decodable types, so
+        # this set is bounded by construction: no cap constant, no eviction
+        # policy, nothing to tune.
+        #
+        # The trade-off is deliberate: two differently-valued drifts of the same
+        # type warn once rather than twice. That loses nothing worth having —
+        # the useful signal is "this slot started arriving as a str", not the
+        # census of every str seen — and the first warning still logs a concrete
+        # example.
+        key = (field_name, type(value).__name__)
         if key in _warned_malformed_share_slots:
             return
         _warned_malformed_share_slots.add(key)
+        rendered = repr(value)[:_MAX_DRIFT_REPR_LEN]
         logger.warning(
             "GET_SHARE_STATUS %s slot malformed — reporting 'no claim' (expected %s, got %s: %s)",
             field_name,

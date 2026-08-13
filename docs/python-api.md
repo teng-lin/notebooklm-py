@@ -2709,7 +2709,10 @@ nothing at all (the parser docstring described the cap as the bare literal
 * `is_public_sharing_allowed` — the tenant/policy gate on making a notebook
   public.
 
-Both are **tri-state**, and the third state matters:
+Both use `None` for "the response made no claim", but they are not the same
+shape. `max_individuals_share_limit` is `int | None` — a cap, or no cap stated.
+`is_public_sharing_allowed` is the genuinely **tri-state** one, `bool | None`,
+where the third state is what makes it easy to misread:
 
 ```python
 status = await client.sharing.get_status(nb_id)

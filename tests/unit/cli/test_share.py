@@ -552,6 +552,10 @@ class TestShareJsonOutput:
         payload = json.loads(result.output)
         assert payload["max_individuals_share_limit"] == 1000
         assert payload["is_public_sharing_allowed"] is False
+        # The verdict reaches CLI JSON too, matching MCP/REST. Without it a CLI
+        # consumer has to re-derive it as ``not is_public_sharing_allowed``,
+        # which is wrong on the unknown case.
+        assert payload["is_public_sharing_denied"] is True
 
     def test_share_status_json_reports_absent_fields_as_null(self, runner, mock_auth):
         """Keys stay present and ``null`` when the backend made no claim."""
@@ -564,6 +568,8 @@ class TestShareJsonOutput:
         payload = json.loads(result.output)
         assert payload["max_individuals_share_limit"] is None
         assert payload["is_public_sharing_allowed"] is None
+        # No claim is not a denial.
+        assert payload["is_public_sharing_denied"] is False
 
     def test_share_status_human_output_warns_when_policy_forbids_public(self, runner, mock_auth):
         mock_client = create_mock_client()

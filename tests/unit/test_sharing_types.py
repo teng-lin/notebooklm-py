@@ -187,8 +187,39 @@ class TestShareStatusCapacityAndPolicyFields:
             ShareStatus.from_api_response([[], None, None, None], "nb-1")
         assert caplog.text == ""
 
-    def test_malformed_slot_warns_once_per_value(self, caplog):
-        """A polled notebook must not re-emit the same drift line every decode."""
+    def test_malformed_slot_warn_cache_is_bounded(self):
+        """The warn-once cache must not grow with the number of distinct payloads.
+
+        It sits on a decode path that runs on every share-status read, so keying
+        it on the value would leak memory in any long-lived process (the REST
+        server, an MCP session). Keying on the *type* bounds it by construction:
+        feeding 500 distinct malformed values adds one entry per (field, type).
+        """
+        from notebooklm._types import sharing as sharing_mod
+
+        sharing_mod._warned_malformed_share_slots.clear()
+
+        for i in range(500):
+            ShareStatus.from_api_response([[], None, f"cap-{i}", f"gate-{i}"], "nb-1")
+
+        # Two fields, one type (str) each — not 1000 entries.
+        assert sharing_mod._warned_malformed_share_slots == {
+            ("maxIndividualsShareLimit", "str"),
+            ("isPublicSharingAllowed", "str"),
+        }
+
+        # A genuinely different failure mode is still reported once more, so
+        # bounding the cache did not cost the signal it exists to carry.
+        ShareStatus.from_api_response([[], None, [1], [2]], "nb-1")
+        assert ("maxIndividualsShareLimit", "list") in sharing_mod._warned_malformed_share_slots
+        assert len(sharing_mod._warned_malformed_share_slots) == 4
+
+    def test_malformed_slot_warns_once_per_failure_mode(self, caplog):
+        """A polled notebook must not re-emit the same drift line every decode.
+
+        "Once" is per ``(field, type)`` — the granularity the bounded cache
+        keys on — not per distinct value.
+        """
         import logging
 
         from notebooklm._types import sharing as sharing_mod

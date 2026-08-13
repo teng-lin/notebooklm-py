@@ -105,6 +105,13 @@ def share_status(ctx, notebook_id, json_output, client_auth):
                     # additions from ``source list --json``.
                     "max_individuals_share_limit": status.max_individuals_share_limit,
                     "is_public_sharing_allowed": status.is_public_sharing_allowed,
+                    # The verdict too, matching the MCP/REST view. It is a
+                    # property, so it would be dropped by any serialization that
+                    # walks dataclass fields — and re-deriving it here as
+                    # ``not is_public_sharing_allowed`` is the exact bug the
+                    # property exists to prevent, since that also fires on the
+                    # unknown case. Read it off the object instead.
+                    "is_public_sharing_denied": status.is_public_sharing_denied,
                     "shared_users": [
                         {
                             "email": u.email,
