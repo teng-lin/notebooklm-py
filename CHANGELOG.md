@@ -15,7 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-item result arrays, including partial and all-failed batches. Transport-
   uncertain writes are never replayed blindly, and a partially admitted group
   of exact duplicate URLs fails closed because the response carries no request
-  positions. The public single-item `sources.add_url()` path and its precise
+  positions. On REST/MCP, that uncertainty deliberately overrides the original
+  transport label: even a typed `RateLimitError` projects as a non-retriable,
+  `unconfirmed` RPC failure (REST 502 rather than 429), preventing downstream
+  retry middleware from duplicating an already-committed subset. Python callers
+  still receive the original typed exception. The public single-item
+  `sources.add_url()` path and its precise
   probe-then-create recovery remain unchanged. Its two ambiguity messages now
   front-load the manual source-list instruction so MCP/REST's real 300-character
   truncation cannot cut away the only actionable guidance.

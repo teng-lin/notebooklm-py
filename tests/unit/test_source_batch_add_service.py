@@ -126,6 +126,26 @@ async def test_true_batch_preserves_mixed_web_page_and_youtube_wire_shapes() -> 
 
 
 @pytest.mark.asyncio
+async def test_complete_legacy_short_rows_are_zipped_positionally() -> None:
+    urls = ["https://a.example.com", "https://b.example.com"]
+    rpc = RecordingRpc([["src-a"], ["src-b"]])
+    list_sources = AsyncMock()
+
+    outcomes = await SourceBatchAddService().add_urls(
+        "nb-1",
+        urls,
+        rpc=rpc,
+        list_sources=list_sources,
+        extract_youtube_video_id=_extract_youtube_video_id,
+        logger=logging.getLogger(__name__),
+    )
+
+    assert [item.url for item in outcomes] == urls
+    assert [item.source.id if item.source else None for item in outcomes] == ["src-a", "src-b"]
+    list_sources.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_partial_batch_reconciles_omission_and_keeps_positional_outcomes() -> None:
     urls = [
         "https://good-a.example.com",
