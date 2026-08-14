@@ -17,6 +17,9 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
+from notebooklm._app.source_batch import batch_item_is_fatal
+from notebooklm._idempotency import mark_unconfirmed
+from notebooklm._source.batch import SourceUrlBatchItem
 from notebooklm._types.artifacts import Artifact, GenerationState, GenerationStatus
 from notebooklm._types.chat import AskResult, ChatSettings, ConversationTurnKey
 from notebooklm._types.common import AccountLimits, UserSettings
@@ -33,8 +36,11 @@ from notebooklm._types.sharing import SharedUser, ShareStatus
 from notebooklm._types.sources import Source, SourceFulltext
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
+    NetworkError,
     NotebookNotFoundError,
     NoteNotFoundError,
+    RateLimitError,
+    ServerError,
     SourceNotFoundError,
     SourceProcessingError,
     SourceTimeoutError,
@@ -138,6 +144,22 @@ class FakeSources:
 
     async def add_url(self, notebook_id: str, url: str) -> Source:
         return self._add(notebook_id, title=url, url=url)
+
+    async def _add_urls_batch(self, notebook_id: str, urls: list[str]) -> list[SourceUrlBatchItem]:
+        """Model typed outcomes; real-client wire batching is unit-tested separately."""
+        outcomes: list[SourceUrlBatchItem] = []
+        for url in urls:
+            try:
+                source = await self.add_url(notebook_id, url)
+            except Exception as exc:  # noqa: BLE001 - scripted per-item outcome
+                if isinstance(exc, (NetworkError, RateLimitError, ServerError)):
+                    mark_unconfirmed(exc)
+                if batch_item_is_fatal(exc):
+                    raise
+                outcomes.append(SourceUrlBatchItem(url=url, error=exc))  # type: ignore[arg-type]
+            else:
+                outcomes.append(SourceUrlBatchItem(url=url, source=source))
+        return outcomes
 
     async def add_text(self, notebook_id: str, title: str, content: str) -> Source:
         return self._add(notebook_id, title=title)

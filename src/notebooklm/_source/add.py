@@ -225,13 +225,13 @@ class SourceAddService:
            the bulk-import case this path serves, where the pre-existing copy
            was added seconds earlier.
 
-           The bump itself is idempotent, so a bulk import reorders *Recent*
-           once rather than once per URL, and any ``wait=True`` caller already
-           pays it via ``wait_until_ready``'s polling. The request count is the
-           part that does compound: a sequential bulk add — the REST
-           ``sources/batch`` route, whose one shared preflight covers none of
-           the per-item baselines — goes from N+1 to 2N+1 requests, worth
-           budgeting against the backend's bulk rate limits. ``add_text`` is
+           The bump itself is idempotent, so a caller looping over this
+           single-item method reorders *Recent* once rather than once per URL,
+           and any ``wait=True`` caller already pays it via
+           ``wait_until_ready``'s polling. Such a caller still pays one baseline
+           read per item. The existing MCP/REST URL-batch endpoints deliberately
+           bypass this method and use one true-batch write plus, when needed, one
+           reconciliation read (#2115). ``add_text`` is
            ``NON_IDEMPOTENT_NO_RETRY``, runs no probe, and is unaffected.
 
         .. warning::
@@ -393,11 +393,13 @@ class SourceAddService:
                         url,
                         cause=baseline_error,
                         message=(
+                            # Action first: MCP and REST truncate at 300 chars,
+                            # while the URL + matched-row description are unbounded.
+                            "UNRESOLVED — check the notebook source list before retrying. "
                             f"Cannot disambiguate URL source {url!r}: the pre-create baseline "
                             f"snapshot failed ({type(baseline_error).__name__}), so "
                             f"{_describe_sources(matches)} may either predate this add or be "
-                            "the source it just created. Check the notebook source list "
-                            "before retrying."
+                            "the source it just created."
                         ),
                     )
                 )
@@ -409,10 +411,12 @@ class SourceAddService:
                     SourceAddError(
                         url,
                         message=(
+                            # _describe_sources grows with every match; keep the
+                            # manual-reconciliation instruction inside [:300].
+                            "UNRESOLVED — check the notebook source list before retrying. "
                             f"Cannot disambiguate URL source {url!r}: probe found "
                             f"{len(matches)} new sources with this URL after a transport "
-                            f"failure ({_describe_sources(matches)}). Check the notebook "
-                            "source list before retrying."
+                            f"failure ({_describe_sources(matches)})."
                         ),
                     )
                 )

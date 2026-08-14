@@ -186,7 +186,11 @@ async def test_add_url_baseline_failure_makes_a_match_ambiguous(
     baseline exists to prevent. The error must carry enough to act on: what
     broke the baseline (as ``cause``), and which source is ambiguous.
     """
-    existing = Source(id="src_ambiguous", title="Some Copy", url="https://example.com")
+    existing = Source(
+        id="src_ambiguous",
+        title="Highly accurate protein structure prediction with AlphaFold",
+        url="https://www.nature.com/articles/s41586-024-07487-w",
+    )
     # First call = the baseline (fails); second = the probe.
     list_sources = AsyncMock(side_effect=[baseline_failure, [existing]])
     transport_error = NetworkError("temporary network failure")
@@ -223,6 +227,8 @@ async def test_add_url_baseline_failure_makes_a_match_ambiguous(
     assert getattr(raised.value, "unconfirmed", False) is True
     assert classify(raised.value).category is ErrorCategory.RPC
     assert classify(raised.value).retriable is False
+    # The action survives the real MCP/REST truncation slice (#2238).
+    assert "check the notebook source list before retrying" in str(raised.value)[:300].lower()
     # The swallow is visible at the default logger level (WARNING), not DEBUG.
     assert "baseline list() failed" in caplog.text
 
@@ -237,9 +243,15 @@ async def test_add_url_probe_raises_on_multiple_new_matches(
     The message must name both, since the caller is being told to go and
     disambiguate a URL that by definition appears in the list more than once.
     """
-    url = "https://example.com"
+    url = "https://www.nature.com/articles/s41586-024-07487-w"
     list_sources = AsyncMock(
-        side_effect=[[], [Source(id="src_a", url=url), Source(id="src_b", url=url)]]
+        side_effect=[
+            [],
+            [
+                Source(id="src_a", title="Highly accurate protein structure prediction", url=url),
+                Source(id="src_b", title="A second long duplicate source title", url=url),
+            ],
+        ]
     )
 
     with pytest.raises(SourceAddError, match="probe found 2 new sources") as raised:
@@ -264,6 +276,8 @@ async def test_add_url_probe_raises_on_multiple_new_matches(
     # a batch add would keep going, issuing more unresolvable writes.
     assert getattr(raised.value, "unconfirmed", False) is True
     assert classify(raised.value).category is ErrorCategory.RPC
+    # _describe_sources grows with every match; guidance must remain before it.
+    assert "check the notebook source list before retrying" in str(raised.value)[:300].lower()
     assert classify(raised.value).retriable is False
 
 

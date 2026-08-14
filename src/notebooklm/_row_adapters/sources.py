@@ -49,6 +49,7 @@ __all__ = [
     "SourceGuideRow",
     "SourceRow",
     "SourceRowShape",
+    "unwrap_add_source_rows",
 ]
 
 
@@ -90,6 +91,78 @@ class SourceRowShape(str, Enum):
     #: separately so drift logs can distinguish "dispatcher produced
     #: this" from "caller handed us an already-unwrapped entry".
     ENTRY = "entry"
+
+
+def _looks_like_source_entry(value: Any) -> bool:
+    """Whether ``value`` resembles one already-unwrapped Source row."""
+    if not isinstance(value, list) or not value:
+        return False
+    # An entry's second field is its title. Reject a nested list here so a
+    # repeated collection of short rows (``[[id-a], [id-b]]``) is not mistaken
+    # for one entry whose id envelope happens to be the first row.
+    if len(value) > 1 and value[1] is not None and not isinstance(value[1], str):
+        return False
+    raw_id = value[0]
+    if isinstance(raw_id, str):
+        return True
+    if not isinstance(raw_id, list) or not raw_id:
+        return False
+    if isinstance(raw_id[0], str):
+        return True
+    return (
+        len(raw_id) == 3
+        and raw_id[0] is None
+        and isinstance(raw_id[2], list)
+        and bool(raw_id[2])
+        and isinstance(raw_id[2][0], str)
+    )
+
+
+def _unwrap_source_entry(value: Any) -> list[Any] | None:
+    """Unwrap one flat/medium/deep Source payload to its entry, if recognized."""
+    candidate = value
+    for _ in range(3):
+        if _looks_like_source_entry(candidate):
+            return candidate
+        if not isinstance(candidate, list) or len(candidate) != 1:
+            return None
+        candidate = candidate[0]
+    return None
+
+
+def unwrap_add_source_rows(payload: Any) -> list[list[Any]]:
+    """Extract repeated Source rows from known ``AddSources`` envelopes.
+
+    A single result historically decodes as one medium/deep Source payload;
+    a multi-entry response may be either a flat repeated-row list or carry one
+    additional outer list. Anything else is schema drift: the general Source
+    parser intentionally degrades malformed listing rows, which is unsafe for a
+    mutating response whose returned ids are the only proof of which writes
+    committed.
+    """
+    if not isinstance(payload, list) or not payload:
+        raise DecodingError(
+            "Unrecognized ADD_SOURCE response envelope",
+            raw_response=repr(payload),
+            method_id=RPCMethod.ADD_SOURCE.value,
+        )
+    single = _unwrap_source_entry(payload)
+    if single is not None:
+        return [single]
+
+    repeated = [_unwrap_source_entry(item) for item in payload]
+    if all(item is not None for item in repeated):
+        return [item for item in repeated if item is not None]
+
+    if len(payload) == 1 and isinstance(payload[0], list) and payload[0]:
+        wrapped_repeated = [_unwrap_source_entry(item) for item in payload[0]]
+        if all(item is not None for item in wrapped_repeated):
+            return [item for item in wrapped_repeated if item is not None]
+    raise DecodingError(
+        "Unrecognized ADD_SOURCE response envelope",
+        raw_response=repr(payload),
+        method_id=RPCMethod.ADD_SOURCE.value,
+    )
 
 
 @dataclass(frozen=True)

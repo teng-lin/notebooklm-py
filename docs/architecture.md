@@ -1010,6 +1010,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_artifact/listing.py` | Listing and filtering operations for notebook artifacts |
 | `_artifact/polling.py` | Poll coordination service for artifact generation tasks |
 | `_source/add.py` | Core service layer for adding text, URL, or Google Drive sources |
+| `_source/batch.py` | True-batch URL `ADD_SOURCE` service for the existing MCP/REST batch endpoints: typed positional outcomes, omitted-row reconciliation, and fail-closed transport/duplicate ambiguity policy |
 | `_source/drive_import.py` | Auto-route add-from-Drive (#1884): download + upload the upload-only Drive types (epub/docx/txt/…); native import (`add_drive`) instead takes Docs/Slides/Sheets + PDF by reference; header-first cookie-authed streaming fetch behind injected seams |
 | `_source/content.py` | Core service layer for fetching source HTML/markdown content |
 | `_source/markdown.py` | Source fulltext HTML-to-Markdown conversion policy, including Markdown-source and LaTeX/table handling |
@@ -1187,6 +1188,7 @@ src/notebooklm/
 │   ├── __init__.py              # Re-exports the cluster's public service classes
 │   ├── _upload_decode.py        # Pure URL/source-id/content-type decode + validation helpers (extracted from upload.py)
 │   ├── add.py                   # Source addition coordinator
+│   ├── batch.py                 # True-batch URL ADD_SOURCE coordinator + typed positional outcomes for MCP/REST batch adapters (#2115)
 │   ├── content.py               # Source content fetcher
 │   ├── markdown.py               # Source fulltext HTML-to-Markdown conversion policy
 │   ├── drive_import.py          # Auto-route add-from-Drive (#1884): DriveImportService + DriveFetcher — parse id/URL, cookie-authed header-first streaming download of the upload-only Drive types (epub/docx/txt/…), confirm-token handling + 0600 temp cleanup, then hand to add_file (native Docs/Slides/Sheets → pointer error)

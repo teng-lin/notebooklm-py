@@ -2437,7 +2437,7 @@ effect of doing something else:
 | `notebooks.create()` (CLI/MCP/REST path) | One best-effort re-read to backfill the timestamps `CREATE_NOTEBOOK` leaves null; skipped when both are already populated. |
 | `chat.get_settings()` | Chat config lives in the notebook payload. |
 | `sources.add_file()` / `add_drive()` / `add_url()` | An **unconditional** pre-create baseline of existing source ids, on every call — the idempotency probe needs it to tell a source it created from one that was already there. (`add_text()` is `NON_IDEMPOTENT_NO_RETRY` and runs no probe at all, so it never bumps recency.) |
-| REST `POST /v1/notebooks/{id}/sources/batch` preflight | One shared existence/auth check before the per-URL loop. |
+| REST `POST /v1/notebooks/{id}/sources/batch` | One shared existence/auth check before one multi-URL `ADD_SOURCE`; omitted failures trigger one reconciliation `GET_NOTEBOOK`. It never blindly replays a transport-uncertain batch. |
 
 > **`sources.add_drive()` and `sources.add_url()` moved rows**, in
 > [#2113](https://github.com/teng-lin/notebooklm-py/issues/2113) and

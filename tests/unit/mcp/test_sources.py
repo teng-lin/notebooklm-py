@@ -1980,6 +1980,9 @@ async def test_source_add_batch_all_success(mcp_call, mock_client) -> None:
             },
         ],
     }
+    mock_client.sources._add_urls_batch.assert_awaited_once_with(
+        NB_ID, ["https://example.com/a", "https://example.com/b"]
+    )
     assert mock_client.sources.add_url.await_count == 2
     # Both ready web_page items were content-checked.
     assert mock_client.sources.get_fulltext.await_count == 2
@@ -2010,6 +2013,9 @@ async def test_source_add_batch_partial_failure(mcp_call, mock_client) -> None:
     assert bad["status"] == "error"
     assert bad["error"]["code"] == "VALIDATION"
     # The disallowed scheme is rejected by validate_url before reaching the client.
+    mock_client.sources._add_urls_batch.assert_awaited_once_with(
+        NB_ID, ["https://good.example.com"]
+    )
     mock_client.sources.add_url.assert_awaited_once_with(NB_ID, "https://good.example.com")
     # The one ready item was content-checked; the rejected entry never reaches it.
     mock_client.sources.get_fulltext.assert_awaited_once_with(NB_ID, SRC_ID, output_format="text")
@@ -2032,12 +2038,16 @@ async def test_source_add_batch_non_url_entry_errors_not_text(mcp_call, mock_cli
     mock_client.sources.add_url.assert_not_called()
     mock_client.sources.add_text.assert_not_called()
     mock_client.sources.add_file.assert_not_called()
+    mock_client.sources._add_urls_batch.assert_not_awaited()
 
 
 async def test_source_add_batch_fatal_error_aborts_the_call(mcp_call, mock_client) -> None:
-    """A mid-batch FATAL failure (network/auth/rate-limit/5xx) aborts the whole tool
-    call rather than being masked as a per-item error in a success envelope (#1871).
-    The batch stops at the first fatal item — the second URL is never attempted."""
+    """A batch-level fatal failure aborts instead of being masked per item (#1871).
+
+    The real RPC receives both URLs at once and may have committed an unknown
+    subset. The fixture's sequential outcome model happens to raise on its first
+    scripted item, but the adapter contract under test is the top-level failure.
+    """
     mock_client.sources.add_url = AsyncMock(
         side_effect=[NetworkError("boom"), FakeSource(id=SRC2_ID, title="Second")]
     )
@@ -2049,9 +2059,13 @@ async def test_source_add_batch_fatal_error_aborts_the_call(mcp_call, mock_clien
                 "urls": ["https://first.example.com", "https://second.example.com"],
             },
         )
-    assert "NETWORK" in str(excinfo.value)
-    # Aborted at the first fatal item — the batch did NOT continue to the second URL.
-    assert mock_client.sources.add_url.await_count == 1
+    error_text = str(excinfo.value)
+    assert "RPC" in error_text
+    assert "unconfirmed=true" in error_text
+    assert "reconcile" in error_text.lower()
+    mock_client.sources._add_urls_batch.assert_awaited_once_with(
+        NB_ID, ["https://first.example.com", "https://second.example.com"]
+    )
 
 
 async def test_source_add_batch_isolates_non_fatal_input_error(mcp_call, mock_client) -> None:

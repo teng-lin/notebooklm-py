@@ -342,6 +342,16 @@ error, never added as text); `source_type`/`url`/`text`/`title`/`path`/
 `document_id`/`mime_type` are not valid with `urls`, but `allow_internal`
 applies to every entry.
 
+Validated URLs share one batch-capable `ADD_SOURCE` RPC rather than issuing one
+write per item. NotebookLM can admit a subset and omit rejected rows from that
+response, so the client reconciles omissions with one `source_list(status="error")`
+read while keeping `results[i]` paired with `urls[i]`. The public single-item
+`sources.add_url()` path is unchanged. A transport failure is deliberately not
+replayed: an unknown subset may already have committed, so first reconcile with
+`source_list` before resubmitting. Avoid exact duplicate URLs within one batch;
+if the backend admits only some identical copies, it returns no request positions
+with which to disambiguate them and the call fails closed with the same guidance.
+
 ### Content-sanity warnings on ready web pages
 
 A dead link, [soft-404](https://en.wikipedia.org/wiki/HTTP_404#Soft_404), or

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Existing MCP/REST URL-batch endpoints now use the batch-capable
+  `ADD_SOURCE` wire shape.** Valid URLs share one write RPC; successful rows
+  and silently omitted failures are reconciled back into the existing ordered,
+  per-item result arrays, including partial and all-failed batches. Transport-
+  uncertain writes are never replayed blindly, and a partially admitted group
+  of exact duplicate URLs fails closed because the response carries no request
+  positions. The public single-item `sources.add_url()` path and its precise
+  probe-then-create recovery remain unchanged. Its two ambiguity messages now
+  front-load the manual source-list instruction so MCP/REST's real 300-character
+  truncation cannot cut away the only actionable guidance.
+  ([#2115](https://github.com/teng-lin/notebooklm-py/issues/2115),
+  [#2238](https://github.com/teng-lin/notebooklm-py/issues/2238))
+
 - **Source listings retain original-file and revision metadata already present
   on the wire.** `Source` now exposes `download_url`, `viewer_url`, and
   `content_mime` for uploaded files, plus `word_count`, `revision_id`,
@@ -887,11 +900,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not merely cheaper but wrong: the probe runs *after* the create, so a list
   taken there already contains the just-created source. The bump does not
   compound across a bulk import, and `wait=True` callers were paying it already
-  via `wait_until_ready`'s polling. The *request count* does compound, though: a
-  sequential bulk add — the REST `POST /v1/notebooks/{id}/sources/batch` route,
-  whose one shared preflight covers none of the per-item baselines — goes from
-  N+1 to 2N+1 requests, which is worth budgeting against the backend's bulk rate
-  limits.
+  via `wait_until_ready`'s polling. A caller looping over single-item `add_url`
+  still pays one baseline read per item. The REST/MCP URL-batch endpoints used
+  that same sequential path in this release; #2115 later moved those already
+  batch-shaped endpoints to one true-batch write plus optional reconciliation,
+  without changing single-item `add_url`.
 
 - **A failed idempotency baseline is no longer invisible.** `add_url` and
   `add_drive` swallow a failure to snapshot source ids before the create and

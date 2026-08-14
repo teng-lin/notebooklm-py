@@ -459,13 +459,9 @@ async def add_batch(
     so a whole-batch failure is never masked as ``201`` with every item errored.
     Only per-entry **input** failures (bad URL / 404 / SSRF-blocked host) are
     isolated — recorded as an ``error`` item and skipped — so partial failure stays
-    visible; a **fatal** service failure (auth / rate-limit / 5xx, per
-    :func:`batch_item_is_fatal`) re-raises so the top-level handler maps it to the
-    right 401 / 429 / 5xx instead of a partial-success envelope. Each entry is added
-    SEQUENTIALLY (concurrent bulk writes
-    invite backend rate-limiting) with ``source_type="url"`` so the http/https
-    SSRF guard runs per item. Results are positional (``results[i]`` ↔
-    ``urls[i]``).
+    visible. Valid entries are sent in one batch-capable ``ADD_SOURCE`` RPC; its
+    typed positional outcomes preserve this route's existing response contract.
+    A **fatal** service failure re-raises so the top-level handler maps it normally.
 
     The top-level ``status`` is ``"added"`` once at least one source was added,
     else ``"error"`` (every item failed) — so the envelope can't claim success
@@ -479,10 +475,15 @@ async def add_batch(
     # swallowed into a 201-all-errored body. Letting it raise here routes it
     # through the normal classify → 404 / 401 contract.
     await client.notebooks.get(notebook_id)
-    results: list[dict[str, Any]] = []
-    for entry in body.urls:
+    results: list[dict[str, Any] | None] = [None] * len(body.urls)
+    valid_positions: list[int] = []
+    valid_urls: list[str] = []
+    for index, entry in enumerate(body.urls):
         try:
-            plan = add_core.build_source_add_plan(
+            # Validate through the normal URL plan, but do not execute it: the
+            # execution step is the single-item add_url path this endpoint is
+            # specifically avoiding.
+            add_core.build_source_add_plan(
                 content=entry,
                 source_type="url",
                 title=None,
@@ -492,10 +493,7 @@ async def add_batch(
                 looks_path_shaped=add_core.looks_like_path,
                 allow_internal=body.allow_internal,
             )
-            result = await add_core.execute_source_add(
-                client, add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan)
-            )
-        except Exception as exc:  # noqa: BLE001 - per-item isolation; CancelledError still propagates
+        except Exception as exc:  # noqa: BLE001 - positional input isolation
             # Re-raise service/infra failures (auth / rate-limit / server /
             # transport) so the top-level handler maps them to the correct
             # 401 / 429 / 5xx instead of masking them as a 200/201 batch
@@ -505,24 +503,45 @@ async def add_batch(
             # ``error_item`` routes ``str(exc)`` through the shared ``_redact``
             # chokepoint (same scrubber as ``safe_detail``), so the per-item text
             # carries no raw exception/stack detail (CodeQL information-exposure).
-            results.append({"input": entry, "status": "error", "error": error_item(exc)})
+            results[index] = {"input": entry, "status": "error", "error": error_item(exc)}
         else:
-            pending.record(notebook_id, result.source.id)
-            view = source_view(result.source)
+            valid_positions.append(index)
+            valid_urls.append(entry)
+
+    outcomes = await client.sources._add_urls_batch(notebook_id, valid_urls) if valid_urls else []
+    if len(outcomes) != len(valid_urls):
+        raise RuntimeError("source batch result count did not match validated input count")
+
+    for index, outcome in zip(valid_positions, outcomes, strict=True):
+        if outcome.error is not None:
+            if batch_item_is_fatal(outcome.error):
+                raise outcome.error
+            results[index] = {
+                "input": outcome.url,
+                "status": "error",
+                "error": error_item(outcome.error),
+            }
+        else:
+            source = outcome.source
+            if source is None:  # pragma: no cover - SourceUrlBatchItem invariant
+                raise RuntimeError("source batch outcome had neither source nor error")
+            pending.record(notebook_id, source.id)
+            view = source_view(source)
             # Mirrors the MCP batch envelope: a per-input RESULT record for a
             # just-created source, not a full source view. Drive health (#2111)
             # is deliberately absent — it carries no signal at add time; read it
             # back through GET /sources or /sources/{id}, which do project it.
-            results.append(
-                {
-                    "input": entry,
-                    "status": "added",
-                    "source_id": result.source.id,
-                    "title": result.source.title,
-                    "status_label": view["status_label"],
-                }
-            )
-    added = sum(1 for item in results if item["status"] == "added")
+            results[index] = {
+                "input": outcome.url,
+                "status": "added",
+                "source_id": source.id,
+                "title": source.title,
+                "status_label": view["status_label"],
+            }
+    finalized = [item for item in results if item is not None]
+    if len(finalized) != len(body.urls):
+        raise RuntimeError("source batch projection lost positional outcomes")
+    added = sum(1 for item in finalized if item["status"] == "added")
     # Nothing created → 200 (not 201). ``status`` mirrors the MCP batch envelope:
     # "added" when ≥1 succeeded, "error" when every item failed.
     if not added:
@@ -531,8 +550,8 @@ async def add_batch(
         "status": "added" if added else "error",
         "notebook_id": notebook_id,
         "added": added,
-        "failed": len(results) - added,
-        "results": results,
+        "failed": len(finalized) - added,
+        "results": finalized,
     }
 
 

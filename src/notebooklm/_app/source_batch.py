@@ -22,8 +22,8 @@ from .errors import ErrorCategory, classify
 
 __all__ = ["MAX_BATCH_URLS", "batch_item_is_fatal"]
 
-#: Max URL entries accepted by one batch add. Bounds how long a single request can
-#: occupy one shared source-mutation slot (each entry is added sequentially).
+#: Max URL entries accepted by one batch add. Bounds one request's wire payload,
+#: backend work, result projection, and time in the shared source-mutation slot.
 MAX_BATCH_URLS = 20
 
 #: Categories whose REST projection (server ``CATEGORY_STATUS``) is 401 / 429 / >=500

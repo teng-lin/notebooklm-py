@@ -630,10 +630,12 @@ def test_add_batch_mid_item_auth_is_top_level_401(
     assert "results" not in resp.json()
 
 
-def test_add_batch_mid_item_rate_limit_is_top_level_429(
+def test_add_batch_transport_rate_limit_is_unconfirmed_502(
     authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
 ) -> None:
-    # A RATE_LIMIT failure mid-batch is fatal too (429), not a per-item error.
+    # The typed RateLimitError still reaches Python callers, but this batch write
+    # may have committed before the response failed. REST must prevent a blind
+    # retry by projecting it as an unconfirmed, non-retriable RPC failure.
     import pytest
 
     from notebooklm.exceptions import RateLimitError
@@ -648,8 +650,12 @@ def test_add_batch_mid_item_rate_limit_is_top_level_429(
     resp = authed_client.post(
         "/v1/notebooks/nb-1/sources/batch", json={"urls": ["https://a.example.com"]}
     )
-    assert resp.status_code == 429
-    assert resp.json()["error"]["category"] == "rate_limited"
+    assert resp.status_code == 502
+    error = resp.json()["error"]
+    assert error["category"] == "rpc"
+    assert error["unconfirmed"] is True
+    assert error["retriable"] is False
+    assert "reconcile" in error["hint"].lower()
     assert "results" not in resp.json()
 
 

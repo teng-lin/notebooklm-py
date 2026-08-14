@@ -167,6 +167,14 @@ Findings:
 
 ### Wave 2 — structural probes (batch, duplicates, Drive, schemes, timeout, content-type, concurrency)
 
+> **Correction (2026-08-13):** The batch-contamination conclusion below did not
+> survive a controlled retest. The supposed good control URL also failed when
+> added alone. Retesting with independently verified controls showed that
+> `ADD_SOURCE` is per-item, admits good entries regardless of bad-neighbor
+> position, and silently omits failed rows unless every entry fails. The quota
+> boundary likewise admitted exactly the first entries that fit. See #2110 and
+> #2115; the historical observation is retained below only as audit context.
+
 - **Batching contaminates good sources with bad ones.** Sent a single raw `ADD_SOURCE` RPC with two
   entries (one good URL, one 404) by bypassing the client's one-source-per-call policy (the RPC method
   is documented as "batch-capable" in `rpc/types.py`, this client just doesn't use that). The whole
@@ -596,9 +604,10 @@ probing actually showed (several of these are weaker than they looked before pro
   there's no strong reason to expect this client fetching from a different IP/UA would fare better,
   and it adds a new failure/security surface for uncertain benefit.
 - **Doc note on the URL/PDF content-type boundary** (PDF via URL: yes; image via URL: no).
-- **Doc/comment note on batch-RPC contamination**, so a future contributor doesn't "optimize" the
-  sequential-loop batch adapters into a single multi-entry RPC call and reintroduce failure
-  contamination of good sources.
+- **Superseded: doc/comment note on batch-RPC contamination.** The corrected
+  controlled retest described above established per-item admission rather than
+  atomic contamination. #2115 therefore uses the true batch RPC for the already
+  batch-shaped MCP/REST endpoints while retaining single-item add separately.
 - **Optional: cheap scheme pre-validation** on `add_url` to skip obviously-non-http(s) input before
   spending an RPC round trip and creating a ghost row.
 

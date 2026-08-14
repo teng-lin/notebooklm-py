@@ -78,7 +78,9 @@ class RPCMethod(str, Enum):
     DELETE_NOTEBOOK = "WWINqb"  # -> DeleteProjects (single id; batch shapes probed & rejected, see _notebooks.delete)
 
     # Source operations
-    ADD_SOURCE = "izAoDd"  # -> AddSources (batch-capable; we send a single source)
+    # -> AddSources. Single-item SDK methods send one source; the existing
+    # MCP/REST batch endpoints deliberately send repeated URL entries (#2115).
+    ADD_SOURCE = "izAoDd"
     # NOTE: the live registry path-extractor paired o4cbdc with ``AddTentativeSources``,
     # but that is almost certainly a mis-pairing — this id is the upload-register
     # step for a file already staged via the upload endpoint, whereas

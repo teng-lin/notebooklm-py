@@ -9,9 +9,10 @@ the typed result to the wire with :func:`to_jsonable`.
 flow through ``_app.source_add`` (``build_source_add_plan`` + ``execute_source_add``);
 ``drive`` flows through ``_app.source_mutations.execute_source_add_drive`` (the
 neutral ``source_add`` core has no Drive path). It also has a batch mode
-(``urls=[...]``) that adds many http(s) URLs sequentially and returns an explicit
-per-item result list. ``source_wait`` waits for a subset when ``sources`` is
-given, one source when ``source`` is given, else every source in the notebook.
+(``urls=[...]``) that sends many http(s) URLs in one batch-capable ``ADD_SOURCE``
+write and returns an explicit per-item result list. ``source_wait`` waits for a
+subset when ``sources`` is given, one source when ``source`` is given, else every
+source in the notebook.
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
@@ -36,9 +37,11 @@ from ..._app.serialize import to_jsonable
 from ..._app.source_batch import MAX_BATCH_URLS, batch_item_is_fatal
 from ..._app.views import source_view as _source_view
 from ...exceptions import (
+    RPCError,
     SourceNotFoundError,
     ValidationError,
 )
+from ...rpc import RPCMethod
 from ...types import source_status_to_str
 from ...urls import is_youtube_url
 from .._coerce import coerce_list
@@ -873,13 +876,11 @@ async def _add_url_batch(
 ) -> dict[str, Any]:
     """Add many http(s) URLs in one call, returning an explicit per-item result list.
 
-    The saving over N single ``source_add`` calls is the per-call MCP/agent
-    round-trip overhead: the URL adds themselves run **sequentially** here, on
-    purpose — concurrent bulk writes invite backend rate-limiting (CLAUDE.md
-    pitfall #4). A **fatal** failure (expired auth, ``RATE_LIMITED``, an upstream
-    5xx — classified by :func:`_app.source_batch.batch_item_is_fatal`, shared with
-    the REST route) is re-raised so the whole tool call fails at the top level,
-    letting the agent re-auth/retry; only per-URL 4xx-input failures isolate.
+    Valid entries are sent through the batch-capable ``ADD_SOURCE`` RPC once.
+    The backend returns successful rows in request order and silently omits
+    failed entries; the SDK batch seam reconciles those omissions with one
+    ERROR-status list and returns typed positional outcomes. The single-item
+    ``add_url`` path remains unchanged and keeps its precise probe/retry contract.
 
     Each entry is added with ``source_type="url"`` so :func:`add_core.validate_url`
     enforces the http/https scheme allowlist + SSRF guard per item; a non-URL entry
@@ -900,39 +901,69 @@ async def _add_url_batch(
     adds return still-PROCESSING, so this often does not fire here and such sources
     surface the warning later via ``source_wait``.
     """
-    results: list[dict[str, Any]] = []
+    results: list[dict[str, Any] | None] = [None] * len(urls)
+    valid_positions: list[int] = []
+    valid_urls: list[str] = []
+    for index, entry in enumerate(urls):
+        try:
+            # Build the normal URL plan for validation only.  Executing it
+            # would call single-item add_url and defeat the true-batch path.
+            add_core.build_source_add_plan(
+                content=entry,
+                source_type="url",
+                title=None,
+                mime_type=None,
+                follow_symlinks=False,
+                validate_path=add_core.validate_upload_path,
+                looks_path_shaped=add_core.looks_like_path,
+                allow_internal=allow_internal,
+            )
+        except Exception as exc:  # noqa: BLE001 - positional input isolation
+            if batch_item_is_fatal(exc):
+                raise
+            results[index] = {
+                "input": entry,
+                "status": "error",
+                "error": tool_error_payload(exc),
+            }
+        else:
+            valid_positions.append(index)
+            valid_urls.append(entry)
+
+    outcomes = await client.sources._add_urls_batch(notebook_id, valid_urls) if valid_urls else []
+    if len(outcomes) != len(valid_urls):
+        raise RPCError(
+            "Internal source batch result count did not match validated input count",
+            method_id=RPCMethod.ADD_SOURCE.value,
+        )
+
     # Keep each added item's Source alongside its result dict so a synchronously-ready
     # web-page item can be annotated with the content-sanity warning after the loop,
     # concurrently — never N×fetch in-loop (reuses :func:`_annotate_thin_warnings`).
     ready_pairs: list[tuple[dict[str, Any], Source]] = []
-    for entry in urls:
-        try:
-            src = await _add_one(
-                client,
-                notebook_id,
-                entry,
-                source_type="url",
-                title=None,
-                mime_type=None,
-                allow_internal=allow_internal,
-            )
-        except Exception as exc:  # noqa: BLE001 - per-item isolation; CancelledError (BaseException) still propagates
-            # A service/infra failure (auth expiry, rate limit, upstream 5xx) is not
-            # specific to this URL — re-raise so the tool call fails at the top level
-            # (letting the agent re-auth/retry) instead of masking it as a per-item
-            # "error" in a success envelope. Only per-URL 4xx-input failures isolate.
-            # Shares REST's classifier via _app.source_batch (#1871).
-            if batch_item_is_fatal(exc):
-                raise
-            results.append({"input": entry, "status": "error", "error": tool_error_payload(exc)})
+    for index, outcome in zip(valid_positions, outcomes, strict=True):
+        if outcome.error is not None:
+            if batch_item_is_fatal(outcome.error):
+                raise outcome.error
+            results[index] = {
+                "input": outcome.url,
+                "status": "error",
+                "error": tool_error_payload(outcome.error),
+            }
         else:
+            src = outcome.source
+            if src is None:  # pragma: no cover - SourceUrlBatchItem invariant
+                raise RPCError(
+                    "Internal source batch outcome had neither source nor error",
+                    method_id=RPCMethod.ADD_SOURCE.value,
+                )
             # Deliberately NOT a ``_source_view`` row: this is a per-input
             # RESULT record for a source that was just created, so Drive health
             # (#2111) carries no signal yet — read it back with ``source_list`` /
             # ``source_read``, which do project it. The REST ``/sources/batch``
             # echo mirrors this shape for the same reason.
             item: dict[str, Any] = {
-                "input": entry,
+                "input": outcome.url,
                 "status": "added",
                 "source_id": src.id,
                 "title": src.title,
@@ -946,13 +977,19 @@ async def _add_url_batch(
                 )
             elif src.is_ready:
                 ready_pairs.append((item, src))
-            results.append(item)
+            results[index] = item
+    finalized = [item for item in results if item is not None]
+    if len(finalized) != len(urls):
+        raise RPCError(
+            "Internal source batch projection lost positional outcomes",
+            method_id=RPCMethod.ADD_SOURCE.value,
+        )
     # Annotate any synchronously-ready web-page items with a thin / soft-404 warning
     # (concurrent; web-page-filtered; degrades any fetch failure to no warning).
     await _annotate_thin_warnings(client, notebook_id, ready_pairs)
     # Derive the tallies from `results` (single source of truth) rather than
     # maintaining parallel counters that must be kept in sync with each append.
-    added = sum(1 for item in results if item["status"] == "added")
+    added = sum(1 for item in finalized if item["status"] == "added")
     return {
         # "added" once at least one source was added; "error" when every item
         # failed (so the top-level envelope can't claim success while
@@ -961,8 +998,8 @@ async def _add_url_batch(
         "status": "added" if added else "error",
         "notebook_id": notebook_id,
         "added": added,
-        "failed": len(results) - added,
-        "results": results,
+        "failed": len(finalized) - added,
+        "results": finalized,
     }
 
 
