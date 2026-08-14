@@ -1,7 +1,7 @@
 # API Stability and Versioning
 
 **Status:** Active
-**Last Updated:** 2026-08-05
+**Last Updated:** 2026-08-14
 
 This document describes the stability guarantees and versioning policy for `notebooklm-py`.
 
@@ -312,8 +312,8 @@ The following v0.3-era deprecations completed their removal cycle in v0.5.0:
 
 | Deprecated | Replacement | Notes |
 |------------|-------------|-------|
-| `AuthTokens.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` and use `client.auth` | Deprecated in v0.9.0; emits `DeprecationWarning`; scheduled for v1.0 removal |
-| `AuthTokens(..., storage_path=..., cookie_jar=None)` synchronous storage fallback | Managed `NotebookLMClient.from_storage(...)`, or an explicit `cookie_jar=` | Deprecated in v0.9.0; only the implicit synchronous-I/O branch warns; scheduled for v1.0 removal |
+| `AuthTokens.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` and use `client.auth` | Deprecated in v0.8.1; emits `DeprecationWarning`; scheduled for v1.0 removal |
+| `AuthTokens(..., storage_path=..., cookie_jar=None)` synchronous storage fallback | Managed `NotebookLMClient.from_storage(...)`, or an explicit `cookie_jar=` | Deprecated in v0.8.1; only the implicit synchronous-I/O branch warns; scheduled for v1.0 removal |
 | Awaiting `NotebookLMClient.from_storage(...)` | `async with NotebookLMClient.from_storage(...) as client:` | Emits `DeprecationWarning`; scheduled for v1.0 removal |
 
 ### Permanent aliases

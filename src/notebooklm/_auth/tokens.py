@@ -119,7 +119,7 @@ class AuthTokens:
             :func:`normalize_cookie_map` during ``__post_init__``. This is a
             public compatibility/bootstrap shadow: the kernel copies it once
             during client composition and no first-party post-open decision
-            reads it. Docs-only deprecated since v0.9.0 for removal in v1;
+            reads it. Docs-only deprecated since v0.8.1 for removal in v1;
             runtime warnings would make synthesized dataclass operations noisy.
         csrf_token: CSRF token (SNlM0e) extracted from page
         session_id: Session ID (FdrFJe) extracted from page
@@ -128,7 +128,7 @@ class AuthTokens:
             The kernel copies it once during client composition, then owns the
             sole mutable jar used for HTTP, routing, recovery, and persistence.
             Managed-client code must use the kernel jar, not this field.
-            Docs-only deprecated since v0.9.0 for removal in v1.
+            Docs-only deprecated since v0.8.1 for removal in v1.
         authuser: Google ``authuser`` index this profile authenticates as.
             ``0`` (the default account) is used when no in-band account
             metadata is present in ``storage_state.json``, matching
@@ -267,7 +267,7 @@ class AuthTokens:
     def cookie_header_for(self, url: str) -> str:
         """Return the ``Cookie:`` header this session would send to ``url``.
 
-        .. deprecated:: 0.9.0
+        .. deprecated:: 0.8.1
            Scheduled for removal in v1. Use managed-client request APIs, which
            select from the kernel-owned live jar.
 
@@ -350,7 +350,7 @@ class AuthTokens:
     def cookie_header(self) -> str:
         """Generate a domain-blind Cookie header value.
 
-        .. deprecated:: 0.9.0
+        .. deprecated:: 0.8.1
            Scheduled for removal in v1. Use managed-client request APIs. This
            property remains warning-free throughout v0.x.
 
@@ -381,7 +381,7 @@ class AuthTokens:
     def jar(self) -> CookieJar:
         """Return a typed, read-only view of the compatibility cookie shadow.
 
-        .. deprecated:: 0.9.0
+        .. deprecated:: 0.8.1
            This warning-free v0.x migration shape becomes the immutable
            ``initial_cookies: CookieJar`` bootstrap field in v1.
 
@@ -403,7 +403,7 @@ class AuthTokens:
     def flat_cookies(self) -> FlatCookieMap:
         """Return a legacy name→value cookie mapping.
 
-        .. deprecated:: 0.9.0
+        .. deprecated:: 0.8.1
            Scheduled for removal in v1. Direct access emits one
            :class:`DeprecationWarning`; use :attr:`jar` for bootstrap-cookie
            questions and managed-client request APIs for HTTP.

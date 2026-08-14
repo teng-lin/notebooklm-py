@@ -1,7 +1,7 @@
 # Python API Reference
 
 **Status:** Active
-**Last Updated:** 2026-06-11
+**Last Updated:** 2026-08-14
 
 Complete reference for the `notebooklm` Python library.
 
@@ -137,7 +137,7 @@ client = NotebookLMClient(auth)
 ```
 
 `AuthTokens.from_storage(...)` remains available as a v0.x compatibility loader,
-but it is deprecated in v0.9.0 and emits `DeprecationWarning` when awaited. Use
+but it is deprecated in v0.8.1 and emits `DeprecationWarning` when awaited. Use
 the managed `NotebookLMClient.from_storage(...)` examples above and access
 `client.auth` while the client is open. It is scheduled for removal in v1.0.
 
@@ -146,10 +146,10 @@ compatible through v0.x, but its implicit synchronous storage/recovery I/O is
 deprecated on the same schedule. Prefer the managed client; low-level callers
 that already own a live jar should pass `cookie_jar=` explicitly.
 
-The v0.9 cookie-view runway preserves the `AuthTokens` constructor and dataclass
+The v0.8.1 cookie-view runway preserves the `AuthTokens` constructor and dataclass
 behavior while moving managed clients toward one live authority:
 
-| Surface | v0.9 behavior and migration |
+| Surface | v0.8.1 behavior and migration |
 |---|---|
 | `flat_cookies` | Direct access warns because the name-only map loses domain/path siblings. Use `jar` for bootstrap-cookie questions and managed client APIs for requests. |
 | `cookies`, `cookie_jar` | Docs-only deprecated compatibility fields. They cannot warn without making construction, repr, equality, and `dataclasses.replace()` noisy. |

@@ -43,7 +43,7 @@ AUTH_COOKIE_DEPRECATION_ROWS = {
     "`AuthTokens.flat_cookies`": (
         "`AuthTokens.jar` for bootstrap-cookie questions; managed `NotebookLMClient` request "
         "APIs for HTTP",
-        "v0.9.0",
+        "v0.8.1",
         "v1.0",
         "Direct property access emits one caller-attributed `DeprecationWarning`. It is a lossy "
         "name-only projection and cannot preserve domain/path siblings. "
@@ -52,7 +52,7 @@ AUTH_COOKIE_DEPRECATION_ROWS = {
     "`AuthTokens.cookies` / `AuthTokens.cookie_jar`": (
         "Use `AuthTokens.jar` as the v0.x migration shape; adopt the immutable "
         "`initial_cookies: CookieJar` bootstrap field in v1",
-        "v0.9.0",
+        "v0.8.1",
         "v1.0",
         "**Docs-only deprecation:** these remain dataclass fields through v0.x, so runtime "
         "warnings would leak through construction, repr, equality, and `dataclasses.replace()`. "
@@ -60,14 +60,14 @@ AUTH_COOKIE_DEPRECATION_ROWS = {
     ),
     "`AuthTokens.jar`": (
         "The v1 `AuthTokens.initial_cookies` bootstrap field",
-        "v0.9.0",
+        "v0.8.1",
         "v1.0",
         "Warning-free v0.x migration shape. It is an immutable question/input projection, not a "
         "second live-cookie authority.",
     ),
     "`AuthTokens.cookie_header`": (
         "Managed `NotebookLMClient` request APIs",
-        "v0.9.0",
+        "v0.8.1",
         "v1.0",
         "Docs-only deprecation. Its name-only, domain-blind join is unsafe for request "
         "construction; it remains warning-free through v0.x so it does not indirectly trigger "
@@ -75,7 +75,7 @@ AUTH_COOKIE_DEPRECATION_ROWS = {
     ),
     "`AuthTokens.cookie_header_for(url)`": (
         "Managed `NotebookLMClient` request APIs",
-        "v0.9.0",
+        "v0.8.1",
         "v1.0",
         "Docs-only deprecation. Domain-aware selection remains compatible for standalone "
         "callers, but first-party request paths already use the kernel-owned jar.",

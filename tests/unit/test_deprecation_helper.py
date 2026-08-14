@@ -80,7 +80,7 @@ def test_auth_storage_registry_is_exact_frozen_and_immutable() -> None:
             message=message,
             category=DeprecationWarning,
             replacement=replacement,
-            since="0.9.0",
+            since="0.8.1",
             removal="1.0",
             stacklevel=stacklevel,
         )
