@@ -10,10 +10,13 @@ per-item failures.
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter, defaultdict, deque
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from ipaddress import IPv6Address, ip_address
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from .._idempotency import mark_unconfirmed
 from .._row_adapters.sources import unwrap_add_source_rows
@@ -31,6 +34,7 @@ from ..types import Source
 from .upload_payloads import build_template_block
 
 ListSources = Callable[..., Awaitable[list[Source]]]
+_PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,64 @@ def _url_spec(url: str, *, youtube: bool) -> list[Any]:
     if youtube:
         return [None, None, None, None, None, None, None, [url], None, None, 1]
     return [None, None, [url], None, None, None, None, None, None, None, 1]
+
+
+def _url_identity(
+    url: str,
+    *,
+    extract_youtube_video_id: Callable[[str], str | None],
+) -> tuple[str, str]:
+    """Return a conservative identity for sparse-response reconciliation."""
+
+    def _normalize_percent_escapes(value: str) -> str:
+        return _PERCENT_ESCAPE.sub(lambda match: match.group(0).upper(), value)
+
+    candidate = url.strip()
+    video_id = extract_youtube_video_id(candidate)
+    if video_id is not None:
+        return ("youtube", video_id)
+
+    try:
+        parsed = urlsplit(candidate)
+        # URL inputs are validated before this private service is called, but a
+        # response URL is untrusted wire data. Keep malformed values distinct
+        # and let the caller fail closed rather than raising from normalization.
+        port = parsed.port
+    except (AttributeError, TypeError, ValueError):
+        return ("raw", candidate)
+    if not parsed.scheme or not parsed.hostname:
+        return ("raw", candidate)
+
+    hostname = parsed.hostname.lower()
+    is_ipv6 = False
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        hostname = address.compressed
+        is_ipv6 = isinstance(address, IPv6Address)
+    if is_ipv6:
+        hostname = f"[{hostname}]"
+    default_port = (parsed.scheme.lower() == "http" and port == 80) or (
+        parsed.scheme.lower() == "https" and port == 443
+    )
+    authority = hostname if port is None or default_port else f"{hostname}:{port}"
+    if parsed.username is not None:
+        userinfo = _normalize_percent_escapes(parsed.username)
+        if parsed.password is not None:
+            userinfo += f":{_normalize_percent_escapes(parsed.password)}"
+        authority = f"{userinfo}@{authority}"
+    normalized = urlunsplit(
+        (
+            parsed.scheme.lower(),
+            authority,
+            _normalize_percent_escapes(parsed.path or "/"),
+            _normalize_percent_escapes(parsed.query),
+            "",
+        )
+    )
+    return ("url", normalized)
 
 
 def _unresolved_batch_error(urls: Sequence[str], message: str, cause: Exception) -> SourceAddError:
@@ -177,14 +239,65 @@ class SourceBatchAddService:
                 error,
             )
 
-        requested_counts = Counter(urls)
-        sources_by_url: dict[str, deque[Source]] = defaultdict(deque)
+        if len(sources) > len(urls):
+            error = RPCError(
+                f"ADD_SOURCE returned {len(sources)} rows for {len(urls)} requests",
+                method_id=RPCMethod.ADD_SOURCE.value,
+            )
+            raise _unresolved_batch_error(
+                urls,
+                "The batch response contained more sources than requested, so positional "
+                "outcomes cannot be trusted; no automatic retry was attempted.",
+                error,
+            )
+
+        requested_identities = [
+            _url_identity(url, extract_youtube_video_id=extract_youtube_video_id) for url in urls
+        ]
+
+        # Live characterization establishes that successful rows retain request
+        # order. A complete response is therefore attributable positionally,
+        # but every URL-bearing row must still identify the corresponding input
+        # (after conservative canonicalization) so an unexpected or duplicated
+        # row is never assigned to the wrong request. Legacy short rows without
+        # URL metadata retain the documented positional fallback.
+        if len(sources) == len(urls):
+            for source, requested_identity in zip(sources, requested_identities, strict=True):
+                if source.url is None:
+                    continue
+                response_identity = _url_identity(
+                    source.url,
+                    extract_youtube_video_id=extract_youtube_video_id,
+                )
+                if response_identity != requested_identity:
+                    error = RPCError(
+                        f"ADD_SOURCE returned unexpected positional URL {source.url!r}",
+                        method_id=RPCMethod.ADD_SOURCE.value,
+                    )
+                    raise _unresolved_batch_error(
+                        urls,
+                        "The complete batch response did not match request order, so positional "
+                        "outcomes cannot be trusted; no automatic retry was attempted.",
+                        error,
+                    )
+            return [
+                SourceUrlBatchItem(url=url, source=source)
+                for url, source in zip(urls, sources, strict=True)
+            ]
+
+        requested_counts = Counter(requested_identities)
+        identity_to_url = dict(zip(requested_identities, urls, strict=True))
+        sources_by_identity: dict[tuple[str, str], deque[Source]] = defaultdict(deque)
         sources_without_url: list[Source] = []
         for source in sources:
             if source.url is None:
                 sources_without_url.append(source)
                 continue
-            if source.url not in requested_counts:
+            identity = _url_identity(
+                source.url,
+                extract_youtube_video_id=extract_youtube_video_id,
+            )
+            if identity not in requested_counts:
                 error = RPCError(
                     f"ADD_SOURCE returned an unrequested URL {source.url!r}",
                     method_id=RPCMethod.ADD_SOURCE.value,
@@ -195,34 +308,29 @@ class SourceBatchAddService:
                     "outcomes cannot be trusted; no automatic retry was attempted.",
                     error,
                 )
-            sources_by_url[source.url].append(source)
+            sources_by_identity[identity].append(source)
 
-        # A sparse response must identify rows by URL: response order alone
-        # cannot reveal which request positions were silently omitted.  A full
-        # response is safe to zip positionally even when the legacy short row
-        # carries only an id.
+        # A sparse response must identify every returned row by URL: response
+        # order alone cannot reveal which request positions were silently
+        # omitted. Complete responses returned positionally above.
         if sources_without_url:
-            if len(sources) != len(urls) or sources_by_url:
-                error = RPCError(
-                    "ADD_SOURCE returned sparse source rows without URL metadata",
-                    method_id=RPCMethod.ADD_SOURCE.value,
-                )
-                raise _unresolved_batch_error(
-                    urls,
-                    "The partial batch response omitted URL metadata needed to match rows "
-                    "back to inputs; no automatic retry was attempted.",
-                    error,
-                )
-            return [
-                SourceUrlBatchItem(url=url, source=source)
-                for url, source in zip(urls, sources, strict=True)
-            ]
+            error = RPCError(
+                "ADD_SOURCE returned sparse source rows without URL metadata",
+                method_id=RPCMethod.ADD_SOURCE.value,
+            )
+            raise _unresolved_batch_error(
+                urls,
+                "The partial batch response omitted URL metadata needed to match rows "
+                "back to inputs; no automatic retry was attempted.",
+                error,
+            )
 
-        # Exact duplicate URLs are representable when all copies share one
-        # outcome.  A partial duplicate group is not attributable per position:
+        # Equivalent URL identities are representable when all copies share one
+        # outcome. A partial duplicate group is not attributable per position:
         # the response has no request index or idempotency key, so fail closed.
-        for url, count in requested_counts.items():
-            success_count = len(sources_by_url[url])
+        for identity, count in requested_counts.items():
+            success_count = len(sources_by_identity[identity])
+            url = identity_to_url[identity]
             if success_count > count:
                 error = RPCError(
                     f"ADD_SOURCE returned {success_count} rows for {count} request(s) of {url!r}",
@@ -247,13 +355,12 @@ class SourceBatchAddService:
                     error,
                 )
 
-        missing_urls: list[str] = []
-        for url in urls:
-            if not sources_by_url[url]:
-                missing_urls.append(url)
+        missing_identities = [
+            identity for identity in requested_identities if not sources_by_identity[identity]
+        ]
 
-        error_rows_by_url: dict[str, list[Source]] = defaultdict(list)
-        if missing_urls:
+        error_rows_by_identity: dict[tuple[str, str], list[Source]] = defaultdict(list)
+        if missing_identities:
             try:
                 error_rows = await list_sources(notebook_id, statuses={SourceStatus.ERROR})
             except Exception:
@@ -269,20 +376,28 @@ class SourceBatchAddService:
             else:
                 for row in error_rows:
                     row_url = row.url
-                    if row_url is not None and row_url in requested_counts:
-                        error_rows_by_url[row_url].append(row)
+                    if row_url is None:
+                        continue
+                    identity = _url_identity(
+                        row_url,
+                        extract_youtube_video_id=extract_youtube_video_id,
+                    )
+                    if identity in requested_counts:
+                        error_rows_by_identity[identity].append(row)
 
         outcomes: list[SourceUrlBatchItem] = []
-        for url in urls:
-            if sources_by_url[url]:
-                outcomes.append(SourceUrlBatchItem(url=url, source=sources_by_url[url].popleft()))
+        for url, identity in zip(urls, requested_identities, strict=True):
+            if sources_by_identity[identity]:
+                outcomes.append(
+                    SourceUrlBatchItem(url=url, source=sources_by_identity[identity].popleft())
+                )
                 continue
-            ghosts = error_rows_by_url[url]
+            ghosts = error_rows_by_identity[identity]
             ghost_text = ""
             if ghosts:
                 ids = ", ".join(source.id for source in ghosts[:3])
                 suffix = "" if len(ghosts) <= 3 else f", … ({len(ghosts)} rows)"
-                ghost_text = f" Matching ERROR source row(s): {ids}{suffix}."
+                ghost_text = f" Existing matching ERROR source row(s): {ids}{suffix}."
             outcomes.append(
                 SourceUrlBatchItem(
                     url=url,

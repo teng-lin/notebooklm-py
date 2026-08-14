@@ -228,6 +228,7 @@ async def test_add_url_baseline_failure_makes_a_match_ambiguous(
     assert classify(raised.value).category is ErrorCategory.RPC
     assert classify(raised.value).retriable is False
     # The action survives the real MCP/REST truncation slice (#2238).
+    assert len(str(raised.value)) > 300
     assert "check the notebook source list before retrying" in str(raised.value)[:300].lower()
     # The swallow is visible at the default logger level (WARNING), not DEBUG.
     assert "baseline list() failed" in caplog.text
@@ -277,6 +278,7 @@ async def test_add_url_probe_raises_on_multiple_new_matches(
     assert getattr(raised.value, "unconfirmed", False) is True
     assert classify(raised.value).category is ErrorCategory.RPC
     # _describe_sources grows with every match; guidance must remain before it.
+    assert len(str(raised.value)) > 300
     assert "check the notebook source list before retrying" in str(raised.value)[:300].lower()
     assert classify(raised.value).retriable is False
 

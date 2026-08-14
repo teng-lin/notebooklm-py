@@ -35,6 +35,11 @@ def _url_row(
     return [[source_id], url, metadata, [None, status.value]]
 
 
+def _deep_bare_url_payload(source_id: str, url: str) -> list[Any]:
+    metadata: list[Any] = [url, None, None, None, 5]
+    return [[[[source_id], url, metadata, [None, SourceStatus.PROCESSING.value]]]]
+
+
 class RecordingRpc:
     def __init__(self, result: Any = None, *, error: Exception | None = None) -> None:
         self.result = result
@@ -146,6 +151,143 @@ async def test_complete_legacy_short_rows_are_zipped_positionally() -> None:
 
 
 @pytest.mark.asyncio
+async def test_complete_canonicalized_urls_are_zipped_in_documented_response_order() -> None:
+    urls = ["https://youtu.be/abc123", "https://example.com"]
+    rpc = RecordingRpc(
+        [
+            _url_row("src-yt", "https://www.youtube.com/watch?v=abc123"),
+            _url_row("src-web", "https://example.com/"),
+        ]
+    )
+
+    outcomes = await SourceBatchAddService().add_urls(
+        "nb-1",
+        urls,
+        rpc=rpc,
+        list_sources=AsyncMock(),
+        extract_youtube_video_id=lambda url: (
+            "abc123" if "youtu.be/abc123" in url or "v=abc123" in url else None
+        ),
+        logger=logging.getLogger(__name__),
+    )
+
+    assert [item.url for item in outcomes] == urls
+    assert [item.source.id if item.source else None for item in outcomes] == [
+        "src-yt",
+        "src-web",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response_urls",
+    [
+        ["https://a.example.com", "https://other.example.com"],
+        ["https://a.example.com", "https://a.example.com"],
+    ],
+)
+async def test_complete_response_with_wrong_positional_identity_fails_closed(
+    response_urls: list[str],
+) -> None:
+    urls = ["https://a.example.com", "https://b.example.com"]
+    rpc = RecordingRpc(
+        [
+            _url_row("src-first", response_urls[0]),
+            _url_row("src-second", response_urls[1]),
+        ]
+    )
+
+    with pytest.raises(SourceAddError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            urls,
+            rpc=rpc,
+            list_sources=AsyncMock(),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert "did not match request order" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_sparse_deep_row_preserves_bare_metadata_url_for_attribution() -> None:
+    urls = ["https://good.example.com", "https://bad.example.com"]
+    rpc = RecordingRpc(_deep_bare_url_payload("src-good", urls[0]))
+
+    outcomes = await SourceBatchAddService().add_urls(
+        "nb-1",
+        urls,
+        rpc=rpc,
+        list_sources=AsyncMock(return_value=[]),
+        extract_youtube_video_id=_extract_youtube_video_id,
+        logger=logging.getLogger(__name__),
+    )
+
+    assert outcomes[0].source is not None
+    assert outcomes[0].source.id == "src-good"
+    assert outcomes[0].source.url == urls[0]
+    assert isinstance(outcomes[1].error, SourceAddError)
+
+
+@pytest.mark.asyncio
+async def test_sparse_canonical_youtube_url_matches_requested_video_identity() -> None:
+    urls = ["https://youtu.be/abc123", "https://bad.example.com"]
+    rpc = RecordingRpc([_url_row("src-yt", "https://www.youtube.com/watch?v=abc123")])
+
+    outcomes = await SourceBatchAddService().add_urls(
+        "nb-1",
+        urls,
+        rpc=rpc,
+        list_sources=AsyncMock(return_value=[]),
+        extract_youtube_video_id=lambda url: (
+            "abc123" if "youtu.be/abc123" in url or "v=abc123" in url else None
+        ),
+        logger=logging.getLogger(__name__),
+    )
+
+    assert outcomes[0].source is not None
+    assert outcomes[0].source.id == "src-yt"
+    assert isinstance(outcomes[1].error, SourceAddError)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("requested_url", "response_url"),
+    [
+        (
+            "http://[2001:db8::1]:80/article",
+            "http://[2001:0DB8:0000:0000:0000:0000:0000:0001]/article",
+        ),
+        (
+            "https://user%2fname:pa%3ass@example.com/item%2fpart?q=%ab",
+            "https://user%2Fname:pa%3Ass@example.com/item%2Fpart?q=%AB",
+        ),
+    ],
+)
+async def test_sparse_equivalent_url_spellings_share_one_identity(
+    requested_url: str,
+    response_url: str,
+) -> None:
+    urls = [requested_url, "https://bad.example.com"]
+    rpc = RecordingRpc([_url_row("src-good", response_url)])
+
+    outcomes = await SourceBatchAddService().add_urls(
+        "nb-1",
+        urls,
+        rpc=rpc,
+        list_sources=AsyncMock(return_value=[]),
+        extract_youtube_video_id=_extract_youtube_video_id,
+        logger=logging.getLogger(__name__),
+    )
+
+    assert outcomes[0].source is not None
+    assert outcomes[0].source.id == "src-good"
+    assert isinstance(outcomes[1].error, SourceAddError)
+
+
+@pytest.mark.asyncio
 async def test_partial_batch_reconciles_omission_and_keeps_positional_outcomes() -> None:
     urls = [
         "https://good-a.example.com",
@@ -172,6 +314,7 @@ async def test_partial_batch_reconciles_omission_and_keeps_positional_outcomes()
     ]
     assert isinstance(outcomes[1].error, SourceAddError)
     assert "ghost-bad" in str(outcomes[1].error)
+    assert "Existing matching ERROR source row" in str(outcomes[1].error)
     assert classify(outcomes[1].error).category is ErrorCategory.SOURCE_ADD
     list_sources.assert_awaited_once_with("nb-1", statuses={SourceStatus.ERROR})
 
@@ -335,3 +478,69 @@ async def test_partially_admitted_duplicate_url_is_reported_as_ambiguous() -> No
     assert getattr(raised.value, "unconfirmed", False) is True
     assert "partially admitted identical URLs" in str(raised.value)
     assert "do not blindly retry" in str(raised.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_sparse_response_with_unrequested_url_fails_closed() -> None:
+    rpc = RecordingRpc([_url_row("src-other", "https://other.example.com")])
+
+    with pytest.raises(SourceAddError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            ["https://a.example.com", "https://b.example.com"],
+            rpc=rpc,
+            list_sources=AsyncMock(),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert "unrequested source" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_sparse_response_with_too_many_rows_for_one_identity_fails_closed() -> None:
+    urls = [
+        "https://a.example.com",
+        "https://b.example.com",
+        "https://c.example.com",
+    ]
+    rpc = RecordingRpc([_url_row("src-a1", urls[0]), _url_row("src-a2", urls[0])])
+
+    with pytest.raises(SourceAddError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            urls,
+            rpc=rpc,
+            list_sources=AsyncMock(),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert "more sources than requested" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_failure_preserves_known_positional_outcomes(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    urls = ["https://good.example.com", "https://bad.example.com"]
+    rpc = RecordingRpc([_url_row("src-good", urls[0])])
+    list_sources = AsyncMock(side_effect=RPCError("listing drifted"))
+
+    with caplog.at_level(logging.WARNING):
+        outcomes = await SourceBatchAddService().add_urls(
+            "nb-1",
+            urls,
+            rpc=rpc,
+            list_sources=list_sources,
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert outcomes[0].source is not None
+    assert outcomes[0].source.id == "src-good"
+    assert isinstance(outcomes[1].error, SourceAddError)
+    assert "ERROR source row" not in str(outcomes[1].error)
+    assert "failed to list ERROR rows" in caplog.text

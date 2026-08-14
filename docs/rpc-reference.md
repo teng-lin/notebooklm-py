@@ -449,7 +449,8 @@ button (`mattooltip='Close source view'`).
 
 ### RPC: ADD_SOURCE (izAoDd) - URL
 
-**Source:** `_source/add.py::SourceAddService.add_url_source()`
+**Sources:** `_source/add.py::SourceAddService.add_url_source()` (single item),
+`_source/batch.py::SourceBatchAddService.add_urls()` (true batch)
 
 ```python
 # URL goes at position [2] in an 11-element source spec.

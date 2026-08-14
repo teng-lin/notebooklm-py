@@ -131,14 +131,16 @@ def _unwrap_source_entry(value: Any) -> list[Any] | None:
 
 
 def unwrap_add_source_rows(payload: Any) -> list[list[Any]]:
-    """Extract repeated Source rows from known ``AddSources`` envelopes.
+    """Extract repeated Source payloads from known ``AddSources`` envelopes.
 
     A single result historically decodes as one medium/deep Source payload;
     a multi-entry response may be either a flat repeated-row list or carry one
     additional outer list. Anything else is schema drift: the general Source
     parser intentionally degrades malformed listing rows, which is unsafe for a
     mutating response whose returned ids are the only proof of which writes
-    committed.
+    committed. Recognized per-row wrappers are deliberately retained so
+    :meth:`SourceRow.from_unknown_shape` can preserve shape-dependent decoding,
+    including the legacy deeply-nested ``metadata[0]`` URL fallback.
     """
     if not isinstance(payload, list) or not payload:
         raise DecodingError(
@@ -148,16 +150,16 @@ def unwrap_add_source_rows(payload: Any) -> list[list[Any]]:
         )
     single = _unwrap_source_entry(payload)
     if single is not None:
-        return [single]
+        return [payload]
 
     repeated = [_unwrap_source_entry(item) for item in payload]
     if all(item is not None for item in repeated):
-        return [item for item in repeated if item is not None]
+        return list(payload)
 
     if len(payload) == 1 and isinstance(payload[0], list) and payload[0]:
         wrapped_repeated = [_unwrap_source_entry(item) for item in payload[0]]
         if all(item is not None for item in wrapped_repeated):
-            return [item for item in wrapped_repeated if item is not None]
+            return list(payload[0])
     raise DecodingError(
         "Unrecognized ADD_SOURCE response envelope",
         raw_response=repr(payload),

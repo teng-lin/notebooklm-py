@@ -225,13 +225,12 @@ class SourceAddService:
            the bulk-import case this path serves, where the pre-existing copy
            was added seconds earlier.
 
-           The bump itself is idempotent, so a caller looping over this
-           single-item method reorders *Recent* once rather than once per URL,
-           and any ``wait=True`` caller already pays it via
-           ``wait_until_ready``'s polling. Such a caller still pays one baseline
-           read per item. The existing MCP/REST URL-batch endpoints deliberately
-           bypass this method and use one true-batch write plus, when needed, one
-           reconciliation read (#2115). ``add_text`` is
+           A caller looping over this single-item method keeps the notebook at
+           the top of *Recent* when no other activity intervenes, but every
+           baseline read still writes ``lastViewedTime``. Any ``wait=True``
+           caller also pays the polling reads. The existing MCP/REST URL-batch
+           endpoints deliberately bypass this method and use one true-batch
+           write plus, when needed, one reconciliation read (#2115). ``add_text`` is
            ``NON_IDEMPOTENT_NO_RETRY``, runs no probe, and is unaffected.
 
         .. warning::

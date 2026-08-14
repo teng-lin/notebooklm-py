@@ -15,7 +15,6 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 from collections.abc import AsyncIterator, Callable
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -73,7 +72,9 @@ def mock_client() -> MagicMock:
     for namespace in _NAMESPACES:
         setattr(client, namespace, MagicMock())
 
-    async def _batch_add(notebook_id: str, urls: list[str]) -> list[SimpleNamespace]:
+    from notebooklm._source.batch import SourceUrlBatchItem
+
+    async def _batch_add(notebook_id: str, urls: list[str]) -> list[SourceUrlBatchItem]:
         """Adapter-test seam: model typed batch outcomes through mocked add_url.
 
         Production reaches the real one-RPC ``SourcesAPI._add_urls_batch``;
@@ -84,7 +85,7 @@ def mock_client() -> MagicMock:
         from notebooklm._idempotency import mark_unconfirmed
         from notebooklm.exceptions import NetworkError, RateLimitError, ServerError
 
-        outcomes: list[SimpleNamespace] = []
+        outcomes: list[SourceUrlBatchItem] = []
         for url in urls:
             try:
                 source = await client.sources.add_url(notebook_id, url)
@@ -96,9 +97,9 @@ def mock_client() -> MagicMock:
                     mark_unconfirmed(exc)
                 if batch_item_is_fatal(exc):
                     raise
-                outcomes.append(SimpleNamespace(url=url, source=None, error=exc))
+                outcomes.append(SourceUrlBatchItem(url=url, error=exc))  # type: ignore[arg-type]
             else:
-                outcomes.append(SimpleNamespace(url=url, source=source, error=None))
+                outcomes.append(SourceUrlBatchItem(url=url, source=source))
         return outcomes
 
     client.sources._add_urls_batch = AsyncMock(side_effect=_batch_add)
