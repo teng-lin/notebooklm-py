@@ -171,12 +171,22 @@ def rookiepy_row_to_storage_row(normalized: Mapping[str, Any]) -> dict[str, Any]
     same_site = normalized.get("sameSite", normalized.get("same_site"))
     if same_site not in {"Strict", "Lax", "None"}:
         same_site = "None"
+    expires = normalized["expires"]
+    # rookiepy reports Chromium-family cookie expiry in *milliseconds* (its
+    # Chrome/Edge extractors read the cookie store's raw µs-since-1601 value and
+    # divide by 1_000, not 1_000_000), while the Playwright storage_state format
+    # — and http.cookiejar — expect Unix *seconds*. Any value above the largest
+    # representable seconds timestamp (year 9999) is unambiguously milliseconds,
+    # so convert it. This mirrors the Firefox path, which already normalizes
+    # ms→s in `_firefox_containers._row_to_rookie_cookies_dict`.
+    if isinstance(expires, (int, float)) and expires > 253402300799:
+        expires = int(expires / 1000)
     return {
         "name": normalized["name"],
         "value": normalized["value"],
         "domain": normalized["domain"],
         "path": normalized["path"],
-        "expires": -1 if normalized["expires"] is None else normalized["expires"],
+        "expires": -1 if expires is None else expires,
         "httpOnly": bool(normalized.get("http_only", False)),
         "secure": bool(normalized.get("secure", False)),
         "sameSite": same_site,

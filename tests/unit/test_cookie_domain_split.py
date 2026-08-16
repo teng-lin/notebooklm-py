@@ -891,3 +891,42 @@ class TestAuthInspectCliFlag:
         assert result.exit_code == 0, result.output
         enum.assert_called_once()
         assert enum.call_args.kwargs["include_domains"] == {"youtube"}
+
+
+class TestMillisecondExpiryNormalization:
+    """rookiepy reports Chromium cookie expiry in milliseconds; the storage_state
+    conversion must normalize it to Unix seconds (matching the Firefox path).
+
+    Regression: ``notebooklm login --browser-cookies chrome`` wrote 13-digit
+    millisecond ``expires`` values into ``storage_state.json``, which Playwright
+    rejects ("Cookie should have a valid expires"). See
+    ``notebooklm._auth.cookie_semantics.rookiepy_row_to_storage_row``.
+    """
+
+    @staticmethod
+    def _cookie(expires):
+        return {
+            "domain": ".google.com",
+            "name": "SID",
+            "value": "v",
+            "path": "/",
+            "secure": True,
+            "expires": expires,
+            "http_only": True,
+        }
+
+    def test_millisecond_expiry_converted_to_seconds(self):
+        storage = convert_rookiepy_cookies_to_storage_state(
+            [self._cookie(1821183946403)]  # 2027-09-17T12:52:26.403Z in ms
+        )
+        assert storage["cookies"][0]["expires"] == 1821183946
+
+    def test_second_expiry_preserved(self):
+        storage = convert_rookiepy_cookies_to_storage_state(
+            [self._cookie(1787639026)]  # 2026-08-25 in seconds
+        )
+        assert storage["cookies"][0]["expires"] == 1787639026
+
+    def test_session_cookie_stays_negative_one(self):
+        storage = convert_rookiepy_cookies_to_storage_state([self._cookie(None)])
+        assert storage["cookies"][0]["expires"] == -1
