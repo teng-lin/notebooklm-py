@@ -560,6 +560,8 @@ API key and may consume Xquik usage credits. Set
 the response into NotebookLM as explicit text:
 
 ```bash
+set -o pipefail
+
 go install 'github.com/Xquik-dev/x-twitter-scraper-cli/cmd/x-twitter-scraper@latest'
 
 tweet_id="1234567890"
@@ -570,6 +572,8 @@ x-twitter-scraper --format yaml x:tweets retrieve --id "$tweet_id" |
 For an X Article, use the full-article route instead:
 
 ```bash
+set -o pipefail
+
 x-twitter-scraper --format yaml x get-article --tweet-id "$tweet_id" |
   notebooklm source add - --type text --title "X Article $tweet_id"
 ```
