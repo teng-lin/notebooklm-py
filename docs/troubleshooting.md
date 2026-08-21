@@ -551,6 +551,29 @@ bird read "https://x.com/username/status/1234567890" > article.md
 notebooklm source add ./article.md
 ```
 
+**API-key workflow for headless environments:**
+
+The [Xquik CLI](https://github.com/Xquik-dev/x-twitter-scraper-cli) can fetch
+structured post data without browser-owned X cookies. It requires a separate
+API key and may consume Xquik usage credits. Set
+`X_TWITTER_SCRAPER_API_KEY` through your shell or secret manager, then stream
+the response into NotebookLM as explicit text:
+
+```bash
+go install 'github.com/Xquik-dev/x-twitter-scraper-cli/cmd/x-twitter-scraper@latest'
+
+tweet_id="1234567890"
+x-twitter-scraper --format yaml x:tweets retrieve --id "$tweet_id" |
+  notebooklm source add - --type text --title "X post $tweet_id"
+```
+
+For an X Article, use the full-article route instead:
+
+```bash
+x-twitter-scraper --format yaml x get-article --tweet-id "$tweet_id" |
+  notebooklm source add - --type text --title "X Article $tweet_id"
+```
+
 **Alternative methods:**
 
 **Using browser automation:**
