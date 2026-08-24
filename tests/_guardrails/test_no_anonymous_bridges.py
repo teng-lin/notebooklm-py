@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
-CURRENT_PHASE = 8
+CURRENT_PHASE = 9
 
 pytestmark = pytest.mark.repo_lint
 
