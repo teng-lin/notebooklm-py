@@ -1088,8 +1088,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/bindings/labels.py` | P9.3 labels/collections codec rows: `LABEL_LIST`, `LABEL_GET`, `LABEL_GENERATE`, `LABEL_DELETE`, `COLLECTION_LIST`, `COLLECTION_GET`, `COLLECTION_DELETE` — one `LIST_LABELS`/`CREATE_LABEL`/`DELETE_LABEL` call per row; the get rows select by exact id inside `decode`. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
 | `_web/bindings/sharing.py` | P9.3 sharing codec rows: `SHARING_GET`, `LEGACY_SHARE_ARTIFACT` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the composites in `_web/sharing.py` keep their own readback helper. |
+| `_web/bindings/sources.py` | P9.3 source codec rows: `SOURCE_LIST`, `SOURCE_GET` (exact-id select inside `decode`), `SOURCE_WAIT` (the one `DeadlineMode.IGNORE` row), `SOURCE_DELETE`, `SOURCE_REFRESH`, `SOURCE_CHECK_FRESHNESS`, `SOURCE_GET_GUIDE`, `SOURCE_GET_FULLTEXT` — `encode → one native call → decode`; the source-add composites, `SOURCE_UPDATE` and the upload callbacks keep reading through `_web/source_variants.py`'s snapshot helper. |
 | `_web/settings_suggestions.py` | P6.6 prompt-suggestion web workflow mixin; since P9.3 only the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` composite remains here (the settings and report-suggestion leaves are `_web/bindings/settings.py` rows). |
-| `_web/source_variants.py` | Web workflow mixin for URL add plus source content, freshness, refresh, Drive, upload, and remaining source variants; owns request dialects and composite reconciliation while keeping the composed backend below the module-size ratchet. |
+| `_web/source_variants.py` | Web workflow mixin for the URL/text/Drive/file source-add composites, `SOURCE_UPDATE`, the upload-pipeline callbacks and the shared recency-writing snapshot helper they read through; since P9.3 the list/get/wait reads and the single-native delete/refresh/freshness/guide/fulltext leaves are `_web/bindings/sources.py` rows. |
 | `_web/policy.py` | Exact P4 ledger for all 82 active web workflows: semantic policy, every reachable native method/variant, reviewed native idempotency, and optional reported divergence. |
 | `_web/registry.py` | Closed web disposition registry over every `Operation`: 82 executable typed handlers plus explicit composite dispositions. |
 | `_studio/catalog.py` | Typed P5.1 Studio list/get service over neutral artifact operation records. |
@@ -1355,14 +1356,15 @@ src/notebooklm/
 │   │   ├── notes.py             # plain-note codec rows
 │   │   ├── research.py          # research codec rows (input-keyed start)
 │   │   ├── settings.py          # settings/suggestion codec rows
-│   │   └── sharing.py           # sharing codec rows (status read, legacy share)
+│   │   ├── sharing.py           # sharing codec rows (status read, legacy share)
+│   │   └── sources.py           # source read/wait and single-native source mutation rows
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)
 │   ├── registry.py              # Closed active/unsupported web dispositions
 │   ├── studio_documents.py      # P5.4 web report/video workflow handlers
 │   ├── studio_media.py          # P5.2/P5.3/P5.5 web family handlers
 │   ├── studio_data.py           # P5.6 data-view generation and Drive-export handlers
 │   ├── studio_facade.py         # P5.8 management/lifecycle/suggestion/representation handlers
-│   ├── source_variants.py       # Source add/content/refresh/Drive/upload/wait workflow handlers
+│   ├── source_variants.py       # Source add/update/upload composites (leaves are bindings/sources.py rows)
 │   ├── transport.py             # P9.1 WebTransport call/stream verbs, WebRequest/WebStreamRequest
 │   └── codec/                   # P3 web response codecs producing neutral records/value exemptions
 │       ├── __init__.py          # Private codec re-exports

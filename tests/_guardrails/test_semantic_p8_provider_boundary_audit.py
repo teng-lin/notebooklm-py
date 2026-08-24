@@ -131,6 +131,7 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_web.bindings.research",
         "_web.bindings.settings",
         "_web.bindings.sharing",
+        "_web.bindings.sources",
         "_web.chat",
         "_web.chat_transport",
         "_web.codec",

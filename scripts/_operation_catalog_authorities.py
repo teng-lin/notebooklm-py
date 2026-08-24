@@ -95,16 +95,10 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         )
     ),
     (Operation.SOURCE_LIST, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
-            "public=sources.list",
-        )
+        ("_web/bindings/sources.py:SOURCE_LIST", "public=sources.list")
     ),
     (Operation.SOURCE_GET, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
-            "select exact source id",
-        )
+        ("_web/bindings/sources.py:SOURCE_GET", "select exact source id inside decode")
     ),
     (Operation.SOURCE_ADD_URL, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
@@ -138,7 +132,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_WAIT, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+            "_web/bindings/sources.py:SOURCE_WAIT",
             "one readiness snapshot per tick; multi-source modes share it across inputs",
         )
     ),
@@ -359,8 +353,11 @@ _UPDATE_TYPED = "_web/backend.py:WebRpcBackend._notebook_update"
 _GET_RAW = "_notebooks.py:NotebooksAPI.get_raw"
 _GET_DATA_SOURCES = "_web/studio_data.py:StudioDataWebHandlers._data_source_ids"
 _GET_SOURCES = "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
-_GET_SOURCE_LIST = _GET_SOURCES
-_GET_SOURCE = _GET_SOURCES
+# P9.3: the three source leaves read through their own codec rows; composites
+# and the upload pipeline keep reading through the retained snapshot helper.
+_GET_SOURCE_LIST = "_web/bindings/sources.py:SOURCE_LIST"
+_GET_SOURCE = "_web/bindings/sources.py:SOURCE_GET"
+_GET_SOURCE_WAIT = "_web/bindings/sources.py:SOURCE_WAIT"
 _GET_PROMPT_SOURCES = (
     "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts"
 )
@@ -488,7 +485,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "public_call",
             "one exact-id source read only when UPDATE_SOURCE returns a null echo",
-            (_GET_SOURCE,),
+            (_GET_SOURCES,),
         ),
     ),
     Operation.SOURCE_WAIT: (
@@ -502,7 +499,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "waiter_poll_tick",
             "one snapshot per single-source waiter tick",
-            (_GET_SOURCES,),
+            (_GET_SOURCE_WAIT,),
         ),
         RecencyRule(
             _p("sources", "wait_all_until_ready"),
@@ -510,7 +507,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "aggregate_poll_tick",
             "one shared snapshot per tick regardless of source count",
-            (_GET_SOURCES,),
+            (_GET_SOURCE_WAIT,),
         ),
         RecencyRule(
             _p("sources", "wait_for_sources"),
@@ -518,7 +515,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "aggregate_poll_tick",
             "one shared snapshot per tick regardless of source count",
-            (_GET_SOURCES,),
+            (_GET_SOURCE_WAIT,),
         ),
         RecencyRule(
             _p(
@@ -533,7 +530,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "optional_add_poll_tick",
             "one source.wait snapshot per tick only when wait=True",
-            (_GET_SOURCES,),
+            (_GET_SOURCE_WAIT,),
         ),
     ),
     Operation.CHAT_ASK: (
