@@ -1346,6 +1346,7 @@ src/notebooklm/
 │   ├── studio_data.py           # P5.6 data-view generation and Drive-export handlers
 │   ├── studio_facade.py         # P5.8 management/lifecycle/suggestion/representation handlers
 │   ├── source_variants.py       # Source add/content/refresh/Drive/upload/wait workflow handlers
+│   ├── transport.py             # P9.1 WebTransport call/stream verbs, WebRequest/WebStreamRequest
 │   └── codec/                   # P3 web response codecs producing neutral records/value exemptions
 │       ├── __init__.py          # Private codec re-exports
 │       ├── artifacts.py         # Artifact/mind-map/report-suggestion rows -> neutral records
