@@ -8,6 +8,7 @@ import inspect
 import typing
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from notebooklm._operations import Operation
@@ -88,6 +89,194 @@ def _attribute_parts(node: ast.AST) -> tuple[str, ...]:
     return tuple(reversed(parts))
 
 
+# Binding rows (P9.2). A module-level ``NAME = CodecBinding(definition=X_DEF, native=...)`` or
+# ``CustomBinding(..., native=(spec, ...))`` — directly, inside a ``{Operation.X: row}`` table,
+# or through a helper call that forwards a ``native=`` keyword — is an execution-authority
+# site exactly like a ``_rpc_call(RPCMethod.X, ...)`` call site. The row's ``NativeCallSpec``
+# is the sole authority for the natives it dispatches, so the walker reads the spec literally
+# and reports anything it cannot resolve statically as an unresolved dispatch.
+_ROW_CONSTRUCTORS = frozenset({"CodecBinding", "CustomBinding"})
+_SPEC_CONSTRUCTORS = frozenset({"NativeCallSpec", "NativeChoice"})
+_SPEC_FACTORIES = frozenset({"constant", "keyed"})
+
+NativeName = tuple[str, str | None]
+
+
+@dataclass(frozen=True, slots=True)
+class BindingRowSite:
+    """One binding row recognised at module scope."""
+
+    site: str
+    operation: Operation | None
+    natives: tuple[NativeName, ...]
+    unresolved: bool = False
+
+
+def _rpc_method_member(node: ast.AST | None) -> str | None:
+    if node is None:
+        return None
+    parts = _attribute_parts(node)
+    if len(parts) >= 2 and parts[-2] == "RPCMethod" and parts[-1] in RPCMethod.__members__:
+        return parts[-1]
+    return None
+
+
+def _variant_literal(node: ast.AST | None) -> tuple[str | None, bool]:
+    if node is None or (isinstance(node, ast.Constant) and node.value is None):
+        return None, True
+    literal = _literal_string(node)
+    return literal, literal is not None
+
+
+def _call_argument(call: ast.Call, index: int, keyword: str) -> ast.AST | None:
+    for item in call.keywords:
+        if item.arg == keyword:
+            return item.value
+    return call.args[index] if 0 <= index < len(call.args) else None
+
+
+def _is_spec_call(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    parts = _attribute_parts(node.func)
+    if not parts:
+        return False
+    if parts[-1] in _SPEC_CONSTRUCTORS:
+        return True
+    return len(parts) >= 2 and parts[-2] == "NativeCallSpec" and parts[-1] in _SPEC_FACTORIES
+
+
+def _is_row_call(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call) or _is_spec_call(node):
+        return False
+    parts = _attribute_parts(node.func)
+    if parts and parts[-1] in _ROW_CONSTRUCTORS:
+        return True
+    return any(keyword.arg == "native" for keyword in node.keywords)
+
+
+def _operation_member(node: ast.AST) -> str | None:
+    parts = _attribute_parts(node)
+    if len(parts) >= 2 and parts[-2] == "Operation" and parts[-1] in Operation.__members__:
+        return parts[-1]
+    return None
+
+
+_DEFINITION_OPERATIONS: dict[str, Operation | None] = {}
+
+
+def _operation_for_definition(name: str) -> Operation | None:
+    """Map a ``<NAME>_DEF`` record name to its closed operation, or ``None``."""
+    if name not in _DEFINITION_OPERATIONS:
+        from notebooklm import _records
+        from notebooklm._operations import OperationDef
+
+        definition = getattr(_records, name, None)
+        _DEFINITION_OPERATIONS[name] = (
+            definition.key if isinstance(definition, OperationDef) else None
+        )
+    return _DEFINITION_OPERATIONS[name]
+
+
+def _definition_name(call: ast.Call) -> str | None:
+    node = _call_argument(call, 0, "definition")
+    if node is None:
+        return None
+    parts = _attribute_parts(node)
+    if parts and parts[-1].endswith("_DEF"):
+        return parts[-1]
+    return None
+
+
+class _SpecResolver:
+    """Resolve ``NativeCallSpec``/``NativeChoice`` literals to ``(method, variant)`` names."""
+
+    def __init__(self, spec_bindings: Mapping[str, tuple[NativeName, ...] | None]) -> None:
+        self._spec_bindings = spec_bindings
+        self.natives: list[NativeName] = []
+        self.unresolved: str | None = None
+
+    def _fail(self, field: str) -> None:
+        if self.unresolved is None:
+            self.unresolved = field
+
+    def _choice(self, method_node: ast.AST | None, variant_node: ast.AST | None) -> None:
+        method = _rpc_method_member(method_node)
+        if method is None:
+            self._fail("method")
+            return
+        variant, resolved = _variant_literal(variant_node)
+        if not resolved:
+            self._fail("operation_variant")
+            return
+        self.natives.append((method, variant))
+
+    def resolve(self, node: ast.AST | None) -> None:
+        if node is None:
+            self._fail("method")
+        elif isinstance(node, ast.Name):
+            bound = self._spec_bindings.get(node.id)
+            if bound is None:
+                self._fail("method")
+            else:
+                self.natives.extend(bound)
+        elif isinstance(node, (ast.Tuple, ast.List)):
+            if not node.elts:
+                self._fail("method")
+            for element in node.elts:
+                self.resolve(element)
+        elif isinstance(node, ast.Call):
+            self._resolve_call(node)
+        else:
+            self._fail("method")
+
+    def _resolve_call(self, call: ast.Call) -> None:
+        parts = _attribute_parts(call.func)
+        last = parts[-1] if parts else ""
+        if (
+            last == "NativeChoice"
+            or last == "constant"
+            and len(parts) >= 2
+            and parts[-2] == "NativeCallSpec"
+        ):
+            self._choice(_call_argument(call, 0, "method"), _call_argument(call, 1, "variant"))
+        elif last == "keyed" and len(parts) >= 2 and parts[-2] == "NativeCallSpec":
+            has_selector_keyword = any(item.arg == "selector" for item in call.keywords)
+            choices = list(call.args if has_selector_keyword else call.args[1:])
+            if not choices:
+                self._fail("method")
+            for choice in choices:
+                self.resolve(choice)
+        elif last == "NativeCallSpec":
+            self.resolve(_call_argument(call, 0, "choices"))
+        else:
+            self._fail("method")
+
+
+def _iter_row_calls(
+    node: ast.AST, key_operation: str | None = None
+) -> typing.Iterator[tuple[ast.Call, str | None]]:
+    """Yield ``(row_call, operation_member_from_table_key)`` pairs found under ``node``."""
+    if _is_row_call(node):
+        assert isinstance(node, ast.Call)
+        yield node, key_operation
+        return
+    if isinstance(node, ast.Dict):
+        for key, value in zip(node.keys, node.values, strict=True):
+            member = _operation_member(key) if key is not None else None
+            yield from _iter_row_calls(value, member or key_operation)
+        return
+    if isinstance(node, (ast.Tuple, ast.List)):
+        for element in node.elts:
+            yield from _iter_row_calls(element, key_operation)
+        return
+    if isinstance(node, ast.Call) and not _is_spec_call(node):
+        for argument in node.args:
+            yield from _iter_row_calls(argument, key_operation)
+        for keyword in node.keywords:
+            yield from _iter_row_calls(keyword.value, key_operation)
+
+
 class _ReferenceCollector(ast.NodeVisitor):
     """Collect RPCMethod references and public facade calls with owners."""
 
@@ -101,6 +290,8 @@ class _ReferenceCollector(ast.NodeVisitor):
         self.rpc_calls: list[tuple[str, str | None, str]] = []
         self.unresolved_rpc_calls: list[tuple[str, str]] = []
         self.public_calls: list[tuple[str, str]] = []
+        self.binding_rows: list[BindingRowSite] = []
+        self.spec_bindings: dict[str, tuple[NativeName, ...] | None] = {}
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.stack.append(node.name)
@@ -139,7 +330,55 @@ class _ReferenceCollector(ast.NodeVisitor):
             self.rpc_references.append((parts[-1], _qualname(self.stack)))
         self.generic_visit(node)
 
+    def _visit_module_assignment(self, target: ast.AST, value: ast.AST) -> None:
+        """Record module-level native specs and binding rows as execution-authority sites."""
+        if not isinstance(target, ast.Name):
+            return
+        if _is_spec_call(value):
+            resolver = _SpecResolver(self.spec_bindings)
+            resolver.resolve(value)
+            self.spec_bindings[target.id] = (
+                None if resolver.unresolved is not None else tuple(resolver.natives)
+            )
+            return
+        for index, (row, key_member) in enumerate(_iter_row_calls(value)):
+            definition = _definition_name(row)
+            operation = _operation_for_definition(definition) if definition is not None else None
+            unresolved: str | None = None
+            if definition is not None and operation is None:
+                unresolved = "definition"
+            if key_member is not None:
+                if operation is None:
+                    operation = Operation[key_member]
+                elif operation.name != key_member:
+                    unresolved = "definition"
+            if operation is None:
+                unresolved = "definition"
+            resolver = _SpecResolver(self.spec_bindings)
+            resolver.resolve(_call_argument(row, -1, "native"))
+            if resolver.unresolved is not None and unresolved is None:
+                unresolved = resolver.unresolved
+            if row is value:
+                site = target.id
+            elif operation is not None:
+                site = f"{target.id}.{operation.name}"
+            else:
+                site = f"{target.id}.{index}"
+            if unresolved is not None:
+                self.unresolved_rpc_calls.append((site, unresolved))
+            self.binding_rows.append(
+                BindingRowSite(
+                    site=site,
+                    operation=operation,
+                    natives=tuple(resolver.natives),
+                    unresolved=unresolved is not None,
+                )
+            )
+
     def visit_Assign(self, node: ast.Assign) -> None:
+        if not self.bindings and not self.stack:
+            for target in node.targets:
+                self._visit_module_assignment(target, node.value)
         if self.bindings:
             methods = {
                 parts[-1]
@@ -157,6 +396,8 @@ class _ReferenceCollector(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if not self.bindings and not self.stack and node.value is not None:
+            self._visit_module_assignment(node.target, node.value)
         if self.bindings and isinstance(node.target, ast.Name) and node.value is not None:
             methods = {
                 parts[-1]
@@ -428,31 +669,137 @@ def collect_rpc_references() -> dict[RPCMethod, dict[str, list[str]]]:
                 inventory[RPCMethod[method_name]]["execution_authorities"].add(
                     f"{relative}:{owner}"
                 )
+            for row in collector.binding_rows:
+                for method_name, _variant in row.natives:
+                    inventory[RPCMethod[method_name]]["execution_authorities"].add(
+                        f"{relative}:{row.site}"
+                    )
     return {
         method: {role: sorted(sites) for role, sites in sorted(roles.items())}
         for method, roles in inventory.items()
     }
 
 
-def collect_native_execution_sites() -> dict[NativeKey, list[str]]:
-    """Return direct transport-reaching call sites per native method/variant."""
-    sites: dict[NativeKey, set[str]] = defaultdict(set)
-    for path in sorted(SRC_ROOT.rglob("*.py")):
-        relative = path.relative_to(SRC_ROOT).as_posix()
-        if relative.startswith(("_row_adapters/", "_types/", "rpc/")) or relative in {
-            "_idempotency_policy.py",
-        }:
+_NATIVE_SITE_EXCLUDED_PREFIXES = ("_row_adapters/", "_types/", "rpc/")
+_NATIVE_SITE_EXCLUDED_MODULES = frozenset({"_idempotency_policy.py"})
+
+
+def _iter_native_site_modules(root: Path) -> typing.Iterator[tuple[str, Path]]:
+    for path in sorted(root.rglob("*.py")):
+        relative = path.relative_to(root).as_posix()
+        if (
+            relative.startswith(_NATIVE_SITE_EXCLUDED_PREFIXES)
+            or relative in _NATIVE_SITE_EXCLUDED_MODULES
+        ):
             continue
+        yield relative, path
+
+
+def collect_native_execution_sites(root: Path = SRC_ROOT) -> dict[NativeKey, list[str]]:
+    """Return direct transport-reaching call sites per native method/variant.
+
+    A site is a ``rpc_call``/``_rpc_call`` invocation naming ``RPCMethod.X`` or a
+    module-level binding row whose ``NativeCallSpec`` declares ``RPCMethod.X``.
+    """
+    sites: dict[NativeKey, set[str]] = defaultdict(set)
+    for relative, path in _iter_native_site_modules(root):
         collector = _ReferenceCollector(relative, set())
         collector.visit(_parse(path))
         for method_name, variant, owner in collector.rpc_calls:
             site = f"{relative}:{owner}"
             if site not in INERT_P1_WEB_HANDLERS:
                 sites[(RPCMethod[method_name], variant)].add(site)
+        for row in collector.binding_rows:
+            site = f"{relative}:{row.site}"
+            if site in INERT_P1_WEB_HANDLERS:
+                continue
+            for method_name, variant in row.natives:
+                sites[(RPCMethod[method_name], variant)].add(site)
     return {
         key: sorted(values)
         for key, values in sorted(sites.items(), key=lambda item: _native_key_text(item[0]))
     }
+
+
+def collect_binding_rows(root: Path = SRC_ROOT) -> list[BindingRowSite]:
+    """Return every module-level binding row with its full ``file.py:NAME`` site."""
+    rows: list[BindingRowSite] = []
+    for relative, path in _iter_native_site_modules(root):
+        collector = _ReferenceCollector(relative, set())
+        collector.visit(_parse(path))
+        rows.extend(
+            BindingRowSite(
+                site=f"{relative}:{row.site}",
+                operation=row.operation,
+                natives=row.natives,
+                unresolved=row.unresolved,
+            )
+            for row in collector.binding_rows
+        )
+    return rows
+
+
+def collect_binding_sites(root: Path = SRC_ROOT) -> set[str]:
+    """Return binding-row sites, accepted wherever a function site is accepted."""
+    return {row.site for row in collect_binding_rows(root)}
+
+
+def derive_row_authorities(
+    root: Path = SRC_ROOT,
+) -> dict[tuple[Operation, NativeKey], tuple[str, ...]]:
+    """Return the ``(operation, native) -> sites`` allocation every binding row declares.
+
+    A hoist or conversion PR replaces a hand-written ``SHARED_RPC_AUTHORITY_RULES`` entry with
+    the derived site for its operation; the audit keeps comparing both directions.
+    """
+    allocation: dict[tuple[Operation, NativeKey], set[str]] = defaultdict(set)
+    for row in collect_binding_rows(root):
+        if row.operation is None:
+            continue
+        for method_name, variant in row.natives:
+            allocation[(row.operation, (RPCMethod[method_name], variant))].add(row.site)
+    return {
+        key: tuple(sorted(sites))
+        for key, sites in sorted(
+            allocation.items(),
+            key=lambda item: (item[0][0].value, _native_key_text(item[0][1])),
+        )
+    }
+
+
+def audit_row_bindings(rows: Sequence[BindingRowSite] | None = None) -> list[str]:
+    """Fail closed when a binding row's declared natives disagree with the policy ledger."""
+    from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
+
+    errors: list[str] = []
+    seen: dict[Operation, str] = {}
+    for row in collect_binding_rows() if rows is None else rows:
+        if row.operation is None:
+            errors.append(f"binding row {row.site} names no resolvable operation definition")
+            continue
+        operation = row.operation
+        if operation in seen:
+            errors.append(
+                f"{operation.value} has more than one binding row: {seen[operation]}, {row.site}"
+            )
+        seen[operation] = row.site
+        ledger = WEB_CALL_POLICY_BINDINGS.get(operation)
+        if ledger is None:
+            errors.append(
+                f"binding row {row.site} for {operation.value} has no web call-policy ledger entry"
+            )
+            continue
+        if row.unresolved:
+            continue
+        declared = {(RPCMethod[method], variant) for method, variant in row.natives}
+        expected = {(native.method, native.variant) for native in ledger.native_bindings}
+        if declared != expected and ledger.known_divergence is None:
+            errors.append(
+                f"{operation.value} binding row {row.site} declares natives "
+                f"{sorted(_native_key_text(key) for key in declared)} but the policy ledger "
+                f"expects {sorted(_native_key_text(key) for key in expected)}"
+            )
+    return errors
 
 
 GENERIC_RPC_FORWARDERS = frozenset(
@@ -2047,7 +2394,7 @@ def audit_operation_authorities() -> list[str]:
                     f"{operation.value}/{_native_key_text(binding)} has an empty discriminator"
                 )
 
-    function_sites = collect_function_sites()
+    function_sites = collect_function_sites() | collect_binding_sites()
     manual_non_rpc_sites = {
         site
         for rules in NON_RPC_AUTHORITY_RULES.values()
@@ -2141,6 +2488,7 @@ def audit_operation_authorities() -> list[str]:
             )
     errors.extend(audit_inert_p1_web_sites())
     errors.extend(audit_inert_p1_backend_dataflow())
+    errors.extend(audit_row_bindings())
     if unresolved := collect_unresolved_rpc_dispatches():
         errors.append(f"unresolved feature RPC calls: {unresolved}")
     if unresolved_app := collect_unresolved_app_dispatches():

@@ -31,8 +31,10 @@ if __package__:
         audit_operation_authorities,
         audit_public_namespace_contract,
         audit_recency_contracts,
+        audit_row_bindings,
         collect_app_authority_source_evidence,
         collect_app_callers,
+        collect_binding_rows,
         collect_native_execution_sites,
         collect_public_client_members,
         collect_public_client_namespaces,
@@ -40,6 +42,7 @@ if __package__:
         collect_rpc_references,
         collect_unresolved_app_dispatches,
         collect_unresolved_rpc_dispatches,
+        derive_row_authorities,
     )
     from ._operation_catalog_authorities import RECENCY_CONTRACTS
     from ._operation_catalog_evidence import (
@@ -70,8 +73,10 @@ else:  # pragma: no cover - direct script execution
         audit_operation_authorities,
         audit_public_namespace_contract,
         audit_recency_contracts,
+        audit_row_bindings,
         collect_app_authority_source_evidence,
         collect_app_callers,
+        collect_binding_rows,
         collect_native_execution_sites,
         collect_public_client_members,
         collect_public_client_namespaces,
@@ -79,6 +84,7 @@ else:  # pragma: no cover - direct script execution
         collect_rpc_references,
         collect_unresolved_app_dispatches,
         collect_unresolved_rpc_dispatches,
+        derive_row_authorities,
     )
     from _operation_catalog_authorities import RECENCY_CONTRACTS
     from _operation_catalog_evidence import (
@@ -116,10 +122,12 @@ __all__ = [
     "RECENCY_CONTRACTS",
     "audit_live_registry_against_evidence",
     "audit_operation_catalog",
+    "audit_row_bindings",
     "audit_rpc_registry_evidence",
     "build_operation_catalog",
     "collect_app_authority_source_evidence",
     "collect_app_callers",
+    "collect_binding_rows",
     "collect_golden_evidence",
     "collect_native_execution_sites",
     "collect_public_client_namespaces",
@@ -128,6 +136,7 @@ __all__ = [
     "collect_rpc_references",
     "collect_unresolved_app_dispatches",
     "collect_unresolved_rpc_dispatches",
+    "derive_row_authorities",
     "load_rpc_registry_evidence",
     "main",
 ]
