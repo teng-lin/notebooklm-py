@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 import pytest
 
 from notebooklm._backend import (
@@ -313,8 +314,14 @@ async def test_chat_row_server_error_translates_with_the_chat_url_scrub_and_is_d
 
 @pytest.mark.asyncio
 async def test_chat_row_network_error_scrubs_request_urls_from_the_public_projection() -> None:
+    # The scrub acts on the httpx request carried by the wrapped transport
+    # failure: the query string (rpcids, f.sid, …) is dropped from its URL.
+    request = httpx.Request(
+        "POST",
+        "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=x&f.sid=1",
+    )
     raw = NetworkError(
-        "connect failed for https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=x"
+        "connect failed", original_error=httpx.ConnectError("refused", request=request)
     )
     executor = _RecordingExecutor(raw)
     backend = build_web_backend(executor)

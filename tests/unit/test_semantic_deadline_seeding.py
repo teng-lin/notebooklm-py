@@ -128,10 +128,21 @@ def test_multi_native_deadline_authority_ledger_is_closed_and_active() -> None:
         and binding.handler_name is not None
         and len(_reachable_native_sites(binding.handler_name)) > 1
     }
+    # A row-backed operation (P9.3) declares its natives on the row: an
+    # input-keyed ``NativeCallSpec`` with several choices is the row form of a
+    # branch-exclusive composite (one call per input, method chosen from it).
+    row_composites = {
+        operation
+        for operation, binding in WEB_OPERATION_REGISTRY.items()
+        if binding.is_supported
+        and binding.row is not None
+        and len(getattr(getattr(binding.row, "native", None), "choices", ())) > 1
+    }
+    assert row_composites <= _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS
     # ARTIFACT_LIST/GET also call the note-backed mind-map collaborator;
     # their second native call is intentionally invisible to a ``self`` AST walk.
     hidden_collaborator_composites = {Operation.ARTIFACT_LIST, Operation.ARTIFACT_GET}
-    assert syntactic_composites | hidden_collaborator_composites == (
+    assert syntactic_composites | row_composites | hidden_collaborator_composites == (
         _EXPECTED_CLIENT_TIMEOUT_OPERATIONS | _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS
     )
 
