@@ -2133,7 +2133,14 @@ research (`RESEARCH_START` input-keyed with `map_error`, `RESEARCH_POLL`, `RESEA
 `_web/errors.py` ahead of P9.4 so a row's `map_error` can call it without importing the head),
 notes and mind maps (nine rows), labels/collections (seven rows; `_label_set_list` kept for the
 four composites' `outcome_unknown_on_expiry` threading). At `b5b0a70b`: 26 rows, 56 handler
-names, chain class-body lines 4,222 → 3,705, gate green.*
+names, chain class-body lines 4,222 → 3,705, gate green. Then notebook reads (six rows; the
+create composite lists through `_list_notebooks`), source reads (eight rows incl. the one
+`DeadlineMode.IGNORE` row `SOURCE_WAIT`; `SOURCE_UPDATE` hydrates through `_source_select_record`),
+Studio (six rows incl. the input-keyed `ARTIFACT_DOWNLOAD`) and chat (five rows incl. the
+input-keyed `CHAT_CONFIGURE`; the `CHAT_GET_HISTORY` ledger row dropped its over-attributed
+`GET_LAST_CONVERSATION_ID` as a reviewed correction). **P9.3 complete at `b9e1c7d3`
+(2026-08-24): 51 codec rows and 31 handler-backed composites — exactly the gate table's leaf
+column — chain class-body lines 3,099, MRO 10, PR suite 15,807 passed, repo_lint 2,009.***
 `planned:_binding.py` (introduced in P9.0; neutral: imports nothing under `_web/`, `rpc/`,
 `_auth/`, or `httpx` — its neutrality is what makes the dispatch type check possible) defines:
 
