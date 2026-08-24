@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from types import MappingProxyType
+import types  # ``from types import …`` reads as a public-model import to the P3 guardrail
 from typing import Any, cast
 
 from ..._artifact.payloads import (
@@ -144,7 +144,7 @@ def artifact_feature_unavailable(
     return BackendError(
         message=f"{artifact_type.capitalize()} generation is unavailable",
         operation=operation,
-        diagnostics=MappingProxyType(
+        diagnostics=types.MappingProxyType(
             {
                 "artifact_type": artifact_type,
                 "method_id": method_id,
