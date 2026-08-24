@@ -20,6 +20,7 @@ rendering assertions stay in ``tests/unit/cli/test_generate.py``.
 from __future__ import annotations
 
 import asyncio
+import gc
 from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
@@ -304,6 +305,98 @@ class TestExecuteGeneration:
         assert tuple(status.status for status in exc_info.value.status_transitions) == (
             "in_progress",
         )
+
+    @pytest.mark.asyncio
+    async def test_caller_timer_does_not_depend_on_deadline_expired_clock_edge(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class _ClockEdgeDeadline:
+            timeout = 60.0
+
+            def __init__(self) -> None:
+                self.remaining_values = iter((60.0, 0.01))
+
+            def expired(self) -> bool:
+                return False
+
+            def remaining(self) -> float:
+                return next(self.remaining_values)
+
+            def timeout_message(self, operation: str) -> str:
+                return f"{operation} timed out after 60.0s"
+
+        deadline = _ClockEdgeDeadline()
+
+        class _ClockEdgeDeadlineFactory:
+            @staticmethod
+            def start(timeout: float, *, monotonic: object) -> _ClockEdgeDeadline:
+                assert timeout == 60.0
+                return deadline
+
+        monkeypatch.setattr(artifact_helpers, "RuntimeDeadline", _ClockEdgeDeadlineFactory)
+        started = GenerationStatus(task_id="t1", status="pending", error=None, error_code=None)
+        client = _make_client("generate_audio", started)
+
+        async def in_progress_wait(*_args: object, **kwargs: object) -> object:
+            callback = kwargs["on_status_change"]
+            assert callable(callback)
+            callback(GenerationStatus(task_id="t1", status="in_progress"))
+            await asyncio.Event().wait()
+
+        client.artifacts.wait_for_completion.side_effect = in_progress_wait
+
+        with pytest.raises(ArtifactInProgressTimeoutError) as exc_info:
+            await execute_generation(
+                _audio_plan(wait=True, timeout=60.0),
+                client,
+                notebook_resolver=_notebook_resolver("nb_resolved"),
+                source_resolver=_source_resolver(["s1"]),
+            )
+
+        assert exc_info.value.last_status == "in_progress"
+        assert exc_info.value.status_history == ("in_progress",)
+
+    @pytest.mark.asyncio
+    async def test_caller_timer_does_not_await_a_cancellation_suppressing_child(self) -> None:
+        release = asyncio.Event()
+        cancellation_observed = asyncio.Event()
+        loop_errors: list[dict[str, object]] = []
+
+        async def suppress_cancellation() -> None:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancellation_observed.set()
+                await release.wait()
+
+        loop = asyncio.get_running_loop()
+        previous_handler = loop.get_exception_handler()
+        loop.set_exception_handler(lambda _loop, context: loop_errors.append(context))
+        original_tasks = set(artifact_helpers._DETACHED_TIMEOUT_TASKS)
+        try:
+            started_at = loop.time()
+            completed, result = await artifact_helpers._await_before_timeout(
+                suppress_cancellation(),
+                0.01,
+            )
+            elapsed = loop.time() - started_at
+
+            assert (completed, result) == (False, None)
+            assert elapsed < 0.05
+            await asyncio.wait_for(cancellation_observed.wait(), timeout=0.1)
+            assert len(artifact_helpers._DETACHED_TIMEOUT_TASKS - original_tasks) == 1
+
+            gc.collect()
+            await asyncio.sleep(0)
+            assert not any("destroyed" in str(error.get("message", "")) for error in loop_errors)
+        finally:
+            release.set()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            loop.set_exception_handler(previous_handler)
+
+        assert original_tasks == artifact_helpers._DETACHED_TIMEOUT_TASKS
 
     @pytest.mark.asyncio
     async def test_inner_bare_timeout_before_caller_deadline_propagates(self) -> None:

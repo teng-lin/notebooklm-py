@@ -400,6 +400,9 @@ class TestLoginCommand:
                 'Page.goto: Navigation to "https://accounts.google.com/" is interrupted by '
                 'another navigation to "https://notebooklm.google.com/"'
             ),
+            # #2257: a superseded navigation reports this instead of the prose
+            # above, and it must be treated as the same benign race.
+            "Page.goto: net::ERR_ABORTED; maybe frame was detached?",
         ],
     )
     @pytest.mark.requires_playwright

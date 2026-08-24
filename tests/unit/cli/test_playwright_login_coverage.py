@@ -870,7 +870,15 @@ def test_prepare_login_paths_fresh_wipe_oserror_returns_path_error(tmp_path, mon
 @pytest.mark.requires_playwright
 def test_run_playwright_login_wait_for_url_other_error_reraises(tmp_path) -> None:
     """A non-target-closed PlaywrightError from ``wait_for_url`` propagates
-    ."""
+    IMMEDIATELY.
+
+    The sentinel must not be a ``net::`` code. #2257 made every ``net::ERR_*``
+    a recognised navigation failure, so the old ``net::ERR_WEIRD`` sentinel
+    still reached this ``raises`` — but only after 20 tolerated retries, which
+    is the cap path, not the immediate propagation this test is named for.
+    ``Protocol error`` is unclassifiable by construction and restores the
+    original meaning.
+    """
     from playwright.sync_api import Error as PlaywrightError
 
     storage_file = tmp_path / "storage.json"
@@ -880,7 +888,7 @@ def test_run_playwright_login_wait_for_url_other_error_reraises(tmp_path) -> Non
     # URL is NOT on the base host, so the wait_for_url branch is taken.
     mock_page.url = "https://accounts.google.com/signin"
     mock_page.goto.return_value = None
-    mock_page.wait_for_url.side_effect = PlaywrightError("net::ERR_WEIRD other failure")
+    mock_page.wait_for_url.side_effect = PlaywrightError("Protocol error: something structural")
     mock_context.pages = [mock_page]
     mock_context.storage_state.return_value = _required_capture_state()
     mock_playwright = MagicMock()
@@ -899,7 +907,7 @@ def test_run_playwright_login_wait_for_url_other_error_reraises(tmp_path) -> Non
             "playwright.sync_api.sync_playwright",
             side_effect=lambda: _FakeSyncPlaywright(),
         ),
-        pytest.raises(PlaywrightError, match="ERR_WEIRD"),
+        pytest.raises(PlaywrightError, match="Protocol error"),
     ):
         playwright_login.run_playwright_login(
             playwright_login.PlaywrightLoginPlan(

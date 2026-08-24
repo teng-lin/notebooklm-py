@@ -64,6 +64,12 @@ _AwaitableFactory = Callable[[], Awaitable[Any]]
 _WaitContext = Callable[[str, str], AbstractAsyncContextManager[None]]
 
 
+# ``asyncio`` keeps only weak references to tasks. Timeout cleanup must retain
+# cancellation-suppressing children until they eventually settle, while still
+# returning at the caller's hard deadline.
+_DETACHED_TIMEOUT_TASKS: set[asyncio.Future[Any]] = set()
+
+
 def calculate_backoff_delay(
     attempt: int,
     initial_delay: float = RATE_LIMIT_RETRY_INITIAL_DELAY,
@@ -314,12 +320,56 @@ async def _await_with_deadline(
     remaining = deadline.remaining()
     if remaining <= 0.0:
         raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation"))
+    completed, result = await _await_before_timeout(awaitable_factory(), remaining)
+    if completed:
+        return result
+    raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation"))
+
+
+async def _await_before_timeout(awaitable: Awaitable[Any], timeout: float) -> tuple[bool, Any]:
+    """Distinguish a child result from this caller's own hard timeout boundary.
+
+    Cancellation is requested but deliberately not awaited: a custom child
+    that suppresses ``CancelledError`` must not hold this caller open past its
+    aggregate budget. Its eventual exception is still consumed by a callback.
+    """
+
+    async def _capture_result() -> tuple[bool, Any]:
+        # Base exceptions must not escape this child Task directly: asyncio
+        # otherwise stops the loop and cancels the parent waiter before a CLI
+        # wait context can translate ``KeyboardInterrupt`` into its resume
+        # hint. Re-raise the identical object from the parent below.
+        try:
+            return True, await awaitable
+        except BaseException as error:
+            return False, error
+
+    task = asyncio.ensure_future(_capture_result())
+
+    def _cancel_without_wait() -> None:
+        def _consume_result(done_task: asyncio.Future[Any]) -> None:
+            try:
+                if not done_task.cancelled():
+                    done_task.exception()
+            finally:
+                _DETACHED_TIMEOUT_TASKS.discard(done_task)
+
+        _DETACHED_TIMEOUT_TASKS.add(task)
+        task.add_done_callback(_consume_result)
+        task.cancel()
+
     try:
-        return await asyncio.wait_for(awaitable_factory(), timeout=remaining)
-    except asyncio.TimeoutError as error:
-        if not deadline.expired():
-            raise
-        raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation")) from error
+        done, _pending = await asyncio.wait((task,), timeout=timeout)
+    except BaseException:
+        _cancel_without_wait()
+        raise
+    if task in done:
+        succeeded, result = task.result()
+        if succeeded:
+            return True, result
+        raise result
+    _cancel_without_wait()
+    return False, None
 
 
 async def _run_generation_workflow(
@@ -380,23 +430,19 @@ async def _run_generation_workflow(
         if caller_interval is not None:
             wait_kwargs["initial_interval"] = caller_interval
         wait_kwargs["on_status_change"] = observed_transitions.append
-        try:
-            return await asyncio.wait_for(
-                wait_for_completion(resolved_notebook_id, task_id, **wait_kwargs),
-                timeout=remaining,
-            )
-        except ArtifactTimeoutError:
-            raise
-        except asyncio.TimeoutError as error:
-            if not deadline.expired():
-                raise
-            raise _caller_artifact_timeout_error(
-                resolved_notebook_id,
-                task_id,
-                caller_timeout,
-                kickoff_result,
-                observed_transitions,
-            ) from error
+        completed, result = await _await_before_timeout(
+            wait_for_completion(resolved_notebook_id, task_id, **wait_kwargs),
+            remaining,
+        )
+        if completed:
+            return result
+        raise _caller_artifact_timeout_error(
+            resolved_notebook_id,
+            task_id,
+            caller_timeout,
+            kickoff_result,
+            observed_transitions,
+        )
 
     return await _run_deadline_generation_workflow(
         _generate,

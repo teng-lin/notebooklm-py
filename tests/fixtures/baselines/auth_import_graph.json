@@ -93,6 +93,11 @@
     {
       "scope": "module",
       "source": "browser_capture",
+      "target": "navigation_errors"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
       "target": "profile_account"
     },
     {
@@ -768,7 +773,7 @@
       "path": "src/notebooklm/_auth/account_types.py"
     },
     {
-      "lines": 1225,
+      "lines": 1445,
       "name": "browser_capture",
       "path": "src/notebooklm/_auth/browser_capture.py"
     },
@@ -868,6 +873,11 @@
       "path": "src/notebooklm/_auth/mint_service.py"
     },
     {
+      "lines": 113,
+      "name": "navigation_errors",
+      "path": "src/notebooklm/_auth/navigation_errors.py"
+    },
+    {
       "lines": 239,
       "name": "paths",
       "path": "src/notebooklm/_auth/paths.py"
@@ -959,10 +969,10 @@
   },
   "summary": {
     "function_local_edges": 12,
-    "module_edges": 135,
-    "modules": 43,
-    "total_lines": 16319,
-    "unique_edges": 147
+    "module_edges": 136,
+    "modules": 44,
+    "total_lines": 16652,
+    "unique_edges": 148
   },
   "version": 1
 }
