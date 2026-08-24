@@ -1812,7 +1812,10 @@ already exist inside the web binding with no shared service owner.
   P9.0's PR and no `Removal: P8` bridge remains.
 - [ ] No other in-flight change touches `src/notebooklm/_web/backend.py`; P9.0 and P9.1 both
   rewrite its head.
-- [ ] The **composite decomposition table** (P9.2 gate) is reviewed before P9.1 opens: one row per
+- [x] The **composite decomposition table** (P9.2 gate) — recorded in
+  [`2026-08-24-p9-composite-gate-table.md`](2026-08-24-p9-composite-gate-table.md) (2026-08-24; it
+  re-measures the 34 multi-native members as 30 sequential / 3 branch-exclusive / 1 single, names
+  nine primitives, and orders eleven hoists) — is reviewed before P9.1 opens: one row per
   multi-native operation with (a) its native sequence, (b) the leaf members each native maps to,
   naming any new primitive member, (c) the backend-identity argument — whether a second backend
   would run the same sequence, or whether principle 2's protocol-variance clause plausibly
