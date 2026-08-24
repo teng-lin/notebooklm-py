@@ -333,7 +333,18 @@ async def _await_before_timeout(awaitable: Awaitable[Any], timeout: float) -> tu
     that suppresses ``CancelledError`` must not hold this caller open past its
     aggregate budget. Its eventual exception is still consumed by a callback.
     """
-    task = asyncio.ensure_future(awaitable)
+
+    async def _capture_result() -> tuple[bool, Any]:
+        # Base exceptions must not escape this child Task directly: asyncio
+        # otherwise stops the loop and cancels the parent waiter before a CLI
+        # wait context can translate ``KeyboardInterrupt`` into its resume
+        # hint. Re-raise the identical object from the parent below.
+        try:
+            return True, await awaitable
+        except BaseException as error:
+            return False, error
+
+    task = asyncio.ensure_future(_capture_result())
 
     def _cancel_without_wait() -> None:
         def _consume_result(done_task: asyncio.Future[Any]) -> None:
@@ -353,7 +364,10 @@ async def _await_before_timeout(awaitable: Awaitable[Any], timeout: float) -> tu
         _cancel_without_wait()
         raise
     if task in done:
-        return True, task.result()
+        succeeded, result = task.result()
+        if succeeded:
+            return True, result
+        raise result
     _cancel_without_wait()
     return False, None
 
