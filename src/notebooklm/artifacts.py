@@ -317,6 +317,8 @@ async def _await_with_deadline(
     try:
         return await asyncio.wait_for(awaitable_factory(), timeout=remaining)
     except asyncio.TimeoutError as error:
+        if not deadline.expired():
+            raise
         raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation")) from error
 
 

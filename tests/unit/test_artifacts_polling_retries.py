@@ -337,6 +337,87 @@ async def test_polling_service_registers_pending_before_transport_begin_complete
 
 
 @pytest.mark.asyncio
+async def test_shared_follower_receives_retained_and_live_status_transitions() -> None:
+    provider = _FakeTransportProvider()
+    service = ArtifactPollingService(
+        loop_guard=provider, op_scope=provider, poll_registry=provider.poll_registry
+    )
+    pending_polled = asyncio.Event()
+    allow_in_progress = asyncio.Event()
+    allow_completed = asyncio.Event()
+    follower_pending = asyncio.Event()
+    follower_in_progress = asyncio.Event()
+    poll_call_count = 0
+    follower_statuses: list[str] = []
+
+    async def poll_status(_notebook_id: str, task_id: str) -> GenerationStatus:
+        nonlocal poll_call_count
+        poll_call_count += 1
+        if poll_call_count == 1:
+            pending_polled.set()
+            return GenerationStatus(task_id=task_id, status="pending")
+        if poll_call_count == 2:
+            await allow_in_progress.wait()
+            return GenerationStatus(task_id=task_id, status="in_progress")
+        await allow_completed.wait()
+        return GenerationStatus(task_id=task_id, status="completed")
+
+    def observe_follower(status: GenerationStatus) -> None:
+        follower_statuses.append(status.status)
+        if status.status == "pending":
+            follower_pending.set()
+        elif status.status == "in_progress":
+            follower_in_progress.set()
+
+    leader = asyncio.create_task(
+        service.wait_for_completion(
+            "nb1",
+            "task1",
+            initial_interval=0.0,
+            max_interval=0.0,
+            timeout=1.0,
+            poll_status=poll_status,
+        )
+    )
+    follower: asyncio.Task[GenerationStatus] | None = None
+    try:
+        await asyncio.wait_for(pending_polled.wait(), timeout=1.0)
+        follower = asyncio.create_task(
+            service.wait_for_completion(
+                "nb1",
+                "task1",
+                initial_interval=0.0,
+                max_interval=0.0,
+                timeout=1.0,
+                poll_status=poll_status,
+                on_status_change=observe_follower,
+            )
+        )
+        await asyncio.wait_for(follower_pending.wait(), timeout=1.0)
+
+        allow_in_progress.set()
+        await asyncio.wait_for(follower_in_progress.wait(), timeout=1.0)
+        assert not leader.done()
+        assert not follower.done()
+
+        allow_completed.set()
+        leader_result, follower_result = await asyncio.gather(leader, follower)
+        assert leader_result.status == follower_result.status == "completed"
+        assert follower_statuses == ["pending", "in_progress", "completed"]
+        assert poll_call_count == 3
+    finally:
+        allow_in_progress.set()
+        allow_completed.set()
+        cleanup_tasks = [
+            task for task in (leader, follower) if task is not None and not task.done()
+        ]
+        for task in cleanup_tasks:
+            task.cancel()
+        if cleanup_tasks:
+            await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 async def test_polling_service_resolves_wait_before_slow_transport_finish() -> None:
     token = object()
     finish_release = asyncio.Event()

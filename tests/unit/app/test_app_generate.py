@@ -323,6 +323,23 @@ class TestExecuteGeneration:
         assert exc_info.value is inner_timeout
 
     @pytest.mark.asyncio
+    async def test_inner_bare_kickoff_timeout_before_caller_deadline_propagates(self) -> None:
+        inner_timeout = TimeoutError("inner kickoff timeout")
+        client = _make_client("generate_audio", None)
+        client.artifacts.generate_audio.side_effect = inner_timeout
+
+        with pytest.raises(TimeoutError) as exc_info:
+            await execute_generation(
+                _audio_plan(wait=False, timeout=60.0),
+                client,
+                notebook_resolver=_notebook_resolver("nb_resolved"),
+                source_resolver=_source_resolver(["s1"]),
+            )
+
+        assert exc_info.value is inner_timeout
+        client.artifacts.wait_for_completion.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_notebook_resolver_invoked_with_json_output_flag(self):
         status = GenerationStatus(task_id="t1", status="pending", error=None, error_code=None)
         client = _make_client("generate_audio", status)

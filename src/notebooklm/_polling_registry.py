@@ -28,6 +28,8 @@ class PollRegistry:
 
     def __init__(self, pending: PendingPolls | None = None) -> None:
         self._pending: PendingPolls = pending if pending is not None else {}
+        self._status_history: dict[asyncio.Future[Any], list[Any]] = {}
+        self._status_subscribers: dict[asyncio.Future[Any], set[asyncio.Queue[Any]]] = {}
 
     def get(self, key: PollKey) -> PendingPoll | None:
         """Return the shared poll entry for ``key``, if one exists."""
@@ -41,10 +43,43 @@ class PollRegistry:
     ) -> None:
         """Register the leader future and poll task for ``key``."""
         self._pending[key] = (future, task)
+        self._status_history[future] = []
+        self._status_subscribers[future] = set()
+
+    def publish_status(self, future: asyncio.Future[Any], status: Any) -> None:
+        """Publish a leader transition without awaiting follower callbacks."""
+        history = self._status_history.get(future)
+        if history is None:
+            return
+        history.append(status)
+        for updates in tuple(self._status_subscribers[future]):
+            updates.put_nowait(status)
+
+    def subscribe_status(
+        self, future: asyncio.Future[Any]
+    ) -> tuple[tuple[Any, ...], asyncio.Queue[Any]] | None:
+        """Return retained transitions and a live queue for one follower."""
+        history = self._status_history.get(future)
+        if history is None:
+            return None
+        updates: asyncio.Queue[Any] = asyncio.Queue()
+        self._status_subscribers[future].add(updates)
+        return tuple(history), updates
+
+    def unsubscribe_status(self, future: asyncio.Future[Any], updates: asyncio.Queue[Any]) -> None:
+        """Detach one follower's live transition queue."""
+        subscribers = self._status_subscribers.get(future)
+        if subscribers is not None:
+            subscribers.discard(updates)
 
     def pop(self, key: PollKey) -> PendingPoll | None:
         """Remove and return the shared poll entry for ``key``, if present."""
-        return self._pending.pop(key, None)
+        pending = self._pending.pop(key, None)
+        if pending is not None:
+            future, _task = pending
+            self._status_history.pop(future, None)
+            self._status_subscribers.pop(future, None)
+        return pending
 
     def active_tasks(self) -> list[asyncio.Task[Any]]:
         """Return the currently-pending leader poll tasks.

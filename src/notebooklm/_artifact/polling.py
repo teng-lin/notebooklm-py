@@ -7,7 +7,7 @@ import builtins
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from .._backoff import compute_backoff_delay
 from .._callbacks import maybe_await_callback
@@ -85,6 +85,65 @@ class ArtifactPollingService:
 
     def _resolve_monotonic(self) -> Monotonic:
         return asyncio.get_running_loop().time if self._monotonic is None else self._monotonic
+
+    async def _await_follower(
+        self,
+        shared_future: asyncio.Future[Any],
+        on_status_change: StatusChangeCallback | None,
+    ) -> GenerationStatus:
+        """Await one shared poll while delivering transitions in this caller."""
+        if on_status_change is None:
+            return cast(GenerationStatus, await asyncio.shield(shared_future))
+
+        subscription = self._poll_registry.subscribe_status(shared_future)
+        if subscription is None:
+            result = cast(GenerationStatus, await asyncio.shield(shared_future))
+            await maybe_await_callback(on_status_change, result)
+            return result
+
+        history, updates = subscription
+        shared_wait = asyncio.shield(shared_future)
+        update_wait: asyncio.Task[Any] | None = None
+        last_delivered: Any = object()
+
+        async def _deliver(status: Any) -> None:
+            nonlocal last_delivered
+            last_delivered = status
+            await maybe_await_callback(on_status_change, status)
+
+        try:
+            for status in history:
+                await _deliver(status)
+
+            while True:
+                update_wait = asyncio.create_task(updates.get())
+                done, _pending = await asyncio.wait(
+                    (shared_wait, update_wait),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if update_wait in done:
+                    await _deliver(update_wait.result())
+                    update_wait = None
+                if shared_wait in done:
+                    while True:
+                        try:
+                            await _deliver(updates.get_nowait())
+                        except asyncio.QueueEmpty:
+                            break
+                    result = cast(GenerationStatus, shared_wait.result())
+                    if last_delivered is not result:
+                        await _deliver(result)
+                    return result
+        finally:
+            self._poll_registry.unsubscribe_status(shared_future, updates)
+            local_waiters = (shared_wait, update_wait)
+            pending_waiters = [
+                waiter for waiter in local_waiters if waiter is not None and not waiter.done()
+            ]
+            for waiter in pending_waiters:
+                waiter.cancel()
+            if pending_waiters:
+                await asyncio.gather(*pending_waiters, return_exceptions=True)
 
     async def drain(self) -> None:
         """Cancel active leader poll tasks and await polling bookkeeping."""
@@ -178,10 +237,7 @@ class ArtifactPollingService:
             # not propagate into the shared future; the leader's poll task
             # continues on behalf of every other follower.
             shared_future, _poll_task = existing
-            result = await asyncio.shield(shared_future)
-            if on_status_change is not None:
-                await maybe_await_callback(on_status_change, result)
-            return result
+            return await self._await_follower(shared_future, on_status_change)
 
         # Leader path. Create the shared future, spawn the poll task, and
         # register the pair so any follower can attach. The task reference
@@ -189,6 +245,11 @@ class ArtifactPollingService:
         # resolves the shared future.
         loop = asyncio.get_running_loop()
         future: asyncio.Future[GenerationStatus] = loop.create_future()
+
+        async def _publish_status_change(status: GenerationStatus) -> None:
+            self._poll_registry.publish_status(future, status)
+            if on_status_change is not None:
+                await maybe_await_callback(on_status_change, status)
 
         # Consume any exception set on the future if no caller ever retrieves
         # it (e.g. leader cancelled with no followers). Without this,
@@ -211,7 +272,7 @@ class ArtifactPollingService:
                 max_not_found=max_not_found,
                 min_not_found_window=min_not_found_window,
                 poll_status=poll_status,
-                on_status_change=on_status_change,
+                on_status_change=_publish_status_change,
                 deadline=deadline,
             ),
             name=f"artifact-poll-{notebook_id}-{task_id}",

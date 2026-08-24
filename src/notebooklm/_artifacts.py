@@ -1088,8 +1088,9 @@ class ArtifactsAPI:
         ``min_not_found_window`` (default 10.0) is the minimum elapsed seconds
         since the *first* not-found before a consecutive run triggers failure,
         avoiding false positives on slow networks. ``on_status_change`` is an
-        optional sync/async callback invoked when the leader observes a new
-        status (followers receive only the final status).
+        optional sync/async callback invoked for each status observed by the
+        shared leader. Late followers first receive its retained transition
+        history, then receive live transitions in their own waiter task.
 
         Raises:
             TimeoutError: If task doesn't complete within ``timeout``.
