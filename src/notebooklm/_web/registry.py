@@ -232,14 +232,8 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
 
 _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
     {
-        Operation.NOTEBOOK_LIST: "_notebook_list",
-        Operation.NOTEBOOK_GET: "_notebook_get",
         Operation.NOTEBOOK_CREATE: "_notebook_create",
         Operation.NOTEBOOK_UPDATE: "_notebook_update",
-        Operation.NOTEBOOK_DELETE: "_notebook_delete",
-        Operation.NOTEBOOK_REMOVE_RECENT: "_notebook_remove_recent",
-        Operation.NOTEBOOK_SUMMARIZE: "_notebook_summarize",
-        Operation.NOTEBOOK_DESCRIBE: "_notebook_describe",
         Operation.SOURCE_ADD_URL: "_source_add_url",
         Operation.SOURCE_ADD_URL_BATCH: "_source_add_url_batch",
         Operation.SOURCE_ADD_TEXT: "_source_add_text",
