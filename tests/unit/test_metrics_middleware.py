@@ -1,7 +1,7 @@
-"""Unit tests for :class:`MetricsMiddleware` (Tier-12 PR 12.4).
+"""Unit tests for :class:`MetricsBehavior` (Tier-12 PR 12.4).
 
 Pins the contract documented in
-``src/notebooklm/_middleware/metrics.py`` and ADR-0009 §"Chain ordering":
+``src/notebooklm/_runtime/metrics_behavior.py`` and ADR-0009 §"Chain ordering":
 
 - Pass-through identity (the middleware is a pure observer; it must not
   mutate ``RpcRequest`` or transform the ``RpcResponse``).
@@ -34,18 +34,17 @@ import pytest
 
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._logging import get_request_id, reset_request_id, set_request_id
-from notebooklm._middleware.core import (
+from notebooklm._runtime.metrics_behavior import MetricsBehavior
+from notebooklm._runtime.rpc_call import (
     NextCall,
     RpcRequest,
     RpcResponse,
-    build_chain,
 )
-from notebooklm._middleware.metrics import MetricsMiddleware
 from notebooklm._types.common import RpcTelemetryEvent
 
 # The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
-from tests._fixtures.chain import make_request
+from tests._fixtures.chain import build_chain, make_request
 
 
 def _make_terminal_returning(response: httpx.Response) -> NextCall:
@@ -91,7 +90,7 @@ async def test_success_increments_counters_and_emits_event(
     metrics._on_rpc_event = capture
 
     expected_response = httpx.Response(status_code=200, content=b"ok")
-    middleware = MetricsMiddleware(metrics)
+    middleware = MetricsBehavior(metrics)
     chain = build_chain([middleware], _make_terminal_returning(expected_response))
 
     request = make_request(
@@ -136,7 +135,7 @@ async def test_failure_increments_counters_emits_error_and_reraises(
 
     metrics._on_rpc_event = capture
 
-    middleware = MetricsMiddleware(metrics)
+    middleware = MetricsBehavior(metrics)
     chain = build_chain([middleware], failing_terminal)
     request = make_request(
         context={"log_label": "RPC LIST_NOTEBOOKS", "rpc_method": "LIST_NOTEBOOKS"}
@@ -181,7 +180,7 @@ async def test_skips_emit_when_rpc_method_absent(
     metrics._on_rpc_event = capture
 
     expected_response = httpx.Response(status_code=200, content=b"chat-ok")
-    middleware = MetricsMiddleware(metrics)
+    middleware = MetricsBehavior(metrics)
     chain = build_chain([middleware], _make_terminal_returning(expected_response))
 
     # log_label present, rpc_method ABSENT — exact shape produced by
@@ -219,7 +218,7 @@ async def test_skips_emit_when_rpc_method_is_none(
     metrics._on_rpc_event = capture
 
     expected_response = httpx.Response(status_code=200, content=b"ok")
-    middleware = MetricsMiddleware(metrics)
+    middleware = MetricsBehavior(metrics)
     chain = build_chain([middleware], _make_terminal_returning(expected_response))
 
     request = make_request(context={"log_label": "chat.ask", "rpc_method": None})
@@ -254,7 +253,7 @@ async def test_cancelled_error_bypasses_all_metrics(
     async def cancelling_terminal(_request: RpcRequest) -> RpcResponse:
         raise asyncio.CancelledError()
 
-    middleware = MetricsMiddleware(metrics)
+    middleware = MetricsBehavior(metrics)
     chain = build_chain([middleware], cancelling_terminal)
     request = make_request(
         context={"log_label": "RPC LIST_NOTEBOOKS", "rpc_method": "LIST_NOTEBOOKS"}
@@ -290,7 +289,7 @@ async def test_event_carries_current_request_id(
     metrics._on_rpc_event = capture
 
     expected_response = httpx.Response(status_code=200, content=b"ok")
-    middleware = MetricsMiddleware(metrics)
+    middleware = MetricsBehavior(metrics)
     chain = build_chain([middleware], _make_terminal_returning(expected_response))
 
     request = make_request(
@@ -329,7 +328,7 @@ async def test_no_callback_still_increments_counters(
     assert metrics._on_rpc_event is None
 
     expected_response = httpx.Response(status_code=200, content=b"ok")
-    middleware = MetricsMiddleware(metrics)
+    middleware = MetricsBehavior(metrics)
     chain = build_chain([middleware], _make_terminal_returning(expected_response))
 
     request = make_request(
@@ -364,7 +363,7 @@ async def test_pass_through_does_not_mutate_request(
             state=request.state,
         )
 
-    middleware = MetricsMiddleware(metrics)
+    middleware = MetricsBehavior(metrics)
     chain = build_chain([middleware], terminal)
 
     context_before = {

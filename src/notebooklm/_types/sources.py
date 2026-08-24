@@ -431,33 +431,7 @@ class Source:
         single field mapping below therefore covers all three wire shapes
         identically.
         """
-        # Correct the type_code==14 native-Sheet/Drive-PDF overload before it
-        # reaches ``kind`` (#1832). Prefer the original-content MIME, then fall
-        # back to the Drive-only MIME if the first value is not a known
-        # override. Both passes are no-ops for every other code and real Sheets.
-        type_code = _disambiguate_type_code(row.type_code, row.content_mime)
-        type_code = _disambiguate_type_code(type_code, row.mime)
-        return cls(
-            id=row.id,
-            # #1850: a direct-PDF URL arrives with the raw URL in the title slot
-            # (the server extracts <title> for HTML pages but not for a link
-            # that points straight at a .pdf). Fall back to the URL path
-            # basename. This single funnel covers the add and list paths.
-            title=_pdf_url_title_fallback(row.title, row.url, type_code),
-            url=row.url,
-            _type_code=type_code,
-            created_at=row.created_at,
-            status=row.status,
-            drive_document_id=row.drive_document_id,
-            drive_status=row.drive_status,
-            download_url=row.download_url,
-            viewer_url=row.viewer_url,
-            content_mime=row.content_mime,
-            word_count=row.word_count,
-            revision_id=row.revision_id,
-            revision_timestamp=row.revision_timestamp,
-            last_modified_at=row.last_modified_at,
-        )
+        return _source_from_row(cls, row)
 
     @classmethod
     def from_api_response(
@@ -509,7 +483,38 @@ class Source:
         # the top-level public type facade.
         from .._row_adapters.sources import SourceRow
 
-        return cls.from_row(SourceRow.from_unknown_shape(data, method_id=method_id))
+        return _source_from_row(cls, SourceRow.from_unknown_shape(data, method_id=method_id))
+
+
+def _source_from_row(source_type: type[Source], row: SourceRow) -> Source:
+    """Build one source model without routing production through its public codec."""
+    # Correct the type_code==14 native-Sheet/Drive-PDF overload before it
+    # reaches ``kind`` (#1832). Prefer the original-content MIME, then fall
+    # back to the Drive-only MIME if the first value is not a known
+    # override. Both passes are no-ops for every other code and real Sheets.
+    type_code = _disambiguate_type_code(row.type_code, row.content_mime)
+    type_code = _disambiguate_type_code(type_code, row.mime)
+    return source_type(
+        id=row.id,
+        # #1850: a direct-PDF URL arrives with the raw URL in the title slot
+        # (the server extracts <title> for HTML pages but not for a link
+        # that points straight at a .pdf). Fall back to the URL path
+        # basename. This single funnel covers the add and list paths.
+        title=_pdf_url_title_fallback(row.title, row.url, type_code),
+        url=row.url,
+        _type_code=type_code,
+        created_at=row.created_at,
+        status=row.status,
+        drive_document_id=row.drive_document_id,
+        drive_status=row.drive_status,
+        download_url=row.download_url,
+        viewer_url=row.viewer_url,
+        content_mime=row.content_mime,
+        word_count=row.word_count,
+        revision_id=row.revision_id,
+        revision_timestamp=row.revision_timestamp,
+        last_modified_at=row.last_modified_at,
+    )
 
 
 @dataclass

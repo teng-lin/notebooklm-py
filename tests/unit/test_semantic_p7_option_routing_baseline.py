@@ -100,7 +100,7 @@ def test_constructor_options_route_to_current_effective_consumers(tmp_path: Path
     # interval. Task behavior remains in test_client_keepalive.py.
     assert lifecycle._keepalive_interval == 11.0
 
-    # Retry options -> the live chain-host values consumed by RetryMiddleware.
+    # Retry options -> the live chain-host values consumed by RetryBehavior.
     assert client._backend.retry_limits == (6, 7)
 
     # Connection limits are owned by lifecycle.open(), which passes this exact

@@ -1,6 +1,6 @@
-"""DrainMiddleware — in-flight transport-operation tracker for the middleware chain.
+"""DrainBehavior — in-flight transport-operation tracker for the runtime pipeline.
 
-Per ADR-0009 §"Chain ordering", ``DrainMiddleware`` sits at
+Per ADR-0009 §"Chain ordering", ``DrainBehavior`` sits at
 the OUTERMOST position of the chain
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, Tracing]``.
 
@@ -46,21 +46,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .core import NextCall, RpcRequest, RpcResponse
+from .rpc_call import NextCall, RpcRequest, RpcResponse
 
 if TYPE_CHECKING:
     from .._transport_drain import TransportDrainTracker
 
 
-class DrainMiddleware:
-    """Middleware that brackets the chain inner call with drain bookkeeping.
+class DrainBehavior:
+    """Runtime behavior that brackets the inner call with drain bookkeeping.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — the
-    ``__call__`` signature matches the Protocol so mypy treats instances
-    as assignable into a ``Sequence[Middleware]``.
+    Its ``__call__`` signature matches the fixed behavior-call shape composed
+    by :class:`RuntimePipeline`.
 
     Holds a reference to the shared :class:`TransportDrainTracker` runtime
-    leaf owned by :class:`WebRpcBackend`. The middleware does not own drain
+    leaf owned by :class:`WebRpcBackend`. The behavior does not own drain
     state; it is a write-through into the backend-owned counters. This keeps
     ``NotebookLMClient.drain()`` authoritative through backend delegation
     (the explicit ``_begin/_finish_transport_post`` calls in the upload and
@@ -104,4 +103,4 @@ class DrainMiddleware:
             await self._drain_tracker.finish_transport_post(token)
 
 
-__all__ = ["DrainMiddleware"]
+__all__ = ["DrainBehavior"]

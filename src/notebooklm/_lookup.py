@@ -3,7 +3,7 @@
 ADR-0019 (error-and-return contract) makes resource absence an exception on
 ``get`` and reserves ``None``-on-miss for an explicit ``get_or_none``. Both share
 the same underlying optional-lookup body; only their handling of a genuine miss
-differs. :func:`unwrap_or_raise` is the one-line bridge that lets a namespace
+differs. :func:`unwrap_or_raise` is the one-line helper that lets a namespace
 keep its fully-typed, per-arity signatures while single-sourcing the
 "None means missing" decision:
 

@@ -3,24 +3,18 @@
 Splits the client-runtime constructor into three concerns:
 :func:`validate_constructor_args` (kwarg validation + normalization),
 :func:`_build_runtime_leaves` (the seven leaves in dependency order),
-and :func:`wire_middleware_chain` (the six-middleware ADR-0009 chain).
-Dependency-ordering and seam-resolution comments live inside the helpers so
+and :func:`build_runtime_transport` (the fixed ADR-0009 behavior pipeline).
+Dependency-ordering and collaborator-resolution comments live inside the helpers so
 future readers see *why* the order matters.
 
-Builds on the constructor-DI work in #1027 (``36dcc634`` —
-"refactor(session): constructor DI for late-bound test seams; drop
-http_client.setter"), which eliminated the late-binding wrappers and
-the ``Kernel.http_client.setter`` and made ``decode_response`` /
-``sleep`` / ``is_auth_error`` / ``async_client_factory`` the canonical
-injection seams.
-
-``None``-default resolution for ``sleep`` is owned by
-:mod:`notebooklm._client_seams`; ``async_client_factory`` resolves directly to
-``httpx.AsyncClient`` here.
+The composition root supplies production collaborators directly. Tests exercise
+the smallest runtime owner with explicit constructor inputs instead of retaining
+a second client-assembly path.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -32,13 +26,9 @@ import httpx
 from .._auth.profile_store import ProfileStore
 from .._auth.web_provider_refresh import WebProviderRefresh
 from .._client_metrics import ClientMetrics
-from .._client_seams import ClientSeams, resolve_client_seams
 from .._cookie_persistence import CookiePersistence
 from .._error_injection import _refuse_synthetic_error_outside_test_context
 from .._kernel import Kernel
-from .._middleware.chain import MiddlewareChainBuilder
-from .._middleware.chain_host import MiddlewareChainHost
-from .._middleware.core import Middleware, NextCall, build_chain
 from .._reqid_counter import ReqidCounter
 from .._rpc_semaphore import RpcSemaphore
 from .._transport_drain import TransportDrainTracker
@@ -56,6 +46,8 @@ from .config import (
 )
 from .helpers import _resolve_keepalive_interval
 from .lifecycle import ClientLifecycle, CookieRotator, CookieSaver
+from .pipeline import RuntimePipeline
+from .rpc_call import NextCall
 from .transport import RuntimeTransport
 from .web_backend_session import WebBackendSession
 from .web_cookie_provider import RuntimeWebCookieProvider
@@ -101,19 +93,11 @@ class ValidatedSessionConfig:
 
 
 @dataclass(frozen=True)
-class WiredMiddleware:
-    """Wired middleware chain produced by :func:`wire_middleware_chain`."""
-
-    chain_builder: MiddlewareChainBuilder
-    middlewares: list[Middleware]
-    authed_post_chain: NextCall
-
-
-@dataclass(frozen=True)
 class ClientInternals:
     """Construction-only receipt for an atomically assembled web runtime.
 
-    ``_assemble_client`` projects explicit safe leaves into ``WebRpcBackend``;
+    ``_client_composition.compose_client`` projects explicit safe leaves into
+    ``WebRpcBackend``;
     the backend never receives this credential-bearing receipt. Unlike the
     retired mutable holder, this record is never published on the client and
     has no bind/reset behavior.
@@ -133,7 +117,31 @@ class ClientInternals:
     web_transport_factory: Callable[..., httpx.AsyncClient]
     rpc_semaphore: RpcSemaphore
     transport: RuntimeTransport
-    chain_host: MiddlewareChainHost
+    pipeline: RuntimePipeline
+
+
+def _resolve_decode_response(value: Callable[..., Any] | None) -> Callable[..., Any]:
+    if value is not None:
+        return value
+    from ..rpc import decode_response
+
+    return decode_response
+
+
+def _resolve_is_auth_error(
+    value: Callable[[Exception], bool] | None,
+) -> Callable[[Exception], bool]:
+    if value is not None:
+        return value
+    from .helpers import is_auth_error
+
+    return is_auth_error
+
+
+def _resolve_sleep(
+    value: Callable[[float], Awaitable[Any]] | None,
+) -> Callable[[float], Awaitable[Any]]:
+    return asyncio.sleep if value is None else value
 
 
 def _resolve_async_client_factory(
@@ -177,7 +185,7 @@ def validate_constructor_args(
     the final client-side seam bindings; see the module docstring for why
     the seam-resolution boundary stops here.
     The returned :class:`ValidatedSessionConfig` is consumed by
-    :func:`_build_runtime_leaves` and :func:`wire_middleware_chain`.
+    :func:`_build_runtime_leaves` and :func:`build_runtime_transport`.
 
     Raises:
         ValueError: If ``rate_limit_max_retries`` / ``server_error_max_retries``
@@ -380,108 +388,38 @@ def build_runtime_transport(
     metrics: ClientMetrics,
     kernel: Kernel,
     lifecycle: ClientLifecycle,
-    chain_host: MiddlewareChainHost,
+    drain_tracker: TransportDrainTracker,
+    rpc_semaphore: RpcSemaphore,
+    rate_limit_max_retries: int,
+    server_error_max_retries: int,
+    refresh_retry_delay: float,
+    is_auth_error: Callable[[Exception], bool],
+    sleep: Callable[[float], Awaitable[Any]] | None,
+    terminal: NextCall | None,
     logger: logging.Logger,
 ) -> RuntimeTransport:
-    """Construct the :class:`RuntimeTransport` collaborator.
-
-    Built **after** :func:`_build_runtime_leaves` and **before**
-    :func:`wire_middleware_chain`, because the wired chain is built
-    around ``transport.terminal``. The transport reaches the chain
-    through a live-binding ``chain_provider`` closure that reads
-    ``chain_host._authed_post_chain`` on every authed POST; that
-    attribute is assigned by :func:`compose_client_internals`
-    immediately after :func:`wire_middleware_chain` returns. Using a
-    provider closure (rather than a frozen reference) keeps the write-once
-    construction cycle explicit without publishing chain state on the client.
-
-    The ``snapshot_provider`` closure reads one immutable generation through
-    the provider boundary. The ``bound_loop_check`` lambda reads through
-    ``collaborators.lifecycle.assert_bound_loop`` at call time, preserving
-    lifecycle method patchability without retaining a broad host-level
-    ``assert_bound_loop`` forward.
-
-    The ``chain_host`` parameter lets the chain-slot lookup go through
-    the host directly, with no extra indirection on the hot
-    path.
-
-    The ``logger`` is forwarded as-is so transport-error log lines keep
-    appearing under the historical session logger namespace rather than
-    acquiring a new transport logger namespace that callers' log filters
-    / ``caplog`` selectors would not yet recognise.
-    """
+    """Construct a transport with its immutable behavior pipeline."""
     return RuntimeTransport(
         kernel=kernel,
         snapshot_provider=lambda: provider.generation(),
-        chain_provider=lambda: chain_host._authed_post_chain,
         metrics=metrics,
         bound_loop_check=lifecycle.assert_bound_loop,
         logger=logger,
-    )
-
-
-def wire_middleware_chain(
-    *,
-    drain_tracker: TransportDrainTracker,
-    metrics: ClientMetrics,
-    lifecycle: ClientLifecycle,
-    provider: WebCookieProvider,
-    chain_host: MiddlewareChainHost,
-    authed_post_chain_terminal: Callable[..., Awaitable[Any]],
-    rpc_semaphore: RpcSemaphore,
-    is_auth_error: Callable[[Exception], bool],
-) -> WiredMiddleware:
-    """Construct the :class:`MiddlewareChainBuilder`, build the six-middleware
-    list, and wire the final chain via :func:`build_chain`.
-
-    Two narrow host parameters:
-
-    * ``chain_host`` — the :class:`MiddlewareChainHost` owns the three
-      retry-budget tunables (``_rate_limit_max_retries`` /
-      ``_server_error_max_retries`` / ``_refresh_retry_delay``) plus the
-      dynamic-delegate refresh entry point (:meth:`await_refresh`). The
-      tunable provider lambdas and the ``refresh_callable`` reference
-      capture this host directly.
-    * ``provider`` — the live immutable-generation and refresh boundary.
-      Concrete refresh coordination and mutable credentials remain behind it.
-
-    Post-construction mutation on ``chain_host._<attr>`` still takes
-    effect through the middleware live-binding contract documented in
-    :class:`MiddlewareChainBuilder`. The ``rpc_semaphore`` is passed explicitly
-    so the helper does not need to know which holder publishes its owner.
-    ``is_auth_error`` is passed as a live-binding
-    callable so rebinding ``ClientSeams.is_auth_error`` after construction
-    still steers the chain.
-    """
-    # ADR-0009 chain construction. Envelope ordering lives in
-    # ``_middleware/chain.py``; typed per-call state and auth-generation
-    # publication live in ``_middleware/context.py``.
-    chain_builder = MiddlewareChainBuilder(
         drain_tracker=drain_tracker,
-        metrics=metrics,
         rpc_semaphore=rpc_semaphore,
-        rate_limit_max_retries_provider=lambda: chain_host._rate_limit_max_retries,
-        server_error_max_retries_provider=lambda: chain_host._server_error_max_retries,
+        rate_limit_max_retries=rate_limit_max_retries,
+        server_error_max_retries=server_error_max_retries,
         retry_timeout_provider=lambda: lifecycle._timeout,
-        refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
-        refresh_callable=chain_host.await_refresh,
-        auth_snapshot_provider=lambda: provider.generation(),
+        refresh_retry_delay=refresh_retry_delay,
+        refresh_callable=provider.await_refresh,
         is_auth_error=is_auth_error,
         refresh_callback_enabled_provider=lambda: provider.has_refresh_callback,
-    )
-    middlewares: list[Middleware] = chain_builder.build()
-    authed_post_chain: NextCall = build_chain(
-        middlewares,
-        authed_post_chain_terminal,
-    )
-    return WiredMiddleware(
-        chain_builder=chain_builder,
-        middlewares=middlewares,
-        authed_post_chain=authed_post_chain,
+        sleep=sleep,
+        terminal=terminal,
     )
 
 
-def compose_client_internals(
+def build_web_runtime(
     *,
     auth: AuthTokens,
     timeout: float = DEFAULT_TIMEOUT,
@@ -504,18 +442,15 @@ def compose_client_internals(
     is_auth_error: Callable[[Exception], bool] | None = None,
     async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
     authed_post_terminal: NextCall | None = None,
-    seams: ClientSeams | None = None,
 ) -> ClientInternals:
     """Single entry point that owns the client composition sequence."""
     # MUST stay first — preserves the earliest-opportunity refusal that
     # ``test_synthetic_error_transport_guard`` pins.
     _refuse_synthetic_error_outside_test_context()
 
-    seams = seams or resolve_client_seams(
-        sleep=sleep,
-        is_auth_error=is_auth_error,
-        decode_response=decode_response,
-    )
+    decode_response = _resolve_decode_response(decode_response)
+    sleep = _resolve_sleep(sleep)
+    is_auth_error = _resolve_is_auth_error(is_auth_error)
     async_client_factory = _resolve_async_client_factory(async_client_factory)
 
     config = validate_constructor_args(
@@ -531,9 +466,9 @@ def compose_client_internals(
         limits=limits,
         max_concurrent_uploads=max_concurrent_uploads,
         max_concurrent_rpcs=max_concurrent_rpcs,
-        decode_response=seams.decode_response,
-        sleep=seams.sleep,
-        is_auth_error=seams.is_auth_error,
+        decode_response=decode_response,
+        sleep=sleep,
+        is_auth_error=is_auth_error,
         async_client_factory=async_client_factory,
     )
     (
@@ -598,50 +533,36 @@ def compose_client_internals(
     )
     provider_ref = provider
 
-    chain_host = MiddlewareChainHost(
-        _refresh=provider.await_refresh,
-        _rate_limit_max_retries=config.rate_limit_max_retries,
-        _server_error_max_retries=config.server_error_max_retries,
-        _refresh_retry_delay=config.refresh_retry_delay,
-    )
-
     transport = build_runtime_transport(
         provider=provider,
         metrics=metrics,
         kernel=backend_kernel,
         lifecycle=lifecycle,
-        chain_host=chain_host,
+        drain_tracker=drain_tracker,
+        rpc_semaphore=rpc_semaphore,
+        rate_limit_max_retries=config.rate_limit_max_retries,
+        server_error_max_retries=config.server_error_max_retries,
+        refresh_retry_delay=config.refresh_retry_delay,
+        is_auth_error=config.is_auth_error,
+        # Retry/auth pipeline defaults stay late-bound so monkeypatching the
+        # canonical runtime clock before a call remains observable. Direct
+        # RuntimePipeline tests can inject an explicit clock.
+        sleep=None,
+        terminal=authed_post_terminal,
         logger=SESSION_LOGGER,
     )
-    chain_host._bind_transport(transport)
-
-    wired = wire_middleware_chain(
-        drain_tracker=drain_tracker,
-        metrics=metrics,
-        lifecycle=lifecycle,
-        provider=provider,
-        chain_host=chain_host,
-        authed_post_chain_terminal=(
-            authed_post_terminal
-            if authed_post_terminal is not None
-            else chain_host._authed_post_chain_terminal
-        ),
-        rpc_semaphore=rpc_semaphore,
-        is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
-    )
-    chain_host._authed_post_chain = wired.authed_post_chain
 
     executor = WebExecutionRuntime(
         assert_open=backend_session.assert_open,
         transport=transport,
         refresh=provider.await_refresh,
         metrics=metrics,
-        decode_response=lambda *a, **kw: seams.decode_response(*a, **kw),
-        is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
-        sleep=lambda *a, **kw: seams.sleep(*a, **kw),
+        decode_response=config.decode_response,
+        is_auth_error=config.is_auth_error,
+        sleep=config.sleep,
         timeout_provider=lambda: lifecycle._timeout,
         refresh_callback_enabled_provider=lambda: provider.has_refresh_callback,
-        refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
+        refresh_retry_delay_provider=lambda: config.refresh_retry_delay,
     )
     return ClientInternals(
         metrics=metrics,
@@ -658,16 +579,14 @@ def compose_client_internals(
         web_transport_factory=config.async_client_factory,
         rpc_semaphore=rpc_semaphore,
         transport=transport,
-        chain_host=chain_host,
+        pipeline=transport.pipeline,
     )
 
 
 __all__ = [
     "ClientInternals",
     "ValidatedSessionConfig",
-    "WiredMiddleware",
     "build_runtime_transport",
-    "compose_client_internals",
+    "build_web_runtime",
     "validate_constructor_args",
-    "wire_middleware_chain",
 ]

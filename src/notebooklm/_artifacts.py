@@ -7,7 +7,8 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 
 import builtins
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -18,6 +19,7 @@ from ._artifact import formatters as _artifact_formatters
 from ._artifact import polling as _artifact_polling
 from ._artifact import validation as _artifact_validation
 from ._artifact.downloads import DownloadResult
+from ._artifact.generation_workflow import ArtifactGenerationWorkflow
 from ._artifact.listing import ArtifactListingService
 from ._backend import BackendAdapter, BackendContractError, BackendError, BackendErrorReason
 from ._backend_compat import project_backend_call, project_backend_error
@@ -33,18 +35,10 @@ from ._records import (
     ArtifactRenameInput,
     ArtifactRepresentationRecord,
     ArtifactRetryInput,
-    ArtifactReviseSlideInput,
     ArtifactSuggestReportsInput,
-    AudioGenerateInput,
-    DataTableGenerateInput,
     DriveExportInput,
-    InfographicGenerateInput,
-    InteractiveGenerateInput,
     MindMapGenerateInput,
     MindMapRepresentationRecord,
-    ReportGenerateInput,
-    SlideDeckGenerateInput,
-    VideoGenerateInput,
 )
 from ._row_adapters.notes import NoteRow
 from ._studio import (
@@ -52,7 +46,6 @@ from ._studio import (
     ArtifactRepresentationService,
     AudioFamilyService,
     DataTableFamilyService,
-    DocumentOptionError,
     DriveExportService,
     InteractiveFamilyService,
     NoteBackedMindMapFamilyService,
@@ -67,10 +60,10 @@ from ._studio.downloads import StudioDownloadClient
 from ._types.research import MindMapResult
 from ._web.backend import WebRpcBackend
 from ._web.codec.artifacts import decode_artifact_representation, decode_mind_map_representation
+from .artifacts import RateLimitRetryEvent
 from .exceptions import (
     ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
-    ValidationError,
 )
 
 if TYPE_CHECKING:
@@ -112,24 +105,6 @@ _PARTIAL_MIND_MAP_FAILURE_REASONS = frozenset(
         BackendErrorReason.TIMEOUT,
     }
 )
-
-
-def _interactive_option_name(
-    value: object | None,
-    expected: type[QuizQuantity] | type[QuizDifficulty],
-    *,
-    parameter: str,
-) -> str | None:
-    """Validate the public enum before crossing the neutral family boundary."""
-
-    if value is None:
-        return None
-    if not isinstance(value, expected):
-        raise ValidationError(
-            f"{parameter} must be a {expected.__name__} member or None, got "
-            f"{value!r} ({type(value).__name__})"
-        )
-    return cast(QuizQuantity | QuizDifficulty, value).name.lower()
 
 
 class ArtifactsAPI:
@@ -237,6 +212,16 @@ class ArtifactsAPI:
             loop_guard=self._lifecycle,
             op_scope=self._drain,
             poll_registry=self._poll_registry,
+        )
+        self._generation_workflow = ArtifactGenerationWorkflow(
+            audio=self._audio,
+            video=self._video,
+            reports=self._reports,
+            interactive=self._interactive,
+            visuals=self._visuals,
+            data_tables=self._data_tables,
+            management=self._management,
+            lifecycle=self._lifecycle_service,
         )
         self._representations = ArtifactRepresentationService(
             _backend,
@@ -472,6 +457,38 @@ class ArtifactsAPI:
     # Generate Operations
     # =========================================================================
 
+    async def _generate_with_retry_and_wait(
+        self,
+        method_name: str,
+        notebook_id: str,
+        call_kwargs: dict[str, Any],
+        *,
+        timeout: float,
+        max_retries: int,
+        wait: bool,
+        artifact_type: str,
+        wait_message: str,
+        initial_interval: float | None = None,
+        on_retry: Callable[[RateLimitRetryEvent], object | Awaitable[object]] | None = None,
+        on_wait_start: Callable[[str], None] | None = None,
+        wait_context: Callable[[str, str], AbstractAsyncContextManager[None]] | None = None,
+    ) -> GenerationStatus | None:
+        """Run one private application workflow under one caller budget."""
+        return await self._generation_workflow.run(
+            method_name,
+            notebook_id,
+            call_kwargs,
+            timeout=timeout,
+            max_retries=max_retries,
+            wait=wait,
+            artifact_type=artifact_type,
+            wait_message=wait_message,
+            initial_interval=initial_interval,
+            on_retry=on_retry,
+            on_wait_start=on_wait_start,
+            wait_context=wait_context,
+        )
+
     async def generate_audio(
         self,
         notebook_id: str,
@@ -482,26 +499,17 @@ class ArtifactsAPI:
         audio_length: AudioLength | None = None,
     ) -> GenerationStatus:
         """Generate an Audio Overview (podcast)."""
-        if self._audio is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        public_error: Exception | None = None
-        try:
-            result = await self._audio.generate(
-                AudioGenerateInput(
-                    notebook_id=notebook_id,
-                    source_ids=None if source_ids is None else tuple(source_ids),
-                    language=language,
-                    instructions=instructions,
-                    audio_format=(None if audio_format is None else audio_format.name.lower()),
-                    audio_length=(None if audio_length is None else audio_length.name.lower()),
-                )
-            )
-        except BackendError as error:
-            public_error = project_backend_error(error)
-        else:
-            return project_generation_status(result.status)
-        assert public_error is not None
-        raise public_error
+        return await self._generation_workflow.generate_once(
+            "generate_audio",
+            notebook_id,
+            {
+                "source_ids": source_ids,
+                "language": language,
+                "instructions": instructions,
+                "audio_format": audio_format,
+                "audio_length": audio_length,
+            },
+        )
 
     async def generate_video(
         self,
@@ -514,25 +522,18 @@ class ArtifactsAPI:
         style_prompt: str | None = None,
     ) -> GenerationStatus:
         """Generate a Video Overview."""
-        if self._video is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        try:
-            result = await project_backend_call(
-                self._video.generate(
-                    VideoGenerateInput(
-                        notebook_id=notebook_id,
-                        source_ids=None if source_ids is None else tuple(source_ids),
-                        language=language,
-                        instructions=instructions,
-                        video_format=None if video_format is None else video_format.name.lower(),
-                        video_style=None if video_style is None else video_style.name.lower(),
-                        style_prompt=style_prompt,
-                    )
-                )
-            )
-        except DocumentOptionError as error:
-            raise ValidationError(str(error)) from None
-        return project_generation_status(result.status)
+        return await self._generation_workflow.generate_once(
+            "generate_video",
+            notebook_id,
+            {
+                "source_ids": source_ids,
+                "language": language,
+                "instructions": instructions,
+                "video_format": video_format,
+                "video_style": video_style,
+                "style_prompt": style_prompt,
+            },
+        )
 
     async def generate_cinematic_video(
         self,
@@ -542,24 +543,15 @@ class ArtifactsAPI:
         instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a Cinematic Video Overview."""
-        if self._video is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        try:
-            result = await project_backend_call(
-                self._video.generate(
-                    VideoGenerateInput(
-                        notebook_id=notebook_id,
-                        source_ids=None if source_ids is None else tuple(source_ids),
-                        language=language,
-                        instructions=instructions,
-                        video_format="cinematic",
-                        cinematic_route=True,
-                    )
-                )
-            )
-        except DocumentOptionError as error:  # pragma: no cover - facade constructs valid input
-            raise ValidationError(str(error)) from None
-        return project_generation_status(result.status)
+        return await self._generation_workflow.generate_once(
+            "generate_cinematic_video",
+            notebook_id,
+            {
+                "source_ids": source_ids,
+                "language": language,
+                "instructions": instructions,
+            },
+        )
 
     async def generate_report(
         self,
@@ -571,22 +563,17 @@ class ArtifactsAPI:
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a report artifact."""
-        report_format = _artifact_validation.coerce_report_format(report_format)
-        if self._reports is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        result = await project_backend_call(
-            self._reports.generate(
-                ReportGenerateInput(
-                    notebook_id=notebook_id,
-                    report_format=report_format.value,
-                    source_ids=None if source_ids is None else tuple(source_ids),
-                    language=language,
-                    custom_prompt=custom_prompt,
-                    extra_instructions=extra_instructions,
-                )
-            )
+        return await self._generation_workflow.generate_once(
+            "generate_report",
+            notebook_id,
+            {
+                "report_format": report_format,
+                "source_ids": source_ids,
+                "language": language,
+                "custom_prompt": custom_prompt,
+                "extra_instructions": extra_instructions,
+            },
         )
-        return project_generation_status(result.status)
 
     async def generate_study_guide(
         self,
@@ -613,25 +600,16 @@ class ArtifactsAPI:
         difficulty: QuizDifficulty | None = None,
     ) -> GenerationStatus:
         """Generate a quiz."""
-        if self._interactive is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        value = InteractiveGenerateInput(
-            notebook_id=notebook_id,
-            source_ids=None if source_ids is None else tuple(source_ids),
-            instructions=instructions,
-            quantity=_interactive_option_name(
-                quantity,
-                QuizQuantity,
-                parameter="quantity",
-            ),
-            difficulty=_interactive_option_name(
-                difficulty,
-                QuizDifficulty,
-                parameter="difficulty",
-            ),
+        return await self._generation_workflow.generate_once(
+            "generate_quiz",
+            notebook_id,
+            {
+                "source_ids": source_ids,
+                "instructions": instructions,
+                "quantity": quantity,
+                "difficulty": difficulty,
+            },
         )
-        result = await project_backend_call(self._interactive.generate_quiz(value))
-        return project_generation_status(result.status)
 
     async def generate_flashcards(
         self,
@@ -642,25 +620,16 @@ class ArtifactsAPI:
         difficulty: QuizDifficulty | None = None,
     ) -> GenerationStatus:
         """Generate flashcards."""
-        if self._interactive is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        value = InteractiveGenerateInput(
-            notebook_id=notebook_id,
-            source_ids=None if source_ids is None else tuple(source_ids),
-            instructions=instructions,
-            quantity=_interactive_option_name(
-                quantity,
-                QuizQuantity,
-                parameter="quantity",
-            ),
-            difficulty=_interactive_option_name(
-                difficulty,
-                QuizDifficulty,
-                parameter="difficulty",
-            ),
+        return await self._generation_workflow.generate_once(
+            "generate_flashcards",
+            notebook_id,
+            {
+                "source_ids": source_ids,
+                "instructions": instructions,
+                "quantity": quantity,
+                "difficulty": difficulty,
+            },
         )
-        result = await project_backend_call(self._interactive.generate_flashcards(value))
-        return project_generation_status(result.status)
 
     async def generate_infographic(
         self,
@@ -673,22 +642,18 @@ class ArtifactsAPI:
         style: InfographicStyle | None = None,
     ) -> GenerationStatus:
         """Generate an infographic."""
-        if self._visuals is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        result = await project_backend_call(
-            self._visuals.generate_infographic(
-                InfographicGenerateInput(
-                    notebook_id=notebook_id,
-                    source_ids=None if source_ids is None else tuple(source_ids),
-                    language=language,
-                    instructions=instructions,
-                    orientation=None if orientation is None else orientation.name.lower(),
-                    detail_level=None if detail_level is None else detail_level.name.lower(),
-                    style=None if style is None else style.name.lower(),
-                )
-            )
+        return await self._generation_workflow.generate_once(
+            "generate_infographic",
+            notebook_id,
+            {
+                "source_ids": source_ids,
+                "language": language,
+                "instructions": instructions,
+                "orientation": orientation,
+                "detail_level": detail_level,
+                "style": style,
+            },
         )
-        return project_generation_status(result.status)
 
     async def generate_slide_deck(
         self,
@@ -700,21 +665,17 @@ class ArtifactsAPI:
         slide_length: SlideDeckLength | None = None,
     ) -> GenerationStatus:
         """Generate a slide deck."""
-        if self._visuals is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        result = await project_backend_call(
-            self._visuals.generate_slide_deck(
-                SlideDeckGenerateInput(
-                    notebook_id=notebook_id,
-                    source_ids=None if source_ids is None else tuple(source_ids),
-                    language=language,
-                    instructions=instructions,
-                    slide_format=None if slide_format is None else slide_format.name.lower(),
-                    slide_length=None if slide_length is None else slide_length.name.lower(),
-                )
-            )
+        return await self._generation_workflow.generate_once(
+            "generate_slide_deck",
+            notebook_id,
+            {
+                "source_ids": source_ids,
+                "language": language,
+                "instructions": instructions,
+                "slide_format": slide_format,
+                "slide_length": slide_length,
+            },
         )
-        return project_generation_status(result.status)
 
     async def revise_slide(
         self,
@@ -724,16 +685,15 @@ class ArtifactsAPI:
         prompt: str,
     ) -> GenerationStatus:
         """Revise an individual slide in a completed slide deck using a prompt."""
-        if slide_index < 0:
-            raise ValidationError(f"slide_index must be >= 0, got {slide_index}")
-        if self._management is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        result = await project_backend_call(
-            self._management.revise_slide(
-                ArtifactReviseSlideInput(notebook_id, artifact_id, slide_index, prompt)
-            )
+        return await self._generation_workflow.generate_once(
+            "revise_slide",
+            notebook_id,
+            {
+                "artifact_id": artifact_id,
+                "slide_index": slide_index,
+                "prompt": prompt,
+            },
         )
-        return project_generation_status(result.status)
 
     async def retry_failed(self, notebook_id: str, artifact_id: str) -> GenerationStatus:
         """Retry a failed Studio artifact in place (the UI "Retry" action).
@@ -767,19 +727,15 @@ class ArtifactsAPI:
         instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a data table."""
-        if self._data_tables is None:
-            raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        result = await project_backend_call(
-            self._data_tables.generate(
-                DataTableGenerateInput(
-                    notebook_id,
-                    None if source_ids is None else tuple(source_ids),
-                    language,
-                    instructions,
-                )
-            )
+        return await self._generation_workflow.generate_once(
+            "generate_data_table",
+            notebook_id,
+            {
+                "source_ids": source_ids,
+                "language": language,
+                "instructions": instructions,
+            },
         )
-        return project_generation_status(result.status)
 
     async def generate_mind_map(
         self,

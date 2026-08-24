@@ -92,7 +92,7 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_env",
         "_idempotency",
         "_logging",
-        "_middleware.chain_host",
+        "_runtime.pipeline",
         "_mind_map",
         "_note_service",
         "_notebook_payloads",

@@ -8,12 +8,13 @@ from typing import Any
 import httpx
 import pytest
 
+import notebooklm._runtime.init as runtime_init
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._kernel import Kernel
 from notebooklm._runtime.transport import RuntimeTransport
 from notebooklm._web_cookie_provider import WebCookieGeneration
 from notebooklm.auth import AuthTokens
-from tests._helpers.client_factory import build_client_shell_for_tests
+from notebooklm.client import NotebookLMClient
 
 
 def _generation(epoch: int, sid: str) -> WebCookieGeneration:
@@ -39,7 +40,9 @@ def _auth() -> AuthTokens:
 
 
 @pytest.mark.asyncio
-async def test_late_old_httpx_response_cannot_mutate_the_new_generation() -> None:
+async def test_late_old_httpx_response_cannot_mutate_the_new_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A real overlapping response settles before the newer jar is installed."""
     old_entered = asyncio.Event()
     release_old = asyncio.Event()
@@ -68,7 +71,8 @@ async def test_late_old_httpx_response_cannot_mutate_the_new_generation() -> Non
         csrf_token="csrf-0",
         session_id="session-0",
     )
-    client = build_client_shell_for_tests(auth, async_client_factory=factory)
+    monkeypatch.setattr(runtime_init, "_resolve_async_client_factory", lambda _value: factory)
+    client = NotebookLMClient(auth)
     await client.__aenter__()
     try:
         provider = client._provider
@@ -121,7 +125,9 @@ async def test_late_old_httpx_response_cannot_mutate_the_new_generation() -> Non
 
 
 @pytest.mark.asyncio
-async def test_drain_false_close_does_not_wait_for_a_hung_backend_attempt() -> None:
+async def test_drain_false_close_does_not_wait_for_a_hung_backend_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Immediate close snapshots best-effort state without joining the barrier."""
     request_entered = asyncio.Event()
     release_request = asyncio.Event()
@@ -134,7 +140,8 @@ async def test_drain_false_close_does_not_wait_for_a_hung_backend_attempt() -> N
     def factory(**kwargs: Any) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
 
-    client = build_client_shell_for_tests(_auth(), async_client_factory=factory)
+    monkeypatch.setattr(runtime_init, "_resolve_async_client_factory", lambda _value: factory)
+    client = NotebookLMClient(_auth())
     await client.__aenter__()
     transport = client._backend._runtime._transport
     assert isinstance(transport, RuntimeTransport)
@@ -162,7 +169,9 @@ async def test_drain_false_close_does_not_wait_for_a_hung_backend_attempt() -> N
 
 
 @pytest.mark.asyncio
-async def test_drain_false_close_bypasses_a_reconciler_waiting_on_a_hung_attempt() -> None:
+async def test_drain_false_close_bypasses_a_reconciler_waiting_on_a_hung_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A direct-leg reconciler cannot hold immediate close behind its lock."""
     request_entered = asyncio.Event()
     release_request = asyncio.Event()
@@ -175,7 +184,8 @@ async def test_drain_false_close_bypasses_a_reconciler_waiting_on_a_hung_attempt
     def factory(**kwargs: Any) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
 
-    client = build_client_shell_for_tests(_auth(), async_client_factory=factory)
+    monkeypatch.setattr(runtime_init, "_resolve_async_client_factory", lambda _value: factory)
+    client = NotebookLMClient(_auth())
     await client.__aenter__()
     transport = client._backend._runtime._transport
     assert isinstance(transport, RuntimeTransport)
@@ -211,7 +221,9 @@ async def test_drain_false_close_bypasses_a_reconciler_waiting_on_a_hung_attempt
 
 
 @pytest.mark.asyncio
-async def test_drain_timeout_closes_without_rejoining_the_hung_attempt() -> None:
+async def test_drain_timeout_closes_without_rejoining_the_hung_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Timed-out drain tears down immediately before re-raising its timeout."""
     request_entered = asyncio.Event()
     release_request = asyncio.Event()
@@ -224,7 +236,8 @@ async def test_drain_timeout_closes_without_rejoining_the_hung_attempt() -> None
     def factory(**kwargs: Any) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
 
-    client = build_client_shell_for_tests(_auth(), async_client_factory=factory)
+    monkeypatch.setattr(runtime_init, "_resolve_async_client_factory", lambda _value: factory)
+    client = NotebookLMClient(_auth())
     await client.__aenter__()
     transport = client._backend._runtime._transport
     assert isinstance(transport, RuntimeTransport)

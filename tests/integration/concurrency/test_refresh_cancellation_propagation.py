@@ -2,7 +2,7 @@
 
 Regression test for the cancellation-propagation bug at
 ``AuthRefreshCoordinator.await_refresh`` (reached today through
-``MiddlewareChainHost.await_refresh``): prior to the fix, a caller
+``RuntimeWebCookieProvider.await_refresh``): prior to the fix, a caller
 cancelled via ``asyncio.wait_for(timeout=...)`` while
 ``await self._refresh_task`` was pending would propagate the
 ``CancelledError`` into the *shared* refresh task itself, taking down
@@ -26,12 +26,12 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from unittest.mock import patch
 
 import pytest
 
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 # async-cancellation propagation tests with no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.
@@ -57,11 +57,12 @@ async def _opened_core(refresh_callback):
         session_id="SID_OLD",
         cookies={"SID": "old_sid_cookie"},
     )
-    core = build_client_shell_for_tests(
-        auth=auth,
-        refresh_callback=refresh_callback,
-        refresh_retry_delay=0.0,
-    )
+    with patch.object(
+        NotebookLMClient,
+        "refresh_auth",
+        lambda _client: refresh_callback(),
+    ):
+        core = NotebookLMClient(auth=auth)
     await core.__aenter__()
     try:
         yield core
@@ -120,13 +121,13 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
         # we never release until both callers are joined, so #1 is
         # guaranteed to time out.
         async def cancelled_waiter():
-            await asyncio.wait_for(core._backend._chain_host.await_refresh(), timeout=0.01)
+            await asyncio.wait_for(core._provider.await_refresh(), timeout=0.01)
 
         # Caller #2: plain await — represents a parallel 401 retry path
         # that should observe a successful shared refresh regardless of
         # what happens to caller #1.
         async def surviving_waiter():
-            return await core._backend._chain_host.await_refresh()
+            return await core._provider.await_refresh()
 
         task1 = asyncio.create_task(cancelled_waiter())
         task2 = asyncio.create_task(surviving_waiter())
@@ -208,7 +209,7 @@ async def test_refresh_task_slot_not_cleared_on_waiter_cancellation():
     async with _opened_core(refresh_callback=cb) as core:
 
         async def cancelled_waiter():
-            await asyncio.wait_for(core._backend._chain_host.await_refresh(), timeout=0.01)
+            await asyncio.wait_for(core._provider.await_refresh(), timeout=0.01)
 
         task = asyncio.create_task(cancelled_waiter())
         await asyncio.wait_for(callback_entered.wait(), EVENT_TIMEOUT_S)

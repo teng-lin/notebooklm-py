@@ -113,13 +113,13 @@ CARVE_OUT_MODULES: frozenset[str] = frozenset(
         "src/notebooklm/_request_types.py",
         "src/notebooklm/_streaming_post.py",
         "src/notebooklm/_transport_errors.py",
-        "src/notebooklm/_middleware/auth_refresh.py",
-        "src/notebooklm/_middleware/chain.py",
-        "src/notebooklm/_middleware/drain.py",
-        "src/notebooklm/_middleware/metrics.py",
-        "src/notebooklm/_middleware/retry.py",
-        "src/notebooklm/_middleware/semaphore.py",
-        "src/notebooklm/_middleware/tracing.py",
+        "src/notebooklm/_runtime/auth_refresh_behavior.py",
+        "src/notebooklm/_runtime/drain_behavior.py",
+        "src/notebooklm/_runtime/metrics_behavior.py",
+        "src/notebooklm/_runtime/pipeline.py",
+        "src/notebooklm/_runtime/retry_behavior.py",
+        "src/notebooklm/_runtime/semaphore_behavior.py",
+        "src/notebooklm/_runtime/tracing_behavior.py",
     }
 )
 

@@ -15,7 +15,7 @@ Two facilities, both process-global:
   *leader* drives the work as an ``asyncio.Task`` on its own loop (held in a
   strong-ref set so the asyncio GC cannot collect it) and mirrors completion
   into a :class:`concurrent.futures.Future`. *Followers* on ANY event loop
-  bridge to that future via ``asyncio.shield(asyncio.wrap_future(f))`` with a
+  await that future via ``asyncio.shield(asyncio.wrap_future(f))`` with a
   settle-before-propagate loop, so a single follower's cancellation cannot
   detonate its siblings and a cross-loop caller never has to run the leader's
   coroutine itself (``run_coroutine_threadsafe`` is deliberately ruled out).

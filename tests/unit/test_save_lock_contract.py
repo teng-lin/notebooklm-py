@@ -29,7 +29,6 @@ import pytest
 from notebooklm._cookie_persistence import CookiePersistence
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _make_core(tmp_path: Path, *, cookie_saver=None) -> NotebookLMClient:
@@ -53,7 +52,7 @@ def _make_core(tmp_path: Path, *, cookie_saver=None) -> NotebookLMClient:
         storage_path=storage_path,
     )
     storage_path.write_text('{"cookies": []}')
-    return build_client_shell_for_tests(auth, cookie_saver=cookie_saver)
+    return NotebookLMClient(auth, cookie_saver=cookie_saver)
 
 
 @pytest.mark.asyncio

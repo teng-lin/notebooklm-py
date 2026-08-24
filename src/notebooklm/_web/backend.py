@@ -154,8 +154,8 @@ from .runtime import WebExecutionRuntime
 if TYPE_CHECKING:
     from .._chat import ChatAPI
     from .._client_metrics import ClientMetrics
-    from .._middleware.chain_host import MiddlewareChainHost
     from .._reqid_counter import ReqidCounter
+    from .._runtime.pipeline import RuntimePipeline
     from .._runtime.transport import RuntimeTransport
     from .._source.upload import SourceUploadPipeline
     from .._transport_drain import TransportDrainTracker
@@ -184,7 +184,7 @@ class WebRpcBackend(ChatWebHandlers):
         metrics: ClientMetrics | None = None,
         drain_tracker: TransportDrainTracker | None = None,
         reqid: ReqidCounter | None = None,
-        chain_host: MiddlewareChainHost | None = None,
+        pipeline: RuntimePipeline | None = None,
         provider: WebCookieProvider | None = None,
         session: WebCookieSession | None = None,
         owns_provider: bool = False,
@@ -202,7 +202,7 @@ class WebRpcBackend(ChatWebHandlers):
         self._metrics = metrics
         self._drain_tracker = drain_tracker
         self._reqid = reqid
-        self._chain_host = chain_host
+        self._pipeline = pipeline
         self._transport_factory = transport_factory
         self._source_uploader = source_uploader
         if self._source_uploader is not None:
@@ -245,18 +245,17 @@ class WebRpcBackend(ChatWebHandlers):
         return (
             self._backend_session is not None
             and self._provider is not None
-            and self._chain_host is not None
-            and self._chain_host._authed_post_chain is not None
+            and self._pipeline is not None
         )
 
     @property
     def retry_limits(self) -> tuple[int, int]:
-        """Return the live retry budgets owned by the backend chain host."""
-        if self._chain_host is None:
+        """Return the immutable retry budgets owned by the runtime pipeline."""
+        if self._pipeline is None:
             raise RuntimeError("WebRpcBackend has no retry configuration")
         return (
-            self._chain_host._rate_limit_max_retries,
-            self._chain_host._server_error_max_retries,
+            self._pipeline.rate_limit_max_retries,
+            self._pipeline.server_error_max_retries,
         )
 
     async def open_client(

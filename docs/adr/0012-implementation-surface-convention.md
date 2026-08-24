@@ -304,8 +304,8 @@ collapses back.
   external-callsite imports from underscore-prefixed `notebooklm`
   submodules but cannot prevent them.
 - Some seams that *look* public-grade are not. For example,
-  `_runtime/contracts.py`, `_runtime/transport.py`, `_kernel.py`, and
-  `_middleware/chain_host.py` are load-bearing first-party internals,
+  `_runtime/contracts.py`, `_runtime/transport.py`, `_runtime/pipeline.py`, and
+  `_kernel.py` are load-bearing first-party internals,
   but downstream callers should still use the public facade or typed
   client API rather than importing those modules directly. If a seam-level
   name has legitimate downstream demand, promote a deliberate re-export

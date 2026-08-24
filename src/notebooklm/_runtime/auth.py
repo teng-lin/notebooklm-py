@@ -119,7 +119,7 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
     def has_refresh_callback(self) -> bool:
         """``True`` iff a refresh callback was wired at construction.
 
-        Used by :class:`notebooklm._middleware.auth_refresh.AuthRefreshMiddleware`
+        Used by :class:`notebooklm._runtime.auth_refresh_behavior.AuthRefreshBehavior`
         to gate the refresh-and-retry branch: a client constructed without
         a ``refresh_callback`` should propagate auth errors directly.
         Exposing this as a property avoids reaching into the private

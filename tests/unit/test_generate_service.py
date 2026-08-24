@@ -490,6 +490,7 @@ def _make_mock_client(method_name: str, return_value: Any) -> MagicMock:
     client = MagicMock()
     client.artifacts = MagicMock()
     setattr(client.artifacts, method_name, AsyncMock(return_value=return_value))
+    client.artifacts.wait_for_completion = AsyncMock()
     return client
 
 

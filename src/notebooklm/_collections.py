@@ -9,7 +9,7 @@ differences (null notebook slot, trailing type discriminator, ``[1, 3]`` options
 tail) plus the account source path.
 
 Like ``LabelsAPI`` it takes a narrow ``list_notebooks`` callable
-(``client.notebooks.list``) — wired in ``_client_assembly.py`` after
+(``client.notebooks.list``) — wired in ``_client_composition.py`` after
 ``NotebooksAPI`` is built — for the membership→``Notebook`` join in
 ``notebooks()``.
 """
@@ -21,13 +21,12 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from ._backend import BackendAdapter, BackendError
-from ._backend_compat import project_backend_error
+from ._backend_compat import project_backend_error, project_local_not_found
 from ._label_service import LabelSetService, require_member_ids
 from ._lookup import unwrap_or_raise
+from ._operations import Operation
 from ._projectors import project_collection
 from ._records import LabelKind
-from .exceptions import CollectionNotFoundError
-from .rpc import RPCMethod
 from .types import Collection, Notebook
 
 logger = logging.getLogger(__name__)
@@ -52,7 +51,7 @@ class CollectionsAPI:
 
     def __init__(self, backend: BackendAdapter, *, list_notebooks: ListNotebooks) -> None:
         """``list_notebooks`` is ``client.notebooks.list`` (wired in
-        ``_client_assembly.py`` after ``NotebooksAPI`` is constructed) — needed
+        ``_client_composition.py`` after ``NotebooksAPI`` is constructed) — needed
         for the membership→``Notebook`` join in ``notebooks()``. Same client /
         bound loop, so no loop-affinity concern (ADR-0004)."""
         self._service = LabelSetService(backend, LabelKind.COLLECTION)
@@ -89,7 +88,7 @@ class CollectionsAPI:
         """Get a collection by id; raises ``CollectionNotFoundError`` on miss (ADR-0019)."""
         return unwrap_or_raise(
             await self.get_or_none(collection_id),
-            CollectionNotFoundError(collection_id, method_id=RPCMethod.LIST_LABELS.value),
+            project_local_not_found(Operation.COLLECTION_GET, collection_id),
         )
 
     async def notebooks(self, collection_id: str) -> builtins.list[Notebook]:

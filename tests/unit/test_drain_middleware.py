@@ -1,6 +1,6 @@
-"""Unit tests for :class:`DrainMiddleware` (Tier-12 PR 12.5).
+"""Unit tests for :class:`DrainBehavior` (Tier-12 PR 12.5).
 
-Pins the contract documented in ``src/notebooklm/_middleware/drain.py``
+Pins the contract documented in ``src/notebooklm/_runtime/drain_behavior.py``
 and ADR-0009 §"Chain ordering":
 
 - Pass-through identity: the middleware brackets ``next_call`` but does
@@ -31,18 +31,17 @@ import asyncio
 import httpx
 import pytest
 
-from notebooklm._middleware.core import (
+from notebooklm._runtime.drain_behavior import DrainBehavior
+from notebooklm._runtime.rpc_call import (
     NextCall,
     RpcRequest,
     RpcResponse,
-    build_chain,
 )
-from notebooklm._middleware.drain import DrainMiddleware
 from notebooklm._transport_drain import TransportDrainTracker
 
 # The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
-from tests._fixtures.chain import make_request
+from tests._fixtures.chain import build_chain, make_request
 
 
 def _terminal_returning(response: httpx.Response) -> NextCall:
@@ -87,7 +86,7 @@ async def test_brackets_next_call_with_begin_finish(
             state=request.state,
         )
 
-    middleware = DrainMiddleware(tracker)
+    middleware = DrainBehavior(tracker)
     chain = build_chain([middleware], observing_terminal)
     request = make_request(context={"log_label": "RPC LIST_NOTEBOOKS"})
 
@@ -104,7 +103,7 @@ async def test_finish_fires_on_exception(
     """If ``next_call`` raises, the counter still decrements via ``finally``.
 
     Pins the load-bearing invariant that orphaning a token would stall
-    ``drain()`` forever — the ``try/finally`` in DrainMiddleware exists
+    ``drain()`` forever — the ``try/finally`` in DrainBehavior exists
     precisely to make ``finish_transport_post`` fire on the failure
     path. The exception itself propagates unchanged (not swallowed).
     """
@@ -113,7 +112,7 @@ async def test_finish_fires_on_exception(
     async def failing_terminal(_request: RpcRequest) -> RpcResponse:
         raise boom
 
-    middleware = DrainMiddleware(tracker)
+    middleware = DrainBehavior(tracker)
     chain = build_chain([middleware], failing_terminal)
     request = make_request(context={"log_label": "RPC LIST_NOTEBOOKS"})
 
@@ -146,7 +145,7 @@ async def test_draining_top_level_request_is_rejected(
             state=request.state,
         )
 
-    middleware = DrainMiddleware(tracker)
+    middleware = DrainBehavior(tracker)
     chain = build_chain([middleware], must_not_run)
 
     # ``drain(timeout=0)`` with no in-flight posts short-circuits the
@@ -193,7 +192,7 @@ async def test_nested_call_admitted_after_drain_starts(
             state=request.state,
         )
 
-    middleware = DrainMiddleware(tracker)
+    middleware = DrainBehavior(tracker)
     chain = build_chain([middleware], inner_terminal)
 
     # Outer admission lifts the current task's depth to 1.
@@ -226,7 +225,7 @@ async def test_missing_log_label_falls_back_to_sentinel(
     that would surface as a flaky test-fixture failure under a
     seemingly-unrelated refactor.
     """
-    middleware = DrainMiddleware(tracker)
+    middleware = DrainBehavior(tracker)
     chain = build_chain([middleware], _terminal_returning(httpx.Response(200, content=b"")))
 
     request = make_request(context={})  # explicitly no log_label
@@ -243,7 +242,7 @@ async def test_pass_through_does_not_mutate_request(
 
     ``RpcRequest`` is a frozen dataclass so attribute mutation raises
     ``FrozenInstanceError``, but ``context`` is mutable by reference.
-    DrainMiddleware reads ``context["log_label"]`` and must not write
+    DrainBehavior reads ``context["log_label"]`` and must not write
     back. Pin by snapshotting context keys before the call and asserting
     equality after.
     """
@@ -257,7 +256,7 @@ async def test_pass_through_does_not_mutate_request(
             state=request.state,
         )
 
-    middleware = DrainMiddleware(tracker)
+    middleware = DrainBehavior(tracker)
     chain = build_chain([middleware], terminal)
 
     context_before = {
@@ -287,7 +286,7 @@ async def test_drain_after_chain_finishes_does_not_block(
     circuits without blocking. A timeout here would indicate the
     counter was orphaned.
     """
-    middleware = DrainMiddleware(tracker)
+    middleware = DrainBehavior(tracker)
     chain = build_chain([middleware], _terminal_returning(httpx.Response(200, content=b"")))
 
     await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))

@@ -8,6 +8,7 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
+import notebooklm.rpc as rpc_module
 from notebooklm._auth import tokens as _auth_tokens
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._auth.profile_store import ProfileStore
@@ -17,8 +18,20 @@ from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import AuthError, RPCError, RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.unit.conftest import install_post_as_stream
+
+
+def _install_refresh_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    callback: object,
+) -> None:
+    """Replace the public refresh owner before constructing a full client."""
+
+    async def refresh_auth(_self: NotebookLMClient, *, allow_headless: bool = False):
+        del allow_headless
+        return await callback()  # type: ignore[operator]
+
+    monkeypatch.setattr(NotebookLMClient, "refresh_auth", refresh_auth)
 
 
 @pytest.fixture
@@ -746,7 +759,7 @@ class TestIsAuthError:
 
 class TestSessionRefreshCallback:
     def test_refresh_callback_stored(self):
-        """Session should store refresh callback."""
+        """The provider stores the public client's refresh owner."""
 
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -754,14 +767,14 @@ class TestSessionRefreshCallback:
             session_id="sid",
         )
 
-        async def mock_refresh():
-            pass
-
-        core = build_client_shell_for_tests(auth, refresh_callback=mock_refresh)
-        assert core._provider._coordinator._refresh_callback is mock_refresh
+        core = NotebookLMClient(auth)
+        callback = core._provider._coordinator._refresh_callback
+        assert callback is not None
+        assert callback.__self__ is core
+        assert callback.__func__ is NotebookLMClient.refresh_auth
 
     def test_refresh_callback_defaults_to_none(self):
-        """Session should default refresh_callback to None."""
+        """Public clients always expose provider refresh capability."""
 
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -769,8 +782,8 @@ class TestSessionRefreshCallback:
             session_id="sid",
         )
 
-        core = build_client_shell_for_tests(auth)
-        assert core._provider._coordinator._refresh_callback is None
+        core = NotebookLMClient(auth)
+        assert core._provider._coordinator.has_refresh_callback
 
     def test_refresh_lock_lazy_at_construction(self):
         """Refresh lock is ``None`` at construction regardless of callback.
@@ -787,18 +800,9 @@ class TestSessionRefreshCallback:
             session_id="sid",
         )
 
-        async def mock_refresh():
-            pass
-
-        # With callback: lazy — lock is None until first refresh attempt.
-        core_with_cb = build_client_shell_for_tests(auth, refresh_callback=mock_refresh)
-        assert core_with_cb._provider._coordinator._refresh_lock is None
-        assert core_with_cb._provider._coordinator._refresh_callback is mock_refresh
-
-        # Without callback: also None (unchanged behavior on this axis).
-        core_without_cb = build_client_shell_for_tests(auth)
-        assert core_without_cb._provider._coordinator._refresh_lock is None
-        assert core_without_cb._provider._coordinator._refresh_callback is None
+        core = NotebookLMClient(auth)
+        assert core._provider._coordinator._refresh_lock is None
+        assert core._provider._coordinator.has_refresh_callback
 
 
 # =============================================================================
@@ -808,7 +812,7 @@ class TestSessionRefreshCallback:
 
 class TestRpcCallAutoRetry:
     @pytest.mark.asyncio
-    async def test_retries_on_http_401_error(self):
+    async def test_retries_on_http_401_error(self, monkeypatch: pytest.MonkeyPatch):
         """rpc_call should retry once after HTTP 401 if callback provided."""
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -825,12 +829,9 @@ class TestRpcCallAutoRetry:
         def fake_decode(*args, **kwargs):
             return ["result"]
 
-        core = build_client_shell_for_tests(
-            auth,
-            refresh_callback=mock_refresh,
-            refresh_retry_delay=0,
-            decode_response=fake_decode,
-        )
+        _install_refresh_owner(monkeypatch, mock_refresh)
+        monkeypatch.setattr(rpc_module, "decode_response", fake_decode)
+        core = NotebookLMClient(auth)
 
         call_count = [0]
 
@@ -859,7 +860,7 @@ class TestRpcCallAutoRetry:
         assert result == ["result"]
 
     @pytest.mark.asyncio
-    async def test_retries_on_rpc_auth_error(self):
+    async def test_retries_on_rpc_auth_error(self, monkeypatch: pytest.MonkeyPatch):
         """rpc_call should retry once after RPC auth error if callback provided."""
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -886,12 +887,9 @@ class TestRpcCallAutoRetry:
                 )
             return ["result"]
 
-        core = build_client_shell_for_tests(
-            auth,
-            refresh_callback=mock_refresh,
-            refresh_retry_delay=0,
-            decode_response=mock_decode,
-        )
+        _install_refresh_owner(monkeypatch, mock_refresh)
+        monkeypatch.setattr(rpc_module, "decode_response", mock_decode)
+        core = NotebookLMClient(auth)
 
         # Mock HTTP client - always succeeds
         async def mock_post(*args, **kwargs):
@@ -912,7 +910,9 @@ class TestRpcCallAutoRetry:
         assert result == ["result"]
 
     @pytest.mark.asyncio
-    async def test_no_auth_refresh_on_rpc_error_with_auth_words_without_signal(self):
+    async def test_no_auth_refresh_on_rpc_error_with_auth_words_without_signal(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         """rpc_call should not refresh on generic RPC text that mentions auth words."""
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -935,12 +935,9 @@ class TestRpcCallAutoRetry:
                 method_id="wXbhsf",
             )
 
-        core = build_client_shell_for_tests(
-            auth,
-            refresh_callback=mock_refresh,
-            refresh_retry_delay=0,
-            decode_response=mock_decode,
-        )
+        _install_refresh_owner(monkeypatch, mock_refresh)
+        monkeypatch.setattr(rpc_module, "decode_response", mock_decode)
+        core = NotebookLMClient(auth)
 
         async def mock_post(*args, **kwargs):
             response = MagicMock()
@@ -960,35 +957,7 @@ class TestRpcCallAutoRetry:
         assert decode_call_count[0] == 1
 
     @pytest.mark.asyncio
-    async def test_no_retry_without_callback(self):
-        """rpc_call should NOT retry if no refresh_callback provided."""
-        auth = AuthTokens(
-            cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
-            csrf_token="csrf",
-            session_id="sid",
-        )
-
-        core = build_client_shell_for_tests(auth)  # No refresh_callback
-
-        call_count = [0]
-
-        async def mock_post(*args, **kwargs):
-            call_count[0] += 1
-            request = httpx.Request("POST", args[0])
-            response = httpx.Response(401, request=request)
-            raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
-
-        install_http_client_for_test(core._backend._kernel, MagicMock())
-        core._backend._kernel.get_http_client().post = mock_post
-        install_post_as_stream(None, core._backend._kernel.get_http_client(), mock_post)
-
-        with pytest.raises(RPCError, match="HTTP 401"):
-            await core._backend._runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
-
-        assert call_count[0] == 1, "Should not retry without callback"
-
-    @pytest.mark.asyncio
-    async def test_no_infinite_retry(self):
+    async def test_no_infinite_retry(self, monkeypatch: pytest.MonkeyPatch):
         """rpc_call should only retry once, not infinitely."""
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -1002,9 +971,8 @@ class TestRpcCallAutoRetry:
             refresh_count[0] += 1
             return auth
 
-        core = build_client_shell_for_tests(
-            auth, refresh_callback=mock_refresh, refresh_retry_delay=0
-        )
+        _install_refresh_owner(monkeypatch, mock_refresh)
+        core = NotebookLMClient(auth)
 
         call_count = [0]
 
@@ -1027,7 +995,7 @@ class TestRpcCallAutoRetry:
         assert call_count[0] == 2, "Should only retry once"
 
     @pytest.mark.asyncio
-    async def test_no_auth_refresh_on_non_auth_error(self):
+    async def test_no_auth_refresh_on_non_auth_error(self, monkeypatch: pytest.MonkeyPatch):
         """rpc_call should NOT trigger auth refresh on non-auth errors (HTTP 500).
 
         Note: ``server_error_max_retries=0`` opts out of the 5xx retry
@@ -1046,12 +1014,8 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = build_client_shell_for_tests(
-            auth,
-            refresh_callback=mock_refresh,
-            refresh_retry_delay=0,
-            server_error_max_retries=0,
-        )
+        _install_refresh_owner(monkeypatch, mock_refresh)
+        core = NotebookLMClient(auth, server_error_max_retries=0)
 
         call_count = [0]
 
@@ -1072,7 +1036,7 @@ class TestRpcCallAutoRetry:
         assert call_count[0] == 1, "Should not retry on non-auth error"
 
     @pytest.mark.asyncio
-    async def test_refresh_failure_raises_original_error(self):
+    async def test_refresh_failure_raises_original_error(self, monkeypatch: pytest.MonkeyPatch):
         """If refresh fails, should raise original error with chained exception."""
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -1083,9 +1047,8 @@ class TestRpcCallAutoRetry:
         async def failing_refresh():
             raise ValueError("Refresh failed - cookies expired")
 
-        core = build_client_shell_for_tests(
-            auth, refresh_callback=failing_refresh, refresh_retry_delay=0
-        )
+        _install_refresh_owner(monkeypatch, failing_refresh)
+        core = NotebookLMClient(auth)
 
         async def mock_post(*args, **kwargs):
             request = httpx.Request("POST", args[0])
@@ -1104,7 +1067,7 @@ class TestRpcCallAutoRetry:
         assert "Refresh failed" in str(exc_info.value.__cause__)
 
     @pytest.mark.asyncio
-    async def test_concurrent_refresh_uses_shared_task(self):
+    async def test_concurrent_refresh_uses_shared_task(self, monkeypatch: pytest.MonkeyPatch):
         """Concurrent auth errors should share a single refresh task."""
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -1119,12 +1082,9 @@ class TestRpcCallAutoRetry:
             await asyncio.sleep(0.05)  # Simulate slow refresh
             return auth
 
-        core = build_client_shell_for_tests(
-            auth,
-            refresh_callback=mock_refresh,
-            refresh_retry_delay=0,
-            decode_response=lambda *a, **kw: ["result"],
-        )
+        _install_refresh_owner(monkeypatch, mock_refresh)
+        monkeypatch.setattr(rpc_module, "decode_response", lambda *a, **kw: ["result"])
+        core = NotebookLMClient(auth)
 
         call_count = [0]
 
@@ -1160,7 +1120,7 @@ class TestRpcCallAutoRetry:
         )
 
     @pytest.mark.asyncio
-    async def test_400_triggers_auth_refresh(self):
+    async def test_400_triggers_auth_refresh(self, monkeypatch: pytest.MonkeyPatch):
         """HTTP 400 (stale CSRF) should trigger refresh + retry (closes #392).
 
         NotebookLM returns 400 — not 401/403 — when the at= body param is
@@ -1179,12 +1139,9 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = build_client_shell_for_tests(
-            auth,
-            refresh_callback=mock_refresh,
-            refresh_retry_delay=0,
-            decode_response=lambda *a, **kw: ["result"],
-        )
+        _install_refresh_owner(monkeypatch, mock_refresh)
+        monkeypatch.setattr(rpc_module, "decode_response", lambda *a, **kw: ["result"])
+        core = NotebookLMClient(auth)
 
         call_count = [0]
 
@@ -1213,43 +1170,9 @@ class TestRpcCallAutoRetry:
         assert result == ["result"]
 
     @pytest.mark.asyncio
-    async def test_400_without_refresh_callback_raises_client_error(self):
-        """HTTP 400 with no refresh_callback must still map to ClientError.
-
-        Back-compat: callers that don't opt in to auto-refresh see the
-        existing 400 → ClientError behavior. The is_auth_error gate in
-        rpc_call requires both the auth match AND a refresh_callback.
-        """
-        auth = AuthTokens(
-            cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
-            csrf_token="csrf",
-            session_id="sid",
-        )
-
-        core = build_client_shell_for_tests(auth)  # No refresh_callback
-
-        call_count = [0]
-
-        async def mock_post(*args, **kwargs):
-            call_count[0] += 1
-            request = httpx.Request("POST", args[0])
-            response = httpx.Response(400, request=request)
-            raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
-
-        install_http_client_for_test(core._backend._kernel, MagicMock())
-        core._backend._kernel.get_http_client().post = mock_post
-        install_post_as_stream(None, core._backend._kernel.get_http_client(), mock_post)
-
-        # ClientError is the 4xx (non-401/403) mapping in rpc_call
-        from notebooklm.rpc import ClientError
-
-        with pytest.raises(ClientError):
-            await core._backend._runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
-
-        assert call_count[0] == 1, "Should not retry without callback"
-
-    @pytest.mark.asyncio
-    async def test_400_refresh_failure_propagates_original_error(self):
+    async def test_400_refresh_failure_propagates_original_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         """If refresh fails after a 400, the original 400 surfaces (chained).
 
         Mirrors test_refresh_failure_raises_original_error but with 400
@@ -1265,9 +1188,8 @@ class TestRpcCallAutoRetry:
         async def failing_refresh():
             raise ValueError("Refresh failed - cookies expired")
 
-        core = build_client_shell_for_tests(
-            auth, refresh_callback=failing_refresh, refresh_retry_delay=0
-        )
+        _install_refresh_owner(monkeypatch, failing_refresh)
+        core = NotebookLMClient(auth)
 
         async def mock_post(*args, **kwargs):
             request = httpx.Request("POST", args[0])
@@ -1312,7 +1234,7 @@ class TestBuildUrlAuthuser:
             csrf_token="csrf",
             session_id="sess",
         )
-        core = build_client_shell_for_tests(auth=auth)
+        core = NotebookLMClient(auth=auth)
         url = core._backend._runtime.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser" not in url
 
@@ -1323,7 +1245,7 @@ class TestBuildUrlAuthuser:
             session_id="sess",
             authuser=2,
         )
-        core = build_client_shell_for_tests(auth=auth)
+        core = NotebookLMClient(auth=auth)
         url = core._backend._runtime.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser=2" in url
 
@@ -1335,7 +1257,7 @@ class TestBuildUrlAuthuser:
             authuser=2,
             account_email="bob@example.com",
         )
-        core = build_client_shell_for_tests(auth=auth)
+        core = NotebookLMClient(auth=auth)
         url = core._backend._runtime.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser=bob%40example.com" in url
         assert "authuser=2" not in url

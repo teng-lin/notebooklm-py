@@ -3,7 +3,7 @@
 NotebookLM recovers from an auth failure at **two** distinct layers, and
 issue #1205 flagged that they were implemented as divergent copies:
 
-* **HTTP-status layer** — :class:`notebooklm._middleware.auth_refresh.AuthRefreshMiddleware`
+* **HTTP-status layer** — :class:`notebooklm._runtime.auth_refresh_behavior.AuthRefreshBehavior`
   catches a raw ``httpx.HTTPStatusError`` 400/401/403 from ``Kernel.post``,
   refreshes, rebuilds the request envelope, and re-invokes the chain leaf
   once.
@@ -26,7 +26,7 @@ This module owns that common core exactly once:
   RPC call to **one** refresh across BOTH layers. ``WebExecutionRuntime``
   mints one budget per logical ``rpc_call``, publishes it through the
   identity-shared ``RpcCallState.refresh_budget`` field (so
-  :class:`AuthRefreshMiddleware` sees it), and keeps the same reference for
+  :class:`AuthRefreshBehavior` sees it), and keeps the same reference for
   the decode-time leg. Without the shared budget a
   ``wire-401 → refresh → decoded-auth-error`` sequence would refresh twice —
   the HTTP-status layer's bounded ``auth_refreshed`` publication and the
@@ -127,7 +127,7 @@ async def refresh_and_count(
        ``retry_deadline`` is supplied the delay is clamped to the remaining
        aggregate budget (issue #1271), so the post-refresh sleep can never
        overshoot the logical call's timeout — symmetric with
-       ``RetryMiddleware._resolve_retry_sleep`` on the HTTP-status layer. An
+       ``RetryBehavior._resolve_retry_sleep`` on the HTTP-status layer. An
        already-exhausted deadline clamps the sleep to ``0`` and the retry
        proceeds immediately.
     5. Log ``"Token refresh successful, retrying <label>"``.

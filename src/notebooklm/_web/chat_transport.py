@@ -91,7 +91,7 @@ async def chat_aware_authed_post(
             retry middleware inherits this exact object instead of minting a
             fresh retry budget for streamed Chat.
     """
-    # Drain admission lives in ``DrainMiddleware`` at the outermost chain
+    # Drain admission lives in ``DrainBehavior`` at the outermost chain
     # position around ``perform_authed_post`` — it reads ``log_label``
     # from ``RpcRequest.state`` (passed below as ``parse_label``), so a
     # drained client still surfaces ``RuntimeError`` with the chat-friendly

@@ -379,7 +379,7 @@ async def test_chat_byte_cap_aborts_pre_decode_with_bytes_read_over_limit(
 ) -> None:
     """All three observables move if chat routes through a decoded-record protocol.
 
-    ``chat_response_max_bytes`` is validated in ``_client_assembly`` but
+    ``chat_response_max_bytes`` is validated in ``_client_composition`` but
     enforced in ``_streaming_post`` on the raw buffered byte total: the read
     loop aborts early, ``bytes_read`` is documented as strictly greater than
     ``limit_bytes``, and the failure is ``RPCResponseTooLargeError`` — not a

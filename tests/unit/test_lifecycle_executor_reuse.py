@@ -8,8 +8,8 @@ executor so a follow-up :meth:`open` would rebuild it against the new
 
 PR 2 deleted both that null line and the lazy factory itself — the
 executor is bound exactly once by the composition root
-(:func:`notebooklm._runtime.init.compose_client_internals`) via
-:class:`notebooklm._client_composed.ClientComposed`, and the same instance
+(:func:`notebooklm._runtime.init.build_web_runtime`) via
+the backend-owned runtime, and the same instance
 survives any ``close()`` → ``open()`` cycle. This is safe because the executor's
 transport collaborator (:class:`Kernel`) rebuilds its
 ``httpx.AsyncClient`` lazily on each :meth:`Kernel.open`, so a stale
@@ -21,8 +21,7 @@ This module pins three load-bearing invariants:
    a full ``close()`` → ``open()`` cycle.
 2. The reused executor can still execute an RPC after the cycle (it is
    not bound to a stale transport reference).
-3. ``NotebookLMClient._backend._runtime`` is the same client-owned executor stored
-   on ``ClientComposed``.
+3. ``NotebookLMClient._backend._runtime`` remains the single execution owner.
 """
 
 from __future__ import annotations
@@ -32,8 +31,8 @@ from typing import Any
 import pytest
 
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _make_auth() -> AuthTokens:
@@ -55,7 +54,7 @@ async def test_executor_identity_survives_close_then_open() -> None:
     adapters that captured the executor at construction time
     (``ChatAPI`` / ``SourcesAPI`` / etc.) do not need to re-grab it.
     """
-    core = build_client_shell_for_tests(_make_auth())
+    core = NotebookLMClient(_make_auth())
     initial_executor = core._backend._runtime
     assert initial_executor is not None, "composition root must bind the executor"
 
@@ -93,7 +92,7 @@ async def test_rpc_call_succeeds_after_close_then_open_with_same_executor() -> N
     would raise ``AttributeError``. This test exercises the call path end-to-end
     through a stubbed executor to confirm the binding survives.
     """
-    core = build_client_shell_for_tests(_make_auth())
+    core = NotebookLMClient(_make_auth())
     executor = core._backend._runtime
     assert executor is not None
 
@@ -136,7 +135,7 @@ async def test_rpc_call_succeeds_after_close_then_open_with_same_executor() -> N
 
 def test_client_raw_rpc_uses_backend_owned_runtime() -> None:
     """The client publishes no second executor owner."""
-    core = build_client_shell_for_tests(_make_auth())
+    core = NotebookLMClient(_make_auth())
 
     assert core.notebooks._legacy_rpc is core._backend._runtime
     assert not hasattr(core, "_rpc_executor")

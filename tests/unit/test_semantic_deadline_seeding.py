@@ -26,8 +26,8 @@ from notebooklm._web.deadlines import (
 )
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
     {
@@ -218,7 +218,7 @@ async def test_source_poll_snapshot_keeps_legacy_in_flight_timeout_semantics() -
 
 
 def test_production_assembly_reads_live_timeout_without_mutating_started_deadline() -> None:
-    client = build_client_shell_for_tests(
+    client = NotebookLMClient(
         AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="session"),
         timeout=17.0,
     )

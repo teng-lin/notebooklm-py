@@ -1,4 +1,4 @@
-"""Fail-closed guards for the typed middleware call-state contract."""
+"""Fail-closed guards for the typed runtime-pipeline call-state contract."""
 
 from __future__ import annotations
 
@@ -8,12 +8,25 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._middleware.context import RpcCallState
+from notebooklm._runtime.rpc_call_state import RpcCallState
 
 ROOT = Path(__file__).resolve().parents[2]
 PRODUCTION_STATE_FILES = [
-    *sorted((ROOT / "src/notebooklm/_middleware").glob("*.py")),
-    ROOT / "src/notebooklm/_runtime/transport.py",
+    *(
+        ROOT / "src/notebooklm/_runtime" / name
+        for name in (
+            "auth_refresh_behavior.py",
+            "drain_behavior.py",
+            "metrics_behavior.py",
+            "pipeline.py",
+            "retry_behavior.py",
+            "rpc_call.py",
+            "rpc_call_state.py",
+            "semaphore_behavior.py",
+            "tracing_behavior.py",
+            "transport.py",
+        )
+    ),
 ]
 
 

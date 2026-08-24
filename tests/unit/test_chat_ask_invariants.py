@@ -37,7 +37,6 @@ from notebooklm._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError
 from tests._fixtures.web_backend import build_web_backend
-from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.unit.conftest import install_post_as_stream
 
 # ---------------------------------------------------------------------------
@@ -365,9 +364,8 @@ class TestChatRefreshRetry:
             auth.session_id = "NEW_SID"
             return auth
 
-        core = build_client_shell_for_tests(
-            auth=auth, refresh_callback=refresh, refresh_retry_delay=0.0
-        )
+        monkeypatch.setattr(NotebookLMClient, "refresh_auth", lambda _client: refresh())
+        core = NotebookLMClient(auth=auth)
         await core.__aenter__()
         try:
             observed_bodies: list[str] = []

@@ -8,6 +8,7 @@ from typing import Any, TypeVar, cast
 import httpx
 
 from ._backend import BackendContractError, BackendError, BackendErrorReason
+from ._operations import Operation
 from ._records import LabelKind, SourceAddFailureKind, SourceAddFailureRecord
 from ._transport_errors import (
     TransportAuthExpired,
@@ -30,6 +31,7 @@ from .exceptions import (
     NetworkError,
     NotebookLimitError,
     NotebookNotFoundError,
+    NotFoundError,
     RateLimitError,
     ResearchStartUnavailableError,
     RPCError,
@@ -42,6 +44,7 @@ from .exceptions import (
     SourceTimeoutError,
     UnknownRPCMethodError,
 )
+from .rpc import RPCMethod
 
 _T = TypeVar("_T")
 
@@ -524,6 +527,59 @@ def project_backend_error(error: BackendError) -> Exception:
     )
 
 
+def project_local_not_found(operation: Operation, resource_id: str) -> NotFoundError:
+    """Project an optional-lookup miss without exposing native IDs to its caller.
+
+    ``get_or_none`` operations deliberately return ``None`` for absence. Their
+    public ``get`` facades must turn that local miss back into the historical
+    ``*NotFoundError`` including its native method diagnostic, but a migrated
+    facade must not import :class:`RPCMethod` to do it. Keep that legacy-only
+    mapping beside the closed backend-error projector.
+    """
+    reason: BackendErrorReason
+    diagnostics: dict[str, object]
+    if operation is Operation.LABEL_GET:
+        reason = BackendErrorReason.LABEL_NOT_FOUND
+        diagnostics = {
+            "label_id": resource_id,
+            "label_kind": LabelKind.SOURCE_LABEL.value,
+            "method_id": RPCMethod.LIST_LABELS.value,
+        }
+    elif operation is Operation.COLLECTION_GET:
+        reason = BackendErrorReason.LABEL_NOT_FOUND
+        diagnostics = {
+            "label_id": resource_id,
+            "label_kind": LabelKind.COLLECTION.value,
+            "method_id": RPCMethod.LIST_LABELS.value,
+        }
+    elif operation is Operation.ARTIFACT_GET:
+        reason = BackendErrorReason.ARTIFACT_NOT_FOUND
+        diagnostics = {
+            "artifact_id": resource_id,
+            "method_id": RPCMethod.LIST_ARTIFACTS.value,
+        }
+    else:
+        raise BackendContractError(
+            f"operation {operation.value!r} has no local not-found compatibility contract",
+            operation=operation,
+        )
+
+    projected = project_backend_error(
+        BackendError(
+            f"{operation.value} resource not found: {resource_id}",
+            operation=operation,
+            diagnostics=diagnostics,
+            reason=reason,
+        )
+    )
+    if not isinstance(projected, NotFoundError):
+        raise BackendContractError(
+            f"operation {operation.value!r} projected a non-not-found compatibility error",
+            operation=operation,
+        )
+    return projected
+
+
 async def project_backend_call(awaitable: Awaitable[_T]) -> _T:
     """Await one backend call and raise its projection outside the private handler."""
     public_error: Exception | None = None
@@ -773,6 +829,7 @@ def project_source_add_failure(record: SourceAddFailureRecord) -> Exception:
 __all__ = [
     "project_backend_call",
     "project_backend_error",
+    "project_local_not_found",
     "project_source_add_error",
     "project_source_add_failure",
 ]

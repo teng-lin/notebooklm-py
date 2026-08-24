@@ -3,9 +3,9 @@
 These dataclasses replace the ``dict[str, Any]`` returns of
 ``ResearchAPI.poll`` / ``start`` / ``wait_for_completion``. They are
 attribute-only frozen dataclasses: use ``result.status`` (the dict-subscript
-back-compat bridge that warned in v0.7.0 was removed in v0.8.0, issue #1251).
+compatibility behavior that warned in v0.7.0 was removed in v0.8.0, issue #1251).
 The ``to_public_dict()`` method survives — it builds the historical JSON shape
-for CLI output and is unrelated to the dropped subscript bridge.
+for CLI output and is unrelated to the dropped subscript behavior.
 
 The models live here (rather than in ``_research_task_parser``) so they are
 public typed surface; the parser re-imports them and stays the home of the

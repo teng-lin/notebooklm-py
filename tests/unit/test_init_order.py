@@ -41,110 +41,10 @@ from tests._guardrails._ast_reach_in import (
     _owned_attr_name,
     _RuntimeImportVisitor,
 )
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 pytestmark = pytest.mark.repo_lint
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
-
-
-# ---------------------------------------------------------------------------
-# Constructor-DI seams (``src/notebooklm/_runtime/init.py`` + docs/architecture.md)
-#
-# These pin tests guard the post-refactor wiring shape so a future
-# refactor cannot silently re-introduce the retired module-level
-# late-binding wrappers (``_decode_response_late_bound``,
-# ``_sleep_late_bound``, ``_live_is_auth_error``) or the retired
-# ``Kernel.http_client`` setter.
-# ---------------------------------------------------------------------------
-
-
-def test_compose_client_internals_exposes_constructor_di_seams() -> None:
-    """``compose_client_internals`` MUST expose the four constructor-DI seams.
-
-    Stage B1 PR 2 of the post-refactoring plan moved the composition
-    root out of ``NotebookLMClient.__init__`` into
-    ``notebooklm._runtime.init.compose_client_internals``. The seams live
-    on the helper (and on the canonical test builder
-    ``build_client_shell_for_tests``), NOT on ``NotebookLMClient.__init__``
-    (which preserves the production surface).
-
-    The seams replace the retired module-level late-binding wrappers and the
-    retired ``Kernel.http_client`` setter. Each must be keyword-only and default
-    to ``None`` so the helper can resolve the canonical seam via a fresh
-    module-attribute lookup at construction time (preserving pre-construction
-    monkeypatch propagation). See ``docs/architecture.md`` for the ClientSeams
-    and Kernel entries.
-    """
-    import inspect
-
-    from notebooklm._runtime.init import compose_client_internals
-
-    sig = inspect.signature(compose_client_internals)
-    for name in ("decode_response", "sleep", "is_auth_error", "async_client_factory"):
-        assert name in sig.parameters, (
-            f"compose_client_internals must expose constructor-DI kwarg {name!r}"
-        )
-        param = sig.parameters[name]
-        assert param.kind == inspect.Parameter.KEYWORD_ONLY, (
-            f"{name!r} must be keyword-only; got {param.kind!r}"
-        )
-        assert param.default is None, (
-            f"{name!r} must default to None (None-sentinel + fresh module "
-            f"lookup); got default {param.default!r}"
-        )
-
-
-def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
-    """Constructor-injected seams MUST reach the executor and chain builder.
-
-    The ``RpcExecutor`` resolves ``decode_response`` / ``is_auth_error`` /
-    ``sleep`` through closures over ``ClientSeams`` etc., so that
-    tests which rebind ``client._seams.decode_response = stub`` after
-    ``NotebookLMClient.__init__`` (which binds ``client._rpc_executor`` through
-    ``compose_client_internals`` during assembly) still take effect. This test
-    pins both halves: constructor-injected callables
-    reach the executor, AND post-construction rebinds also take effect.
-    """
-    from notebooklm.auth import AuthTokens
-
-    auth = AuthTokens(
-        cookies={"SID": "x"},
-        csrf_token="csrf",
-        session_id="sid",
-    )
-
-    def custom_decode(*_a, **_kw):
-        return ["custom"]
-
-    async def custom_sleep(_seconds):
-        return None
-
-    def custom_is_auth_error(_exc):
-        return True
-
-    core = build_client_shell_for_tests(
-        auth,
-        decode_response=custom_decode,
-        sleep=custom_sleep,
-        is_auth_error=custom_is_auth_error,
-    )
-
-    assert core._seams.decode_response is custom_decode
-    assert core._seams.sleep is custom_sleep
-    assert core._seams.is_auth_error is custom_is_auth_error
-
-    executor = core._backend._runtime
-    # Constructor-injected callables propagate through the closure.
-    assert executor._decode_response() == ["custom"]
-    assert executor._is_auth_error(object()) is True
-
-    # Post-construction rebind takes effect (late-binding contract).
-    def rebound_decode(*_a, **_kw):
-        return ["rebound"]
-
-    core._seams.decode_response = rebound_decode
-    assert executor._decode_response() == ["rebound"]
 
 
 def test_kernel_http_client_is_read_only_property() -> None:
@@ -246,13 +146,12 @@ def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:
 def test_client_constructs_sources_before_notebooks_and_injects_sources_api() -> None:
     """Client wiring must avoid hidden SourcesAPI construction inside NotebooksAPI.
 
-    The wiring lives in :func:`notebooklm._client_assembly._assemble_client`
-    (the single construction seam ``NotebookLMClient.__init__`` and the
-    canonical test factory both run), where the client instance is bound to
-    the ``client`` parameter — hence the ``owner="client"`` matchers.
+    The wiring lives in the production-only
+    :func:`notebooklm._client_composition.compose_client`, where the client
+    instance is bound to ``client`` — hence the owner matchers.
     """
-    assembly_tree = ast.parse((SRC_ROOT / "_client_assembly.py").read_text(encoding="utf-8"))
-    assembly_body = _module_function_body(assembly_tree, "_assemble_client")
+    assembly_tree = ast.parse((SRC_ROOT / "_client_composition.py").read_text(encoding="utf-8"))
+    assembly_body = _module_function_body(assembly_tree, "compose_client")
     sources_index, sources_assignment = _owned_attr_assignment(
         assembly_body, "sources", owner="client"
     )

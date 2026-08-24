@@ -8,13 +8,14 @@ the ``tests`` package chain is complete and fully qualified.
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
+from unittest.mock import patch
 
 import httpx
 import pytest
 
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def install_post_as_stream(
@@ -127,7 +128,7 @@ def auth_tokens():
 
 
 @asynccontextmanager
-async def make_core(refresh_callback=None, transport=None, refresh_retry_delay=0.0):
+async def make_core(refresh_callback=None, transport=None):
     """Yield an opened Session with optional mock transport; close cleanly.
 
     Args:
@@ -135,19 +136,21 @@ async def make_core(refresh_callback=None, transport=None, refresh_retry_delay=0
             for use by ``_try_refresh_and_retry``. ``None`` skips refresh setup.
         transport: optional ``httpx.MockTransport`` so tests can observe the
             real ``httpx.Request`` after cookie merge.
-        refresh_retry_delay: shortened in tests (default 0.0) to keep the
-            suite fast — production default is 0.2s.
     """
     auth = AuthTokens(
         csrf_token="CSRF_OLD",
         session_id="SID_OLD",
         cookies={"SID": "old_sid_cookie"},
     )
-    core = build_client_shell_for_tests(
-        auth=auth,
-        refresh_callback=refresh_callback,
-        refresh_retry_delay=refresh_retry_delay,
-    )
+    if refresh_callback is None:
+        core = NotebookLMClient(auth=auth)
+    else:
+        with patch.object(
+            NotebookLMClient,
+            "refresh_auth",
+            lambda _client: refresh_callback(),
+        ):
+            core = NotebookLMClient(auth=auth)
     await core.__aenter__()
     if transport is not None:
         # Replace the auto-built client with one that uses our transport so we

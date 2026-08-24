@@ -2,8 +2,8 @@
 
 This is the plan-construction half of the Click-free ``generate`` core (the
 sibling :mod:`notebooklm._app.generate` owns the executor;
-:mod:`notebooklm._app.generate_retry` dispatches retry/wait through the exported
-artifact-facade helper that owns retry execution). It holds the enum/format
+:mod:`notebooklm._app.generate_retry` retains compatibility/result projection
+while the artifact facade owns retry/wait execution). It holds the enum/format
 maps, the :class:`GenerationPlan` dataclass, the
 :class:`GenerationPlanValidationError`, :func:`build_generation_plan`, the
 per-kind plan builders it dispatches to, and the resolver type aliases the

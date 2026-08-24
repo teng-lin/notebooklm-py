@@ -26,9 +26,9 @@ import httpx
 import pytest
 
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 # Mock-only test (no real HTTP, no cassette) — opt out of the
 # integration-tree enforcement hook in ``tests/integration/conftest.py``.
@@ -122,7 +122,7 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
 
     # No refresh callback is needed: the harness drives the provider's public
     # whole-transaction boundary directly and pauses inside its work callback.
-    core = build_client_shell_for_tests(auth=auth, refresh_retry_delay=0.0)
+    core = NotebookLMClient(auth=auth)
     refresh_started = asyncio.Event()
     release_refresh = asyncio.Event()
 

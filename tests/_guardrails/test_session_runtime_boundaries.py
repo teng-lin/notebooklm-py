@@ -132,9 +132,9 @@ DELETED_SESSION_ATTR = "_" + "session"
 MOVED_SESSION_SYMBOL_NAMES: frozenset[str] = frozenset(
     # Only symbols that used to be reachable through the deleted session module
     # aliases belong here. Moves between other modules, such as default sleep
-    # resolution moving onto `ClientSeams`, are outside this guard's scope.
+    # resolution moving onto `retired mutable client callable holders`, are outside this guard's scope.
     # ``resolve_seam_defaults`` was deleted in issue #1327 (redundant
-    # alongside ``resolve_client_seams``); dropped from this set since the
+    # alongside ``retired callable-holder resolver``); dropped from this set since the
     # symbol no longer exists to be reached through any alias.
     {
         "compose_session_internals",

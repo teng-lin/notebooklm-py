@@ -11,7 +11,6 @@ from pytest_httpx import HTTPXMock
 import notebooklm._auth.keepalive as _auth_keepalive
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 ROTATE_URL_RE = re.compile(r"^https://accounts\.google\.com/RotateCookies$")
 
@@ -519,7 +518,7 @@ class TestSaveCookiesUnification:
             return True
 
         # Phase 2 PR 4: inject the cookie-saver seam at construction.
-        core = build_client_shell_for_tests(auth, cookie_saver=spy)
+        core = NotebookLMClient(auth, cookie_saver=spy)
         core_ref["core"] = core
 
         await core._provider._lifecycle.save_cookies(

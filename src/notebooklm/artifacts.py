@@ -11,10 +11,14 @@ need to duplicate the backoff loop.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from typing import Any
 
+from ._deadline import Monotonic, RuntimeDeadline, Sleep
 from .exceptions import RateLimitError
 from .types import GenerationState, GenerationStatus
 
@@ -44,6 +48,15 @@ class RateLimitRetryEvent:
 
 
 _RetryCallback = Callable[[RateLimitRetryEvent], object | Awaitable[object]]
+_WorkflowGenerate = Callable[[RuntimeDeadline], Awaitable[Any]]
+_WorkflowWait = Callable[
+    [str, str, RuntimeDeadline, float, float | None],
+    Awaitable[Any],
+]
+_FacadeGenerate = Callable[[], Awaitable[Any]]
+_FacadeWait = Callable[..., Awaitable[Any]]
+_AwaitableFactory = Callable[[], Awaitable[Any]]
+_WaitContext = Callable[[str, str], AbstractAsyncContextManager[None]]
 
 
 def calculate_backoff_delay(
@@ -64,7 +77,7 @@ def calculate_backoff_delay(
     return min(delay, max_delay)
 
 
-async def with_rate_limit_retry(
+async def _run_rate_limit_retry(
     generate_fn: _GenerationCallable,
     *,
     max_retries: int,
@@ -74,7 +87,13 @@ async def with_rate_limit_retry(
     sleep: _RetrySleep | None = None,
     on_retry: _RetryCallback | None = None,
 ) -> GenerationStatus | None:
-    """Run an artifact-generation callable with rate-limit retry.
+    """Run the shared artifact-generation retry loop.
+
+    The public :func:`with_rate_limit_retry` helper and the private
+    :class:`~notebooklm._artifacts.ArtifactsAPI` workflow entry both delegate
+    here.  Keeping the loop in one primitive preserves the public helper while
+    ensuring internal ``_app`` orchestration no longer wraps a facade call in a
+    second execution authority.
 
     The callable is always invoked at least once. A retry is scheduled only
     when an attempt raises :class:`~notebooklm.exceptions.RateLimitError` — the
@@ -173,6 +192,172 @@ async def with_rate_limit_retry(
                 await callback_result
         await sleep_func(delay)
         attempt += 1
+
+
+def _generation_task_id(result: Any) -> str | None:
+    """Return the compatibility task id used by optional workflow polling."""
+    if isinstance(result, dict):
+        return result.get("artifact_id") or result.get("task_id")
+    task_id = getattr(result, "task_id", None)
+    return task_id if isinstance(task_id, str) and task_id else None
+
+
+@contextlib.asynccontextmanager
+async def _null_wait_context(_message: str, _resume_hint: str) -> AsyncIterator[None]:
+    yield
+
+
+async def _run_deadline_generation_workflow(
+    generate_fn: _WorkflowGenerate,
+    wait_fn: _WorkflowWait,
+    *,
+    notebook_id: str,
+    timeout: float,
+    max_retries: int,
+    wait: bool,
+    artifact_type: str,
+    wait_message: str,
+    initial_interval: float | None = None,
+    on_retry: _RetryCallback | None = None,
+    on_wait_start: Callable[[str], None] | None = None,
+    wait_context: _WaitContext | None = None,
+    sleep: Sleep | None = None,
+    monotonic: Monotonic | None = None,
+) -> Any:
+    """Own one absolute deadline for kickoff retry and optional polling."""
+    resolved_monotonic = monotonic or asyncio.get_running_loop().time
+    resolved_sleep = sleep or asyncio.sleep
+    deadline = RuntimeDeadline.start(timeout, monotonic=resolved_monotonic)
+
+    async def _generate() -> Any:
+        if deadline.expired():
+            raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation"))
+        return await generate_fn(deadline)
+
+    async def _sleep(delay: float) -> None:
+        bounded = deadline.clamp_sleep(delay)
+        if delay > 0.0 and bounded <= 0.0:
+            raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation"))
+        await resolved_sleep(bounded)
+        if deadline.expired():
+            raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation"))
+
+    result = await _run_rate_limit_retry(
+        _generate,
+        max_retries=max_retries,
+        sleep=_sleep,
+        on_retry=on_retry,
+    )
+    task_id = _generation_task_id(result)
+    if not wait or result is None or task_id is None:
+        return result
+
+    if on_wait_start is not None:
+        on_wait_start(task_id)
+    context = wait_context or _null_wait_context
+    async with context(wait_message, f"notebooklm artifact poll {task_id}"):
+        return await wait_fn(notebook_id, task_id, deadline, timeout, initial_interval)
+
+
+async def _await_with_deadline(
+    awaitable_factory: _AwaitableFactory,
+    deadline: RuntimeDeadline,
+    artifact_type: str,
+) -> Any:
+    remaining = deadline.remaining()
+    if remaining <= 0.0:
+        raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation"))
+    try:
+        return await asyncio.wait_for(awaitable_factory(), timeout=remaining)
+    except asyncio.TimeoutError as error:
+        raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation")) from error
+
+
+async def _run_generation_workflow(
+    generate_fn: _FacadeGenerate,
+    wait_for_completion: _FacadeWait | None,
+    *,
+    notebook_id: str,
+    timeout: float,
+    max_retries: int,
+    wait: bool,
+    artifact_type: str,
+    wait_message: str,
+    initial_interval: float | None = None,
+    on_retry: _RetryCallback | None = None,
+    on_wait_start: Callable[[str], None] | None = None,
+    wait_context: _WaitContext | None = None,
+) -> Any:
+    """Adapt public facade callables into the single private workflow owner.
+
+    This entry is intentionally underscore-private and absent from ``__all__``.
+    ``_app`` supplies already-resolved public namespace methods, preserving the
+    established adapter monkeypatch seam without owning retry, clocks, or wait
+    dispatch itself.
+    """
+
+    async def _generate(deadline: RuntimeDeadline) -> Any:
+        return await _await_with_deadline(generate_fn, deadline, artifact_type)
+
+    async def _wait(
+        resolved_notebook_id: str,
+        task_id: str,
+        deadline: RuntimeDeadline,
+        caller_timeout: float,
+        caller_interval: float | None,
+    ) -> Any:
+        if wait_for_completion is None:
+            raise RuntimeError("artifact wait callable is required when wait=True")
+        wait_kwargs: dict[str, Any] = {"timeout": caller_timeout}
+        if caller_interval is not None:
+            wait_kwargs["initial_interval"] = caller_interval
+        return await _await_with_deadline(
+            lambda: wait_for_completion(resolved_notebook_id, task_id, **wait_kwargs),
+            deadline,
+            artifact_type,
+        )
+
+    return await _run_deadline_generation_workflow(
+        _generate,
+        _wait,
+        notebook_id=notebook_id,
+        timeout=timeout,
+        max_retries=max_retries,
+        wait=wait,
+        artifact_type=artifact_type,
+        wait_message=wait_message,
+        initial_interval=initial_interval,
+        on_retry=on_retry,
+        on_wait_start=on_wait_start,
+        wait_context=wait_context,
+    )
+
+
+async def with_rate_limit_retry(
+    generate_fn: _GenerationCallable,
+    *,
+    max_retries: int,
+    initial_delay: float = RATE_LIMIT_RETRY_INITIAL_DELAY,
+    max_delay: float = RATE_LIMIT_RETRY_MAX_DELAY,
+    multiplier: float = RATE_LIMIT_RETRY_BACKOFF_MULTIPLIER,
+    sleep: _RetrySleep | None = None,
+    on_retry: _RetryCallback | None = None,
+) -> GenerationStatus | None:
+    """Run an artifact-generation callable with rate-limit retry.
+
+    This remains the supported standalone helper for Python callers. Internal
+    application workflows enter through ``ArtifactsAPI`` so their retry sleep,
+    semantic kickoff, and optional wait share one private absolute deadline.
+    """
+    return await _run_rate_limit_retry(
+        generate_fn,
+        max_retries=max_retries,
+        initial_delay=initial_delay,
+        max_delay=max_delay,
+        multiplier=multiplier,
+        sleep=sleep,
+        on_retry=on_retry,
+    )
 
 
 __all__ = [

@@ -1,47 +1,26 @@
-"""Authed POST transport collaborator — the middleware-chain leaf.
+"""Authed POST transport collaborator and fixed-pipeline terminal.
 
 ``RuntimeTransport`` owns the three pieces of the authed POST hot path
 (history: docs/refactor-history.md):
 
-* :meth:`RuntimeTransport.terminal` — the middleware-chain leaf. Sends
+* :meth:`RuntimeTransport.terminal` — the pipeline terminal. Sends
   the populated :class:`RpcRequest` via :meth:`Kernel.post` and maps the
   raw transport errors into the ``Transport*`` exception shapes consumed
-  by ``RetryMiddleware`` / ``AuthRefreshMiddleware``.
+  by ``RetryBehavior`` / ``AuthRefreshBehavior``.
 * :meth:`RuntimeTransport.refresh_request_for_current_auth` — re-builds
   the envelope from ``RpcCallState.build_request`` if a concurrent refresh
   moved the auth snapshot between materialization and the terminal POST.
 * :meth:`RuntimeTransport.perform_authed_post` — the entry point the
   :class:`WebExecutionRuntime` / chat path call. Runs the
   loop-affinity guard, captures the current auth snapshot, materializes
-  the request envelope, dispatches it through the wired middleware
-  chain, and records the semaphore queue-wait latency.
+  the request envelope, dispatches it through the immutable runtime
+  pipeline, and records the semaphore queue-wait latency.
 
-:class:`MiddlewareChainHost` owns the chain leaf
-(:meth:`MiddlewareChainHost._authed_post_chain_terminal`), the chain
-slot (``chain_host._authed_post_chain``), and the three retry-budget
-tunables (``_rate_limit_max_retries`` / ``_server_error_max_retries`` /
-``_refresh_retry_delay``). ``perform_authed_post`` does not read the
-retry-delay directly — the retry/backoff budget for the refresh path
-is owned by ``AuthRefreshMiddleware`` and by
-``WebExecutionRuntime.try_refresh_and_retry``, both of which read
-``chain_host._refresh_retry_delay`` live through provider lambdas wired
-in ``_runtime.init.wire_middleware_chain``.
-
-Construction order in :func:`compose_client_internals`:
-:func:`notebooklm._runtime.init.build_runtime_transport` constructs the
-transport **before** :func:`wire_middleware_chain`. The wired chain
-leaf is :meth:`MiddlewareChainHost._authed_post_chain_terminal` (a
-one-line forward to :meth:`RuntimeTransport.terminal`) — wiring through
-the host preserves the canonical fixture-rebind seam (tests that
-swap the chain leaf or the chain itself rebind on the host directly).
-The chain itself is reached by the transport through an injected
-``chain_provider`` closure that reads
-``chain_host._authed_post_chain`` live, late on every
-:meth:`perform_authed_post` call; this both breaks the construction
-cycle while keeping chain ownership inside the backend runtime. The
-immutable provider generation is reached via an injected
-``snapshot_provider`` callable so :class:`RuntimeTransport` never retains
-a mutable credential owner.
+Construction is atomic: :class:`RuntimeTransport` builds its complete
+:class:`RuntimePipeline` from explicit leaves and retains no bindable chain
+slot. The immutable provider generation is reached through an injected
+``snapshot_provider`` callable, so the transport never retains a mutable
+credential owner.
 """
 
 from __future__ import annotations
@@ -53,15 +32,18 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from .._middleware.context import RpcCallState
-from .._middleware.core import (
+from .._request_types import AuthSnapshot, BuildRequest
+from .._rpc_semaphore import RpcSemaphore
+from .._transport_drain import TransportDrainTracker
+from .._transport_errors import raise_mapped_post_error
+from .pipeline import RuntimePipeline
+from .rpc_call import (
     NextCall,
     RpcRequest,
     RpcResponse,
     materialize_rpc_request,
 )
-from .._request_types import AuthSnapshot, BuildRequest
-from .._transport_errors import raise_mapped_post_error
+from .rpc_call_state import RpcCallState
 
 if TYPE_CHECKING:
     from .._auth_refresh_retry import RefreshBudget
@@ -75,17 +57,10 @@ class RuntimeTransport:
 
     Owns the three authed-POST hot-path methods.
     Does NOT own lifecycle (that stays on :class:`ClientLifecycle`) nor
-    retry/refresh budget state (that lives on
-    :class:`MiddlewareChainHost` and is threaded into middleware via
-    provider lambdas).
+    retry/refresh budget state (that is carried by :class:`RpcCallState`).
 
-    The chain reference is fetched late on every
-    :meth:`perform_authed_post` — just before chain dispatch, after
-    snapshot + materialization — through the injected ``chain_provider``
-    closure (typically ``lambda: chain_host._authed_post_chain``). The
-    lookup is intentionally deferred so a chain reassignment that
-    happens while the snapshot capture awaits still steers the
-    dispatch; the chain is read at the dispatch site.
+    The fixed pipeline is constructed with the transport and cannot be
+    rebound after client construction.
 
     The injected ``logger`` is held so error messages mapped through
     :func:`notebooklm._transport_errors.raise_mapped_post_error` keep
@@ -99,30 +74,52 @@ class RuntimeTransport:
         *,
         kernel: Kernel,
         snapshot_provider: Callable[[], Awaitable[AuthSnapshot]],
-        chain_provider: Callable[[], NextCall | None],
         metrics: ClientMetrics,
         bound_loop_check: Callable[[], None],
         logger: logging.Logger,
+        drain_tracker: TransportDrainTracker,
+        rpc_semaphore: RpcSemaphore,
+        rate_limit_max_retries: int,
+        server_error_max_retries: int,
+        retry_timeout_provider: Callable[[], float | None],
+        refresh_retry_delay: float,
+        refresh_callable: Callable[[], Awaitable[None]],
+        is_auth_error: Callable[[Exception], bool],
+        refresh_callback_enabled_provider: Callable[[], bool],
+        sleep: Callable[[float], Awaitable[Any]] | None = None,
+        terminal: NextCall | None = None,
     ) -> None:
         self._kernel = kernel
         self._snapshot_provider = snapshot_provider
-        # Live-binding chain accessor. The wired chain is installed onto
-        # :class:`MiddlewareChainHost` AFTER :class:`RuntimeTransport`
-        # is constructed (the chain's leaf is :meth:`terminal`, so the
-        # transport must exist first). Going through a provider closure
-        # (called late in :meth:`perform_authed_post`) ensures those
-        # reassignments take effect on the next call without any
-        # further mutation here.
-        self._chain_provider = chain_provider
         self._metrics = metrics
         self._bound_loop_check = bound_loop_check
         self._logger = logger
+        self._pipeline = RuntimePipeline(
+            terminal=self.terminal if terminal is None else terminal,
+            drain_tracker=drain_tracker,
+            metrics=metrics,
+            rpc_semaphore=rpc_semaphore,
+            rate_limit_max_retries=rate_limit_max_retries,
+            server_error_max_retries=server_error_max_retries,
+            retry_timeout_provider=retry_timeout_provider,
+            refresh_retry_delay=refresh_retry_delay,
+            refresh_callable=refresh_callable,
+            auth_snapshot_provider=snapshot_provider,
+            is_auth_error=is_auth_error,
+            refresh_callback_enabled_provider=refresh_callback_enabled_provider,
+            sleep=sleep,
+        )
+
+    @property
+    def pipeline(self) -> RuntimePipeline:
+        """Return the complete immutable behavior pipeline."""
+        return self._pipeline
 
     async def refresh_request_for_current_auth(self, request: RpcRequest) -> RpcRequest:
         """Rebuild the envelope from the current auth snapshot before every POST.
 
         This guard is **load-bearing**: it runs on *every* terminal attempt
-        (including retries driven by ``RetryMiddleware`` for 429 / 5xx) and
+        (including retries driven by ``RetryBehavior`` for 429 / 5xx) and
         unconditionally rebuilds ``RpcRequest.url`` / ``.headers`` / ``.body``
         from a freshly captured :class:`AuthSnapshot` whenever
         ``RpcCallState.build_request`` is present. The unconditional rebuild
@@ -134,17 +131,17 @@ class RuntimeTransport:
            :meth:`perform_authed_post`, the envelope is materialized, and
            the request enters the chain.
         2. Terminal POSTs and the response is HTTP 401.
-        3. :class:`AuthRefreshMiddleware` (just inside ``RetryMiddleware``)
+        3. :class:`AuthRefreshBehavior` (just inside ``RetryBehavior``)
            catches the auth error, refreshes credentials, mutates
            the shared state's auth snapshot to ``S_new`` in-place (see
-           :meth:`AuthRefreshMiddleware._rebuild_request_after_refresh`
+           :meth:`AuthRefreshBehavior._rebuild_request_after_refresh`
            for the contract — that mutation is the carrier of the new
            snapshot across the ``Retry`` ↔ ``AuthRefresh`` boundary), and
            hands a freshly built ``retry_request`` to the chain leaf.
         4. The retry attempt POSTs with the refreshed envelope and the
            response is HTTP 429.
-        5. The 429 propagates back up to ``RetryMiddleware`` (outside
-           ``AuthRefreshMiddleware``), which retries by re-invoking the
+        5. The 429 propagates back up to ``RetryBehavior`` (outside
+           ``AuthRefreshBehavior``), which retries by re-invoking the
            chain with the **original** ``RpcRequest`` from step 1. That
            request's ``.url`` / ``.headers`` / ``.body`` were built from
            ``S_old`` even though its shared ``context`` dict now carries
@@ -192,7 +189,7 @@ class RuntimeTransport:
         The chain interface carries the actual HTTP request. The terminal
         reads ``RpcRequest.url`` / ``headers`` / ``body`` directly, maps raw
         ``Kernel.post`` errors into the transport exception shapes consumed
-        by ``RetryMiddleware`` / ``AuthRefreshMiddleware``, and wraps the
+        by ``RetryBehavior`` / ``AuthRefreshBehavior``, and wraps the
         returned :class:`httpx.Response` in :class:`RpcResponse`.
 
         AST guarded — see
@@ -253,7 +250,7 @@ class RuntimeTransport:
         max_response_bytes: int | None = None,
         disable_read_timeout_retries: bool = False,
     ) -> httpx.Response:
-        """Authed POST entry point — routes through the middleware chain.
+        """Authed POST entry point — routes through the runtime pipeline.
 
         Shared transport surface used by ``WebExecutionRuntime._execute_once``
         (``_rpc_executor.py``) and the semantic chat binding through
@@ -268,7 +265,7 @@ class RuntimeTransport:
         ``refresh_budget`` is an optional
         :class:`notebooklm._auth_refresh_retry.RefreshBudget` seeded by the
         RPC executor so the HTTP-status refresh layer
-        (:class:`AuthRefreshMiddleware`) shares its once-per-logical-call
+        (:class:`AuthRefreshBehavior`) shares its once-per-logical-call
         refresh allowance with the executor's decoded-RPC refresh layer
         (issue #1205). Callers that drive the chain without a budget (the
         chat path) pass ``None``; the middleware then falls back to its
@@ -276,22 +273,14 @@ class RuntimeTransport:
 
         ``retry_deadline`` is an optional
         :class:`notebooklm._deadline.RuntimeDeadline` seeded by the RPC
-        executor so the chain's :class:`RetryMiddleware` INHERITS the logical
+        executor so the chain's :class:`RetryBehavior` INHERITS the logical
         call's aggregate retry deadline (anchored at T0) instead of minting a
         fresh one at chain re-entry. This keeps the 429/5xx retry budget from
         restarting across a decode-time auth-refresh retry (issue #1873).
         Callers that drive the chain without an aggregate deadline (the chat
-        path) pass ``None``; ``RetryMiddleware`` then falls back to
+        path) pass ``None``; ``RetryBehavior`` then falls back to
         ``_start_retry_deadline()``.
 
-        Raises:
-            RuntimeError: if the chain provider returns ``None``. The
-                wired chain is installed by the composition root in
-                :func:`notebooklm._runtime.init.wire_middleware_chain`
-                (driven from ``NotebookLMClient.__init__``) immediately
-                after :class:`RuntimeTransport` is built; a ``None`` value
-                indicates a construction-time wiring bug, not a runtime
-                condition.
         """
         # Event-loop affinity guard. The check lives here so it fires once
         # per chain invocation rather than once per leaf attempt.
@@ -321,7 +310,7 @@ class RuntimeTransport:
         )
 
         # The ``max_concurrent_rpcs`` slot is acquired by
-        # :class:`SemaphoreMiddleware` (chain position 2, between Metrics
+        # :class:`SemaphoreBehavior` (chain position 2, between Metrics
         # and Retry) — that placement keeps Drain admitting queued tasks
         # AND keeps Metrics timing the queue wait, while still bounding
         # the retry-and-refresh cohort to one slot per logical RPC.
@@ -330,28 +319,17 @@ class RuntimeTransport:
         # below can forward it to ``ClientMetrics`` without giving the
         # middleware an opinionated ``ClientMetrics`` dependency.
         #
-        # Chain resolution is deferred to here — AFTER snapshot capture +
-        # materialization, immediately before dispatch — so a reassignment
-        # of ``chain_host._authed_post_chain`` that lands while the
-        # snapshot call awaits still steers this dispatch. Pre-extraction,
-        # the equivalent read happened at the dispatch site for the same
-        # live-binding reason; the provider closure preserves that timing.
-        chain = self._chain_provider()
-        if chain is None:  # pragma: no cover - wiring bug guard
-            raise RuntimeError(
-                "RuntimeTransport.perform_authed_post called before the "
-                "wired chain was installed on MiddlewareChainHost; the "
-                "composition root must assign chain_host._authed_post_chain "
-                "before any authed POST."
-            )
+        # The complete pipeline was fixed during construction. Dispatch begins
+        # here only after snapshot capture and request materialization, with no
+        # mutable chain lookup or post-construction bind step.
         try:
-            result = await chain(request)
+            result = await self._pipeline.dispatch(request)
             return result.response
         finally:
             # Record queue wait even if the chain raised. A failed chain
-            # (RetryMiddleware budget exhaustion, AuthRefreshMiddleware
+            # (RetryBehavior budget exhaustion, AuthRefreshBehavior
             # refresh failure, etc.) MUST still surface the queue-wait
-            # latency. ``SemaphoreMiddleware`` writes the duration to
+            # latency. ``SemaphoreBehavior`` writes the duration to
             # ``request.state.queue_wait_seconds`` after the
             # semaphore is acquired; absence of the key means the slot
             # was never acquired and there's nothing to record.

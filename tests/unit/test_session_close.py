@@ -22,7 +22,6 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._polling_registry import PollRegistry
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _auth() -> AuthTokens:
@@ -95,7 +94,7 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 
-    core = build_client_shell_for_tests(_auth())
+    core = NotebookLMClient(_auth())
     # ``ArtifactsAPI`` consumes its three runtime collaborators
     # (``rpc`` + ``drain`` + ``lifecycle``) directly — mirrors production
     # wiring in ``NotebookLMClient.__init__``.
@@ -142,7 +141,7 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
 @pytest.mark.asyncio
 async def test_session_close_absorbs_drain_hook_errors() -> None:
     """A drain hook raising during close does not block transport teardown."""
-    core = build_client_shell_for_tests(_auth())
+    core = NotebookLMClient(_auth())
     await core.__aenter__()
 
     async def angry_hook() -> None:
@@ -159,7 +158,7 @@ async def test_session_close_absorbs_drain_hook_errors() -> None:
 @pytest.mark.asyncio
 async def test_session_close_with_no_polls_is_noop_on_drain_step() -> None:
     """``close()`` works unchanged when no polls are registered."""
-    core = build_client_shell_for_tests(_auth())
+    core = NotebookLMClient(_auth())
     await core.__aenter__()
     await core.close()
     assert core._backend._kernel.http_client is None
@@ -181,7 +180,7 @@ async def test_close_drain_cancels_inflight_poll_in_operation_scope() -> None:
     A real-time deadline turns a regression into a fast failure rather than a
     suite hang.
     """
-    core = build_client_shell_for_tests(_auth())
+    core = NotebookLMClient(_auth())
     await core.__aenter__()
 
     tracker = core._backend._drain_tracker

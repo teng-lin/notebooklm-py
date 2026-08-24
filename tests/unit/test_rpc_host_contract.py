@@ -36,6 +36,7 @@ from notebooklm._chat.wire import build_streaming_chat_request
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._transport_errors import TransportRateLimited
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import (
     ClientError,
     RateLimitError,
@@ -46,7 +47,6 @@ from notebooklm.rpc import (
     get_query_url,
     get_upload_url,
 )
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 DEFAULT_HOST = "https://notebook.google.com"
 
@@ -111,7 +111,7 @@ def _status_error(
 
 def _executor() -> Any:
     tokens = AuthTokens(cookies={"SID": "sid"}, csrf_token="CSRF", session_id="SID")
-    return build_client_shell_for_tests(tokens)._backend._runtime
+    return NotebookLMClient(tokens)._backend._runtime
 
 
 @pytest.mark.parametrize(
@@ -186,9 +186,7 @@ async def test_retry_exhausted_429_names_the_host(monkeypatch) -> None:
     ``_execute_once`` handles it before the status mapper is ever consulted.
     Pinning the host here keeps the two 429 paths from drifting apart.
     """
-    core = build_client_shell_for_tests(
-        AuthTokens(cookies={"SID": "sid"}, csrf_token="CSRF", session_id="SID")
-    )
+    core = NotebookLMClient(AuthTokens(cookies={"SID": "sid"}, csrf_token="CSRF", session_id="SID"))
     original = _status_error(429)
 
     async def _rate_limited(**_kwargs: Any) -> httpx.Response:

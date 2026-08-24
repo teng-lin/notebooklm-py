@@ -46,6 +46,7 @@ def _make_client(method_name: str, return_value) -> MagicMock:
     client = MagicMock()
     client.artifacts = MagicMock()
     setattr(client.artifacts, method_name, AsyncMock(return_value=return_value))
+    client.artifacts.wait_for_completion = AsyncMock()
     return client
 
 
@@ -155,6 +156,32 @@ class TestExecuteGeneration:
         # The resolved notebook id is the one used for the API call.
         call_args = client.artifacts.generate_audio.await_args
         assert call_args.args[0] == "nb_resolved"
+        client.artifacts.wait_for_completion.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_public_kickoff_and_wait_seams_receive_workflow_inputs(self):
+        started = GenerationStatus(task_id="t1", status="pending", error=None, error_code=None)
+        completed = GenerationStatus(task_id="t1", status="completed", error=None, error_code=None)
+        client = _make_client("generate_audio", started)
+        client.artifacts.wait_for_completion.return_value = completed
+        plan = _audio_plan(wait=True, timeout=60.0, interval=5.0)
+
+        result = await execute_generation(
+            plan,
+            client,
+            notebook_resolver=_notebook_resolver("nb_resolved"),
+            source_resolver=_source_resolver(["s1"]),
+        )
+
+        assert result.generation is not None
+        assert result.generation.status == "completed"
+        client.artifacts.generate_audio.assert_awaited_once()
+        client.artifacts.wait_for_completion.assert_awaited_once_with(
+            "nb_resolved",
+            "t1",
+            timeout=60.0,
+            initial_interval=5.0,
+        )
 
     @pytest.mark.asyncio
     async def test_notebook_resolver_invoked_with_json_output_flag(self):

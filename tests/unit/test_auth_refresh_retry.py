@@ -4,7 +4,7 @@ Pins the contract documented in ``src/notebooklm/_auth_refresh_retry.py``:
 
 - :class:`RefreshBudget` is a single-consume once-per-logical-call token.
 - :func:`refresh_and_count` owns the common refresh body shared by the
-  HTTP-status layer (``AuthRefreshMiddleware``) and the decoded-RPC layer
+  HTTP-status layer (``AuthRefreshBehavior``) and the decoded-RPC layer
   (``RpcExecutor``): log → refresh → on-failure raise (caller-shaped) →
   optional sleep → log → ``rpc_auth_retries`` metric increment.
 """
@@ -120,7 +120,7 @@ def _fixed_clock(value: float) -> RuntimeDeadline:
 async def test_refresh_and_count_clamps_post_refresh_sleep_to_deadline() -> None:
     """A large ``refresh_retry_delay`` is clamped to the remaining budget.
 
-    Symmetry with ``RetryMiddleware._resolve_retry_sleep`` (issue #1271): the
+    Symmetry with ``RetryBehavior._resolve_retry_sleep`` (issue #1271): the
     decode-time post-refresh sleep must never wait past the aggregate
     ``RuntimeDeadline``. Here 5s of budget remains but the configured delay is
     100s, so the actual sleep is clamped to 5s.

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -24,7 +25,6 @@ from notebooklm._auth_refresh_retry import RefreshBudget
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import AuthError, RPCMethod
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 _UNIT_CONFTEST_SPEC = importlib.util.spec_from_file_location(
     "unit_conftest_make_core",
@@ -56,8 +56,8 @@ async def _noop_refresh() -> AuthTokens:
 # --------------------------------------------------------------------------- #
 
 
-def test_construct_outside_event_loop_with_callback() -> None:
-    """``NotebookLMClient(refresh_callback=...)`` must succeed with no running loop.
+def test_construct_outside_event_loop_with_refresh_owner() -> None:
+    """Client construction with its production refresh owner needs no running loop.
 
     Previously, the eager ``asyncio.Lock()`` in ``__init__`` could raise
     ``RuntimeError: no running event loop`` on some interpreters / asyncio
@@ -73,16 +73,18 @@ def test_construct_outside_event_loop_with_callback() -> None:
         asyncio.get_running_loop()
 
     # Eager construction would have blown up under the prior code path.
-    core_with_cb = build_client_shell_for_tests(auth=_auth_tokens(), refresh_callback=_noop_refresh)
+    with patch.object(NotebookLMClient, "refresh_auth", lambda _client: _noop_refresh()):
+        core_with_cb = NotebookLMClient(auth=_auth_tokens())
     assert core_with_cb._provider._coordinator._refresh_lock is None, (
         "Lazy-init contract: lock must remain None until first refresh."
     )
-    assert core_with_cb._provider._coordinator._refresh_callback is _noop_refresh
+    assert core_with_cb._provider._coordinator._refresh_callback is not None
 
-    # And the no-callback path stays the same (also lazy / also None).
-    core_without_cb = build_client_shell_for_tests(auth=_auth_tokens())
-    assert core_without_cb._provider._coordinator._refresh_lock is None
-    assert core_without_cb._provider._coordinator._refresh_callback is None
+    # The public client always installs its production refresh owner, and it
+    # remains lazy too.
+    production_core = NotebookLMClient(auth=_auth_tokens())
+    assert production_core._provider._coordinator._refresh_lock is None
+    assert production_core._provider._coordinator._refresh_callback is not None
 
 
 # --------------------------------------------------------------------------- #

@@ -228,9 +228,9 @@ After migration, `Session` owns:
   the storage backing the chain's tunables — `_authed_post_chain_terminal`,
   `_authed_post_chain`, `_rate_limit_max_retries`,
   `_server_error_max_retries`, `_refresh_retry_delay` — moved off `Session`
-  onto `MiddlewareChainHost`
-  ([`_middleware_chain_host.py`](../../src/notebooklm/_middleware/chain_host.py))
-  in Stage B2 PR 1 (#1090). PR 2 (#1092) then split
+  onto `MiddlewareChainHost` in Stage B2 PR 1 (#1090). That host was later
+  retired by P7; its current successor is
+  [`RuntimePipeline`](../../src/notebooklm/_runtime/pipeline.py). PR 2 (#1092) then split
   `wire_middleware_chain` / `build_session_transport` to take
   `chain_host: MiddlewareChainHost` directly, so the live chain reads
   the host and the Session-side names are exclusively writable
@@ -239,8 +239,9 @@ After migration, `Session` owns:
   long-standing fixture-rebind contract is preserved end-to-end — a test
   that writes `core._<attr> = ...` still steers the live chain because
   the descriptor's setter writes through to `chain_host._<attr>`. The
-  per-attr contract is now historical; current code binds the host directly
-  from `ClientComposed`. `Session.assert_bound_loop` remains captured via lambda by
+  per-attr contract is now historical; P7 deleted both the host and
+  `ClientComposed` in favor of one immutable `RuntimePipeline`.
+  `Session.assert_bound_loop` remained captured via lambda by
   `build_session_transport`'s `bound_loop_check` (not migrated to the
   host — it forwards to `ClientLifecycle` per Rule 1).
 
@@ -368,8 +369,8 @@ shared contracts module; it stays interface-only.
 - Each new feature requires a new adapter (5-10 lines). Small ongoing cost. The
   cost is local to the feature module and visible at construction time — preferable
   to invisible growth of `Session`.
-- Wider client composition wiring. Mitigated by
-  `_client_assembly.py::_assemble_client(...)` and `_runtime/init.py`
+- Wider client composition wiring. Mitigated today by
+  `_client_composition.py::compose_client(...)` and `_runtime/init.py`
   centralizing collaborator construction.
 - Migration churn for existing tests. Tests that constructed a `Session` and then
   patched a method must migrate to fake-adapter construction. The ADR-0007
@@ -440,8 +441,9 @@ section of this ADR's revision history.
 
 Issue #1085 (deferred `MiddlewareChainHost` extraction) closed.
 
-- **#1090** introduced
-  [`_middleware_chain_host.py`](../../src/notebooklm/_middleware/chain_host.py).
+- **#1090** introduced the since-deleted `_middleware_chain_host` module. Its
+  current successor is
+  [`_runtime/pipeline.py`](../../src/notebooklm/_runtime/pipeline.py).
   The chain's tunable storage (`_authed_post_chain_terminal`,
   `_authed_post_chain`, `_rate_limit_max_retries`,
   `_server_error_max_retries`, `_refresh_retry_delay`) moved from
@@ -535,8 +537,8 @@ client-owned holder/executor graph as described below.
 ### 2026-08-24 — P7 backend-owned runtime collapse
 
 `ClientComposed` and `RuntimeCollaborators` were deleted. `_runtime/init.py` now returns one frozen
-`ClientInternals` construction receipt; `_client_assembly.py` immediately unpacks it into
-`WebRpcBackend` and does not publish the receipt, chain builder, or middleware list. The public
+`ClientInternals` construction receipt; `_client_composition.py` immediately consumes it while
+constructing `WebRpcBackend` and does not publish the receipt or pipeline internals. The public
 client retains one `_backend` reference rather than `_auth`, `_collaborators`, `_composed`, and
 `_rpc_executor` duplicates. `WebExecutionRuntime` owns encode/dispatch/decode;
 `RpcExecutor(WebExecutionRuntime)` adds no behavior. Mutable string-key request context was replaced

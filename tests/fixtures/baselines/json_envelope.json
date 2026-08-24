@@ -353,8 +353,8 @@
                 "refresh_adapter = WebProviderRefresh",
                 "refresh_session=refresh_adapter.refresh"
               ],
-              "semantic_fingerprint": "sha256:01a38d89ddf3dad99a7ee1f8c67a3a73de2394c5d43db5c4b0d397ff4d8b3c35",
-              "symbol": "notebooklm._runtime.init.compose_client_internals"
+              "semantic_fingerprint": "sha256:9d61b246a51051b784f64fe883dd73b9d9772554ac32d2e7c740becd0a46c912",
+              "symbol": "notebooklm._runtime.init.build_web_runtime"
             }
           ],
           "unreachable_category": "internal-runtime-auth-capability"
@@ -7194,9 +7194,9 @@
       }
     ],
     "transitive_helper_graph": {
-      "aggregate_fingerprint": "sha256:48ab09be3007bc942af1bc6236f9c0ce3d629dc55b84ed982dcf91989f17c08e",
-      "edge_count": 1245,
-      "node_count": 521,
+      "aggregate_fingerprint": "sha256:cb4454f5c3020afba6e0734cc32e10bbdfd0570f6f20c0b2ced76e31de6324c3",
+      "edge_count": 1253,
+      "node_count": 528,
       "root_count": 210,
       "schema_version": 1
     }
@@ -8297,7 +8297,7 @@
               "notebooklm/cli/generate_cmd.py:_output_generation_outcome"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:4c81fdc6194d3f9531494670400c3f2908e08fa4cead093ea32f012e12afe246",
+              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:56c2e5650ed6b7057539938072f68df59519214e369a4ddc21c24572c4d101f5",
               "notebooklm/cli/generate_cmd.py:_output_generation_outcome": "sha256:d44241576da0575764382e681b13ed2d6b7aec5fb71491722f6263f180dc9cdf"
             },
             "id": "cli.GenerationStatus.manual-generation-completed-projection",
@@ -8315,7 +8315,7 @@
               "notebooklm/cli/generate_cmd.py:_output_generation_outcome"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:4c81fdc6194d3f9531494670400c3f2908e08fa4cead093ea32f012e12afe246",
+              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:56c2e5650ed6b7057539938072f68df59519214e369a4ddc21c24572c4d101f5",
               "notebooklm/cli/generate_cmd.py:_output_generation_outcome": "sha256:d44241576da0575764382e681b13ed2d6b7aec5fb71491722f6263f180dc9cdf"
             },
             "id": "cli.GenerationStatus.manual-generation-pending-projection",
@@ -8333,7 +8333,7 @@
               "notebooklm/cli/error_handler.py:response: dict ="
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:4c81fdc6194d3f9531494670400c3f2908e08fa4cead093ea32f012e12afe246",
+              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:56c2e5650ed6b7057539938072f68df59519214e369a4ddc21c24572c4d101f5",
               "notebooklm/cli/error_handler.py:response: dict =": "sha256:d623ef4856089a3c252977001ef2f47c0a9ce47faa7fa6f99ff5597c4577ec88",
               "notebooklm/cli/generate_cmd.py:_output_generation_outcome": "sha256:d44241576da0575764382e681b13ed2d6b7aec5fb71491722f6263f180dc9cdf"
             },
@@ -12240,7 +12240,7 @@
               "notebooklm/mcp/tools/_studio_payloads.py:_generation_payload"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:4c81fdc6194d3f9531494670400c3f2908e08fa4cead093ea32f012e12afe246",
+              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:56c2e5650ed6b7057539938072f68df59519214e369a4ddc21c24572c4d101f5",
               "notebooklm/mcp/tools/_studio_payloads.py:_generation_payload": "sha256:7ad19c2194668715e49bbd5bc5a33809eef95aa62a0bbc46e1641b501397e4b3"
             },
             "id": "mcp.GenerationStatus.manual-generate-projection",
@@ -15184,7 +15184,7 @@
               "notebooklm/server/routes/artifacts.py:_generation_payload"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:4c81fdc6194d3f9531494670400c3f2908e08fa4cead093ea32f012e12afe246",
+              "notebooklm/_app/generate_retry.py:generation_outcome_from_status": "sha256:56c2e5650ed6b7057539938072f68df59519214e369a4ddc21c24572c4d101f5",
               "notebooklm/server/routes/artifacts.py:_generation_payload": "sha256:d0885c90d093de2e1fe3d29198eee1ae20cc13e0ebd8846e325895c7a2984efb"
             },
             "id": "rest.GenerationStatus.manual-generate-projection",

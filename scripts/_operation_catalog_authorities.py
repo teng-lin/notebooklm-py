@@ -323,19 +323,7 @@ NON_RPC_SOURCE_CONTRACTS: Mapping[str, tuple[tuple[str, ...], ...]] = {
 }
 
 
-_GENERATION_RETRY_AUTHORITY = AppAuthorityRule(
-    "artifacts.py:with_rate_limit_retry",
-    "public_helper",
-    "exported retry helper re-invokes the internal facade generation after rate limiting; "
-    "P4.2 removes the internal use while preserving the public helper",
-)
-
-
 APP_OPERATION_AUTHORITIES: Mapping[Operation, tuple[AppAuthorityRule, ...]] = {
-    **dict.fromkeys(
-        (*_GENERATION_OPERATIONS, Operation.ARTIFACT_REVISE_SLIDE),
-        (_GENERATION_RETRY_AUTHORITY,),
-    ),
     Operation.ARTIFACT_DOWNLOAD: (
         AppAuthorityRule(
             "_app/download.py:execute_download",
@@ -346,19 +334,10 @@ APP_OPERATION_AUTHORITIES: Mapping[Operation, tuple[AppAuthorityRule, ...]] = {
 }
 
 
-# The generation retry authority lives in an exported public helper, not in the
-# thin ``_app`` wrapper that calls it.  Pin both the helper's loop ingredients
-# and the one production-internal call edge so moving, bypassing, or duplicating
-# the loop changes the generated catalog rather than silently preserving a stale
-# hand-authored site.
-APP_AUTHORITY_SOURCE_CONTRACTS: Mapping[str, AppAuthoritySourceContract] = {
-    _GENERATION_RETRY_AUTHORITY.site: AppAuthoritySourceContract(
-        required_calls=(("generate_fn",), ("calculate_backoff_delay",), ("sleep_func",)),
-        internal_caller="_app/generate_retry.py:generate_with_retry",
-        caller_target=("artifact_retry", "with_rate_limit_retry"),
-        public_export="with_rate_limit_retry",
-    )
-}
+# Exported retry helpers are caller-owned compatibility utilities, not
+# production application execution authorities. Application generation enters
+# one private facade workflow and therefore needs no delegated-authority row.
+APP_AUTHORITY_SOURCE_CONTRACTS: Mapping[str, AppAuthoritySourceContract] = {}
 
 
 @dataclass(frozen=True, slots=True)

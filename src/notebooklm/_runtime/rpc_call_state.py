@@ -1,4 +1,4 @@
-"""Typed per-call state shared by the web transport middleware stack."""
+"""Typed per-call state shared by the web runtime pipeline."""
 
 from __future__ import annotations
 

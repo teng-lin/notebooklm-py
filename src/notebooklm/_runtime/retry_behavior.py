@@ -1,7 +1,7 @@
-"""RetryMiddleware — 429/5xx retry loop for the chain.
+"""RetryBehavior — 429/5xx retry loop for the chain.
 
-Per ADR-0009 §"Chain ordering", ``RetryMiddleware`` sits just *inside*
-``SemaphoreMiddleware`` and just *outside* ``AuthRefreshMiddleware``. The
+Per ADR-0009 §"Chain ordering", ``RetryBehavior`` sits just *inside*
+``SemaphoreBehavior`` and just *outside* ``AuthRefreshBehavior``. The
 chain is
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, Tracing]``.
 
@@ -11,7 +11,7 @@ The chain leaf is a single ``Kernel.post`` attempt that raises
 :class:`TransportServerError` on HTTP 5xx / network failures —
 **immediately**, without internal retry. The middleware catches those
 exceptions and decides whether to retry by re-invoking the chain.
-Auth-refresh-and-retry lives in :class:`AuthRefreshMiddleware`.
+Auth-refresh-and-retry lives in :class:`AuthRefreshBehavior`.
 
 Behavior:
 
@@ -63,10 +63,10 @@ import httpx
 
 from .._backoff import compute_backoff_delay
 from .._deadline import Monotonic, RuntimeDeadline
-from .._runtime.config import CORE_LOGGER_NAME
-from .._runtime.helpers import resolve_sleep
 from .._transport_errors import TransportRateLimited, TransportServerError, parse_retry_after
-from .core import NextCall, RpcRequest, RpcResponse
+from .config import CORE_LOGGER_NAME
+from .helpers import resolve_sleep
+from .rpc_call import NextCall, RpcRequest, RpcResponse
 
 if TYPE_CHECKING:
     from .._client_metrics import ClientMetrics
@@ -79,7 +79,7 @@ if TYPE_CHECKING:
 # ``RemoteProtocolError`` cover a connection severed after the request was sent
 # but before/while the response streamed. Connect/Write/Pool failures are
 # deliberately excluded — the request was not fully sent, so a retry is safe —
-# and auth-expiry (HTTP 401) is handled separately by ``AuthRefreshMiddleware``,
+# and auth-expiry (HTTP 401) is handled separately by ``AuthRefreshBehavior``,
 # so this gate does not suppress transparent token refresh.
 _NON_REPLAYABLE_POST_SEND_ERRORS = (
     httpx.ReadTimeout,
@@ -97,16 +97,10 @@ _BACKOFF_JITTER_RATIO = 0.2
 _BACKOFF_MIN_SECONDS = 0.1
 
 
-class RetryMiddleware:
-    """Chain middleware that retries on HTTP 429 / 5xx / network failures.
+class RetryBehavior:
+    """Pipeline behavior that retries on HTTP 429 / 5xx / network failures.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` —
-    ``__call__`` matches the Protocol so instances are assignable into a
-    ``Sequence[Middleware]``.
-
-    Constructor inputs (all wired by
-    :func:`notebooklm._runtime.init.wire_middleware_chain`, driven from
-    ``NotebookLMClient.__init__``):
+    Constructor inputs are wired by :class:`RuntimePipeline`:
 
     - ``rate_limit_max_retries`` / ``server_error_max_retries``: the same
       budgets exposed by ``NotebookLMClient`` via ``_rate_limit_max_retries`` /
@@ -138,16 +132,8 @@ class RetryMiddleware:
         logger: logging.Logger | None = None,
         metrics: ClientMetrics | None = None,
     ) -> None:
-        # Budgets accept either a static int OR a zero-arg callable. The
-        # callable form preserves the historical contract where the retry
-        # loop read ``chain_host._rate_limit_max_retries`` /
-        # ``chain_host._server_error_max_retries`` LIVE, so tests (and any
-        # production tweaks) that mutate those attrs on the chain host
-        # after ``open()`` still take effect. ``wire_middleware_chain``
-        # passes the callable form via a
-        # ``lambda: chain_host._rate_limit_max_retries`` closure; tests
-        # that build a middleware in isolation typically pass the int
-        # form.
+        # Budgets accept either a static int or a zero-arg callable so
+        # focused owner tests can exercise both resolution forms.
         self._rate_limit_max = rate_limit_max_retries
         self._server_error_max = server_error_max_retries
         # Late-binding rationale lives on ``_runtime.helpers.resolve_sleep``;
@@ -186,7 +172,7 @@ class RetryMiddleware:
         Reads ``log_label`` and retry gates from the typed ``request.state``.
         A missing ``log_label`` falls back to a defensive sentinel so a
         ``__new__``-built fixture driving the chain raw still produces a
-        useful label (matching DrainMiddleware's fallback).
+        useful label (matching DrainBehavior's fallback).
         ``disable_internal_retries`` defaults to ``False`` — the production
         path always populates it from
         :func:`_idempotency.resolve_effective_disable_internal_retries`.
@@ -381,4 +367,4 @@ class RetryMiddleware:
             raise exc
 
 
-__all__ = ["RetryMiddleware"]
+__all__ = ["RetryBehavior"]

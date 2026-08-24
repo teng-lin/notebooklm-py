@@ -12,7 +12,7 @@ Only ``interactive=True, headless=False`` and ``interactive=False,
 headless=True`` are supported. Automatic headless recovery remains opt-in via
 ``NOTEBOOKLM_HEADLESS_REAUTH=1``.
 
-ADR-0033 folded the login-wait trace and captured-state heal bridge into this
+ADR-0033 folded the login-wait trace and captured-state heal path into this
 module. ``browser_launch_errors.py`` remains a cohesive pure classifier leaf and
 is re-exported here for the CLI boundary.
 """

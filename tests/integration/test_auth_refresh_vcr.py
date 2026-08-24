@@ -5,7 +5,7 @@ This module records and replays the **full three-leg** auth-refresh flow that
 
 1. **Failing batchexecute** — the client makes a ``LIST_NOTEBOOKS`` POST with a
    deliberately invalidated CSRF token; Google returns HTTP **400** (not 401).
-2. **Homepage GET** — ``AuthRefreshMiddleware`` classifies the 400 as an auth
+2. **Homepage GET** — ``AuthRefreshBehavior`` classifies the 400 as an auth
    error via :func:`notebooklm._runtime.helpers.is_auth_error` and awaits
    ``refresh_auth``, which fetches the NotebookLM homepage to re-extract
    ``SNlM0e`` + ``FdrFJe``.
@@ -104,7 +104,7 @@ async def test_stale_csrf_triggers_refresh_and_retry(
     3. POST ``batchexecute?rpcids=wXbhsf`` with the refreshed CSRF →
        HTTP 200 with the normal ``LIST_NOTEBOOKS`` ``wrb.fr`` envelope.
 
-    The 400 → refresh → retry sequence is what ``AuthRefreshMiddleware`` and
+    The 400 → refresh → retry sequence is what ``AuthRefreshBehavior`` and
     ``RuntimeTransport.refresh_request_for_current_auth`` promise. Asserting both
     that the call returned a value (the retry succeeded) AND that a
     refresh happened (token mutated mid-call) gives us a fail-loud
@@ -115,21 +115,20 @@ async def test_stale_csrf_triggers_refresh_and_retry(
     # keeping it on would surface as a cassette mismatch on replay).
     monkeypatch.setenv("NOTEBOOKLM_DISABLE_KEEPALIVE_POKE", "1")
 
-    client = await _build_client_for_test()
-
     # Track whether refresh_auth ran. We wrap the bound method so the
     # mutation is observable from outside the test. Using ``list[object]``
     # keeps the counter intent obvious without overspecifying element type.
     refresh_calls: list[object] = []
-    original_refresh = client.refresh_auth
+    original_refresh = NotebookLMClient.refresh_auth
 
-    async def tracking_refresh() -> AuthTokens:
+    async def tracking_refresh(
+        client: NotebookLMClient, *, allow_headless: bool = False
+    ) -> AuthTokens:
         refresh_calls.append(None)
-        return await original_refresh()
+        return await original_refresh(client, allow_headless=allow_headless)
 
-    # The refresh callback is reached through the auth coordinator; patch it on
-    # the coordinator so the wrapper is what the retry loop sees.
-    client._provider._coordinator._refresh_callback = tracking_refresh
+    monkeypatch.setattr(NotebookLMClient, "refresh_auth", tracking_refresh)
+    client = await _build_client_for_test()
 
     with notebooklm_vcr.use_cassette(CASSETTE_NAME) as cassette:
         async with client:

@@ -64,7 +64,6 @@ from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ConnectionLimits
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 from .conftest import ConcurrentMockTransport
 
@@ -100,7 +99,7 @@ async def _open_core_with_transport(
     one routing through the recording transport so the in-flight peak
     is observable.
     """
-    core = build_client_shell_for_tests(
+    core = NotebookLMClient(
         auth=_make_auth(),
         max_concurrent_rpcs=max_concurrent_rpcs,
         rate_limit_max_retries=rate_limit_max_retries,
@@ -247,12 +246,12 @@ async def test_slot_held_across_retry_middleware_retries(
     """PR-12.9 regression: a logical RPC that retries does NOT release its slot.
 
     Pre-PR-12.9 the chain leaf held the semaphore around a single POST
-    attempt — when ``RetryMiddleware`` re-invoked the chain on a 429, the
+    attempt — when ``RetryBehavior`` re-invoked the chain on a 429, the
     leaf released the slot, the retrying call queued behind whatever was
     already in flight, and (under sustained 429s) every slot could end
     up held by a retrying call waiting for a slot to retry into.
     Codex caught this in the PR-12.9 audit. The fix is
-    :class:`SemaphoreMiddleware` at chain position 2 (between Metrics
+    :class:`SemaphoreBehavior` at chain position 2 (between Metrics
     and Retry) so the entire retry cohort stays in ONE slot per logical
     RPC.
 
@@ -262,7 +261,7 @@ async def test_slot_held_across_retry_middleware_retries(
     - Total transport hits = 4 (2 originals + 2 retries).
     - Peak in-flight MUST stay at 1. A value > 1 would mean a retry
       attempt re-acquired the slot, indicating the gate moved INSIDE
-      ``RetryMiddleware`` again.
+      ``RetryBehavior`` again.
     """
     import httpx as _httpx
 
@@ -307,9 +306,9 @@ async def test_slot_held_across_retry_middleware_retries(
     peak = transport.get_peak_inflight()
     assert peak == 1, (
         f"peak in-flight was {peak} under max_concurrent_rpcs=1 with retries; "
-        f"expected exactly 1. A peak > 1 means RetryMiddleware retries "
-        f"re-acquired the slot, which would put SemaphoreMiddleware INSIDE "
-        f"RetryMiddleware — a chain-ordering regression."
+        f"expected exactly 1. A peak > 1 means RetryBehavior retries "
+        f"re-acquired the slot, which would put SemaphoreBehavior INSIDE "
+        f"RetryBehavior — a chain-ordering regression."
     )
 
 

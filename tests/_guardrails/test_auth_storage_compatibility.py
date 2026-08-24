@@ -1130,7 +1130,7 @@ def test_all_remaining_facade_inventory_callables_are_exact_identity_reexports()
 EXPECTED_DIRECT_CALLERS = {
     "AuthTokens": [
         "src/notebooklm/__init__.py",
-        "src/notebooklm/_client_assembly.py",
+        "src/notebooklm/_client_composition.py",
         "src/notebooklm/_cookie_persistence.py",
         "src/notebooklm/_kernel.py",
         "src/notebooklm/_runtime/auth.py",

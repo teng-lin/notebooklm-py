@@ -65,6 +65,7 @@ class ArtifactLifecycleService:
         min_not_found_window: float,
         poll_status: PollStatusCallback,
         on_status_change: Callable[[GenerationStatus], object] | None,
+        deadline: RuntimeDeadline | None = None,
     ) -> GenerationStatus:
         return await self._polling.wait_for_completion(
             notebook_id,
@@ -76,6 +77,7 @@ class ArtifactLifecycleService:
             min_not_found_window=min_not_found_window,
             poll_status=poll_status,
             on_status_change=on_status_change,
+            deadline=deadline,
         )
 
     async def drain(self) -> None:

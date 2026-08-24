@@ -56,7 +56,6 @@ from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 from .conftest import ConcurrentMockTransport
 
@@ -91,7 +90,7 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Noteb
     ``core._provider._lifecycle.get_bound_loop()`` unchanged because we
     don't enter the client again.
     """
-    core = build_client_shell_for_tests(auth=_make_auth())
+    core = NotebookLMClient(auth=_make_auth())
     await core.__aenter__()
     assert core._backend._kernel.http_client is not None
     prior_cookies = core._backend._kernel.get_http_client().cookies
@@ -224,7 +223,7 @@ def test_capped_client_reopen_on_new_loop_rebinds_semaphore(
     transport.set_delay(0.01)
 
     # Build a capped client once; reuse the instance across two loops.
-    core = build_client_shell_for_tests(auth=_make_auth(), max_concurrent_rpcs=2)
+    core = NotebookLMClient(auth=_make_auth(), max_concurrent_rpcs=2)
 
     async def _open_swap_and_close_under_loop_a() -> None:
         await core.__aenter__()
@@ -313,7 +312,7 @@ def test_upload_pipeline_reopen_on_new_loop_rebinds_semaphore(
     transport = mock_transport_concurrent
     transport.set_delay(0.0)
 
-    core = build_client_shell_for_tests(auth=_make_auth(), max_concurrent_uploads=1)
+    core = NotebookLMClient(auth=_make_auth(), max_concurrent_uploads=1)
     uploader = core._source_uploader
 
     async def _force_contended_acquire(sem: asyncio.Semaphore) -> None:
@@ -424,7 +423,7 @@ def test_reqid_and_auth_locks_reopen_on_new_loop_rebind(
     transport = mock_transport_concurrent
     transport.set_delay(0.0)
 
-    core = build_client_shell_for_tests(auth=_make_auth())
+    core = NotebookLMClient(auth=_make_auth())
     reqid = core._backend._reqid
     auth_coord = core._provider._coordinator
 
@@ -543,7 +542,7 @@ def test_chat_locks_reopen_on_new_loop_rebind(
     transport = mock_transport_concurrent
     transport.set_delay(0.0)
 
-    core = build_client_shell_for_tests(auth=_make_auth())
+    core = NotebookLMClient(auth=_make_auth())
     chat = core.chat
     conv_id = "conv-1225"
 
@@ -635,7 +634,7 @@ async def test_bound_loop_captured_on_open(
     outside a running loop) would break the audit-§14 fix because the
     construction-time loop may not be the dispatch-time loop.
     """
-    core = build_client_shell_for_tests(auth=_make_auth())
+    core = NotebookLMClient(auth=_make_auth())
     assert core._provider._lifecycle.get_bound_loop() is None, (
         "NotebookLMClient must not bind to a loop at construction time — open() is the binding moment."
     )

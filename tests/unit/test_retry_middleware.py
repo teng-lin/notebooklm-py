@@ -1,6 +1,6 @@
-"""Unit tests for :class:`RetryMiddleware` (Tier-12 PR 12.7).
+"""Unit tests for :class:`RetryBehavior` (Tier-12 PR 12.7).
 
-Pins the contract documented in ``src/notebooklm/_middleware/retry.py`` and
+Pins the contract documented in ``src/notebooklm/_runtime/retry_behavior.py`` and
 ADR-0009 §"Chain ordering":
 
 - **Pass-through on success.** Single ``next_call`` invocation; result
@@ -37,19 +37,19 @@ import httpx
 import pytest
 
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
-from notebooklm._middleware.retry import RetryMiddleware
+from notebooklm._runtime.retry_behavior import RetryBehavior
+from notebooklm._runtime.rpc_call import NextCall, RpcRequest, RpcResponse
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
 
 # The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
-from tests._fixtures.chain import make_request
+from tests._fixtures.chain import Behavior, build_chain, make_request
 
 
 def _recording_sleep() -> tuple[Callable[[float], Awaitable[None]], list[float]]:
     """Build an async sleep stub that records every duration it's asked to wait.
 
-    Returns ``(sleep, slept)``: tests pass ``sleep`` into ``RetryMiddleware``
+    Returns ``(sleep, slept)``: tests pass ``sleep`` into ``RetryBehavior``
     via the ``sleep=`` kwarg and assert on ``slept`` to verify the backoff
     timing without spending wall-clock time.
     """
@@ -147,7 +147,7 @@ async def test_passes_through_when_no_retryable_failure() -> None:
     """No retry on a clean 200 — single ``next_call`` invocation."""
     sleep, slept = _recording_sleep()
     terminal, calls = _scripted_terminal([httpx.Response(200, content=b"ok")])
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -177,7 +177,7 @@ async def test_retries_on_429_until_success() -> None:
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -212,7 +212,7 @@ async def test_429_retry_after_larger_than_remaining_timeout_does_not_sleep() ->
             httpx.Response(200, content=b"late-success"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         retry_timeout=1.0,
@@ -250,7 +250,7 @@ async def test_429_does_not_sleep_when_attempt_already_exhausted_retry_timeout()
         clock = 1.5
         raise first_429
 
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         retry_timeout=1.0,
@@ -277,7 +277,7 @@ async def test_429_retry_timeout_none_disables_aggregate_deadline() -> None:
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         retry_timeout=lambda: None,
@@ -302,7 +302,7 @@ async def test_429_without_retry_after_uses_exponential_backoff() -> None:
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -329,7 +329,7 @@ async def test_429_budget_exhausted_reraises_last_exception() -> None:
             last,  # 3rd attempt — exhausts budget of 2
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=2,
         server_error_max_retries=3,
         sleep=sleep,
@@ -359,7 +359,7 @@ async def test_retries_on_503_until_success() -> None:
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -395,7 +395,7 @@ async def test_5xx_backoff_larger_than_remaining_timeout_does_not_sleep() -> Non
             httpx.Response(200, content=b"late-success"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         retry_timeout=0.05,
@@ -423,7 +423,7 @@ async def test_retries_on_network_error_until_success() -> None:
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -442,7 +442,7 @@ async def test_disable_read_timeout_retries_skips_read_timeout_retry() -> None:
     sleep, slept = _recording_sleep()
     boom = _read_timeout()
     terminal, calls = _scripted_terminal([boom, httpx.Response(200, content=b"late")])
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -481,7 +481,7 @@ async def test_disable_read_timeout_retries_skips_post_send_network_errors(
     sleep, slept = _recording_sleep()
     boom = TransportServerError("chat.ask network error", original=original)
     terminal, calls = _scripted_terminal([boom, httpx.Response(200, content=b"late")])
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -513,7 +513,7 @@ async def test_disable_read_timeout_retries_still_retries_connect_errors() -> No
         original=httpx.ConnectError("connection refused", request=request),
     )
     terminal, calls = _scripted_terminal([connect, httpx.Response(200, content=b"ok")])
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -545,7 +545,7 @@ async def test_5xx_budget_exhausted_reraises_last_exception() -> None:
             last,
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=1,
         sleep=sleep,
@@ -570,7 +570,7 @@ async def test_disable_internal_retries_skips_429_retry() -> None:
     sleep, slept = _recording_sleep()
     boom = _rate_limited(retry_after=1)
     terminal, calls = _scripted_terminal([boom])
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -591,7 +591,7 @@ async def test_disable_internal_retries_skips_5xx_retry() -> None:
     sleep, slept = _recording_sleep()
     boom = _server_error(status=503)
     terminal, calls = _scripted_terminal([boom])
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -623,7 +623,7 @@ async def test_metrics_increment_per_429_retry() -> None:
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -652,7 +652,7 @@ async def test_metrics_increment_per_5xx_retry() -> None:
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -687,7 +687,7 @@ async def test_429_retry_log_message_shape(caplog: pytest.LogCaptureFixture) -> 
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -715,7 +715,7 @@ async def test_5xx_retry_log_message_shape(caplog: pytest.LogCaptureFixture) -> 
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -745,7 +745,7 @@ async def test_missing_log_label_falls_back_to_sentinel(
 
     Defensive against ``__new__``-built fixtures driving the chain raw.
     The middleware must not raise ``KeyError`` on a missing label —
-    matches DrainMiddleware's same fallback (pinned in
+    matches DrainBehavior's same fallback (pinned in
     ``test_drain_middleware.py::test_missing_log_label_falls_back_to_sentinel``).
     """
     sleep, _slept = _recording_sleep()
@@ -755,7 +755,7 @@ async def test_missing_log_label_falls_back_to_sentinel(
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,
@@ -788,7 +788,7 @@ async def test_429_and_5xx_budgets_are_independent() -> None:
             httpx.Response(200, content=b"ok"),
         ]
     )
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=1,
         server_error_max_retries=1,
         sleep=sleep,
@@ -811,10 +811,8 @@ async def test_429_and_5xx_budgets_are_independent() -> None:
 
 
 def test_middleware_satisfies_protocol() -> None:
-    """``RetryMiddleware`` instance is assignable to ``Middleware``."""
-    from notebooklm._middleware.core import Middleware
-
-    middleware: Middleware = RetryMiddleware(rate_limit_max_retries=3, server_error_max_retries=3)
+    """``RetryBehavior`` instance is assignable to ``Middleware``."""
+    middleware: Behavior = RetryBehavior(rate_limit_max_retries=3, server_error_max_retries=3)
     assert callable(middleware)
 
 
@@ -825,19 +823,19 @@ def test_middleware_satisfies_protocol() -> None:
 
 @pytest.mark.asyncio
 async def test_non_transport_exception_propagates_without_retry() -> None:
-    """``RetryMiddleware`` only catches transport exceptions; everything else flows up.
+    """``RetryBehavior`` only catches transport exceptions; everything else flows up.
 
     A generic ``RuntimeError`` from a deeper middleware (e.g. drain
     rejection) must propagate without consuming the retry budget.
     Pre-PR-12.7 the legacy transport loop only caught
     ``httpx.HTTPStatusError`` / ``httpx.RequestError``; the middleware
     only catches the two named transport-exception types so
-    ``DrainMiddleware``'s ``RuntimeError("draining…")`` still propagates.
+    ``DrainBehavior``'s ``RuntimeError("draining…")`` still propagates.
     """
     sleep, slept = _recording_sleep()
     boom = RuntimeError("not a transport error")
     terminal, calls = _scripted_terminal([boom])
-    middleware = RetryMiddleware(
+    middleware = RetryBehavior(
         rate_limit_max_retries=3,
         server_error_max_retries=3,
         sleep=sleep,

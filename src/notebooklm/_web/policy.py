@@ -55,11 +55,6 @@ _IDEMPOTENT = IdempotencyPolicy.IDEMPOTENT_SET_OP
 _PROBE_CREATE = IdempotencyPolicy.PROBE_THEN_CREATE
 _NO_RETRY = IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY
 _AT_LEAST_ONCE = IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED
-_APP_GENERATION_DIVERGENCE = (
-    "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal "
-    "facade operation after rate limiting. P4.2 removes that internal use while preserving the "
-    "public helper and adapter-neutral retry presentation policy."
-)
 _APP_DOWNLOAD_DIVERGENCE = (
     "_app/download.py owns selection/conflict/filesystem choreography while the facade owns "
     "network reads. P4.2 starts a separate budget at each facade list/download operation; "
@@ -456,7 +451,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                     "audio artifact allocation",
                 ),
             ),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.ARTIFACT_GENERATE_QUIZ: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -472,7 +466,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                     "quiz artifact allocation",
                 ),
             ),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.ARTIFACT_GENERATE_FLASHCARDS: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -488,7 +481,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                     "flashcards artifact allocation",
                 ),
             ),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.ARTIFACT_GENERATE_VIDEO: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -496,7 +488,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional all-source resolution"),
                 _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded video kickoff"),
             ),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.ARTIFACT_GENERATE_REPORT: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -504,7 +495,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional all-source resolution"),
                 _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded report kickoff"),
             ),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -512,7 +502,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional all-source resolution"),
                 _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded infographic kickoff"),
             ),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.ARTIFACT_GENERATE_SLIDE_DECK: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -520,7 +509,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional all-source resolution"),
                 _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded slide-deck kickoff"),
             ),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.ARTIFACT_GENERATE_DATA_TABLE: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -528,7 +516,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional source-set read"),
                 _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "data-table kickoff"),
             ),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.ARTIFACT_GENERATE_MIND_MAP: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -558,7 +545,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
         Operation.ARTIFACT_REVISE_SLIDE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (_native(RPCMethod.REVISE_SLIDE, _NO_RETRY, "unrepeatable slide revision"),),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.ARTIFACT_RETRY: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -684,7 +670,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                     "interactive mind-map allocation",
                 ),
             ),
-            known_divergence=_APP_GENERATION_DIVERGENCE,
         ),
         Operation.MIND_MAP_UPDATE: WebCallPolicyBinding(
             CallPolicy.MUTATION,

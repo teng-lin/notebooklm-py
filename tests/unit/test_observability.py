@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+import notebooklm.rpc as rpc_module
 from notebooklm import (
     ClientMetricsSnapshot,
     NotebookLMClient,
@@ -16,21 +17,23 @@ from notebooklm import (
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
+from notebooklm._runtime.transport import RuntimeTransport
 from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import GenerationStatus
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 @pytest.mark.asyncio
-async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) -> None:
+async def test_rpc_metrics_event_and_correlation_scope(
+    auth_tokens: AuthTokens, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Public contract: ``rpc_call`` bumps counters + emits ``RpcTelemetryEvent``.
 
     As of Tier-12 PR 12.4 the per-RPC success/failure counters and the
-    ``on_rpc_event`` fire live inside ``MetricsMiddleware`` (which sits
+    ``on_rpc_event`` fire live inside ``MetricsBehavior`` (which sits
     in the shared authed transport chain), not inside
     ``RpcExecutor.rpc_call``. The seam the test mocks therefore has to
     live below the chain. We mock the chain terminal so the chain runs
@@ -45,7 +48,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     events: list[RpcTelemetryEvent] = []
 
     # Inject the decoder at construction time (NotebookLMClient test seam; see
-    # ``docs/architecture.md``'s ClientSeams wiring). The real decoder requires a wire
+    # ``docs/architecture.md``'s explicit runtime decoder injection). The real decoder requires a wire
     # payload that matches the method's RPC ID; constructing one makes
     # the test brittle to RPC-ID changes. Stubbing keeps the test focused
     # on observability semantics (counters + events + correlation) rather
@@ -59,13 +62,13 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
 
     # Mock the chain LEAF (innermost wrapper around
     # ``Kernel.post``) so the real chain runs
-    # end-to-end and ``MetricsMiddleware`` sees the call. Mocking
+    # end-to-end and ``MetricsBehavior`` sees the call. Mocking
     # the shared authed transport itself would bypass the chain entirely
     # and silence the counters this test exists to assert. Mocking above
     # the chain would do the same.
-    from notebooklm._middleware.core import RpcResponse
+    from notebooklm._runtime.rpc_call import RpcResponse
 
-    async def fake_terminal(request: object) -> RpcResponse:
+    async def fake_terminal(_transport: RuntimeTransport, request: object) -> RpcResponse:
         # Read the correlation id INSIDE the chain so the assertion
         # below verifies the contextvar survived chain entry.
         seen_request_ids.append(get_request_id())
@@ -74,12 +77,9 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
             state=request.state,  # type: ignore[attr-defined]
         )
 
-    core = build_client_shell_for_tests(
-        auth_tokens,
-        on_rpc_event=events.append,
-        decode_response=fake_decode,
-        authed_post_terminal=fake_terminal,
-    )
+    monkeypatch.setattr(rpc_module, "decode_response", fake_decode)
+    monkeypatch.setattr(RuntimeTransport, "terminal", fake_terminal)
+    core = NotebookLMClient(auth_tokens, on_rpc_event=events.append)
     install_http_client_for_test(core._backend._kernel, AsyncMock(spec=httpx.AsyncClient))
 
     with correlation_id("batch-42"):
@@ -105,7 +105,9 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
 
 
 @pytest.mark.asyncio
-async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> None:
+async def test_rpc_decode_error_bumps_drift_counter(
+    auth_tokens: AuthTokens, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Public contract: a decode/drift failure increments ``rpc_decode_errors``.
 
     End-to-end mirror of the success test above (issue #1492). The transport
@@ -122,19 +124,17 @@ async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> 
     ) -> dict:
         raise DecodingError("Google reshaped the response", method_id=rpc_id)
 
-    from notebooklm._middleware.core import RpcResponse
+    from notebooklm._runtime.rpc_call import RpcResponse
 
-    async def fake_terminal(request: object) -> RpcResponse:
+    async def fake_terminal(_transport: RuntimeTransport, request: object) -> RpcResponse:
         return RpcResponse(
             response=httpx.Response(200, text=")]}'\n[]"),
             state=request.state,  # type: ignore[attr-defined]
         )
 
-    core = build_client_shell_for_tests(
-        auth_tokens,
-        decode_response=drifting_decode,
-        authed_post_terminal=fake_terminal,
-    )
+    monkeypatch.setattr(rpc_module, "decode_response", drifting_decode)
+    monkeypatch.setattr(RuntimeTransport, "terminal", fake_terminal)
+    core = NotebookLMClient(auth_tokens)
     install_http_client_for_test(core._backend._kernel, AsyncMock(spec=httpx.AsyncClient))
 
     with pytest.raises(DecodingError):
@@ -150,7 +150,7 @@ async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> 
 
 @pytest.mark.asyncio
 async def test_drain_rejects_new_work_and_waits_for_in_flight(auth_tokens: AuthTokens) -> None:
-    core = build_client_shell_for_tests(auth_tokens)
+    core = NotebookLMClient(auth_tokens)
     started = asyncio.Event()
     release = asyncio.Event()
 
@@ -181,7 +181,7 @@ async def test_drain_rejects_new_work_and_waits_for_in_flight(auth_tokens: AuthT
 async def test_drain_allows_nested_work_inside_accepted_operation(
     auth_tokens: AuthTokens,
 ) -> None:
-    core = build_client_shell_for_tests(auth_tokens)
+    core = NotebookLMClient(auth_tokens)
     outer_token = await core._backend._drain_tracker.begin_transport_post("source upload")
     try:
         drain_task = asyncio.create_task(core._backend._drain_tracker.drain(timeout=1.0))
@@ -201,7 +201,7 @@ async def test_drain_allows_nested_work_inside_accepted_operation(
 async def test_operation_scope_tracks_drain_without_upload_semaphore(
     auth_tokens: AuthTokens,
 ) -> None:
-    core = build_client_shell_for_tests(auth_tokens)
+    core = NotebookLMClient(auth_tokens)
 
     async with core._backend._drain_tracker.operation_scope("plain-operation"):
         assert core._backend._drain_tracker._in_flight_posts == 1
@@ -215,7 +215,7 @@ async def test_operation_scope_tracks_drain_without_upload_semaphore(
 async def test_drain_rejects_child_task_spawned_from_accepted_operation(
     auth_tokens: AuthTokens,
 ) -> None:
-    core = build_client_shell_for_tests(auth_tokens)
+    core = NotebookLMClient(auth_tokens)
     outer_token = await core._backend._drain_tracker.begin_transport_post("source upload")
     try:
         drain_task = asyncio.create_task(core._backend._drain_tracker.drain(timeout=1.0))
@@ -235,7 +235,7 @@ async def test_drain_rejects_child_task_spawned_from_accepted_operation(
 
 @pytest.mark.asyncio
 async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> None:
-    core = build_client_shell_for_tests(auth_tokens)
+    core = NotebookLMClient(auth_tokens)
     # ``ArtifactsAPI`` consumes its three runtime collaborators
     # (``rpc`` + ``drain`` + ``lifecycle``) directly — mirrors production
     # wiring in ``NotebookLMClient.__init__``.
@@ -336,7 +336,7 @@ async def test_upload_progress_callback_receives_byte_counts(
     auth_tokens: AuthTokens,
     tmp_path,
 ) -> None:
-    core = build_client_shell_for_tests(auth_tokens)
+    core = NotebookLMClient(auth_tokens)
     await core.__aenter__()
     try:
         api = SourcesAPI(
@@ -385,7 +385,7 @@ async def test_upload_progress_callback_receives_byte_counts(
 
 @pytest.mark.asyncio
 async def test_wait_for_completion_status_change_callback(auth_tokens: AuthTokens) -> None:
-    core = build_client_shell_for_tests(auth_tokens)
+    core = NotebookLMClient(auth_tokens)
     # ``ArtifactsAPI`` consumes its three runtime collaborators directly.
     api = ArtifactsAPI(
         rpc=core._backend._runtime,

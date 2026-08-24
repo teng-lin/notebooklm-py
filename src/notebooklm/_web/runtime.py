@@ -169,7 +169,7 @@ class WebExecutionRuntime:
         ``timeout_provider`` on the first ``_execute_once``) across the
         decode-time retry recursion so the post-refresh sleep is clamped to the
         remaining budget instead of overshooting it (issue #1271) — symmetric
-        with ``RetryMiddleware`` on the HTTP-status layer. Like
+        with ``RetryBehavior`` on the HTTP-status layer. Like
         ``_refresh_budget`` it is internal-only and minted once per logical
         call; threading it through the recursion keeps the budget anchored to
         the original start time rather than resetting it on the retry leg.
@@ -222,8 +222,8 @@ class WebExecutionRuntime:
         # because they bracket the entire logical RPC including decode —
         # the chain wraps only the transport leg. Per-attempt latency,
         # ``rpc_calls_succeeded`` / ``rpc_calls_failed``, and
-        # ``emit_rpc_event`` live in ``MetricsMiddleware``; drain
-        # admission lives in ``DrainMiddleware``.
+        # ``emit_rpc_event`` live in ``MetricsBehavior``; drain
+        # admission lives in ``DrainBehavior``.
         _reqid_token = None if get_request_id() is not None else set_request_id()
         try:
             return await self._execute_once(
@@ -264,7 +264,7 @@ class WebExecutionRuntime:
         # Mint the shared once-per-logical-call refresh budget on the FIRST
         # ``_execute_once`` of a logical call (``_refresh_budget is None``). The
         # same instance is threaded into the chain (so the HTTP-status refresh
-        # layer in ``AuthRefreshMiddleware`` consumes it) AND into the
+        # layer in ``AuthRefreshBehavior`` consumes it) AND into the
         # decode-time retry recursion below, so a ``wire-401 → refresh →
         # decoded-auth-error`` sequence drives ONE refresh (issue #1205).
         # Standalone ``_execute_once`` test calls pass ``None`` and get a fresh
@@ -404,7 +404,7 @@ class WebExecutionRuntime:
             # other condition already holds. Reordering it earlier would burn
             # the budget on calls that then fall through to a plain raise. It is
             # the shared once-per-logical-call allowance: it returns ``False``
-            # once the HTTP-status layer (``AuthRefreshMiddleware``) has already
+            # once the HTTP-status layer (``AuthRefreshBehavior``) has already
             # refreshed on this call, suppressing a redundant decode-time
             # refresh (issue #1205), and it returns ``False`` on the
             # ``_is_retry`` recursion leg — replacing the old ``not _is_retry``
@@ -626,7 +626,7 @@ class WebExecutionRuntime:
         remaining budget, and once that sleep returns an exhausted deadline
         makes this method *give up* — re-raising ``original_error`` instead of
         issuing a retry POST that would run past the aggregate timeout, exactly
-        as ``RetryMiddleware`` re-raises rather than re-invoking the chain. The
+        as ``RetryBehavior`` re-raises rather than re-invoking the chain. The
         deadline is also threaded into the retry :meth:`rpc_call` so the
         recursion keeps the same anchored deadline. ``None`` reproduces the
         historical unclamped sleep and unconditional retry (e.g. when
@@ -649,7 +649,7 @@ class WebExecutionRuntime:
             retry_deadline=_retry_deadline,
         )
 
-        # Give up symmetrically with ``RetryMiddleware`` (issue #1271): if the
+        # Give up symmetrically with ``RetryBehavior`` (issue #1271): if the
         # aggregate budget is already spent after the (clamped) post-refresh
         # sleep, re-raise the original decoded auth error instead of issuing a
         # retry POST that would overshoot the logical call's timeout. The
@@ -677,7 +677,7 @@ class WebExecutionRuntime:
     def _start_retry_deadline(self) -> RuntimeDeadline | None:
         """Start the logical call's aggregate deadline from ``timeout_provider``.
 
-        Mirrors ``RetryMiddleware._start_retry_deadline`` so both auth-retry
+        Mirrors ``RetryBehavior._start_retry_deadline`` so both auth-retry
         layers derive their deadline from the same client timeout source
         (``lifecycle._timeout``) and treat a ``None`` or non-finite timeout the
         same way: ``None`` (no clamp), preserving the historical unclamped

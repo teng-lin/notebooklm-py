@@ -243,7 +243,7 @@ async def test_create_artifact_429_does_not_re_post(auth_tokens) -> None:
 
     ``RuntimeTransport.perform_authed_post`` shares the same
     ``disable_internal_retries`` short-circuit for both 429 and 5xx paths
-    through ``RetryMiddleware``.
+    through ``RetryBehavior``.
     The PROBE_THEN_CREATE
     classification must therefore prevent rate-limit retries from
     silently re-issuing a committed-but-throttled-response request.

@@ -1,11 +1,11 @@
 """Unit tests for the Tier-12 middleware-chain type scaffolding.
 
-Exercises the shapes defined in ``src/notebooklm/_middleware/core.py`` and the
+Exercises the shapes defined in ``src/notebooklm/_runtime/rpc_call.py`` and the
 public-ish aliases in ``src/notebooklm/_request_types.py``:
 
 - ``RpcRequest`` / ``RpcResponse`` dataclass round-trip (construction,
   ``dataclasses.replace`` equivalence, frozen-mutation guard).
-- ``Middleware: Protocol`` structural typing — a plain async callable
+- ``Behavior: Protocol`` structural typing — a plain async callable
   satisfies the Protocol without inheriting from it.
 - ``build_chain`` composition order — leftmost middleware in the sequence
   becomes the outermost wrapper (matches ADR-0009 chain ordering).
@@ -24,22 +24,20 @@ import dataclasses
 import httpx
 import pytest
 
-from notebooklm._middleware.context import RpcCallState
-from notebooklm._middleware.core import (
-    Middleware,
-    NextCall,
-    RpcRequest,
-    RpcResponse,
-    build_chain,
-    materialize_rpc_request,
-)
 from notebooklm._request_types import (
     AuthSnapshot,
     BuildRequest,
     BuildRequestResult,
     materialize_build_request,
 )
-from tests._fixtures.chain import make_call_state, make_request
+from notebooklm._runtime.rpc_call import (
+    NextCall,
+    RpcRequest,
+    RpcResponse,
+    materialize_rpc_request,
+)
+from notebooklm._runtime.rpc_call_state import RpcCallState
+from tests._fixtures.chain import Behavior, build_chain, make_call_state, make_request
 
 # ---------------------------------------------------------------------------
 # RpcRequest / RpcResponse dataclass shape
@@ -101,7 +99,7 @@ def test_rpc_response_is_frozen() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Middleware Protocol — structural typing check
+# Behavior Protocol — structural typing check
 # ---------------------------------------------------------------------------
 
 
@@ -110,13 +108,13 @@ async def _passthrough_middleware(request: RpcRequest, next_call: NextCall) -> R
 
 
 def test_async_callable_satisfies_middleware_protocol() -> None:
-    """A bare async function with the right shape *is* a ``Middleware``.
+    """A bare async function with the right shape *is* a ``Behavior``.
 
-    ``Middleware`` is a ``Protocol`` with a single ``__call__``; structural
+    ``Behavior`` is a ``Protocol`` with a single ``__call__``; structural
     typing accepts any async callable whose parameters and return type
     match.
     """
-    mw: Middleware = _passthrough_middleware  # mypy will fail if wrong shape
+    mw: Behavior = _passthrough_middleware  # mypy will fail if wrong shape
     assert callable(mw)
 
 
@@ -132,7 +130,7 @@ class _ClassMiddleware:
 
 
 def test_class_with_async_call_satisfies_middleware_protocol() -> None:
-    mw: Middleware = _ClassMiddleware()
+    mw: Behavior = _ClassMiddleware()
     assert callable(mw)
 
 
@@ -141,7 +139,7 @@ def test_class_with_async_call_satisfies_middleware_protocol() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _ordering_recorder(label: str, order_log: list[str]) -> Middleware:
+def _ordering_recorder(label: str, order_log: list[str]) -> Behavior:
     """Make a middleware that records its label before *and* after recursing.
 
     Used by the composition-order tests below: a chain ``[A, B, C]`` over
@@ -433,16 +431,3 @@ def test_request_types_all_contains_only_public_names() -> None:
     assert "BuildRequestResult" in _request_types.__all__
     assert "materialize_build_request" in _request_types.__all__
     assert all(not name.startswith("_") for name in _request_types.__all__)
-
-
-def test_middleware_all_contains_only_public_names() -> None:
-    """``_middleware.__all__`` exports the chain contract helpers."""
-    from notebooklm import _middleware
-
-    assert "Middleware" in _middleware.__all__
-    assert "NextCall" in _middleware.__all__
-    assert "RpcRequest" in _middleware.__all__
-    assert "RpcResponse" in _middleware.__all__
-    assert "build_chain" in _middleware.__all__
-    assert "materialize_rpc_request" in _middleware.__all__
-    assert all(not name.startswith("_") for name in _middleware.__all__)

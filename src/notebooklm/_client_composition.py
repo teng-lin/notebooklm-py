@@ -1,47 +1,25 @@
-"""Single client-assembly seam shared by production and the test factory.
+"""Production-only composition root for :class:`NotebookLMClient`.
 
-:func:`_assemble_client` is the ONE place that wires a
+:func:`compose_client` is the one production place that wires a
 :class:`~notebooklm.client.NotebookLMClient` instance: auth normalization,
-seam resolution, collaborator composition (via
-:func:`notebooklm._runtime.init.compose_client_internals`), the upload
-pipeline, and every feature API. Two callers exist:
-
-1. ``NotebookLMClient.__init__`` (production) — delegates its whole body
-   here, passing only its public kwargs.
-2. ``tests/_helpers/client_factory.build_client_shell_for_tests`` — calls
-   ``NotebookLMClient.__new__`` and then this function with the
-   test-only injection seams (``decode_response`` / ``sleep`` /
-   ``is_auth_error`` / ``async_client_factory`` plus ``refresh_callback`` /
-   ``refresh_retry_delay`` / ``connect_timeout`` /
-   ``keepalive_storage_path``).
-
-History: the test factory previously duplicated this wiring by hand
-against ``NotebookLMClient.__new__``. That drifted twice — issue #1196
-(the open-time upload-semaphore loop reset needed ``_source_uploader``)
-and issue #1225 (the open-time ChatAPI conversation-lock reset needed
-``chat``) — each time silently stranding the shell until a test happened
-to exercise the missing attribute. Sharing one assembly function makes
-that whole drift class structurally impossible;
-``tests/_guardrails/test_client_factory_parity.py`` pins the remaining
-edges (attributes added *outside* this function).
-
-This module is private: it is not exported from ``notebooklm`` and the
-test-only parameters MUST NOT be promoted to ``NotebookLMClient``'s
-public constructor (see the seam policy in ``_client_seams``).
+collaborator composition (via
+:func:`notebooklm._runtime.init.build_web_runtime`), the upload
+pipeline, and every feature API. ``NotebookLMClient.__init__`` is its sole
+caller and forwards only the documented public constructor options. Tests
+construct the smallest runtime owner they exercise; none call this root.
 """
 
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import httpx
 
 from ._artifacts import ArtifactsAPI
 from ._chat import ChatAPI
-from ._client_seams import resolve_client_seams
 from ._collections import CollectionsAPI
 from ._deadline import RuntimeDeadlineFactory
 from ._labels import LabelsAPI
@@ -62,7 +40,7 @@ from ._runtime.config import (
     resolve_chat_read_timeout,
     validate_read_timeout_kwarg,
 )
-from ._runtime.init import compose_client_internals
+from ._runtime.init import build_web_runtime
 from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
@@ -74,29 +52,11 @@ from ._web.backend import WebRpcBackend
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
-    from ._middleware.core import NextCall
     from .client import NotebookLMClient
     from .types import ConnectionLimits, RpcTelemetryEvent
 
 
-class _UnsetType:
-    """Sentinel type: resolve the production default inside ``_assemble_client``.
-
-    Used where ``None`` is itself a meaningful caller value
-    (``refresh_callback=None`` means "no refresh callback";
-    ``keepalive_storage_path=None`` skips the constructor-level
-    canonicalization and lets ``compose_client_internals`` apply its own
-    raw ``auth.storage_path`` fallback — the historical test-shell
-    behavior), so the production default ("use ``client.refresh_auth``" /
-    "derive the canonicalized path from ``auth.storage_path``") needs a
-    distinct marker.
-    """
-
-
-_UNSET = _UnsetType()
-
-
-def _assemble_client(
+def compose_client(
     client: NotebookLMClient,
     *,
     auth: AuthTokens,
@@ -116,32 +76,12 @@ def _assemble_client(
     chat_timeout: float | None = AUTO_READ_TIMEOUT,
     import_research_timeout: float | None = AUTO_READ_TIMEOUT,
     chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
-    # --- Production-default overrides (test factory only) -----------------
-    # ``NotebookLMClient.__init__`` never passes these; the sentinels
-    # resolve to the exact behavior the constructor had when this logic
-    # lived inline. The test factory forwards its caller's values
-    # explicitly to preserve the historical shell semantics (e.g.
-    # ``refresh_callback=None`` → no auth refresh coordination).
-    refresh_callback: Callable[[], Awaitable[AuthTokens]] | None | _UnsetType = _UNSET,
-    refresh_retry_delay: float = 0.2,
-    connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
-    keepalive_storage_path: Path | None | _UnsetType = _UNSET,
-    # --- Test-only injection seams (see ``_client_seams`` docstring) ------
-    decode_response: Callable[..., Any] | None = None,
-    sleep: Callable[[float], Awaitable[Any]] | None = None,
-    is_auth_error: Callable[[Exception], bool] | None = None,
-    async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
-    authed_post_terminal: NextCall | None = None,
 ) -> None:
     """Wire every constructor-set attribute onto ``client``.
 
-    This is the production assembly path — ``NotebookLMClient.__init__``
-    is a thin delegate to this function — and simultaneously the seam the
-    canonical test factory builds on, so the two can never drift apart
-    (incidents #1196 / #1225). Any new constructor-time attribute MUST be
-    set here, not in ``__init__`` after the delegation call; the parity
-    gate ``tests/_guardrails/test_client_factory_parity.py`` fails
-    otherwise.
+    ``NotebookLMClient.__init__`` is the sole caller. Any new
+    constructor-time attribute must be set here before the graph is
+    published; this function intentionally exposes no test-only seams.
     """
     # Normalize the effective storage path onto the auth object so every
     # downstream code path (refresh_auth, lifecycle on-close save,
@@ -167,11 +107,7 @@ def _assemble_client(
     # auth-sensitive leaf captures that identical mutable object. The public
     # client no longer publishes a second protocol-runtime owner.
 
-    # Production default: the client's own ``refresh_auth`` bound method.
-    # The test factory overrides this (typically with ``None`` or a fake)
-    # to keep shells network-free.
-    if isinstance(refresh_callback, _UnsetType):
-        refresh_callback = client.refresh_auth
+    refresh_callback = client.refresh_auth
 
     # Canonicalize the keepalive storage path so different representations
     # of the same physical file (relative vs absolute, ``~`` shorthand,
@@ -189,13 +125,11 @@ def _assemble_client(
     # factory passes its own ``keepalive_storage_path`` explicitly, which
     # bypasses THIS canonicalizing derivation (preserving the historical
     # shell semantics); an explicit ``None`` still falls through to
-    # ``compose_client_internals``' own raw ``auth.storage_path``
+    # ``build_web_runtime``' own raw ``auth.storage_path``
     # fallback downstream.
-    if isinstance(keepalive_storage_path, _UnsetType):
-        derived_keepalive_path: Path | None = auth.storage_path
-        if derived_keepalive_path is not None:
-            derived_keepalive_path = Path(derived_keepalive_path).expanduser().resolve()
-        keepalive_storage_path = derived_keepalive_path
+    keepalive_storage_path: Path | None = auth.storage_path
+    if keepalive_storage_path is not None:
+        keepalive_storage_path = Path(keepalive_storage_path).expanduser().resolve()
 
     # Cross-validate the RPC throttle against the underlying httpx pool
     # before the collaborator builder swallows the ``limits=None``
@@ -234,34 +168,15 @@ def _assemble_client(
         import_research_timeout, name="import_research_timeout"
     )
 
-    # This function is the only composition root. ``compose_client_internals``
-    # returns a complete frozen construction receipt which WebRpcBackend
-    # immediately unpacks before the client is published.
-    #
-    # The public NotebookLMClient kwarg surface is unchanged — the
-    # five seam kwargs (``decode_response`` / ``sleep`` /
-    # ``is_auth_error`` / ``async_client_factory`` /
-    # ``authed_post_terminal``) live on ``compose_client_internals`` and
-    # this private assembly function only.
-    #
-    # TEST-ONLY injection points: production passes ``None`` for all
-    # three runtime seams here (and never supplies either construction
-    # seam), so they always resolve to the
-    # canonical module bindings. The non-``None`` paths exist solely
-    # for deterministic test injection — see ``_client_seams`` module
-    # docstring. Do not promote any of them to a public kwarg without
-    # a production caller that varies them.
-    client._seams = resolve_client_seams(
-        decode_response=decode_response,
-        sleep=sleep,
-        is_auth_error=is_auth_error,
-    )
-    internals = compose_client_internals(
+    # The public constructor is the sole client construction path. Runtime
+    # tests vary explicit backend/provider/transport leaves after using that
+    # path; production assembly therefore has no test-only callable seams.
+    internals = build_web_runtime(
         auth=auth,
         timeout=timeout,
-        connect_timeout=connect_timeout,
+        connect_timeout=DEFAULT_CONNECT_TIMEOUT,
         refresh_callback=refresh_callback,
-        refresh_retry_delay=refresh_retry_delay,
+        refresh_retry_delay=0.2,
         keepalive=keepalive,
         keepalive_min_interval=keepalive_min_interval,
         keepalive_storage_path=keepalive_storage_path,
@@ -276,9 +191,6 @@ def _assemble_client(
         # preserves its historical late-bound default.
         cookie_saver=cookie_saver,
         cookie_rotator=cookie_rotator,
-        async_client_factory=async_client_factory,
-        authed_post_terminal=authed_post_terminal,
-        seams=client._seams,
     )
     # ADR-0014 Rule 2: the upload pipeline takes its three runtime
     # collaborators (``rpc`` + ``drain`` + ``lifecycle``) directly
@@ -326,7 +238,7 @@ def _assemble_client(
         metrics=internals.metrics,
         drain_tracker=internals.drain_tracker,
         reqid=internals.reqid,
-        chain_host=internals.chain_host,
+        pipeline=internals.pipeline,
         provider=internals.provider,
         session=internals.backend_session,
         owns_provider=True,

@@ -98,6 +98,11 @@ def test_visual_facade_has_one_generation_and_listing_authority() -> None:
     for method in (
         ArtifactsAPI.generate_infographic,
         ArtifactsAPI.generate_slide_deck,
+    ):
+        source = inspect.getsource(method)
+        assert "self._generation_workflow.generate_once" in source
+        assert "self._visuals" not in source
+    for method in (
         ArtifactsAPI.list_infographics,
         ArtifactsAPI.list_slide_decks,
     ):

@@ -47,12 +47,6 @@ def _p(namespace: str, *methods: str) -> tuple[str, ...]:
 
 
 _CREATE_ARTIFACT = (_b(RPCMethod.CREATE_ARTIFACT),)
-_APP_GENERATION_AUTHORITY_SITE = "artifacts.py:with_rate_limit_retry"
-_APP_GENERATION_DIVERGENCE = (
-    "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal "
-    "facade operation after rate limiting. P4.2 removes that internal use while preserving the "
-    "public helper and adapter-neutral retry presentation policy."
-)
 _APP_DOWNLOAD_DIVERGENCE = (
     "_app/download.py owns selection/conflict/filesystem choreography while the facade owns "
     "network reads. P4.2 starts a separate budget at each facade list/download operation; "
@@ -390,8 +384,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Creates audio with format/length/instruction variants.",
         _p("artifacts", "generate_audio"),
         _CREATE_ARTIFACT + (_b(RPCMethod.GET_NOTEBOOK),),
-        app_authorities=(_APP_GENERATION_AUTHORITY_SITE,),
-        known_divergence=_APP_GENERATION_DIVERGENCE,
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
@@ -402,8 +394,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Creates standard or cinematic video while preserving their option shapes.",
         _p("artifacts", "generate_video", "generate_cinematic_video"),
         _CREATE_ARTIFACT + (_b(RPCMethod.GET_NOTEBOOK),),
-        app_authorities=(_APP_GENERATION_AUTHORITY_SITE,),
-        known_divergence=_APP_GENERATION_DIVERGENCE,
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
@@ -414,8 +404,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Creates report or study-guide variants.",
         _p("artifacts", "generate_report", "generate_study_guide"),
         _CREATE_ARTIFACT + (_b(RPCMethod.GET_NOTEBOOK),),
-        app_authorities=(_APP_GENERATION_AUTHORITY_SITE,),
-        known_divergence=_APP_GENERATION_DIVERGENCE,
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
@@ -426,8 +414,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Creates quiz variant 2.",
         _p("artifacts", "generate_quiz"),
         _CREATE_ARTIFACT + (_b(RPCMethod.GET_NOTEBOOK),),
-        app_authorities=(_APP_GENERATION_AUTHORITY_SITE,),
-        known_divergence=_APP_GENERATION_DIVERGENCE,
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
@@ -438,8 +424,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Creates flashcard variant 1.",
         _p("artifacts", "generate_flashcards"),
         _CREATE_ARTIFACT + (_b(RPCMethod.GET_NOTEBOOK),),
-        app_authorities=(_APP_GENERATION_AUTHORITY_SITE,),
-        known_divergence=_APP_GENERATION_DIVERGENCE,
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
@@ -450,8 +434,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Creates an infographic with orientation/detail/style variants.",
         _p("artifacts", "generate_infographic"),
         _CREATE_ARTIFACT + (_b(RPCMethod.GET_NOTEBOOK),),
-        app_authorities=(_APP_GENERATION_AUTHORITY_SITE,),
-        known_divergence=_APP_GENERATION_DIVERGENCE,
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
@@ -462,8 +444,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Creates a slide deck with format and length variants.",
         _p("artifacts", "generate_slide_deck"),
         _CREATE_ARTIFACT + (_b(RPCMethod.GET_NOTEBOOK),),
-        app_authorities=(_APP_GENERATION_AUTHORITY_SITE,),
-        known_divergence=_APP_GENERATION_DIVERGENCE,
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
@@ -474,8 +454,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Creates a data-table artifact.",
         _p("artifacts", "generate_data_table"),
         _CREATE_ARTIFACT + (_b(RPCMethod.GET_NOTEBOOK),),
-        app_authorities=(_APP_GENERATION_AUTHORITY_SITE,),
-        known_divergence=_APP_GENERATION_DIVERGENCE,
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
@@ -503,8 +481,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Derives one revised slide from an existing deck.",
         _p("artifacts", "revise_slide"),
         (_b(RPCMethod.REVISE_SLIDE),),
-        app_authorities=(_APP_GENERATION_AUTHORITY_SITE,),
-        known_divergence=_APP_GENERATION_DIVERGENCE,
     ),
     OperationSpec(
         Operation.ARTIFACT_RETRY,
@@ -752,7 +728,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
             _b(RPCMethod.GET_INTERACTIVE_HTML),
         ),
         disposition=Disposition.COMPOSITE,
-        known_divergence=_APP_GENERATION_DIVERGENCE,
         recency_effect="one GET_NOTEBOOK when source_ids is omitted",
     ),
     OperationSpec(
@@ -1035,16 +1010,6 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
 
 DIVERGENCE_KINDS: Mapping[Operation, str] = {
     Operation.ARTIFACT_DOWNLOAD: "authority",
-    Operation.ARTIFACT_GENERATE_AUDIO: "authority",
-    Operation.ARTIFACT_GENERATE_DATA_TABLE: "authority",
-    Operation.ARTIFACT_GENERATE_FLASHCARDS: "authority",
-    Operation.ARTIFACT_GENERATE_INFOGRAPHIC: "authority",
-    Operation.ARTIFACT_GENERATE_QUIZ: "authority",
-    Operation.ARTIFACT_GENERATE_REPORT: "authority",
-    Operation.ARTIFACT_GENERATE_SLIDE_DECK: "authority",
-    Operation.ARTIFACT_GENERATE_VIDEO: "authority",
-    Operation.ARTIFACT_REVISE_SLIDE: "authority",
-    Operation.MIND_MAP_GENERATE_INTERACTIVE: "authority",
     Operation.SOURCE_REFRESH: "policy",
 }
 
@@ -1126,8 +1091,9 @@ GREENFIELD_OMISSION_COVERAGE: Mapping[str, tuple[Operation, ...]] = {
 APP_ORCHESTRATOR_DISPOSITIONS: Mapping[str, str] = {
     "_app/generate_retry.py": (
         "Keep adapter-neutral command composition, optional wait dispatch, progress, and outcome "
-        "projection. P4.2 passes one budget through the public facade and removes the internal use "
-        "of the exported retry helper; the helper itself remains public."
+        "projection. P4.2 passes one scalar budget and the public kickoff/wait callables through "
+        "the underscore-private notebooklm.artifacts workflow entry; the exported retry helper "
+        "remains available only for external callers."
     ),
     "_app/source_wait.py": (
         "Keep validation and typed outcome mapping as ordinary application callers. The public "

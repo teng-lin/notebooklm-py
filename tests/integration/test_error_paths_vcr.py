@@ -51,6 +51,8 @@ synthetic shapes these cassettes carry.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from notebooklm import NotebookLMClient
@@ -60,7 +62,6 @@ from notebooklm.exceptions import (
     RateLimitError,
     ServerError,
 )
-from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.integration.conftest import skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
 
@@ -184,10 +185,6 @@ class TestErrorPaths:
         installed on ``client._provider._coordinator._refresh_callback`` and corroborated by the
         ``play_count == 2`` assertion on the cassette.
         """
-        client = build_client_shell_for_tests(_synthetic_auth(), refresh_retry_delay=0)
-        # Eliminate the post-refresh retry delay so the test runs fast under
-        # replay (mirrors ``test_auth_refresh_vcr.py``).
-
         # In-process refresh callback that issues NO HTTP traffic. This is
         # what lets the cassette capture only the TWO synthetic batchexecute
         # interactions (failing POST → retried POST) without a homepage GET
@@ -196,7 +193,7 @@ class TestErrorPaths:
         # ``test_auth_refresh_vcr.py`` exercises that full three-leg flow.
         refresh_calls: list[object] = []
 
-        async def stub_refresh() -> AuthTokens:
+        async def stub_refresh(client: NotebookLMClient) -> AuthTokens:
             refresh_calls.append(None)
             # Mutate the in-memory CSRF token to simulate a successful refresh.
             # The retry loop rebuilds the request body from the refreshed
@@ -216,7 +213,8 @@ class TestErrorPaths:
             )
             return client.auth
 
-        client._provider._coordinator._refresh_callback = stub_refresh
+        with patch.object(NotebookLMClient, "refresh_auth", stub_refresh):
+            client = NotebookLMClient(_synthetic_auth())
 
         with notebooklm_vcr.use_cassette("error_synthetic_stale_csrf.yaml") as cassette:
             async with client:

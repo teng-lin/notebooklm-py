@@ -37,7 +37,6 @@ from fastmcp import Client  # noqa: E402 - after importorskip guard
 
 from notebooklm import NotebookLMClient  # noqa: E402
 from notebooklm.mcp.server import create_server  # noqa: E402
-from tests._helpers.client_factory import build_client_shell_for_tests  # noqa: E402
 from tests.integration.conftest import get_vcr_auth  # noqa: E402
 
 __all__ = ["build_mcp_client", "build_zero_retry_mcp_client"]
@@ -58,11 +57,10 @@ def _real_client_factory(
     async def factory() -> AsyncIterator[NotebookLMClient]:
         auth = await get_vcr_auth()
         client = (
-            build_client_shell_for_tests(
+            NotebookLMClient(
                 auth,
                 rate_limit_max_retries=0,
                 server_error_max_retries=0,
-                refresh_retry_delay=0,
             )
             if zero_retries
             else NotebookLMClient(auth)

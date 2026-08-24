@@ -149,9 +149,12 @@ def test_public_facade_signatures_and_single_generation_authorities_are_preserve
         ArtifactsAPI.generate_video,
         ArtifactsAPI.generate_cinematic_video,
         ArtifactsAPI.generate_report,
-        ArtifactsAPI.generate_study_guide,
     ):
-        assert "self._generation" not in inspect.getsource(method)
+        source = inspect.getsource(method)
+        assert "self._generation_workflow.generate_once" in source
+        assert "self._video.generate" not in source
+        assert "self._reports.generate" not in source
+    assert "self.generate_report" in inspect.getsource(ArtifactsAPI.generate_study_guide)
 
 
 @pytest.mark.asyncio

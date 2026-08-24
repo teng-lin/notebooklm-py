@@ -13,7 +13,6 @@ from notebooklm._auth.profile_store import ProfileStore
 from notebooklm._auth.web_provider_storage import WebProviderBootstrap
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _auth(path: Path) -> AuthTokens:
@@ -64,7 +63,7 @@ async def test_from_storage_context_owns_opened_but_not_awaited_provider(
 
     class LocalClient(NotebookLMClient):
         def __init__(self, loaded_auth: AuthTokens, **_kwargs: Any) -> None:
-            shell = build_client_shell_for_tests(loaded_auth)
+            shell = NotebookLMClient(loaded_auth)
             vars(self).update(vars(shell))
 
     monkeypatch.setattr(client_module, "load_web_provider_bootstrap", load)

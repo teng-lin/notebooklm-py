@@ -10,6 +10,7 @@ import pytest
 from notebooklm._logging import get_request_id, reset_request_id, set_request_id
 from notebooklm._transport_errors import TransportServerError
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import DecodingError, UnknownRPCMethodError
 from notebooklm.rpc import (
     ClientError,
@@ -20,7 +21,6 @@ from notebooklm.rpc import (
     RPCTimeoutError,
     ServerError,
 )
-from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.unit._rpc_executor_support import _executor, _ok_response, _Owner
 
 
@@ -42,7 +42,7 @@ def _status_error(status_code: int, *, retry_after: str | None = None) -> httpx.
 @pytest.mark.asyncio
 async def test_rpc_executor_attribute_is_dispatched_through(monkeypatch) -> None:
     """``core._backend._runtime`` is the canonical RPC dispatch seam."""
-    core = build_client_shell_for_tests(_auth_tokens())
+    core = NotebookLMClient(_auth_tokens())
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
 
     class FakeExecutor:
@@ -111,19 +111,8 @@ async def test_rpc_call_wraps_execute_once_with_metrics_and_request_id(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_constructor_injected_decode_response_drives_executor(monkeypatch) -> None:
-    """Pin that the constructor-injected ``decode_response`` reaches the executor.
-
-    The legacy module-level ``_decode_response_late_bound`` wrapper used to
-    re-import ``notebooklm.rpc.decode_response`` on every call, so a late
-    string-target monkeypatch of that module attribute (after the executor
-    was already constructed) still affected the live decode path.
-    The client-shell seam
-    (``build_client_shell_for_tests(..., decode_response=...)``) intentionally
-    captures the callable at construction time; see ``docs/architecture.md``'s
-    ClientSeams wiring. This test asserts the new contract: the injected
-    callable reaches :class:`RpcExecutor` end-to-end.
-    """
+async def test_explicit_decoder_leaf_drives_executor() -> None:
+    """The executor consumes its explicitly constructed decoder leaf."""
     decode_calls: list[dict[str, Any]] = []
 
     def fake_decode(
@@ -132,28 +121,9 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         decode_calls.append({"raw": raw, "rpc_id": rpc_id, "allow_null": allow_null})
         return {"decoded": rpc_id}
 
-    core = build_client_shell_for_tests(_auth_tokens(), decode_response=fake_decode)
-    executor = core._backend._runtime
-
-    async def fake_perform_authed_post(
-        *,
-        build_request,
-        log_label: str,
-        disable_internal_retries: bool = False,
-        rpc_method: str | None = None,
-        refresh_budget: Any = None,
-        retry_deadline: Any = None,
-        read_timeout: float | None = None,
-    ) -> httpx.Response:
-        return _ok_response("wire")
-
-    # ADR-0014 Rule 5 (Wave 4 of session-decoupling): the executor calls
-    # ``self._transport.perform_authed_post(...)`` directly instead of
-    # routing through the retired ``Session._perform_authed_post`` forward. Patch the
-    # collaborator the executor actually reaches.
-    monkeypatch.setattr(
-        core._backend._runtime._transport, "perform_authed_post", fake_perform_authed_post
-    )
+    owner = _Owner()
+    owner.response = _ok_response("wire")
+    executor = _executor(owner, decode_response=fake_decode)
 
     result = await executor._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
@@ -163,7 +133,6 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         False,
     )
 
-    assert core._backend._runtime is executor
     assert result == {"decoded": RPCMethod.LIST_NOTEBOOKS.value}
     assert decode_calls == [
         {
@@ -320,7 +289,7 @@ async def test_decode_time_auth_retry_gives_up_when_aggregate_deadline_exhausted
     exhausted, so after the (productive) refresh the executor must NOT sleep the
     large ``refresh_retry_delay`` and must NOT issue a retry POST that would run
     past the budget — it re-raises the original decoded auth error, symmetric
-    with ``RetryMiddleware`` re-raising instead of re-invoking the chain.
+    with ``RetryBehavior`` re-raising instead of re-invoking the chain.
     """
 
     async def refresh_callback() -> object:
@@ -582,7 +551,7 @@ async def test_decode_time_auth_retry_threads_retry_deadline_to_transport() -> N
     The aggregate ``RuntimeDeadline`` is minted once on the first
     ``_execute_once`` and threaded into ``perform_authed_post`` on BOTH the
     initial attempt AND the decode-time auth-refresh retry, so the chain's
-    ``RetryMiddleware`` inherits a single T0-anchored budget instead of
+    ``RetryBehavior`` inherits a single T0-anchored budget instead of
     restarting the retry clock on the retry leg.
     """
     from notebooklm._deadline import RuntimeDeadline
@@ -630,7 +599,7 @@ async def test_decode_time_auth_retry_skips_when_shared_budget_already_spent() -
     """Issue #1205: a budget already consumed (e.g. by the HTTP-status layer)
     suppresses the decode-time refresh.
 
-    Mirrors the production sequence where ``AuthRefreshMiddleware`` refreshed
+    Mirrors the production sequence where ``AuthRefreshBehavior`` refreshed
     on a wire-401, consumed the shared budget, and the post-refresh retry
     returned a decoded auth error: the executor must NOT refresh a second time.
     """
@@ -709,18 +678,8 @@ async def test_decode_time_auth_retry_increments_auth_retry_metric() -> None:
 
 
 @pytest.mark.asyncio
-async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
-    """Pin that the constructor-injected ``sleep`` reaches the executor.
-
-    The legacy module-level ``_sleep_late_bound`` wrapper used to re-import
-    ``asyncio.sleep`` on every call, so a late string-target monkeypatch of
-    the ``notebooklm._runtime.helpers`` ``asyncio.sleep`` attribute (after the
-    executor was already constructed) still affected the live sleep path.
-    The ``RpcExecutor(..., sleep=...)`` seam intentionally captures the callable
-    at construction time; see ``docs/architecture.md``'s RpcExecutor wiring.
-    This test asserts the new contract: the injected callable reaches
-    :class:`RpcExecutor`'s refresh-and-retry delay.
-    """
+async def test_explicit_sleep_leaf_drives_executor(monkeypatch) -> None:
+    """The executor uses its explicit clock leaf for the refresh delay."""
 
     async def refresh_callback() -> AuthTokens:
         return _auth_tokens()
@@ -730,18 +689,8 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
     async def fake_sleep(seconds: float) -> None:
         sleep_calls.append(seconds)
 
-    core = build_client_shell_for_tests(
-        _auth_tokens(),
-        refresh_callback=refresh_callback,
-        refresh_retry_delay=0.5,
-        sleep=fake_sleep,
-    )
-    executor = core._backend._runtime
-    refresh_calls = 0
-
-    async def fake_await_refresh() -> None:
-        nonlocal refresh_calls
-        refresh_calls += 1
+    owner = _Owner(refresh_callback=refresh_callback, refresh_retry_delay=0.5)
+    executor = _executor(owner, sleep=fake_sleep)
 
     async def fake_rpc_call(
         method: RPCMethod,
@@ -772,9 +721,6 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         assert raise_on_null_status is True
         return {"ok": True}
 
-    # ADR-0014 Rule 5 (Wave 4): executor calls ``self._auth_refresh.await_refresh()``
-    # directly. Patch the collaborator the executor actually reaches.
-    monkeypatch.setattr(core._provider._coordinator, "await_refresh", fake_await_refresh)
     monkeypatch.setattr(executor, "rpc_call", fake_rpc_call)
 
     from notebooklm._auth_refresh_retry import RefreshBudget
@@ -791,9 +737,8 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         _refresh_budget=RefreshBudget(),
     )
 
-    assert core._backend._runtime is executor
     assert result == {"ok": True}
-    assert refresh_calls == 1
+    assert owner.refresh_calls == 1
     assert sleep_calls == [0.5]
 
 

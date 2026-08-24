@@ -323,9 +323,9 @@ def test_backend_private_session_clones_and_fences_provider_generations() -> Non
 @pytest.mark.asyncio
 async def test_provider_and_backend_own_distinct_mutable_sessions() -> None:
     """Mutation crosses the boundary only through a detached generation."""
-    from tests._helpers.client_factory import build_client_shell_for_tests
+    from notebooklm.client import NotebookLMClient
 
-    client = build_client_shell_for_tests(_make_auth())
+    client = NotebookLMClient(_make_auth())
     async with client:
         provider_kernel = client._provider._kernel
         backend_kernel = client._backend._kernel
@@ -348,9 +348,9 @@ async def test_provider_and_backend_own_distinct_mutable_sessions() -> None:
 @pytest.mark.asyncio
 async def test_provider_refresh_publishes_one_atomic_local_epoch() -> None:
     """A live-jar/token gap remains private until one successful commit."""
-    from tests._helpers.client_factory import build_client_shell_for_tests
+    from notebooklm.client import NotebookLMClient
 
-    client = build_client_shell_for_tests(_make_auth())
+    client = NotebookLMClient(_make_auth())
     provider = client._provider
     cookie_changed = asyncio.Event()
     finish = asyncio.Event()
@@ -389,9 +389,9 @@ async def test_provider_refresh_publishes_one_atomic_local_epoch() -> None:
 @pytest.mark.asyncio
 async def test_provider_refresh_is_single_flight_and_waiter_cancellation_is_local() -> None:
     """Concurrent callers share one shielded leader and one success epoch."""
-    from tests._helpers.client_factory import build_client_shell_for_tests
+    from notebooklm.client import NotebookLMClient
 
-    client = build_client_shell_for_tests(_make_auth())
+    client = NotebookLMClient(_make_auth())
     provider = client._provider
     entered = asyncio.Event()
     finish = asyncio.Event()
@@ -447,10 +447,10 @@ def test_generation_repr_redacts_cookie_and_token_values() -> None:
 @pytest.mark.asyncio
 async def test_client_auth_identity_invariant_holds_across_the_graph() -> None:
     """ADR-0016: every consumer aliases the one mutable ``AuthTokens``."""
-    from tests._helpers.client_factory import build_client_shell_for_tests
+    from notebooklm.client import NotebookLMClient
 
     auth = _make_auth()
-    client = build_client_shell_for_tests(auth=auth)
+    client = NotebookLMClient(auth=auth)
 
     assert client.auth is auth
     assert client.auth is auth

@@ -26,8 +26,10 @@ from notebooklm._auth.profile_store import (
 from notebooklm._auth.storage import CookieSaveResult, snapshot_cookie_jar
 from notebooklm._auth.web_provider_storage import WebProviderBootstrap
 from notebooklm._cookie_persistence import CookiePersistence
+from notebooklm._runtime.lifecycle import ClientLifecycle
 from notebooklm.auth import AuthTokens
-from tests._helpers.client_factory import build_client_shell_for_tests
+from notebooklm.client import NotebookLMClient
+from notebooklm.types import ConnectionLimits
 
 T = TypeVar("T")
 
@@ -428,15 +430,22 @@ async def test_nondefault_legacy_override_uses_own_retryable_snapshot(tmp_path: 
     assert next(iter(calls[0].values())).value == "disk"
 
 
-def test_runtime_factory_keeps_raw_auth_store_and_resolved_lifecycle_target(
+def test_storage_and_lifecycle_owners_keep_distinct_explicit_targets(
     tmp_path: Path,
 ) -> None:
     raw = tmp_path / "raw.json"
     explicit = tmp_path / "explicit.json"
     auth = _auth(raw)
-    client = build_client_shell_for_tests(auth, keepalive_storage_path=explicit)
-    persistence = client._provider._persistence
-    lifecycle = client._provider._lifecycle
+    persistence = CookiePersistence._from_store(ProfileStore(raw))
+    lifecycle = ClientLifecycle(
+        timeout=30.0,
+        connect_timeout=10.0,
+        limits=ConnectionLimits(),
+        keepalive_interval=None,
+        keepalive_storage_path=explicit,
+        auth=auth,
+        cookie_persistence_path=explicit,
+    )
 
     assert persistence._default_store is not None
     assert persistence._default_store.path == raw
@@ -465,7 +474,7 @@ async def test_lifecycle_default_canonical_and_explicit_saver_routes(
     path = tmp_path / "profile.json"
     _write(path)
     auth = _auth(path)
-    default_client = build_client_shell_for_tests(auth)
+    default_client = NotebookLMClient(auth)
     persistence = default_client._provider._persistence
     lifecycle = default_client._provider._lifecycle
     canonical = AsyncMock()
@@ -481,7 +490,7 @@ async def test_lifecycle_default_canonical_and_explicit_saver_routes(
         mutate_writer_copy(received)
         return True
 
-    custom_client = build_client_shell_for_tests(_auth(path), cookie_saver=custom)
+    custom_client = NotebookLMClient(_auth(path), cookie_saver=custom)
     custom_input = legacy_jar("custom")
     custom_expected = rows(custom_input)
     await custom_client._provider._lifecycle.save_cookies(

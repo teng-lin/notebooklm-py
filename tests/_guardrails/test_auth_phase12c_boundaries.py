@@ -45,7 +45,7 @@ _MODULE_HASHES = {
     "psidts_recovery.py": "cde36fed0fcdc319a3e1d3a165c33d2a05385141b318667d4ce8c2c54ff7e51f",
     "recovery.py": "b396b441096ef4a4a961cccec8bf846eeb5aa1e11848927d1e3de8118e55e1e1",
     "refresh.py": "99bc87088b997b534c1ce9e12844d6103a223b4fddf459df00d5812501ed866f",
-    "single_flight.py": "8e298fe515dd667a3dfc95449165ab45345d327381951e98474aafa67510f246",
+    "single_flight.py": "5159e97da527c576be7c4b66e828ae04579c70ae72e2662c38c361bdc9d5d6fe",
     "storage.py": "7c106fc41e4945c82d95fd57c7e29855b7e862e02d8d81db931df3df133f8b1e",
 }
 

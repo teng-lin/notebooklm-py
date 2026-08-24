@@ -28,7 +28,7 @@ src/notebooklm/
 ├── auth.py              # Public auth facade
 ├── types.py             # Dataclasses and type definitions
 ├── _app/                # Transport-neutral business logic shared by adapters
-├── _client_assembly.py  # Single client composition root
+├── _client_composition.py # Production-only client composition root
 ├── _runtime/            # Runtime contracts, config, lifecycle, auth, transport
 ├── _notebooks.py        # NotebooksAPI implementation
 ├── _notebook_metadata.py # Private notebook metadata composition service
@@ -93,31 +93,34 @@ src/notebooklm/
 | **Adapters** | `cli/`, `mcp/`, `server/` | User commands/tools/routes, transport-specific input/output, auth envelopes |
 | **App core** | `_app/*.py` | Transport-neutral workflows reused by adapters |
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
-| **Runtime** | `_client_assembly.py`, `_web/backend.py`, `_web/runtime.py`, `_runtime/*.py`, `_kernel.py` | Atomic construction plus backend-owned HTTP lifecycle, RPC dispatch, metrics, drain, request-id, and auth-refresh leaves |
+| **Runtime** | `_client_composition.py`, `_web/backend.py`, `_web/runtime.py`, `_runtime/*.py`, `_kernel.py` | Atomic construction plus backend-owned HTTP lifecycle, RPC dispatch, metrics, drain, request-id, and auth-refresh leaves |
 | **RPC** | `rpc/*.py` | Protocol encoding/decoding, method IDs |
 
 #### Runtime seam modules
 
-`_client_assembly.py` is the single composition root. `_runtime/init.py`
-atomically builds a frozen construction receipt, which assembly immediately
-unpacks into `WebRpcBackend`; neither the client nor backend retains that
-receipt. The backend owns `WebExecutionRuntime` and the lifecycle, transport,
-auth-refresh, metrics, drain, request-id, and cookie-persistence leaves. Each
-helper exposes a narrow Protocol surface so it can be tested against a stub:
+`_client_composition.py` is the production-only composition root.
+`_runtime/init.py` atomically builds a frozen construction receipt, which the
+composition root immediately consumes while constructing `WebRpcBackend`;
+neither the client nor backend retains that receipt. The backend owns
+`WebExecutionRuntime`, its private session, transport pipeline, metrics, drain,
+and request-id leaves; the provider owns auth refresh, lifecycle, and cookie
+persistence. Each helper exposes a narrow Protocol surface so it can be tested
+against a stub:
 
 | Module | Class | Responsibility |
 |---|---|---|
-| `_client_assembly.py` | composition root | Validates public options, consumes `ClientInternals`, and publishes one complete `WebRpcBackend`. |
+| `_client_composition.py` | `compose_client` | Validates public options, consumes `ClientInternals`, and publishes one complete `WebRpcBackend`. |
 | `_web/backend.py` | `WebRpcBackend` | Owns semantic dispatch plus the concrete runtime leaves used by public lifecycle, raw-RPC, auth, account, and metrics delegates. |
 | `_web/runtime.py` | `WebExecutionRuntime` | Sole batchexecute encode/dispatch/decode authority. |
-| `_runtime/init.py` | `ClientInternals` construction receipt | Builds leaves and wires the ordered middleware chain atomically before backend publication. |
+| `_runtime/init.py` | `ClientInternals` construction receipt | Builds leaves and wires the ordered runtime pipeline atomically before backend publication. |
+| `_runtime/pipeline.py` | `RuntimePipeline` | Composes the fixed drain/metrics/semaphore/retry/auth-refresh/tracing behavior order around the transport terminal. |
 | `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
 | `_transport_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
 | `_reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
 | `_runtime/auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |
 | `_runtime/contracts.py` | Runtime Protocols | Shared capability Protocols: `Kernel`, `RpcCaller`, and `LoopGuard`. Single-consumer capabilities stay local to their owner modules. |
 | `_runtime/lifecycle.py` | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
-| `_runtime/transport.py` | `RuntimeTransport` | Authenticated transport leg used by `WebExecutionRuntime` and the middleware chain terminal. |
+| `_runtime/transport.py` | `RuntimeTransport` | Authenticated transport leg used by `WebExecutionRuntime` and the runtime pipeline terminal. |
 | `_rpc_executor.py` | `RpcExecutor` | Behaviorless compatibility subclass of `WebExecutionRuntime`. |
 | `_request_types.py` | `AuthSnapshot`, `BuildRequest`, request materialization | Shared request construction Interface. |
 | `_transport_errors.py` | transport exceptions, `parse_retry_after`, `raise_mapped_post_error` | Terminal `Kernel.post` error mapping for middleware retry/auth behavior. |
@@ -229,11 +232,11 @@ from those catalogues rather than introducing parallel patterns.
    depend on a broad runtime facade for type annotations** — there is no
    concrete `Session` class (the broad `Session` Protocol was deleted;
    see ADR-0013).
-3. Add the wiring in `_client_assembly.py::_assemble_client(...)`, not
-   directly in `client.py`. The assembly seam is shared by
-   `NotebookLMClient.__init__` and the canonical test factory; set every
-   constructor-time attribute there and thread concrete collaborators
-   from `compose_client_internals(...)`.
+3. Add production wiring in `_client_composition.py::compose_client(...)`, not
+   directly in `client.py`. Set every constructor-time attribute there and
+   thread concrete collaborators from `compose_client_internals(...)`. Tests do
+   not call the production composition root; construct the narrow runtime owner
+   or collaborator the test actually exercises.
 4. **Tests** should inject the narrow collaborator the feature actually
    needs. `tests/_fixtures/fake_core.py:FakeSession` remains available
    for legacy broad-fixture tests, but new direct feature tests should
@@ -297,7 +300,7 @@ Design notes:
     (`refresh._fetch_tokens_with_refresh`, `refresh.try_refresh_cmd_reauth`)
     pass the already-canonicalized path they key the single flight on.
   - `.rotate.lock` is alias-proof only on the keepalive route, where
-    `_client_assembly` canonicalizes the keepalive storage path once at client
+    `_client_composition` canonicalizes the keepalive storage path once at client
     assembly; the PSIDTS rotation-recovery route passes its load path through
     unchanged.
   - `.storage_state.json.lock` never canonicalizes for I/O: `ProfileStore` and

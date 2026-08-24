@@ -1,13 +1,13 @@
-"""AuthRefreshMiddleware — 401/403/400-CSRF retry-with-refresh for the chain.
+"""AuthRefreshBehavior — 401/403/400-CSRF retry-with-refresh for the chain.
 
-Per ADR-0009 §"Chain ordering", ``AuthRefreshMiddleware`` sits just *inside*
-``RetryMiddleware`` and just *outside* ``TracingMiddleware``. The chain is
+Per ADR-0009 §"Chain ordering", ``AuthRefreshBehavior`` sits just *inside*
+``RetryBehavior`` and just *outside* ``TracingBehavior``. The chain is
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, Tracing]``.
 
 This middleware owns the **auth-refresh-once retry** loop. The leaf is a
 *pure* ``Kernel.post`` terminal that lets ``httpx.HTTPStatusError`` /
 ``httpx.RequestError`` propagate raw for auth errors (the 429 / 5xx mapping
-stays at the terminal since it feeds ``RetryMiddleware``). The middleware
+stays at the terminal since it feeds ``RetryBehavior``). The middleware
 catches the raw auth-error ``httpx.HTTPStatusError``, triggers a coalesced
 refresh via :class:`AuthRefreshCoordinator`, rebuilds the request envelope,
 then re-invokes ``next_call`` exactly once.
@@ -15,7 +15,7 @@ then re-invokes ``next_call`` exactly once.
 Why "exactly once": ADR-0009 §"Retry semantics" pins
 "**exactly one** retry per ``next_call`` invocation. If the retry also
 raises 401, the exception propagates — no second retry, no recursion."
-``RetryMiddleware`` outside this middleware does NOT retry on auth
+``RetryBehavior`` outside this middleware does NOT retry on auth
 errors (it catches only ``TransportRateLimited`` /
 ``TransportServerError``), so a persistent 401 surfaces cleanly to the
 caller without burning the rate-limit / server-error budget on auth
@@ -36,13 +36,13 @@ the initial ``RpcRequest.url`` / ``.headers`` / ``.body`` populated and the
 terminal consumes that envelope through ``Kernel.post``. After a successful
 refresh this middleware re-snapshots auth state and replaces the request
 envelope before retrying so the terminal never sends stale URL/body/header
-values. See :meth:`AuthRefreshMiddleware._rebuild_request_after_refresh`
+values. See :meth:`AuthRefreshBehavior._rebuild_request_after_refresh`
 for the typed-state publication contract and the paired terminal rebuild
 invariant that keeps the post-refresh 429 retry from sending a stale envelope.
 
-Refresh is a chain-level concern: ``RetryMiddleware`` is unaware of
+Refresh is a chain-level concern: ``RetryBehavior`` is unaware of
 refreshes, and the once-per-call contract holds because
-``AuthRefreshMiddleware`` only retries ONCE per ``next_call`` invocation.
+``AuthRefreshBehavior`` only retries ONCE per ``next_call`` invocation.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract and
 ``src/notebooklm/_runtime/auth.py`` for :class:`AuthRefreshCoordinator`
@@ -59,48 +59,37 @@ import httpx
 
 from .._auth_refresh_retry import refresh_and_count
 from .._request_types import AuthSnapshot
-from .._runtime.config import CORE_LOGGER_NAME
-from .._runtime.helpers import resolve_sleep
 from .._transport_errors import TransportAuthExpired
-from .core import NextCall, RpcRequest, RpcResponse, materialize_rpc_request
+from .config import CORE_LOGGER_NAME
+from .helpers import resolve_sleep
+from .rpc_call import NextCall, RpcRequest, RpcResponse, materialize_rpc_request
 
 if TYPE_CHECKING:
     from .._client_metrics import ClientMetrics
 
 
-class AuthRefreshMiddleware:
-    """Chain middleware that retries authed POSTs once after refreshing tokens.
+class AuthRefreshBehavior:
+    """Pipeline behavior that retries authed POSTs once after refreshing tokens.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — ``__call__``
-    matches the Protocol so instances are assignable into a
-    ``Sequence[Middleware]``.
-
-    Constructor inputs (all wired by
-    :func:`notebooklm._runtime.init.wire_middleware_chain`, driven from
-    ``NotebookLMClient.__init__``):
+    Constructor inputs are wired by :class:`RuntimePipeline`:
 
     - ``refresh_callable``: a zero-arg async callable that drives one
       coalesced auth refresh. Production wires
-      ``chain_host.await_refresh``, which dynamically delegates to
-      :meth:`AuthRefreshCoordinator.await_refresh`. The middleware never
+      the provider refresh owner, which delegates to
+      :meth:`AuthRefreshCoordinator.await_refresh`. The behavior never
       reaches into the coordinator directly; this keeps the seam thin
       and testable.
     - ``is_auth_error``: predicate that decides whether an exception is
-      an auth failure (HTTP 400 / 401 / 403). Production wires a closure
-      over ``ClientSeams.is_auth_error`` so rebinding
-      ``client._seams.is_auth_error`` / ``seams.is_auth_error`` after
-      construction steers the chain; tests that build the middleware
-      directly typically pass the function itself.
+      an auth failure (HTTP 400 / 401 / 403).
     - ``refresh_callback_enabled``: a zero-arg callable returning ``True``
       iff a refresh callback is wired on the coordinator. Production wires
       ``lambda: collaborators.auth_coord.has_refresh_callback`` so a
       client built without ``refresh_callback`` skips the refresh path
       entirely.
     - ``refresh_retry_delay``: zero-arg callable returning the
-      post-refresh sleep duration. Production wires
-      ``lambda: chain_host._refresh_retry_delay`` so a test that mutates
-      the attr on the live host still takes effect (matches the
-      live-binding contract used for retry budgets).
+      post-refresh sleep duration. Production wires the pipeline's fixed
+      construction-time value through this callable; focused behavior tests
+      may supply a mutable provider when they need to exercise live resolution.
     - ``snapshot_provider``: optional async callable returning a fresh
       :class:`AuthSnapshot` after refresh. Production wires a lambda
       that invokes :meth:`AuthRefreshCoordinator.snapshot` with the
@@ -109,7 +98,7 @@ class AuthRefreshMiddleware:
       preserve the older "retry the same request" unit shape.
     - ``sleep``: optional sleep injection (defaults to :func:`asyncio.sleep`
       resolved at call time via :func:`_runtime.helpers.resolve_sleep` —
-      the same shared helper :class:`RetryMiddleware` uses).
+      the same shared helper :class:`RetryBehavior` uses).
     - ``logger``: structured logger for the "auth error detected" /
       "refresh successful" / "refresh failed" info / warning lines.
       Defaults to the project-canonical ``notebooklm._core`` logger so
@@ -149,11 +138,11 @@ class AuthRefreshMiddleware:
         """Catch auth-error ``HTTPStatusError``, refresh, retry exactly once.
 
         Reads ``request.state.log_label`` for log lines (the defensive
-        sentinel fallback matches DrainMiddleware / RetryMiddleware /
+        sentinel fallback matches DrainBehavior / RetryBehavior /
         the retired test-only error-injection stage).
 
         Enforces **at most one refresh per logical call** even when
-        ``RetryMiddleware`` (outside this middleware) re-invokes the chain on
+        ``RetryBehavior`` (outside this middleware) re-invokes the chain on
         a 429/5xx that fires after a successful refresh. Without this guard
         the sequence ``401 → refresh → 429 → Retry retry → 401`` would refresh
         twice. With it, the second 401
@@ -170,7 +159,7 @@ class AuthRefreshMiddleware:
         refreshes (issue #1205). ``request.state.auth_refreshed`` is the
         fallback when no budget is threaded (for example, the chat path).
         Because retries retain the exact same :class:`RpcCallState` object,
-        RetryMiddleware re-entry and the terminal freshness rebuild both
+        RetryBehavior re-entry and the terminal freshness rebuild both
         observe the published post-refresh state.
 
         Pass-through paths:
@@ -264,7 +253,7 @@ class AuthRefreshMiddleware:
             # blocks the decoded-RPC layer in ``WebExecutionRuntime`` from refreshing
             # a second time on the SAME logical call (issue #1205). The
             # per-chain boolean is also set so a 429 thrown by the retry then
-            # caught by ``RetryMiddleware`` (outside us) doesn't trigger a
+            # caught by ``RetryBehavior`` (outside us) doesn't trigger a
             # second refresh when it re-enters our chain leg, and so the
             # terminal freshness rebuild observes the post-refresh marker.
             if budget is not None:
@@ -275,7 +264,7 @@ class AuthRefreshMiddleware:
 
             # Exactly one retry. If this raises (auth or otherwise), the
             # exception propagates — the outer caller decides what to do
-            # (chat error mapping, RetryMiddleware does NOT catch auth
+            # (chat error mapping, RetryBehavior does NOT catch auth
             # errors so a persistent 401 won't burn its budget).
             return await next_call(retry_request)
 
@@ -290,7 +279,7 @@ class AuthRefreshMiddleware:
         **The identity-shared :class:`RpcCallState` is the deliberate
         cross-boundary carrier for refreshed auth state and the once-per-call
         refresh guard.** :meth:`__call__` publishes ``auth_refreshed`` on the
-        state carried by the original request. ``RetryMiddleware`` lives one
+        state carried by the original request. ``RetryBehavior`` lives one
         layer *outside* this middleware and, on a 429 / 5xx caught after the
         refresh, re-invokes the chain with that original ``RpcRequest``. The
         published marker suppresses a second refresh and preserves the
@@ -303,7 +292,7 @@ class AuthRefreshMiddleware:
         returned ``retry_request`` and the original request observe the same
         snapshot. That bounded publication lets the terminal freshness guard
         (:meth:`RuntimeTransport.refresh_request_for_current_auth`) observe
-        the post-refresh snapshot when ``RetryMiddleware`` later retries the
+        the post-refresh snapshot when ``RetryBehavior`` later retries the
         original request after a 429.
 
         The companion invariant — and the reason this shared state is safe
@@ -333,4 +322,4 @@ class AuthRefreshMiddleware:
         )
 
 
-__all__ = ["AuthRefreshMiddleware"]
+__all__ = ["AuthRefreshBehavior"]

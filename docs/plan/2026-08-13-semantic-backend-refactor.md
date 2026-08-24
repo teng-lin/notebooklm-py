@@ -3,6 +3,8 @@
 **Status:** Accepted for P0-P8; P7-last, P3, and P8 approved by owner decision
 **Implementation status:** P0's catalog and compatibility-contract evidence are complete and
 frozen; this plan does not mark P1-P8 complete.
+P9 (web-backend decomposition) is proposed 2026-08-24 and not started; its entry record is
+measured, its projections are estimates.
 **Planning date:** 2026-08-13
 **Planning base:** `main` at `3bb0c185` (re-pinned; the original `dd710a09` base had drifted).
 P0's inventory is independently measured at its PR merge base, which for this frozen baseline is
@@ -425,8 +427,9 @@ gantt
 ```
 
 Every phase before P7 is net-additive; the plan concedes this. P7 is the only phase whose deliverable
-is deletion — the former ClientComposed module (165) + `_client_assembly.py` (420) + `_client_seams.py` (74) +
-`_middleware/` (2,206) = **2,865 LOC**. Sequenced last, the effort pays roughly 40 PRs of additive
+is deletion — the former ClientComposed module (165) + the now-retired `_client_assembly` module
+(420) + the now-retired `_client_seams` module (74) + the former middleware package (2,206) =
+**2,865 LOC**. Sequenced last, the effort pays roughly 40 PRs of additive
 cost before collecting any simplification, and a stall anywhere in P1-P6 leaves the repository
 strictly worse off than not starting. See the open sequencing decision above.
 
@@ -439,7 +442,7 @@ The findings below are design inputs, not criticisms of the behavior they curren
 | Feature APIs are coupled to the web wire vocabulary | 435 source lines mention `RPCMethod`; the reproducible P0 measure below finds 170 direct `RPCMethod.<member>` expressions outside `rpc/`, `_idempotency*`, and `_row_adapters/`, plus many `list[Any]` request/response shapes. The figure that actually governs P6/P7 effort is the **1,740 references in `tests/`** | Add a semantic operation port below feature behavior; migrated services must not import `RPCMethod` |
 | The current neutral layer is neutral only across frontends | `_app/` shares application workflows, while `RpcCaller` remains explicitly `batchexecute`-shaped | Preserve `_app/`; add backend-neutral services below it |
 | Public models participate in decoding | `Notebook`, `Source`, `Artifact`, `Label`, `Collection`, and sharing types expose or use `from_api_response()` / `from_row()` paths | Move live decoding to a private web codec and project private records into models |
-| Composition has accumulated mutable holders and test seams | `NotebookLMClient`, `_client_assembly.py`, `ClientComposed`, `RuntimeCollaborators`, `RpcExecutor`, `MiddlewareChainHost`, and six middleware objects participate in one web runtime | Do not simplify this graph first; isolate it behind `WebRpcBackend`, then collapse it after feature callers leave it |
+| Composition has accumulated mutable holders and test seams | At the P0 baseline, `NotebookLMClient`, the now-retired `_client_assembly` module, `ClientComposed`, `RuntimeCollaborators`, `RpcExecutor`, `MiddlewareChainHost`, and six middleware objects participated in one web runtime | Do not simplify this graph first; isolate it behind `WebRpcBackend`, then collapse it after feature callers leave it |
 | Artifact behavior is decomposed by verb, and every verb still branches on family | `_artifacts.py` is 988 lines and already delegates to listing/generation/download services plus `_artifact/polling.py`, `formatters.py`, `validation.py`, `payloads.py`. The existing split is by **verb**; P5 proposes one by **family** | Carve family services out of the existing verb services; each verb service retires as its last family leaves. This is a re-split of already-split code, not a first decomposition |
 | Retry safety is expressed primarily by native method | The idempotency registry is keyed by `RPCMethod` and variant, while one semantic workflow may use several RPCs | Add semantic `CallPolicy`; retain the existing registry as the web binding authority until parity is proven |
 | Deadline handling is correct locally but not uniformly end-to-end | `RuntimeDeadline` is used in retry and polling, while research, upload, auth, and adapter workflows also manage their own budgets | Pass one absolute monotonic deadline through each semantic operation |
@@ -765,8 +768,9 @@ below and resolved it before P1: retain the written phase order, approve P3 with
 constraints, and approve P8 after P7.
 
 **The case for running P7 first, standalone.** P7 is the only phase whose deliverable is deletion:
-the former ClientComposed module (165) + `_client_assembly.py` (420) + `_client_seams.py` (74) + `_middleware/`
-(2,206) = **2,865 LOC** of collapse. Every other phase is net-additive, which this plan concedes.
+the former ClientComposed module (165) + the now-retired `_client_assembly` module (420) + the
+now-retired `_client_seams` module (74) + the former middleware package (2,206) = **2,865 LOC** of
+collapse. Every other phase is net-additive, which this plan concedes.
 Sequenced last, the effort pays roughly 40 PRs of additive cost before collecting any simplification
 — and if it stalls anywhere in P1-P6, the repository ends **strictly worse**: all of the translation,
 none of the collapse.
@@ -958,7 +962,8 @@ Exact names may change in the ADR; ownership may not.
   unscheduled throwaway translation layer.
 - Keep the new backend private and construct it in the existing composition root without changing
   public constructor arguments. Route every transitional attribute (`_backend`, records, registry)
-  through `_client_assembly`, because `tests/_guardrails/test_client_factory_parity.py` pins
+  through the then-current `_client_assembly` module, because
+  `tests/_guardrails/test_client_factory_parity.py` pins
   `vars(NotebookLMClient)` against the test factory shell and will fail on an attribute added
   directly to the client. That guard is not retired until P7.
 
@@ -1399,7 +1404,7 @@ Migrate in bounded domain PRs:
    - **There is no public streaming API.** `ChatAPI.ask` is unary and returns `AskResult`; no
      generator, iterator, or context manager is exposed. "Streaming" is entirely internal to the
      transport, so principle 2's separate stream protocol must not surface one.
-   - **`chat_response_max_bytes` is *validated* in `_client_assembly.py` but *enforced* in
+   - **`chat_response_max_bytes` is *validated* in `_client_composition.py` but *enforced* in
      `_streaming_post.py`** -- on the raw buffered byte total, mid-stream, **pre-decode**, aborting
      the live connection. Three things are observable and all three move if chat is routed through a
      protocol yielding decoded records: early abort vs full buffering; `bytes_read`, documented as
@@ -1731,13 +1736,285 @@ inherit the pre-P8 baseline.
   with fail-closed post-extraction ownership, import, storage, refresh, interactive-auth, and
   secret-boundary evidence.
 
+### P9 — Decompose the web backend into transport, codec, and binding table
+
+**Purpose:** make `WebRpcBackend` a shell over a transport, a codec, and a table of typed
+bindings, so that a second backend differs from the first only below the port.
+
+**Status:** proposed 2026-08-24. Not started. Entry criteria are measured at the P8 completion
+commit; the "P9 entry record" below is the frozen baseline the acceptance criteria compare against.
+
+#### Why now
+
+P0–P8 moved semantic callers off the wire vocabulary and collapsed the runtime, but the web
+binding that absorbed the handlers was assembled as an **eleven-deep single-inheritance chain**:
+`WebRpcBackend(ChatWebHandlers)` → `SourceVariantWebHandlers` → … → `StudioDocumentWebHandlers`.
+Measured at P8 completion (`inspect` over `WebRpcBackend.__mro__`):
+
+- 11 classes, 4,225 class-body lines across 11 files, 141 methods, 136 non-dunder callables on
+  the instance; all 19 state attributes are assigned in the head's `__init__`, the ten ancestors
+  hold none.
+- No `super()` anywhere, no override with a body: the six methods defined twice are typed
+  `raise NotImplementedError` stubs in an ancestor implemented only at the head (`_rpc_call`,
+  `_translate_error`, `_capture_public_failure`, `_source_get`, `_artifact_catalog_records`,
+  `_persist_generated_mind_map`). 88 of the 105 cross-class calls are `self._rpc_call`. The
+  dependency runs ancestor → head while inheritance runs head → ancestor.
+- Nine of the ten links carry no dependency on their immediate base; the order is not
+  load-bearing. The real graph is six edges over five nodes.
+- Dispatch is `handler = getattr(self, _HANDLER_NAMES[op])`. The registry stores a `str`; the
+  typed `OperationDef[InputT, OutputT]` established at the port is erased at exactly that hop
+  (mypy accepts a handler whose input type contradicts its own definition — see the demo under
+  "Acceptance"), and no test or import-time check verifies that the 82 names resolve.
+- `policy.py` (848 lines) is a second hand-maintained `Operation → RPCMethod` table that exists to
+  audit the first.
+
+The chain exists for one reason: `getattr` dispatch requires every handler in one flat namespace,
+and the module-size ratchet (`MODULE_SIZE_BUDGET = 1500`, per file) rewards splitting that
+namespace across files. Neither the domain, the port, nor the protocol requires it. The only
+existing guard measures the wrong unit — the file — so the gate is green on a 4,225-line class.
+
+The second finding governs the shape of the fix. Tracing every handler's transitive call graph:
+
+| Handler kind | Operations | Unique lines | Meaning |
+|---|---|---|---|
+| Leaf — exactly one native call | 54 | 1,201 | `encode → transport.call → decode` plus one or two transport flags |
+| Composite — two or more native calls | 28 | 2,066 | product policy: snapshot/create/probe/reconcile, resolve-then-create, name-or-id resolution |
+| Shared helpers | — | 321 | |
+
+Every leaf is literally `encode → one call → decode`: a **row of data**, not a method. The
+composites are product policy that would be identical on gRPC; they are below the port only
+because P2–P6 parked them there. 58% of the handler code is therefore on the wrong side of the
+port for a second backend, and three near-duplicate source-id resolvers
+(`_audio_source_ids`, `_document_source_ids`, `_data_source_ids`) already exist inside the web
+binding for want of a service-level home.
+
+#### The invariant P9 establishes
+
+> Nothing below the port has a domain vocabulary in its method names.
+
+If `_web/` contains `async def _audio_generate`, code is on the wrong side of the line. `_web/`
+knows one thing about audio: `Operation.ARTIFACT_GENERATE_AUDIO → CodecBinding(AUDIO_DEF,
+encode_audio_create, decode_generation_status)`. A backend is a shell + transport + codec + table;
+two backends differ in exactly those four modules; the generic dispatch loop, the port, the
+records, the projectors and the services are shared. This is enforceable: a guardrail rejects
+any `async def` in the `planned:_web/bindings.py` outside the custom-handler section and caps that section's
+size.
+
+#### Entry criteria
+
+- [ ] P8 merged to `main`. P9 lands as its own PR stack; stacking a code-motion change on the
+  unmerged P0–P8 branch destroys the per-slice reviewability that is the best property of that
+  work.
+- [ ] The P9 entry record below is re-measured at the merge commit and matches; any drift is
+  re-recorded before P9.0 opens.
+- [ ] No other in-flight change touches `src/notebooklm/_web/backend.py` (the file is a
+  concurrent-edit hotspot; P9.0 and P9.1 both rewrite its head).
+- [ ] The composite decomposition table (P9.4 gate) is produced and reviewed before P9.2 opens,
+  so leaf-row conversion never has to guess which operations will narrow.
+
+#### Changes, by slice
+
+P9.0 through P9.3 are pure code motion with zero behaviour delta; P9.4 changes the meaning of
+closed vocabulary and is the only semantically hard slice. Each slice is independently green and
+leaves exactly one execution authority per operation (migration rule 2); no slice introduces a
+runtime old/new fallback.
+
+**P9.0 — Binding table and construction-time audit (≈40 lines).**
+`WebRpcBackend.__init__` builds `self._bindings: Mapping[Operation, Binding]` from
+`_HANDLER_NAMES` via `getattr` once, and asserts its key set equals `_SUPPORTED_DEFINITIONS`.
+`invoke()` reads the table; the per-call `getattr` is deleted. The chain is untouched. This slice
+closes the missing-audit hole immediately (a renamed handler fails at construction, not on first
+invocation of one unlucky operation) and makes "row" a first-class object every later slice
+consumes. `_HANDLER_NAMES` survives as the table's *source* until P9.5.
+
+**P9.1 — `WebTransport` (`planned:_web/transport.py`).**
+Extract the four transport verbs and lifecycle out of the head: `call(WebRequest, *, deadline)`
+(unary batchexecute via `WebExecutionRuntime`), `stream(...)` (the chat-aware authed POST),
+`upload(...)` (Scotty resumable upload — the `SourceUploadPipeline` HTTP leg),
+`download(...)` (`StudioDownloadClient`), plus `open(generation)` / `drain` / `close`.
+`WebTransport` owns `WebExecutionRuntime`, `WebBackendSession`, the `WebCookieProvider` port, the
+chat `RuntimeTransport`, and the download client. Deadline arithmetic (remaining → read timeout,
+`BackendDeadlineExceededError` on expiry-before-dispatch) moves into the transport verb; it is
+identical for every call today and per-handler only by accident. `WebRpcBackend._rpc_call`
+becomes a one-line delegate so no handler changes in this slice. Lifecycle members
+(`open_client`/`drain_client`/`close_client`) delegate. The `SourceUploadPipeline` cycle — the
+backend hands the uploader three of its own bound methods at construction — is resolved by
+construction order in the factory: the uploader receives `transport.upload` and a
+`SourceReadService`-shaped callback, never a backend method.
+
+`WebRequest` is a frozen value: `method: RPCMethod`, `params: list[Any]`, `source_path: str`,
+`variant: str | None`. Measured usage of the current `_rpc_call` flags across all 88 sites decides
+their fate: `source_path` (87) and `operation_variant` (28) are encode outputs — they follow the
+input; `allow_null` (59) and `raise_on_null_status` (15) become one `null_policy` row field;
+`disable_internal_retries` (15) becomes a static row field; `outcome_unknown_on_expiry` (21) and
+`_is_retry` (4) are **deleted** — the first because `invoke()` already derives it from
+`policy is not CallPolicy.READ` and the per-call override exists only for multi-call composites,
+the second because probe-then-create re-entry moves up with the composite in P9.4.
+
+**P9.2 — Leaf handlers become `CodecBinding` rows, one domain per PR.**
+`planned:_binding.py` (neutral; imports nothing from `_web/`, `rpc/`, or `httpx`) defines
+`CodecBinding[I, O](definition, encode: I → Request, decode: Raw → O, null_policy,
+internal_retries)`, `StreamBinding[I, Chunk]`, `CustomBinding[I, O](handler(value, deadline,
+transport))`, `BindingTable`, `audit_bindings(table, supported)`, and
+`invoke_binding(table, transport, errors, op, value, deadline)` — **a function, never a base
+class**. Each converted leaf's handler method is deleted; its inline params list (e.g.
+`[value.notebook_id, None, [value.note_id]]`) becomes a named `encode_*` in the matching
+`_web/codec/` module, where the positional grammar already lives. Order: settings/suggestions
+(5), sharing (5), research (4), notes (5), mind maps (6), then labels/collections and Studio
+leaves, then notebook/source reads. When a chain class has no methods left it is deleted and its
+two neighbours' `bases` re-linked — safe because the order is not load-bearing. The two
+non-uniform handlers (`_notebook_list`, `_source_get`, which take extra keywords because they
+double as internal helpers) split into a row plus a helper. Typing arrives incrementally: a row
+built by `bind(AUDIO_DEF, media.audio_generate)` is checked by mypy the moment it stops coming
+from `getattr`.
+
+**P9.3 — Composites become `CustomBinding` rows; the chain is deleted.**
+Each of the 28 composites becomes a `CustomBinding` whose handler function takes `transport`
+explicitly instead of `self`. The last chain classes go; `WebRpcBackend` has no bases and no
+handler methods. `_HANDLER_NAMES` is deleted; `registry.py` keeps `_SUPPORTED_DEFINITIONS`, the
+count assertions, and the policy audit unchanged — it remains the single reviewable file that
+answers "which operations does web support, and why not the others." The number of
+`CustomBinding` rows (28 at this point) becomes a guardrail ratchet that may only decrease.
+
+**P9.4 — Hoist product composites into semantic services.**
+One composite per PR. The service owns the sequence and invokes leaf operations; the web row for
+the composite's `Operation` narrows to its primary native call. Worked example —
+`source.add_url` today: snapshot (`GET_NOTEBOOK`) → create (`ADD_SOURCE`) → on a failure that may
+have committed, probe by URL against the pre-create baseline → best-effort rename
+(`UPDATE_SOURCE`). After: `SourceService.add_url` runs that sequence over
+`invoke(SOURCE_LIST)`, `invoke(SOURCE_ADD_URL)` (now the bare create), and
+`invoke(SOURCE_UPDATE)`, branching on `BackendError.outcome_unknown` — a signal the port already
+carries (`_backend.py`, seven references) precisely so a neutral caller can decide whether to
+probe. The three source-id resolvers collapse into one service-level helper. `policy.py`'s
+per-operation native tuples reduce to one native per leaf and are **derived** from the binding
+table; the whole-workflow `CallPolicy` moves to the service. The custom-row ratchet ends in the
+single digits: the remaining rows are *protocol* composites — a sequence the wire forces, not the
+product — and each must state in one sentence why. Canonical example: web has no
+get-source-by-id, so `SOURCE_GET` on web is list-then-filter (`CustomBinding`) while mobile has
+`LoadSource` and binds it as a plain codec row; the service cannot tell.
+
+Two prerequisites are measured, not assumed:
+
+1. **`_idempotency.py` is not transport-neutral.** It imports `RPCMethod` (18 references) and the
+   registry is keyed by native method. Services cannot call `idempotent_create` as it stands.
+   P9.4 either (a) adds a neutral façade whose probe/create callables are service-supplied and
+   whose "may have committed" input is `BackendError.outcome_unknown`, leaving the registry as
+   the web-side retry authority per ADR-0005, or (b) re-implements the probe-then-create pattern
+   at the service level and deletes the web-side copy when its last consumer leaves. Choose (a)
+   unless the façade turns out to be a rename of the whole module.
+2. **Vocabulary narrowing is a reviewed change per composite.** The `Operation` enum is closed
+   and count-asserted at 87. Ten native methods are used only inside composites
+   (`CREATE_ARTIFACT`, `CREATE_NOTEBOOK`, `GENERATE_MIND_MAP`, `RENAME_NOTEBOOK`,
+   `SHARE_NOTEBOOK`, `START_DEEP_RESEARCH`, `START_FAST_RESEARCH`, `SUGGEST_PROMPTS`,
+   `UPDATE_LABEL`, `UPDATE_SOURCE`); each becomes the narrowed meaning of the composite's own
+   member. A composite whose *secondary* natives are not already covered by a leaf member needs a
+   new member, with `_EXPECTED_OPERATION_COUNT` and the catalog updated in the same PR. The gate
+   is a table — composite → (primary native → narrowed member, secondary natives → existing leaf
+   members, new members required) — reviewed before P9.2 opens. Expected new members: zero to
+   three; more than five means the composites were not what this analysis says they are, and P9.4
+   stops for re-planning.
+
+**P9.5 — Second backend as the same four modules (separate go/no-go).**
+`planned:_mobile/transport.py` (grpc channel, `MobileTokenProvider` bearer, the same four verbs),
+`_mobile/codec/` (generated `schema_pb2` stubs plus proto → record projection),
+`planned:_mobile/bindings.py` (leaf rows only; ~55–65 of 87 given the 14 web-only methods),
+`planned:_mobile/errors.py` (grpc-status → `BackendErrorReason`). Reads first — `GetProject`,
+`ListArtifacts`, `GetNotes`, `ListChatTurns` are live-exercised and carry no composites. Then the
+differential test: the same `Operation` and input through both tables, records diffed. This is
+the standing form of the 2026-08-07 audit that found the inverted `is_owner` flag, and it is the
+strongest justification for the whole boundary. P9.5 requires ADR-0035's "separate decision" on a
+second backend; P9.0–P9.4 do not, and are worth doing without it.
+
+#### Acceptance criteria
+
+- `WebRpcBackend` has no base classes; `len(WebRpcBackend.__mro__) == 2`; `inspect` finds zero
+  methods whose name matches `_<domain>_<verb>` outside `planned:_web/bindings.py`'s custom section.
+- `planned:_web/bindings.py` contains only declarations plus the custom-handler section; the guardrail
+  caps custom rows at the P9.4 exit count and rejects any new one without a one-line protocol
+  justification.
+- A construction-time audit rejects a binding table whose key set differs from
+  `_SUPPORTED_DEFINITIONS`, and a unit test proves that a misnamed or missing handler fails at
+  construction.
+- Type check at dispatch: a fixture with a handler declared `value: VideoIn` bound to
+  `AUDIO_DEF: OperationDef[AudioIn, ...]` fails `mypy` under the repository's configuration. (The
+  current `getattr` form passes it clean — measured 2026-08-24.)
+- `planned:_binding.py` imports no module under `_web/`, `rpc/`, `_auth/`, or `httpx`; a guardrail pins
+  that import set.
+- `WebRequest`/`WebTransport` are the only types below the port that name `RPCMethod`; the
+  `_rpc_call` flag surface is gone (`outcome_unknown_on_expiry` and `_is_retry` have zero
+  references).
+- `policy.py`'s native tuples are derived from the binding table; the parity audit against
+  `IDEMPOTENCY_REGISTRY` still runs and still reports the previously reviewed divergences.
+- P9.0–P9.3 land with **no edits** to `tests/unit/test_web_backend.py` (2,348 lines) or any
+  per-slice characterization suite except the three unbound `WebRpcBackend._translate_error`
+  calls (`test_backend_compat.py` ×2, research characterization ×1), which rebind to the mapper.
+  Any other required edit is evidence that behaviour moved and stops the slice.
+- Every P9 PR that relocates a handler declares the resulting `operation_catalog.json` change as
+  an ADR-0022 derivation update (ownership moved), never as a regeneration to accept drift. The
+  catalog currently pins 319 `_web/<file>.py:<Class>.<method>` source-site strings plus 20 in
+  `test_operation_catalog.py`; each moves exactly once.
+- Loop affinity, drain/close, cancellation, retry, auth refresh, metrics and telemetry pass the
+  same equality gates P7 established; the pre-P7 observability fixture stays byte-for-byte frozen.
+- Module-size ratchet: `_web/backend.py` and every `_web/` module end under budget with no new
+  allowlist entry, and — the point — the largest *class* below the port is under 500 lines.
+
+#### Slice, module, and test map
+
+| Slice | Boundary & purpose | Modules touched | Verification & sentinels |
+|---|---|---|---|
+| **P9.0** | Table + audit; `getattr` gone | `_web/backend.py`, `_web/registry.py` | New unit: misnamed handler fails at construction; `test_web_backend.py` untouched |
+| **P9.1** | `WebTransport`, `WebRequest`; lifecycle delegation; uploader cycle broken | `planned:_web/transport.py`, `_web/backend.py`, `_client_*` factory | P7 lifecycle/concurrency suites untouched; observability fixture frozen; uploader tests untouched |
+| **P9.2** | Leaf rows, per domain; chain classes deleted as they empty | `planned:_binding.py`, `planned:_web/bindings.py`, `_web/codec/*`, one `_web/<domain>.py` per PR | Codec goldens gain the moved inline encoders; catalog derivation update per PR; mypy dispatch fixture |
+| **P9.3** | Composites as `CustomBinding`; chain gone; `_HANDLER_NAMES` deleted | `_web/backend.py`, `_web/registry.py`, remaining `_web/<domain>.py` | `len(__mro__) == 2`; custom-row ratchet installed at 28; three `_translate_error` test rebinds |
+| **P9.4** | Composites hoisted; vocabulary narrowed; policy ledger derived | `_source_service.py`, `_notebook_mutation_service.py`, `_studio/*`, `_label_service.py`, `_web/policy.py`, `_idempotency*.py` façade | Composite decomposition table (gate); `RecordingBackend` tests per hoisted workflow with no codec in the loop; ratchet decreases; ADR-0005 parity report unchanged in its reviewed divergences |
+| **P9.5** | Mobile leaf rows over the same loop | `_mobile/` (new) | Differential test web ↔ mobile per shared read; `BackendCapabilities` audit |
+
+#### Risks specific to P9
+
+- **A concurrent editor on `backend.py`.** P9.0 and P9.1 both rewrite its head. Serialize.
+- **The custom section quietly becomes the new chain.** Mitigation: the ratchet, the
+  one-sentence justification requirement, and the invariant guardrail on method names.
+- **Narrowing a member silently changes a public wait or retry.** The composite's whole-workflow
+  `CallPolicy` moves to the service; the leaf row's policy is `READ` or `MUTATION`. The P4
+  parity audit and the P7 equality gates are the tripwire; any change to when a public method
+  returns is a separate decision, as P5 already records.
+- **The mypy `Protocol` with `async def __call__` and keyword-only parameters is fiddly.** Spike
+  it in P9.0's PR before committing the `Binding` signature; if it does not unify cleanly, bind
+  through a small generic function rather than a callable Protocol.
+- **Estimate drift.** The numbers below are measured; the projections (`_web/` ≈ 6,300 lines
+  after, `policy.py` ≈ 150, `WebRpcBackend` ≈ 300) are not, and are the only figures in this
+  section that may move.
+
+#### P9 entry record (measured 2026-08-24 on `refactor/semantic-backend-dev`, HEAD `8e78a8b7`)
+
+| Measure | Value |
+|---|---|
+| `WebRpcBackend.__mro__` depth (excl. `object`) | 11 |
+| Class-body lines across the chain / file lines | 4,225 / 4,966 |
+| Methods / non-dunder callables on the instance | 141 / 136 |
+| State attributes, all in the head's `__init__` | 19 |
+| `super()` calls in the chain | 0 |
+| Abstract seams (`NotImplementedError` in ancestor, body in head) | 6 |
+| Cross-class calls / of which `_rpc_call` | 105 / 88 |
+| Links with zero dependency on immediate base | 9 of 10 |
+| Registry handler names / resolved by any existing audit | 82 / 0 |
+| Leaf handlers (one native call) / unique lines | 54 / 1,201 |
+| Composite handlers (≥2 native calls) / unique lines | 28 / 2,066 |
+| Native methods used only inside composites | 10 |
+| `_rpc_call` flag usage: `source_path` · `allow_null` · `operation_variant` · `outcome_unknown_on_expiry` · `raise_on_null_status` · `disable_internal_retries` · `_is_retry` · `attempt_timeout` | 87 · 59 · 28 · 21 · 15 · 15 · 4 · 1 |
+| `policy.py` lines / `RPCMethod` references | 848 / 129 |
+| `_idempotency.py` `RPCMethod` references | 18 |
+| Tests reaching into chain internals | 3 (all `_translate_error`, unbound) |
+| Catalog source-site strings (JSON / hand-written in test) | 319 / 20 |
+| Per-file coverage floors on `_web/` | 0 |
+
 ### Deliberately out of scope
 
-**P9 (public vNext surface)** and **P10 (mobile gRPC backend)** are removed from this plan. Neither
-is required for the internal refactor, both are gated on decisions nobody has made, and their
-presence here distorts the phases that remain -- P10 in particular is the only consumer of the
-capability/`BackendKind` machinery, which is why P1 would otherwise ship abstraction with no live
-caller in violation of migration rule 4.
+A **public vNext surface** (previously labelled P9) and a **mobile gRPC backend** (previously P10)
+remain outside this plan. Neither is required for the internal refactor and both are gated on
+decisions nobody has made. The P9 label now names the web-backend decomposition above; P9.5
+sketches what a mobile backend would cost *after* that decomposition, but building it still
+requires its own decision.
 
 - A new public client surface, immutable models, or the ADR-0028 naming question require their own
   API ADR. Write it when there is a caller need.
@@ -1951,6 +2228,18 @@ phase reports rerun the same commands and record their base commit.
 | Secret-bearing repr/log/exception regressions | **0** failures (**103 passed**) |
 | Coverage | **96.69%** global; all five floors pass: `__main__.py` 0.00% / 0%, `cli/_firefox_containers.py` 97.44% / 95%, `doctor_cmd.py` 89.91% / 63%, `profile_cmd.py` 90.95% / 74%, `session_cmd.py` 97.44% / 83% |
 
+### P6/P8 phase-boundary record
+
+Captured on 2026-08-24 after the semantic feature migrations and runtime/provider collapse. The
+fully migrated facade/service inventory in
+`tests/_guardrails/test_semantic_p7_entry_audit.py` has **zero** `RPCMethod` imports or member
+references. The same P0 import measure is down from 36 to **15** modules after excluding its
+original binding homes (`rpc/`, `_web/`, `_idempotency*`); every survivor is classified
+fail-closed as a legacy wire decoder, protocol declaration, public raw-RPC compatibility owner, or
+the central compatibility-error projector. In particular, labels, collections, and artifact
+selection now construct legacy not-found diagnostics through `_backend_compat` rather than owning
+native method IDs.
+
 The model/adapter contracts cover 86 public identities (50 dataclasses and 36 enums). Valid
 constructor samples produce 85 successful structured pickle probes, zero mismatches, and one
 truthful `AuthTokens` dumps failure (`TypeError`, `unpickleable-thread-lock`); the baseline also
@@ -1961,21 +2250,49 @@ projections for CLI, 32 / 123 for MCP, and 32 / 57 for REST: 313 unique projecti
 supplemental. `adapter_sink_reachability` closes the adapter graph over 350 exact terminal/error
 sites: 225 carry public projections, 117 are reviewed non-public, and eight are forwarding
 infrastructure. Fifteen conditional non-public variants are pinned across 14 mixed sites. All 313
-live ids are allocated. It also records 36 private DTO -> public dataclass paths (32 linked, one
-production-dead public-valued arm, one internal-runtime-only path, and two adapter-dropped
-structured-document paths), 16 delegated-helper fingerprints, and the aggregate 521-node / 1,245-edge transitive-helper graph digest. Adapter
+live ids are allocated. It also records 38 private DTO -> public dataclass paths (32 linked, one
+production-dead public-valued arm, one internal-runtime-configuration path, two internal auth
+capabilities, and two adapter-dropped structured-document paths), 16 delegated-helper fingerprints,
+and the aggregate 528-node / 1,253-edge transitive-helper graph digest. Adapter
 registrations and direct JSON emissions are fail-closed. `AuthTokens` remains
 out of the full-key inventory and is reachable only through the exact redacted MCP/REST
 `server_info` identity projections; credential serialization remains forbidden.
 
 The catalog also records 87 semantic operations, 47 RPC ids, 56 native rows, 146 public namespace
-methods (eight local-only), and ten public root-client members. It carries 12 reviewed divergences:
-11 authority and one policy. Golden evidence scope is `variant`, `method_family`, or
-`method_contract`; four native rows are honestly `not_recorded`:
+methods (eight local-only), and ten public root-client members. The 157 exact authority allocations
+produce 44 syntactically multi-authority operation rows, but 42 span distinct binding/transport legs
+and 43 have distinct discriminators. The remaining reviewed exceptions are one true authority
+divergence (`artifact.download`) and one policy divergence (`source.refresh`); the ten generation
+divergences present at this phase's entry are gone. Golden evidence scope is `variant`,
+`method_family`, or `method_contract`; four native rows are honestly `not_recorded`:
 `ADD_SOURCE:<default>`, `ADD_SOURCE:drive`, `CREATE_NOTE:<default>`, and
 `CREATE_NOTE:saved_from_chat`. Every native row has source-dataflow plus parameterized runtime
 override proof. The raw public `rpc_call()` escape hatch remains explicitly classified as
 web-only/raw.
+
+The final P6-P8 scorecard is:
+
+| Measure | P6/P8 value |
+| --- | --- |
+| Direct `RPCMethod.<member>` references in the migrated facade/service inventory | **0** |
+| Broader P0-scope modules importing `RPCMethod` | **15**, all fail-closed classified compatibility/decoder/protocol/raw-RPC owners; **0** migrated service owners |
+| Production public parser factory calls in P3 scope | **0** |
+| Test files using retired production client factory/composition symbols | **0** |
+| Test-only post-construction mutation seams in the production runtime | **0** |
+| Exact authority allocation | **157** rows across **87** operations; **1** true authority divergence and **1** policy divergence remain |
+| Native method/variant rows with more than one direct non-test execution site | **18 of 56**, retained as a tracking metric distinct from semantic authority |
+| Existing cassette rewrites caused only by code motion | **0** |
+| Public API compatibility failures / new allowlist entries | **0 / 0** |
+| Metrics/event contract drift | **0** |
+| Exception mixin-lattice regressions | **0** (**105 passed**) |
+| Secret-bearing repr/log/exception regressions | **0** (**103 passed**) |
+| Coverage | **95.04%** global; all five per-file floors pass (`0/0`, `97/95`, `90/63`, `91/74`, `97/83`) |
+
+P7 also deletes 2,865 lines of production assembly/seam/middleware code and replaces them with
+1,894 lines under the fixed runtime composition boundary: a net reduction of **971 lines
+(33.9%)**. The ordinary parallel lane completed with **15,516 passed / 61 skipped** in 64.61s;
+the isolated deep guardrail lane completed with **2,009 passed / 1 xfailed** in 144.72s. A fresh
+parallel coverage run completed the same 15,516 tests in 98.39s without a worker crash.
 
 #### Reproduction
 
@@ -2031,15 +2348,16 @@ The registered projections and compatibility gates reproduce the remaining value
 
 ```bash
 # Catalog totals: 87 operations, 47 RPC ids, 56 native rows, 146 namespace
-# methods (eight local-only), ten root-client members, 173 allocated authority
-# rows, 46 multi-authority operations, 19 multi-site native rows, 12 divergences
-# (11 authority plus one policy), four honest golden gaps, and 56/56 override proof.
+# methods (eight local-only), ten root-client members, 157 allocated authority
+# rows, 44 syntactically multi-authority operations, 18 multi-site native rows,
+# two divergences (one authority plus one policy), four honest golden gaps, and
+# 56/56 override proof.
 uv run python scripts/audit_operation_catalog.py --json | uv run python -c \
   'import json,sys; c=json.load(sys.stdin); print({"operations": len(c["operations"]), "rpc_ids": len({r["rpc_method"] for r in c["native_bindings"]}), "native_rows": len(c["native_bindings"]), "namespace_methods": len(c["public_methods"]), "namespace_local_only": sum(r["disposition"] == "local_only" for r in c["public_methods"].values()), "root_client_members": len(c["client_members"]), "allocated_authority_rows": sum(len(r["execution_authorities"]) for r in c["operations"]), "multi_authority_operations": sum(len(r["execution_authorities"]) > 1 for r in c["operations"]), "multi_site_native_rows": sum(len(r["execution_authorities"]) > 1 for r in c["native_bindings"]), "authority_divergences": sum(r["kind"] == "authority" for r in c["known_divergences"]), "policy_divergences": sum(r["kind"] == "policy" for r in c["known_divergences"]), "golden_not_recorded": sum(r["golden_disposition"] == "not_recorded" for r in c["native_bindings"]), "override_honored": sum(r["override_honored"] for r in c["native_bindings"])})'
 # JSON envelope totals: CLI 31 models/133 projections, MCP 32/123, REST 32/57;
 # 313 unique ids. Sink totals: 350 = 225 projection + 117 reviewed non-public
-# + 8 infrastructure; 15 conditional non-public variants, 36 private paths,
-# 16 explicit helper fingerprints, and a 521-node / 1,245-edge helper-graph digest.
+# + 8 infrastructure; 15 conditional non-public variants, 38 private paths,
+# 16 explicit helper fingerprints, and a 528-node / 1,253-edge helper-graph digest.
 uv run python - <<'PY'
 import json
 from collections import Counter
@@ -2121,7 +2439,9 @@ and REST tests while coverage still measures those packages, producing a mislead
 ```bash
 uv sync --frozen --extra browser --extra dev --extra markdown --extra mcp \
   --extra server --extra impersonate --extra cookies
-uv run pytest -n auto --dist loadgroup --cov=src/notebooklm \
+uv run pytest -n auto --dist loadgroup \
+  -m "not repo_lint and not requires_playwright and not requires_chromium" --timeout=180 \
+  --cov=src/notebooklm \
   --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=90
 uv run python scripts/check_coverage_thresholds.py --coverage-json coverage.json
 ```

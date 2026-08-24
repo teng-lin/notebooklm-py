@@ -32,19 +32,21 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import httpx
 import pytest
 
+import notebooklm.rpc as rpc_module
 from notebooklm import correlation_id
 from notebooklm._chat.service import ChatService
 from notebooklm._records import ChatAskInput
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import DecodingError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ClientMetricsSnapshot, RpcTelemetryEvent
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 _BASELINE_PATH = (
     Path(__file__).resolve().parents[1]
@@ -198,8 +200,10 @@ async def _run_scenario(
             request=request,
         )
 
+    async_client_type = httpx.AsyncClient
+
     def client_factory(**kwargs: object) -> httpx.AsyncClient:
-        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+        return async_client_type(transport=httpx.MockTransport(handler), **kwargs)
 
     def decode_response(
         _raw: str,
@@ -221,16 +225,21 @@ async def _run_scenario(
         await asyncio.sleep(0)
         return _auth(generation="refreshed")
 
-    client = build_client_shell_for_tests(
-        _auth(),
-        on_rpc_event=collector,
-        decode_response=decode_response,
-        refresh_callback=refresh if refresh_enabled else None,
-        refresh_retry_delay=0.0,
-        rate_limit_max_retries=retry_budget,
-        server_error_max_retries=retry_budget,
-        async_client_factory=client_factory,
-    )
+    async def no_sleep(_seconds: float) -> None:
+        return None
+
+    with (
+        patch.object(rpc_module, "decode_response", decode_response),
+        patch.object(httpx, "AsyncClient", client_factory),
+        patch.object(asyncio, "sleep", no_sleep),
+        patch.object(NotebookLMClient, "refresh_auth", lambda _client: refresh()),
+    ):
+        client = NotebookLMClient(
+            _auth(),
+            on_rpc_event=collector,
+            rate_limit_max_retries=retry_budget,
+            server_error_max_retries=retry_budget,
+        )
 
     raised: str | None = None
     result: object = None

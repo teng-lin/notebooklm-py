@@ -39,9 +39,7 @@ from ._auth.account import authuser_query as authuser_query
 from ._auth.extraction import extract_wiz_field as extract_wiz_field
 from ._auth.web_provider_storage import load_web_provider_bootstrap
 from ._chat import ChatAPI
-from ._client_assembly import _assemble_client
-from ._client_seams import ClientSeams
-from ._client_seams import resolve_client_seams as resolve_client_seams  # noqa: F401
+from ._client_composition import compose_client
 from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
@@ -60,7 +58,6 @@ from ._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
 )
-from ._runtime.init import compose_client_internals as compose_client_internals  # noqa: F401
 from ._runtime.lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
@@ -120,12 +117,11 @@ class NotebookLMClient:
 
     # Constructor-set attribute surface. Declared here (annotation-only;
     # no runtime effect) because the assignments live in the shared
-    # assembly seam :func:`notebooklm._client_assembly._assemble_client`,
+    # production composition root :func:`notebooklm._client_composition.compose_client`,
     # not in ``__init__`` — see the delegation comment there. Keep this
-    # block in sync with ``_assemble_client``; the parity gate
-    # ``tests/_guardrails/test_client_factory_parity.py`` pins the
-    # runtime attribute surface itself.
-    _seams: ClientSeams
+    # block in sync with ``compose_client``; the composition guard
+    # ``tests/_guardrails/test_client_composition.py`` pins the runtime
+    # attribute surface itself.
     _backend: WebRpcBackend
     _provider: WebCookieProvider
     _source_uploader: SourceUploadPipeline
@@ -285,18 +281,9 @@ class NotebookLMClient:
                 late-bound wrapper. Must be async — it is awaited from
                 the keepalive loop.
         """
-        # The full assembly lives in ``notebooklm._client_assembly`` —
-        # one private seam shared with the canonical test factory
-        # (``tests/_helpers/client_factory.build_client_shell_for_tests``)
-        # so the two construction paths cannot drift (incidents #1196 /
-        # #1225). Set EVERY constructor-time attribute inside
-        # ``_assemble_client``, never here after the delegation call —
-        # the parity gate
-        # ``tests/_guardrails/test_client_factory_parity.py`` fails
-        # otherwise. The test-only seam kwargs (``decode_response`` /
-        # ``sleep`` / ``is_auth_error`` / ``async_client_factory``) stay
-        # off this public constructor by design.
-        _assemble_client(
+        # The production-only composition root builds the complete graph
+        # before publication and exposes no test-only construction path.
+        compose_client(
             self,
             auth=auth,
             timeout=timeout,

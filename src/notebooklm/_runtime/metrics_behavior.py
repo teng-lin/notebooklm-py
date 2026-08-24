@@ -1,7 +1,7 @@
-"""MetricsMiddleware — per-RPC telemetry emitter for the middleware chain.
+"""MetricsBehavior — per-RPC telemetry emitter for the runtime pipeline.
 
-Per ADR-0009 §"Chain ordering", ``MetricsMiddleware`` sits
-just inside ``DrainMiddleware`` (and just outside ``SemaphoreMiddleware``) in
+Per ADR-0009 §"Chain ordering", ``MetricsBehavior`` sits
+just inside ``DrainBehavior`` (and just outside ``SemaphoreBehavior``) in
 the chain ordering
 ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, Tracing]``,
 which keeps Metrics outside the semaphore.
@@ -16,7 +16,7 @@ dispatch through the chain:
   ``rpc_latency_seconds_total`` on the shared :class:`ClientMetrics` snapshot.
 - Awaits ``ClientMetrics.emit_rpc_event`` with a backend-agnostic
   :class:`RpcTelemetryEvent` so application-level ``on_rpc_event``
-  callbacks fire (Prometheus exporter, OTEL bridge, custom logger, …).
+  callbacks fire (Prometheus exporter, OTEL exporter, custom logger, …).
 
 The emit fires only when ``RpcCallState.rpc_method`` is present on
 ``request.state``. Other code paths through the chain (e.g. the chat streaming path in
@@ -33,7 +33,7 @@ failed-attempt metrics and re-raise. ``Exception`` (not
 ``BaseException``) — cooperative-cancellation signals
 (``KeyboardInterrupt``, ``SystemExit``, ``asyncio.CancelledError``) are
 caller-initiated unwinds, not RPC failures; they propagate without
-incrementing counters or emitting events. Same scope as TracingMiddleware,
+incrementing counters or emitting events. Same scope as TracingBehavior,
 same reason.
 
 The chain owns per-dispatch telemetry emission, and
@@ -60,21 +60,20 @@ from typing import TYPE_CHECKING
 
 from .._logging import get_request_id
 from .._types.common import RpcTelemetryEvent
-from .core import NextCall, RpcRequest, RpcResponse
+from .rpc_call import NextCall, RpcRequest, RpcResponse
 
 if TYPE_CHECKING:
     from .._client_metrics import ClientMetrics
 
 
-class MetricsMiddleware:
-    """Middleware that increments counters and emits :class:`RpcTelemetryEvent`.
+class MetricsBehavior:
+    """Runtime behavior that increments counters and emits telemetry events.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — the
-    ``__call__`` signature matches the Protocol so mypy treats instances
-    as assignable into a ``Sequence[Middleware]``.
+    Its ``__call__`` signature matches the fixed behavior-call shape composed
+    by :class:`RuntimePipeline`.
 
     Holds a reference to the shared :class:`ClientMetrics` runtime leaf owned
-    by :class:`WebRpcBackend`. The middleware does not own metric state; it is
+    by :class:`WebRpcBackend`. The behavior does not own metric state; it is
     purely a write-through into the backend-owned accumulator. This keeps the
     client snapshot view authoritative through backend delegation.
     """
@@ -116,7 +115,7 @@ class MetricsMiddleware:
                         elapsed_seconds=elapsed,
                         request_id=get_request_id(),
                         # ``__qualname__`` matches the
-                        # idiom used by ``TracingMiddleware`` (``_middleware/tracing.py``)
+                        # idiom used by ``TracingBehavior``
                         # so nested exception classes are distinguishable
                         # in metrics + traces alike.
                         error_type=type(exc).__qualname__,
@@ -141,4 +140,4 @@ class MetricsMiddleware:
         return response
 
 
-__all__ = ["MetricsMiddleware"]
+__all__ = ["MetricsBehavior"]

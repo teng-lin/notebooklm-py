@@ -234,6 +234,95 @@ MIGRATED_SOURCE_MODULES = frozenset(
     }
 )
 
+# P6's fully semantic feature facades and their immediate semantic services.
+# Partial legacy/raw-RPC owners (notably NotebooksAPI and LegacyNoteBackedService)
+# remain in the separately classified physical inventory below.
+MIGRATED_FEATURE_RPC_NEUTRAL_MODULES = frozenset(
+    {
+        "_artifact/listing.py",
+        "_artifacts.py",
+        "_chat/api.py",
+        "_chat/service.py",
+        "_collections.py",
+        "_label_service.py",
+        "_labels.py",
+        "_mind_maps_api.py",
+        "_notes.py",
+        "_research.py",
+        "_research_service.py",
+        "_settings.py",
+        "_settings_service.py",
+        "_sharing.py",
+        "_sharing_service.py",
+        "_source_service.py",
+        "_sources.py",
+    }
+)
+
+# Exact post-P6 physical imports outside the protocol/binding homes skipped by
+# the P0 measurement. Every survivor has a named compatibility/protocol role;
+# a feature facade is never admitted here as a convenient exception.
+CLASSIFIED_NON_WEB_RPC_METHOD_IMPORTS: dict[str, str] = {
+    "_artifact/formatters.py": "legacy artifact wire decoder",
+    "_backend_compat.py": "legacy public exception diagnostic projector",
+    "_note_service.py": "plan-authorized LegacyNoteBackedService",
+    "_notebooks.py": "documented public raw-RPC compatibility owner",
+    "_research_task_parser.py": "legacy research wire decoder",
+    "_row_adapters/artifacts.py": "artifact positional row decoder",
+    "_row_adapters/chat.py": "chat positional row decoder",
+    "_row_adapters/notes.py": "note positional row decoder",
+    "_row_adapters/research.py": "research positional row decoder",
+    "_row_adapters/sources.py": "source positional row decoder",
+    "_runtime/contracts.py": "web RPC protocol type declaration",
+    "_types/notebooks.py": "legacy notebook wire decoder",
+    "_types/sharing.py": "legacy sharing wire decoder",
+    "_web_request_auth.py": "web request binding support",
+    "client.py": "documented public raw rpc_call escape hatch",
+}
+
+
+def collect_rpc_method_import_modules(src_dir: Path = SRC_ROOT) -> set[str]:
+    """Collect non-binding modules that still import the native RPC enum."""
+    found: set[str] = set()
+    for path in sorted(src_dir.rglob("*.py")):
+        relative = path.relative_to(src_dir)
+        if (
+            relative.is_relative_to("rpc")
+            or relative.is_relative_to("_web")
+            or path.name.startswith("_idempotency")
+        ):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if any(
+            isinstance(node, (ast.Import, ast.ImportFrom))
+            and any(alias.name == "RPCMethod" for alias in node.names)
+            for node in ast.walk(tree)
+        ):
+            found.add(relative.as_posix())
+    return found
+
+
+def collect_migrated_feature_rpc_method_leaks(
+    src_dir: Path = SRC_ROOT,
+) -> set[tuple[str, int, str]]:
+    """Find native enum imports/references in the fully migrated P6 slice."""
+    leaks: set[tuple[str, int, str]] = set()
+    for relative in sorted(MIGRATED_FEATURE_RPC_NEUTRAL_MODULES):
+        path = src_dir / relative
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)) and any(
+                alias.name == "RPCMethod" for alias in node.names
+            ):
+                leaks.add((relative, node.lineno, "import RPCMethod"))
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "RPCMethod"
+            ):
+                leaks.add((relative, node.lineno, f"RPCMethod.{node.attr}"))
+    return leaks
+
 
 def collect_migrated_source_transport_leaks(
     src_dir: Path = SRC_ROOT,
@@ -341,14 +430,14 @@ def check_error_injection_middleware_dependency(
     core_imports = {"NextCall", "RpcRequest", "RpcResponse", "core"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import) and any(
-            alias.name == "notebooklm._middleware.core" for alias in node.names
+            alias.name == "notebooklm._runtime.rpc_call" for alias in node.names
         ):
             return True
         if isinstance(node, ast.ImportFrom):
             if node.module in {
                 "core",
                 ".core",
-                "notebooklm._middleware.core",
+                "notebooklm._runtime.rpc_call",
                 "._middleware.core",
             }:
                 return True
@@ -724,6 +813,19 @@ def test_migrated_source_layers_cannot_reintroduce_transport_execution() -> None
     )
 
 
+def test_migrated_feature_layers_cannot_reintroduce_native_rpc_vocabulary() -> None:
+    leaks = collect_migrated_feature_rpc_method_leaks()
+    assert not leaks, (
+        "Migrated feature layers reintroduced native RPC vocabulary:\n  "
+        + "\n  ".join(f"{path}:{line}: {reason}" for path, line, reason in sorted(leaks))
+    )
+
+
+def test_remaining_non_web_rpc_method_imports_are_exact_and_classified() -> None:
+    assert collect_rpc_method_import_modules() == set(CLASSIFIED_NON_WEB_RPC_METHOD_IMPORTS)
+    assert all(reason.strip() for reason in CLASSIFIED_NON_WEB_RPC_METHOD_IMPORTS.values())
+
+
 def test_active_semantic_operation_inventory_is_exact_for_p7() -> None:
     """P7's runtime-collapse input is the exact P4-supported operation set."""
     assert len(KNOWN_ACTIVE_SEMANTIC_OPERATIONS) == 82
@@ -869,7 +971,7 @@ def test_error_injection_detector_catches_reintroduced_absolute_core_import(
 ) -> None:
     middleware_path = tmp_path / "error_injection.py"
     middleware_path.write_text(
-        "import notebooklm._middleware.core as core\n",
+        "import notebooklm._runtime.rpc_call as core\n",
         encoding="utf-8",
     )
 
@@ -889,23 +991,23 @@ def test_error_injection_detector_catches_reintroduced_absolute_core_import(
             "chain_host",
         ),
         (
-            "from notebooklm._middleware.core import RpcRequest as Request\n"
+            "from notebooklm._runtime.rpc_call import RpcRequest as Request\n"
             "value = Request(url='x', headers={}, body=b'', context={})\n",
             "request_context",
         ),
         (
-            "from notebooklm._middleware.core import RpcRequest as Request\n"
+            "from notebooklm._runtime.rpc_call import RpcRequest as Request\n"
             "value = Request('x', {}, b'', {})\n",
             "request_context",
         ),
         (
-            "from notebooklm._middleware.core import RpcRequest\n"
+            "from notebooklm._runtime.rpc_call import RpcRequest\n"
             "def mutate(request: RpcRequest):\n"
             "    request.context.update({'rpc_method': 'x'})\n",
             "request_context",
         ),
         (
-            "from notebooklm._middleware.core import RpcRequest\n"
+            "from notebooklm._runtime.rpc_call import RpcRequest\n"
             "def mutate(request: RpcRequest):\n"
             "    context = request.context\n"
             "    alias = context\n"
@@ -932,7 +1034,7 @@ def test_request_factory_exemption_is_function_scoped_and_fails_closed(tmp_path:
     fixture_dir.mkdir()
     fixture = fixture_dir / "chain.py"
     fixture.write_text(
-        "from notebooklm._middleware.core import RpcRequest\n"
+        "from notebooklm._runtime.rpc_call import RpcRequest\n"
         "def make_request():\n"
         "    return RpcRequest('x', {}, b'', {})\n"
         "def bypass_factory():\n"
@@ -950,7 +1052,7 @@ def test_request_factory_is_the_only_allowed_request_constructor(tmp_path: Path)
     fixture_dir.mkdir()
     fixture = fixture_dir / "chain.py"
     fixture.write_text(
-        "from notebooklm._middleware.core import RpcRequest\n"
+        "from notebooklm._runtime.rpc_call import RpcRequest\n"
         "def make_request():\n"
         "    return RpcRequest('x', {}, b'', {})\n",
         encoding="utf-8",
@@ -966,7 +1068,7 @@ def test_request_fixture_context_alias_outside_factory_fails_closed(tmp_path: Pa
     fixture_dir.mkdir()
     fixture = fixture_dir / "chain.py"
     fixture.write_text(
-        "from notebooklm._middleware.core import RpcRequest\n"
+        "from notebooklm._runtime.rpc_call import RpcRequest\n"
         "def make_request():\n"
         "    return RpcRequest('x', {}, b'', {})\n"
         "def mutate(request: RpcRequest):\n"

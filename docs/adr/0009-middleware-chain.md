@@ -5,7 +5,7 @@
 Accepted for middleware ordering and transport behavior; **superseded in part by P7** of the
 [semantic-backend refactor plan](../plan/2026-08-13-semantic-backend-refactor.md). P7 replaces the
 former `RpcRequest.context: dict[str, Any]` decision with the closed typed `RpcCallState` in
-`_middleware/context.py`, deletes the `ClientComposed` semaphore holder, and makes
+`_runtime/rpc_call_state.py`, deletes the `ClientComposed` semaphore holder, and makes
 `WebRpcBackend`/`WebExecutionRuntime` the execution owner. All later sections that prescribe a
 string-key context vocabulary, `RPC_CONTEXT_*` constants, mutable-context sharing, or
 `ClientComposed` are historical rationale and are no longer normative.
@@ -213,7 +213,7 @@ Per-position rationale:
 | `log_label` | `str` | `RuntimeTransport.perform_authed_post` | `DrainMiddleware`, `RetryMiddleware`, `AuthRefreshMiddleware`, `TracingMiddleware`, `RuntimeTransport.terminal` |
 | `auth_snapshot` | `AuthSnapshot` | `RuntimeTransport.perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `RuntimeTransport.refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `RuntimeTransport.refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialized envelope so middlewares never observe a torn `(snapshot, request)` pair |
 | `auth_refreshed` | `bool` | `AuthRefreshMiddleware` (sets to `True` after a successful refresh, **before** the retry leg) | `AuthRefreshMiddleware` (skip-on-replay guard so a `RetryMiddleware` retry on the post-refresh leg cannot drive a second refresh on a fresh 401) |
-| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire — also exported as `RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS` from `_middleware/context.py`; `RPC_QUEUE_WAIT_CONTEXT_KEY` remains a compatibility alias in `_middleware/semaphore.py`) | `RuntimeTransport.perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the chain returns) |
+| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (historically wrote the context key; the current `SemaphoreBehavior` publishes through `RpcCallState.record_queue_wait`) | `RuntimeTransport.perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the pipeline returns) |
 | `read_timeout` | `float \| None` | `RuntimeTransport.perform_authed_post` (seeded only when a per-request read timeout is supplied — currently the chat path's `chat_timeout`; absent otherwise so metadata RPCs keep the base read window) | `RuntimeTransport.terminal` (forwards to `Kernel.post(read_timeout=...)`, which widens only the streamed-response `read` slot) |
 | `max_response_bytes` | `int` | `RuntimeTransport.perform_authed_post` (seeded only when a per-request response cap is supplied — currently the chat path's `chat_response_max_bytes`; absent otherwise so metadata RPCs keep the shared response-size guard) | `RuntimeTransport.terminal` (forwards to `Kernel.post(max_response_bytes=...)`, which passes a per-call cap to the streaming size guard) |
 | `disable_read_timeout_retries` | `bool` | `RuntimeTransport.perform_authed_post` (seeded `True` by the chat path) | `RetryMiddleware` (re-raises read-side post-transmission failures — `ReadTimeout` / `ReadError` / `RemoteProtocolError`, see `_NON_REPLAYABLE_POST_SEND_ERRORS` — instead of replaying the non-idempotent in-flight chat generation; connect/write/pool stay retryable and 401 auth refresh is unaffected) |
@@ -297,12 +297,11 @@ than deferred to a future arc):
   on the middleware instance or in a `contextvars.ContextVar` scoped to
   the call. Context keys are for cross-middleware contract.
 
-The vocabulary is also centralized in
-`_middleware.context.ALLOWED_RPC_CONTEXT_KEYS`, and
-`tests/_guardrails/test_middleware_context_contract.py` scans production
-middleware and transport code for non-approved literal context keys.
-Adding a key must update this table, `_middleware/context.py`, and the
-guard test in the same PR.
+The former string-key vocabulary was centralized in
+`ALLOWED_RPC_CONTEXT_KEYS`; P7 deleted it. Current configuration fields and
+bounded progress publication live on `RpcCallState` in
+`_runtime/rpc_call_state.py`. Adding state must update that typed record and its
+focused contract tests in the same PR.
 
 ### AuthRefreshMiddleware constructor signature (historical Tier-13 target)
 
@@ -577,9 +576,8 @@ once `Kernel.post` is the chain leaf. The signature pinned in
 
 ADR-0010 (the original target of this forward reference) was itself
 superseded by ADR-0013 ("Composable Session Capabilities") in v0.5.0.
-ADR-0009's middleware-chain ordering remains load-bearing; chain
-construction now lives in `MiddlewareChainBuilder`
-(`_middleware/chain.py`) — an extraction performed inside this ADR's
-domain, not a supersession — and the order is preserved by
+ADR-0009's middleware-chain ordering remains load-bearing. P7 retired the
+intermediate `MiddlewareChainBuilder`; composition now lives in
+`RuntimePipeline` (`_runtime/pipeline.py`), and the order is preserved by
 `tests/unit/test_chain_wiring.py`. Status: Accepted (chain order
 load-bearing).

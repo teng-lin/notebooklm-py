@@ -17,7 +17,6 @@ from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod, get_batchexecute_url, get_query_url, get_upload_url
 from notebooklm.types import ShareStatus
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def test_default_base_url_is_personal(monkeypatch):
@@ -118,7 +117,7 @@ def test_rpc_endpoint_helpers_are_lazy(monkeypatch):
 
 def test_core_build_url_uses_enterprise_base_url(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
-    core = build_client_shell_for_tests(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
+    core = NotebookLMClient(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
 
     # ``RpcExecutor.build_url`` consumes an ``AuthSnapshot`` so direct callers
     # outside the shared transport path must build one inline.
@@ -146,7 +145,7 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
         headers={"x-goog-upload-url": upload_url},
     )
 
-    core = build_client_shell_for_tests(auth)
+    core = NotebookLMClient(auth)
     await core.__aenter__()
     try:
         api = SourcesAPI(

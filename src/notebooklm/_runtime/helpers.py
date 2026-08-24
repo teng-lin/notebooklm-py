@@ -89,7 +89,7 @@ def resolve_sleep(
 ) -> Callable[[float], Awaitable[object]]:
     """Return the call-time sleep function — injected fake-or-real ``asyncio.sleep``.
 
-    Used by ``RetryMiddleware`` and ``AuthRefreshMiddleware`` to honor a
+    Used by ``RetryBehavior`` and ``AuthRefreshBehavior`` to honor a
     constructor-time fake while still resolving the real ``asyncio.sleep`` at
     call time. Resolving via the ``asyncio`` module global on each call (rather
     than capturing the callable at construction) is what preserves test

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ from scripts.audit_operation_catalog import (
 )
 from scripts.audit_public_api_compat import CLIENT_NAMESPACE_ATTRIBUTES
 
+from notebooklm._app.generate import execute_generation
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY
 from notebooklm._operations import CallPolicy, Operation
 from notebooklm.rpc import RPCMethod
@@ -61,11 +63,11 @@ def test_backend_dataflow_is_bounded_to_migrated_services() -> None:
     assert errors[0].startswith("semantic backend invoke sites changed: ")
     assert "_notebooks.py" in errors[0]
 
-    assembly = (root / "_client_assembly.py").read_text(encoding="utf-8")
+    assembly = (root / "_client_composition.py").read_text(encoding="utf-8")
     escape_mutation = assembly + (
         "\ndef _p1_escape_mutation(client):\n    return NotebooksAPI(client._backend)\n"
     )
-    errors = audit_inert_p1_backend_dataflow({"_client_assembly.py": escape_mutation})
+    errors = audit_inert_p1_backend_dataflow({"_client_composition.py": escape_mutation})
     assert len(errors) == 1
     assert errors[0].startswith("client._backend escapes the reviewed facade bindings at lines: ")
 
@@ -138,19 +140,33 @@ def test_rule_two_distinguishes_app_callers_from_execution_authorities() -> None
         )
 
 
-def test_generation_retry_authority_has_live_helper_and_call_edge_evidence() -> None:
+def test_generation_workflow_is_local_and_not_a_second_execution_authority() -> None:
     catalog = build_operation_catalog()
-    evidence = catalog["app_authority_source_evidence"]["artifacts.py:with_rate_limit_retry"]
+    rows = {row["key"]: row for row in catalog["operations"]}
+    source = inspect.getsource(execute_generation)
 
-    assert evidence["function_ast_sha256"].startswith("sha256:")
-    assert len(evidence["function_ast_sha256"]) == 71
-    assert evidence["public_export"] == "with_rate_limit_retry"
-    assert len(evidence["internal_call_edges"]) == 1
-    edge = evidence["internal_call_edges"][0]
-    assert edge["caller"] == "_app/generate_retry.py:generate_with_retry"
-    assert edge["target"] == "artifact_retry.with_rate_limit_retry"
-    assert edge["caller_ast_sha256"].startswith("sha256:")
-    assert len(edge["caller_ast_sha256"]) == 71
+    assert catalog["app_authority_source_evidence"] == {}
+    assert "_run_generation_workflow" in source
+    assert "_run_rate_limit_retry" not in source
+    assert "generate_with_retry(" not in source
+    assert "handle_generation_result(" not in source
+    assert all(
+        all(
+            authority["transport_kind"] != "orchestrator"
+            for authority in rows[key]["execution_authorities"]
+        )
+        for key in (
+            "artifact.generate_audio",
+            "artifact.generate_video",
+            "artifact.generate_report",
+            "artifact.generate_quiz",
+            "artifact.generate_flashcards",
+            "artifact.generate_infographic",
+            "artifact.generate_slide_deck",
+            "artifact.generate_data_table",
+            "artifact.revise_slide",
+        )
+    )
 
 
 def test_every_active_binding_honors_runtime_rpc_overrides() -> None:

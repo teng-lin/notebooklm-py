@@ -1,11 +1,11 @@
-"""TracingMiddleware — innermost middleware in the chain.
+"""TracingBehavior — innermost middleware in the chain.
 
-Per ADR-0009 §"Chain ordering", ``TracingMiddleware`` is
+Per ADR-0009 §"Chain ordering", ``TracingBehavior`` is
 the **innermost** wrapper around the ``Kernel.post`` transport leaf. It logs one
 "starting" record before invoking ``next_call`` and one "completed"
 (success) or "failed" (exception) record after, capturing per-attempt
 HTTP-level visibility — including retry attempts, which is why it sits
-inside ``RetryMiddleware``.
+inside ``RetryBehavior``.
 
 Pure observer: the middleware never mutates ``request`` or transforms
 ``response``. The frozen ``RpcRequest`` dataclass enforces request
@@ -50,22 +50,21 @@ from __future__ import annotations
 import logging
 import time
 
-from .core import NextCall, RpcRequest, RpcResponse
+from .rpc_call import NextCall, RpcRequest, RpcResponse
 
 logger = logging.getLogger("notebooklm.middleware.tracing")
 
 
-class TracingMiddleware:
-    """Innermost middleware — emits a per-attempt trace record around ``next_call``.
+class TracingBehavior:
+    """Innermost behavior — emits a per-attempt trace record around ``next_call``.
 
     Stateless and constructor-arg-free: the only collaborator is the
     module-level :data:`logger`. Tests that need to capture emitted
     records use stdlib :mod:`logging` machinery (``caplog`` fixture in
     pytest, or :class:`logging.handlers.MemoryHandler` directly).
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — the
-    ``__call__`` signature matches the Protocol so mypy treats the
-    instance as assignable into a ``Sequence[Middleware]``.
+    Its ``__call__`` signature matches the fixed behavior-call shape composed
+    by :class:`RuntimePipeline`.
     """
 
     async def __call__(
@@ -137,4 +136,4 @@ class TracingMiddleware:
         return response
 
 
-__all__ = ["TracingMiddleware"]
+__all__ = ["TracingBehavior"]

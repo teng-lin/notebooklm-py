@@ -557,7 +557,7 @@ def test_transitive_public_error_helper_mutation_changes_reachability_contract(
     assert (
         before["private_dataclass_projection_paths"] == after["private_dataclass_projection_paths"]
     )
-    assert before["transitive_helper_graph"]["node_count"] == 521
+    assert before["transitive_helper_graph"]["node_count"] == 528
     assert (
         before["transitive_helper_graph"]["aggregate_fingerprint"]
         != after["transitive_helper_graph"]["aggregate_fingerprint"]
@@ -1350,8 +1350,8 @@ def test_checked_in_reachability_allocations_are_exact() -> None:
     assert contract["transitive_helper_graph"] == {
         "schema_version": 1,
         "root_count": 210,
-        "node_count": 521,
-        "edge_count": 1245,
+        "node_count": 528,
+        "edge_count": 1253,
         "aggregate_fingerprint": contract["transitive_helper_graph"]["aggregate_fingerprint"],
     }
     assert str(contract["transitive_helper_graph"]["aggregate_fingerprint"]).startswith("sha256:")

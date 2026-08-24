@@ -9,7 +9,7 @@ and exception chain.
 
 As of Tier-12 PR 12.5 the drain-tracking bookkeeping
 (``_begin_transport_post`` / ``_finish_transport_post``) has moved into
-``DrainMiddleware`` at the outermost chain position around
+``DrainBehavior`` at the outermost chain position around
 ``RuntimeTransport.perform_authed_post``. ``chat_aware_authed_post`` no
 longer brackets its own transport call with explicit drain calls —
 admission and finalization are middleware concerns now. The tests
@@ -76,7 +76,7 @@ def _make_stub_transport(
     should be supplied per test — they are mutually exclusive.
 
     PR 12.5 lifted ``_begin_transport_post`` / ``_finish_transport_post``
-    into DrainMiddleware, so the stub no longer needs to mock them —
+    into DrainBehavior, so the stub no longer needs to mock them —
     ``chat_aware_authed_post`` does not call them. Wave 8 of
     session-decoupling switched the helper to take a
     :class:`RuntimeTransport` directly, so the stub exposes the
@@ -408,13 +408,13 @@ async def test_raw_http_status_error_maps_to_chat_error():
 
 
 # ---------------------------------------------------------------------------
-# Finalization invariant (PR 12.5: moved into DrainMiddleware)
+# Finalization invariant (PR 12.5: moved into DrainBehavior)
 # ---------------------------------------------------------------------------
 #
 # The pre-PR-12.5 contract that ``chat_aware_authed_post`` ran
 # ``_finish_transport_post`` in its own ``finally`` is no longer this
 # function's responsibility — drain admission/finalization moved into
-# ``DrainMiddleware`` at the outermost chain position. The exception-
+# ``DrainBehavior`` at the outermost chain position. The exception-
 # path finalization invariant is now pinned by
 # ``tests/unit/test_drain_middleware.py::test_finish_fires_on_exception``,
 # which exercises a real ``TransportDrainTracker`` end-to-end rather

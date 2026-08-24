@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import inspect
 import json
 from typing import Any
 
 import httpx
 import pytest
 
+from notebooklm._app.generate import execute_generation
 from notebooklm._idempotency import IdempotencyPolicy, IdempotencyRegistry
 from notebooklm._operations import CallPolicy, Operation, OperationDef
 from notebooklm.rpc import RPCMethod
@@ -486,50 +488,15 @@ def test_non_rpc_authority_source_contract_fails_closed(
 
 
 @pytest.mark.repo_lint
-def test_app_authority_source_contract_and_fingerprint_fail_closed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    site = "artifacts.py:with_rate_limit_retry"
-    evidence = catalog.collect_app_authority_source_evidence()[site]
+def test_internal_generation_workflow_is_not_a_second_execution_authority() -> None:
+    projection = catalog.build_operation_catalog()
+    source = inspect.getsource(execute_generation)
 
-    assert evidence["function_ast_sha256"].startswith("sha256:")
-    assert len(evidence["function_ast_sha256"]) == 71
-    assert evidence["public_export"] == "with_rate_limit_retry"
-    assert evidence["observed_required_calls"] == [
-        "calculate_backoff_delay",
-        "generate_fn",
-        "sleep_func",
-    ]
-    assert len(evidence["internal_call_edges"]) == 1
-    edge = evidence["internal_call_edges"][0]
-    assert edge["caller"] == "_app/generate_retry.py:generate_with_retry"
-    assert edge["target"] == "artifact_retry.with_rate_limit_retry"
-    assert edge["caller_ast_sha256"].startswith("sha256:")
-    assert len(edge["caller_ast_sha256"]) == 71
-
-    contracts = dict(catalog_ast.APP_AUTHORITY_SOURCE_CONTRACTS)
-    contracts[site] = dataclasses.replace(
-        contracts[site], required_calls=(*contracts[site].required_calls, ("future_retry",))
-    )
-    monkeypatch.setattr(catalog_ast, "APP_AUTHORITY_SOURCE_CONTRACTS", contracts)
-    assert any(
-        f"app authority {site} no longer reaches required loop call future_retry" in error
-        for error in catalog.audit_operation_catalog()
-    )
-
-    monkeypatch.undo()
-    fingerprints = catalog_ast.collect_function_ast_fingerprints()
-    monkeypatch.setattr(
-        catalog_ast,
-        "collect_function_ast_fingerprints",
-        lambda: {**fingerprints, site: "sha256:" + "0" * 64},
-    )
-    assert (
-        catalog.build_operation_catalog()["app_authority_source_evidence"][site][
-            "function_ast_sha256"
-        ]
-        == "sha256:" + "0" * 64
-    )
+    assert projection["app_authority_source_evidence"] == {}
+    assert "_run_generation_workflow" in source
+    assert "_run_rate_limit_retry" not in source
+    assert "generate_with_retry(" not in source
+    assert "handle_generation_result(" not in source
 
 
 def test_semantic_ast_fingerprint_ignores_cross_version_shape_noise() -> None:
@@ -582,16 +549,6 @@ def test_known_divergences_remain_reported_but_do_not_fail_audit() -> None:
 
     assert {row["operation"] for row in divergences} == {
         "artifact.download",
-        "artifact.generate_audio",
-        "artifact.generate_data_table",
-        "artifact.generate_flashcards",
-        "artifact.generate_infographic",
-        "artifact.generate_quiz",
-        "artifact.generate_report",
-        "artifact.generate_slide_deck",
-        "artifact.generate_video",
-        "artifact.revise_slide",
-        "mind_map.generate_interactive",
         "source.refresh",
     }
 
@@ -603,20 +560,14 @@ def test_operation_authorities_are_exact_discriminated_and_include_non_rpc_paths
 
     audio = rows["artifact.generate_audio"]["execution_authorities"]
     assert {row["site"] for row in audio} == {
-        "artifacts.py:with_rate_limit_retry",
         "_web/studio_media.py:StudioMediaWebHandlers._audio_generate",
     }
-    retry_authority = next(
-        row for row in audio if row["site"] == "artifacts.py:with_rate_limit_retry"
-    )
-    assert retry_authority["binding"] == "public_helper"
     assert all(row["discriminator"] for row in audio)
     assert not any("MindMapsAPI.generate" in row["site"] for row in audio)
 
     for operation in ("artifact.generate_quiz", "artifact.generate_flashcards"):
         authorities = rows[operation]["execution_authorities"]
         assert {row["site"] for row in authorities} == {
-            "artifacts.py:with_rate_limit_retry",
             "_web/studio_media.py:StudioMediaWebHandlers._interactive_generate",
         }
         assert all(row["discriminator"] for row in authorities)

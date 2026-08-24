@@ -82,8 +82,8 @@ def test_audio_records_are_frozen_slotted_closed_and_redacted() -> None:
 def test_audio_facade_has_one_generation_authority() -> None:
     source = inspect.getsource(ArtifactsAPI.generate_audio)
 
-    assert "self._audio.generate" in source
-    assert "self._generation" not in source
+    assert "self._generation_workflow.generate_once" in source
+    assert "self._audio.generate" not in source
 
 
 @pytest.mark.asyncio

@@ -55,74 +55,81 @@ class SharedUser:
 
         Entry format: [email, permission, [], [name, avatar]]
         """
-        # ``data[0]`` is the user email. An absent / ``None`` slot keeps the
-        # historical silent ``""``-degrade (this factory parses entries out of
-        # the whole shared-user list, so raising would abort sibling entries).
-        # A *present-but-malformed* slot (non-str, non-None) also degrades to
-        # ``""`` for the same reason, but now logs a WARNING instead of
-        # silently fabricating an empty email (#1485 absence-vs-malformed
-        # policy).
-        email = ""
-        if data:
-            # ``data`` is non-empty here, so slot 0 is present: ``safe_index``
-            # can never raise — it stays the soft read it replaces.
-            raw_email = safe_index(
-                data, 0, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response"
-            )
-            if isinstance(raw_email, str):
-                email = raw_email
-            elif raw_email is not None:
-                logger.warning(
-                    "Share user email slot malformed — fabricating empty email "
-                    "(expected str at entry[0], got %s; entry=%s)",
-                    type(raw_email).__name__,
-                    reprlib.repr(data),
-                )
-        # ``len(data) > 1`` proves slot 1 is present before descending.
-        perm_value = (
-            safe_index(data, 1, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response")
-            if len(data) > 1
-            else 3
-        )
-        try:
-            permission = SharePermission(perm_value)
-        except (TypeError, ValueError):
-            permission = SharePermission.VIEWER
+        return _shared_user_from_api_response(cls, data)
 
-        display_name = None
-        avatar_url = None
-        # ``len(data) > 3`` proves slot 3 is present; ``isinstance(..., list)``
-        # is checked on the same descended value so the original guard shape is
-        # preserved.
-        user_info_block = (
-            safe_index(data, 3, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response")
-            if len(data) > 3
+
+def _shared_user_from_api_response(
+    user_type: type[SharedUser],
+    data: list[Any],
+) -> SharedUser:
+    """Build one shared-user model without routing production through its public codec."""
+    # ``data[0]`` is the user email. An absent / ``None`` slot keeps the
+    # historical silent ``""``-degrade (this factory parses entries out of
+    # the whole shared-user list, so raising would abort sibling entries).
+    # A *present-but-malformed* slot (non-str, non-None) also degrades to
+    # ``""`` for the same reason, but now logs a WARNING instead of
+    # silently fabricating an empty email (#1485 absence-vs-malformed policy).
+    email = ""
+    if data:
+        # ``data`` is non-empty here, so slot 0 is present: ``safe_index``
+        # can never raise — it stays the soft read it replaces.
+        raw_email = safe_index(
+            data, 0, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response"
+        )
+        if isinstance(raw_email, str):
+            email = raw_email
+        elif raw_email is not None:
+            logger.warning(
+                "Share user email slot malformed — fabricating empty email "
+                "(expected str at entry[0], got %s; entry=%s)",
+                type(raw_email).__name__,
+                reprlib.repr(data),
+            )
+    # ``len(data) > 1`` proves slot 1 is present before descending.
+    perm_value = (
+        safe_index(data, 1, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response")
+        if len(data) > 1
+        else 3
+    )
+    try:
+        permission = SharePermission(perm_value)
+    except (TypeError, ValueError):
+        permission = SharePermission.VIEWER
+
+    display_name = None
+    avatar_url = None
+    # ``len(data) > 3`` proves slot 3 is present; ``isinstance(..., list)``
+    # is checked on the same descended value so the original guard shape is
+    # preserved.
+    user_info_block = (
+        safe_index(data, 3, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response")
+        if len(data) > 3
+        else None
+    )
+    if isinstance(user_info_block, list):
+        user_info = user_info_block
+        # ``if user_info`` / ``len(user_info) > 1`` guard each slot below.
+        display_name = (
+            safe_index(
+                user_info, 0, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response"
+            )
+            if user_info
             else None
         )
-        if isinstance(user_info_block, list):
-            user_info = user_info_block
-            # ``if user_info`` / ``len(user_info) > 1`` guard each slot below.
-            display_name = (
-                safe_index(
-                    user_info, 0, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response"
-                )
-                if user_info
-                else None
+        avatar_url = (
+            safe_index(
+                user_info, 1, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response"
             )
-            avatar_url = (
-                safe_index(
-                    user_info, 1, method_id=_SHARE_METHOD_ID, source="SharedUser.from_api_response"
-                )
-                if len(user_info) > 1
-                else None
-            )
-
-        return cls(
-            email=email,
-            permission=permission,
-            display_name=display_name,
-            avatar_url=avatar_url,
+            if len(user_info) > 1
+            else None
         )
+
+    return user_type(
+        email=email,
+        permission=permission,
+        display_name=display_name,
+        avatar_url=avatar_url,
+    )
 
 
 @dataclass
@@ -237,7 +244,7 @@ class ShareStatus:
         if isinstance(user_entries, list):
             for user_data in user_entries:
                 if isinstance(user_data, list):
-                    users.append(SharedUser.from_api_response(user_data))
+                    users.append(_shared_user_from_api_response(SharedUser, user_data))
 
         # Parse is_public from [1]. Bind the ``[is_public]`` block to a local so
         # the flag read is a single-level index rather than a chained

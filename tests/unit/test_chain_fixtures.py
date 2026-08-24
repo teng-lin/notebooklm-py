@@ -7,11 +7,10 @@ import asyncio
 import httpx
 import pytest
 
-from notebooklm._middleware.core import (
+from notebooklm._runtime.rpc_call import (
     NextCall,
     RpcRequest,
     RpcResponse,
-    build_chain,
 )
 
 # Match the import idiom documented in ``tests/_fixtures/__init__.py``: the
@@ -19,6 +18,7 @@ from notebooklm._middleware.core import (
 # fully-qualified import path for these helpers.
 from tests._fixtures.chain import (
     FakeChainTerminal,
+    build_chain,
     chain_calls_through_to_terminal,
     make_request,
 )

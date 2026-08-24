@@ -104,7 +104,7 @@ def resolve_auth_json_env() -> str | None:
 # other's updates, the exact class ADR-0029 closed. Only
 # :func:`_bootstrap_lock_path` canonicalizes internally (#2103); the other three
 # derive from the caller's path as given, and the call sites that need alias
-# collapsing canonicalize before calling (``_client_assembly`` for the keepalive
+# collapsing canonicalize before calling (``_client_composition.compose_client`` for the keepalive
 # rotation, ``refresh._fetch_tokens_with_refresh`` / ``try_refresh_cmd_reauth``
 # for the refresh-cmd flock). ``tests/unit/test_auth_lock_path_derivation.py``
 # pins all four against hard-coded strings, base policy included.
@@ -157,8 +157,8 @@ def _rotation_lock_path(storage_path: Path | None) -> Path | None:
     so a long-running save doesn't block rotations or vice versa.
 
     Base: the caller's path as given. The keepalive route hands it an already
-    canonicalized path (``_client_assembly`` canonicalizes the keepalive storage
-    path once, at client assembly); the PSIDTS rotation-recovery route
+    canonicalized path (``_client_composition.compose_client`` canonicalizes the
+    keepalive storage path once, at client composition); the PSIDTS rotation-recovery route
     (``psidts_recovery._recover_psidts_inline``) passes the load path
     through unchanged. ``None`` (env-var auth) has no file to anchor a sentinel
     to and yields ``None``, which every caller treats as "no cross-process

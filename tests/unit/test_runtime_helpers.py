@@ -2,7 +2,7 @@
 
 Currently focused on :func:`resolve_sleep` — the shared helper that
 replaces the duplicated ``_resolve_sleep`` methods previously defined on
-both :class:`RetryMiddleware` and :class:`AuthRefreshMiddleware` (audit
+both :class:`RetryBehavior` and :class:`AuthRefreshBehavior` (audit
 finding CC1).
 
 The contract pinned here:
@@ -11,8 +11,8 @@ The contract pinned here:
   injected callable verbatim when it is not ``None``.
 - **None resolves to ``asyncio.sleep`` at call time** — capturing the
   module-level attribute on each invocation rather than at import time.
-- **Late binding through middlewares** — both ``RetryMiddleware`` and
-  ``AuthRefreshMiddleware`` observe a ``monkeypatch.setattr`` of
+- **Late binding through middlewares** — both ``RetryBehavior`` and
+  ``AuthRefreshBehavior`` observe a ``monkeypatch.setattr`` of
   ``asyncio.sleep`` because they call ``resolve_sleep(self._sleep)``
   per backoff/retry, and ``resolve_sleep`` re-reads the ``asyncio``
   module attribute every time.
@@ -30,13 +30,13 @@ from collections.abc import Awaitable
 import httpx
 import pytest
 
-from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
-from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
-from notebooklm._middleware.retry import RetryMiddleware
+from notebooklm._runtime.auth_refresh_behavior import AuthRefreshBehavior
 from notebooklm._runtime.helpers import is_auth_error, resolve_sleep
+from notebooklm._runtime.retry_behavior import RetryBehavior
+from notebooklm._runtime.rpc_call import NextCall, RpcRequest, RpcResponse
 from notebooklm._transport_errors import TransportServerError
 from notebooklm.rpc import AuthError, RPCError, ServerError
-from tests._fixtures.chain import make_request
+from tests._fixtures.chain import build_chain, make_request
 
 # ---------------------------------------------------------------------------
 # Direct unit tests for resolve_sleep
@@ -186,7 +186,7 @@ def _scripted_terminal(behaviors: list[object]) -> NextCall:
 async def test_retry_middleware_observes_monkeypatched_asyncio_sleep(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """RetryMiddleware honors a ``monkeypatch.setattr('asyncio.sleep', ...)``.
+    """RetryBehavior honors a ``monkeypatch.setattr('asyncio.sleep', ...)``.
 
     The middleware is constructed without a ``sleep=`` injection, so the
     no-jitter / no-real-time backoff comes from late-binding to the
@@ -201,7 +201,7 @@ async def test_retry_middleware_observes_monkeypatched_asyncio_sleep(
 
     # No ``sleep=`` injection — the middleware must resolve ``asyncio.sleep``
     # at call time via the shared helper.
-    middleware = RetryMiddleware(rate_limit_max_retries=0, server_error_max_retries=1)
+    middleware = RetryBehavior(rate_limit_max_retries=0, server_error_max_retries=1)
     chain = build_chain([middleware], _scripted_terminal([_server_error(), _ok()]))
 
     response = await chain(make_request())
@@ -214,7 +214,7 @@ async def test_retry_middleware_observes_monkeypatched_asyncio_sleep(
 async def test_auth_refresh_middleware_observes_monkeypatched_asyncio_sleep(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AuthRefreshMiddleware honors a ``monkeypatch.setattr('asyncio.sleep', ...)``.
+    """AuthRefreshBehavior honors a ``monkeypatch.setattr('asyncio.sleep', ...)``.
 
     Forces a post-refresh sleep by setting ``refresh_retry_delay`` > 0 and
     asserts the patched ``asyncio.sleep`` (not the real one) is invoked.
@@ -234,7 +234,7 @@ async def test_auth_refresh_middleware_observes_monkeypatched_asyncio_sleep(
     def _live_delay() -> float:
         return 0.25
 
-    middleware = AuthRefreshMiddleware(
+    middleware = AuthRefreshBehavior(
         refresh_callable=refresh,
         is_auth_error=is_auth_error,
         refresh_callback_enabled=lambda: True,

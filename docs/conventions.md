@@ -60,7 +60,7 @@ Examples:
   pinning a discovered `task_id` between iterations.
 - `SourcesAPI.wait_for_sources` — facade-owned fail-fast batch wait across N
   source IDs with one shared deadline and one notebook snapshot per poll tick.
-- `RetryMiddleware._wait_for_rate_limit` / `_wait_for_server_error` — private
+- `RetryBehavior._wait_for_rate_limit` / `_wait_for_server_error` — private
   variant; see the underscore-prefix subsection below.
 
 ### `wait_until_X` — loop on a **predicate** (also bounded)
@@ -100,19 +100,19 @@ get `await`-ed. The verb signals coalescing semantics, not async-ness.
 
 ### `_wait_for_X` — module-private backoff helper
 
-The leading underscore + `wait_for_` shape is used inside middlewares to
+The leading underscore + `wait_for_` shape is used inside runtime behaviors to
 indicate **"this is the bounded backoff helper I extracted from one specific
 retry leg"**. It is not a public coordination primitive; it is a private
 implementation detail of a larger retry loop.
 
 Examples:
 
-- `RetryMiddleware._wait_for_rate_limit` — honors `Retry-After`, falls back to
+- `RetryBehavior._wait_for_rate_limit` — honors `Retry-After`, falls back to
   exponential backoff. Called from inside the rate-limit branch of the retry
   loop; never called externally.
-- `RetryMiddleware._wait_for_server_error` — same shape for the 5xx branch.
+- `RetryBehavior._wait_for_server_error` — same shape for the 5xx branch.
 
-If you extract a backoff helper from a middleware, follow this pattern. If you
+If you extract a backoff helper from a runtime behavior, follow this pattern. If you
 extract a *public* waiting primitive, drop the underscore and use one of the
 four verbs above.
 
@@ -136,7 +136,7 @@ aliases. They accept operation-specific, transport-neutral collaborators such as
 owns method IDs, request envelopes, response decoding, retry variants, and the
 concrete `RpcExecutor`.
 
-`NextCall` in `_middleware/core.py` remains the middleware-chain callable alias:
+`NextCall` in `_runtime/rpc_call.py` remains the runtime-pipeline callable alias:
 `Callable[[RpcRequest], Awaitable[RpcResponse]]`. It describes one link invoking
 the next link and is not a feature-layer transport capability.
 

@@ -1,11 +1,11 @@
-"""Unit tests for :class:`AuthRefreshMiddleware` (Tier-12 PR 12.8).
+"""Unit tests for :class:`AuthRefreshBehavior` (Tier-12 PR 12.8).
 
-Pins the contract documented in ``src/notebooklm/_middleware/auth_refresh.py``
+Pins the contract documented in ``src/notebooklm/_runtime/auth_refresh_behavior.py``
 and ADR-0009 §"Chain ordering":
 
 - **Pass-through on success.** Single ``next_call``; result returned.
 - **Pass-through on non-auth exception.** ``TransportRateLimited`` /
-  ``TransportServerError`` propagate to ``RetryMiddleware`` outside.
+  ``TransportServerError`` propagate to ``RetryBehavior`` outside.
 - **Pass-through when no refresh callback configured.** The
   ``refresh_callback_enabled`` gate matches the legacy
   ``host._refresh_callback is not None`` check.
@@ -24,7 +24,7 @@ and ADR-0009 §"Chain ordering":
   error on the retry leg propagates — no second refresh, no recursion.
 - **Post-refresh sleep honored** when ``refresh_retry_delay > 0``.
 - **Live-bound `refresh_retry_delay`.** Callable getter so test mutation
-  on the host still takes effect (matches the RetryMiddleware idiom).
+  on the host still takes effect (matches the RetryBehavior idiom).
 - **Log shape preservation** — "auth error detected, attempting token
   refresh" / "Token refresh failed: X" / "Token refresh successful,
   retrying Y" match the legacy transport messages bit-for-bit
@@ -45,10 +45,10 @@ import httpx
 import pytest
 
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
-from notebooklm._middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._request_types import AuthSnapshot
+from notebooklm._runtime.auth_refresh_behavior import AuthRefreshBehavior
 from notebooklm._runtime.helpers import is_auth_error
+from notebooklm._runtime.rpc_call import NextCall, RpcRequest, RpcResponse
 from notebooklm._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,
@@ -57,7 +57,7 @@ from notebooklm._transport_errors import (
 
 # The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
-from tests._fixtures.chain import make_call_state, make_request
+from tests._fixtures.chain import Behavior, build_chain, make_call_state, make_request
 
 
 def _recording_sleep() -> tuple[Callable[[float], Awaitable[None]], list[float]]:
@@ -100,13 +100,13 @@ def _make_middleware(
     metrics: ClientMetrics | None = None,
     snapshot_provider: Callable[[], Awaitable[AuthSnapshot]] | None = None,
     auth_error_predicate: Callable[[Exception], bool] = is_auth_error,
-) -> AuthRefreshMiddleware:
-    """Build an ``AuthRefreshMiddleware`` with sensible defaults for tests."""
+) -> AuthRefreshBehavior:
+    """Build an ``AuthRefreshBehavior`` with sensible defaults for tests."""
 
     async def _noop_refresh() -> None:
         return None
 
-    return AuthRefreshMiddleware(
+    return AuthRefreshBehavior(
         refresh_callable=refresh_callable or _noop_refresh,
         is_auth_error=auth_error_predicate,
         refresh_callback_enabled=lambda: refresh_enabled,
@@ -137,7 +137,7 @@ async def test_passes_through_on_success() -> None:
 
 @pytest.mark.asyncio
 async def test_passes_through_on_rate_limited() -> None:
-    """``TransportRateLimited`` propagates to ``RetryMiddleware`` outside."""
+    """``TransportRateLimited`` propagates to ``RetryBehavior`` outside."""
     request = httpx.Request("POST", "https://example.test/x")
     boom = TransportRateLimited(
         "rate limited",
@@ -484,10 +484,10 @@ async def test_refresh_failure_raises_transport_auth_expired() -> None:
 async def test_auth_refresh_skipped_when_context_marks_already_refreshed() -> None:
     """If ``context["auth_refreshed"]`` is set, a fresh 401 propagates.
 
-    Models the load-bearing scenario where ``RetryMiddleware`` (outside
+    Models the load-bearing scenario where ``RetryBehavior`` (outside
     this middleware in the final chain) re-invokes the chain after a 429
     that fired post-refresh. The retry hits a 401 again; without the
-    per-request flag, AuthRefreshMiddleware would refresh a SECOND time.
+    per-request flag, AuthRefreshBehavior would refresh a SECOND time.
     With it, the 401 propagates — restoring the pre-PR-12.7
     "one refresh max per logical call" contract.
 
@@ -516,7 +516,7 @@ async def test_auth_refresh_skipped_when_context_marks_already_refreshed() -> No
 @pytest.mark.asyncio
 async def test_context_auth_refreshed_flag_set_after_first_refresh() -> None:
     """A successful refresh marks ``context["auth_refreshed"]`` so a later
-    chain re-entry through ``RetryMiddleware`` won't refresh again.
+    chain re-entry through ``RetryBehavior`` won't refresh again.
     """
     boom = _auth_error()
     terminal, _calls = _scripted_terminal([boom, httpx.Response(200, content=b"ok")])
@@ -695,7 +695,7 @@ async def test_refresh_retry_delay_is_live_bound() -> None:
         return None
 
     sleep, slept = _recording_sleep()
-    middleware = AuthRefreshMiddleware(
+    middleware = AuthRefreshBehavior(
         refresh_callable=refresh,
         is_auth_error=is_auth_error,
         refresh_callback_enabled=lambda: True,
@@ -727,13 +727,12 @@ async def test_refresh_retry_delay_is_live_bound() -> None:
 
 
 def test_middleware_satisfies_protocol() -> None:
-    """``AuthRefreshMiddleware`` instance is assignable to ``Middleware``."""
-    from notebooklm._middleware.core import Middleware
+    """``AuthRefreshBehavior`` instance is assignable to ``Middleware``."""
 
     async def _noop() -> None:
         return None
 
-    middleware: Middleware = AuthRefreshMiddleware(
+    middleware: Behavior = AuthRefreshBehavior(
         refresh_callable=_noop,
         is_auth_error=is_auth_error,
         refresh_callback_enabled=lambda: True,

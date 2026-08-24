@@ -9,9 +9,8 @@ OR a :class:`.outcomes.BrowserCookieOutcome` subclass on failure.
 Callers (the auth-inspect command, the ``login --browser-cookies``
 refresh driver) dispatch on the outcome. The boundary test keeps this
 module in :data:`GUARDED_PATHS` — no presentation reach-in, no exit
-policy. The transitional helpers in :mod:`.chromium_accounts` and
-:mod:`.firefox_accounts` (still owning presentation + exit policy per
-their own ``TRANSITIONAL_GUARDED_PATHS`` entries) are wrapped here so
+policy. The browser-family helpers in :mod:`.chromium_accounts` and
+:mod:`.firefox_accounts` are wrapped here so
 the caller sees a uniform outcome shape on the auth-inspect path.
 
 Imports from :mod:`.chromium_accounts`, :mod:`.firefox_accounts`,

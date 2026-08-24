@@ -932,9 +932,9 @@ surface and delegates web execution and lifecycle operations through
 split, `Kernel.__init__` in `src/notebooklm/_kernel.py` constructs the
 `httpx.AsyncClient` and is responsible for closing it on `aclose()`.
 `_runtime/init.py` constructs the runtime leaves and returns them in a
-frozen `ClientInternals` construction receipt. `_client_assembly.py`
-passes that receipt directly to `WebRpcBackend`, which unpacks the leaves
-and does not retain the receipt. `WebExecutionRuntime` is the sole
+frozen `ClientInternals` construction receipt. `_client_composition.py`
+consumes that receipt while constructing `WebRpcBackend`; neither the client
+nor backend retains the receipt. `WebExecutionRuntime` is the sole
 encode/dispatch/decode implementation; the historical `RpcExecutor` name
 is a behaviorless compatibility subclass.
 
@@ -952,8 +952,8 @@ compatibility shim was removed in v0.5.0.
 | `_web/backend.py` | `WebRpcBackend`: typed semantic web port plus the client-facing auth, lifecycle, metrics, and raw-RPC delegation surface. | Unpacks the construction receipt and owns the assembled runtime leaves; `NotebookLMClient` delegates through this backend. |
 | `_web/runtime.py` | `WebExecutionRuntime`: batchexecute encoding, policy-stack dispatch, decoding, and decoded-auth retry. | Sole execution authority for semantic web operations and the public raw-RPC escape hatch. |
 | `_kernel` | Concrete `Kernel` transport core; owns the `httpx.AsyncClient` (constructed in `Kernel.__init__`, closed in `Kernel.aclose()`) and the cookie jar. | Pure transport surface (see `Kernel` Protocol in `_runtime/contracts.py`). |
-| `_runtime/init.py` | Constructor validation plus construction of runtime leaves, `RuntimeTransport`, the middleware chain, and `WebExecutionRuntime`. | Returns a frozen `ClientInternals` construction-only receipt; assembly passes it directly to `WebRpcBackend`, and neither client nor backend retains the container. |
-| `_runtime/transport.py` | Authenticated transport leg used by `WebExecutionRuntime` and the middleware chain terminal. | Routes through `Kernel.post` and centralizes request-envelope materialization. |
+| `_runtime/init.py` | Constructor validation plus construction of runtime leaves, `RuntimeTransport`, `RuntimePipeline`, and `WebExecutionRuntime`. | Returns a frozen `ClientInternals` construction-only receipt; `_client_composition.py` consumes it while constructing `WebRpcBackend`, and neither client nor backend retains the container. |
+| `_runtime/transport.py` | Authenticated transport leg used by `WebExecutionRuntime` and the runtime pipeline terminal. | Routes through `Kernel.post` and centralizes request-envelope materialization. |
 | `_runtime/config.py` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_CHAT_TIMEOUT`, `DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT`/`_PER_SOURCE_TIMEOUT`/`_MAX_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
 | `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
 | `_error_injection` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
@@ -966,9 +966,11 @@ compatibility shim was removed in v0.5.0.
 | `_polling_registry` | Pending-poll registry shared by long-running artifact generations. | Used by artifacts to coordinate and cancel pending polls. |
 | `_reqid_counter` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
 | `_rpc_executor` | Behaviorless `RpcExecutor` compatibility subclass and `DecodeResponse` re-export. | Retains private import/construction compatibility; all execution behavior lives in `WebExecutionRuntime`. |
-| `_middleware/context.py` | `RpcCallState`: immutable per-call configuration plus bounded progress publication. | The exact state object is shared by identity across retries; it replaces the retired string-key request-context protocol. |
-| `_request_types` | `AuthSnapshot`, `BuildRequest`, `BuildRequestResult`, and request materialization helpers. | Shared request Interface for RPC, chat, auth refresh, and the chain terminal. |
-| `_transport_errors` | Transport exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping. | Keeps terminal error mapping out of `Kernel` callers and lets the middleware chain consume a narrow exception Interface. |
+| `_runtime/rpc_call_state.py` | `RpcCallState`: immutable per-call configuration plus bounded progress publication. | The exact state object is shared by identity across retries; it replaces the retired string-key request-context protocol. |
+| `_runtime/rpc_call.py` | `RpcRequest`, `RpcResponse`, `NextCall`, and the chain-composition primitive. | Supplies the typed envelopes shared by the immutable runtime pipeline. |
+| `_runtime/pipeline.py` | `RuntimePipeline`: fixed drain/metrics/semaphore/retry/auth-refresh/tracing behavior order. | Composes the transport terminal once; no mutable chain host or post-construction bind step remains. |
+| `_request_types` | `AuthSnapshot`, `BuildRequest`, `BuildRequestResult`, and request materialization helpers. | Shared request Interface for RPC, chat, auth refresh, and the runtime pipeline terminal. |
+| `_transport_errors` | Transport exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping. | Keeps terminal error mapping out of `Kernel` callers and lets the runtime pipeline consume a narrow exception Interface. |
 | `_streaming_post` | Streaming POST helper with the response-size cap. | Keeps low-level buffered HTTP read behavior local to the `Kernel.post` implementation. |
 
 Feature APIs depend on narrow per-capability Protocols defined in

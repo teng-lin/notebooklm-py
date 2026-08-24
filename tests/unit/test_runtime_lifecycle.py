@@ -56,8 +56,8 @@ from notebooklm._runtime.lifecycle import (
 )
 from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.types import ConnectionLimits
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 class _StubHost:
@@ -637,7 +637,7 @@ def test_bound_loop_mismatch_via_session_raises_runtime_error() -> None:
     """
 
     auth = AuthTokens(csrf_token="CSRF", session_id="SID", cookies={"SID": "v1"})
-    core = build_client_shell_for_tests(auth=auth)
+    core = NotebookLMClient(auth=auth)
 
     async def _open_on_loop_a() -> None:
         await core.__aenter__()

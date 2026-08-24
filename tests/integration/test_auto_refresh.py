@@ -1,20 +1,107 @@
 """Integration tests for automatic token refresh."""
 
 import asyncio
-from unittest.mock import MagicMock
+import logging
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 import pytest
 
 from notebooklm import NotebookLMClient
+from notebooklm._auth.cookie_types import CookieJar
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._kernel import Kernel
+from notebooklm._request_types import AuthSnapshot
+from notebooklm._rpc_semaphore import RpcSemaphore
+from notebooklm._runtime.helpers import is_auth_error
+from notebooklm._runtime.rpc_call import RpcRequest, RpcResponse
+from notebooklm._runtime.transport import RuntimeTransport
+from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm._web.runtime import WebExecutionRuntime
+from notebooklm._web_cookie_provider import WebCookieGeneration
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCError, RPCMethod
-from tests._helpers.client_factory import build_client_shell_for_tests
-from tests.integration.conftest import install_post_as_stream
 
 # mock-based refresh-callback wiring tests; no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
+
+
+def _generation(epoch: int = 0) -> WebCookieGeneration:
+    return WebCookieGeneration(
+        cookies=CookieJar(),
+        csrf_token=f"csrf-{epoch}",
+        session_id=f"session-{epoch}",
+        authuser=0,
+        account_email=None,
+        generation=epoch,
+    )
+
+
+def _runtime(
+    *,
+    terminal: Callable[[RpcRequest], Awaitable[RpcResponse]],
+    decode_response: Callable[..., Any],
+    refresh: Callable[[], Awaitable[Any]],
+    refresh_retry_delay: float = 0.0,
+) -> tuple[WebExecutionRuntime, ClientMetrics]:
+    """Build the smallest explicit transport/decoder refresh graph."""
+    generations = [_generation()]
+    metrics = ClientMetrics()
+
+    async def snapshot() -> AuthSnapshot:
+        return generations[-1]
+
+    async def refresh_generation() -> None:
+        await refresh()
+        generations.append(_generation(len(generations)))
+
+    transport = RuntimeTransport(
+        kernel=Kernel(),
+        snapshot_provider=snapshot,
+        metrics=metrics,
+        bound_loop_check=lambda: None,
+        logger=logging.getLogger(__name__),
+        drain_tracker=TransportDrainTracker(),
+        rpc_semaphore=RpcSemaphore(None),
+        rate_limit_max_retries=0,
+        server_error_max_retries=0,
+        retry_timeout_provider=lambda: 30.0,
+        refresh_retry_delay=refresh_retry_delay,
+        refresh_callable=refresh_generation,
+        is_auth_error=is_auth_error,
+        refresh_callback_enabled_provider=lambda: True,
+        terminal=terminal,
+    )
+    runtime = WebExecutionRuntime(
+        assert_open=lambda: None,
+        transport=transport,
+        refresh=refresh_generation,
+        metrics=metrics,
+        decode_response=decode_response,
+        is_auth_error=is_auth_error,
+        sleep=asyncio.sleep,
+        timeout_provider=lambda: 30.0,
+        refresh_callback_enabled_provider=lambda: True,
+        refresh_retry_delay_provider=lambda: refresh_retry_delay,
+    )
+    return runtime, metrics
+
+
+def _success(request: RpcRequest, text: str = "mock response") -> RpcResponse:
+    response = httpx.Response(
+        200,
+        text=text,
+        request=httpx.Request("POST", request.url),
+    )
+    return RpcResponse(response=response, state=request.state)
+
+
+def _unauthorized(request: RpcRequest) -> httpx.HTTPStatusError:
+    wire_request = httpx.Request("POST", request.url)
+    response = httpx.Response(401, request=wire_request)
+    return httpx.HTTPStatusError("Unauthorized", request=wire_request, response=response)
 
 
 class TestAutoRefreshIntegration:
@@ -43,116 +130,67 @@ class TestAutoRefreshIntegration:
     @pytest.mark.asyncio
     async def test_full_refresh_flow_http_error(self):
         """Test complete auto-refresh flow for HTTP 401 errors."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="old_csrf",
-            session_id="sid",
+        refresh_calls: list[bool] = []
+
+        async def tracking_refresh() -> None:
+            refresh_calls.append(True)
+
+        attempts = 0
+
+        async def terminal(request: RpcRequest) -> RpcResponse:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise _unauthorized(request)
+            return _success(request)
+
+        runtime, _ = _runtime(
+            terminal=terminal,
+            decode_response=lambda *_a, **_kw: [[["nb1"], ["Notebook 1"]]],
+            refresh=tracking_refresh,
         )
 
-        client = build_client_shell_for_tests(auth, refresh_retry_delay=0)
+        result = await runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
-        # Track refresh calls
-        refresh_calls = []
-
-        async def tracking_refresh():
-            refresh_calls.append(True)
-            # Simulate successful refresh
-            client.auth.csrf_token = "new_csrf"
-            # Wave 3 of plan ``host-protocol-removal`` deleted the
-            # Session-level ``update_auth_headers`` forward; call the
-            # canonical coordinator method directly with explicit kwargs.
-            client._provider._coordinator.update_auth_headers(
-                auth=client.auth,
-                kernel=client._backend._kernel,
-            )
-            return client.auth
-
-        client._provider._coordinator._refresh_callback = tracking_refresh
-
-        # Mock HTTP responses
-        call_count = [0]
-
-        async def mock_post(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                # First call: simulate HTTP 401
-                request = httpx.Request("POST", args[0])
-                response = httpx.Response(401, request=request)
-                raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
-            # Second call: success
-            response = MagicMock()
-            response.text = ')]}\'\\n[["wrb.fr","wXbhsf",[[[["nb1"],["Notebook 1"]]]]]]'
-            response.raise_for_status = MagicMock()
-            return response
-
-        # Override the runtime decode-response seam before the RPC fires.
-        client._seams.decode_response = lambda *a, **kw: [[["nb1"], ["Notebook 1"]]]
-
-        async with client:
-            install_post_as_stream(None, client._backend._kernel.get_http_client(), mock_post)
-            await client.notebooks.list()
-
-        assert len(refresh_calls) == 1, "Should have refreshed once"
-        assert call_count[0] == 2, "Should have retried once"
+        assert result == [[["nb1"], ["Notebook 1"]]]
+        assert refresh_calls == [True]
+        assert attempts == 2
 
     @pytest.mark.asyncio
     async def test_full_refresh_flow_rpc_error(self):
         """Test complete auto-refresh flow for RPC auth errors."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="old_csrf",
-            session_id="sid",
-        )
+        refresh_calls: list[bool] = []
 
-        client = build_client_shell_for_tests(auth, refresh_retry_delay=0)
-
-        refresh_calls = []
-
-        async def tracking_refresh():
+        async def tracking_refresh() -> None:
             refresh_calls.append(True)
-            client.auth.csrf_token = "new_csrf"
-            # Wave 3 of plan ``host-protocol-removal`` deleted the
-            # Session-level ``update_auth_headers`` forward; call the
-            # canonical coordinator method directly with explicit kwargs.
-            client._provider._coordinator.update_auth_headers(
-                auth=client.auth,
-                kernel=client._backend._kernel,
-            )
-            return client.auth
 
-        client._provider._coordinator._refresh_callback = tracking_refresh
+        decode_count = 0
 
-        # Mock HTTP to succeed, but decode_response to fail with auth error first
-        async def mock_post(*args, **kwargs):
-            response = MagicMock()
-            response.text = "mock response"
-            response.raise_for_status = MagicMock()
-            return response
-
-        decode_count = [0]
-
-        def mock_decode(*args, **kwargs):
-            decode_count[0] += 1
-            if decode_count[0] == 1:
-                raise RPCError("Authentication expired")
+        def mock_decode(*_args: Any, **_kwargs: Any) -> Any:
+            nonlocal decode_count
+            decode_count += 1
+            if decode_count == 1:
+                raise RPCError("Authentication expired", rpc_code=401)
             return [[["nb1"], ["Notebook 1"]]]
 
-        # Override the runtime decode-response seam before the RPC fires.
-        client._seams.decode_response = mock_decode
+        runtime, _ = _runtime(
+            terminal=lambda request: asyncio.sleep(0, result=_success(request)),
+            decode_response=mock_decode,
+            refresh=tracking_refresh,
+        )
 
-        async with client:
-            install_post_as_stream(None, client._backend._kernel.get_http_client(), mock_post)
-            await client.notebooks.list()
+        result = await runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
-        assert len(refresh_calls) == 1, "Should have refreshed once"
-        assert decode_count[0] == 2, "Should have retried once"
+        assert result == [[["nb1"], ["Notebook 1"]]]
+        assert refresh_calls == [True]
+        assert decode_count == 2
 
     @pytest.mark.asyncio
     async def test_wire_401_then_decoded_auth_error_refreshes_once(self):
         """Issue #1205: a wire-401 followed by a decoded auth error on the SAME
         logical call must drive exactly ONE refresh.
 
-        Before consolidation the HTTP-status layer (``AuthRefreshMiddleware``)
+        Before consolidation the HTTP-status layer (``AuthRefreshBehavior``)
         and the decoded-RPC layer (``RpcExecutor``) tracked their once-per-call
         guard independently — the chain's per-request ``auth_refreshed`` flag
         and the executor's ``_is_retry`` flag could not see each other. So a
@@ -162,43 +200,23 @@ class TestAutoRefreshIntegration:
         auth error surfaces to the caller instead of triggering a second
         refresh.
         """
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="old_csrf",
-            session_id="sid",
-        )
+        refresh_calls: list[bool] = []
 
-        client = NotebookLMClient(auth)
-
-        refresh_calls = []
-
-        async def tracking_refresh():
+        async def tracking_refresh() -> None:
             refresh_calls.append(True)
-            client.auth.csrf_token = "new_csrf"
-            client._provider._coordinator.update_auth_headers(
-                auth=client.auth,
-                kernel=client._backend._kernel,
-            )
-            return client.auth
 
-        client._provider._coordinator._refresh_callback = tracking_refresh
+        attempts = 0
 
-        call_count = [0]
-
-        async def mock_post(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
+        async def terminal(request: RpcRequest) -> RpcResponse:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
                 # Wire 401 → HTTP-status layer refreshes (refresh #1) and
                 # retries the POST.
-                request = httpx.Request("POST", args[0])
-                response = httpx.Response(401, request=request)
-                raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+                raise _unauthorized(request)
             # The post-refresh retry returns HTTP 200; the decoded payload
             # still carries an auth error.
-            response = MagicMock()
-            response.text = "mock response"
-            response.raise_for_status = MagicMock()
-            return response
+            return _success(request)
 
         auth_rpc_error = RPCError(
             "authentication expired",
@@ -209,35 +227,26 @@ class TestAutoRefreshIntegration:
         )
         auth_rpc_error.unconfirmed = True
 
-        def mock_decode(*args, **kwargs):
+        def mock_decode(*_args: Any, **_kwargs: Any) -> Any:
             raise auth_rpc_error
 
-        client._seams.decode_response = mock_decode
+        runtime, _ = _runtime(
+            terminal=terminal,
+            decode_response=mock_decode,
+            refresh=tracking_refresh,
+        )
 
-        async with client:
-            install_post_as_stream(None, client._backend._kernel.get_http_client(), mock_post)
+        # The decoded auth error surfaces — the shared budget was already
+        # spent by the HTTP-status refresh, so the decoded layer does NOT
+        # refresh again and re-raises the original auth error.
+        with pytest.raises(RPCError) as raised:
+            await runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
-            # The decoded auth error surfaces — the shared budget was already
-            # spent by the HTTP-status refresh, so the decoded layer does NOT
-            # refresh again and re-raises the original auth error.
-            with pytest.raises(RPCError) as raised:
-                await client.notebooks.list()
-
-        # The semantic backend crosses a typed record boundary, so public
-        # exceptions are reconstructed rather than returned by object identity.
-        # Preserve the observable contract while still proving that the decoded
-        # error surfaced and the shared refresh budget prevented a second retry.
-        assert type(raised.value) is type(auth_rpc_error)
-        assert raised.value.args == auth_rpc_error.args
-        assert raised.value.method_id == auth_rpc_error.method_id
-        assert raised.value.raw_response == auth_rpc_error.raw_response
-        assert raised.value.rpc_code == auth_rpc_error.rpc_code
-        assert raised.value.found_ids == auth_rpc_error.found_ids
-        assert raised.value.unconfirmed is True
-        assert len(refresh_calls) == 1, "wire-401 + decoded-auth-error must refresh exactly once"
+        assert raised.value is auth_rpc_error
+        assert refresh_calls == [True]
         # Two POSTs: the initial 401 and the single post-refresh retry. No
         # third POST, because the decoded layer did not refresh-and-retry.
-        assert call_count[0] == 2
+        assert attempts == 2
 
     @pytest.mark.asyncio
     async def test_decoded_auth_retry_increments_auth_retry_metric(self):
@@ -247,119 +256,87 @@ class TestAutoRefreshIntegration:
         ``rpc_auth_retries``; the decode-time refresh-and-retry leg silently
         skipped it. The shared refresh body counts on both layers.
         """
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="old_csrf",
-            session_id="sid",
-        )
 
-        client = build_client_shell_for_tests(auth, refresh_retry_delay=0)
+        async def tracking_refresh() -> None:
+            return None
 
-        async def tracking_refresh():
-            client.auth.csrf_token = "new_csrf"
-            client._provider._coordinator.update_auth_headers(
-                auth=client.auth,
-                kernel=client._backend._kernel,
-            )
-            return client.auth
+        decode_count = 0
 
-        client._provider._coordinator._refresh_callback = tracking_refresh
-
-        async def mock_post(*args, **kwargs):
-            response = MagicMock()
-            response.text = "mock response"
-            response.raise_for_status = MagicMock()
-            return response
-
-        decode_count = [0]
-
-        def mock_decode(*args, **kwargs):
-            decode_count[0] += 1
-            if decode_count[0] == 1:
-                raise RPCError("Authentication expired")
+        def mock_decode(*_args: Any, **_kwargs: Any) -> Any:
+            nonlocal decode_count
+            decode_count += 1
+            if decode_count == 1:
+                raise RPCError("Authentication expired", rpc_code=401)
             return [[["nb1"], ["Notebook 1"]]]
 
-        client._seams.decode_response = mock_decode
+        async def terminal(request: RpcRequest) -> RpcResponse:
+            return _success(request)
 
-        async with client:
-            install_post_as_stream(None, client._backend._kernel.get_http_client(), mock_post)
-            await client.notebooks.list()
+        runtime, metrics = _runtime(
+            terminal=terminal,
+            decode_response=mock_decode,
+            refresh=tracking_refresh,
+        )
 
-        assert client._backend._metrics.snapshot().rpc_auth_retries == 1
+        await runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        assert metrics.snapshot().rpc_auth_retries == 1
 
     @pytest.mark.asyncio
     async def test_refresh_delay_is_applied(self):
         """Test that retry delay is actually applied."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="csrf",
-            session_id="sid",
+
+        async def refresh() -> None:
+            return None
+
+        attempts = 0
+
+        async def terminal(request: RpcRequest) -> RpcResponse:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise _unauthorized(request)
+            return _success(request)
+
+        runtime, _ = _runtime(
+            terminal=terminal,
+            decode_response=lambda *_a, **_kw: [],
+            refresh=refresh,
+            refresh_retry_delay=0.1,
         )
 
-        client = build_client_shell_for_tests(auth, refresh_retry_delay=0.1)
-
-        async def mock_refresh():
-            return auth
-
-        client._provider._coordinator._refresh_callback = mock_refresh
-
-        call_count = [0]
-
-        async def mock_post(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                request = httpx.Request("POST", args[0])
-                response = httpx.Response(401, request=request)
-                raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
-            response = MagicMock()
-            response.text = "mock"
-            response.raise_for_status = MagicMock()
-            return response
-
-        # Override the runtime decode-response seam before the RPC fires.
-        client._seams.decode_response = lambda *a, **kw: []
-
-        async with client:
-            install_post_as_stream(None, client._backend._kernel.get_http_client(), mock_post)
-
-            start_time = asyncio.get_event_loop().time()
-            await client.notebooks.list()
-            elapsed = asyncio.get_event_loop().time() - start_time
+        loop = asyncio.get_running_loop()
+        start_time = loop.time()
+        await runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        elapsed = loop.time() - start_time
 
         # Should have taken at least the delay time
         assert elapsed >= 0.09, f"Delay should be applied, elapsed: {elapsed}"
+        assert attempts == 2
 
     @pytest.mark.asyncio
     async def test_no_retry_on_cookie_expiration(self):
         """Test that full cookie expiration is not retried (requires re-login)."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="csrf",
-            session_id="sid",
-        )
 
-        client = build_client_shell_for_tests(auth, refresh_retry_delay=0)
-
-        async def failing_refresh():
+        async def failing_refresh() -> None:
             # Simulates refresh_auth detecting redirect to login
             raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
 
-        client._provider._coordinator._refresh_callback = failing_refresh
+        async def terminal(request: RpcRequest) -> RpcResponse:
+            raise _unauthorized(request)
 
-        async def mock_post(*args, **kwargs):
-            request = httpx.Request("POST", args[0])
-            response = httpx.Response(401, request=request)
-            raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+        runtime, _ = _runtime(
+            terminal=terminal,
+            decode_response=lambda *_a, **_kw: [],
+            refresh=failing_refresh,
+        )
 
-        async with client:
-            install_post_as_stream(None, client._backend._kernel.get_http_client(), mock_post)
+        # Should raise the original HTTP error with refresh failure as cause.
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
-            # Should raise the original HTTP error with refresh failure as cause
-            with pytest.raises(httpx.HTTPStatusError) as exc_info:
-                await client.notebooks.list()
-
-            assert exc_info.value.__cause__ is not None
-            assert "re-authenticate" in str(exc_info.value.__cause__)
+        assert exc_info.value.__cause__ is not None
+        assert "re-authenticate" in str(exc_info.value.__cause__)
 
     @pytest.mark.asyncio
     async def test_http_auth_error_does_not_replay_non_idempotent_write(self):
@@ -368,57 +345,33 @@ class TestAutoRefreshIntegration:
         Regression for issue #1157. ``CREATE_NOTEBOOK`` is PROBE_THEN_CREATE,
         so ``resolve_effective_disable_internal_retries`` forces the effective
         disable flag True. The server may have committed the notebook before
-        the 401 surfaced, so ``AuthRefreshMiddleware`` must NOT refresh and
-        re-POST — that would duplicate the notebook. The original auth error
-        propagates so ``NotebooksAPI.create``'s probe-then-create wrapper can
-        disambiguate. Driven through the public ``client.notebooks.create``
-        surface so the regression is pinned end-to-end.
+        the 401 surfaced, so ``AuthRefreshBehavior`` must NOT refresh and
+        re-POST — that would duplicate the notebook. Drive the explicit
+        execution runtime so its retry owner is tested directly.
         """
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="old_csrf",
-            session_id="sid",
+        refresh_calls: list[bool] = []
+
+        async def tracking_refresh() -> None:
+            refresh_calls.append(True)
+
+        create_post_count = 0
+
+        async def terminal(request: RpcRequest) -> RpcResponse:
+            nonlocal create_post_count
+            create_post_count += 1
+            raise _unauthorized(request)
+
+        runtime, _ = _runtime(
+            terminal=terminal,
+            decode_response=lambda *_a, **_kw: [],
+            refresh=tracking_refresh,
         )
 
-        client = build_client_shell_for_tests(auth, refresh_retry_delay=0)
-
-        refresh_calls = []
-
-        async def tracking_refresh():
-            refresh_calls.append(True)
-            return client.auth
-
-        client._provider._coordinator._refresh_callback = tracking_refresh
-
-        create_post_count = [0]
-
-        async def mock_post(*args, **kwargs):
-            url = args[0]
-            # ``NotebooksAPI.create`` first lists notebooks to capture a
-            # baseline; that LIST_NOTEBOOKS POST must succeed so only the
-            # CREATE_NOTEBOOK leg exercises the auth-error path.
-            if RPCMethod.LIST_NOTEBOOKS.value in str(url):
-                response = MagicMock()
-                response.text = "list-ok"
-                response.raise_for_status = MagicMock()
-                return response
-            create_post_count[0] += 1
-            request = httpx.Request("POST", url)
-            response = httpx.Response(401, request=request)
-            raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
-
-        # Baseline ``list()`` decodes to an empty notebook list; the create's
-        # decode never runs because the POST raises a 401 first.
-        client._seams.decode_response = lambda *a, **kw: []
-
-        async with client:
-            install_post_as_stream(None, client._backend._kernel.get_http_client(), mock_post)
-
-            with pytest.raises(RPCError):
-                await client.notebooks.create("My Notebook")
+        with pytest.raises(RPCError):
+            await runtime.rpc_call(RPCMethod.CREATE_NOTEBOOK, [])
 
         assert refresh_calls == [], "non-idempotent write must not trigger an auth refresh"
-        assert create_post_count[0] == 1, "CREATE_NOTEBOOK must POST exactly once (no replay)"
+        assert create_post_count == 1, "CREATE_NOTEBOOK must POST exactly once (no replay)"
 
     @pytest.mark.asyncio
     async def test_rpc_auth_error_does_not_replay_non_idempotent_write(self):
@@ -428,55 +381,36 @@ class TestAutoRefreshIntegration:
         ``RpcExecutor`` must honor the effective disable classification just
         like the HTTP-status leg. ``CREATE_NOTEBOOK`` resolves to disabled
         retries, so the decoded auth error surfaces without a second POST.
-        Driven through the public ``client.notebooks.create`` surface.
+        Driven through the explicit execution runtime.
         """
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="old_csrf",
-            session_id="sid",
+        refresh_calls: list[bool] = []
+
+        async def tracking_refresh() -> None:
+            refresh_calls.append(True)
+
+        create_post_count = 0
+
+        async def terminal(request: RpcRequest) -> RpcResponse:
+            nonlocal create_post_count
+            create_post_count += 1
+            return _success(request)
+
+        create_decode_count = 0
+
+        def mock_decode(*_args: Any, **_kwargs: Any) -> Any:
+            nonlocal create_decode_count
+            create_decode_count += 1
+            raise RPCError("Authentication expired", rpc_code=401)
+
+        runtime, _ = _runtime(
+            terminal=terminal,
+            decode_response=mock_decode,
+            refresh=tracking_refresh,
         )
 
-        client = build_client_shell_for_tests(auth, refresh_retry_delay=0)
-
-        refresh_calls = []
-
-        async def tracking_refresh():
-            refresh_calls.append(True)
-            return client.auth
-
-        client._provider._coordinator._refresh_callback = tracking_refresh
-
-        create_post_count = [0]
-
-        async def mock_post(*args, **kwargs):
-            if RPCMethod.CREATE_NOTEBOOK.value in str(args[0]):
-                create_post_count[0] += 1
-            response = MagicMock()
-            response.text = "mock response"
-            response.raise_for_status = MagicMock()
-            return response
-
-        create_decode_count = [0]
-
-        def mock_decode(raw, rpc_id, *args, **kwargs):
-            # The baseline ``list()`` decodes to an empty list; the create's
-            # decode raises an auth-shaped RPCError to exercise the
-            # decode-time refresh-and-retry leg.
-            if rpc_id == RPCMethod.CREATE_NOTEBOOK.value:
-                create_decode_count[0] += 1
-                raise RPCError("Authentication expired")
-            return []
-
-        client._seams.decode_response = mock_decode
-
-        async with client:
-            install_post_as_stream(None, client._backend._kernel.get_http_client(), mock_post)
-
-            with pytest.raises(RPCError):
-                await client.notebooks.create("My Notebook")
+        with pytest.raises(RPCError):
+            await runtime.rpc_call(RPCMethod.CREATE_NOTEBOOK, [])
 
         assert refresh_calls == [], "non-idempotent write must not trigger an auth refresh"
-        assert create_post_count[0] == 1, "CREATE_NOTEBOOK must POST exactly once (no replay)"
-        assert create_decode_count[0] == 1, (
-            "CREATE_NOTEBOOK decode must run once — no retried decode"
-        )
+        assert create_post_count == 1, "CREATE_NOTEBOOK must POST exactly once (no replay)"
+        assert create_decode_count == 1, "CREATE_NOTEBOOK decode must run once — no retry"

@@ -8,6 +8,8 @@ from typing import Any
 
 import httpx
 
+from .._backend_compat import project_local_not_found
+from .._operations import Operation
 from .._projectors import project_artifact
 from .._row_adapters.artifacts import ArtifactRow
 from .._row_adapters.notes import NoteRow
@@ -19,9 +21,8 @@ from ..rpc import (
     QUIZ_VARIANT,
     ArtifactTypeCode,
     RPCError,
-    RPCMethod,
 )
-from ..types import Artifact, ArtifactNotFoundError, ArtifactNotReadyError, ArtifactType
+from ..types import Artifact, ArtifactNotReadyError, ArtifactType
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,7 @@ class ArtifactListingService:
             mind_map_rows = await list_mind_maps(notebook_id)
             if any(NoteRow(m).id == artifact_id for m in mind_map_rows):
                 return None
-        raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.LIST_ARTIFACTS.value)
+        raise project_local_not_found(Operation.ARTIFACT_GET, artifact_id)
 
     def select_artifact(
         self,

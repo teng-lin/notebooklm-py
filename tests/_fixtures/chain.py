@@ -8,7 +8,7 @@ Three helpers live here:
 
 - :class:`FakeChainTerminal` — programmable terminal stub matching the
   ``NextCall`` shape: ``RpcRequest -> RpcResponse``.
-- :func:`make_request` — factory for :class:`notebooklm._middleware.core.RpcRequest`
+- :func:`make_request` — factory for :class:`notebooklm._runtime.rpc_call.RpcRequest`
   instances with benign defaults. Tests override only the fields they care
   about via keyword arguments.
 - :func:`chain_calls_through_to_terminal` — assertion helper that builds a
@@ -20,17 +20,41 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
-from notebooklm._middleware.context import RpcCallState
-from notebooklm._middleware.core import (
-    Middleware,
+from notebooklm._runtime.rpc_call import (
+    NextCall,
     RpcRequest,
     RpcResponse,
-    build_chain,
 )
+from notebooklm._runtime.rpc_call_state import RpcCallState
+
+
+class Behavior(Protocol):
+    """Test-only callable shape for exercising one pipeline behavior."""
+
+    async def __call__(
+        self,
+        request: RpcRequest,
+        next_call: NextCall,
+    ) -> RpcResponse: ...
+
+
+def build_chain(behaviors: Sequence[Behavior], terminal: NextCall) -> NextCall:
+    """Test-only composer for focused behavior tests."""
+
+    def wrap(behavior: Behavior, next_call: NextCall) -> NextCall:
+        async def call(request: RpcRequest) -> RpcResponse:
+            return await behavior(request, next_call)
+
+        return call
+
+    call = terminal
+    for behavior in reversed(behaviors):
+        call = wrap(behavior, call)
+    return call
 
 
 def make_call_state(**values: Any) -> RpcCallState:
@@ -137,7 +161,7 @@ def make_request(
 
 def chain_calls_through_to_terminal(
     terminal: FakeChainTerminal,
-    middlewares: Sequence[Middleware],
+    middlewares: Sequence[Behavior],
 ) -> bool:
     """Return ``True`` iff invoking the chain reaches the terminal."""
     chain = build_chain(middlewares, terminal)
@@ -154,7 +178,9 @@ def chain_calls_through_to_terminal(
 
 
 __all__ = [
+    "Behavior",
     "FakeChainTerminal",
+    "build_chain",
     "chain_calls_through_to_terminal",
     "make_call_state",
     "make_request",

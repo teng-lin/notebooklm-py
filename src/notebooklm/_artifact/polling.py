@@ -159,6 +159,7 @@ class ArtifactPollingService:
         min_not_found_window: float = 10.0,
         poll_status: PollStatusCallback,
         on_status_change: StatusChangeCallback | None = None,
+        deadline: RuntimeDeadline | None = None,
     ) -> GenerationStatus:
         """Wait for a generation task to complete using a shared poll loop."""
         # Catch cross-loop wait_for_completion before touching the
@@ -211,6 +212,7 @@ class ArtifactPollingService:
                 min_not_found_window=min_not_found_window,
                 poll_status=poll_status,
                 on_status_change=on_status_change,
+                deadline=deadline,
             ),
             name=f"artifact-poll-{notebook_id}-{task_id}",
         )
@@ -254,6 +256,7 @@ class ArtifactPollingService:
         min_not_found_window: float,
         poll_status: PollStatusCallback,
         on_status_change: StatusChangeCallback | None,
+        deadline: RuntimeDeadline | None,
     ) -> GenerationStatus:
         async with self._op_scope.operation_scope(f"artifact wait {task_id}"):
             return await self._run_poll_loop(
@@ -266,6 +269,7 @@ class ArtifactPollingService:
                 min_not_found_window=min_not_found_window,
                 poll_status=poll_status,
                 on_status_change=on_status_change,
+                deadline=deadline,
             )
 
     async def _run_poll_loop(
@@ -280,9 +284,10 @@ class ArtifactPollingService:
         min_not_found_window: float,
         poll_status: PollStatusCallback,
         on_status_change: StatusChangeCallback | None,
+        deadline: RuntimeDeadline | None = None,
     ) -> GenerationStatus:
         """The actual polling loop. Driven by the leader's shielded task."""
-        deadline = RuntimeDeadline.start(timeout, monotonic=self._resolve_monotonic())
+        deadline = deadline or RuntimeDeadline.start(timeout, monotonic=self._resolve_monotonic())
         current_interval = initial_interval
         consecutive_not_found = 0
         poll_retry_count = 0

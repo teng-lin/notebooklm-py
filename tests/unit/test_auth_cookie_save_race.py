@@ -48,7 +48,7 @@ from notebooklm.auth import (
     AuthTokens,
     build_httpx_cookies_from_storage,
 )
-from tests._helpers.client_factory import build_client_shell_for_tests
+from notebooklm.client import NotebookLMClient
 
 
 def _read_cookies(storage_path: Path) -> list[dict]:
@@ -1219,7 +1219,7 @@ class TestBaselineNotAdvancedOnSaveFailure:
         monkeypatch.setattr(ProfileStore, "merge_cookie_observation", failed_merge)
 
         auth = await auth_mod.AuthTokens.from_storage(path=storage)
-        core = build_client_shell_for_tests(auth)
+        core = NotebookLMClient(auth)
         await core.__aenter__()
         try:
             key = CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
@@ -1383,7 +1383,7 @@ class TestCASRejectReturnsFalse:
             session_id="s",
             storage_path=storage,
         )
-        core = build_client_shell_for_tests(auth)
+        core = NotebookLMClient(auth)
         await core.__aenter__()
 
         def jar_with(sid_value: str) -> httpx.Cookies:
@@ -1587,7 +1587,7 @@ class TestCASVariantAware:
         # Stand up the real client runtime so the second save flows through
         # ClientLifecycle.save_cookies (lock + to_thread + baseline advance),
         # not straight into save_cookies_to_storage.
-        core = build_client_shell_for_tests(auth)
+        core = NotebookLMClient(auth)
         await core.__aenter__()
         try:
             assert core._provider._persistence.loaded_cookie_snapshot is not None
@@ -1704,7 +1704,7 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
 
         # Phase 2 PR 4: inject the cookie-saver seam via the constructor
         # rather than monkeypatching ``notebooklm._core.save_cookies_to_storage``.
-        core = build_client_shell_for_tests(auth, cookie_saver=capture_save)
+        core = NotebookLMClient(auth, cookie_saver=capture_save)
         await core.__aenter__()
 
         # Explicit barrier: each coroutine records its submission and the

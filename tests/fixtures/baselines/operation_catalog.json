@@ -50,7 +50,7 @@
     },
     "artifact.generate_audio": {
       "call_policy": "stateful_start",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -68,7 +68,7 @@
     },
     "artifact.generate_data_table": {
       "call_policy": "stateful_start",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -86,7 +86,7 @@
     },
     "artifact.generate_flashcards": {
       "call_policy": "stateful_start",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -104,7 +104,7 @@
     },
     "artifact.generate_infographic": {
       "call_policy": "stateful_start",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -158,7 +158,7 @@
     },
     "artifact.generate_quiz": {
       "call_policy": "stateful_start",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -176,7 +176,7 @@
     },
     "artifact.generate_report": {
       "call_policy": "stateful_start",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -194,7 +194,7 @@
     },
     "artifact.generate_slide_deck": {
       "call_policy": "stateful_start",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -212,7 +212,7 @@
     },
     "artifact.generate_video": {
       "call_policy": "stateful_start",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -296,7 +296,7 @@
     },
     "artifact.revise_slide": {
       "call_policy": "mutation",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "non_idempotent_no_retry",
@@ -614,7 +614,7 @@
     },
     "mind_map.generate_interactive": {
       "call_policy": "stateful_start",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
+      "known_divergence": null,
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -1267,24 +1267,7 @@
       ]
     }
   },
-  "app_authority_source_evidence": {
-    "artifacts.py:with_rate_limit_retry": {
-      "function_ast_sha256": "sha256:d5517704ba0c43416721a674670bafdbd5dc56bcfeba132696a05c62ecb662bf",
-      "internal_call_edges": [
-        {
-          "caller": "_app/generate_retry.py:generate_with_retry",
-          "caller_ast_sha256": "sha256:a2c5a883a8240e05c0424c645c1afe97f055b733db0d36314822df7c3018156b",
-          "target": "artifact_retry.with_rate_limit_retry"
-        }
-      ],
-      "observed_required_calls": [
-        "calculate_backoff_delay",
-        "generate_fn",
-        "sleep_func"
-      ],
-      "public_export": "with_rate_limit_retry"
-    }
-  },
+  "app_authority_source_evidence": {},
   "app_callers": {
     "artifacts.delete": [
       "_app/artifacts.py:delete_artifact"
@@ -1371,8 +1354,7 @@
       "_app/generate.py:execute_generation"
     ],
     "artifacts.wait_for_completion": [
-      "_app/artifacts.py:wait_for_artifact",
-      "_app/generate_retry.py:handle_generation_result"
+      "_app/artifacts.py:wait_for_artifact"
     ],
     "chat.cache_size": [
       "_app/chat.py:execute_clear_cache"
@@ -1584,7 +1566,7 @@
   },
   "app_orchestrator_dispositions": {
     "_app/download.py": "Keep selection/conflict/filesystem choreography; P4.2 starts a separate budget for each facade list/download operation (no command-wide outer budget), and P5 makes family services the sole network execution authority.",
-    "_app/generate_retry.py": "Keep adapter-neutral command composition, optional wait dispatch, progress, and outcome projection. P4.2 passes one budget through the public facade and removes the internal use of the exported retry helper; the helper itself remains public.",
+    "_app/generate_retry.py": "Keep adapter-neutral command composition, optional wait dispatch, progress, and outcome projection. P4.2 passes one scalar budget and the public kickoff/wait callables through the underscore-private notebooklm.artifacts workflow entry; the exported retry helper remains available only for external callers.",
     "_app/pagination.py": "Keep the pure bounded slice as local-only application behavior; move the web fact that batchexecute does not paginate into web binding evidence when domains migrate.",
     "_app/source_wait.py": "Keep validation and typed outcome mapping as ordinary application callers. The public source facade is already the sole polling authority and receives the caller budget once."
   },
@@ -1696,66 +1678,6 @@
       "disposition": "known_divergence",
       "kind": "authority",
       "operation": "artifact.download"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "artifact.generate_audio"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "artifact.generate_data_table"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "artifact.generate_flashcards"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "artifact.generate_infographic"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "artifact.generate_quiz"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "artifact.generate_report"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "artifact.generate_slide_deck"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "artifact.generate_video"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "artifact.revise_slide"
-    },
-    {
-      "detail": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "disposition": "known_divergence",
-      "kind": "authority",
-      "operation": "mind_map.generate_interactive"
     },
     {
       "detail": "Semantic mutation is backed by AT_LEAST_ONCE_ACCEPTED native retry; P4 records parity but must not change behavior.",
@@ -4620,12 +4542,6 @@
       "disposition": "semantic",
       "execution_authorities": [
         {
-          "binding": "public_helper",
-          "discriminator": "exported retry helper re-invokes the internal facade generation after rate limiting; P4.2 removes the internal use while preserving the public helper",
-          "site": "artifacts.py:with_rate_limit_retry",
-          "transport_kind": "orchestrator"
-        },
-        {
           "binding": "CREATE_ARTIFACT:<default>",
           "discriminator": "artifact_type=audio",
           "site": "_web/studio_media.py:StudioMediaWebHandlers._audio_generate",
@@ -4639,8 +4555,8 @@
         }
       ],
       "key": "artifact.generate_audio",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "CREATE_ARTIFACT:<default>",
         "GET_NOTEBOOK:<default>"
@@ -4687,12 +4603,6 @@
       "disposition": "semantic",
       "execution_authorities": [
         {
-          "binding": "public_helper",
-          "discriminator": "exported retry helper re-invokes the internal facade generation after rate limiting; P4.2 removes the internal use while preserving the public helper",
-          "site": "artifacts.py:with_rate_limit_retry",
-          "transport_kind": "orchestrator"
-        },
-        {
           "binding": "CREATE_ARTIFACT:<default>",
           "discriminator": "artifact_type=data-table",
           "site": "_web/studio_data.py:StudioDataWebHandlers._data_table_generate",
@@ -4706,8 +4616,8 @@
         }
       ],
       "key": "artifact.generate_data_table",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "CREATE_ARTIFACT:<default>",
         "GET_NOTEBOOK:<default>"
@@ -4754,12 +4664,6 @@
       "disposition": "semantic",
       "execution_authorities": [
         {
-          "binding": "public_helper",
-          "discriminator": "exported retry helper re-invokes the internal facade generation after rate limiting; P4.2 removes the internal use while preserving the public helper",
-          "site": "artifacts.py:with_rate_limit_retry",
-          "transport_kind": "orchestrator"
-        },
-        {
           "binding": "CREATE_ARTIFACT:<default>",
           "discriminator": "artifact_type=flashcards",
           "site": "_web/studio_media.py:StudioMediaWebHandlers._interactive_generate",
@@ -4773,8 +4677,8 @@
         }
       ],
       "key": "artifact.generate_flashcards",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "CREATE_ARTIFACT:<default>",
         "GET_NOTEBOOK:<default>"
@@ -4821,12 +4725,6 @@
       "disposition": "semantic",
       "execution_authorities": [
         {
-          "binding": "public_helper",
-          "discriminator": "exported retry helper re-invokes the internal facade generation after rate limiting; P4.2 removes the internal use while preserving the public helper",
-          "site": "artifacts.py:with_rate_limit_retry",
-          "transport_kind": "orchestrator"
-        },
-        {
           "binding": "CREATE_ARTIFACT:<default>",
           "discriminator": "artifact_type=infographic",
           "site": "_web/studio_media.py:StudioMediaWebHandlers._visual_generate",
@@ -4840,8 +4738,8 @@
         }
       ],
       "key": "artifact.generate_infographic",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "CREATE_ARTIFACT:<default>",
         "GET_NOTEBOOK:<default>"
@@ -4970,12 +4868,6 @@
       "disposition": "semantic",
       "execution_authorities": [
         {
-          "binding": "public_helper",
-          "discriminator": "exported retry helper re-invokes the internal facade generation after rate limiting; P4.2 removes the internal use while preserving the public helper",
-          "site": "artifacts.py:with_rate_limit_retry",
-          "transport_kind": "orchestrator"
-        },
-        {
           "binding": "CREATE_ARTIFACT:<default>",
           "discriminator": "artifact_type=quiz",
           "site": "_web/studio_media.py:StudioMediaWebHandlers._interactive_generate",
@@ -4989,8 +4881,8 @@
         }
       ],
       "key": "artifact.generate_quiz",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "CREATE_ARTIFACT:<default>",
         "GET_NOTEBOOK:<default>"
@@ -5037,12 +4929,6 @@
       "disposition": "semantic",
       "execution_authorities": [
         {
-          "binding": "public_helper",
-          "discriminator": "exported retry helper re-invokes the internal facade generation after rate limiting; P4.2 removes the internal use while preserving the public helper",
-          "site": "artifacts.py:with_rate_limit_retry",
-          "transport_kind": "orchestrator"
-        },
-        {
           "binding": "CREATE_ARTIFACT:<default>",
           "discriminator": "artifact_type=report|study-guide",
           "site": "_web/studio_documents.py:StudioDocumentWebHandlers._document_generate",
@@ -5056,8 +4942,8 @@
         }
       ],
       "key": "artifact.generate_report",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "CREATE_ARTIFACT:<default>",
         "GET_NOTEBOOK:<default>"
@@ -5106,12 +4992,6 @@
       "disposition": "semantic",
       "execution_authorities": [
         {
-          "binding": "public_helper",
-          "discriminator": "exported retry helper re-invokes the internal facade generation after rate limiting; P4.2 removes the internal use while preserving the public helper",
-          "site": "artifacts.py:with_rate_limit_retry",
-          "transport_kind": "orchestrator"
-        },
-        {
           "binding": "CREATE_ARTIFACT:<default>",
           "discriminator": "artifact_type=slide-deck",
           "site": "_web/studio_media.py:StudioMediaWebHandlers._visual_generate",
@@ -5125,8 +5005,8 @@
         }
       ],
       "key": "artifact.generate_slide_deck",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "CREATE_ARTIFACT:<default>",
         "GET_NOTEBOOK:<default>"
@@ -5173,12 +5053,6 @@
       "disposition": "semantic",
       "execution_authorities": [
         {
-          "binding": "public_helper",
-          "discriminator": "exported retry helper re-invokes the internal facade generation after rate limiting; P4.2 removes the internal use while preserving the public helper",
-          "site": "artifacts.py:with_rate_limit_retry",
-          "transport_kind": "orchestrator"
-        },
-        {
           "binding": "CREATE_ARTIFACT:<default>",
           "discriminator": "artifact_type=video|cinematic-video",
           "site": "_web/studio_documents.py:StudioDocumentWebHandlers._document_generate",
@@ -5192,8 +5066,8 @@
         }
       ],
       "key": "artifact.generate_video",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "CREATE_ARTIFACT:<default>",
         "GET_NOTEBOOK:<default>"
@@ -5412,12 +5286,6 @@
       "disposition": "semantic",
       "execution_authorities": [
         {
-          "binding": "public_helper",
-          "discriminator": "exported retry helper re-invokes the internal facade generation after rate limiting; P4.2 removes the internal use while preserving the public helper",
-          "site": "artifacts.py:with_rate_limit_retry",
-          "transport_kind": "orchestrator"
-        },
-        {
           "binding": "REVISE_SLIDE:<default>",
           "discriminator": "direct semantic binding",
           "site": "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_revise_slide",
@@ -5425,8 +5293,8 @@
         }
       ],
       "key": "artifact.revise_slide",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "REVISE_SLIDE:<default>"
       ],
@@ -5475,8 +5343,7 @@
     {
       "app_callers": [
         "_app/artifacts.py:poll_artifact",
-        "_app/artifacts.py:wait_for_artifact",
-        "_app/generate_retry.py:handle_generation_result"
+        "_app/artifacts.py:wait_for_artifact"
       ],
       "composite_behavior": "Polls the artifact catalog through the shared-leader polling registry.",
       "disposition": "composite",
@@ -6346,8 +6213,8 @@
         }
       ],
       "key": "mind_map.generate_interactive",
-      "known_divergence": "The exported notebooklm.artifacts.with_rate_limit_retry helper re-invokes the internal facade operation after rate limiting. P4.2 removes that internal use while preserving the public helper and adapter-neutral retry presentation policy.",
-      "known_divergence_kind": "authority",
+      "known_divergence": null,
+      "known_divergence_kind": null,
       "native_bindings": [
         "CREATE_ARTIFACT:<default>",
         "GET_INTERACTIVE_HTML:<default>",
@@ -9663,8 +9530,7 @@
     },
     "artifacts.wait_for_completion": {
       "app_callers": [
-        "_app/artifacts.py:wait_for_artifact",
-        "_app/generate_retry.py:handle_generation_result"
+        "_app/artifacts.py:wait_for_artifact"
       ],
       "declared_by": "notebooklm._artifacts.ArtifactsAPI",
       "disposition": "semantic",

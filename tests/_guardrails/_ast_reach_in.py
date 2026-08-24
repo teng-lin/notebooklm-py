@@ -21,9 +21,9 @@ import ast
 def _owned_attr_name(node: ast.AST, owner: str = "self") -> str | None:
     """``<owner>.<attr>`` → ``attr`` (``owner`` is the host-object name).
 
-    ``owner`` defaults to ``"self"`` for method bodies; the client-assembly
+    ``owner`` defaults to ``"self"`` for method bodies; the client-composition
     checks pass ``owner="client"`` because the construction seam
-    (``notebooklm._client_assembly._assemble_client``) binds the instance
+    (``notebooklm._client_composition.compose_client``) binds the instance
     to a ``client`` parameter instead of ``self``.
     """
     if (

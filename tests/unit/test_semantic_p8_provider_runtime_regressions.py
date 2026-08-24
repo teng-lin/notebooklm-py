@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
+import notebooklm._runtime.init as runtime_init
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._cookie_persistence import CookiePersistence
 from notebooklm._kernel import Kernel
@@ -20,7 +21,7 @@ from notebooklm._runtime.auth import AuthRefreshCoordinator
 from notebooklm._source.drive_import import DriveFetcher, DriveRef
 from notebooklm._web_cookie_provider import WebCookieGeneration
 from notebooklm.auth import AuthTokens
-from tests._helpers.client_factory import build_client_shell_for_tests
+from notebooklm.client import NotebookLMClient
 
 
 def _auth(*, sid: str = "cookie-old") -> AuthTokens:
@@ -40,6 +41,14 @@ def _session_factory(**kwargs: Any) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
 
 
+@pytest.fixture(autouse=True)
+def _inject_web_transport_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Vary the explicit transport-construction leaf for this test module."""
+    monkeypatch.setattr(
+        runtime_init, "_resolve_async_client_factory", lambda _value: _session_factory
+    )
+
+
 async def _wait_until(predicate: Callable[[], bool], *, turns: int = 100) -> None:
     for _ in range(turns):
         if predicate():
@@ -55,7 +64,7 @@ def _sid(cookies: CookieJar | httpx.Cookies) -> str | None:
 
 def test_provider_and_backend_own_distinct_kernels_and_narrow_backend_state() -> None:
     """P8 is an extraction, not two names for the same credential graph."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     backend = client._backend
     provider = client._provider
 
@@ -77,7 +86,7 @@ def test_backend_type_surface_is_protocol_narrow_and_shallow_repr_is_redacted() 
     from notebooklm._runtime.web_cookie_provider import RuntimeWebCookieProvider
     from notebooklm._web.backend import WebRpcBackend
 
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     backend = client._backend
     provider = client._provider
     session = backend._backend_session
@@ -94,7 +103,9 @@ def test_backend_type_surface_is_protocol_narrow_and_shallow_repr_is_redacted() 
 
 
 @pytest.mark.asyncio
-async def test_open_time_cookie_reload_publishes_before_backend_session_seed() -> None:
+async def test_open_time_cookie_reload_publishes_before_backend_session_seed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A provider-open cookie change advances one epoch before backend cloning."""
     factory_calls = 0
 
@@ -106,7 +117,8 @@ async def test_open_time_cookie_reload_publishes_before_backend_session_seed() -
             client.cookies.set("SID", "cookie-open-reload", domain=".google.com", path="/")
         return client
 
-    client = build_client_shell_for_tests(_auth(), async_client_factory=open_factory)
+    monkeypatch.setattr(runtime_init, "_resolve_async_client_factory", lambda _value: open_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
     before = await provider.generation()
 
@@ -127,7 +139,7 @@ async def test_failed_or_cancelled_provider_refresh_publishes_no_epoch(
     error_type: type[BaseException],
 ) -> None:
     """Mutable work that does not succeed never becomes a provider commit."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
     before = await provider.generation()
 
@@ -185,7 +197,7 @@ def test_equal_or_stale_generation_preserves_backend_set_cookie() -> None:
 @pytest.mark.asyncio
 async def test_direct_generation_reconciles_one_matching_backend_cookie_for_all_waiters() -> None:
     """Concurrent direct legs join one fenced response-cookie publication."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
 
     await client.__aenter__()
@@ -231,7 +243,7 @@ async def test_direct_generation_reconciles_one_matching_backend_cookie_for_all_
 @pytest.mark.asyncio
 async def test_direct_generation_rejects_a_stale_backend_cookie_epoch() -> None:
     """A late response from an older backend seed cannot replace a refresh commit."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
 
     await client.__aenter__()
@@ -282,7 +294,7 @@ async def test_direct_refresh_is_single_flight_and_publishes_one_atomic_epoch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A cancelled waiter cannot tear or duplicate the provider's refresh commit."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
     before = await provider.generation()
     started = asyncio.Event()
@@ -344,7 +356,7 @@ async def test_direct_refresh_is_single_flight_and_publishes_one_atomic_epoch(
 @pytest.mark.asyncio
 async def test_wider_refresh_is_single_flight_without_losing_its_policy() -> None:
     """Concurrent headless-enabled callers share one wider-policy leader."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
     before = await provider.generation()
     started = asyncio.Event()
@@ -387,7 +399,9 @@ async def test_wider_refresh_is_single_flight_without_losing_its_policy() -> Non
 
 
 @pytest.mark.asyncio
-async def test_custom_coordinator_refresh_success_publishes_one_provider_epoch() -> None:
+async def test_custom_coordinator_refresh_success_publishes_one_provider_epoch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A 401 callback outside ``provider.refresh`` still feeds the retry generation."""
     auth = _auth()
 
@@ -398,11 +412,12 @@ async def test_custom_coordinator_refresh_success_publishes_one_provider_epoch()
         auth.account_email = "custom@example.com"
         return auth
 
-    client = build_client_shell_for_tests(
-        auth,
-        refresh_callback=custom_refresh,
-        async_client_factory=_session_factory,
-    )
+    async def refresh_auth(_self: NotebookLMClient, *, allow_headless: bool = False) -> AuthTokens:
+        del allow_headless
+        return await custom_refresh()
+
+    monkeypatch.setattr(NotebookLMClient, "refresh_auth", refresh_auth)
+    client = NotebookLMClient(auth)
     provider = client._provider
 
     await client.__aenter__()
@@ -426,6 +441,7 @@ async def test_custom_coordinator_refresh_success_publishes_one_provider_epoch()
 @pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
 async def test_custom_coordinator_refresh_failure_publishes_no_provider_epoch(
     error_type: type[BaseException],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Only successful custom callback work is eligible for publication."""
     auth = _auth()
@@ -434,11 +450,12 @@ async def test_custom_coordinator_refresh_failure_publishes_no_provider_epoch(
         auth.csrf_token = "csrf-uncommitted-custom"
         raise error_type("custom refresh did not commit")
 
-    client = build_client_shell_for_tests(
-        auth,
-        refresh_callback=custom_refresh,
-        async_client_factory=_session_factory,
-    )
+    async def refresh_auth(_self: NotebookLMClient, *, allow_headless: bool = False) -> AuthTokens:
+        del allow_headless
+        return await custom_refresh()
+
+    monkeypatch.setattr(NotebookLMClient, "refresh_auth", refresh_auth)
+    client = NotebookLMClient(auth)
     provider = client._provider
 
     await client.__aenter__()
@@ -452,7 +469,9 @@ async def test_custom_coordinator_refresh_failure_publishes_no_provider_epoch(
 
 
 @pytest.mark.asyncio
-async def test_cancelled_custom_refresh_waiter_cannot_drop_leader_success() -> None:
+async def test_cancelled_custom_refresh_waiter_cannot_drop_leader_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Publication belongs to the shared leader, not to one cancellable waiter."""
     auth = _auth()
     started = asyncio.Event()
@@ -466,11 +485,12 @@ async def test_cancelled_custom_refresh_waiter_cannot_drop_leader_success() -> N
         finished.set()
         return auth
 
-    client = build_client_shell_for_tests(
-        auth,
-        refresh_callback=custom_refresh,
-        async_client_factory=_session_factory,
-    )
+    async def refresh_auth(_self: NotebookLMClient, *, allow_headless: bool = False) -> AuthTokens:
+        del allow_headless
+        return await custom_refresh()
+
+    monkeypatch.setattr(NotebookLMClient, "refresh_auth", refresh_auth)
+    client = NotebookLMClient(auth)
     provider = client._provider
 
     await client.__aenter__()
@@ -499,7 +519,7 @@ async def test_cancelled_custom_refresh_waiter_cannot_drop_leader_success() -> N
 @pytest.mark.asyncio
 async def test_provider_refresh_callback_is_not_published_twice() -> None:
     """The production callback already commits inside the provider transaction."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
 
     async def fake_refresh(*, allow_headless: bool = False) -> AuthTokens:
@@ -512,7 +532,6 @@ async def test_provider_refresh_callback_is_not_published_twice() -> None:
         return await provider.run_refresh_transaction(work)
 
     provider._refresh_session = fake_refresh
-    provider._coordinator._refresh_callback = client.refresh_auth
 
     await client.__aenter__()
     try:
@@ -537,12 +556,11 @@ async def test_keepalive_rotation_publishes_a_generation(
         client.cookies.set("SID", "cookie-rotated", domain=".google.com", path="/")
         rotated.set()
 
-    client = build_client_shell_for_tests(
+    client = NotebookLMClient(
         _auth(),
         keepalive=0.01,
         keepalive_min_interval=0.01,
         cookie_rotator=rotate,
-        async_client_factory=_session_factory,
     )
     provider = client._provider
     before = await provider.generation()
@@ -575,14 +593,13 @@ async def test_keepalive_save_reconciles_backend_set_cookie_first(tmp_path: Path
     async def rotate(_client: httpx.AsyncClient, _path: object) -> None:
         return None
 
-    client = build_client_shell_for_tests(
+    client = NotebookLMClient(
         _auth(),
         keepalive=0.01,
         keepalive_min_interval=0.01,
-        keepalive_storage_path=storage,
+        storage_path=storage,
         cookie_saver=save,
         cookie_rotator=rotate,
-        async_client_factory=_session_factory,
     )
     provider = client._provider
 
@@ -613,7 +630,7 @@ async def test_close_without_drain_cancels_a_hung_direct_refresh(
     allow_headless: bool,
 ) -> None:
     """Fire-and-forget close cancels either policy's shared refresh leader."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     started = asyncio.Event()
     cancelled = asyncio.Event()
 
@@ -649,7 +666,7 @@ async def test_close_without_drain_cancels_a_hung_account_probe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Identity network I/O cannot hold the provider lock ahead of teardown."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     started = asyncio.Event()
     cancelled = asyncio.Event()
 
@@ -687,7 +704,7 @@ async def test_post_close_account_lookup_preserves_network_free_policy() -> None
     """Closed providers retain offline identity state but reject live probes."""
     auth = _auth()
     auth.account_email = "offline@example.com"
-    client = build_client_shell_for_tests(auth, async_client_factory=_session_factory)
+    client = NotebookLMClient(auth)
 
     await client.__aenter__()
     await client.close(drain=False)
@@ -821,7 +838,7 @@ async def test_provider_close_waiter_cancellation_does_not_cancel_teardown() -> 
 @pytest.mark.asyncio
 async def test_owned_provider_and_private_session_support_close_reopen() -> None:
     """The established client close-to-reopen lifecycle survives P8 extraction."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
 
     await client.__aenter__()
     first_provider_client = client._provider._kernel.get_http_client()
@@ -842,7 +859,7 @@ async def test_owned_provider_and_private_session_support_close_reopen() -> None
 
 def test_owned_provider_and_private_session_reopen_on_a_new_event_loop() -> None:
     """Close-to-reopen replaces every loop-owned provider/session resource."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     observations: list[tuple[asyncio.AbstractEventLoop, ...]] = []
 
     async def cycle() -> None:
@@ -890,7 +907,7 @@ def test_provider_lock_paths_fail_fast_on_a_foreign_event_loop(
     untouched_slot: str,
 ) -> None:
     """Every provider lock path rejects cross-loop use before allocating state."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
     owner_loop = asyncio.new_event_loop()
     try:
@@ -911,7 +928,7 @@ async def test_registration_set_cookie_reaches_upload_finalize_and_drive(
     tmp_path: Path,
 ) -> None:
     """Every direct HTTP leg clones the cookie committed by registration RPC."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
     uploader = client._source_uploader
     upload_observations: list[tuple[str | None, str]] = []
@@ -1021,7 +1038,7 @@ async def test_direct_upload_uses_one_committed_generation_during_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Upload waits for one whole refresh before cloning cookies and route."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     provider = client._provider
     uploader = client._source_uploader
     refresh_started = asyncio.Event()
@@ -1108,7 +1125,7 @@ async def test_drive_fetch_uses_one_committed_generation_during_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Drive waits for one whole refresh before cloning cookies and route."""
-    client = build_client_shell_for_tests(_auth(), async_client_factory=_session_factory)
+    client = NotebookLMClient(_auth())
     uploader = client._source_uploader
     refresh_started = asyncio.Event()
     release_refresh = asyncio.Event()

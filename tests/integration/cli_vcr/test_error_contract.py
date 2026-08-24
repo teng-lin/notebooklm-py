@@ -66,7 +66,6 @@ import pytest
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.notebooklm_cli import cli
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 from .conftest import (
     ERROR_SCHEMA,
@@ -95,11 +94,10 @@ def _zero_retry_client(auth: AuthTokens, **kwargs: Any) -> NotebookLMClient:
     instead of asking VCR for a non-existent 2nd interaction.
     """
     assert not kwargs, f"list error-contract factory received unexpected options: {kwargs!r}"
-    return build_client_shell_for_tests(
+    return NotebookLMClient(
         auth,
         rate_limit_max_retries=0,
         server_error_max_retries=0,
-        refresh_retry_delay=0,
     )
 
 
@@ -129,10 +127,9 @@ def _install_zero_retry_seam(
     """
 
     def _factory(*args: Any, **kwargs: Any) -> NotebookLMClient:
-        client = _zero_retry_client(*args, **kwargs)
         if refresh_calls is not None:
 
-            async def _stub_refresh() -> AuthTokens:
+            async def _stub_refresh(client: NotebookLMClient) -> AuthTokens:
                 refresh_calls.append(None)
                 client.auth.csrf_token = "refreshed_csrf_token"
                 client._provider._coordinator.update_auth_headers(
@@ -141,8 +138,8 @@ def _install_zero_retry_seam(
                 )
                 return client.auth
 
-            client._provider._coordinator._refresh_callback = _stub_refresh
-        return client
+            monkeypatch.setattr(NotebookLMClient, "refresh_auth", _stub_refresh)
+        return _zero_retry_client(*args, **kwargs)
 
     async def _instant_sleep(_seconds: float) -> None:
         return None

@@ -15,9 +15,9 @@ import httpx
 import pytest
 
 import notebooklm._deadline as _deadline
+from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RateLimitError, RPCError, RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.unit.conftest import install_post_as_stream
 
 
@@ -55,7 +55,7 @@ async def test_rate_limit_retry_success_with_budget(auth_tokens):
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_client.post.side_effect = [_build_429("1"), _build_200([["result"]])]
 
-    core = build_client_shell_for_tests(auth_tokens, rate_limit_max_retries=2)
+    core = NotebookLMClient(auth_tokens, rate_limit_max_retries=2)
     install_http_client_for_test(core._backend._kernel, mock_client)
     install_post_as_stream(None, mock_client, mock_client.post)
 
@@ -91,7 +91,7 @@ async def test_rate_limit_retry_after_larger_than_client_timeout_does_not_sleep(
     # deadline — not by a header that trivially outruns the timeout.
     mock_client.post.return_value = _build_429("1")
 
-    core = build_client_shell_for_tests(auth_tokens, timeout=10.0, rate_limit_max_retries=2)
+    core = NotebookLMClient(auth_tokens, timeout=10.0, rate_limit_max_retries=2)
     install_http_client_for_test(core._backend._kernel, mock_client)
     install_post_as_stream(None, mock_client, mock_client.post)
 
@@ -142,7 +142,7 @@ async def test_rate_limit_retry_exhausted_with_budget(auth_tokens):
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_client.post.return_value = _build_429("1")
 
-    core = build_client_shell_for_tests(auth_tokens, rate_limit_max_retries=2)
+    core = NotebookLMClient(auth_tokens, rate_limit_max_retries=2)
     install_http_client_for_test(core._backend._kernel, mock_client)
     install_post_as_stream(None, mock_client, mock_client.post)
 
@@ -169,7 +169,7 @@ async def test_rate_limit_no_retry_if_disabled(auth_tokens):
     mock_client.post.return_value = resp_429
 
     # Explicitly disable retries
-    core = build_client_shell_for_tests(auth_tokens, rate_limit_max_retries=0)
+    core = NotebookLMClient(auth_tokens, rate_limit_max_retries=0)
     install_http_client_for_test(core._backend._kernel, mock_client)
     install_post_as_stream(None, mock_client, mock_client.post)
 
@@ -192,7 +192,7 @@ async def test_rate_limit_exp_backoff_fallback_without_header(auth_tokens):
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_client.post.return_value = _build_429(retry_after=None)
 
-    core = build_client_shell_for_tests(auth_tokens, rate_limit_max_retries=2)
+    core = NotebookLMClient(auth_tokens, rate_limit_max_retries=2)
     install_http_client_for_test(core._backend._kernel, mock_client)
     install_post_as_stream(None, mock_client, mock_client.post)
 
@@ -218,7 +218,7 @@ async def test_rate_limit_no_retry_without_header_when_disabled(auth_tokens):
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_client.post.return_value = _build_429(retry_after=None)
 
-    core = build_client_shell_for_tests(auth_tokens, rate_limit_max_retries=0)
+    core = NotebookLMClient(auth_tokens, rate_limit_max_retries=0)
     install_http_client_for_test(core._backend._kernel, mock_client)
     install_post_as_stream(None, mock_client, mock_client.post)
 
@@ -231,4 +231,4 @@ async def test_rate_limit_no_retry_without_header_when_disabled(auth_tokens):
 def test_rate_limit_max_retries_negative_raises(auth_tokens):
     """Negative budget is rejected at construction."""
     with pytest.raises(ValueError, match="rate_limit_max_retries must be >= 0"):
-        build_client_shell_for_tests(auth_tokens, rate_limit_max_retries=-1)
+        NotebookLMClient(auth_tokens, rate_limit_max_retries=-1)

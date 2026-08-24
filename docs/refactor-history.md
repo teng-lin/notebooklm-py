@@ -382,8 +382,8 @@ LabelsAPI(rpc, list_sources=sources.list)
 
 Compatibility aliases and fallback constructors that read missing
 collaborators off a broad session were removed — every feature now
-requires its dependencies explicitly. `_client_assembly.py::_assemble_client`
-is the single wiring root that hands them out.
+requires its dependencies explicitly. The later P7 collapse made
+`_client_composition.py::compose_client` the production-only wiring root.
 
 ## How it landed
 

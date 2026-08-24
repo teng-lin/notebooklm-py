@@ -6,7 +6,7 @@ references keep resolving; importers may also reach submodules directly
 (``from .._runtime.config import DEFAULT_TIMEOUT``).
 """
 
-from . import auth, config, contracts, helpers, init, lifecycle, transport
+from . import auth, config, contracts, helpers, init, lifecycle, pipeline, transport
 from .auth import AuthRefreshCoordinator
 from .config import (
     AUTO_READ_TIMEOUT,
@@ -38,11 +38,9 @@ from .helpers import (
 from .init import (
     ClientInternals,
     ValidatedSessionConfig,
-    WiredMiddleware,
     build_runtime_transport,
-    compose_client_internals,
+    build_web_runtime,
     validate_constructor_args,
-    wire_middleware_chain,
 )
 from .lifecycle import (
     ClientLifecycle,
@@ -50,6 +48,7 @@ from .lifecycle import (
     CookieSaver,
     _default_cookie_rotator,
 )
+from .pipeline import RuntimePipeline
 from .transport import RuntimeTransport
 
 __all__ = [
@@ -59,6 +58,7 @@ __all__ = [
     "helpers",
     "init",
     "lifecycle",
+    "pipeline",
     "transport",
     "AuthRefreshCoordinator",
     "AUTO_READ_TIMEOUT",
@@ -88,14 +88,13 @@ __all__ = [
     "resolve_sleep",
     "ClientInternals",
     "ValidatedSessionConfig",
-    "WiredMiddleware",
     "build_runtime_transport",
-    "compose_client_internals",
+    "build_web_runtime",
     "validate_constructor_args",
-    "wire_middleware_chain",
     "ClientLifecycle",
     "CookieRotator",
     "CookieSaver",
     "_default_cookie_rotator",
     "RuntimeTransport",
+    "RuntimePipeline",
 ]

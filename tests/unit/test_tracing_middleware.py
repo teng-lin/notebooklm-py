@@ -1,6 +1,6 @@
-"""Unit tests for :class:`notebooklm._middleware.tracing.TracingMiddleware`.
+"""Unit tests for :class:`notebooklm._runtime.tracing_behavior.TracingBehavior`.
 
-PR 12.3 of the Tier-12/13 greenfield migration lands ``TracingMiddleware``
+PR 12.3 of the Tier-12/13 greenfield migration lands ``TracingBehavior``
 as the innermost middleware in the chain (ADR-0009 §"Chain ordering"). The
 middleware is a pure observer: it logs one "starting" record before
 ``next_call`` and one "completed"/"failed" record after, without
@@ -44,18 +44,18 @@ import logging
 import httpx
 import pytest
 
-from notebooklm._middleware.core import (
-    Middleware,
+from notebooklm._runtime.rpc_call import (
     RpcRequest,
     RpcResponse,
-    build_chain,
 )
-from notebooklm._middleware.tracing import TracingMiddleware
+from notebooklm._runtime.tracing_behavior import TracingBehavior
 
 # The ``tests/`` package chain is complete; ``tests._fixtures.chain`` is the
 # fully-qualified import path documented in ``tests/_fixtures/__init__.py``.
 from tests._fixtures.chain import (
+    Behavior,
     FakeChainTerminal,
+    build_chain,
     chain_calls_through_to_terminal,
     make_request,
 )
@@ -69,7 +69,7 @@ _TRACE_LOGGER = "notebooklm.middleware.tracing"
 
 
 def test_tracing_middleware_satisfies_protocol() -> None:
-    """``TracingMiddleware`` is assignable into ``Middleware`` (Protocol check).
+    """``TracingBehavior`` is assignable into ``Middleware`` (Protocol check).
 
     Static check at runtime: assignment to a ``Middleware``-typed variable
     is the mypy-visible equivalent of "satisfies the Protocol." If a
@@ -77,12 +77,12 @@ def test_tracing_middleware_satisfies_protocol() -> None:
     fails type-check; the runtime assertion guards against the runtime
     invariant too.
     """
-    middleware: Middleware = TracingMiddleware()
+    middleware: Behavior = TracingBehavior()
     assert middleware is not None
 
 
 def test_tracing_middleware_calls_through_to_transport() -> None:
-    """Chain of ``[TracingMiddleware()]`` reaches the terminal exactly once.
+    """Chain of ``[TracingBehavior()]`` reaches the terminal exactly once.
 
     Uses the shared :func:`chain_calls_through_to_terminal` fixture from
     ``tests/_fixtures/chain.py`` — the canonical wire-up smoke test for
@@ -90,7 +90,7 @@ def test_tracing_middleware_calls_through_to_transport() -> None:
     plan line 105.
     """
     terminal = FakeChainTerminal()
-    assert chain_calls_through_to_terminal(terminal, [TracingMiddleware()])
+    assert chain_calls_through_to_terminal(terminal, [TracingBehavior()])
     assert terminal.call_count == 1
 
 
@@ -113,7 +113,7 @@ async def test_emits_starting_and_completed_records_on_success(
     async def terminal(_request: RpcRequest) -> RpcResponse:
         return RpcResponse(response=expected_response, state=_request.state)
 
-    chain = build_chain([TracingMiddleware()], terminal)
+    chain = build_chain([TracingBehavior()], terminal)
 
     with caplog.at_level(logging.DEBUG, logger=_TRACE_LOGGER):
         result = await chain(
@@ -163,7 +163,7 @@ async def test_starting_record_is_emitted_before_next_call(
             response=httpx.Response(status_code=200, content=b""), state=_request.state
         )
 
-    chain = build_chain([TracingMiddleware()], terminal)
+    chain = build_chain([TracingBehavior()], terminal)
 
     with caplog.at_level(logging.DEBUG, logger=_TRACE_LOGGER):
         await chain(make_request(context={"log_label": "ordering-check"}))
@@ -187,7 +187,7 @@ async def test_rpc_method_absent_does_not_raise(
             response=httpx.Response(status_code=204, content=b""), state=_request.state
         )
 
-    chain = build_chain([TracingMiddleware()], terminal)
+    chain = build_chain([TracingBehavior()], terminal)
 
     with caplog.at_level(logging.DEBUG, logger=_TRACE_LOGGER):
         # Context has ``log_label`` but no ``rpc_method``.
@@ -216,7 +216,7 @@ async def test_empty_context_does_not_raise(
             response=httpx.Response(status_code=200, content=b""), state=_request.state
         )
 
-    chain = build_chain([TracingMiddleware()], terminal)
+    chain = build_chain([TracingBehavior()], terminal)
 
     with caplog.at_level(logging.DEBUG, logger=_TRACE_LOGGER):
         await chain(make_request())
@@ -248,7 +248,7 @@ async def test_response_passthrough_identity() -> None:
     async def terminal(_request: RpcRequest) -> RpcResponse:
         return sentinel_response
 
-    chain = build_chain([TracingMiddleware()], terminal)
+    chain = build_chain([TracingBehavior()], terminal)
     result = await chain(make_request())
 
     assert result is sentinel_response
@@ -272,7 +272,7 @@ async def test_request_is_not_mutated() -> None:
             response=httpx.Response(status_code=200, content=b""), state=request.state
         )
 
-    chain = build_chain([TracingMiddleware()], terminal)
+    chain = build_chain([TracingBehavior()], terminal)
     sent = make_request(context={"log_label": "no-mutation"})
     await chain(sent)
 
@@ -301,7 +301,7 @@ async def test_failure_emits_failed_record_and_reraises(
     async def terminal(_request: RpcRequest) -> RpcResponse:
         raise boom
 
-    chain = build_chain([TracingMiddleware()], terminal)
+    chain = build_chain([TracingBehavior()], terminal)
 
     with (
         caplog.at_level(logging.DEBUG, logger=_TRACE_LOGGER),
@@ -331,7 +331,7 @@ async def test_cancelled_error_bypasses_failed_record(
     """``asyncio.CancelledError`` propagates without emitting a "failed" record.
 
     ``CancelledError`` is a :class:`BaseException` subclass (Python 3.8+), and
-    the ``except Exception`` clause in :class:`TracingMiddleware` is
+    the ``except Exception`` clause in :class:`TracingBehavior` is
     deliberately narrow: cooperative-cancellation signals
     (``CancelledError`` / ``KeyboardInterrupt`` / ``SystemExit``) are caller-
     initiated unwinds, not RPC failures, so they bypass the failure-trace
@@ -346,7 +346,7 @@ async def test_cancelled_error_bypasses_failed_record(
     async def terminal(_request: RpcRequest) -> RpcResponse:
         raise asyncio.CancelledError()
 
-    chain = build_chain([TracingMiddleware()], terminal)
+    chain = build_chain([TracingBehavior()], terminal)
 
     with (
         caplog.at_level(logging.DEBUG, logger=_TRACE_LOGGER),

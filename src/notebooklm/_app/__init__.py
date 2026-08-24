@@ -105,9 +105,8 @@ from .generate import (
     GenerationPlanValidationError,
     build_generation_plan,
     execute_generation,
-    generate_with_retry,
+    generation_outcome_from_result,
     generation_outcome_from_status,
-    handle_generation_result,
 )
 from .labels import (
     LabelGenerateResult,
@@ -355,9 +354,8 @@ __all__ = [
     "GenerationPlanValidationError",
     "build_generation_plan",
     "execute_generation",
-    "generate_with_retry",
+    "generation_outcome_from_result",
     "generation_outcome_from_status",
-    "handle_generation_result",
     # collections
     "CollectionMembershipResult",
     "CollectionResolutionError",

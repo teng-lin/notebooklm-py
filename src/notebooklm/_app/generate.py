@@ -4,8 +4,9 @@ This is the executor half of the Click-free ``generate`` core: it owns the
 end-to-end :func:`execute_generation` dispatcher, the ``kind`` → API-method
 map, the per-kind call-kwargs builder, and the typed
 :class:`GenerationExecutionResult`. The plan-building half lives in
-:mod:`notebooklm._app.generate_plans` and the retry/wait half in
-:mod:`notebooklm._app.generate_retry`; this module re-exports their public
+:mod:`notebooklm._app.generate_plans`; retry/wait execution lives behind the
+artifact facade while :mod:`notebooklm._app.generate_retry` retains result
+projection and compatibility exports. This module re-exports their public
 surface so ``_app.generate`` stays the single import point each transport
 adapter (the Click CLI today, the FastMCP server / future HTTP later) drives.
 
@@ -40,6 +41,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from ..artifacts import _run_generation_workflow
 from ..types import MindMapKind
 from .generate_plans import (
     GenerationKind,
@@ -54,10 +56,10 @@ from .generate_retry import (
     RETRY_INITIAL_DELAY,
     RETRY_MAX_DELAY,
     GenerationOutcome,
+    _format_status_message,
     calculate_backoff_delay,
-    generate_with_retry,
+    generation_outcome_from_result,
     generation_outcome_from_status,
-    handle_generation_result,
 )
 
 if TYPE_CHECKING:
@@ -176,9 +178,8 @@ async def execute_generation(
     inject the notebook/source resolvers (the CLI passes its
     ``cli.resolve.resolve_notebook_id`` / ``resolve_source_ids``, whose full-id
     fast paths preserve the RPC call set). This function resolves the IDs,
-    dispatches to the matching ``client.artifacts.<method>``, runs the
-    retry-with-backoff loop, and returns a typed result for the command layer
-    to render.
+    dispatches one explicit scalar budget to the private artifact-facade
+    workflow, and returns a typed result for the command layer to render.
     """
     nb_id_resolved = await notebook_resolver(client, plan.notebook_id, json_output=plan.json_output)
 
@@ -225,23 +226,22 @@ async def execute_generation(
             mind_map=result,
         )
 
-    result = await generate_with_retry(
+    wait_for_completion = client.artifacts.wait_for_completion if plan.wait else None
+    result = await _run_generation_workflow(
         _generate,
-        plan.max_retries,
-        plan.display_name,
-        on_retry=retry_sink,
-    )
-    outcome = await handle_generation_result(
-        client,
-        nb_id_resolved,
-        result,
-        plan.display_name,
-        plan.wait,
+        wait_for_completion,
+        notebook_id=nb_id_resolved,
         timeout=plan.timeout,
-        interval=plan.interval,
+        max_retries=plan.max_retries,
+        wait=plan.wait,
+        artifact_type=plan.display_name,
+        wait_message=_format_status_message(plan.display_name),
+        initial_interval=plan.interval,
+        on_retry=retry_sink,
+        on_wait_start=wait_start_sink,
         wait_context=wait_context,
-        wait_start_sink=wait_start_sink,
     )
+    outcome = generation_outcome_from_result(result, plan.display_name)
     return GenerationExecutionResult(
         kind=plan.kind,
         display_name=plan.display_name,
@@ -263,7 +263,6 @@ __all__ = [
     "build_generation_plan",
     "calculate_backoff_delay",
     "execute_generation",
-    "generate_with_retry",
+    "generation_outcome_from_result",
     "generation_outcome_from_status",
-    "handle_generation_result",
 ]

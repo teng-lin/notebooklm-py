@@ -2313,7 +2313,7 @@ def test_only_migrated_feature_runtime_reads_private_backend() -> None:
     """Only composition plus the migrated semantic slices may use the port."""
     package = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
     allowed = {
-        package / "_client_assembly.py",
+        package / "_client_composition.py",
         package / "_artifacts.py",
         package / "client.py",  # annotation-only declaration
         package / "_label_service.py",

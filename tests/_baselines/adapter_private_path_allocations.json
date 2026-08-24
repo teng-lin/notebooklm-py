@@ -220,9 +220,9 @@
           "semantic_fingerprint": "sha256:e7fc406b7dc50dfd71dd501d934d3a309598ad87bb60b6948f52590c2f763025"
         },
         {
-          "symbol": "notebooklm._runtime.init.compose_client_internals",
+          "symbol": "notebooklm._runtime.init.build_web_runtime",
           "required_ast_fragments": ["refresh_adapter = WebProviderRefresh", "refresh_session=refresh_adapter.refresh"],
-          "semantic_fingerprint": "sha256:01a38d89ddf3dad99a7ee1f8c67a3a73de2394c5d43db5c4b0d397ff4d8b3c35"
+          "semantic_fingerprint": "sha256:9d61b246a51051b784f64fe883dd73b9d9772554ac32d2e7c740becd0a46c912"
         }
       ]
     },

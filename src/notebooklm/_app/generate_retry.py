@@ -1,19 +1,13 @@
 """Transport-neutral artifact-generation retry + wait orchestration.
 
 This is the retry/wait half of the Click-free ``generate`` core (the sibling
-:mod:`notebooklm._app.generate` owns plan-building + the executor). It delegates
-retry-with-backoff to the exported :mod:`notebooklm.artifacts` helper, retains
-wait-for-completion dispatch and outcome orchestration, and defines the typed
+:mod:`notebooklm._app.generate` owns plan-building + the executor). Production
+retry/wait execution lives behind the artifact facade; this module retains
+presentation-only result projection, compatibility constants, and the typed
 :class:`GenerationOutcome`, the status-extraction helpers, and the spinner
 status-line formatter. Splitting this out keeps each module under the
 ADR-0008 module-size budget while leaving a single import surface
 (``_app.generate`` re-exports everything callers need).
-
-The long-running progress seams are neutral callables: ``wait_start_sink`` is a
-point notification; ``wait_context`` spans the awaited poll with an enter/exit
-boundary (a spinner in the CLI). Neither signature carries a transport type, so
-the adapter wires its Rich-coupled implementations in and this core stays
-presentation-neutral.
 
 This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 ``fastmcp`` imports (enforced by ``tests/_guardrails/test_app_boundary.py``).
@@ -21,17 +15,11 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 
 from __future__ import annotations
 
-import contextlib
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .. import artifacts as artifact_retry
 from ..types import GenerationStatus
-
-if TYPE_CHECKING:
-    from ..client import NotebookLMClient
 
 # Retry constants re-exported from the public ``artifacts`` retry helper so the
 # CLI service adapter (and its tests) keep their established import seam.
@@ -93,54 +81,6 @@ def _format_status_message(artifact_type: str, elapsed: float | None = None) -> 
     return f"{base} [{int(elapsed)}s elapsed]"
 
 
-async def generate_with_retry(
-    generate_fn: Callable[[], Awaitable[GenerationStatus | None]],
-    max_retries: int,
-    artifact_type: str,
-    on_retry: Callable[[artifact_retry.RateLimitRetryEvent], None] | None = None,
-) -> GenerationStatus | None:
-    """Generate artifact with retry on rate limit.
-
-    Retries the generation call with exponential backoff when rate limited.
-    Always makes at least one attempt, even when max_retries=0.
-
-    Args:
-        generate_fn: Async function that performs the generation.
-        max_retries: Maximum number of retries (0 = no retry, just one attempt).
-        artifact_type: Display name for progress messages.
-        on_retry: Optional command-layer callback for retry notices.
-
-    Returns:
-        GenerationStatus or None if generation failed.
-    """
-    return await artifact_retry.with_rate_limit_retry(
-        generate_fn,
-        max_retries=max_retries,
-        on_retry=on_retry,
-    )
-
-
-@contextlib.asynccontextmanager
-async def _null_wait_context(_message: str, _resume_hint: str) -> AsyncIterator[None]:
-    yield
-
-
-def _extract_generation_task_id(result: Any) -> str | None:
-    """Extract the task ID used to wait after a generation-start response.
-
-    Generation-start dicts historically prefer ``artifact_id`` over
-    ``task_id``. Keep that precedence separate from final status rendering,
-    where ``_extract_task_id`` preserves the existing ``task_id``-first order.
-    The facade ``generate_*`` methods return typed ``GenerationStatus``
-    objects, so no raw positional payload ever reaches this helper.
-    """
-    if isinstance(result, GenerationStatus):
-        return result.task_id
-    if isinstance(result, dict):
-        return result.get("artifact_id") or result.get("task_id")
-    return None
-
-
 def _extract_task_id(status: Any) -> str | None:
     """Extract task ID from various status formats.
 
@@ -190,56 +130,14 @@ def generation_outcome_from_status(status: Any, artifact_type: str) -> Generatio
     )
 
 
-async def handle_generation_result(
-    client: NotebookLMClient,
-    notebook_id: str,
-    result: Any,
-    artifact_type: str,
-    wait: bool = False,
-    timeout: float = 300.0,
-    interval: float | None = None,
-    wait_context: Callable[[str, str], AbstractAsyncContextManager[None]] | None = None,
-    wait_start_sink: Callable[[str], None] | None = None,
-) -> GenerationOutcome:
-    """Handle generation result with optional waiting and typed outcome mapping.
-
-    Consolidates the common pattern across all generate commands:
-
-    - Check for None/failed result
-    - Optionally wait for completion
-    - Return a typed outcome for the command layer to render
-
-    Args:
-        client: The NotebookLM client.
-        notebook_id: The notebook ID.
-        result: The generation result from artifacts API.
-        artifact_type: Display name for the artifact type (e.g., "audio", "video").
-        wait: Whether to wait for completion.
-        timeout: Timeout forwarded to ``wait_for_completion``. Callers supply
-            per-command defaults; media generators use longer budgets while
-            generic artifact waits remain at 300s.
-        interval: Polling interval in seconds. ``None`` (default) lets
-            ``wait_for_completion`` use its built-in default
-            (``initial_interval=2.0``); when supplied, the value is forwarded
-            as ``initial_interval`` so callers can tighten or loosen the
-            cadence.
-        wait_context: Optional span-context the adapter wraps the awaited poll
-            with (a spinner in the CLI). Receives the status message + a
-            resume-hint string. ``None`` uses a no-op context.
-        wait_start_sink: Optional point notification fired with the task id
-            once the wait begins. ``None`` skips it.
-
-    Returns:
-        GenerationOutcome describing the final status.
-    """
+def generation_outcome_from_result(result: Any, artifact_type: str) -> GenerationOutcome:
+    """Project a kickoff/final result without owning retry or wait execution."""
     if result is None:
         return GenerationOutcome(
             status="failed",
             artifact_type=artifact_type,
             error=f"{artifact_type.title()} generation failed",
         )
-
-    # Check for rate limiting (result exists but failed due to rate limit)
     if isinstance(result, GenerationStatus) and result.is_rate_limited:
         return GenerationOutcome(
             status="rate_limited",
@@ -253,25 +151,7 @@ async def handle_generation_result(
             ),
             raw_status=result,
         )
-
-    status: Any = result
-    task_id = _extract_generation_task_id(result)
-
-    # Wait for completion if requested
-    if wait and task_id:
-        if wait_start_sink is not None:
-            wait_start_sink(task_id)
-        wait_kwargs: dict[str, Any] = {"timeout": timeout}
-        if interval is not None:
-            wait_kwargs["initial_interval"] = interval
-        context = wait_context or _null_wait_context
-        async with context(
-            _format_status_message(artifact_type),
-            f"notebooklm artifact poll {task_id}",
-        ):
-            status = await client.artifacts.wait_for_completion(notebook_id, task_id, **wait_kwargs)
-
-    return generation_outcome_from_status(status, artifact_type)
+    return generation_outcome_from_status(result, artifact_type)
 
 
 __all__ = [
@@ -280,7 +160,6 @@ __all__ = [
     "RETRY_MAX_DELAY",
     "GenerationOutcome",
     "calculate_backoff_delay",
-    "generate_with_retry",
+    "generation_outcome_from_result",
     "generation_outcome_from_status",
-    "handle_generation_result",
 ]

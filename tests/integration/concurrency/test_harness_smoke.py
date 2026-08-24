@@ -43,7 +43,6 @@ from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 from .conftest import ConcurrentMockTransport
 
@@ -80,7 +79,7 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Noteb
     prove the harness fans out at the *transport* boundary (the
     cap-on semantics are covered by ``test_max_concurrent_rpcs.py``).
     """
-    core = build_client_shell_for_tests(auth=_make_auth(), max_concurrent_rpcs=None)
+    core = NotebookLMClient(auth=_make_auth(), max_concurrent_rpcs=None)
     await core.__aenter__()
     assert core._backend._kernel.http_client is not None
     prior_cookies = core._backend._kernel.get_http_client().cookies

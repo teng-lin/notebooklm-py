@@ -26,7 +26,6 @@ from notebooklm._runtime.auth import AuthRefreshCoordinator
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 REFRESH_HTML = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
 
@@ -890,7 +889,7 @@ async def test_profile_reload_adopts_disk_baseline_before_persisting_response_co
     stale.set("SID", "open-a", domain=".google.com", path="/")
     stale.set("__Secure-1PSIDTS", "open-a-ts", domain=".google.com", path="/")
     auth = _auth(storage_path=storage, cookie_jar=stale)
-    core = build_client_shell_for_tests(auth)
+    core = NotebookLMClient(auth)
 
     async def inline_to_thread(func):  # type: ignore[no-untyped-def]
         return func()
@@ -1084,7 +1083,7 @@ async def test_storage_cookie_reload_preserves_legacy_account_route(tmp_path: Pa
     live = httpx.Cookies()
     live.set("SID", "open-a", domain=".google.com", path="/")
     live.set("__Secure-1PSIDTS", "open-a-ts", domain=".google.com", path="/")
-    core = build_client_shell_for_tests(
+    core = NotebookLMClient(
         _auth(
             storage_path=storage,
             cookie_jar=live,
@@ -1430,7 +1429,7 @@ async def test_profile_advance_between_reload_and_adoption_cannot_be_overwritten
     live.set("SID", "open-a", domain=".google.com", path="/")
     live.set("__Secure-1PSIDTS", "open-a-ts", domain=".google.com", path="/")
     write_profile("open-a", 1, "open@example.com")
-    core = build_client_shell_for_tests(
+    core = NotebookLMClient(
         _auth(
             storage_path=storage,
             cookie_jar=live,
@@ -1512,7 +1511,7 @@ async def test_reload_sequence_supersedes_a_pre_replacement_cookie_save(tmp_path
     live.set("SID", "open-a", domain=".google.com", path="/")
     live.set("__Secure-1PSIDTS", "open-a-ts", domain=".google.com", path="/")
     write_profile("open-a")
-    core = build_client_shell_for_tests(_auth(storage_path=storage, cookie_jar=live))
+    core = NotebookLMClient(_auth(storage_path=storage, cookie_jar=live))
     persistence = core._provider._persistence
     await persistence._prepare_open_baseline(storage, to_thread=inline_to_thread)
     write_profile("disk-b")
@@ -1630,7 +1629,7 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
     # Inject the cookie-saver seam directly (Phase 2 PR 4 — replaces the
     # legacy ``_core.save_cookies_to_storage`` string-target monkeypatch
     # with constructor injection through ``ClientLifecycle._cookie_saver``).
-    core = build_client_shell_for_tests(auth, cookie_saver=fake_save_cookies_to_storage)
+    core = NotebookLMClient(auth, cookie_saver=fake_save_cookies_to_storage)
 
     http_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),

@@ -17,7 +17,7 @@ from notebooklm._logging import (
     reset_request_id,
     set_request_id,
 )
-from tests._helpers.client_factory import build_client_shell_for_tests
+from notebooklm.client import NotebookLMClient
 
 
 @pytest.fixture(autouse=True)
@@ -274,7 +274,7 @@ async def test_retry_inherits_parent_request_id():
     # the test exercises the request-id propagation through the executor
     # wrapper purely in-process.
     auth = AuthTokens(cookies={"SID": "test_sid"}, csrf_token="csrf", session_id="sid")
-    core = build_client_shell_for_tests(auth)
+    core = NotebookLMClient(auth)
     await core.__aenter__()
     try:
         executor = core._backend._runtime

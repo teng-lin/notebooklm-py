@@ -8,7 +8,7 @@ Five names live here:
 
 - :data:`AuthSnapshot` — point-in-time view of auth headers used to build
   one HTTP attempt. ADR-0009 pins this as the public input type of the
-  ``AuthRefreshMiddleware`` callbacks.
+  ``AuthRefreshBehavior`` callbacks.
 - :data:`BuildRequest` — sync callable that maps an ``AuthSnapshot`` to a
   ``(url, body, headers)`` tuple ready for the transport. The chain leaf reads
   the materialized ``RpcRequest`` fields directly; the callable remains in
@@ -18,11 +18,11 @@ Five names live here:
   ``BuildRequest`` shape and by the low-level streaming POST helper.
 - :class:`BuildRequestResult` — the *named* dataclass form of the same
   ``(url, body, headers)`` triple, used by the
-  ``AuthRefreshMiddleware.build_request_factory`` callback. The dataclass
+  ``AuthRefreshBehavior.build_request_factory`` callback. The dataclass
   shape is preferred for new code (named fields, immutable, type-checked
   at construction) over the legacy tuple return. Existing callers continue
   to use the tuple shape until they migrate.
-- :func:`materialize_build_request` — bridge from the legacy tuple callback
+- :func:`materialize_build_request` — adapter from the legacy tuple callback
   to ``BuildRequestResult``. This is the contract used before handing a request
   envelope to ``Kernel.post``.
 
@@ -56,7 +56,7 @@ BuildRequest = Callable[[AuthSnapshot], tuple[str, PostBody, dict[str, str] | No
 class BuildRequestResult:
     """Named dataclass form of the ``(url, body, headers)`` request triple.
 
-    Used by ``AuthRefreshMiddleware`` (ADR-0009): the middleware's
+    Used by ``AuthRefreshBehavior`` (ADR-0009): the middleware's
     ``build_request_factory`` callback returns this dataclass
     instead of the legacy ``(url, body, headers)`` tuple so the constructor
     signature reads as a single named value rather than positional unpacking.

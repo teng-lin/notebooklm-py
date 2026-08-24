@@ -9,19 +9,18 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLIENT_PATH = REPO_ROOT / "src" / "notebooklm" / "client.py"
-ASSEMBLY_PATH = REPO_ROOT / "src" / "notebooklm" / "_client_assembly.py"
+COMPOSITION_PATH = REPO_ROOT / "src" / "notebooklm" / "_client_composition.py"
 RUNTIME_INIT_PATH = REPO_ROOT / "src" / "notebooklm" / "_runtime" / "init.py"
 EXECUTABLE_ROOTS = (REPO_ROOT / "tests", REPO_ROOT / "scripts")
 
-# Both composition-root files: ``client.py`` (the thin ``__init__``
-# delegate) and ``_client_assembly.py`` (the shared assembly seam the
-# constructor and the canonical test factory both run). The guards below
-# scan both so moving wiring between them can't dodge the gate.
-COMPOSITION_ROOT_PATHS = (CLIENT_PATH, ASSEMBLY_PATH)
+# Both production composition-root files: the public constructor delegate and
+# its private production-only graph builder. Tests never call either builder
+# directly.
+COMPOSITION_ROOT_PATHS = (CLIENT_PATH, COMPOSITION_PATH)
 
 # Names a composition-root scope may bind the client instance to:
 # ``self`` inside ``NotebookLMClient`` methods, ``client`` inside
-# ``_assemble_client``.
+# ``compose_client``.
 CLIENT_HOST_NAMES = {"self", "client"}
 
 FEATURE_API_NAMES = {
@@ -171,7 +170,7 @@ def test_client_internals_is_a_frozen_complete_runtime_record() -> None:
         "web_transport_factory",
         "rpc_semaphore",
         "transport",
-        "chain_host",
+        "pipeline",
     }
     decorator = class_node.decorator_list[0]
     assert isinstance(decorator, ast.Call)

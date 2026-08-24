@@ -1,22 +1,22 @@
-"""SemaphoreMiddleware — RPC concurrency gate for the chain.
+"""SemaphoreBehavior — RPC concurrency gate for the chain.
 
-Per ADR-0009 §"Chain ordering", ``SemaphoreMiddleware``
-sits between ``MetricsMiddleware`` and ``RetryMiddleware``. The chain
+Per ADR-0009 §"Chain ordering", ``SemaphoreBehavior``
+sits between ``MetricsBehavior`` and ``RetryBehavior``. The chain
 ordering is ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, Tracing]``.
 
 Placing the semaphore here (rather than around the chain dispatch in
 ``RuntimeTransport.perform_authed_post``) keeps two contracts intact: queued tasks
-stay counted by ``DrainMiddleware`` (Drain sits outside the semaphore wait),
+stay counted by ``DrainBehavior`` (Drain sits outside the semaphore wait),
 and Metrics latency includes RPC queue wait:
 
-- **Drain admits queued tasks** — ``DrainMiddleware`` (outermost) increments
+- **Drain admits queued tasks** — ``DrainBehavior`` (outermost) increments
   ``_in_flight_posts`` before this middleware acquires the slot, so a
   ``client.close()`` mid-flight blocks on queued tasks instead of rejecting
   them once they finally pull a slot.
-- **Metrics latency includes queue wait** — ``MetricsMiddleware`` starts its
+- **Metrics latency includes queue wait** — ``MetricsBehavior`` starts its
   ``perf_counter`` BEFORE this middleware's ``async with``, so the telemetry
   shape includes queue wait.
-- **Retry stays in one slot** — ``RetryMiddleware`` sits INSIDE this
+- **Retry stays in one slot** — ``RetryBehavior`` sits INSIDE this
   middleware, so its retry attempts re-invoke the inner chain (AuthRefresh,
   Tracing, terminal) WITHOUT releasing the semaphore. This
   preserves the "one slot per logical RPC" backpressure contract.
@@ -35,15 +35,14 @@ from __future__ import annotations
 import time
 
 from .._rpc_semaphore import RpcSemaphore
-from .core import NextCall, RpcRequest, RpcResponse
+from .rpc_call import NextCall, RpcRequest, RpcResponse
 
 
-class SemaphoreMiddleware:
-    """Chain middleware that holds an :class:`asyncio.Semaphore` slot.
+class SemaphoreBehavior:
+    """Runtime behavior that holds an :class:`asyncio.Semaphore` slot.
 
-    Conforms to :class:`notebooklm._middleware.core.Middleware` — the ``__call__``
-    signature matches the Protocol so instances are assignable into a
-    ``Sequence[Middleware]``.
+    Its ``__call__`` signature matches the fixed behavior-call shape composed
+    by :class:`RuntimePipeline`.
 
     Constructor input:
 
@@ -53,7 +52,7 @@ class SemaphoreMiddleware:
     Side effect: records the per-call queue-wait duration on the request's
     typed state so the host can forward it to ``ClientMetrics.record_rpc_queue_wait``
     without giving the
-    middleware a direct ``ClientMetrics`` reference (keeps the middleware
+    behavior a direct ``ClientMetrics`` reference (keeps the behavior
     opinion-free about metric naming).
     """
 
@@ -83,5 +82,5 @@ class SemaphoreMiddleware:
 
 
 __all__ = [
-    "SemaphoreMiddleware",
+    "SemaphoreBehavior",
 ]

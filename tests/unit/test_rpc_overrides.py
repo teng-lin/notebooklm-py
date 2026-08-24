@@ -25,7 +25,6 @@ from notebooklm.rpc import RPCMethod
 from notebooklm.rpc import overrides as rpc_overrides
 from notebooklm.rpc import types as rpc_types
 from notebooklm.rpc.overrides import _load_rpc_overrides, _parse_rpc_overrides, resolve_rpc_id
-from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.unit.conftest import install_post_as_stream
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -339,11 +338,7 @@ def _make_core() -> NotebookLMClient:
         session_id="SID_OLD",
         cookies={"SID": "sid_cookie"},
     )
-    return build_client_shell_for_tests(
-        auth=auth,
-        refresh_callback=None,
-        refresh_retry_delay=0.0,
-    )
+    return NotebookLMClient(auth=auth)
 
 
 def _ok_response_for(rpc_id: str) -> httpx.Response:

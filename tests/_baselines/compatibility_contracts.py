@@ -421,19 +421,21 @@ async def _logical_rpc_scenario(
     disconnect_executor_metrics: bool = False,
 ) -> dict[str, object]:
     """Run one public ``rpc_call`` through production assembly and RpcExecutor."""
-    from unittest.mock import AsyncMock
+    from unittest.mock import AsyncMock, patch
 
     import httpx
 
+    import notebooklm.rpc as rpc_module
     from notebooklm import correlation_id
     from notebooklm._client_metrics import ClientMetrics
-    from notebooklm._middleware.core import RpcRequest, RpcResponse
+    from notebooklm._runtime.rpc_call import RpcRequest, RpcResponse
+    from notebooklm._runtime.transport import RuntimeTransport
     from notebooklm.auth import AuthTokens
+    from notebooklm.client import NotebookLMClient
     from notebooklm.exceptions import DecodingError
     from notebooklm.rpc import RPCMethod
     from notebooklm.types import RpcTelemetryEvent
     from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-    from tests._helpers.client_factory import build_client_shell_for_tests
 
     events: list[RpcTelemetryEvent] = []
 
@@ -456,7 +458,7 @@ async def _logical_rpc_scenario(
     )
     leaf_calls = 0
 
-    async def fake_terminal(request: RpcRequest) -> RpcResponse:
+    async def fake_terminal(_transport: RuntimeTransport, request: RpcRequest) -> RpcResponse:
         nonlocal leaf_calls
         leaf_calls += 1
         await asyncio.sleep(0)
@@ -467,12 +469,11 @@ async def _logical_rpc_scenario(
             state=request.state,
         )
 
-    client = build_client_shell_for_tests(
-        auth,
-        on_rpc_event=events.append,
-        decode_response=decode,
-        authed_post_terminal=fake_terminal,
-    )
+    with (
+        patch.object(rpc_module, "decode_response", decode),
+        patch.object(RuntimeTransport, "terminal", fake_terminal),
+    ):
+        client = NotebookLMClient(auth, on_rpc_event=events.append)
     install_http_client_for_test(
         client._backend._kernel,
         AsyncMock(spec=httpx.AsyncClient),
@@ -510,8 +511,8 @@ async def _supplemental_middleware_scenarios() -> dict[str, object]:
 
     from notebooklm._client_metrics import ClientMetrics
     from notebooklm._logging import reset_request_id, set_request_id
-    from notebooklm._middleware.core import RpcRequest, RpcResponse
-    from notebooklm._middleware.metrics import MetricsMiddleware
+    from notebooklm._runtime.metrics_behavior import MetricsBehavior
+    from notebooklm._runtime.rpc_call import RpcRequest, RpcResponse
     from notebooklm.types import RpcTelemetryEvent
     from tests._fixtures.chain import make_request
 
@@ -522,7 +523,7 @@ async def _supplemental_middleware_scenarios() -> dict[str, object]:
             events.append(event)
 
         metrics = ClientMetrics(on_rpc_event=capture)
-        middleware = MetricsMiddleware(metrics)
+        middleware = MetricsBehavior(metrics)
         context = {} if rpc_method is None else {"rpc_method": rpc_method}
         request = make_request(
             url="https://contract.invalid",

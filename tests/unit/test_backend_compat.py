@@ -16,15 +16,22 @@ from notebooklm._backend import (
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._backend_compat import project_backend_call, project_backend_error
+from notebooklm._backend_compat import (
+    project_backend_call,
+    project_backend_error,
+    project_local_not_found,
+)
 from notebooklm._operations import Operation
 from notebooklm._records import SourceAddFailureKind, SourceAddFailureRecord
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm.exceptions import (
     ArtifactFeatureUnavailableError,
+    ArtifactNotFoundError,
     AuthError,
     ClientError,
+    CollectionNotFoundError,
     DecodingError,
+    LabelNotFoundError,
     NetworkError,
     NotebookLimitError,
     NotebookNotFoundError,
@@ -35,6 +42,7 @@ from notebooklm.exceptions import (
     ServerError,
     UnknownRPCMethodError,
 )
+from notebooklm.rpc import RPCMethod
 
 
 def test_project_backend_error_has_one_explicit_case_per_closed_reason() -> None:
@@ -57,7 +65,53 @@ def test_project_backend_error_has_one_explicit_case_per_closed_reason() -> None
     assert Counter(cases) == Counter({reason.name: 1 for reason in BackendErrorReason})
 
 
+@pytest.mark.parametrize(
+    ("operation", "resource_id", "expected_type", "id_attribute", "method"),
+    [
+        (
+            Operation.LABEL_GET,
+            "label-1",
+            LabelNotFoundError,
+            "label_id",
+            RPCMethod.LIST_LABELS,
+        ),
+        (
+            Operation.COLLECTION_GET,
+            "collection-1",
+            CollectionNotFoundError,
+            "collection_id",
+            RPCMethod.LIST_LABELS,
+        ),
+        (
+            Operation.ARTIFACT_GET,
+            "artifact-1",
+            ArtifactNotFoundError,
+            "artifact_id",
+            RPCMethod.LIST_ARTIFACTS,
+        ),
+    ],
+)
+def test_local_not_found_projection_owns_legacy_native_diagnostics(
+    operation: Operation,
+    resource_id: str,
+    expected_type: type[Exception],
+    id_attribute: str,
+    method: RPCMethod,
+) -> None:
+    projected = project_local_not_found(operation, resource_id)
+
+    assert type(projected) is expected_type
+    assert getattr(projected, id_attribute) == resource_id
+    assert projected.method_id == method.value
+
+
+def test_local_not_found_projection_rejects_unreviewed_operations() -> None:
+    with pytest.raises(BackendContractError, match="no local not-found compatibility contract"):
+        project_local_not_found(Operation.SETTINGS_GET, "missing")
+
+
 _COMPATIBILITY_FACADES = (
+    "_artifact/generation_workflow.py",
     "_artifacts.py",
     "_chat/api.py",
     "_collections.py",

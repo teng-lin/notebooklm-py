@@ -20,7 +20,6 @@ import pytest
 
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _make_core() -> NotebookLMClient:
@@ -29,7 +28,7 @@ def _make_core() -> NotebookLMClient:
         csrf_token="test_csrf",
         session_id="test_session",
     )
-    return build_client_shell_for_tests(auth=auth)
+    return NotebookLMClient(auth=auth)
 
 
 @pytest.mark.asyncio

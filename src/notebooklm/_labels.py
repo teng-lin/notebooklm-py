@@ -6,7 +6,7 @@ bound to :attr:`LabelKind.SOURCE_LABEL`, and projects neutral records onto the
 public :class:`~notebooklm.types.Label` model. Because ``sources()`` expands
 membership into ``Source`` objects, the constructor also takes a narrow
 ``list_sources`` callable (``client.sources.list``) — wired in
-``_client_assembly.py`` after ``SourcesAPI`` is built (mirrors ``NotebooksAPI``).
+``_client_composition.py`` after ``SourcesAPI`` is built (mirrors ``NotebooksAPI``).
 
 Collections are the same wire surface with a different discriminator; see
 :mod:`notebooklm._collections`.
@@ -20,13 +20,12 @@ from collections.abc import Awaitable, Callable
 from typing import Literal
 
 from ._backend import BackendAdapter, BackendError
-from ._backend_compat import project_backend_error
+from ._backend_compat import project_backend_error, project_local_not_found
 from ._label_service import LabelSetService, require_member_ids
 from ._lookup import unwrap_or_raise
+from ._operations import Operation
 from ._projectors import project_label
 from ._records import LabelKind
-from .exceptions import LabelNotFoundError
-from .rpc import RPCMethod
 from .types import Label, Source
 
 logger = logging.getLogger(__name__)
@@ -49,8 +48,8 @@ class LabelsAPI:
     """
 
     def __init__(self, backend: BackendAdapter, *, list_sources: ListSources) -> None:
-        """``list_sources`` is ``client.sources.list`` (wired in ``_client_assembly.py``
-        after the ``SourcesAPI`` is constructed) — needed for the
+        """``list_sources`` is ``client.sources.list`` (wired in
+        ``_client_composition.py`` after ``SourcesAPI`` is constructed) — needed for the
         membership→Source join in ``sources()``. Same client/bound loop, so no
         loop-affinity concern (ADR-0004)."""
         self._service = LabelSetService(backend, LabelKind.SOURCE_LABEL)
@@ -87,7 +86,7 @@ class LabelsAPI:
         """Get a label by id; raises ``LabelNotFoundError`` on miss (ADR-0019)."""
         return unwrap_or_raise(
             await self.get_or_none(notebook_id, label_id),
-            LabelNotFoundError(label_id, method_id=RPCMethod.LIST_LABELS.value),
+            project_local_not_found(Operation.LABEL_GET, label_id),
         )
 
     async def sources(self, notebook_id: str, label_id: str) -> builtins.list[Source]:

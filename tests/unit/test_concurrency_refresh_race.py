@@ -70,14 +70,14 @@ import httpx
 import pytest
 
 from notebooklm._auth.cookie_types import CookieJar
-from notebooklm._middleware.auth_refresh import AuthRefreshMiddleware
 from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._runtime.auth import AuthRefreshCoordinator
+from notebooklm._runtime.auth_refresh_behavior import AuthRefreshBehavior
 from notebooklm._runtime.transport import RuntimeTransport
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
-from tests._helpers.client_factory import build_client_shell_for_tests
 
 # Test-side deadline for any single asyncio.Event in the race scaffolding.
 # Generous enough not to flake on slow CI, tight enough that a regression
@@ -95,7 +95,7 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     rebuild and wire send.
 
     The terminal body lives on :meth:`RuntimeTransport.terminal`; the
-    chain leaf (:meth:`MiddlewareChainHost._authed_post_chain_terminal`)
+    chain leaf (:meth:`RuntimeTransport.terminal`)
     forwards to it. The AST guard inspects the collaborator method
     that carries the actual body.
     """
@@ -106,7 +106,7 @@ def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
     # Locate the ``try`` block guarding the POST. Post-PR-12.9 the leaf
     # has no ``while`` retry loop and no ``async with`` semaphore wrap;
     # the try sits at the top of the function body (the semaphore is
-    # held by ``SemaphoreMiddleware`` higher up the chain).
+    # held by ``SemaphoreBehavior`` higher up the chain).
     def _find_first_try(parent: ast.AST) -> ast.Try | None:
         for child in ast.iter_child_nodes(parent):
             if isinstance(child, ast.Try):
@@ -237,7 +237,7 @@ def test_terminal_freshness_check_has_no_await_after_materialization():
 
 def test_auth_refresh_rebuild_has_no_await_after_snapshot_capture():
     """Auth-refresh retry rebuild pairs fresh snapshot and envelope atomically."""
-    src = textwrap.dedent(inspect.getsource(AuthRefreshMiddleware._rebuild_request_after_refresh))
+    src = textwrap.dedent(inspect.getsource(AuthRefreshBehavior._rebuild_request_after_refresh))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
@@ -261,7 +261,7 @@ def test_auth_refresh_rebuild_has_no_await_after_snapshot_capture():
     ]
     assert materialize_positions, "Could not locate materialize_rpc_request in refresh rebuild"
     assert snapshot_position < min(materialize_positions), (
-        "AuthRefreshMiddleware._rebuild_request_after_refresh must capture "
+        "AuthRefreshBehavior._rebuild_request_after_refresh must capture "
         "the fresh snapshot before rebuilding the retry envelope."
     )
 
@@ -271,7 +271,7 @@ def test_auth_refresh_rebuild_has_no_await_after_snapshot_capture():
         if isinstance(n, ast.Await) and (n.lineno, n.col_offset) > snapshot_position
     ]
     assert later_awaits == [], (
-        "AuthRefreshMiddleware._rebuild_request_after_refresh must not await "
+        "AuthRefreshBehavior._rebuild_request_after_refresh must not await "
         "after capturing the fresh snapshot; context['auth_snapshot'] and the "
         "rebuilt RpcRequest must stay paired until the terminal freshness check."
     )
@@ -444,7 +444,7 @@ async def test_stale_account_only_profile_install_cannot_overwrite_newer_route()
         authuser=1,
         account_email="first@example.com",
     )
-    client = build_client_shell_for_tests(auth)
+    client = NotebookLMClient(auth)
     coordinator = client._provider._coordinator
     target = auth.cookie_jar
     assert target is not None
@@ -541,14 +541,14 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
 
     # Build the same auth scaffold the unit conftest's ``make_core`` produces
     # (CSRF_OLD / SID_OLD / old_sid_cookie) so the OLD/NEW marker assertions
-    # below stay valid. Routed through :func:`build_client_shell_for_tests` so the
+    # below stay valid. Routed through :func:`NotebookLMClient` so the
     # refresh client shell and composed runtime share one auth snapshot provider.
     auth = AuthTokens(
         csrf_token="CSRF_OLD",
         session_id="SID_OLD",
         cookies={"SID": "old_sid_cookie"},
     )
-    client = build_client_shell_for_tests(auth=auth, refresh_retry_delay=0.0)
+    client = NotebookLMClient(auth=auth)
     core = client
     await core.__aenter__()
     try:

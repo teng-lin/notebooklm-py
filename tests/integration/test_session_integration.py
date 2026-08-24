@@ -1,12 +1,24 @@
 """Integration tests for client initialization and core functionality."""
 
+import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from notebooklm import AuthTokens, NotebookLMClient
+from notebooklm._auth.cookie_types import CookieJar
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._kernel import Kernel
+from notebooklm._request_types import AuthSnapshot
+from notebooklm._rpc_semaphore import RpcSemaphore
 from notebooklm._runtime.helpers import is_auth_error
+from notebooklm._runtime.rpc_call import RpcRequest, RpcResponse
+from notebooklm._runtime.transport import RuntimeTransport
+from notebooklm._transport_drain import TransportDrainTracker
+from notebooklm._web.runtime import WebExecutionRuntime
+from notebooklm._web_cookie_provider import WebCookieGeneration
 from notebooklm.rpc import (
     AuthError,
     ClientError,
@@ -17,7 +29,6 @@ from notebooklm.rpc import (
     RPCTimeoutError,
     ServerError,
 )
-from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.integration.conftest import install_post_as_stream
 
 # httpx-mock + MagicMock based core-layer tests; no real HTTP, no
@@ -52,7 +63,7 @@ class TestClientInitialization:
         # with a constructor-injection seam wired through
         # ``ClientLifecycle._cookie_saver``).
         mock_save = MagicMock(return_value=False)
-        core = build_client_shell_for_tests(auth, cookie_saver=mock_save)
+        core = NotebookLMClient(auth, cookie_saver=mock_save)
         await core.__aenter__()
 
         await core.close()
@@ -67,7 +78,7 @@ class TestClientInitialization:
         # close()-handles-saver-failure path without monkeypatching the
         # legacy ``_core.save_cookies_to_storage`` seam.
         boom_save = MagicMock(side_effect=RuntimeError("boom"))
-        core = build_client_shell_for_tests(auth_tokens, cookie_saver=boom_save)
+        core = NotebookLMClient(auth_tokens, cookie_saver=boom_save)
         await core.__aenter__()
 
         await core.close()
@@ -217,22 +228,63 @@ class TestRPCCallHTTPErrors:
     @pytest.mark.asyncio
     async def test_client_error_400(self, auth_tokens):
         # With the stale-CSRF fix, HTTP 400 is treated as an auth error and
-        # routed through _try_refresh_and_retry first. To exercise the raw
-        # 400 → ClientError mapping (back-compat for callers that don't opt
-        # in to auto-refresh), clear the refresh callback so is_auth_error's
-        # gate in rpc_call short-circuits and the status mapping runs.
-        async with NotebookLMClient(auth_tokens) as client:
-            core = client
-            core._provider._coordinator._refresh_callback = None
+        # routed through auth refresh first. Exercise the callback-disabled
+        # 400 → ClientError compatibility path with explicit runtime owners,
+        # rather than mutating the provider coordinator after construction.
+        del auth_tokens
+        generation = WebCookieGeneration(
+            cookies=CookieJar(),
+            csrf_token="csrf",
+            session_id="session",
+            authuser=0,
+            account_email=None,
+            generation=0,
+        )
 
-            mock_response = MagicMock()
-            mock_response.status_code = 400
-            mock_response.reason_phrase = "Bad Request"
-            error = httpx.HTTPStatusError("400", request=MagicMock(), response=mock_response)
+        async def snapshot() -> AuthSnapshot:
+            return generation
 
-            _install_error_post(core, error)
-            with pytest.raises(ClientError):
-                await core._backend._runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        async def unexpected_refresh() -> None:
+            pytest.fail("refresh must stay disabled")
+
+        async def terminal(request: RpcRequest) -> RpcResponse:
+            wire_request = httpx.Request("POST", request.url)
+            response = httpx.Response(400, request=wire_request)
+            raise httpx.HTTPStatusError("400", request=wire_request, response=response)
+
+        metrics = ClientMetrics()
+        transport = RuntimeTransport(
+            kernel=Kernel(),
+            snapshot_provider=snapshot,
+            metrics=metrics,
+            bound_loop_check=lambda: None,
+            logger=logging.getLogger(__name__),
+            drain_tracker=TransportDrainTracker(),
+            rpc_semaphore=RpcSemaphore(None),
+            rate_limit_max_retries=0,
+            server_error_max_retries=0,
+            retry_timeout_provider=lambda: 30.0,
+            refresh_retry_delay=0.0,
+            refresh_callable=unexpected_refresh,
+            is_auth_error=is_auth_error,
+            refresh_callback_enabled_provider=lambda: False,
+            terminal=terminal,
+        )
+        runtime = WebExecutionRuntime(
+            assert_open=lambda: None,
+            transport=transport,
+            refresh=unexpected_refresh,
+            metrics=metrics,
+            decode_response=lambda *_a, **_kw: pytest.fail("400 must not decode"),
+            is_auth_error=is_auth_error,
+            sleep=asyncio.sleep,
+            timeout_provider=lambda: 30.0,
+            refresh_callback_enabled_provider=lambda: False,
+            refresh_retry_delay_provider=lambda: 0.0,
+        )
+
+        with pytest.raises(ClientError):
+            await runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
     async def test_server_error_500(self, auth_tokens):
@@ -289,44 +341,91 @@ class TestRPCCallAuthRetry:
 
     @pytest.mark.asyncio
     async def test_auth_retry_on_decode_rpc_error(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens) as client:
-            core = client
-            refresh_callback = AsyncMock()
-            core._provider._coordinator._refresh_callback = refresh_callback
-            import asyncio
+        del auth_tokens  # The explicit runtime owns only an immutable generation.
+        generations = [
+            WebCookieGeneration(
+                cookies=CookieJar(),
+                csrf_token="csrf-0",
+                session_id="session-0",
+                authuser=0,
+                account_email=None,
+                generation=0,
+            )
+        ]
+        refresh_callback = AsyncMock()
 
-            # Pre-allocate the lock so the first refresh attempt doesn't
-            # try to construct one (the coordinator's lazy-init runs at
-            # the first ``await_refresh`` call site).
-            core._provider._coordinator._refresh_lock = asyncio.Lock()
+        async def snapshot() -> AuthSnapshot:
+            return generations[-1]
 
-            success_response = MagicMock()
-            success_response.status_code = 200
-            success_response.text = "some_valid_response"
-
-            mock_post = AsyncMock(return_value=success_response)
-            install_post_as_stream(None, core._backend._kernel.get_http_client(), mock_post)
-
-            # Override the runtime decode-response seam before the RPC fires.
-            decode_responses = iter(
-                [
-                    RPCError("authentication expired", rpc_code=401),
-                    ["result_data"],
-                ]
+        async def refresh() -> None:
+            await refresh_callback()
+            generations.append(
+                WebCookieGeneration(
+                    cookies=CookieJar(),
+                    csrf_token="csrf-1",
+                    session_id="session-1",
+                    authuser=0,
+                    account_email=None,
+                    generation=1,
+                )
             )
 
-            def fake_decode(*_a, **_kw):
-                value = next(decode_responses)
-                if isinstance(value, BaseException):
-                    raise value
-                return value
+        async def terminal(request: RpcRequest) -> RpcResponse:
+            response = httpx.Response(
+                200,
+                text="some_valid_response",
+                request=httpx.Request("POST", request.url),
+            )
+            return RpcResponse(response=response, state=request.state)
 
-            core._seams.decode_response = fake_decode
+        decode_responses = iter(
+            [
+                RPCError("authentication expired", rpc_code=401),
+                ["result_data"],
+            ]
+        )
 
-            result = await core._backend._runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        def fake_decode(*_a, **_kw):
+            value = next(decode_responses)
+            if isinstance(value, BaseException):
+                raise value
+            return value
 
-            assert result == ["result_data"]
-            refresh_callback.assert_called_once()
+        metrics = ClientMetrics()
+        transport = RuntimeTransport(
+            kernel=Kernel(),
+            snapshot_provider=snapshot,
+            metrics=metrics,
+            bound_loop_check=lambda: None,
+            logger=logging.getLogger(__name__),
+            drain_tracker=TransportDrainTracker(),
+            rpc_semaphore=RpcSemaphore(None),
+            rate_limit_max_retries=0,
+            server_error_max_retries=0,
+            retry_timeout_provider=lambda: 30.0,
+            refresh_retry_delay=0.0,
+            refresh_callable=refresh,
+            is_auth_error=is_auth_error,
+            refresh_callback_enabled_provider=lambda: True,
+            terminal=terminal,
+        )
+        runtime = WebExecutionRuntime(
+            assert_open=lambda: None,
+            transport=transport,
+            refresh=refresh,
+            metrics=metrics,
+            decode_response=fake_decode,
+            is_auth_error=is_auth_error,
+            sleep=asyncio.sleep,
+            timeout_provider=lambda: 30.0,
+            refresh_callback_enabled_provider=lambda: True,
+            refresh_retry_delay_provider=lambda: 0.0,
+        )
+
+        result = await runtime.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        assert result == ["result_data"]
+        refresh_callback.assert_awaited_once()
 
 
 class TestGetHttpClient:
@@ -338,7 +437,7 @@ class TestGetHttpClient:
     """
 
     def test_get_http_client_raises_when_not_initialized(self, auth_tokens):
-        core = build_client_shell_for_tests(auth_tokens)
+        core = NotebookLMClient(auth_tokens)
         with pytest.raises(RuntimeError, match="not initialized"):
             core._backend._kernel.get_http_client()
 
@@ -582,18 +681,18 @@ class TestBuildUrlHL:
 
     def test_build_url_defaults_hl_to_en(self, auth_tokens, monkeypatch):
         monkeypatch.delenv("NOTEBOOKLM_HL", raising=False)
-        core = build_client_shell_for_tests(auth_tokens)
+        core = NotebookLMClient(auth_tokens)
         url = core._backend._runtime.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=en" in url
 
     def test_build_url_includes_hl_from_env(self, auth_tokens, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
-        core = build_client_shell_for_tests(auth_tokens)
+        core = NotebookLMClient(auth_tokens)
         url = core._backend._runtime.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=ja" in url
 
     def test_build_url_empty_env_falls_back_to_en(self, auth_tokens, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_HL", "")
-        core = build_client_shell_for_tests(auth_tokens)
+        core = NotebookLMClient(auth_tokens)
         url = core._backend._runtime.build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=en" in url

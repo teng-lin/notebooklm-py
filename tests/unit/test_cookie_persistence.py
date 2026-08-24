@@ -24,7 +24,7 @@ from notebooklm._cookie_persistence import CookiePersistence
 from notebooklm.auth import (
     AuthTokens,
 )
-from tests._helpers.client_factory import build_client_shell_for_tests
+from notebooklm.client import NotebookLMClient
 
 
 def _auth_tokens(storage_path: Path | None = None) -> AuthTokens:
@@ -72,7 +72,7 @@ async def _inline_to_thread(func, /, *args, **kwargs):  # type: ignore[no-untype
 
 
 def test_client_core_exposes_cookie_persistence(tmp_path: Path) -> None:
-    core = build_client_shell_for_tests(_auth_tokens(tmp_path / "storage_state.json"))
+    core = NotebookLMClient(_auth_tokens(tmp_path / "storage_state.json"))
     baseline = snapshot_cookie_jar(_jar())
 
     # The ``Session._save_lock`` + ``Session._loaded_cookie_snapshot`` compat
@@ -99,7 +99,7 @@ async def test_direct_client_preserves_auth_baseline_across_pre_open_sibling_wri
     with pytest.warns(DeprecationWarning):
         auth = _auth_tokens(path)
     auth.cookie_snapshot = snapshot_cookie_jar(_jar(sid="old"))
-    core = build_client_shell_for_tests(auth)
+    core = NotebookLMClient(auth)
     persistence = core._provider._persistence
 
     # A sibling advances disk after auth loaded but before this client opens.
@@ -145,9 +145,7 @@ async def test_client_core_save_cookies_routes_through_injected_seam_and_to_thre
         return func(*args, **kwargs)
 
     monkeypatch.setattr(lifecycle_module.asyncio, "to_thread", fake_to_thread)
-    core = build_client_shell_for_tests(
-        _auth_tokens(tmp_path / "storage_state.json"), cookie_saver=fake_save
-    )
+    core = NotebookLMClient(_auth_tokens(tmp_path / "storage_state.json"), cookie_saver=fake_save)
 
     await core._provider._lifecycle.save_cookies(core._provider._persistence, _jar())
 

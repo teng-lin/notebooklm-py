@@ -30,12 +30,12 @@ from notebooklm._chat import ChatAPI
 from notebooklm._collections import CollectionsAPI
 from notebooklm._labels import LabelsAPI
 from notebooklm._loop_bound import LoopBoundPrimitive
-from notebooklm._middleware.core import build_chain
-from notebooklm._middleware.retry import RetryMiddleware
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._research import ResearchAPI
+from notebooklm._runtime.auth import AuthRefreshCoordinator
+from notebooklm._runtime.retry_behavior import RetryBehavior
 from notebooklm._settings import SettingsAPI
 from notebooklm._sharing import SharingAPI
 from notebooklm._source.upload import SourceUploadPipeline
@@ -65,8 +65,7 @@ from notebooklm.types import (
     ConnectionLimits,
     RpcTelemetryEvent,
 )
-from tests._fixtures.chain import FakeChainTerminal, make_request
-from tests._helpers.client_factory import build_client_shell_for_tests
+from tests._fixtures.chain import FakeChainTerminal, build_chain, make_request
 
 
 def _make_auth() -> AuthTokens:
@@ -83,7 +82,7 @@ def _make_auth() -> AuthTokens:
 
 
 def test_atomic_runtime_is_complete_before_backend_publication() -> None:
-    client = build_client_shell_for_tests(auth=_make_auth(), max_concurrent_rpcs=4)
+    client = NotebookLMClient(auth=_make_auth(), max_concurrent_rpcs=4)
     backend = client._backend
 
     assert backend._runtime is client.notebooks._legacy_rpc
@@ -103,7 +102,7 @@ def test_atomic_runtime_is_complete_before_backend_publication() -> None:
 
 def test_rpc_executor_and_middleware_chain_ordering_invariants() -> None:
     """Middleware chain ordering is strictly preserved in Tier-12 composition."""
-    client = build_client_shell_for_tests(auth=_make_auth())
+    client = NotebookLMClient(auth=_make_auth())
 
     # RpcExecutor is shared identically across client and features
     assert client.notebooks._legacy_rpc is client._backend._runtime
@@ -124,9 +123,9 @@ def test_rpc_executor_and_middleware_chain_ordering_invariants() -> None:
 
 
 def test_constructor_and_factory_vars_exact_parity() -> None:
-    """NotebookLMClient(...) and build_client_shell_for_tests(...) have identical vars() attribute surface."""
+    """NotebookLMClient(...) and NotebookLMClient(...) have identical vars() attribute surface."""
     prod = NotebookLMClient(_make_auth())
-    shell = build_client_shell_for_tests(auth=_make_auth())
+    shell = NotebookLMClient(auth=_make_auth())
 
     prod_vars = {k: type(v) for k, v in vars(prod).items()}
     shell_vars = {k: type(v) for k, v in vars(shell).items()}
@@ -187,7 +186,7 @@ def test_constructor_option_routing_to_all_collaborators() -> None:
     # 3. keepalive & keepalive_min_interval -> lifecycle (clamped to min_interval)
     assert client._provider._lifecycle._keepalive_interval == 120.0
 
-    # 4. retry retries -> RetryMiddleware
+    # 4. retry retries -> RetryBehavior
     assert client._backend.retry_limits == (5, 4)
 
     # 5. limits -> lifecycle
@@ -264,7 +263,7 @@ def test_public_client_member_disposition_and_owner_parity() -> None:
 
 def test_loop_affinity_protocol_and_cross_loop_rejection() -> None:
     """The runtime semaphore rejects cross-loop reuse and rebuilds after rebinding."""
-    client = build_client_shell_for_tests(auth=_make_auth(), max_concurrent_rpcs=2)
+    client = NotebookLMClient(auth=_make_auth(), max_concurrent_rpcs=2)
     semaphore = client._provider._rpc_semaphore
     assert semaphore is not None
     assert isinstance(semaphore, LoopBoundPrimitive)
@@ -300,7 +299,7 @@ def test_loop_affinity_protocol_and_cross_loop_rejection() -> None:
 
 def test_uploader_and_chat_loop_bound_reset_contracts() -> None:
     """SourceUploadPipeline and ChatAPI participate in the LoopGuard protocol."""
-    client = build_client_shell_for_tests(auth=_make_auth())
+    client = NotebookLMClient(auth=_make_auth())
 
     assert isinstance(client._source_uploader, (SourceUploadPipeline, LoopBoundPrimitive))
     assert isinstance(client.chat, (ChatAPI, LoopBoundPrimitive))
@@ -319,7 +318,7 @@ def test_uploader_and_chat_loop_bound_reset_contracts() -> None:
 @pytest.mark.asyncio
 async def test_drain_lifecycle_invariants() -> None:
     """drain() blocks new operations and waits for in-flight operations."""
-    client = build_client_shell_for_tests(auth=_make_auth())
+    client = NotebookLMClient(auth=_make_auth())
     drain_tracker = client._backend._drain_tracker
     assert drain_tracker is not None
     started = asyncio.Event()
@@ -416,7 +415,7 @@ async def test_close_cancellation_during_drain_tears_down_transport_via_shield()
 
 @pytest.mark.asyncio
 async def test_retry_middleware_rate_limit_and_server_error_retries() -> None:
-    """RetryMiddleware retries TransportRateLimited and TransportServerError up to max retries."""
+    """RetryBehavior retries TransportRateLimited and TransportServerError up to max retries."""
     rate_limit_resp = httpx.Response(429, headers={"Retry-After": "0"})
     fake_req = make_request()
     fake_http_err = httpx.HTTPStatusError(
@@ -435,7 +434,7 @@ async def test_retry_middleware_rate_limit_and_server_error_retries() -> None:
     async def fake_sleep(secs: float) -> None:
         slept.append(secs)
 
-    retry_mw = RetryMiddleware(
+    retry_mw = RetryBehavior(
         rate_limit_max_retries=2,
         server_error_max_retries=1,
         sleep=fake_sleep,
@@ -462,9 +461,7 @@ async def test_auth_refresh_coordinator_single_flight() -> None:
         await asyncio.sleep(0.02)
         return auth
 
-    client = build_client_shell_for_tests(auth=auth, refresh_callback=mock_refresh)
-    coord = client._provider._coordinator
-    assert coord is not None
+    coord = AuthRefreshCoordinator(refresh_callback=mock_refresh)
 
     await asyncio.gather(
         coord.await_refresh(),
@@ -567,7 +564,7 @@ async def test_on_rpc_event_backpressure_and_swallow_contracts(caplog) -> None:
         await finish.wait()
         events.append(event)
 
-    client = build_client_shell_for_tests(auth=_make_auth(), on_rpc_event=slow_cb)
+    client = NotebookLMClient(auth=_make_auth(), on_rpc_event=slow_cb)
     event = RpcTelemetryEvent(method="GET_NOTEBOOK", status="success", elapsed_seconds=0.05)
 
     assert client._backend._metrics is not None

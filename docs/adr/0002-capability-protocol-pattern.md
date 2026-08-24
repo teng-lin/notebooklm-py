@@ -18,7 +18,7 @@
 
 ## Status
 
-Superseded by [`arch-d2-cutover`](https://github.com/teng-lin/notebooklm-py/pull/835) (#835). The `SessionCapabilities` adapter and the transitional `ChatStreamingProvider` Protocol were deleted at cutover time; the later composable-capabilities arc continued in [ADR-0013](0013-composable-session-capabilities.md) (#866) and then retired the concrete `Session` facade itself. Current feature APIs depend on direct collaborators and the small shared Protocol set in `src/notebooklm/_runtime/contracts.py` (`Kernel`, `RpcCaller`, `LoopGuard`); single-consumer Protocols stay local to their owners. `NotebookLMClient` wires those collaborators in `src/notebooklm/_client_assembly.py`.
+Superseded by [`arch-d2-cutover`](https://github.com/teng-lin/notebooklm-py/pull/835) (#835). The `SessionCapabilities` adapter and the transitional `ChatStreamingProvider` Protocol were deleted at cutover time; the later composable-capabilities arc continued in [ADR-0013](0013-composable-session-capabilities.md) (#866) and then retired the concrete `Session` facade itself. Current feature APIs depend on direct collaborators and the small shared Protocol set in `src/notebooklm/_runtime/contracts.py` (`Kernel`, `RpcCaller`, `LoopGuard`); single-consumer Protocols stay local to their owners. `NotebookLMClient` wires those collaborators in `src/notebooklm/_client_composition.py`.
 
 This ADR documents the pre-cutover pattern for historical context. The "Decision" section below describes the state prior to D2 cutover; the "Alternatives considered" section describes the replacement now adopted.
 

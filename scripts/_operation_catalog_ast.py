@@ -530,6 +530,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_collections.py", "_backend", "BackendAdapter"),
         ("_collections.py", "_backend", "BackendError"),
         ("_collections.py", "_backend_compat", "project_backend_error"),
+        ("_collections.py", "_backend_compat", "project_local_not_found"),
         ("_collections.py", "_label_service", "LabelSetService"),
         ("_collections.py", "_label_service", "require_member_ids"),
         ("_collections.py", "_projectors", "project_collection"),
@@ -538,11 +539,13 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_labels.py", "_backend", "BackendAdapter"),
         ("_labels.py", "_backend", "BackendError"),
         ("_labels.py", "_backend_compat", "project_backend_error"),
+        ("_labels.py", "_backend_compat", "project_local_not_found"),
         ("_labels.py", "_label_service", "LabelSetService"),
         ("_labels.py", "_label_service", "require_member_ids"),
         ("_labels.py", "_projectors", "project_label"),
         ("_labels.py", "_records", "LabelKind"),
         ("_label_service.py", "_backend", "BackendAdapter"),
+        ("_artifact/listing.py", "_backend_compat", "project_local_not_found"),
         ("_projectors.py", "_records", "LabelKind"),
         ("_projectors.py", "_records", "LabelRecord"),
         ("_web/codec/labels.py", "_records", "LabelKind"),
@@ -1480,6 +1483,64 @@ ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
     }
 )
 
+# P4.2 moves artifact kickoff construction/projection into the one private
+# caller-budgeted facade workflow; P7 renames the production composition root.
+# Keep the exact import inventory fail-closed across both cohesive moves.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_artifacts.py", "_records", "ArtifactReviseSlideInput"),
+        ("_artifacts.py", "_records", "AudioGenerateInput"),
+        ("_artifacts.py", "_records", "DataTableGenerateInput"),
+        ("_artifacts.py", "_records", "InfographicGenerateInput"),
+        ("_artifacts.py", "_records", "InteractiveGenerateInput"),
+        ("_artifacts.py", "_records", "ReportGenerateInput"),
+        ("_artifacts.py", "_records", "SlideDeckGenerateInput"),
+        ("_artifacts.py", "_records", "VideoGenerateInput"),
+        ("_artifacts.py", "_studio", "DocumentOptionError"),
+        ("_client_assembly.py", "_note_service", "LegacyNoteBackedService"),
+        ("_client_assembly.py", "_note_service", "NoteService"),
+        ("_client_assembly.py", "_studio", "MindMapFamilyService"),
+        ("_client_assembly.py", "_studio", "StudioCatalog"),
+        ("_client_assembly.py", "_web.backend", "WebRpcBackend"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_artifact/generation_workflow.py", "_backend", "BackendError"),
+        ("_artifact/generation_workflow.py", "_backend_compat", "project_backend_call"),
+        ("_artifact/generation_workflow.py", "_backend_compat", "project_backend_error"),
+        ("_artifact/generation_workflow.py", "_projectors", "project_generation_status"),
+        ("_artifact/generation_workflow.py", "_records", "ArtifactReviseSlideInput"),
+        ("_artifact/generation_workflow.py", "_records", "AudioGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "DataTableGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "InfographicGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "InteractiveGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "ReportGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "SlideDeckGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "VideoGenerateInput"),
+        ("_artifact/generation_workflow.py", "_studio", "ArtifactLifecycleService"),
+        ("_artifact/generation_workflow.py", "_studio", "AudioFamilyService"),
+        ("_artifact/generation_workflow.py", "_studio", "DataTableFamilyService"),
+        ("_artifact/generation_workflow.py", "_studio", "DocumentOptionError"),
+        ("_artifact/generation_workflow.py", "_studio", "InteractiveFamilyService"),
+        ("_artifact/generation_workflow.py", "_studio", "ReportFamilyService"),
+        ("_artifact/generation_workflow.py", "_studio", "StudioManagementService"),
+        ("_artifact/generation_workflow.py", "_studio", "VideoFamilyService"),
+        ("_artifact/generation_workflow.py", "_studio", "VisualFamilyService"),
+        ("_client_composition.py", "_note_service", "LegacyNoteBackedService"),
+        ("_client_composition.py", "_note_service", "NoteService"),
+        ("_client_composition.py", "_studio", "MindMapFamilyService"),
+        ("_client_composition.py", "_studio", "StudioCatalog"),
+        ("_client_composition.py", "_web.backend", "WebRpcBackend"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_artifact/generation_workflow.py", "_backend", "BackendError"),
+        ("_artifact/generation_workflow.py", "_backend_compat", "project_backend_error"),
+    }
+)
+
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose
 # whole wire surface has migrated takes it as its sole positional collaborator.
@@ -1583,7 +1644,7 @@ def audit_inert_p1_backend_dataflow(
                             "_web",
                         }
                     )
-            if relative == "_client_assembly.py":
+            if relative == "_client_composition.py":
                 if (
                     isinstance(node, ast.Attribute)
                     and _attribute_parts(node) == ("client", "_backend")
