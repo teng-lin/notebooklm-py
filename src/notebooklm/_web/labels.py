@@ -10,10 +10,6 @@ from .._operations import Operation
 from .._records import (
     LabelCreateInput,
     LabelCreateResult,
-    LabelDeleteInput,
-    LabelDeleteResult,
-    LabelGenerateInput,
-    LabelGenerateResult,
     LabelGetInput,
     LabelGetResult,
     LabelKind,
@@ -27,16 +23,14 @@ from ..rpc import RPCMethod
 from .codec.labels import (
     build_create_collection_params,
     build_create_label_params,
-    build_delete_collections_params,
-    build_delete_labels_params,
-    build_generate_labels_params,
-    build_list_collections_params,
-    build_list_labels_params,
     build_rename_collection_params,
     build_update_collection_notebooks_params,
     build_update_label_params,
     decode_label_create_echo,
-    decode_label_list,
+    decode_label_set_list_result,
+    encode_label_set_list,
+    require_label_kind,
+    require_notebook_scope,
 )
 from .studio_data import StudioDataWebHandlers
 
@@ -46,14 +40,18 @@ _ACCOUNT_PATH = "/"
 
 
 class LabelSetWebHandlers(StudioDataWebHandlers):
-    """Reusable source-label/collection handlers mixed into the web backend."""
+    """Composite source-label/collection handlers mixed into the web backend.
+
+    Since P9.3 the leaf reads, the batch deletes and auto-grouping are codec
+    rows in ``_web/bindings/labels.py``; only the four create/update composites
+    remain here, with the shared set read they preflight and read back through.
+    """
 
     # -- labels and collections ---------------------------------------------
     #
-    # One wire surface, two discriminated dialects. The shared reads and the
-    # shared batch delete keep a single execution authority; the write paths
-    # split per dialect only because ``operation_variant`` must be a literal at
-    # the dispatch site for the operation catalog to allocate it.
+    # One wire surface, two discriminated dialects. The write paths split per
+    # dialect only because ``operation_variant`` must be a literal at the
+    # dispatch site for the operation catalog to allocate it.
 
     @staticmethod
     def _require_label_kind(
@@ -62,21 +60,12 @@ class LabelSetWebHandlers(StudioDataWebHandlers):
         operation: Operation,
     ) -> None:
         """Fail closed when a request addresses the other dialect's operation."""
-        if actual is not expected:
-            raise BackendContractError(
-                f"{operation.value} requires a {expected.value} request, got {actual.value}",
-                operation=operation,
-            )
+        require_label_kind(actual, expected, operation)
 
     @staticmethod
     def _require_notebook_scope(notebook_id: str | None, operation: Operation) -> str:
         """Source labels are notebook-scoped; a null scope is a contract error."""
-        if notebook_id is None:
-            raise BackendContractError(
-                f"{operation.value} requires a notebook scope",
-                operation=operation,
-            )
-        return notebook_id
+        return require_notebook_scope(notebook_id, operation)
 
     @staticmethod
     def _label_not_found(
@@ -148,37 +137,25 @@ class LabelSetWebHandlers(StudioDataWebHandlers):
         deadline: RuntimeDeadline | None,
         outcome_unknown_on_expiry: bool = False,
     ) -> LabelListResult:
-        """Read one whole label set; the only wire read either dialect has."""
+        """Read one whole label set for a composite's preflight or readback.
+
+        The leaf ``label.list``/``collection.list`` rows dispatch the same
+        payload; this helper exists because composites thread
+        ``outcome_unknown_on_expiry`` through the read, which a codec row cannot.
+        """
         self._require_label_kind(value.kind, kind, operation)
-        if kind is LabelKind.COLLECTION:
-            notebook_id: str | None = None
-            params = build_list_collections_params()
-            source_path = _ACCOUNT_PATH
-            # An account with zero collections may echo a null envelope, which
-            # decodes to an empty set rather than raising.
-            allow_null = True
-        else:
-            notebook_id = self._require_notebook_scope(value.notebook_id, operation)
-            params = build_list_labels_params(notebook_id)
-            source_path = f"/notebook/{notebook_id}"
-            allow_null = False
+        notebook_id = None if kind is LabelKind.COLLECTION else value.notebook_id
+        payload = encode_label_set_list(kind, notebook_id, operation)
         result = await self._rpc_call(
             RPCMethod.LIST_LABELS,
-            params,
+            payload.params,
             operation=operation,
             deadline=deadline,
-            source_path=source_path,
-            allow_null=allow_null,
+            source_path=payload.source_path,
+            allow_null=payload.allow_null,
             outcome_unknown_on_expiry=outcome_unknown_on_expiry,
         )
-        return LabelListResult(
-            labels=decode_label_list(
-                result,
-                kind=kind,
-                notebook_id=notebook_id,
-                method_id=RPCMethod.LIST_LABELS.value,
-            )
-        )
+        return decode_label_set_list_result(result, kind=kind, notebook_id=notebook_id)
 
     async def _label_set_get(
         self,
@@ -202,137 +179,6 @@ class LabelSetWebHandlers(StudioDataWebHandlers):
             label=next(
                 (label for label in listed.labels if label.id == value.label_id),
                 None,
-            )
-        )
-
-    async def _label_set_delete(
-        self,
-        value: LabelDeleteInput,
-        *,
-        kind: LabelKind,
-        operation: Operation,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelDeleteResult:
-        """Delete groups in one batch; an absent id is an idempotent no-op."""
-        self._require_label_kind(value.kind, kind, operation)
-        if kind is LabelKind.COLLECTION:
-            params = build_delete_collections_params(value.label_ids)
-            source_path = _ACCOUNT_PATH
-        else:
-            notebook_id = self._require_notebook_scope(value.notebook_id, operation)
-            params = build_delete_labels_params(notebook_id, value.label_ids)
-            source_path = f"/notebook/{notebook_id}"
-        await self._rpc_call(
-            RPCMethod.DELETE_LABEL,
-            params,
-            operation=operation,
-            deadline=deadline,
-            source_path=source_path,
-            allow_null=True,
-        )
-        return LabelDeleteResult()
-
-    async def _label_list(
-        self,
-        value: LabelListInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelListResult:
-        return await self._label_set_list(
-            value,
-            kind=LabelKind.SOURCE_LABEL,
-            operation=Operation.LABEL_LIST,
-            deadline=deadline,
-        )
-
-    async def _collection_list(
-        self,
-        value: LabelListInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelListResult:
-        return await self._label_set_list(
-            value,
-            kind=LabelKind.COLLECTION,
-            operation=Operation.COLLECTION_LIST,
-            deadline=deadline,
-        )
-
-    async def _label_get(
-        self,
-        value: LabelGetInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelGetResult:
-        return await self._label_set_get(
-            value,
-            kind=LabelKind.SOURCE_LABEL,
-            operation=Operation.LABEL_GET,
-            deadline=deadline,
-        )
-
-    async def _collection_get(
-        self,
-        value: LabelGetInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelGetResult:
-        return await self._label_set_get(
-            value,
-            kind=LabelKind.COLLECTION,
-            operation=Operation.COLLECTION_GET,
-            deadline=deadline,
-        )
-
-    async def _label_delete(
-        self,
-        value: LabelDeleteInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelDeleteResult:
-        return await self._label_set_delete(
-            value,
-            kind=LabelKind.SOURCE_LABEL,
-            operation=Operation.LABEL_DELETE,
-            deadline=deadline,
-        )
-
-    async def _collection_delete(
-        self,
-        value: LabelDeleteInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelDeleteResult:
-        return await self._label_set_delete(
-            value,
-            kind=LabelKind.COLLECTION,
-            operation=Operation.COLLECTION_DELETE,
-            deadline=deadline,
-        )
-
-    async def _label_generate(
-        self,
-        value: LabelGenerateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelGenerateResult:
-        """Run CreateLabel's auto-grouping mode and decode its full-set echo."""
-        result = await self._rpc_call(
-            RPCMethod.CREATE_LABEL,
-            build_generate_labels_params(
-                value.notebook_id,
-                replace_existing=value.replace_existing,
-            ),
-            operation=Operation.LABEL_GENERATE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return LabelGenerateResult(
-            labels=decode_label_create_echo(
-                result,
-                notebook_id=value.notebook_id,
-                method_id=RPCMethod.CREATE_LABEL.value,
             )
         )
 
