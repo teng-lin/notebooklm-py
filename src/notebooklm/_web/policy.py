@@ -255,12 +255,10 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
         ),
         Operation.CHAT_GET_HISTORY: WebCallPolicyBinding(
             CallPolicy.READ,
+            # Reviewed ledger correction (P9.3 chat; gate table §9): the handler
+            # never issued GET_LAST_CONVERSATION_ID — the facade resolves the
+            # conversation through CHAT_GET_CONVERSATION above the port.
             (
-                _native(
-                    RPCMethod.GET_LAST_CONVERSATION_ID,
-                    _IDEMPOTENT,
-                    "optional most-recent conversation resolution",
-                ),
                 _native(
                     RPCMethod.GET_CONVERSATION_TURNS,
                     _IDEMPOTENT,

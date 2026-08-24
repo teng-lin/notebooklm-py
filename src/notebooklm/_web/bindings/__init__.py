@@ -14,6 +14,7 @@ from types import MappingProxyType
 
 from ..._binding import Binding
 from ..._operations import Operation
+from .chat import CHAT_ROWS
 from .labels import LABEL_ROWS
 from .mind_maps import MIND_MAP_ROWS
 from .notebooks import NOTEBOOK_ROWS
@@ -25,6 +26,7 @@ from .sources import SOURCE_ROWS
 from .studio import STUDIO_ROWS
 
 _DOMAIN_ROWS: tuple[Mapping[Operation, Binding], ...] = (
+    CHAT_ROWS,
     LABEL_ROWS,
     MIND_MAP_ROWS,
     NOTEBOOK_ROWS,

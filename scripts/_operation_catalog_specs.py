@@ -595,7 +595,7 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "notebook+conversation",
         "Loads turns and exposes raw or question/answer history projections.",
         _p("chat", "get_conversation_turns", "get_history"),
-        (_b(RPCMethod.GET_CONVERSATION_TURNS), _b(RPCMethod.GET_LAST_CONVERSATION_ID)),
+        (_b(RPCMethod.GET_CONVERSATION_TURNS),),
     ),
     OperationSpec(
         Operation.CHAT_DELETE_HISTORY,

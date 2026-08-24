@@ -396,12 +396,6 @@
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
-          "role": "optional most-recent conversation resolution",
-          "rpc_method": "GET_LAST_CONVERSATION_ID",
-          "variant": null
-        },
-        {
-          "idempotency_policy": "idempotent_set_op",
           "role": "conversation-turn collection read",
           "rpc_method": "GET_CONVERSATION_TURNS",
           "variant": null
@@ -2215,7 +2209,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/chat.py:ChatWebHandlers._chat_save_note"
+        "_web/bindings/chat.py:CHAT_SAVE_NOTE"
       ],
       "golden_disposition": "not_recorded",
       "golden_evidence": [],
@@ -2346,7 +2340,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/chat.py:ChatWebHandlers._chat_delete_history"
+        "_web/bindings/chat.py:CHAT_DELETE_HISTORY"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "success contract returns None; the response carries no decodable row to pin",
@@ -2654,7 +2648,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/chat.py:ChatWebHandlers._chat_get_history"
+        "_web/bindings/chat.py:CHAT_GET_HISTORY"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2757,6 +2751,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/chat.py:CHAT_GET_CONVERSATION",
         "_web/chat.py:ChatWebHandlers._chat_conversation_id"
       ],
       "golden_disposition": "golden_covered",
@@ -2794,15 +2789,13 @@
       "response_projectors": [],
       "route_contexts": [
         "notebook",
-        "notebook+conversation",
         "notebook+conversation+source-set"
       ],
       "rpc_id": "hPTbtc",
       "rpc_method": "GET_LAST_CONVERSATION_ID",
       "semantic_operations": [
         "chat.ask",
-        "chat.get_conversation",
-        "chat.get_history"
+        "chat.get_conversation"
       ],
       "variant": null
     },
@@ -2814,11 +2807,11 @@
         "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
         "_web/backend.py:WebRpcBackend._mind_map_generate_note",
         "_web/backend.py:WebRpcBackend._notebook_update",
+        "_web/bindings/chat.py:CHAT_CONFIGURE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT",
-        "_web/chat.py:ChatWebHandlers._chat_configure",
         "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
         "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
         "_web/studio_data.py:StudioDataWebHandlers._data_source_ids",
@@ -3654,7 +3647,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/backend.py:WebRpcBackend._notebook_update",
-        "_web/chat.py:ChatWebHandlers._chat_configure",
+        "_web/bindings/chat.py:CHAT_CONFIGURE",
         "_web/sharing.py:SharingWebHandlers._sharing_set_view_level"
       ],
       "golden_disposition": "golden_exempt",
@@ -5492,13 +5485,13 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "action=GET only",
-          "site": "_web/chat.py:ChatWebHandlers._chat_configure",
+          "site": "_web/bindings/chat.py:CHAT_CONFIGURE",
           "transport_kind": "rpc"
         },
         {
           "binding": "RENAME_NOTEBOOK:<default>",
           "discriminator": "action=SET",
-          "site": "_web/chat.py:ChatWebHandlers._chat_configure",
+          "site": "_web/bindings/chat.py:CHAT_CONFIGURE",
           "transport_kind": "rpc"
         }
       ],
@@ -5519,7 +5512,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/chat.py:ChatWebHandlers._chat_configure"
+            "_web/bindings/chat.py:CHAT_CONFIGURE"
           ],
           "condition": "always for get_settings",
           "maximum_calls": 1,
@@ -5563,7 +5556,7 @@
         {
           "binding": "DELETE_CONVERSATION:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/chat.py:ChatWebHandlers._chat_delete_history",
+          "site": "_web/bindings/chat.py:CHAT_DELETE_HISTORY",
           "transport_kind": "rpc"
         }
       ],
@@ -5595,7 +5588,7 @@
         {
           "binding": "GET_LAST_CONVERSATION_ID:<default>",
           "discriminator": "public=chat.get_conversation_id",
-          "site": "_web/chat.py:ChatWebHandlers._chat_conversation_id",
+          "site": "_web/bindings/chat.py:CHAT_GET_CONVERSATION",
           "transport_kind": "rpc"
         }
       ],
@@ -5626,13 +5619,7 @@
         {
           "binding": "GET_CONVERSATION_TURNS:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/chat.py:ChatWebHandlers._chat_get_history",
-          "transport_kind": "rpc"
-        },
-        {
-          "binding": "GET_LAST_CONVERSATION_ID:<default>",
-          "discriminator": "conversation_id is omitted",
-          "site": "_web/chat.py:ChatWebHandlers._chat_conversation_id",
+          "site": "_web/bindings/chat.py:CHAT_GET_HISTORY",
           "transport_kind": "rpc"
         }
       ],
@@ -5640,8 +5627,7 @@
       "known_divergence": null,
       "known_divergence_kind": null,
       "native_bindings": [
-        "GET_CONVERSATION_TURNS:<default>",
-        "GET_LAST_CONVERSATION_ID:<default>"
+        "GET_CONVERSATION_TURNS:<default>"
       ],
       "owner": "ChatService",
       "policy": "read",
@@ -5668,7 +5654,7 @@
         {
           "binding": "CREATE_NOTE:saved_from_chat",
           "discriminator": "direct semantic binding",
-          "site": "_web/chat.py:ChatWebHandlers._chat_save_note",
+          "site": "_web/bindings/chat.py:CHAT_SAVE_NOTE",
           "transport_kind": "rpc"
         }
       ],

@@ -1,4 +1,10 @@
-"""Web workflow bindings for semantic Chat operations."""
+"""Web workflow binding for the two-phase ``chat.ask`` composite.
+
+Since P9.3 the five unary chat leaves are codec rows in ``_web/bindings/chat.py``;
+this mixin keeps only ``chat.ask`` (streamed phase plus the conditional
+conversation-id read) and the conversation-id helper that phase shares with
+the ``chat.get_conversation`` row's decoder.
+"""
 
 from __future__ import annotations
 
@@ -12,36 +18,14 @@ from .._backend import BackendContractError, BackendDeadlineExceededError
 from .._deadline import RuntimeDeadline
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._operations import Operation
-from .._records import (
-    ChatAskInput,
-    ChatAskResultRecord,
-    ChatConfigureAction,
-    ChatConfigureInput,
-    ChatConfigureResult,
-    ChatDeleteHistoryInput,
-    ChatDeleteHistoryResult,
-    ChatGetConversationInput,
-    ChatGetConversationResult,
-    ChatGetHistoryInput,
-    ChatGetHistoryResult,
-    ChatSaveNoteInput,
-    ChatSaveNoteResult,
-)
+from .._records import ChatAskInput, ChatAskResultRecord
 from ..exceptions import ChatError, NetworkError, NotebookLMError
 from ..rpc import RPCMethod
 from .codec.chat import (
     build_ask_request,
-    build_configure_params,
-    build_delete_history_params,
     build_get_conversation_params,
-    build_get_history_params,
-    build_get_settings_params,
-    build_save_note_params,
     decode_ask_response,
-    decode_get_conversation_result,
-    decode_get_history_result,
-    decode_get_settings_result,
-    decode_save_note_result,
+    decode_conversation_id_or_warn,
 )
 from .source_variants import SourceVariantWebHandlers
 from .transport import WebStreamRequest
@@ -55,7 +39,7 @@ chat_logger = logging.getLogger("notebooklm._chat.api")
 
 
 class ChatWebHandlers(SourceVariantWebHandlers):
-    """Reusable Chat handlers mixed into the web backend."""
+    """The ``chat.ask`` composite handler mixed into the web backend."""
 
     _chat_transport: RuntimeTransport | None
     _chat_reqid: ReqidCounter | None
@@ -79,120 +63,7 @@ class ChatWebHandlers(SourceVariantWebHandlers):
             source_path=f"/notebook/{notebook_id}",
             outcome_unknown_on_expiry=outcome_unknown_on_expiry,
         )
-        conversation_id = decode_get_conversation_result(raw)
-        if conversation_id is not None:
-            return conversation_id
-        if raw and isinstance(raw, list):
-            chat_logger.warning(
-                "hPTbtc returned an unexpected response shape; no "
-                "conversation_id extracted (notebook=%s, raw=%r)",
-                notebook_id,
-                repr(raw)[:500],
-            )
-        elif raw is not None:
-            chat_logger.warning(
-                "hPTbtc returned a non-list, non-empty response (notebook=%s, type=%s, raw=%r)",
-                notebook_id,
-                type(raw).__name__,
-                repr(raw)[:500],
-            )
-        return None
-
-    async def _chat_get_conversation(
-        self,
-        value: ChatGetConversationInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> ChatGetConversationResult:
-        conversation_id = await self._chat_conversation_id(
-            value.notebook_id,
-            operation=Operation.CHAT_GET_CONVERSATION,
-            deadline=deadline,
-        )
-        return ChatGetConversationResult(conversation_id)
-
-    async def _chat_get_history(
-        self,
-        value: ChatGetHistoryInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> ChatGetHistoryResult:
-        raw = await self._rpc_call(
-            RPCMethod.GET_CONVERSATION_TURNS,
-            build_get_history_params(value.conversation_id, value.limit),
-            operation=Operation.CHAT_GET_HISTORY,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-        )
-        return decode_get_history_result(raw, source="ChatAPI.get_conversation_turns")
-
-    async def _chat_delete_history(
-        self,
-        value: ChatDeleteHistoryInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> ChatDeleteHistoryResult:
-        await self._rpc_call(
-            RPCMethod.DELETE_CONVERSATION,
-            build_delete_history_params(value.conversation_id),
-            operation=Operation.CHAT_DELETE_HISTORY,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-        )
-        return ChatDeleteHistoryResult()
-
-    async def _chat_configure(
-        self,
-        value: ChatConfigureInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> ChatConfigureResult:
-        if value.action is ChatConfigureAction.GET:
-            raw = await self._rpc_call(
-                RPCMethod.GET_NOTEBOOK,
-                build_get_settings_params(value.notebook_id),
-                operation=Operation.CHAT_CONFIGURE,
-                deadline=deadline,
-                source_path=f"/notebook/{value.notebook_id}",
-            )
-            return ChatConfigureResult(settings=decode_get_settings_result(raw))
-        await self._rpc_call(
-            RPCMethod.RENAME_NOTEBOOK,
-            build_configure_params(value),
-            operation=Operation.CHAT_CONFIGURE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return ChatConfigureResult()
-
-    async def _chat_save_note(
-        self,
-        value: ChatSaveNoteInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> ChatSaveNoteResult:
-        raw = await self._rpc_call(
-            RPCMethod.CREATE_NOTE,
-            build_save_note_params(
-                value.notebook_id,
-                value.answer,
-                value.references,
-                value.title,
-            ),
-            operation=Operation.CHAT_SAVE_NOTE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            operation_variant="saved_from_chat",
-        )
-        return ChatSaveNoteResult(
-            note=decode_save_note_result(
-                raw,
-                notebook_id=value.notebook_id,
-                answer=value.answer,
-                requested_title=value.title,
-            )
-        )
+        return decode_conversation_id_or_warn(raw, notebook_id=notebook_id)
 
     async def _chat_ask(
         self,

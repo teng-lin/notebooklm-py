@@ -140,7 +140,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         ("_web/bindings/notebooks.py:NOTEBOOK_GET", "source_ids is None")
     ),
     (Operation.CHAT_CONFIGURE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/chat.py:ChatWebHandlers._chat_configure", "action=GET only")
+        ("_web/bindings/chat.py:CHAT_CONFIGURE", "action=GET only")
     ),
     (Operation.RESEARCH_IMPORT_VERIFY, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
@@ -550,7 +550,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "public_call",
             "always for get_settings",
-            ("_web/chat.py:ChatWebHandlers._chat_configure",),
+            ("_web/bindings/chat.py:CHAT_CONFIGURE",),
         ),
         RecencyRule(
             _p("chat", "configure", "set_mode"),
@@ -728,7 +728,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/backend.py:WebRpcBackend._notebook_update", "title|emoji mutation")
         ),
         (Operation.CHAT_CONFIGURE, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
-            ("_web/chat.py:ChatWebHandlers._chat_configure", "action=SET")
+            ("_web/bindings/chat.py:CHAT_CONFIGURE", "action=SET")
         ),
         (Operation.SHARING_SET_VIEW_LEVEL, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
             (
@@ -857,14 +857,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.CHAT_GET_CONVERSATION, _b(RPCMethod.GET_LAST_CONVERSATION_ID)): _rules(
             (
-                "_web/chat.py:ChatWebHandlers._chat_conversation_id",
+                "_web/bindings/chat.py:CHAT_GET_CONVERSATION",
                 "public=chat.get_conversation_id",
-            )
-        ),
-        (Operation.CHAT_GET_HISTORY, _b(RPCMethod.GET_LAST_CONVERSATION_ID)): _rules(
-            (
-                "_web/chat.py:ChatWebHandlers._chat_conversation_id",
-                "conversation_id is omitted",
             )
         ),
         (Operation.NOTE_LIST, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(

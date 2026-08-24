@@ -1,8 +1,8 @@
 """Compatibility helpers for the migrated saved-from-chat note codec.
 
-The live ``CREATE_NOTE:saved_from_chat`` binding is owned by
-``WebRpcBackend._chat_save_note``. These helpers retain historical private
-encoder imports without accepting an RPC dispatcher.
+The live ``CREATE_NOTE:saved_from_chat`` binding is owned by the
+``_web/bindings/chat.py:CHAT_SAVE_NOTE`` codec row. These helpers retain
+historical private encoder imports without accepting an RPC dispatcher.
 """
 
 from __future__ import annotations

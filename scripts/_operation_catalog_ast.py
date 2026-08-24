@@ -1700,19 +1700,31 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/chat.py", "_backend", "BackendDeadlineExceededError"),
         ("_web/chat.py", "_records", "ChatAskInput"),
         ("_web/chat.py", "_records", "ChatAskResultRecord"),
-        ("_web/chat.py", "_records", "ChatConfigureAction"),
-        ("_web/chat.py", "_records", "ChatConfigureInput"),
-        ("_web/chat.py", "_records", "ChatConfigureResult"),
-        ("_web/chat.py", "_records", "ChatDeleteHistoryInput"),
-        ("_web/chat.py", "_records", "ChatDeleteHistoryResult"),
-        ("_web/chat.py", "_records", "ChatGetConversationInput"),
-        ("_web/chat.py", "_records", "ChatGetConversationResult"),
-        ("_web/chat.py", "_records", "ChatGetHistoryInput"),
-        ("_web/chat.py", "_records", "ChatGetHistoryResult"),
-        ("_web/chat.py", "_records", "ChatSaveNoteInput"),
-        ("_web/chat.py", "_records", "ChatSaveNoteResult"),
+        # P9.3 chat codec rows and their row-facing codec helpers.
+        ("_web/bindings/chat.py", "_binding", "Binding"),
+        ("_web/bindings/chat.py", "_binding", "CodecBinding"),
+        ("_web/bindings/chat.py", "_binding", "NativeCallSpec"),
+        ("_web/bindings/chat.py", "_binding", "NativeChoice"),
+        ("_web/bindings/chat.py", "_records", "CHAT_CONFIGURE_DEF"),
+        ("_web/bindings/chat.py", "_records", "CHAT_DELETE_HISTORY_DEF"),
+        ("_web/bindings/chat.py", "_records", "CHAT_GET_CONVERSATION_DEF"),
+        ("_web/bindings/chat.py", "_records", "CHAT_GET_HISTORY_DEF"),
+        ("_web/bindings/chat.py", "_records", "CHAT_SAVE_NOTE_DEF"),
+        ("_web/bindings/chat.py", "_records", "ChatConfigureAction"),
+        ("_web/bindings/chat.py", "_records", "ChatConfigureInput"),
+        ("_web/bindings/chat.py", "codec", "chat"),
+        ("_web/codec/chat.py", "_binding", "CodecPayload"),
         ("_web/codec/chat.py", "_records", "ChatAskInput"),
+        ("_web/codec/chat.py", "_records", "ChatConfigureAction"),
         ("_web/codec/chat.py", "_records", "ChatConfigureInput"),
+        ("_web/codec/chat.py", "_records", "ChatConfigureResult"),
+        ("_web/codec/chat.py", "_records", "ChatDeleteHistoryInput"),
+        ("_web/codec/chat.py", "_records", "ChatDeleteHistoryResult"),
+        ("_web/codec/chat.py", "_records", "ChatGetConversationInput"),
+        ("_web/codec/chat.py", "_records", "ChatGetConversationResult"),
+        ("_web/codec/chat.py", "_records", "ChatGetHistoryInput"),
+        ("_web/codec/chat.py", "_records", "ChatSaveNoteInput"),
+        ("_web/codec/chat.py", "_records", "ChatSaveNoteResult"),
         ("_web/codec/chat.py", "_records", "ChatConversationTurnRecord"),
         ("_web/codec/chat.py", "_records", "ChatGetHistoryResult"),
         ("_web/codec/chat.py", "_records", "ChatLegacyMappingRecord"),
@@ -2777,13 +2789,47 @@ def audit_recency_contracts() -> list[str]:
             errors.append(
                 f"ChatAPI.{method_name} must contain exactly {expected_gets} GET_NOTEBOOK binding(s)"
             )
-    chat_backend_tree = _parse(SRC_ROOT / "_web" / "chat.py")
-    configure_fn = _find_class_method(chat_backend_tree, "ChatWebHandlers", "_chat_configure")
-    if configure_fn is None or _rpc_binding_call_count(configure_fn, RPCMethod.GET_NOTEBOOK) != 1:
+    # Since P9.3 ``chat.configure`` is an input-keyed codec row; its declared
+    # native choices are the only GET_NOTEBOOK authority the row can select.
+    chat_rows_tree = _parse(SRC_ROOT / "_web" / "bindings" / "chat.py")
+    configure_row = _find_module_assignment(chat_rows_tree, "CHAT_CONFIGURE")
+    if configure_row is None or _native_choice_count(configure_row, RPCMethod.GET_NOTEBOOK) != 1:
         errors.append(
-            "ChatWebHandlers._chat_configure must contain exactly one GET_NOTEBOOK binding"
+            "_web/bindings/chat.py:CHAT_CONFIGURE must declare exactly one GET_NOTEBOOK native"
         )
     return errors
+
+
+def _find_module_assignment(tree: ast.Module, name: str) -> ast.expr | None:
+    """Return the value assigned to module-level ``name``, if any."""
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign):
+            targets = statement.targets
+            value: ast.expr | None = statement.value
+        elif isinstance(statement, ast.AnnAssign):
+            targets = [statement.target]
+            value = statement.value
+        else:
+            continue
+        if value is not None and any(
+            isinstance(target, ast.Name) and target.id == name for target in targets
+        ):
+            return value
+    return None
+
+
+def _native_choice_count(node: ast.AST, method: RPCMethod) -> int:
+    """Count ``NativeChoice(RPCMethod.X …)``/``NativeCallSpec.constant(RPCMethod.X …)`` literals."""
+    count = 0
+    for call in (item for item in ast.walk(node) if isinstance(item, ast.Call)):
+        parts = _attribute_parts(call.func)
+        if not parts or parts[-1] not in {"NativeChoice", "constant"}:
+            continue
+        if parts[-1] == "constant" and parts[-2:-1] != ("NativeCallSpec",):
+            continue
+        if _rpc_method_member(_call_argument(call, 0, "method")) == method.name:
+            count += 1
+    return count
 
 
 def _find_class_method(
