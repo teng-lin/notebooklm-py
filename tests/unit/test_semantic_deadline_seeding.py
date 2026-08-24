@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from notebooklm._binding import CodecBinding
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from notebooklm._operations import Operation
 from notebooklm._records import (
@@ -128,12 +129,27 @@ def test_multi_native_deadline_authority_ledger_is_closed_and_active() -> None:
         and binding.handler_name is not None
         and len(_reachable_native_sites(binding.handler_name)) > 1
     }
+    # P9.3: a row-backed operation whose ``NativeCallSpec`` is input-keyed declares
+    # more than one native without any ``self`` walk; those rows are the
+    # branch-exclusive members by construction (one call per input).
+    keyed_row_composites = {
+        operation
+        for operation, binding in WEB_OPERATION_REGISTRY.items()
+        if binding.is_supported
+        and isinstance(binding.row, CodecBinding)
+        and not binding.row.native.is_constant
+    }
+    assert keyed_row_composites <= _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS | {
+        Operation.RESEARCH_START
+    }
     # ARTIFACT_LIST/GET also call the note-backed mind-map collaborator;
     # their second native call is intentionally invisible to a ``self`` AST walk.
     hidden_collaborator_composites = {Operation.ARTIFACT_LIST, Operation.ARTIFACT_GET}
-    assert syntactic_composites | hidden_collaborator_composites == (
-        _EXPECTED_CLIENT_TIMEOUT_OPERATIONS | _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS
-    )
+    assert (
+        syntactic_composites
+        | hidden_collaborator_composites
+        | (keyed_row_composites & _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS)
+    ) == (_EXPECTED_CLIENT_TIMEOUT_OPERATIONS | _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS)
 
 
 @pytest.mark.parametrize("timeout", [None, float("inf")])

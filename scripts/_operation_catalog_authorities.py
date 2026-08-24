@@ -639,8 +639,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.ARTIFACT_DOWNLOAD, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
             (
-                "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_download",
-                "note-backed mind-map representation read",
+                "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
+                "action=mind_maps note-backed mind-map representation read",
             )
         ),
         (Operation.ARTIFACT_RENAME, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
@@ -648,13 +648,13 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.ARTIFACT_DOWNLOAD, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/studio_facade.py:StudioFacadeWebHandlers._studio_rows",
-                "representation catalog read",
+                "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
+                "action=catalog representation catalog read",
             ),
         ),
         (Operation.ARTIFACT_WAIT, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/studio_facade.py:StudioFacadeWebHandlers._studio_rows",
+                "_web/bindings/studio.py:ARTIFACT_WAIT",
                 "one catalog read per poll tick",
             )
         ),
@@ -811,10 +811,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/labels.py:LabelSetWebHandlers._collection_create", "label_type=collection")
         ),
         (Operation.ARTIFACT_DELETE, _b(RPCMethod.DELETE_ARTIFACT)): _rules(
-            (
-                "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_delete",
-                "public=artifacts.delete",
-            )
+            ("_web/bindings/studio.py:ARTIFACT_DELETE", "public=artifacts.delete")
         ),
         (Operation.MIND_MAP_DELETE, _b(RPCMethod.DELETE_ARTIFACT)): _rules(
             ("_web/bindings/mind_maps.py:MIND_MAP_DELETE", "kind=INTERACTIVE")
@@ -842,8 +839,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.ARTIFACT_DOWNLOAD, _b(RPCMethod.GET_INTERACTIVE_HTML)): _rules(
             (
-                "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_download",
-                "quiz|flashcards|mind-map interactive representation",
+                "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
+                "action=interactive_html|mind_map_tree interactive representation",
             ),
         ),
         (Operation.MIND_MAP_GET, _b(RPCMethod.GET_INTERACTIVE_HTML)): _rules(

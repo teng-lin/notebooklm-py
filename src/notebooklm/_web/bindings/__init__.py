@@ -22,6 +22,7 @@ from .research import RESEARCH_ROWS
 from .settings import SETTINGS_ROWS
 from .sharing import SHARING_ROWS
 from .sources import SOURCE_ROWS
+from .studio import STUDIO_ROWS
 
 _DOMAIN_ROWS: tuple[Mapping[Operation, Binding], ...] = (
     LABEL_ROWS,
@@ -32,6 +33,7 @@ _DOMAIN_ROWS: tuple[Mapping[Operation, Binding], ...] = (
     SETTINGS_ROWS,
     SHARING_ROWS,
     SOURCE_ROWS,
+    STUDIO_ROWS,
 )
 
 

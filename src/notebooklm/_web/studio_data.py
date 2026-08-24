@@ -1,4 +1,8 @@
-"""Web workflow bindings for mind-map, data-table, and Drive export compatibility."""
+"""Web workflow bindings for mind-map and data-table generation compatibility.
+
+Since P9.3 the Drive export leaf (``ARTIFACT_EXPORT``) is a codec row in
+``_web/bindings/studio.py``; the two input-defaulting generate composites remain here.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,6 @@ import json
 from datetime import datetime
 
 from .._artifact.payloads import build_data_table_artifact_params, build_mind_map_params
-from .._backend import BackendContractError
 from .._deadline import RuntimeDeadline
 from .._env import get_default_language
 from .._notebook_payloads import build_get_notebook_params
@@ -14,19 +17,12 @@ from .._operations import Operation
 from .._records import (
     DataTableGenerateInput,
     DataTableGenerateResult,
-    DriveExportInput,
-    DriveExportResult,
     MindMapGenerateInput,
     MindMapGenerateResult,
 )
 from .._row_adapters.artifacts import MIND_MAP_LEAF_ABSENT, unwrap_mind_map_generation_leaf
-from ..rpc import ExportType, RPCMethod
+from ..rpc import RPCMethod
 from .studio_media import StudioMediaWebHandlers
-
-_DRIVE_EXPORT_DESTINATIONS = {
-    "docs": ExportType.DOCS,
-    "sheets": ExportType.SHEETS,
-}
 
 
 class StudioDataWebHandlers(StudioMediaWebHandlers):
@@ -157,28 +153,6 @@ class StudioDataWebHandlers(StudioMediaWebHandlers):
             note_id=note_id,
             created_at=created_at,
         )
-
-    async def _artifact_export(
-        self,
-        value: DriveExportInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> DriveExportResult:
-        destination = _DRIVE_EXPORT_DESTINATIONS.get(value.destination)
-        if destination is None:
-            raise BackendContractError(
-                f"unrecognized Drive export destination {value.destination!r}",
-                operation=Operation.ARTIFACT_EXPORT,
-            )
-        result = await self._rpc_call(
-            RPCMethod.EXPORT_ARTIFACT,
-            [None, value.artifact_id, value.content, value.title, int(destination)],
-            operation=Operation.ARTIFACT_EXPORT,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return DriveExportResult(result)
 
 
 __all__ = ["StudioDataWebHandlers"]
