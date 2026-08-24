@@ -6,10 +6,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._idempotency import (
     _CreateResultKind,
     _IdempotentCreateResult,
+    transport_may_have_committed,
+)
+from notebooklm._idempotency import idempotent_create as adapter_idempotent_create
+from notebooklm._idempotency_create import (
     idempotent_create,
+    semantic_may_have_committed,
 )
 from notebooklm._records import (
     SOURCE_ADD_URL_DEF,
@@ -29,7 +35,9 @@ from tests._fixtures.recording_backend import RecordingBackend
 @pytest.mark.asyncio
 async def test_idempotent_create_marks_fresh_create() -> None:
     result = await idempotent_create(
-        AsyncMock(return_value="created"), AsyncMock(return_value=None)
+        AsyncMock(return_value="created"),
+        AsyncMock(return_value=None),
+        may_have_committed=transport_may_have_committed,
     )
     assert result == _IdempotentCreateResult("created", _CreateResultKind.CREATED)
 
@@ -39,7 +47,7 @@ async def test_idempotent_create_marks_probe_match_without_retry() -> None:
     create = AsyncMock(side_effect=NetworkError("lost response"))
     probe = AsyncMock(return_value="existing")
 
-    result = await idempotent_create(create, probe)
+    result = await idempotent_create(create, probe, may_have_committed=transport_may_have_committed)
 
     assert result.value == "existing"
     assert result.kind is _CreateResultKind.PROBED
@@ -52,7 +60,7 @@ async def test_idempotent_create_retries_after_probe_miss() -> None:
     create = AsyncMock(side_effect=[NetworkError("first"), "second"])
     probe = AsyncMock(return_value=None)
 
-    result = await idempotent_create(create, probe)
+    result = await idempotent_create(create, probe, may_have_committed=transport_may_have_committed)
 
     assert result.value == "second"
     assert result.kind is _CreateResultKind.CREATED
@@ -66,7 +74,11 @@ async def test_idempotent_create_reraises_last_exception_by_identity() -> None:
     create = AsyncMock(side_effect=[NetworkError("first"), error])
 
     with pytest.raises(NetworkError) as raised:
-        await idempotent_create(create, AsyncMock(return_value=None))
+        await idempotent_create(
+            create,
+            AsyncMock(return_value=None),
+            may_have_committed=transport_may_have_committed,
+        )
 
     assert raised.value is error
 
@@ -181,10 +193,96 @@ async def test_idempotent_create_aborts_when_the_probe_raises() -> None:
     probe_error = RuntimeError("probe cannot answer")
 
     with pytest.raises(RuntimeError) as exc_info:
-        await idempotent_create(create, AsyncMock(side_effect=probe_error), max_attempts=3)
+        await idempotent_create(
+            create,
+            AsyncMock(side_effect=probe_error),
+            may_have_committed=transport_may_have_committed,
+            max_attempts=3,
+        )
 
     assert exc_info.value is probe_error
     # One attempt, despite max_attempts=3: the probe never said "no match".
     assert create.await_count == 1
     # The transport failure that made the probe run is still reachable.
     assert isinstance(probe_error.__context__, NetworkError)
+
+
+# ---------------------------------------------------------------------------
+# One implementation, two predicates (P9.2 contract 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_semantic_predicate_probes_on_a_dispatched_commit_uncertain_backend_error() -> None:
+    create = AsyncMock(
+        side_effect=BackendError("5xx", reason=BackendErrorReason.SERVER, dispatched=True)
+    )
+    probe = AsyncMock(return_value="existing")
+
+    result = await idempotent_create(create, probe, may_have_committed=semantic_may_have_committed)
+
+    assert result.value == "existing"
+    assert result.kind is _CreateResultKind.PROBED
+    probe.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(
+            BackendError("pre-dispatch", reason=BackendErrorReason.SERVER, dispatched=False),
+            id="not-dispatched",
+        ),
+        pytest.param(
+            BackendError("rejected", reason=BackendErrorReason.RPC, dispatched=True),
+            id="dispatched-but-rejected",
+        ),
+        pytest.param(NetworkError("raw transport error"), id="raw-transport-error"),
+    ],
+)
+async def test_semantic_predicate_does_not_probe_when_nothing_could_have_committed(
+    error: Exception,
+) -> None:
+    create = AsyncMock(side_effect=error)
+    probe = AsyncMock(return_value="existing")
+
+    with pytest.raises(type(error)) as raised:
+        await idempotent_create(create, probe, may_have_committed=semantic_may_have_committed)
+
+    assert raised.value is error
+    create.assert_awaited_once()
+    probe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_adapter_predicate_ignores_backend_records_and_keeps_the_class_tuple() -> None:
+    backend_error = BackendError("5xx", reason=BackendErrorReason.SERVER, dispatched=True)
+    probe = AsyncMock(return_value="existing")
+
+    with pytest.raises(BackendError):
+        await idempotent_create(
+            AsyncMock(side_effect=backend_error),
+            probe,
+            may_have_committed=transport_may_have_committed,
+        )
+    probe.assert_not_awaited()
+
+    assert transport_may_have_committed(NetworkError("x")) is True
+    assert semantic_may_have_committed(NetworkError("x")) is False
+
+
+@pytest.mark.asyncio
+async def test_adapter_entry_point_defaults_to_the_transport_predicate() -> None:
+    """``_idempotency.idempotent_create`` keeps today's class-tuple behaviour.
+
+    The remaining adapter-owned call site inside ``_web/backend.py`` relies on
+    this default until its slice names the predicate explicitly.
+    """
+    create = AsyncMock(side_effect=NetworkError("lost response"))
+    probe = AsyncMock(return_value="existing")
+
+    result = await adapter_idempotent_create(create, probe)
+
+    assert result.kind is _CreateResultKind.PROBED
+    probe.assert_awaited_once()

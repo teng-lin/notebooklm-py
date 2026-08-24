@@ -1552,6 +1552,14 @@ REVIEWED_BACKEND_IMPORTS -= frozenset(
         ("_artifact/generation_workflow.py", "_backend_compat", "project_backend_error"),
     }
 )
+# P9.2 splits the registry-free probe-then-retry wrapper out of ``_idempotency``;
+# it consumes the neutral commit-uncertainty predicate over ``BackendError``.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_idempotency_create.py", "_backend", "BackendError"),
+        ("_idempotency_create.py", "_backend", "may_have_committed"),
+    }
+)
 
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose

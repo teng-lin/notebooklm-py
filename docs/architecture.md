@@ -1119,7 +1119,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_polling_registry.py` | Pending-poll registry for long-running artifact generations |
 | `_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
 | `_runtime/contracts.py` | Shared runtime Protocols consumed by sub-clients |
-| `_idempotency.py` | Mutating-RPC idempotency policy registry and probe-then-retry wrapper; ADR-0005 is the taxonomy source |
+| `_idempotency.py` | Mutating-RPC idempotency policy registry and the web-adapter commit-uncertainty predicate (`transport_may_have_committed`); re-exports the probe-then-retry names; ADR-0005 is the taxonomy source |
+| `_idempotency_create.py` | Registry-free probe-then-retry wrapper (`idempotent_create`, `mark_unconfirmed`, result provenance) parameterised by a commit-uncertainty predicate; `semantic_may_have_committed` is the neutral `BackendError` predicate (P9.2) |
 | `_idempotency_policy.py` | Declarative per-RPC idempotency classification data, applied to `IDEMPOTENCY_REGISTRY` via `register_default_policies` at `_idempotency` import time (#1331). Holds the load-bearing two-pass seeding order (pre-seed `register()` → `_seed_defaults()` → post-seed `register()` + the read/set-op loop). |
 | `_atomic_io.py`, `io.py` | Atomic JSON write/update internals and public I/O re-export surface for CLI boundary compliance |
 | `exceptions.py` | Public exception hierarchy plus safe diagnostic preview/redaction helpers |
@@ -1247,7 +1248,8 @@ src/notebooklm/
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
 ├── _deprecation.py              # Immutable auth-storage specs + gated deprecation emitters
 ├── _env.py                      # Runtime environment/default endpoint helpers
-├── _idempotency.py              # Mutating-RPC idempotency registry + wrappers
+├── _idempotency.py              # Mutating-RPC idempotency registry + adapter predicate
+├── _idempotency_create.py       # Registry-free probe-then-retry wrapper + neutral predicate
 ├── _idempotency_policy.py       # Declarative per-RPC idempotency classification data (register_default_policies)
 ├── _kernel.py                   # Concrete Kernel transport core
 ├── _logging.py                  # Redaction + correlation logging internals
