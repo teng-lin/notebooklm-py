@@ -75,10 +75,6 @@ from .._records import (
     NotebookUpdateInput,
     NotebookUpdateResult,
     SourceAddFailureRecord,
-    SourceGetInput,
-    SourceGetResult,
-    SourceListInput,
-    SourceListResult,
 )
 from .._row_adapters.artifacts import (
     unwrap_artifact_rows,
@@ -822,24 +818,6 @@ class WebRpcBackend(ChatWebHandlers):
             )
         return NotebookUpdateResult(notebook=notebook)
 
-    async def _source_list(
-        self,
-        value: SourceListInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> SourceListResult:
-        records = await self._source_snapshot_records(
-            value.notebook_id,
-            operation=Operation.SOURCE_LIST,
-            deadline=deadline,
-            strict=value.strict,
-        )
-        if value.statuses is not None:
-            records = tuple(record for record in records if record.status in value.statuses)
-        if value.kinds is not None:
-            records = tuple(record for record in records if record.kind in value.kinds)
-        return SourceListResult(sources=records)
-
     async def _artifact_catalog_records(
         self,
         notebook_id: str,
@@ -944,24 +922,6 @@ class WebRpcBackend(ChatWebHandlers):
             content=content,
         )
         return note.id or None, note.created_at
-
-    async def _source_get(
-        self,
-        value: SourceGetInput,
-        *,
-        deadline: RuntimeDeadline | None,
-        operation: Operation = Operation.SOURCE_GET,
-        outcome_unknown_on_expiry: bool = False,
-    ) -> SourceGetResult:
-        records = await self._source_snapshot_records(
-            value.notebook_id,
-            operation=operation,
-            deadline=deadline,
-            outcome_unknown_on_expiry=outcome_unknown_on_expiry,
-        )
-        return SourceGetResult(
-            source=next((source for source in records if source.id == value.source_id), None)
-        )
 
     async def _mind_map_generate_note(
         self,

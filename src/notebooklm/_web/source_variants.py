@@ -27,27 +27,13 @@ from .._records import (
     SourceAddUrlInput,
     SourceAddUrlReceipt,
     SourceAddUrlResult,
-    SourceDeleteInput,
-    SourceDeleteResult,
     SourceFileInputKind,
     SourceFileRegistrationRecord,
-    SourceFreshnessInput,
-    SourceFreshnessResult,
-    SourceFulltextInput,
-    SourceFulltextResult,
-    SourceGetInput,
-    SourceGuideInput,
-    SourceGuideResult,
     SourceRecord,
-    SourceRefreshInput,
-    SourceRefreshResult,
     SourceUpdateInput,
     SourceUpdateResult,
     SourceUrlBatchItemRecord,
-    SourceWaitSnapshotInput,
-    SourceWaitSnapshotResult,
 )
-from .._row_adapters.sources import interpret_source_freshness
 from .._source.add import (
     SourceAddService,
     honor_requested_title,
@@ -68,17 +54,11 @@ from .codec import settings as settings_codec
 from .codec.sources import (
     decode_add_source_records,
     decode_file_registration,
-    decode_source_fulltext,
-    decode_source_guide,
     decode_source_record,
     decode_source_snapshot,
     encode_add_drive,
     encode_add_text,
     encode_add_url_batch,
-    encode_delete,
-    encode_get_fulltext,
-    encode_get_guide,
-    encode_refresh_or_freshness,
     encode_register_file_source,
     encode_source_snapshot,
     encode_update_source,
@@ -148,16 +128,6 @@ class SourceVariantWebHandlers(StudioFacadeWebHandlers):
     def _capture_public_failure(self, exc: Exception, *, operation: Operation) -> Any:
         raise NotImplementedError
 
-    async def _source_get(
-        self,
-        value: Any,
-        *,
-        deadline: RuntimeDeadline | None,
-        operation: Operation = Operation.SOURCE_GET,
-        outcome_unknown_on_expiry: bool = False,
-    ) -> Any:
-        raise NotImplementedError
-
     async def _source_snapshot_records(
         self,
         notebook_id: str,
@@ -214,6 +184,29 @@ class SourceVariantWebHandlers(StudioFacadeWebHandlers):
             deadline=deadline,
         )
         return next((source for source in sources if source.id == source_id), None)
+
+    async def _source_select_record(
+        self,
+        notebook_id: str,
+        source_id: str,
+        *,
+        operation: Operation,
+        deadline: RuntimeDeadline | None,
+        outcome_unknown_on_expiry: bool = False,
+    ) -> SourceRecord | None:
+        """Select one exact-id record from a composite's own snapshot read.
+
+        The ``source.get`` leaf is a codec row since P9.3; this helper exists
+        because composites attribute the read to themselves and thread
+        ``outcome_unknown_on_expiry`` through it, which a codec row cannot.
+        """
+        records = await self._source_snapshot_records(
+            notebook_id,
+            operation=operation,
+            deadline=deadline,
+            outcome_unknown_on_expiry=outcome_unknown_on_expiry,
+        )
+        return next((source for source in records if source.id == source_id), None)
 
     async def _create_url_source(
         self,
@@ -619,21 +612,6 @@ class SourceVariantWebHandlers(StudioFacadeWebHandlers):
         )
         return SourceAddDriveResult(_source_record(source))
 
-    async def _source_wait(
-        self,
-        value: SourceWaitSnapshotInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> SourceWaitSnapshotResult:
-        """Fetch exactly one neutral snapshot for one facade-owned poll tick."""
-        records = await self._source_snapshot_records(
-            value.notebook_id,
-            operation=Operation.SOURCE_WAIT,
-            # Source polling historically never clamps an in-flight read.
-            deadline=None,
-        )
-        return SourceWaitSnapshotResult(records)
-
     async def _source_register_file(
         self,
         notebook_id: str,
@@ -782,22 +760,6 @@ class SourceVariantWebHandlers(StudioFacadeWebHandlers):
         )
         return settings_codec.decode_account_limits(result).source_limit
 
-    async def _source_delete(
-        self,
-        value: SourceDeleteInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> SourceDeleteResult:
-        await self._rpc_call(
-            RPCMethod.DELETE_SOURCE,
-            encode_delete(value.source_id),
-            operation=Operation.SOURCE_DELETE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return SourceDeleteResult()
-
     async def _source_update(
         self,
         value: SourceUpdateInput,
@@ -819,13 +781,14 @@ class SourceVariantWebHandlers(StudioFacadeWebHandlers):
                 else None
             )
 
-        hydrated = await self._source_get(
-            SourceGetInput(value.notebook_id, value.source_id),
+        hydrated = await self._source_select_record(
+            value.notebook_id,
+            value.source_id,
             deadline=deadline,
             operation=Operation.SOURCE_UPDATE,
             outcome_unknown_on_expiry=True,
         )
-        if hydrated.source is None:
+        if hydrated is None:
             raise BackendError(
                 message=f"Source not found: {value.source_id}",
                 operation=Operation.SOURCE_UPDATE,
@@ -838,108 +801,4 @@ class SourceVariantWebHandlers(StudioFacadeWebHandlers):
                 ),
                 reason=BackendErrorReason.SOURCE_NOT_FOUND,
             )
-        return SourceUpdateResult(hydrated.source if value.return_object else None)
-
-    async def _source_refresh(
-        self,
-        value: SourceRefreshInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> SourceRefreshResult:
-        await self._rpc_call(
-            RPCMethod.REFRESH_SOURCE,
-            encode_refresh_or_freshness(value.source_id),
-            operation=Operation.SOURCE_REFRESH,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return SourceRefreshResult()
-
-    async def _source_check_freshness(
-        self,
-        value: SourceFreshnessInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> SourceFreshnessResult:
-        payload = await self._rpc_call(
-            RPCMethod.CHECK_SOURCE_FRESHNESS,
-            encode_refresh_or_freshness(value.source_id),
-            operation=Operation.SOURCE_CHECK_FRESHNESS,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return SourceFreshnessResult(interpret_source_freshness(payload))
-
-    async def _source_get_guide(
-        self,
-        value: SourceGuideInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> SourceGuideResult:
-        payload = await self._rpc_call(
-            RPCMethod.GET_SOURCE_GUIDE,
-            encode_get_guide(value.source_id),
-            operation=Operation.SOURCE_GET_GUIDE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return SourceGuideResult(decode_source_guide(payload))
-
-    async def _source_get_fulltext(
-        self,
-        value: SourceFulltextInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> SourceFulltextResult:
-        if value.output_format not in ("text", "markdown"):
-            raise ValueError(
-                f"Invalid format: '{value.output_format}'. Must be 'text' or 'markdown'."
-            )
-        if value.output_format == "markdown":
-            try:
-                import markdownify  # noqa: F401
-            except ImportError:
-                raise ImportError(
-                    "The 'markdown' format requires the 'markdownify' package. "
-                    "Install it with: pip install 'notebooklm-py[markdown]'"
-                ) from None
-        payload = await self._rpc_call(
-            RPCMethod.GET_SOURCE,
-            encode_get_fulltext(
-                value.source_id,
-                markdown=value.output_format == "markdown",
-            ),
-            operation=Operation.SOURCE_GET_FULLTEXT,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        fulltext = decode_source_fulltext(
-            payload,
-            source_id=value.source_id,
-            output_format=value.output_format,
-            logger=source_logger,
-        )
-        if fulltext is None:
-            legacy_source_reference = (
-                f"Source {value.source_id} not found in notebook {value.notebook_id}"
-            )
-            raise BackendError(
-                message=f"Source not found: {legacy_source_reference}",
-                operation=Operation.SOURCE_GET_FULLTEXT,
-                diagnostics=MappingProxyType(
-                    {
-                        # Compatibility: the legacy renderer passed this whole
-                        # sentence as SourceNotFoundError's ``source_id`` and did
-                        # not attach GET_SOURCE transport evidence.
-                        "source_id": legacy_source_reference,
-                        "method_id": None,
-                        "raw_response": None,
-                    }
-                ),
-                reason=BackendErrorReason.SOURCE_NOT_FOUND,
-            )
-        return SourceFulltextResult(fulltext)
+        return SourceUpdateResult(hydrated if value.return_object else None)

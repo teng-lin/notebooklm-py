@@ -6,18 +6,39 @@ import builtins
 import logging
 import re
 import reprlib
+import types
 from typing import Any
 
+from ..._backend import BackendError, BackendErrorReason
+from ..._binding import CodecPayload
+from ..._operations import Operation
 from ..._records import (
+    SourceDeleteInput,
+    SourceDeleteResult,
     SourceFileRegistrationRecord,
+    SourceFreshnessInput,
+    SourceFreshnessResult,
+    SourceFulltextInput,
     SourceFulltextRecord,
+    SourceFulltextResult,
+    SourceGetInput,
+    SourceGetResult,
+    SourceGuideInput,
     SourceGuideRecord,
+    SourceGuideResult,
+    SourceListInput,
+    SourceListResult,
     SourceRecord,
+    SourceRefreshInput,
+    SourceRefreshResult,
+    SourceWaitSnapshotInput,
+    SourceWaitSnapshotResult,
 )
 from ..._row_adapters.sources import (
     SourceFulltextRow,
     SourceGuideRow,
     SourceRow,
+    interpret_source_freshness,
     unwrap_add_source_rows,
 )
 from ..._url_utils import pdf_url_display_title
@@ -579,15 +600,207 @@ def decode_source_fulltext(
     )
 
 
+# Row-facing codec helpers (P9.3 source domain). Each encoder returns the full
+# request payload one codec row dispatches — params, the notebook route and the
+# typed options the handler passed — and never names a method: the row's
+# ``NativeCallSpec`` is the sole method authority. Decoders take the input so
+# ``SOURCE_GET`` can select its exact id and ``SOURCE_LIST`` can filter.
+_ROW_LOGGER = logging.getLogger("notebooklm").getChild("_sources")
+
+
+def _notebook_route(notebook_id: str) -> str:
+    return f"/notebook/{notebook_id}"
+
+
+def encode_source_list(value: SourceListInput) -> CodecPayload:
+    """Payload for the ``source.list`` codec row (the recency-writing snapshot)."""
+    return CodecPayload(
+        params=encode_source_snapshot(value.notebook_id),
+        source_path=_notebook_route(value.notebook_id),
+    )
+
+
+def encode_source_get(value: SourceGetInput) -> CodecPayload:
+    """Payload for the ``source.get`` codec row (same snapshot, exact-id select)."""
+    return CodecPayload(
+        params=encode_source_snapshot(value.notebook_id),
+        source_path=_notebook_route(value.notebook_id),
+    )
+
+
+def encode_source_wait(value: SourceWaitSnapshotInput) -> CodecPayload:
+    """Payload for the ``source.wait`` codec row (one snapshot per poll tick)."""
+    return CodecPayload(
+        params=encode_source_snapshot(value.notebook_id),
+        source_path=_notebook_route(value.notebook_id),
+    )
+
+
+def encode_source_delete(value: SourceDeleteInput) -> CodecPayload:
+    """Payload for the ``source.delete`` codec row."""
+    return CodecPayload(
+        params=encode_delete(value.source_id),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_source_refresh(value: SourceRefreshInput) -> CodecPayload:
+    """Payload for the ``source.refresh`` codec row."""
+    return CodecPayload(
+        params=encode_refresh_or_freshness(value.source_id),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_source_check_freshness(value: SourceFreshnessInput) -> CodecPayload:
+    """Payload for the ``source.check_freshness`` codec row."""
+    return CodecPayload(
+        params=encode_refresh_or_freshness(value.source_id),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_source_get_guide(value: SourceGuideInput) -> CodecPayload:
+    """Payload for the ``source.get_guide`` codec row."""
+    return CodecPayload(
+        params=encode_get_guide(value.source_id),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_source_get_fulltext(value: SourceFulltextInput) -> CodecPayload:
+    """Payload for the ``source.get_fulltext`` codec row.
+
+    The output-format validation and the optional ``markdownify`` dependency
+    check run here, before any wire call, exactly as the handler ordered them.
+    """
+    if value.output_format not in ("text", "markdown"):
+        raise ValueError(f"Invalid format: '{value.output_format}'. Must be 'text' or 'markdown'.")
+    if value.output_format == "markdown":
+        try:
+            import markdownify  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "The 'markdown' format requires the 'markdownify' package. "
+                "Install it with: pip install 'notebooklm-py[markdown]'"
+            ) from None
+    return CodecPayload(
+        params=encode_get_fulltext(value.source_id, markdown=value.output_format == "markdown"),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def decode_source_list(value: SourceListInput, payload: Any) -> SourceListResult:
+    """Row decoder for ``source.list``: decode the snapshot, then apply the filters."""
+    records = decode_source_snapshot(
+        value.notebook_id,
+        payload,
+        strict=value.strict,
+        logger=_ROW_LOGGER,
+    )
+    if value.statuses is not None:
+        records = tuple(record for record in records if record.status in value.statuses)
+    if value.kinds is not None:
+        records = tuple(record for record in records if record.kind in value.kinds)
+    return SourceListResult(sources=records)
+
+
+def decode_source_get(value: SourceGetInput, payload: Any) -> SourceGetResult:
+    """Row decoder for ``source.get``: list-then-filter by exact source id."""
+    records = decode_source_snapshot(value.notebook_id, payload, logger=_ROW_LOGGER)
+    return SourceGetResult(
+        source=next((source for source in records if source.id == value.source_id), None)
+    )
+
+
+def decode_source_wait(value: SourceWaitSnapshotInput, payload: Any) -> SourceWaitSnapshotResult:
+    """Row decoder for ``source.wait``: one neutral snapshot for one poll tick."""
+    return SourceWaitSnapshotResult(
+        decode_source_snapshot(value.notebook_id, payload, logger=_ROW_LOGGER)
+    )
+
+
+def decode_source_delete(value: SourceDeleteInput, payload: Any) -> SourceDeleteResult:
+    """Row decoder for ``source.delete``: the acknowledgement carries no signal."""
+    del value, payload
+    return SourceDeleteResult()
+
+
+def decode_source_refresh(value: SourceRefreshInput, payload: Any) -> SourceRefreshResult:
+    """Row decoder for ``source.refresh``: the acknowledgement carries no signal."""
+    del value, payload
+    return SourceRefreshResult()
+
+
+def decode_source_check_freshness(
+    value: SourceFreshnessInput, payload: Any
+) -> SourceFreshnessResult:
+    """Row decoder for ``source.check_freshness``."""
+    del value
+    return SourceFreshnessResult(interpret_source_freshness(payload))
+
+
+def decode_source_get_guide(value: SourceGuideInput, payload: Any) -> SourceGuideResult:
+    """Row decoder for ``source.get_guide``."""
+    del value
+    return SourceGuideResult(decode_source_guide(payload))
+
+
+def decode_source_get_fulltext(value: SourceFulltextInput, payload: Any) -> SourceFulltextResult:
+    """Row decoder for ``source.get_fulltext``; a missing source keeps its legacy identity."""
+    fulltext = decode_source_fulltext(
+        payload,
+        source_id=value.source_id,
+        output_format=value.output_format,
+        logger=_ROW_LOGGER,
+    )
+    if fulltext is None:
+        legacy_source_reference = (
+            f"Source {value.source_id} not found in notebook {value.notebook_id}"
+        )
+        raise BackendError(
+            message=f"Source not found: {legacy_source_reference}",
+            operation=Operation.SOURCE_GET_FULLTEXT,
+            # ``import types`` rather than ``from types import``: the P3 codec
+            # boundary guardrail reads a ``from types import`` as a public-model
+            # import.
+            diagnostics=types.MappingProxyType(
+                {
+                    # Compatibility: the legacy renderer passed this whole
+                    # sentence as SourceNotFoundError's ``source_id`` and did
+                    # not attach GET_SOURCE transport evidence.
+                    "source_id": legacy_source_reference,
+                    "method_id": None,
+                    "raw_response": None,
+                }
+            ),
+            reason=BackendErrorReason.SOURCE_NOT_FOUND,
+        )
+    return SourceFulltextResult(fulltext)
+
+
 __all__ = [
     "decode_add_source_records",
     "decode_file_registration",
     "decode_source",
+    "decode_source_check_freshness",
+    "decode_source_delete",
     "decode_source_fulltext",
+    "decode_source_get",
+    "decode_source_get_fulltext",
+    "decode_source_get_guide",
     "decode_source_guide",
+    "decode_source_list",
     "decode_source_record",
+    "decode_source_refresh",
     "decode_source_row",
     "decode_source_snapshot",
+    "decode_source_wait",
     "encode_add_drive",
     "encode_add_text",
     "encode_add_url_batch",
@@ -596,6 +809,14 @@ __all__ = [
     "encode_get_guide",
     "encode_refresh_or_freshness",
     "encode_register_file_source",
+    "encode_source_check_freshness",
+    "encode_source_delete",
+    "encode_source_get",
+    "encode_source_get_fulltext",
+    "encode_source_get_guide",
+    "encode_source_list",
+    "encode_source_refresh",
     "encode_source_snapshot",
+    "encode_source_wait",
     "encode_update_source",
 ]

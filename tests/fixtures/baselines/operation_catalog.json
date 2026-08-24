@@ -1952,7 +1952,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._source_check_freshness"
+        "_web/bindings/sources.py:SOURCE_CHECK_FRESHNESS"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2519,7 +2519,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._source_delete"
+        "_web/bindings/sources.py:SOURCE_DELETE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "success contract returns None; the response carries no decodable row to pin",
@@ -2815,6 +2815,9 @@
         "_web/backend.py:WebRpcBackend._mind_map_generate_note",
         "_web/backend.py:WebRpcBackend._notebook_update",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
+        "_web/bindings/sources.py:SOURCE_GET",
+        "_web/bindings/sources.py:SOURCE_LIST",
+        "_web/bindings/sources.py:SOURCE_WAIT",
         "_web/chat.py:ChatWebHandlers._chat_configure",
         "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
         "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
@@ -3049,7 +3052,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._source_get_fulltext"
+        "_web/bindings/sources.py:SOURCE_GET_FULLTEXT"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3096,7 +3099,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._source_get_guide"
+        "_web/bindings/sources.py:SOURCE_GET_GUIDE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3524,7 +3527,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._source_refresh"
+        "_web/bindings/sources.py:SOURCE_REFRESH"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "success contract returns None; the response carries no decodable row to pin",
@@ -8026,7 +8029,7 @@
         {
           "binding": "CHECK_SOURCE_FRESHNESS:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_check_freshness",
+          "site": "_web/bindings/sources.py:SOURCE_CHECK_FRESHNESS",
           "transport_kind": "rpc"
         }
       ],
@@ -8060,7 +8063,7 @@
         {
           "binding": "DELETE_SOURCE:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_delete",
+          "site": "_web/bindings/sources.py:SOURCE_DELETE",
           "transport_kind": "rpc"
         }
       ],
@@ -8090,8 +8093,8 @@
       "execution_authorities": [
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "select exact source id",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+          "discriminator": "select exact source id inside decode",
+          "site": "_web/bindings/sources.py:SOURCE_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -8110,7 +8113,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_GET"
           ],
           "condition": "always",
           "maximum_calls": 1,
@@ -8146,7 +8149,7 @@
         {
           "binding": "GET_SOURCE:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_get_fulltext",
+          "site": "_web/bindings/sources.py:SOURCE_GET_FULLTEXT",
           "transport_kind": "rpc"
         }
       ],
@@ -8179,7 +8182,7 @@
         {
           "binding": "GET_SOURCE_GUIDE:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_get_guide",
+          "site": "_web/bindings/sources.py:SOURCE_GET_GUIDE",
           "transport_kind": "rpc"
         }
       ],
@@ -8212,7 +8215,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "public=sources.list",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+          "site": "_web/bindings/sources.py:SOURCE_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -8230,7 +8233,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_LIST"
           ],
           "condition": "always",
           "maximum_calls": 1,
@@ -8265,7 +8268,7 @@
         {
           "binding": "REFRESH_SOURCE:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_refresh",
+          "site": "_web/bindings/sources.py:SOURCE_REFRESH",
           "transport_kind": "rpc"
         }
       ],
@@ -8360,7 +8363,7 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "one readiness snapshot per tick; multi-source modes share it across inputs",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+          "site": "_web/bindings/sources.py:SOURCE_WAIT",
           "transport_kind": "rpc"
         }
       ],
@@ -8386,7 +8389,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_WAIT"
           ],
           "condition": "one snapshot per single-source waiter tick",
           "maximum_calls": 1,
@@ -8399,7 +8402,7 @@
         },
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_WAIT"
           ],
           "condition": "one shared snapshot per tick regardless of source count",
           "maximum_calls": 1,
@@ -8411,7 +8414,7 @@
         },
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_WAIT"
           ],
           "condition": "one shared snapshot per tick regardless of source count",
           "maximum_calls": 1,
@@ -8423,7 +8426,7 @@
         },
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_WAIT"
           ],
           "condition": "one source.wait snapshot per tick only when wait=True",
           "maximum_calls": 1,
