@@ -16,13 +16,11 @@ primitive vocabulary; §6–§8 answer the plan's specific questions.
 The 82 active bindings and their native sets come from the reviewed ledger, not from handler
 prose:
 
-```python
-from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS as L
-from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES as D
-from notebooklm._web.registry import _HANDLER_NAMES as H
-multi = [o for o, b in L.items() if len(b.native_bindings) > 1]      # 34
-single = [o for o, b in L.items() if len(b.native_bindings) == 1]    # 48
-```
+Concretely: `WEB_CALL_POLICY_BINDINGS` (`src/notebooklm/_web/policy.py`) partitions the 82
+active operations by the size of `native_bindings` — 34 multi-native and 48 single-native;
+`SEMANTIC_DEADLINE_AUTHORITIES` (`src/notebooklm/_web/deadlines.py`) supplies the
+`BRANCH_EXCLUSIVE`/`WORKFLOW_OWNED`/`CLIENT_TIMEOUT` classes; and `_HANDLER_NAMES`
+(`src/notebooklm/_web/registry.py`) maps each operation to the handler whose body was read.
 
 Maximum calls per input were counted by reading each handler named by `_HANDLER_NAMES` and every
 private helper it reaches (`_web/backend.py`, `chat.py`, `source_variants.py`, `studio_facade.py`,
