@@ -2157,7 +2157,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_note_service.py:LegacyNoteBackedService.create_note",
-        "_web/backend.py:WebRpcBackend._note_create"
+        "_web/bindings/notes.py:NOTE_CREATE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2300,7 +2300,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._mind_map_delete",
+        "_web/bindings/mind_maps.py:MIND_MAP_DELETE",
         "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_delete"
       ],
       "golden_disposition": "golden_exempt",
@@ -2428,7 +2428,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_note_service.py:LegacyNoteBackedService.delete_note",
-        "_web/backend.py:WebRpcBackend._note_delete"
+        "_web/bindings/notes.py:NOTE_DELETE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "success contract returns None; the response carries no decodable row to pin",
@@ -2699,7 +2699,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._mind_map_get",
+        "_web/bindings/mind_maps.py:MIND_MAP_GET",
         "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_download"
       ],
       "golden_disposition": "golden_covered",
@@ -2922,9 +2922,9 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_note_service.py:LegacyNoteBackedService.fetch_note_rows",
-        "_web/backend.py:WebRpcBackend._mind_map_list",
-        "_web/backend.py:WebRpcBackend._note_get",
-        "_web/backend.py:WebRpcBackend._note_list",
+        "_web/bindings/mind_maps.py:MIND_MAP_LIST",
+        "_web/bindings/notes.py:NOTE_GET",
+        "_web/bindings/notes.py:NOTE_LIST",
         "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_download"
       ],
       "golden_disposition": "golden_covered",
@@ -3592,7 +3592,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._mind_map_update",
+        "_web/bindings/mind_maps.py:MIND_MAP_UPDATE",
         "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_rename"
       ],
       "golden_disposition": "golden_exempt",
@@ -4298,7 +4298,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_note_service.py:LegacyNoteBackedService.update_note",
-        "_web/backend.py:WebRpcBackend._note_update"
+        "_web/bindings/notes.py:NOTE_UPDATE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "success contract returns None; the response carries no decodable row to pin",
@@ -6152,13 +6152,13 @@
         {
           "binding": "DELETE_ARTIFACT:<default>",
           "discriminator": "kind=INTERACTIVE",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_delete",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_DELETE",
           "transport_kind": "rpc"
         },
         {
           "binding": "DELETE_NOTE:<default>",
           "discriminator": "kind=NOTE_BACKED",
-          "site": "_web/backend.py:WebRpcBackend._note_delete",
+          "site": "_web/bindings/notes.py:NOTE_DELETE",
           "transport_kind": "rpc"
         }
       ],
@@ -6197,7 +6197,7 @@
         {
           "binding": "GET_INTERACTIVE_HTML:<default>",
           "discriminator": "wait=True post-generation tree",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_get",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GET",
           "transport_kind": "rpc"
         },
         {
@@ -6269,7 +6269,7 @@
         {
           "binding": "CREATE_NOTE:plain",
           "discriminator": "kind=NOTE_BACKED persistence",
-          "site": "_web/backend.py:WebRpcBackend._note_create",
+          "site": "_web/bindings/notes.py:NOTE_CREATE",
           "transport_kind": "rpc"
         },
         {
@@ -6287,7 +6287,7 @@
         {
           "binding": "UPDATE_NOTE:<default>",
           "discriminator": "kind=NOTE_BACKED persistence finalize",
-          "site": "_web/backend.py:WebRpcBackend._note_update",
+          "site": "_web/bindings/notes.py:NOTE_UPDATE",
           "transport_kind": "rpc"
         }
       ],
@@ -6342,13 +6342,13 @@
         {
           "binding": "GET_INTERACTIVE_HTML:<default>",
           "discriminator": "kind=INTERACTIVE",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_get",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GET",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
           "discriminator": "auto-detect/select note-backed id",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_list",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_LIST",
           "transport_kind": "rpc"
         },
         {
@@ -6398,7 +6398,7 @@
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
           "discriminator": "filter kind=NOTE_BACKED",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_list",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_LIST",
           "transport_kind": "rpc"
         },
         {
@@ -6444,13 +6444,13 @@
         {
           "binding": "RENAME_ARTIFACT:<default>",
           "discriminator": "kind=INTERACTIVE",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_update",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_UPDATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_NOTE:<default>",
           "discriminator": "kind=NOTE_BACKED",
-          "site": "_web/backend.py:WebRpcBackend._note_update",
+          "site": "_web/bindings/notes.py:NOTE_UPDATE",
           "transport_kind": "rpc"
         }
       ],
@@ -6483,19 +6483,19 @@
         {
           "binding": "CREATE_NOTE:plain",
           "discriminator": "public=notes.create",
-          "site": "_web/backend.py:WebRpcBackend._note_create",
+          "site": "_web/bindings/notes.py:NOTE_CREATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "DELETE_NOTE:<default>",
           "discriminator": "cancelled create orphan cleanup",
-          "site": "_web/backend.py:WebRpcBackend._note_delete",
+          "site": "_web/bindings/notes.py:NOTE_DELETE",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_NOTE:<default>",
           "discriminator": "notes.create finalize",
-          "site": "_web/backend.py:WebRpcBackend._note_update",
+          "site": "_web/bindings/notes.py:NOTE_UPDATE",
           "transport_kind": "rpc"
         }
       ],
@@ -6531,7 +6531,7 @@
         {
           "binding": "DELETE_NOTE:<default>",
           "discriminator": "public=notes.delete",
-          "site": "_web/backend.py:WebRpcBackend._note_delete",
+          "site": "_web/bindings/notes.py:NOTE_DELETE",
           "transport_kind": "rpc"
         }
       ],
@@ -6563,7 +6563,7 @@
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
           "discriminator": "select note id",
-          "site": "_web/backend.py:WebRpcBackend._note_get",
+          "site": "_web/bindings/notes.py:NOTE_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -6598,7 +6598,7 @@
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
           "discriminator": "filter kind=NOTE",
-          "site": "_web/backend.py:WebRpcBackend._note_list",
+          "site": "_web/bindings/notes.py:NOTE_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -6635,7 +6635,7 @@
         {
           "binding": "UPDATE_NOTE:<default>",
           "discriminator": "public=notes.update",
-          "site": "_web/backend.py:WebRpcBackend._note_update",
+          "site": "_web/bindings/notes.py:NOTE_UPDATE",
           "transport_kind": "rpc"
         }
       ],

@@ -64,18 +64,10 @@ from .._records import (
     ArtifactListInput,
     ArtifactListResult,
     ArtifactRecord,
-    MindMapDeleteInput,
-    MindMapDeleteResult,
     MindMapGenerateInteractiveInput,
     MindMapGenerateInteractiveResult,
     MindMapGenerateNoteInput,
     MindMapGenerateNoteResult,
-    MindMapGetInput,
-    MindMapGetResult,
-    MindMapListInput,
-    MindMapListResult,
-    MindMapUpdateInput,
-    MindMapUpdateResult,
     NotebookCreateInput,
     NotebookCreateResult,
     NotebookDeleteInput,
@@ -91,16 +83,6 @@ from .._records import (
     NotebookRemoveRecentResult,
     NotebookUpdateInput,
     NotebookUpdateResult,
-    NoteCreateInput,
-    NoteCreateResult,
-    NoteDeleteInput,
-    NoteDeleteResult,
-    NoteGetInput,
-    NoteGetResult,
-    NoteListInput,
-    NoteListResult,
-    NoteUpdateInput,
-    NoteUpdateResult,
     SourceAddFailureRecord,
     SourceGetInput,
     SourceGetResult,
@@ -139,19 +121,12 @@ from .codec.artifacts import decode_artifact, decode_mind_map_artifact
 from .codec.mind_maps import (
     decode_created_interactive_id,
     decode_generated_tree,
-    decode_interactive_tree,
 )
 from .codec.notebooks import (
     decode_notebook,
     decode_notebook_description,
     encode_notebook_guide,
     encode_remove_from_recent,
-)
-from .codec.notes import (
-    decode_created_note,
-    decode_note,
-    decode_note_backed_mind_maps,
-    decode_notes,
 )
 from .codec.suggestions import decode_prompt_source_ids
 from .deadline_rpc import DeadlineRpcCaller
@@ -1123,120 +1098,6 @@ class WebRpcBackend(ChatWebHandlers):
             source=next((source for source in records if source.id == value.source_id), None)
         )
 
-    async def _note_list(
-        self,
-        value: NoteListInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NoteListResult:
-        result = await self._rpc_call(
-            RPCMethod.GET_NOTES_AND_MIND_MAPS,
-            [value.notebook_id],
-            operation=Operation.NOTE_LIST,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return NoteListResult(decode_notes(result, value.notebook_id))
-
-    async def _note_get(
-        self,
-        value: NoteGetInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NoteGetResult:
-        result = await self._rpc_call(
-            RPCMethod.GET_NOTES_AND_MIND_MAPS,
-            [value.notebook_id],
-            operation=Operation.NOTE_GET,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return NoteGetResult(decode_note(result, value.notebook_id, value.note_id))
-
-    async def _note_create(
-        self,
-        value: NoteCreateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NoteCreateResult:
-        result = await self._rpc_call(
-            RPCMethod.CREATE_NOTE,
-            [value.notebook_id, "", [1], None, value.title],
-            operation=Operation.NOTE_CREATE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            operation_variant="plain",
-        )
-        return NoteCreateResult(
-            decode_created_note(result, value.notebook_id, value.title, value.content)
-        )
-
-    async def _note_update(
-        self,
-        value: NoteUpdateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NoteUpdateResult:
-        await self._rpc_call(
-            RPCMethod.UPDATE_NOTE,
-            [value.notebook_id, value.note_id, [[[value.content, value.title, [], 0]]]],
-            operation=Operation.NOTE_UPDATE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return NoteUpdateResult()
-
-    async def _note_delete(
-        self,
-        value: NoteDeleteInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NoteDeleteResult:
-        await self._rpc_call(
-            RPCMethod.DELETE_NOTE,
-            [value.notebook_id, None, [value.note_id]],
-            operation=Operation.NOTE_DELETE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return NoteDeleteResult()
-
-    async def _mind_map_list(
-        self,
-        value: MindMapListInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> MindMapListResult:
-        result = await self._rpc_call(
-            RPCMethod.GET_NOTES_AND_MIND_MAPS,
-            [value.notebook_id],
-            operation=Operation.MIND_MAP_LIST,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return MindMapListResult(decode_note_backed_mind_maps(result, value.notebook_id))
-
-    async def _mind_map_get(
-        self,
-        value: MindMapGetInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> MindMapGetResult:
-        result = await self._rpc_call(
-            RPCMethod.GET_INTERACTIVE_HTML,
-            [value.mind_map_id],
-            operation=Operation.MIND_MAP_GET,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return MindMapGetResult(decode_interactive_tree(result))
-
     async def _mind_map_generate_note(
         self,
         value: MindMapGenerateNoteInput,
@@ -1304,38 +1165,6 @@ class WebRpcBackend(ChatWebHandlers):
                 "mind_map",
             )
         return MindMapGenerateInteractiveResult(mind_map_id)
-
-    async def _mind_map_update(
-        self,
-        value: MindMapUpdateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> MindMapUpdateResult:
-        await self._rpc_call(
-            RPCMethod.RENAME_ARTIFACT,
-            [[value.mind_map_id, value.title], [["title"]]],
-            operation=Operation.MIND_MAP_UPDATE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return MindMapUpdateResult()
-
-    async def _mind_map_delete(
-        self,
-        value: MindMapDeleteInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> MindMapDeleteResult:
-        await self._rpc_call(
-            RPCMethod.DELETE_ARTIFACT,
-            [[2], value.mind_map_id],
-            operation=Operation.MIND_MAP_DELETE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        return MindMapDeleteResult()
 
     @staticmethod
     def _error_diagnostics(

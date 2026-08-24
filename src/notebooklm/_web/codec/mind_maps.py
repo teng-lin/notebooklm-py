@@ -7,9 +7,21 @@ import logging
 import reprlib
 from typing import Any
 
+from ..._binding import CodecPayload
+from ..._records import (
+    MindMapDeleteInput,
+    MindMapDeleteResult,
+    MindMapGetInput,
+    MindMapGetResult,
+    MindMapListInput,
+    MindMapListResult,
+    MindMapUpdateInput,
+    MindMapUpdateResult,
+)
 from ..._row_adapters.artifacts import MIND_MAP_LEAF_ABSENT, unwrap_mind_map_generation_leaf
 from ...exceptions import UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
+from .notes import decode_note_backed_mind_maps
 
 logger = logging.getLogger("notebooklm._mind_maps_api")
 
@@ -98,9 +110,83 @@ def decode_created_interactive_id(result: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
+# Row-facing encoders and decoders (P9.3). Each encoder returns the full
+# request payload one codec row dispatches — params plus the notebook route and
+# option flags exactly as the handler passed them — and never names a method.
+def _notebook_route(notebook_id: str) -> str:
+    return f"/notebook/{notebook_id}"
+
+
+def encode_mind_map_list(value: MindMapListInput) -> CodecPayload:
+    """Payload for the ``mind_map.list`` codec row (mixed note-row read)."""
+    return CodecPayload(
+        params=[value.notebook_id],
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_mind_map_get(value: MindMapGetInput) -> CodecPayload:
+    """Payload for the ``mind_map.get`` codec row (interactive tree read)."""
+    return CodecPayload(
+        params=[value.mind_map_id],
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_mind_map_update(value: MindMapUpdateInput) -> CodecPayload:
+    """Payload for the ``mind_map.update`` codec row (interactive title set-op)."""
+    return CodecPayload(
+        params=[[value.mind_map_id, value.title], [["title"]]],
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_mind_map_delete(value: MindMapDeleteInput) -> CodecPayload:
+    """Payload for the ``mind_map.delete`` codec row (interactive delete)."""
+    return CodecPayload(
+        params=[[2], value.mind_map_id],
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def decode_mind_map_list(value: MindMapListInput, data: Any) -> MindMapListResult:
+    """Row decoder for ``mind_map.list``."""
+    return MindMapListResult(decode_note_backed_mind_maps(data, value.notebook_id))
+
+
+def decode_mind_map_get(value: MindMapGetInput, data: Any) -> MindMapGetResult:
+    """Row decoder for ``mind_map.get``."""
+    del value
+    return MindMapGetResult(decode_interactive_tree(data))
+
+
+def decode_mind_map_update(value: MindMapUpdateInput, data: Any) -> MindMapUpdateResult:
+    """Row decoder for ``mind_map.update``; the wire echo carries nothing neutral."""
+    del value, data
+    return MindMapUpdateResult()
+
+
+def decode_mind_map_delete(value: MindMapDeleteInput, data: Any) -> MindMapDeleteResult:
+    """Row decoder for ``mind_map.delete``; the wire echo carries nothing neutral."""
+    del value, data
+    return MindMapDeleteResult()
+
+
 __all__ = [
     "decode_created_interactive_id",
     "decode_generated_tree",
     "decode_interactive_tree",
+    "decode_mind_map_delete",
+    "decode_mind_map_get",
+    "decode_mind_map_list",
+    "decode_mind_map_update",
+    "encode_mind_map_delete",
+    "encode_mind_map_get",
+    "encode_mind_map_list",
+    "encode_mind_map_update",
     "extract_interactive_tree_leaf",
 ]
