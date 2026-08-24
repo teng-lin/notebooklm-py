@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final
 
+from .._binding import OperationDisposition
 from .._operations import Operation, OperationDef
 from .._records import (
     ARTIFACT_DELETE_DEF,
@@ -125,6 +126,13 @@ class WebOperationBinding:
     def is_staged(self) -> bool:
         """Whether a reviewed handler exists but production dispatch rejects it."""
         return self.definition is not None and self.unsupported_reason is not None
+
+    @property
+    def disposition(self) -> OperationDisposition:
+        """Three-way disposition; ``SERVICE_OWNED`` arrives with the P9.2 hoists."""
+        if self.is_supported:
+            return OperationDisposition.SUPPORTED_DIRECT
+        return OperationDisposition.UNSUPPORTED
 
 
 _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = MappingProxyType(
@@ -366,7 +374,9 @@ def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
 WEB_OPERATION_REGISTRY: Final = _build_web_operation_registry()
 
 WEB_SUPPORTED_OPERATIONS: Final = frozenset(
-    operation for operation, binding in WEB_OPERATION_REGISTRY.items() if binding.is_supported
+    operation
+    for operation, binding in WEB_OPERATION_REGISTRY.items()
+    if binding.disposition is OperationDisposition.SUPPORTED_DIRECT
 )
 
 WEB_STAGED_OPERATIONS: Final = frozenset(

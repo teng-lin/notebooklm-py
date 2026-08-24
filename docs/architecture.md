@@ -1036,6 +1036,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_deadline.py` | `RuntimeDeadline` helper shared by retry and polling loops so aggregate timeouts clamp sleep consistently |
 | `_backend_compat.py` | Private compatibility projector from closed semantic `BackendErrorReason` + safe diagnostics back to the existing public exception subclasses at migrated facade boundaries. |
 | `_backend.py` | Private protocol-neutral semantic port: backend kind/capabilities, typed `BackendAdapter.invoke`, and the minimal scrubbed error/deadline handoff used by the P2 slice. |
+| `_binding.py` | Neutral binding vocabulary (P9.0): `OperationDisposition`, `NativeCallSpec`, `CodecPayload`, the `CodecBinding` / `CustomBinding` / `ResolvedHandlerBinding` row kinds, `BindingTable`, the construction-time `audit_bindings`, and the `invoke_binding` dispatch function; imports no `_web/`, `rpc/`, `_auth/`, or `httpx` module. |
 | `_records.py` | Compatibility re-export hub for frozen, slotted, protocol-neutral input/output records and `OperationDef` values for P2 notebook/source operations, P5.1–P5.8 Studio families, and P6.1–P6.7 domain workflows, plus P3 decoded values and closed URL-source error evidence. Large domain families live in sibling record modules so this hub remains under the module-size ratchet. |
 | `_chat_records.py` | P6.1 neutral Chat records and six typed operation definitions, re-exported from `_records.py`. |
 | `_label_records.py` | P6.4 neutral source-label/collection records and eleven typed operation definitions, re-exported from `_records.py`. |
@@ -1236,6 +1237,7 @@ src/notebooklm/
 ├── _atomic_io.py                # Atomic JSON write/update helpers
 ├── _auth_refresh_retry.py       # Shared auth refresh-and-retry core (RefreshBudget + refresh_and_count) for both retry layers
 ├── _backend.py                  # Private semantic backend port, capabilities, errors, and deadline handoff (P1)
+├── _binding.py                  # Neutral binding rows, table, audit, and dispatch function (P9.0)
 ├── _backend_compat.py           # Closed backend-error to legacy public-exception projector (P2)
 ├── _backoff.py                  # Shared retry backoff calculation
 ├── _callbacks.py                # Sync/async callback invocation helper

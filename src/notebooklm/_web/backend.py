@@ -34,6 +34,14 @@ from .._backend import (
     UnsupportedOperationError,
     mark_backend_outcome_unknown,
 )
+from .._binding import (
+    BindingAuditError,
+    BindingTable,
+    OperationDisposition,
+    ResolvedHandlerBinding,
+    audit_bindings,
+    invoke_binding,
+)
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._env import get_default_language
 from .._idempotency import (
@@ -221,6 +229,10 @@ class WebRpcBackend(ChatWebHandlers):
             supported_operations=WEB_SUPPORTED_OPERATIONS,
         )
         self._closed = False
+        # Resolve every registry handler name exactly once. A misnamed or
+        # missing handler fails here, at construction, rather than on that
+        # operation's first invocation.
+        self._bindings = _resolve_handler_bindings(self)
 
     @property
     def kind(self) -> BackendKind:
@@ -426,12 +438,15 @@ class WebRpcBackend(ChatWebHandlers):
                 ),
             )
 
-        handler_name = binding.handler_name
-        if handler_name is None:  # pragma: no cover - registry invariant
-            raise BackendContractError(f"{operation.key.value} has no web handler")
-        handler = getattr(self, handler_name)
         try:
-            result = await handler(value, deadline=deadline)
+            result = await invoke_binding(
+                self._bindings,
+                None,
+                None,
+                operation,
+                value,
+                deadline=deadline,
+            )
         except BackendError:
             raise
         except RPCTimeoutError as exc:
@@ -1365,6 +1380,30 @@ class WebRpcBackend(ChatWebHandlers):
             diagnostics=MappingProxyType(diagnostics),
             reason=reason,
         )
+
+
+def _resolve_handler_bindings(backend: WebRpcBackend) -> BindingTable:
+    """Resolve registry handler names into a construction-audited binding table."""
+    rows: dict[Operation, ResolvedHandlerBinding[Any, Any]] = {}
+    for operation, binding in WEB_OPERATION_REGISTRY.items():
+        handler_name = binding.handler_name
+        if handler_name is None:
+            continue
+        handler = getattr(backend, handler_name, None)
+        if handler is None or not callable(handler):
+            raise BackendContractError(
+                f"{operation.value} names missing web handler {handler_name!r}",
+                operation=operation,
+            )
+        definition = binding.definition
+        if definition is not None and binding.disposition is OperationDisposition.SUPPORTED_DIRECT:
+            rows[operation] = ResolvedHandlerBinding(definition=definition, handler=handler)
+    table = BindingTable(rows)
+    try:
+        audit_bindings(table, WEB_SUPPORTED_OPERATIONS)
+    except BindingAuditError as exc:
+        raise BackendContractError(f"web binding table rejected: {exc}") from exc
+    return table
 
 
 __all__ = ["WebRpcBackend"]

@@ -481,6 +481,15 @@ INERT_P1_WEB_SITES = INERT_P1_WEB_FORWARDERS | INERT_P1_WEB_HANDLERS
 # These exact imports are the complete production semantic-backend dataflow.
 REVIEWED_BACKEND_IMPORTS = frozenset(
     {
+        ("_binding.py", "_backend", "BackendContractError"),
+        ("_binding.py", "_backend", "BackendError"),
+        ("_web/backend.py", "_binding", "BindingAuditError"),
+        ("_web/backend.py", "_binding", "BindingTable"),
+        ("_web/backend.py", "_binding", "OperationDisposition"),
+        ("_web/backend.py", "_binding", "ResolvedHandlerBinding"),
+        ("_web/backend.py", "_binding", "audit_bindings"),
+        ("_web/backend.py", "_binding", "invoke_binding"),
+        ("_web/registry.py", "_binding", "OperationDisposition"),
         ("_web/deadline_rpc.py", "_backend", "BackendDeadlineExceededError"),
         ("_web/deadline_rpc.py", "backend", "WebRpcBackend"),
         ("_artifact/listing.py", "_projectors", "project_artifact"),
@@ -1299,6 +1308,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
 _REVIEWED_BACKEND_IMPORT_MODULES = frozenset(
     {
         "_backend",
+        "_binding",
         "_backend_compat",
         "_label_service",
         "_mutation_services",
@@ -1328,6 +1338,7 @@ _REVIEWED_BACKEND_IMPORT_MODULES = frozenset(
 
 _REVIEWED_BACKEND_IMPORT_PREFIXES = (
     "notebooklm._backend",
+    "notebooklm._binding",
     "notebooklm._label_service",
     "notebooklm._mutation_services",
     "notebooklm._notebook_mutation_service",
@@ -1631,6 +1642,7 @@ def audit_inert_p1_backend_dataflow(
                         if alias.name
                         in {
                             "_backend",
+                            "_binding",
                             "_backend_compat",
                             "_label_service",
                             "_mutation_services",
