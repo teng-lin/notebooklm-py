@@ -892,7 +892,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.SHARING_GET, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
-            ("_web/sharing.py:SharingWebHandlers._sharing_status", "public=sharing.get_status")
+            ("_web/bindings/sharing.py:SHARING_GET", "public=sharing.get_status")
         ),
         (Operation.SHARING_SET_PUBLIC, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
             ("_web/sharing.py:SharingWebHandlers._sharing_status", "post-public-mutation read")

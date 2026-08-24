@@ -1261,8 +1261,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/backend.py", "_records", "NoteUpdateResult"),
         ("_web/sharing.py", "_records", "ShareStatusRecord"),
         ("_web/sharing.py", "_records", "ShareViewScope"),
-        ("_web/sharing.py", "_records", "SharingGetInput"),
-        ("_web/sharing.py", "_records", "SharingGetResult"),
         ("_web/sharing.py", "_records", "SharingSetPublicInput"),
         ("_web/sharing.py", "_records", "SharingSetPublicResult"),
         ("_web/sharing.py", "_records", "SharingSetViewLevelInput"),
@@ -1842,13 +1840,18 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/registry.py", "_records", "NOTEBOOK_REMOVE_RECENT_DEF"),
         ("_web/registry.py", "_records", "NOTEBOOK_SUMMARIZE_DEF"),
         ("_web/registry.py", "_records", "LEGACY_SHARE_ARTIFACT_DEF"),
-        ("_web/sharing.py", "_records", "LegacyShareArtifactInput"),
-        ("_web/sharing.py", "_records", "LegacyShareArtifactResult"),
-        (
-            "_web/sharing.py",
-            "codec.sharing",
-            "build_legacy_share_artifact_params",
-        ),
+        # P9.3 sharing codec rows and their row-facing codec helpers.
+        ("_web/bindings/sharing.py", "_binding", "Binding"),
+        ("_web/bindings/sharing.py", "_binding", "CodecBinding"),
+        ("_web/bindings/sharing.py", "_binding", "NativeCallSpec"),
+        ("_web/bindings/sharing.py", "_records", "LEGACY_SHARE_ARTIFACT_DEF"),
+        ("_web/bindings/sharing.py", "_records", "SHARING_GET_DEF"),
+        ("_web/bindings/sharing.py", "codec", "sharing"),
+        ("_web/codec/sharing.py", "_binding", "CodecPayload"),
+        ("_web/codec/sharing.py", "_records", "LegacyShareArtifactInput"),
+        ("_web/codec/sharing.py", "_records", "LegacyShareArtifactResult"),
+        ("_web/codec/sharing.py", "_records", "SharingGetInput"),
+        ("_web/codec/sharing.py", "_records", "SharingGetResult"),
     }
 )
 ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
