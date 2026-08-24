@@ -273,7 +273,6 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.ARTIFACT_GENERATE_SLIDE_DECK: "_slide_deck_generate",
         Operation.ARTIFACT_GENERATE_DATA_TABLE: "_data_table_generate",
         Operation.ARTIFACT_GENERATE_MIND_MAP: "_mind_map_generate",
-        Operation.ARTIFACT_EXPORT: "_artifact_export",
         Operation.LABEL_CREATE: "_label_create",
         Operation.LABEL_UPDATE: "_label_update",
         Operation.COLLECTION_CREATE: "_collection_create",
@@ -282,12 +281,7 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.SHARING_SET_VIEW_LEVEL: "_sharing_set_view_level",
         Operation.SHARING_UPDATE_USERS: "_sharing_update_users",
         Operation.NOTEBOOK_SUGGEST_PROMPTS: "_notebook_suggest_prompts",
-        Operation.ARTIFACT_REVISE_SLIDE: "_artifact_revise_slide",
-        Operation.ARTIFACT_RETRY: "_artifact_retry",
-        Operation.ARTIFACT_DELETE: "_artifact_delete",
         Operation.ARTIFACT_RENAME: "_artifact_rename",
-        Operation.ARTIFACT_DOWNLOAD: "_artifact_download",
-        Operation.ARTIFACT_WAIT: "_artifact_wait",
     }
 )
 

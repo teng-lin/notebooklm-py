@@ -7,15 +7,26 @@ import reprlib
 from typing import Any
 
 from ..._artifact.formatters import _parse_data_table
+from ..._backend import BackendContractError
+from ..._binding import CodecPayload
+from ..._operations import Operation
 from ..._records import (
+    ArtifactDeleteInput,
+    ArtifactDeleteResult,
+    ArtifactDownloadInput,
+    ArtifactDownloadResult,
     ArtifactInfographicRecord,
     ArtifactMediaRecord,
     ArtifactParseFailureKind,
     ArtifactParseFailureRecord,
+    ArtifactPollInput,
+    ArtifactPollResult,
     ArtifactRecord,
     ArtifactRepresentationRecord,
     ArtifactSlideRecord,
     ArtifactUserStateRecord,
+    DriveExportInput,
+    DriveExportResult,
     GenerationStatusRecord,
     MindMapRepresentationRecord,
     ReportSuggestionRecord,
@@ -28,14 +39,21 @@ from ..._row_adapters.artifacts import (
     _AudioUserStateValue,
     _FlashcardUserStateValue,
     _UnknownUserStateValue,
+    unwrap_artifact_rows,
 )
 from ..._row_adapters.notes import NoteRow
-from ...exceptions import ArtifactParseError, UnknownRPCMethodError
-from ...rpc import RPCMethod, safe_index
+from ...exceptions import ArtifactParseError, DecodingError, UnknownRPCMethodError
+from ...rpc import ARTIFACT_STATUS_SUGGESTED_WIRE_NAME, ExportType, RPCMethod, safe_index
 from ...rpc.types import ArtifactStatus, ArtifactTypeCode, artifact_status_to_str
 from .notes import _decode_note_rows
 
 logger = logging.getLogger("notebooklm._types.artifacts")
+
+_DRIVE_EXPORT_DESTINATIONS = {
+    "docs": ExportType.DOCS,
+    "sheets": ExportType.SHEETS,
+}
+_DOWNLOAD_CONTENT_ACTIONS = frozenset({"interactive_html", "mind_map_tree"})
 
 _ARTIFACT_FAMILIES = {
     1: "audio",
@@ -402,13 +420,171 @@ def decode_artifact_poll(
     )
 
 
+# --- P9.3 Studio codec rows ----------------------------------------------------
+# Row-facing payload builders and decoders behind ``_web/bindings/studio.py``.
+# Each returns the full request payload one codec row dispatches — params plus
+# the notebook route and typed options — and never names a method: the row's
+# ``NativeCallSpec`` is the sole method authority.
+
+
+def encode_studio_catalog_params(notebook_id: str) -> list[Any]:
+    """The ``LIST_ARTIFACTS`` params every Studio catalog read issues."""
+
+    return [
+        [2],
+        notebook_id,
+        f'NOT artifact.status = "{ARTIFACT_STATUS_SUGGESTED_WIRE_NAME}"',
+    ]
+
+
+def decode_studio_rows(result: object, *, source: str) -> list[list[object]]:
+    """Unwrap one ``LIST_ARTIFACTS`` response into raw Studio rows."""
+
+    if isinstance(result, list):
+        return unwrap_artifact_rows(
+            result,
+            method_id=RPCMethod.LIST_ARTIFACTS.value,
+            source=source,
+        )
+    if not result:
+        return []
+    raise DecodingError(
+        "Unrecognized LIST_ARTIFACTS payload shape",
+        raw_response=reprlib.repr(result),
+        method_id=RPCMethod.LIST_ARTIFACTS.value,
+    )
+
+
+def encode_artifact_delete(value: ArtifactDeleteInput) -> CodecPayload:
+    """Payload for the ``artifact.delete`` codec row."""
+
+    return CodecPayload(
+        params=[[2], value.artifact_id],
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_artifact_delete(value: ArtifactDeleteInput, result: object) -> ArtifactDeleteResult:
+    """Row decoder for ``artifact.delete``: the acknowledgement carries no signal."""
+
+    del value, result
+    return ArtifactDeleteResult()
+
+
+def encode_artifact_export(value: DriveExportInput) -> CodecPayload:
+    """Payload for the ``artifact.export`` codec row (Google Drive companion export)."""
+
+    destination = _DRIVE_EXPORT_DESTINATIONS.get(value.destination)
+    if destination is None:
+        raise BackendContractError(
+            f"unrecognized Drive export destination {value.destination!r}",
+            operation=Operation.ARTIFACT_EXPORT,
+        )
+    return CodecPayload(
+        params=[None, value.artifact_id, value.content, value.title, int(destination)],
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_artifact_export(value: DriveExportInput, result: object) -> DriveExportResult:
+    """Row decoder for ``artifact.export``: the opaque response is preserved."""
+
+    del value
+    return DriveExportResult(result)
+
+
+def encode_artifact_wait(value: ArtifactPollInput) -> CodecPayload:
+    """Payload for the ``artifact.wait`` codec row (one catalog read per poll tick)."""
+
+    return CodecPayload(
+        params=encode_studio_catalog_params(value.notebook_id),
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_artifact_wait(value: ArtifactPollInput, result: object) -> ArtifactPollResult:
+    """Row decoder for ``artifact.wait``: one lifecycle observation for ``task_id``."""
+
+    rows = decode_studio_rows(result, source="WebRpcBackend._artifact_wait")
+    return ArtifactPollResult(decode_artifact_poll(rows, value.task_id))
+
+
+def encode_artifact_download(value: ArtifactDownloadInput) -> CodecPayload:
+    """Payload for the ``artifact.download`` codec row, keyed on ``value.action``.
+
+    The row's ``NativeCallSpec`` selects the native from the same action; this
+    builder only shapes the params and rejects the inputs the handler rejected
+    before dispatch.
+    """
+
+    if value.action == "catalog":
+        params: list[Any] = encode_studio_catalog_params(value.notebook_id)
+    elif value.action == "mind_maps":
+        params = [value.notebook_id]
+    elif value.action in _DOWNLOAD_CONTENT_ACTIONS:
+        if value.artifact_id is None:
+            raise BackendContractError(
+                f"artifact.download action {value.action!r} requires artifact_id",
+                operation=Operation.ARTIFACT_DOWNLOAD,
+            )
+        params = [value.artifact_id]
+    else:
+        raise BackendContractError(
+            f"unrecognized artifact.download action {value.action!r}",
+            operation=Operation.ARTIFACT_DOWNLOAD,
+        )
+    return CodecPayload(
+        params=params,
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_artifact_download(
+    value: ArtifactDownloadInput, result: object
+) -> ArtifactDownloadResult:
+    """Row decoder for ``artifact.download``, branching on the same action as the encoder."""
+
+    if value.action == "catalog":
+        rows = decode_studio_rows(
+            result,
+            source="ArtifactRepresentationService._list_representations",
+        )
+        return ArtifactDownloadResult(
+            representations=tuple(decode_artifact_representation(row) for row in rows)
+        )
+    if value.action == "mind_maps":
+        return ArtifactDownloadResult(mind_maps=decode_mind_map_representations(result))
+    if value.action in _DOWNLOAD_CONTENT_ACTIONS:
+        return ArtifactDownloadResult(
+            content=decode_interactive_content(result, tree=value.action == "mind_map_tree")
+        )
+    raise BackendContractError(
+        f"unrecognized artifact.download action {value.action!r}",
+        operation=Operation.ARTIFACT_DOWNLOAD,
+    )
+
+
 __all__ = [
     "decode_artifact",
+    "decode_artifact_delete",
+    "decode_artifact_download",
+    "decode_artifact_export",
     "decode_artifact_representation",
     "decode_artifact_poll",
+    "decode_artifact_wait",
     "decode_interactive_content",
     "decode_mind_map_artifact",
     "decode_mind_map_representation",
     "decode_mind_map_representations",
     "decode_report_suggestion",
+    "decode_studio_rows",
+    "encode_artifact_delete",
+    "encode_artifact_download",
+    "encode_artifact_export",
+    "encode_artifact_wait",
+    "encode_studio_catalog_params",
 ]

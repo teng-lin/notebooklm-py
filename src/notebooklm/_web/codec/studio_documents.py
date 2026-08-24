@@ -2,14 +2,28 @@
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import Any, cast
 
 from ..._artifact.payloads import (
     build_cinematic_video_artifact_params,
     build_report_artifact_params,
+    build_retry_artifact_params,
+    build_revise_slide_params,
     build_video_artifact_params,
 )
-from ..._records import GenerationStatusRecord, ReportGenerateInput, VideoGenerateInput
+from ..._backend import BackendError, BackendErrorReason
+from ..._binding import CodecPayload
+from ..._operations import Operation
+from ..._records import (
+    ArtifactRetryInput,
+    ArtifactRetryResult,
+    ArtifactReviseSlideInput,
+    ArtifactReviseSlideResult,
+    GenerationStatusRecord,
+    ReportGenerateInput,
+    VideoGenerateInput,
+)
 from ...exceptions import DecodingError
 from ...rpc import ReportFormat, RPCMethod, VideoFormat, VideoStyle, safe_index
 from ...rpc.types import artifact_status_to_str
@@ -114,4 +128,94 @@ def decode_generation_status(
     return GenerationStatusRecord(task_id=cast(str, artifact_id), status=status)
 
 
-__all__ = ["decode_generation_status", "encode_report_generation", "encode_video_generation"]
+# --- P9.3 Studio codec rows ----------------------------------------------------
+# Row-facing payload builders and decoders for the slide-revision and retry
+# kickoffs behind ``_web/bindings/studio.py``; neither names a method.
+
+
+def artifact_feature_unavailable(
+    operation: Operation,
+    artifact_type: str,
+    *,
+    method_id: str,
+) -> BackendError:
+    """The closed ``ARTIFACT_FEATURE_UNAVAILABLE`` error for a null kickoff response."""
+
+    return BackendError(
+        message=f"{artifact_type.capitalize()} generation is unavailable",
+        operation=operation,
+        diagnostics=MappingProxyType(
+            {
+                "artifact_type": artifact_type,
+                "method_id": method_id,
+                "raw_response": None,
+            }
+        ),
+        reason=BackendErrorReason.ARTIFACT_FEATURE_UNAVAILABLE,
+    )
+
+
+def encode_artifact_revise_slide(value: ArtifactReviseSlideInput) -> CodecPayload:
+    """Payload for the ``artifact.revise_slide`` codec row."""
+
+    return CodecPayload(
+        params=build_revise_slide_params(value.artifact_id, value.slide_index, value.prompt),
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+        raise_on_null_status=True,
+    )
+
+
+def decode_artifact_revise_slide(
+    value: ArtifactReviseSlideInput, result: object
+) -> ArtifactReviseSlideResult:
+    """Row decoder for ``artifact.revise_slide``; a null status is the closed unavailable error."""
+
+    del value
+    method_id = RPCMethod.REVISE_SLIDE.value
+    status = decode_generation_status(result, method_id=method_id) if result is not None else None
+    if status is None:
+        raise artifact_feature_unavailable(
+            Operation.ARTIFACT_REVISE_SLIDE,
+            "slide revision",
+            method_id=method_id,
+        )
+    return ArtifactReviseSlideResult(status)
+
+
+def encode_artifact_retry(value: ArtifactRetryInput) -> CodecPayload:
+    """Payload for the ``artifact.retry`` codec row."""
+
+    return CodecPayload(
+        params=build_retry_artifact_params(value.artifact_id),
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+        raise_on_null_status=True,
+    )
+
+
+def decode_artifact_retry(value: ArtifactRetryInput, result: object) -> ArtifactRetryResult:
+    """Row decoder for ``artifact.retry``; a null status is the closed unavailable error."""
+
+    del value
+    method_id = RPCMethod.RETRY_ARTIFACT.value
+    status = decode_generation_status(result, method_id=method_id) if result is not None else None
+    if status is None:
+        raise artifact_feature_unavailable(
+            Operation.ARTIFACT_RETRY,
+            "retry",
+            method_id=method_id,
+        )
+    return ArtifactRetryResult(status)
+
+
+__all__ = [
+    "artifact_feature_unavailable",
+    "decode_artifact_retry",
+    "decode_artifact_revise_slide",
+    "decode_generation_status",
+    "encode_artifact_retry",
+    "encode_artifact_revise_slide",
+    "encode_report_generation",
+    "encode_video_generation",
+]

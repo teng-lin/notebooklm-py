@@ -20,6 +20,7 @@ from .notes import NOTE_ROWS
 from .research import RESEARCH_ROWS
 from .settings import SETTINGS_ROWS
 from .sharing import SHARING_ROWS
+from .studio import STUDIO_ROWS
 
 _DOMAIN_ROWS: tuple[Mapping[Operation, Binding], ...] = (
     LABEL_ROWS,
@@ -28,6 +29,7 @@ _DOMAIN_ROWS: tuple[Mapping[Operation, Binding], ...] = (
     RESEARCH_ROWS,
     SETTINGS_ROWS,
     SHARING_ROWS,
+    STUDIO_ROWS,
 )
 
 
