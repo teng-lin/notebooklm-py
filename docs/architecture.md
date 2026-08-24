@@ -314,7 +314,7 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 | Source URL/text/Drive add | `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` because those flows have stable probes. Text-source adds are intentionally non-idempotent unless the caller handles dedupe externally. |
 | Artifact generation | P5.2–P5.6 route every family kickoff through transport-neutral family services and the typed web backend while preserving established payload builders and public `GenerationStatus`. P5.8 routes revision, retry, rename, delete, suggestions, lifecycle status reads, and representation discovery through typed Studio services; `_artifact/generation.py` and `_artifact/downloads.py` retain import-compatible helper exports only and own no native RPC authority. `ArtifactLifecycleService` composes the existing `ArtifactPollingService`, `operation_scope(...)`, and feature-local `PollRegistry`, so public `wait_for_completion()` remains lifecycle-terminal; family-usable readiness does not alter that wait condition. |
 | Artifact download | P5.8 routes every family through `ArtifactRepresentationService` and typed `artifact.download` catalog/content actions. It delegates remote bytes to `StudioDownloadClient` and local report/interactive/table/map formats to `StudioSerializationClient`, preserving storage cookies, trusted-host checks, per-hop redirect validation, exact latest-created selection, and the explicit prefetched no-refetch path. |
-| Notes and mind maps | Backend-neutral `NoteService` invokes typed NOTE_* operations for `NotesAPI` and note-backed MIND_MAP_* workflows for `MindMapsAPI`; `MindMapFamilyService` owns its interactive Studio branch. `WebRpcBackend` owns the six typed mind-map bindings and mixed note-row decoding. `LegacyNoteBackedService` remains bounded to deferred saved-chat/artifact compatibility callers and is absent from `MindMapsAPI`. |
+| Notes and mind maps | Backend-neutral `NoteService` invokes typed NOTE_* operations for `NotesAPI` and note-backed MIND_MAP_* workflows for `MindMapsAPI`; `MindMapFamilyService` owns its interactive Studio branch. `WebRpcBackend` owns the two input-defaulting mind-map generate composites; since P9.3 the plain-note leaves and the four mind-map leaves are `_web/bindings/notes.py` / `_web/bindings/mind_maps.py` codec rows over the mixed note-row codec. `LegacyNoteBackedService` remains bounded to deferred saved-chat/artifact compatibility callers and is absent from `MindMapsAPI`. |
 
 ## Cross-cutting policies
 
@@ -1082,6 +1082,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/research.py` | P6.2 Research web workflow mixin; owns fast/deep start, poll, cancel, and ordered import handlers while keeping the composed backend below the module-size ratchet. |
 | `_web/sharing.py` | P6.5 Sharing web workflow mixin; owns the status/readback and mutation request dialects while keeping the composed backend below the module-size ratchet. |
 | `_web/bindings/__init__.py` | `WEB_BINDING_ROWS` (P9.3): the union of every domain's binding rows, checked for one row per operation and canonical definitions; `_web/registry.py` partitions the supported set between these rows and the remaining handler names. |
+| `_web/bindings/mind_maps.py` | P9.3 mind-map leaf codec rows: `MIND_MAP_LIST`, `MIND_MAP_GET`, `MIND_MAP_UPDATE`, `MIND_MAP_DELETE` — `encode → one native call → decode`; the two generate members stay input-defaulting handlers until their P9.4 custom rows. |
+| `_web/bindings/notes.py` | P9.3 plain-note codec rows: `NOTE_LIST`, `NOTE_GET`, `NOTE_CREATE`, `NOTE_UPDATE`, `NOTE_DELETE` over `_web/codec/notes.py`; `NoteService` sequences them above the port and the walker derives their catalog authorities from the module-level assignments. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
 | `_web/settings_suggestions.py` | P6.6 prompt-suggestion web workflow mixin; since P9.3 only the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` composite remains here (the settings and report-suggestion leaves are `_web/bindings/settings.py` rows). |
 | `_web/source_variants.py` | Web workflow mixin for URL add plus source content, freshness, refresh, Drive, upload, and remaining source variants; owns request dialects and composite reconciliation while keeping the composed backend below the module-size ratchet. |
@@ -1102,7 +1104,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/studio_media.py` | Shared P5.2/P5.3/P5.5 web generation handlers for Audio, Quiz/Flashcards, and Infographic/Slide Deck; inherits the document-family RPC/source helpers and keeps the composed backend below the module-size ratchet. |
 | `_web/studio_data.py` | P5.6 web handlers for data-table/mind-map generation and Drive export; composes with the media/document handlers while keeping the backend module below the size ratchet. |
 | `_web/codec/studio_documents.py` | P5.4 exact report/video request encoders and generation-status decoder over backend-neutral records. |
-| `_web/codec/notes.py` | P6.3 mixed note-row codec: normalizes flat/wrapped envelopes, classifies deleted and note-backed mind-map rows, preserves exact-id selection, and emits only neutral `NoteRecord` values. |
+| `_web/codec/notes.py` | P6.3 mixed note-row codec: normalizes flat/wrapped envelopes, classifies deleted and note-backed mind-map rows, preserves exact-id selection, and emits only neutral `NoteRecord` values; since P9.3 also the row-facing `encode_note_*`/`decode_note_*` helpers behind `_web/bindings/notes.py`. |
 | `_web/codec/labels.py` | P6.4 shared source-label/collection codec: owns both wire dialects behind `LabelKind` and emits only neutral `LabelRecord` values. |
 | `_web/codec/research.py` | P6.2 DiscoverSources codec: owns fast/deep start, poll, cancel, and report-before-web import request grammar and decodes responses into neutral Research records without selecting or dispatching an RPC. |
 | `_web/codec/settings.py` | P6.6 account settings/limits/language request grammar and tolerant neutral decoders. |
@@ -1345,6 +1347,8 @@ src/notebooklm/
 │   ├── settings_suggestions.py  # P6.6 prompt-suggestion composite handler
 │   ├── bindings/                # P9.3 per-domain binding rows
 │   │   ├── __init__.py          # WEB_BINDING_ROWS union
+│   │   ├── mind_maps.py         # mind-map leaf codec rows
+│   │   ├── notes.py             # plain-note codec rows
 │   │   └── settings.py          # settings/suggestion codec rows
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)
 │   ├── registry.py              # Closed active/unsupported web dispositions
