@@ -249,7 +249,7 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_web/backend.py:WebRpcBackend._mind_map_generate_note",
         "_web/backend.py:WebRpcBackend._notebook_get",
         "_web/backend.py:WebRpcBackend._notebook_update",
-        "_web/chat.py:ChatWebHandlers._chat_configure",
+        "_web/bindings/chat.py:CHAT_CONFIGURE",
         "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
         "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
         "_web/studio_data.py:StudioDataWebHandlers._data_source_ids",
