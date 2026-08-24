@@ -2303,7 +2303,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/mind_maps.py:MIND_MAP_DELETE",
-        "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_delete"
+        "_web/bindings/studio.py:ARTIFACT_DELETE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "success contract returns None; the response carries no decodable row to pin",
@@ -2559,7 +2559,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/studio_data.py:StudioDataWebHandlers._artifact_export"
+        "_web/bindings/studio.py:ARTIFACT_EXPORT"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2703,7 +2703,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/mind_maps.py:MIND_MAP_GET",
-        "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_download"
+        "_web/bindings/studio.py:ARTIFACT_DOWNLOAD"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2928,7 +2928,7 @@
         "_web/bindings/mind_maps.py:MIND_MAP_LIST",
         "_web/bindings/notes.py:NOTE_GET",
         "_web/bindings/notes.py:NOTE_LIST",
-        "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_download"
+        "_web/bindings/studio.py:ARTIFACT_DOWNLOAD"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3290,7 +3290,8 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/backend.py:WebRpcBackend._artifact_catalog_records",
-        "_web/studio_facade.py:StudioFacadeWebHandlers._studio_rows"
+        "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
+        "_web/bindings/studio.py:ARTIFACT_WAIT"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3329,7 +3330,8 @@
         "StudioManagementService"
       ],
       "response_decoders": [
-        "_row_adapters/artifacts.py:ArtifactRow"
+        "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "response_projectors": [],
       "route_contexts": [
@@ -3691,7 +3693,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_retry"
+        "_web/bindings/studio.py:ARTIFACT_RETRY"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3720,7 +3722,9 @@
       "owners": [
         "StudioManagementService"
       ],
-      "response_decoders": [],
+      "response_decoders": [
+        "_web/codec/studio_documents.py:decode_artifact_retry"
+      ],
       "response_projectors": [],
       "route_contexts": [
         "notebook+artifact"
@@ -3736,7 +3740,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_revise_slide"
+        "_web/bindings/studio.py:ARTIFACT_REVISE_SLIDE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3765,7 +3769,9 @@
       "owners": [
         "StudioManagementService"
       ],
-      "response_decoders": [],
+      "response_decoders": [
+        "_web/codec/studio_documents.py:decode_artifact_revise_slide"
+      ],
       "response_projectors": [],
       "route_contexts": [
         "notebook+artifact"
@@ -4415,7 +4421,7 @@
         {
           "binding": "DELETE_ARTIFACT:<default>",
           "discriminator": "public=artifacts.delete",
-          "site": "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_delete",
+          "site": "_web/bindings/studio.py:ARTIFACT_DELETE",
           "transport_kind": "rpc"
         }
       ],
@@ -4457,20 +4463,20 @@
         },
         {
           "binding": "GET_INTERACTIVE_HTML:<default>",
-          "discriminator": "quiz|flashcards|mind-map interactive representation",
-          "site": "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_download",
+          "discriminator": "action=interactive_html|mind_map_tree interactive representation",
+          "site": "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
-          "discriminator": "note-backed mind-map representation read",
-          "site": "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_download",
+          "discriminator": "action=mind_maps note-backed mind-map representation read",
+          "site": "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_ARTIFACTS:<default>",
-          "discriminator": "representation catalog read",
-          "site": "_web/studio_facade.py:StudioFacadeWebHandlers._studio_rows",
+          "discriminator": "action=catalog representation catalog read",
+          "site": "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
           "transport_kind": "rpc"
         }
       ],
@@ -4501,6 +4507,7 @@
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
         "_web/codec/artifacts.py:decode_interactive_content",
+        "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
@@ -4521,7 +4528,7 @@
         {
           "binding": "EXPORT_ARTIFACT:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/studio_data.py:StudioDataWebHandlers._artifact_export",
+          "site": "_web/bindings/studio.py:ARTIFACT_EXPORT",
           "transport_kind": "rpc"
         }
       ],
@@ -5158,6 +5165,7 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
         "_web/codec/notes.py:_normalize_note_row"
@@ -5210,6 +5218,7 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
         "_web/codec/notes.py:_normalize_note_row"
@@ -5252,7 +5261,8 @@
       "recency_contract": [],
       "recency_effect": "none",
       "response_decoders_projectors": [
-        "_row_adapters/artifacts.py:ArtifactRow"
+        "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "route_context": "notebook+artifact",
       "web_paths": []
@@ -5267,7 +5277,7 @@
         {
           "binding": "RETRY_ARTIFACT:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_retry",
+          "site": "_web/bindings/studio.py:ARTIFACT_RETRY",
           "transport_kind": "rpc"
         }
       ],
@@ -5284,7 +5294,9 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/studio_documents.py:decode_artifact_retry"
+      ],
       "route_context": "notebook+artifact",
       "web_paths": []
     },
@@ -5298,7 +5310,7 @@
         {
           "binding": "REVISE_SLIDE:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_revise_slide",
+          "site": "_web/bindings/studio.py:ARTIFACT_REVISE_SLIDE",
           "transport_kind": "rpc"
         }
       ],
@@ -5315,7 +5327,9 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/studio_documents.py:decode_artifact_revise_slide"
+      ],
       "route_context": "notebook+artifact",
       "web_paths": []
     },
@@ -5361,7 +5375,7 @@
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "one catalog read per poll tick",
-          "site": "_web/studio_facade.py:StudioFacadeWebHandlers._studio_rows",
+          "site": "_web/bindings/studio.py:ARTIFACT_WAIT",
           "transport_kind": "rpc"
         }
       ],
@@ -5380,7 +5394,8 @@
       "recency_contract": [],
       "recency_effect": "none",
       "response_decoders_projectors": [
-        "_row_adapters/artifacts.py:ArtifactRow"
+        "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "route_context": "notebook+artifact",
       "web_paths": []
@@ -6280,6 +6295,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/artifacts.py:decode_interactive_content",
+        "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
@@ -6410,6 +6426,7 @@
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
         "_web/codec/artifacts.py:decode_interactive_content",
+        "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
@@ -6458,6 +6475,7 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
         "_web/codec/notes.py:_normalize_note_row"
