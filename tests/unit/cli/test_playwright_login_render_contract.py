@@ -690,6 +690,34 @@ class TestLoginProgressSuccess:
 # ---------------------------------------------------------------------------
 class TestLoginErrorRender:
     @pytest.mark.requires_playwright
+    def test_navigation_race_retries_are_rendered(self, runner):
+        """#2257's sibling of the connection-retry line, snapshotted like it.
+
+        A superseded initial navigation retries WITHOUT the backoff wording:
+        there is no overloaded peer to wait for, so "Retrying..." rather than
+        "Retrying in Ns...". After the retries the login proceeds to the wait
+        instead of failing, so this run ends in the normal login flow.
+        """
+        from playwright.sync_api import Error as PlaywrightError
+
+        def goto_side(url, **kwargs):
+            raise PlaywrightError("Page.goto: net::ERR_ABORTED; maybe frame was detached?")
+
+        result, _ = _drive_login(
+            runner, page_url="https://accounts.google.com/signin", goto_side=goto_side
+        )
+        assert "Navigation interrupted (attempt 1/3). Retrying...\n" in result.output
+        assert "Navigation interrupted (attempt 2/3). Retrying...\n" in result.output
+        # The backoff wording belongs to the connection branch, not this one.
+        assert "Retrying in" not in result.output
+        # And the point of the branch: exhausting the retries must NOT fail the
+        # login. It proceeds to the human wait, which is what turns a
+        # repeatedly-cancelled navigation into a recoverable sign-in rather than
+        # an "Unexpected error ... report a bug" exit 2.
+        assert "Complete the Google login in the browser window" in result.output
+        assert "Unexpected error" not in result.output
+
+    @pytest.mark.requires_playwright
     def test_retry_exhausted_connection_error_help(self, runner):
         from playwright.sync_api import Error as PlaywrightError
 
@@ -776,6 +804,9 @@ class TestLoginErrorRender:
             "notebooklm login --browser chrome to reuse that session "
             "(often detects immediately; also avoids bundled-Chromium "
             "issues on macOS).\n"
+            "Or skip the browser launch entirely and read cookies from a browser "
+            "you are already signed in to: notebooklm login --browser-cookies "
+            "(needs the 'cookies' extra).\n"
         )
 
     @pytest.mark.requires_playwright
@@ -837,7 +868,9 @@ class TestLoginErrorRender:
             "\n"
             "Waiting for login (up to 5 minutes)...\n"
             "Login detected.\n"
-            "Unexpected URL after login: https://accounts.google.com/AccountChooser\n"
+            # Host only: the drift target can be a credential-bearing SSO URL,
+            # and this line goes to the terminal and to captured CI output.
+            "Unexpected URL after login: https://accounts.google.com/\n"
             "Authentication may be incomplete. Try: notebooklm login --fresh\n"
         )
 

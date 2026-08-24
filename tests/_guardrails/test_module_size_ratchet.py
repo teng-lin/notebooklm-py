@@ -196,7 +196,18 @@ ALLOWLISTED_CEILINGS: dict[str, int] = {
 # ``tests/_guardrails/test_auth_profile_document_boundary.py``, for a different reason
 # (a consumer boundary). Both are deliberate; a shrink there updates both.
 SHRINK_LOCKED_CEILINGS: dict[str, int] = {
-    "_auth/browser_capture.py": 1225,
+    # 1225 -> 1445: maintainer-sanctioned exception for #2257, NOT a precedent.
+    # The login wait could not be fixed without net growth, because the pin was
+    # exactly the module's size — every path forward (tolerating a failed
+    # navigation, resuming on the remaining budget, tracing the hop that
+    # Playwright hides) adds lines, and no trimming reaches zero. The split that
+    # this map normally demands would have moved the login-landing concern —
+    # including the tracing block ADR-0033 PR 4.1 deliberately absorbed here —
+    # back out into a new leaf; the maintainer chose to keep the consolidation
+    # and spend the pin instead.
+    # Still shrink-only from 1445. The next change to this module that frees
+    # lines should lower this back down; the gate prints the exact value.
+    "_auth/browser_capture.py": 1445,
     "_auth/psidts_recovery.py": 1214,
     "_auth/refresh.py": 1184,
     "_auth/storage.py": 1089,
