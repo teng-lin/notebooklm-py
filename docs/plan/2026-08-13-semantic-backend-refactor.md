@@ -1866,7 +1866,13 @@ invocation. `planned:_binding.py` declares the three-way `OperationDisposition` 
 `SERVICE_OWNED`, `UNSUPPORTED`) here, with `SERVICE_OWNED` unused until P9.2, so the audit
 compares the table's keys against `SUPPORTED_DIRECT` from day one and survives P9.2 unchanged. The empty `_STAGED_*` tables fold into the same mechanism. Chain untouched.
 
-**P9.1 — `WebTransport` (`planned:_web/transport.py`), code motion plus one additive marker.**
+**P9.1 — `WebTransport` (`_web/transport.py`), code motion plus one additive marker.** *Done
+2026-08-24 (`f5bf681e`, `3a335897`, `57f34b12`; merged at `d029b7e0`): `WebRequest` carries all
+ten `_rpc_call` inputs, `WebTransport.call` is the verbatim deadline arithmetic and kwarg
+forwarding over a runtime read through the shell, `stream` is the chat-aware POST as a clean
+cut, every escaping native exception (and its wrapped original) is tagged `dispatched = True`,
+`_rpc_call` and `DeadlineRpcCaller` no longer forward `_is_retry`, and the catalog's inert
+forwarder literal re-points to `_web/transport.py:WebTransport.call`.*
 Extract the two transport verbs out of the head: `call(WebRequest, *, deadline)` over
 `WebExecutionRuntime` and `stream(...)` for the chat-aware authed POST. `WebTransport` owns
 `WebExecutionRuntime` and the chat `RuntimeTransport` — nothing new. Lifecycle stays on the
@@ -1933,6 +1939,14 @@ Constraints that keep this slice pure motion (each is pinned by existing tests, 
   `INERT_P1_WEB_FORWARDERS` and its guardrail literal re-point from `WebRpcBackend._rpc_call`.
 
 **P9.2 — Hoist product composites into semantic services; add primitive leaf members.**
+*Foundations landed 2026-08-24: contract 1's `require_leaves` and contract 2's `dispatched`,
+`COMMIT_UNCERTAIN_REASONS`, `may_have_committed`, subclass-preserving
+`mark_backend_outcome_unknown`, `rebind_operation`, the registry-free `_idempotency_create.py`
+with its two predicates, `RecordingBackend.set_sequence`/`scripted_error` and the truth table
+(`6b228084`, `0f269e31`; merged at `fedde1bc`); the catalog walker derives execution
+authorities from module-level binding rows and audits each row's natives against the policy
+ledger (`8b1d7299`; merged at `092a9b9c`). The gate table's hoist order and primitive
+vocabulary are in `2026-08-24-p9-composite-gate-table.md`.*
 Each hoist PR adds its primitive member(s) as `CodecBinding` rows — the first codec rows in
 the table, using the P9.0 core — and catalogs their authority in the same PR, so the service
 never invokes an operation that has no executable web authority. That requires the catalog
