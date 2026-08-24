@@ -4,7 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..._records import MindMapRecord, NoteRecord
+from ..._binding import CodecPayload
+from ..._records import (
+    MindMapRecord,
+    NoteCreateInput,
+    NoteCreateResult,
+    NoteDeleteInput,
+    NoteDeleteResult,
+    NoteGetInput,
+    NoteGetResult,
+    NoteListInput,
+    NoteListResult,
+    NoteRecord,
+    NoteUpdateInput,
+    NoteUpdateResult,
+)
 from ..._row_adapters.notes import NoteRow
 from ...exceptions import DecodingError, RPCError
 from ...rpc import RPCMethod, safe_index
@@ -162,9 +176,99 @@ def decode_created_note(result: Any, notebook_id: str, title: str, content: str)
     return NoteRecord(note_id, notebook_id, title, content, created_at)
 
 
+# Row-facing encoders and decoders (P9.3). Each encoder returns the full
+# request payload one codec row dispatches — params plus the notebook route and
+# option flags exactly as the handler passed them — and never names a method.
+def _notebook_route(notebook_id: str) -> str:
+    return f"/notebook/{notebook_id}"
+
+
+def encode_note_list(value: NoteListInput) -> CodecPayload:
+    """Payload for the ``note.list`` codec row."""
+    return CodecPayload(
+        params=[value.notebook_id],
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_note_get(value: NoteGetInput) -> CodecPayload:
+    """Payload for the ``note.get`` codec row (same collection read)."""
+    return CodecPayload(
+        params=[value.notebook_id],
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_note_create(value: NoteCreateInput) -> CodecPayload:
+    """Payload for the ``note.create`` codec row (the ``plain`` variant)."""
+    return CodecPayload(
+        params=[value.notebook_id, "", [1], None, value.title],
+        source_path=_notebook_route(value.notebook_id),
+    )
+
+
+def encode_note_update(value: NoteUpdateInput) -> CodecPayload:
+    """Payload for the ``note.update`` codec row."""
+    return CodecPayload(
+        params=[value.notebook_id, value.note_id, [[[value.content, value.title, [], 0]]]],
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_note_delete(value: NoteDeleteInput) -> CodecPayload:
+    """Payload for the ``note.delete`` codec row."""
+    return CodecPayload(
+        params=[value.notebook_id, None, [value.note_id]],
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def decode_note_list(value: NoteListInput, data: Any) -> NoteListResult:
+    """Row decoder for ``note.list``."""
+    return NoteListResult(decode_notes(data, value.notebook_id))
+
+
+def decode_note_get(value: NoteGetInput, data: Any) -> NoteGetResult:
+    """Row decoder for ``note.get``; the input selects the exact note id."""
+    return NoteGetResult(decode_note(data, value.notebook_id, value.note_id))
+
+
+def decode_note_create(value: NoteCreateInput, data: Any) -> NoteCreateResult:
+    """Row decoder for ``note.create``; the input supplies title and content."""
+    return NoteCreateResult(
+        decode_created_note(data, value.notebook_id, value.title, value.content)
+    )
+
+
+def decode_note_update(value: NoteUpdateInput, data: Any) -> NoteUpdateResult:
+    """Row decoder for ``note.update``; the wire echo carries nothing neutral."""
+    del value, data
+    return NoteUpdateResult()
+
+
+def decode_note_delete(value: NoteDeleteInput, data: Any) -> NoteDeleteResult:
+    """Row decoder for ``note.delete``; the wire echo carries nothing neutral."""
+    del value, data
+    return NoteDeleteResult()
+
+
 __all__ = [
     "decode_created_note",
     "decode_note",
     "decode_note_backed_mind_maps",
+    "decode_note_create",
+    "decode_note_delete",
+    "decode_note_get",
+    "decode_note_list",
+    "decode_note_update",
     "decode_notes",
+    "encode_note_create",
+    "encode_note_delete",
+    "encode_note_get",
+    "encode_note_list",
+    "encode_note_update",
 ]
