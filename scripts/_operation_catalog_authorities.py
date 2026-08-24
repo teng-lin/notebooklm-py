@@ -713,10 +713,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/labels.py:LabelSetWebHandlers._label_set_list", "resolve collection membership")
         ),
         (Operation.RESEARCH_POLL, _b(RPCMethod.POLL_RESEARCH)): _rules(
-            ("_web/research.py:ResearchWebHandlers._research_poll", "single public poll")
+            ("_web/bindings/research.py:RESEARCH_POLL", "single public poll")
         ),
         (Operation.RESEARCH_WAIT, _b(RPCMethod.POLL_RESEARCH)): _rules(
-            ("_web/research.py:ResearchWebHandlers._research_poll", "one read per wait poll tick")
+            ("_web/bindings/research.py:RESEARCH_POLL", "one read per wait poll tick")
         ),
         (Operation.ARTIFACT_RENAME, _b(RPCMethod.RENAME_ARTIFACT)): _rules(
             (
@@ -919,10 +919,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/settings.py:SETTINGS_GET_LIMITS", "account-limit projection")
         ),
         (Operation.RESEARCH_IMPORT, _b(RPCMethod.IMPORT_RESEARCH)): _rules(
-            ("_web/research.py:ResearchWebHandlers._research_import", "single import attempt")
+            ("_web/bindings/research.py:RESEARCH_IMPORT", "single import attempt")
         ),
         (Operation.RESEARCH_IMPORT_VERIFY, _b(RPCMethod.IMPORT_RESEARCH)): _rules(
-            ("_web/research.py:ResearchWebHandlers._research_import", "verified import attempt")
+            ("_web/bindings/research.py:RESEARCH_IMPORT", "verified import attempt")
         ),
     }
 )

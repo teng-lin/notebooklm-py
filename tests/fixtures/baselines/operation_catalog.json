@@ -1912,7 +1912,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/research.py:ResearchWebHandlers._research_cancel"
+        "_web/bindings/research.py:RESEARCH_CANCEL"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "success contract returns None; the response carries no decodable row to pin",
@@ -3239,7 +3239,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/research.py:ResearchWebHandlers._research_import"
+        "_web/bindings/research.py:RESEARCH_IMPORT"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3463,7 +3463,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/research.py:ResearchWebHandlers._research_poll"
+        "_web/bindings/research.py:RESEARCH_POLL"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3901,7 +3901,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/research.py:ResearchWebHandlers._research_start"
+        "_web/bindings/research.py:RESEARCH_START"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3946,7 +3946,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/research.py:ResearchWebHandlers._research_start"
+        "_web/bindings/research.py:RESEARCH_START"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -7130,7 +7130,7 @@
         {
           "binding": "CANCEL_RESEARCH:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/research.py:ResearchWebHandlers._research_cancel",
+          "site": "_web/bindings/research.py:RESEARCH_CANCEL",
           "transport_kind": "rpc"
         }
       ],
@@ -7159,7 +7159,7 @@
         {
           "binding": "IMPORT_RESEARCH:<default>",
           "discriminator": "single import attempt",
-          "site": "_web/research.py:ResearchWebHandlers._research_import",
+          "site": "_web/bindings/research.py:RESEARCH_IMPORT",
           "transport_kind": "rpc"
         }
       ],
@@ -7196,7 +7196,7 @@
         {
           "binding": "IMPORT_RESEARCH:<default>",
           "discriminator": "verified import attempt",
-          "site": "_web/research.py:ResearchWebHandlers._research_import",
+          "site": "_web/bindings/research.py:RESEARCH_IMPORT",
           "transport_kind": "rpc"
         }
       ],
@@ -7236,7 +7236,7 @@
         {
           "binding": "POLL_RESEARCH:<default>",
           "discriminator": "single public poll",
-          "site": "_web/research.py:ResearchWebHandlers._research_poll",
+          "site": "_web/bindings/research.py:RESEARCH_POLL",
           "transport_kind": "rpc"
         }
       ],
@@ -7269,13 +7269,13 @@
         {
           "binding": "START_DEEP_RESEARCH:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/research.py:ResearchWebHandlers._research_start",
+          "site": "_web/bindings/research.py:RESEARCH_START",
           "transport_kind": "rpc"
         },
         {
           "binding": "START_FAST_RESEARCH:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/research.py:ResearchWebHandlers._research_start",
+          "site": "_web/bindings/research.py:RESEARCH_START",
           "transport_kind": "rpc"
         }
       ],
@@ -7308,7 +7308,7 @@
         {
           "binding": "POLL_RESEARCH:<default>",
           "discriminator": "one read per wait poll tick",
-          "site": "_web/research.py:ResearchWebHandlers._research_poll",
+          "site": "_web/bindings/research.py:RESEARCH_POLL",
           "transport_kind": "rpc"
         }
       ],

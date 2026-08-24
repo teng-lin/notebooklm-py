@@ -17,10 +17,10 @@ from .._records import (
 )
 from ..rpc import RPCMethod
 from .codec import suggestions as suggestions_codec
-from .research import ResearchWebHandlers
+from .sharing import SharingWebHandlers
 
 
-class SettingsSuggestionWebHandlers(ResearchWebHandlers):
+class SettingsSuggestionWebHandlers(SharingWebHandlers):
     """Prompt-suggestion composite handler mixed into the web backend."""
 
     async def _notebook_suggest_prompts(

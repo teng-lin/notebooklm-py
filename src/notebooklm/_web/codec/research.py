@@ -21,12 +21,20 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from ..._binding import CodecPayload
 from ..._records import (
+    ResearchCancelInput,
+    ResearchCancelResult,
     ResearchImportedSourceRecord,
     ResearchImportEntry,
     ResearchImportEntryKind,
+    ResearchImportInput,
+    ResearchImportResult,
     ResearchMode,
+    ResearchPollInput,
+    ResearchPollResult,
     ResearchSearchSource,
+    ResearchStartInput,
     ResearchStartResult,
     ResearchTaskRecord,
 )
@@ -98,6 +106,51 @@ def encode_research_import_params(
     return [None, [1], task_id, notebook_id, source_array]
 
 
+# Row-facing encoders (P9.3). Each returns the full request payload one codec
+# row dispatches — params plus the notebook route and typed options — and never
+# names a method: the row's ``NativeCallSpec`` is the sole method authority.
+def encode_research_start(value: ResearchStartInput) -> CodecPayload:
+    """Payload for the ``research.start`` codec row (fast or deep by ``mode``)."""
+    return CodecPayload(
+        params=encode_research_start_params(
+            value.notebook_id,
+            value.query,
+            value.search_source,
+            value.mode,
+        ),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def encode_research_poll(value: ResearchPollInput) -> CodecPayload:
+    """Payload for the ``research.poll`` codec row."""
+    return CodecPayload(
+        params=encode_research_poll_params(value.notebook_id),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def encode_research_cancel(value: ResearchCancelInput) -> CodecPayload:
+    """Payload for the ``research.cancel`` codec row (routed on the notebook)."""
+    return CodecPayload(
+        params=encode_research_cancel_params(value.run_id),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def encode_research_import(value: ResearchImportInput) -> CodecPayload:
+    """Payload for the ``research.import`` codec row.
+
+    ``attempt_timeout`` is the service-computed per-attempt window the handler
+    forwarded verbatim; the caller's deadline still bounds it (``INHERIT``).
+    """
+    return CodecPayload(
+        params=encode_research_import_params(value.notebook_id, value.task_id, value.entries),
+        source_path=f"/notebook/{value.notebook_id}",
+        attempt_timeout=value.attempt_timeout,
+    )
+
+
 def decode_research_start(result: Any, *, method_id: str) -> ResearchStartResult:
     """Decode a kickoff response into the identifiers the run volunteered.
 
@@ -149,14 +202,39 @@ def decode_imported_sources(result: Any) -> tuple[ResearchImportedSourceRecord, 
     return tuple(imported)
 
 
+def decode_research_poll(value: ResearchPollInput, result: Any) -> ResearchPollResult:
+    """Row decoder for ``research.poll``."""
+    del value
+    return ResearchPollResult(tasks=decode_research_tasks(result))
+
+
+def decode_research_cancel(value: ResearchCancelInput, result: Any) -> ResearchCancelResult:
+    """Row decoder for ``research.cancel``: the acknowledgement carries no signal."""
+    del value, result
+    return ResearchCancelResult()
+
+
+def decode_research_import(value: ResearchImportInput, result: Any) -> ResearchImportResult:
+    """Row decoder for ``research.import``."""
+    del value
+    return ResearchImportResult(imported=decode_imported_sources(result))
+
+
 __all__ = [
     "build_report_import_entry",
     "build_web_import_entry",
     "decode_imported_sources",
+    "decode_research_cancel",
+    "decode_research_import",
+    "decode_research_poll",
     "decode_research_start",
     "decode_research_tasks",
+    "encode_research_cancel",
     "encode_research_cancel_params",
+    "encode_research_import",
     "encode_research_import_params",
+    "encode_research_poll",
     "encode_research_poll_params",
+    "encode_research_start",
     "encode_research_start_params",
 ]
