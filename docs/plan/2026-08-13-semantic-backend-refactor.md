@@ -2,9 +2,10 @@
 
 **Status:** Accepted for P0-P8; P7-last, P3, and P8 approved by owner decision
 **Implementation status:** P0's catalog and compatibility-contract evidence are complete and
-frozen; this plan does not mark P1-P8 complete.
-P9 (web-backend decomposition) is proposed 2026-08-24 and not started; its entry record is
-measured, its projections are estimates.
+frozen. P1–P8 are implemented on `refactor/semantic-backend-dev` with per-phase completion
+evidence recorded below; they are not yet merged to `main`. P9 (web-backend decomposition) is
+proposed 2026-08-24, not approved and not started; its entry record is measured and its
+projections are estimates.
 **Planning date:** 2026-08-13
 **Planning base:** `main` at `3bb0c185` (re-pinned; the original `dd710a09` base had drifted).
 P0's inventory is independently measured at its PR merge base, which for this frozen baseline is
@@ -406,7 +407,7 @@ exported helper remains available to external callers.
 
 ```mermaid
 gantt
-    title Net code impact by phase (P7 is the only phase that deletes)
+    title Net code impact by phase (P7 is the only approved phase that deletes)
     dateFormat X
     axisFormat %s
 
@@ -804,13 +805,15 @@ the coupling the transitional backend exists to break. The plan's original order
    single-flight, profile storage, recovery, locking, or persistence merely to make the seam exist.
 
 P1-P8 are therefore approved subject to their entry criteria, acceptance criteria, and stop/go
-reviews. P9 public-surface work and a mobile backend remain separate decisions.
+reviews. Public-surface (vNext) work and a mobile backend remain separate decisions; P9 below is
+the proposed web-backend decomposition and requires its own approval.
 
 ## Phase and PR sequence
 
 The phases are ordered by dependency. P0 through P6 establish the semantic core. P7 and P8 simplify
 the web runtime and authentication after callers are isolated. A public vNext surface and a mobile
-backend are separate future decisions, not phases in this plan.
+backend are separate future decisions, not phases in this plan. P9 (web-backend decomposition) is
+proposed and not part of the approved sequence.
 
 ```text
 P0 operation inventory + ADR
@@ -913,6 +916,17 @@ P0 operation inventory + ADR
 - this plan and relevant architecture documentation
 
 Exact names may change in the ADR; ownership may not.
+
+#### Open items carried into the P9.0 PR review
+
+Two implementation questions raised in the final review round are recorded here rather than
+settled in prose, because their answer is code: (1) the `SourceUploadPipeline` callbacks that the
+`SOURCE_ADD_FILE` custom row invokes must execute through that row's `RowInvoker` (invocation-scoped,
+same allowlist, same failure tagging) or the row's declared specs are not an enforceable
+boundary; (2) selected-spec attribution must survive every adapter rethrow — today
+`DeadlineRpcCaller` catches `BackendDeadlineExceededError` and raises a fresh, unchained
+`RPCTimeoutError` (`_web/deadline_rpc.py`), which would drop the tag — with a test per declared
+legacy spec. Both are P9.0/P9.4 acceptance items for the binding core, not plan decisions.
 
 #### Acceptance criteria
 
@@ -1196,7 +1210,7 @@ fail-closed web policy ledger. `notebook.get`, `source.list`, and `source.get` a
 classified as semantic mutations because `GET_NOTEBOOK` updates recency; the native registry
 remains the sole retry authority. When an existing facade/service starts a `RuntimeDeadline`,
 every nested native call receives that identity; this convergence does not add a second budget.
-All active failures now select a closed `BackendErrorReason`, including bounded URL-source error
+All active RPC-layer failures now select a closed `BackendErrorReason` (a raw transport error raised during auth refresh still passes through `invoke()` untranslated — recorded by P9, translated in its own PR), including bounded URL-source error
 graphs, before the single compatibility projector restores public diagnostics, aliases,
 `unconfirmed`, and catch-lattice behavior. The operation catalog still reports 11 reviewed
 repository-wide divergences (10 authority, one policy); none belongs to the eight active bindings.
@@ -1344,7 +1358,8 @@ existing `client.artifacts` API stable.
 - `ArtifactsAPI.wait_for_completion()` keeps **lifecycle-terminal** semantics and its
   `GenerationStatus` return (including `.is_terminal`) unchanged. Family-usable readiness is an
   additional internal predicate consumed by family services; it does not become the facade's wait
-  condition in P5. Any change to when the public wait returns is a P9 decision.
+  condition in P5. Any change to when the public wait returns is a separate public-behaviour
+  decision outside this plan.
 - Current artifact CLI/MCP/REST behavior, downloads, exports, retries, and uncommon mind-map/table
   features retain coverage.
 - **New** private records and backend errors introduce no unsanitized asset data into reprs, logs,
@@ -1381,7 +1396,7 @@ the canonical download-client factory, trusted-host allowlist, and per-hop redir
 formats use the RPC-free serializer. `wait_for_completion()` continues to use the existing
 `ArtifactPollingService` and returns only on lifecycle-terminal state, independent of family-usable
 readiness. `_artifact/generation.py` and `_artifact/downloads.py` now retain compatibility exports
-only and own no native RPC authority. This completes P5; it does not mark P6–P9 complete.
+only and own no native RPC authority. This completes P5; it does not mark P6–P8 complete.
 
 
 ### P6 — Migrate remaining feature domains
@@ -1739,282 +1754,594 @@ inherit the pre-P8 baseline.
 ### P9 — Decompose the web backend into transport, codec, and binding table
 
 **Purpose:** make `WebRpcBackend` a shell over a transport, a codec, and a table of typed
-bindings, so that a second backend differs from the first only below the port.
+bindings, and move product-policy workflows above the port, so that a second backend differs
+from the first only below the port. Below the port, domain vocabulary appears only in binding rows
+and in a capped custom-handler section; no `_web/` class or free function outside that section
+sequences more than one transport call.
 
-**Status:** proposed 2026-08-24. Not started. Entry criteria are measured at the P8 completion
-commit; the "P9 entry record" below is the frozen baseline the acceptance criteria compare against.
+**Status:** proposed 2026-08-24 (revised the same day); execution approved by the plan owner
+on 2026-08-24 and in progress on `refactor/semantic-backend-dev`. The entry record is measured;
+every projection is labelled as an estimate. Owner-directed deviation: P9 opens on the P0–P8
+development branch before that branch merges to `main`, so the "P8 merged to `main`" entry
+criterion is replaced by "P8 complete at the branch head" for this execution.
 
 #### Why now
 
-P0–P8 moved semantic callers off the wire vocabulary and collapsed the runtime, but the web
-binding that absorbed the handlers was assembled as an **eleven-deep single-inheritance chain**:
-`WebRpcBackend(ChatWebHandlers)` → `SourceVariantWebHandlers` → … → `StudioDocumentWebHandlers`.
-Measured at P8 completion (`inspect` over `WebRpcBackend.__mro__`):
+The P1–P6 handlers were assembled into an **eleven-deep single-inheritance chain**
+(`WebRpcBackend(ChatWebHandlers)` → … → `StudioDocumentWebHandlers`). Measured with `inspect`
+over `WebRpcBackend.__mro__` (entry record below): 11 classes, 4,222 class-body lines, 141
+methods, all 19 state attributes in the head; no `super()`; six methods stubbed
+`NotImplementedError` in an ancestor and implemented only in the head, so the dependency runs
+ancestor → head while inheritance runs head → ancestor; eight of ten links carry no dependency on
+their immediate base (the two live links are `StudioData → StudioMedia` and
+`StudioMedia → StudioDocument`). Dispatch is `getattr(self, _HANDLER_NAMES[op])` over a `str`, which erases
+the `OperationDef[InputT, OutputT]` typing at that hop (a handler whose input type contradicts its
+definition passes the repository's mypy invocation — measured) and no check resolves the 54
+leaf names (the deadline-seeding ledger indirectly resolves the 28 composite names; 54/28 is the
+handler-code split of the same 82 that the ledger splits 48/34). The erasure is not only at the hop: `_SUPPORTED_DEFINITIONS` is annotated
+`Mapping[Operation, OperationDef[Any, Any]]` (`registry.py:130`), so removing `getattr` alone
+does not restore typing — the table must be typed per row. `policy.py` restates every operation's
+native calls by hand so it can audit the first table. The chain is a consequence of string dispatch over one flat namespace plus a per-file size
+ratchet; no domain, port, or protocol constraint requires it, and the ratchet measures files, so
+a 4,222-line class across 11 files passes it.
 
-- 11 classes, 4,225 class-body lines across 11 files, 141 methods, 136 non-dunder callables on
-  the instance; all 19 state attributes are assigned in the head's `__init__`, the ten ancestors
-  hold none.
-- No `super()` anywhere, no override with a body: the six methods defined twice are typed
-  `raise NotImplementedError` stubs in an ancestor implemented only at the head (`_rpc_call`,
-  `_translate_error`, `_capture_public_failure`, `_source_get`, `_artifact_catalog_records`,
-  `_persist_generated_mind_map`). 88 of the 105 cross-class calls are `self._rpc_call`. The
-  dependency runs ancestor → head while inheritance runs head → ancestor.
-- Nine of the ten links carry no dependency on their immediate base; the order is not
-  load-bearing. The real graph is six edges over five nodes.
-- Dispatch is `handler = getattr(self, _HANDLER_NAMES[op])`. The registry stores a `str`; the
-  typed `OperationDef[InputT, OutputT]` established at the port is erased at exactly that hop
-  (mypy accepts a handler whose input type contradicts its own definition — see the demo under
-  "Acceptance"), and no test or import-time check verifies that the 82 names resolve.
-- `policy.py` (848 lines) is a second hand-maintained `Operation → RPCMethod` table that exists to
-  audit the first.
-
-The chain exists for one reason: `getattr` dispatch requires every handler in one flat namespace,
-and the module-size ratchet (`MODULE_SIZE_BUDGET = 1500`, per file) rewards splitting that
-namespace across files. Neither the domain, the port, nor the protocol requires it. The only
-existing guard measures the wrong unit — the file — so the gate is green on a 4,225-line class.
-
-The second finding governs the shape of the fix. Tracing every handler's transitive call graph:
-
-| Handler kind | Operations | Unique lines | Meaning |
-|---|---|---|---|
-| Leaf — exactly one native call | 54 | 1,201 | `encode → transport.call → decode` plus one or two transport flags |
-| Composite — two or more native calls | 28 | 2,066 | product policy: snapshot/create/probe/reconcile, resolve-then-create, name-or-id resolution |
-| Shared helpers | — | 321 | |
-
-Every leaf is literally `encode → one call → decode`: a **row of data**, not a method. The
-composites are product policy that would be identical on gRPC; they are below the port only
-because P2–P6 parked them there. 58% of the handler code is therefore on the wrong side of the
-port for a second backend, and three near-duplicate source-id resolvers
-(`_audio_source_ids`, `_document_source_ids`, `_data_source_ids`) already exist inside the web
-binding for want of a service-level home.
-
-#### The invariant P9 establishes
-
-> Nothing below the port has a domain vocabulary in its method names.
-
-If `_web/` contains `async def _audio_generate`, code is on the wrong side of the line. `_web/`
-knows one thing about audio: `Operation.ARTIFACT_GENERATE_AUDIO → CodecBinding(AUDIO_DEF,
-encode_audio_create, decode_generation_status)`. A backend is a shell + transport + codec + table;
-two backends differ in exactly those four modules; the generic dispatch loop, the port, the
-records, the projectors and the services are shared. This is enforceable: a guardrail rejects
-any `async def` in the `planned:_web/bindings.py` outside the custom-handler section and caps that section's
-size.
+By the reviewed policy ledger (`WEB_CALL_POLICY_BINDINGS`, the ADR-0005 authority), 48 operations
+bind exactly one native method and 34 bind two or more. The ledger counts natives bound, not
+calls made: the deadline ledger already marks 2 of the 34 as `BRANCH_EXCLUSIVE`
+(one call per input, method chosen from the input — `ARTIFACT_DOWNLOAD` and its kin), which are
+input-keyed rows, not sequences. The gate table re-measures every multi-native member by the
+maximum number of calls executed for one input — single-native, branch-exclusive, or genuinely
+sequential — and only the sequential subset is hoist scope. Each single-native or
+branch-exclusive handler is `encode → one call → decode` and can be expressed as a table row.
+The sequential handlers implement sequences — snapshot/create/probe/reconcile, resolve-then-create, name-or-id
+resolution, mutate-then-readback — that were placed below the port under Architectural
+principle 2's "an adapter handler may own a composite workflow when protocols differ" clause
+without a per-composite ruling. Five overlapping source-id resolvers (`_audio_source_ids`,
+`_document_source_ids`, `_data_source_ids`, `_generation_source_ids`, `_visual_source_selection`)
+already exist inside the web binding with no shared service owner.
 
 #### Entry criteria
 
-- [ ] P8 merged to `main`. P9 lands as its own PR stack; stacking a code-motion change on the
-  unmerged P0–P8 branch destroys the per-slice reviewability that is the best property of that
-  work.
-- [ ] The P9 entry record below is re-measured at the merge commit and matches; any drift is
-  re-recorded before P9.0 opens.
-- [ ] No other in-flight change touches `src/notebooklm/_web/backend.py` (the file is a
-  concurrent-edit hotspot; P9.0 and P9.1 both rewrite its head).
-- [ ] The composite decomposition table (P9.4 gate) is produced and reviewed before P9.2 opens,
-  so leaf-row conversion never has to guess which operations will narrow.
+- [x] Owner approval of P9.0–P9.4 recorded in this section (2026-08-24, execution directive).
+  A second backend (the former "P10") is not part of P9 and keeps its separate decision.
+- [x] P8 complete at `9e5daef4` on `refactor/semantic-backend-dev` (owner-directed deviation:
+  P9 slices land on that branch as reviewed merges rather than as a PR stack on `main`).
+- [ ] The entry record is re-measured at the merge commit with the committed measurement script
+  and matches, or is re-recorded before P9.0 opens.
+- [ ] `CURRENT_PHASE` in `tests/_guardrails/test_no_anonymous_bridges.py` is raised to 9 in
+  P9.0's PR and no `Removal: P8` bridge remains.
+- [ ] No other in-flight change touches `src/notebooklm/_web/backend.py`; P9.0 and P9.1 both
+  rewrite its head.
+- [ ] The **composite decomposition table** (P9.2 gate) is reviewed before P9.1 opens: one row per
+  multi-native operation with (a) its native sequence, (b) the leaf members each native maps to,
+  naming any new primitive member, (c) the backend-identity argument — whether a second backend
+  would run the same sequence, or whether principle 2's protocol-variance clause plausibly
+  applies (source registration with its tentative-source mobile variant, file upload, `chat.ask`),
+  (d) any new neutral `BackendErrorReason` the workflow needs from a leaf, (e) which of the
+  workflow's error identities and public messages are pinned by tests, (f) the raw native
+  exception types the composite catches or lets leak, (g) whether the member is an
+  input-defaulting member kept adapter-owned (contract 1), (h) for each primitive it introduces: the `Operation`
+  name, input/output record types, `CallPolicy`, native variants, cardinality (one call per
+  member for `UPDATE_LABEL`), and the owning service call sites; (i) per-PR deltas to
+  `operations`, `supported` and `service_owned` counts, and each primitive's consumer set —
+  primitives shared by more than one workflow (`UPDATE_LABEL` by label and collection updates,
+  `SHARE_NOTEBOOK` by two sharing operations) land in a foundational P9.2 PR before either
+  consumer, and rollback runs in reverse dependency order. The primitive vocabulary is defined
+  in that table, not deferred past it. Rows under (c) with a plausible protocol variant stay
+  adapter-owned unless ADR-0035 principle 2 is amended by addendum; rows under (f) with a raw
+  catch stay adapter-owned until the leak is translated at the transport.
 
 #### Changes, by slice
 
-P9.0 through P9.3 are pure code motion with zero behaviour delta; P9.4 changes the meaning of
-closed vocabulary and is the only semantically hard slice. Each slice is independently green and
-leaves exactly one execution authority per operation (migration rule 2); no slice introduces a
-runtime old/new fallback.
+Every slice is independently green and leaves exactly one execution authority per operation
+(migration rule 2); no slice introduces a runtime old/new fallback. P9.0, P9.1, P9.3 and P9.4 are
+code motion with pinned behaviour; P9.2 changes ownership of workflows and is the only slice that
+touches operation semantics, which is why it carries the stop/go review.
 
-**P9.0 — Binding table and construction-time audit (≈40 lines).**
-`WebRpcBackend.__init__` builds `self._bindings: Mapping[Operation, Binding]` from
-`_HANDLER_NAMES` via `getattr` once, and asserts its key set equals `_SUPPORTED_DEFINITIONS`.
-`invoke()` reads the table; the per-call `getattr` is deleted. The chain is untouched. This slice
-closes the missing-audit hole immediately (a renamed handler fails at construction, not on first
-invocation of one unlucky operation) and makes "row" a first-class object every later slice
-consumes. `_HANDLER_NAMES` survives as the table's *source* until P9.5.
+**P9.0 — Neutral binding core and handler resolution at construction.**
+`planned:_binding.py` lands here (types, table, audit and the generic `invoke_binding` function
+as specified under P9.3 — no rows yet), so every later slice consumes it rather than defining it
+late. `WebRpcBackend.__init__` resolves every `_HANDLER_NAMES` entry once via `getattr` into a
+`BindingTable` of explicitly temporary, tagged `ResolvedHandlerBinding` rows (a bound method plus
+its `OperationDef`); the per-call `getattr` in `invoke()` is deleted. The construction audit
+counts that row kind, and P9.3/P9.4 replace entries one operation at a time until the count is
+zero — deterministic per-operation dispatch, never a runtime fallback — so the mixed-table state
+during P9.3 is specified, and the custom-row ratchet does not start at 82.
+`registry.py` already asserts key-set equality at import (`registry.py:317`); the new value is
+that a misnamed or missing handler fails at construction rather than on that operation's first
+invocation. `planned:_binding.py` declares the three-way `OperationDisposition` (`SUPPORTED_DIRECT`,
+`SERVICE_OWNED`, `UNSUPPORTED`) here, with `SERVICE_OWNED` unused until P9.2, so the audit
+compares the table's keys against `SUPPORTED_DIRECT` from day one and survives P9.2 unchanged. The empty `_STAGED_*` tables fold into the same mechanism. Chain untouched.
 
-**P9.1 — `WebTransport` (`planned:_web/transport.py`).**
-Extract the four transport verbs and lifecycle out of the head: `call(WebRequest, *, deadline)`
-(unary batchexecute via `WebExecutionRuntime`), `stream(...)` (the chat-aware authed POST),
-`upload(...)` (Scotty resumable upload — the `SourceUploadPipeline` HTTP leg),
-`download(...)` (`StudioDownloadClient`), plus `open(generation)` / `drain` / `close`.
-`WebTransport` owns `WebExecutionRuntime`, `WebBackendSession`, the `WebCookieProvider` port, the
-chat `RuntimeTransport`, and the download client. Deadline arithmetic (remaining → read timeout,
-`BackendDeadlineExceededError` on expiry-before-dispatch) moves into the transport verb; it is
-identical for every call today and per-handler only by accident. `WebRpcBackend._rpc_call`
-becomes a one-line delegate so no handler changes in this slice. Lifecycle members
-(`open_client`/`drain_client`/`close_client`) delegate. The `SourceUploadPipeline` cycle — the
-backend hands the uploader three of its own bound methods at construction — is resolved by
-construction order in the factory: the uploader receives `transport.upload` and a
-`SourceReadService`-shaped callback, never a backend method.
+**P9.1 — `WebTransport` (`planned:_web/transport.py`), code motion plus one additive marker.**
+Extract the two transport verbs out of the head: `call(WebRequest, *, deadline)` over
+`WebExecutionRuntime` and `stream(...)` for the chat-aware authed POST. `WebTransport` owns
+`WebExecutionRuntime` and the chat `RuntimeTransport` — nothing new. Lifecycle stays on the
+shell verbatim: `open_client`, `drain_client`, `close_client`, `close`, `_close_owned_provider`,
+their flags, the private backend session (`WebBackendSession`, typed as the `WebCookieSession`
+protocol) and the `WebCookieProvider` port. Moving lifecycle would give one mutable state two
+owners; if it ever moves, it is its own slice. Byte download stays where it is —
+`ArtifactsAPI` → `StudioDownloadClient` with storage-file cookies, above the port; it is not a
+transport verb. (`Operation.ARTIFACT_DOWNLOAD` is a separate thing: a web handler with three
+branch-exclusive natives — `LIST_ARTIFACTS`, `GET_NOTES_AND_MIND_MAPS`, `GET_INTERACTIVE_HTML` —
+which the gate table classifies as an input-keyed `NativeCallSpec` row.) Scotty upload legs stay inside `SourceUploadPipeline`; a later slice may expose
+`upload_start/upload_stream/upload_cancel` when a second backend needs them.
 
-`WebRequest` is a frozen value: `method: RPCMethod`, `params: list[Any]`, `source_path: str`,
-`variant: str | None`. Measured usage of the current `_rpc_call` flags across all 88 sites decides
-their fate: `source_path` (87) and `operation_variant` (28) are encode outputs — they follow the
-input; `allow_null` (59) and `raise_on_null_status` (15) become one `null_policy` row field;
-`disable_internal_retries` (15) becomes a static row field; `outcome_unknown_on_expiry` (21) and
-`_is_retry` (4) are **deleted** — the first because `invoke()` already derives it from
-`policy is not CallPolicy.READ` and the per-call override exists only for multi-call composites,
-the second because probe-then-create re-entry moves up with the composite in P9.4.
+Constraints that keep this slice pure motion (each is pinned by existing tests, see the map):
 
-**P9.2 — Leaf handlers become `CodecBinding` rows, one domain per PR.**
-`planned:_binding.py` (neutral; imports nothing from `_web/`, `rpc/`, or `httpx`) defines
-`CodecBinding[I, O](definition, encode: I → Request, decode: Raw → O, null_policy,
-internal_retries)`, `StreamBinding[I, Chunk]`, `CustomBinding[I, O](handler(value, deadline,
-transport))`, `BindingTable`, `audit_bindings(table, supported)`, and
-`invoke_binding(table, transport, errors, op, value, deadline)` — **a function, never a base
-class**. Each converted leaf's handler method is deleted; its inline params list (e.g.
-`[value.notebook_id, None, [value.note_id]]`) becomes a named `encode_*` in the matching
-`_web/codec/` module, where the positional grammar already lives. Order: settings/suggestions
-(5), sharing (5), research (4), notes (5), mind maps (6), then labels/collections and Studio
-leaves, then notebook/source reads. When a chain class has no methods left it is deleted and its
-two neighbours' `bases` re-linked — safe because the order is not load-bearing. The two
-non-uniform handlers (`_notebook_list`, `_source_get`, which take extra keywords because they
-double as internal helpers) split into a row plus a helper. Typing arrives incrementally: a row
-built by `bind(AUDIO_DEF, media.audio_generate)` is checked by mypy the moment it stops coming
-from `getattr`.
+- `WebRpcBackend.__init__` keeps its signature; `WebTransport` is constructed inside it from the
+  same keyword arguments. The 19 assigned attributes (`_runtime`, `_provider`,
+  `_backend_session`, `_drain_tracker`, `_metrics`, `_chat_transport`, `_chat_reqid`,
+  `_chat_timeout`, `_chat_response_max_bytes`, `_pipeline`, `_deadline_factory`, `_reqid`,
+  `_source_uploader`, `_capabilities`, `_closed`, `_owns_provider`, `_provider_closed`,
+  `_provider_close_task`, `_transport_factory`) stay **real instance attributes** on the shell —
+  the P8 regression asserts `{"_provider", "_backend_session"} <= vars(backend).keys()` (a
+  subset check), and a property would not appear in `vars()`. Two keys are *added* and baselined
+  in the same PR: `_bindings` (P9.0) and `_transport` (P9.1); the redaction check reprs
+  `vars(backend)`, so `WebTransport.__repr__` redacts. The transport does not copy `_runtime`:
+  tests rebind `backend._runtime` after construction and expect dispatch to observe it
+  (`test_public_shims.py`, `test_rpc_executor.py`), so `WebTransport` reads the runtime through
+  the shell (`runtime_provider=lambda: self._runtime`).
+  Computed members (`_kernel`, `retry_limits`, `runtime_ready`, `public_rpc_call`,
+  `metrics_snapshot`) delegate. Dead `_transport_factory` (assigned, never read) is deleted in
+  P9.4 with the chain, not here, so `vars()` is unchanged in this slice.
+- `WebRequest` is a frozen value carrying **every** current `_rpc_call` input: `operation`
+  (needed to construct `BackendDeadlineExceededError` and for error attribution), `method`,
+  `params`, `source_path`, `operation_variant`, `allow_null`, `raise_on_null_status`,
+  `disable_internal_retries`, `outcome_unknown_on_expiry`, `attempt_timeout` (at-site usage
+  across the 88 call sites: 84 · 20 · 54 · 7 · 5 · 10 · 1; `_is_retry` is passed by no handler).
+  `WebTransport.call` forwards the identical keyword set to `WebExecutionRuntime.rpc_call`,
+  including explicit `False`/`None` values — the 66 recorded-kwargs assertion lines (13 files)
+  pin this. Deadline arithmetic (remaining → read timeout; pre-dispatch expiry raises
+  `BackendDeadlineExceededError(outcome_unknown=request.outcome_unknown_on_expiry)`) moves with
+  the call, unchanged. `_is_retry` is a `WebExecutionRuntime` auth-refresh recursion flag, not a
+  handler input; it leaves the `_rpc_call`/`WebRequest` surface and remains inside the runtime.
+  `_web/deadline_rpc.py` (`DeadlineRpcCaller`, which forwards it today) is edited in this slice
+  to accept it only as an ignored `RpcCaller` signature-compatibility parameter.
+- `WebRpcBackend._rpc_call` and `WebRpcBackend._translate_error` become delegates (the latter
+  keeps its current unbound-callable form on the head through P9.4: ten unbound test call sites
+  pass `(Operation, error)`). `WebTransport.call` sets `dispatched = True` on every native exception that escapes
+  `runtime.rpc_call` except its own pre-dispatch deadline check (the marker goes on the
+  exception and on its `.original`, since `_execute_once` re-raises the original). This is
+  "the runtime was entered", not "the POST was sent" — which reproduces today's class-based
+  probe trigger exactly (a connect-phase `NetworkError` is retryable today too). No send-precise marker is planned: it would change probe/retry behaviour for connect-phase
+  `NetworkError`, which today's class-based trigger treats as retryable, and P9.2's truth table
+  is written against this definition. Nothing reads
+  the marker until P9.2, so this slice is code motion plus one additive, unread marker.
+- The uploader keeps its `configure_source_backend(list_sources=, register_file_source=,
+  rename_source=)` shape, the limit lookup, and — in this slice — the backend bound methods it
+  receives today, which now delegate through the transport. Rebinding those callbacks to closures
+  over transport and codec waits until the catalog walker derives authorities from rows (P9.2's
+  first PR), and lands with the source-domain rows in P9.3; doing it here would leave `ADD_SOURCE_FILE`/`UPDATE_SOURCE` registration sites the
+  walker cannot see (it recognises only `rpc_call`/`_rpc_call` call sites). The callbacks are
+  never binding rows — `SOURCE_ADD_FILE` is the whole upload workflow and stays adapter-owned
+  under gate column (c).
+- Catalog: `WebTransport.call` is a dynamic dispatch site and joins `GENERIC_RPC_FORWARDERS`;
+  `INERT_P1_WEB_FORWARDERS` and its guardrail literal re-point from `WebRpcBackend._rpc_call`.
 
-**P9.3 — Composites become `CustomBinding` rows; the chain is deleted.**
-Each of the 28 composites becomes a `CustomBinding` whose handler function takes `transport`
-explicitly instead of `self`. The last chain classes go; `WebRpcBackend` has no bases and no
-handler methods. `_HANDLER_NAMES` is deleted; `registry.py` keeps `_SUPPORTED_DEFINITIONS`, the
-count assertions, and the policy audit unchanged — it remains the single reviewable file that
-answers "which operations does web support, and why not the others." The number of
-`CustomBinding` rows (28 at this point) becomes a guardrail ratchet that may only decrease.
+**P9.2 — Hoist product composites into semantic services; add primitive leaf members.**
+Each hoist PR adds its primitive member(s) as `CodecBinding` rows — the first codec rows in
+the table, using the P9.0 core — and catalogs their authority in the same PR, so the service
+never invokes an operation that has no executable web authority. That requires the catalog
+walker to derive authorities from rows, so the derivation change (`scripts/_operation_catalog_ast.py`,
+`SHARED_RPC_AUTHORITY_RULES`/`RECENCY_CONTRACTS` in `scripts/_operation_catalog_authorities.py`)
+lands in **P9.2's first PR, before any primitive row** — not in P9.3.
+One composite per PR, in gate-table order: rows whose backend-identity argument is strongest
+first (name-or-id resolution, mutate-then-readback), rows that catch or leak raw native
+exception types last or never (gate column (f)). Worked example — `label.update`, as the code actually branches (the API takes an id, never a
+name): membership changes issue zero or more `UPDATE_LABEL` calls, one per added or removed
+member, followed by a mandatory readback; a field change does a preflight read, one
+`UPDATE_LABEL`, and a readback only when `return_object` is set. The gate table must express
+conditional, repeated and optional leaf calls per row, not a flat native list. After:
+`LabelService.update` owns the loop, the preflight and the conditional readback over
+`invoke(LABEL_GET)`, repeated `invoke(LABEL_MUTATE)` (a one-call primitive) and `invoke(LABEL_GET)`;
+the web binding for `LABEL_UPDATE` becomes a `service_owned` disposition with no web row.
 
-**P9.4 — Hoist product composites into semantic services.**
-One composite per PR. The service owns the sequence and invokes leaf operations; the web row for
-the composite's `Operation` narrows to its primary native call. Worked example —
-`source.add_url` today: snapshot (`GET_NOTEBOOK`) → create (`ADD_SOURCE`) → on a failure that may
-have committed, probe by URL against the pre-create baseline → best-effort rename
-(`UPDATE_SOURCE`). After: `SourceService.add_url` runs that sequence over
-`invoke(SOURCE_LIST)`, `invoke(SOURCE_ADD_URL)` (now the bare create), and
-`invoke(SOURCE_UPDATE)`, branching on `BackendError.outcome_unknown` — a signal the port already
-carries (`_backend.py`, seven references) precisely so a neutral caller can decide whether to
-probe. The three source-id resolvers collapse into one service-level helper. `policy.py`'s
-per-operation native tuples reduce to one native per leaf and are **derived** from the binding
-table; the whole-workflow `CallPolicy` moves to the service. The custom-row ratchet ends in the
-single digits: the remaining rows are *protocol* composites — a sequence the wire forces, not the
-product — and each must state in one sentence why. Canonical example: web has no
-get-source-by-id, so `SOURCE_GET` on web is list-then-filter (`CustomBinding`) while mobile has
-`LoadSource` and binds it as a plain codec row; the service cannot tell.
+Contracts P9.2 establishes, each a prerequisite of the first hoist:
 
-Two prerequisites are measured, not assumed:
+1. **Vocabulary is extended, never narrowed.** `Operation` members are closed product
+   vocabulary; reusing a member for a different contract would change fake-backend
+   registrations, `BackendCapabilities` meaning, error policy and catalog semantics under a count
+   gate that cannot see it. Natives that appear only in multi-native bindings: 12 by the ledger,
+   8 by handler code (the ledger additionally lists `ADD_SOURCE_FILE`, `GET_CONVERSATION_TURNS`,
+   and the two research starts that the single-site leaf `_research_start` selects at runtime).
+   Two rules shrink the set that needs a **primitive** member:
+   - *Input-defaulting members stay adapter-owned in P9.* Eleven members — ten generate members
+     plus `notebook.suggest_prompts` — are `GET_NOTEBOOK`-if-`source_ids`-is-`None` → one native,
+     with a family-specific DTO whose `source_ids` is optional. Moving the read service-side while
+     keeping the member `SUPPORTED_DIRECT` would make the row reject an input its `OperationDef`
+     allows — a narrowing of the operation's executable contract, whatever the service surface
+     does. Hoisting them properly needs a distinct resolved-input primitive per family and the
+     product member becoming `service_owned`: a vocabulary extension of eleven-plus members that
+     the gate table may propose but P9 does not assume. In P9 they are not hoist scope; they
+     become `CustomBinding` rows under *deferred-product* in P9.4, and their natives
+     (`CREATE_ARTIFACT`, `GENERATE_MIND_MAP`, `SUGGEST_PROMPTS`) need no primitive. The twelfth,
+     `ARTIFACT_GENERATE_MIND_MAP`, also persists the tree through `CREATE_NOTE`/`UPDATE_NOTE`/
+     `DELETE_NOTE` via `LegacyNoteBackedService` and has its own gate row (compatibility).
+   - Natives inside rows that stay adapter-owned need no primitive (`ADD_SOURCE_FILE` in the
+     upload workflow; `GET_CONVERSATION_TURNS` in `chat.get_history`, unless its gate row hoists
+     it).
+   - Natives a single-site leaf selects at runtime (`START_FAST_RESEARCH`/`START_DEEP_RESEARCH`
+     in `_research_start`) are an input-keyed `NativeCallSpec` row and need no primitive.
+   That leaves five composite-only candidates — `CREATE_NOTEBOOK`, `RENAME_NOTEBOOK`,
+   `SHARE_NOTEBOOK`, `UPDATE_LABEL`, `UPDATE_SOURCE` — each an explicitly named primitive
+   member. Five is a lower bound: a native that a leaf already owns under an *incompatible*
+   contract also needs a primitive (`CREATE_LABEL` for `label.create`/`collection.create`,
+   because `LABEL_GENERATE` is the auto-grouping contract; a compatible rename and a native
+   catalog read for `artifact.rename`, because `MIND_MAP_UPDATE` and the merged `ARTIFACT_LIST`
+   are not substitutes), or the workflow stays adapter-owned. The gate table fixes names and the
+   final count. Workflow members keep their identity
+   and meaning; `registry.py` gains a third disposition, `service_owned`, alongside
+   supported/unsupported. `capabilities.supports(<service_owned member>)` returns `False` on the web backend: the
+   port's `supports` means invokable — `invoke()` gates on it, `test_backend_foundation.py`
+   pins membership semantics, and `RecordingBackend` gates its own `invoke` on it — so
+   reporting a workflow the backend refuses to invoke would break the fixture and any
+   differential test that selects by `supports()`. The workflow's leaf conjunction is a catalog
+   row, and a service checks `backend.capabilities.supports()` for every leaf in its declared
+   conditional set — through a small `require_leaves(backend, ...)` helper in `_backend.py`, since it needs only
+   `BackendAdapter.capabilities` and services must not import the binding module —
+   before its first credential, file or network side effect, so a later unsupported leaf can
+   never be discovered mid-workflow (principle 5). With one backend this always passes. A public
+   `supports_workflow` is deferred until a consumer exists (zero today; rule 4). The count pins move together in every such PR:
+   `_EXPECTED_OPERATION_COUNT` in `_web/registry.py`, `scripts/audit_operation_catalog.py`,
+   `tests/_guardrails/test_operation_catalog.py`, `tests/unit/test_operation_catalog.py`, plus
+   `_EXPECTED_SUPPORTED_COUNT` and the `KNOWN_ACTIVE_SEMANTIC_OPERATIONS` literal in
+   `tests/_guardrails/test_semantic_p7_entry_audit.py`. The supported count changes by
+   (primitives added − workflows moved to `service_owned`) per PR — a foundational primitive PR
+   increases it — and gate column (i) records the exact delta and the resulting literal per PR.
+2. **Commit uncertainty is a neutral signal distinct from `outcome_unknown`.**
+   `BackendError.outcome_unknown` keeps its existing, broad meaning — the workflow's requested
+   final outcome is not fully confirmed and is unsafe to retry: set when a probe could not answer
+   (`_idempotency.mark_unconfirmed`), and equally when a readback expires after a successful
+   write or a later phase expires after an earlier write (compat replays all of these as
+   `unconfirmed`, and the oracles pin them). It is not redefined; it is simply not the
+   reconciliation *trigger*. The probe *trigger* today is the exception class — the tuple
+   `_idempotency._RETRYABLE_TRANSPORT_ERRORS = (RateLimitError, ServerError, NetworkError)`,
+   which covers `RPCTimeoutError` by subclassing. `_backend.py` gains a new
+   `may_have_committed(error) -> bool` over the closed reason set `{SERVER, NETWORK, RATE_LIMIT,
+   TIMEOUT}` — reproducing that subclass relationship as a reason set, not a fourth tuple entry —
+   plus a new `dispatched: bool` on `BackendError`. One definition is authoritative: `dispatched`
+   means the native exception escaped `runtime.rpc_call` — "the runtime was entered" — exactly
+   as P9.1 sets it; it is *not* send-precise, and deliberately so, because today's reconciliation
+   catches every `NetworkError` by class, including connect-phase failures, and a send-precise
+   marker would change probe/retry behaviour. The truth table and tests use this definition.
+   Mechanism: `WebTransport.call` sets the marker (P9.1); `_translate_error` copies it; a pre-dispatch
+   `BackendDeadlineExceededError` is constructed with `dispatched=False`; `rebind_operation`
+   and `mark_backend_outcome_unknown` preserve subclass, marker and rebuilt message (today
+   `mark_backend_outcome_unknown` rebuilds a base `BackendError` and drops the subclass — it is
+   fixed in the same PR). The predicate is exact — `may_have_committed(error) = error.dispatched
+   and error.reason in {SERVER, NETWORK, RATE_LIMIT, TIMEOUT}` — and P9.2's first PR publishes
+   and tests its truth table over {prior write in this workflow, current dispatched mutation,
+   probe or readback result, expiry before or after dispatch}, matching
+   `test_semantic_outcome_unknown_readback.py` case for case. Services probe on `may_have_committed`, raise
+   `mark_backend_outcome_unknown(...)` when their own probe cannot answer, and keep
+   CREATED/PROBED provenance (today `_IdempotentCreateResult.kind`). `idempotent_create` itself is
+   already transport-neutral — it takes `create`/`probe` callables and never names `RPCMethod`;
+   its web coupling is the `_RETRYABLE_TRANSPORT_ERRORS` class tuple it catches. P9.2
+   parameterizes that predicate (`may_have_committed`) and moves `idempotent_create`,
+   `mark_unconfirmed` and `_IdempotentCreateResult` into a registry-free module
+   (`planned:_idempotency_create.py`, re-exported from `_idempotency` for the `_source/*`
+   importers) — the function is neutral but the module is not (18 `RPCMethod` references and a
+   `register_default_policies` import-time side effect), and `_idempotency` is enumerated by
+   three boundary inventories (`test_semantic_p7_entry_audit.py`, `test_no_facade_reach_in.py`,
+   `test_semantic_p8_provider_boundary_audit.py`) that are touched in that PR. `idempotent_create` takes the predicate as a parameter: semantic services pass the neutral
+   `BackendError` predicate; the adapter-owned callers that remain (`SourceAddService`, file
+   registration) consume raw `RateLimitError`/`ServerError`/`NetworkError` by design and pass an
+   adapter predicate preserving today's class tuple and marker semantics. One implementation, two
+   predicates, in the same PR; the
+   `RPCMethod`-keyed `IdempotencyRegistry` stays the web retry authority per ADR-0005.
+3. **One deadline per workflow.** P4.2 placed the deadline start at the service boundary; the
+   implementation left minting inside `invoke()` for `CLIENT_TIMEOUT` operations, with services
+   passing `deadline=None`. P9.2 moves minting to the service, where P4.2 placed it, with no change
+   to any budget value. `RuntimeDeadlineFactory` becomes a service constructor dependency — services are constructed
+   inside the facades today (`_artifacts.py`, `_collections.py`, `_labels.py`, `_notebooks.py`,
+   `_sources.py`) and in `_client_composition.py`, so those modules carry the factory through and
+   are in the P9.2 module map; the service starts one deadline before the first leaf and
+   threads the same identity through every `invoke`. The `SEMANTIC_DEADLINE_AUTHORITIES` entries
+   for hoisted workflows move out of `_web/deadlines.py` to the service ledger. Per-phase
+   `outcome_unknown_on_expiry` is deleted composite-by-composite here, replaced by explicit
+   service-side phase state (`write_dispatched`), which is when the request field can go.
+4. **Error identity is preserved.** Phase errors are re-raised as the workflow's operation with
+   the leaf operation retained in `diagnostics`/cause (a new `rebind_operation` helper), so
+   `BackendDeadlineExceededError.message`, `BackendError.operation`, public exception text and
+   catalog attribution do not change. The source-add family additionally relies on `invoke()`'s
+   deliberate raw re-raise for `SOURCE_ADD_URL_BATCH/TEXT/DRIVE/FILE` (callers inspect
+   `source_id`/`stage`/causal chain): those hoist only after the compat projector and records
+   carry that evidence losslessly, or stay adapter-owned under gate column (c).
+5. **Workflow `CallPolicy` stays on the workflow's `OperationDef`** (P4.1, principle 1); primitive
+   rows carry `READ`/`MUTATION`. The catalog row records both. `policy.py` keeps its hand-reviewed
+   expected-natives, `role` and `known_divergence` columns; only `(method, variant)` per row is
+   derived and compared against them, so the ledger remains an independent audit rather than a
+   tautology. A `service_owned` member's ledger row is `policy` plus `leaf_operations`, each entry an
+   `(operation, allowed_variants)` edge — a shared primitive exposes different variants to
+   different workflows (`UPDATE_LABEL`: `add_sources`/`remove_sources` for labels,
+   `add_notebooks`/`remove_notebooks` for collections), and a plain operation set would
+   over-attribute both families to both workflows. The parity audit derives the workflow's
+   native `(method, variant)` set transitively from those edges and audits the workflow row
+   against it exactly as before, so the P4.1
+   workflow-versus-native divergence check survives the hoist. The three tests that pin the
+   supported set and per-def natives literally (`test_semantic_p7_entry_audit.py`'s
+   `KNOWN_ACTIVE_SEMANTIC_OPERATIONS`, `test_web_backend.py`'s registry-closure test, the
+   parametrized def/native check in `test_semantic_p4_convergence_characterization.py`) are
+   structural and edited per hoist.
 
-1. **`_idempotency.py` is not transport-neutral.** It imports `RPCMethod` (18 references) and the
-   registry is keyed by native method. Services cannot call `idempotent_create` as it stands.
-   P9.4 either (a) adds a neutral façade whose probe/create callables are service-supplied and
-   whose "may have committed" input is `BackendError.outcome_unknown`, leaving the registry as
-   the web-side retry authority per ADR-0005, or (b) re-implements the probe-then-create pattern
-   at the service level and deletes the web-side copy when its last consumer leaves. Choose (a)
-   unless the façade turns out to be a rename of the whole module.
-2. **Vocabulary narrowing is a reviewed change per composite.** The `Operation` enum is closed
-   and count-asserted at 87. Ten native methods are used only inside composites
-   (`CREATE_ARTIFACT`, `CREATE_NOTEBOOK`, `GENERATE_MIND_MAP`, `RENAME_NOTEBOOK`,
-   `SHARE_NOTEBOOK`, `START_DEEP_RESEARCH`, `START_FAST_RESEARCH`, `SUGGEST_PROMPTS`,
-   `UPDATE_LABEL`, `UPDATE_SOURCE`); each becomes the narrowed meaning of the composite's own
-   member. A composite whose *secondary* natives are not already covered by a leaf member needs a
-   new member, with `_EXPECTED_OPERATION_COUNT` and the catalog updated in the same PR. The gate
-   is a table — composite → (primary native → narrowed member, secondary natives → existing leaf
-   members, new members required) — reviewed before P9.2 opens. Expected new members: zero to
-   three; more than five means the composites were not what this analysis says they are, and P9.4
-   stops for re-planning.
+Also in P9.2: the five source-id resolvers collapse into one `_web/` helper (they serve the
+adapter-owned input-defaulting rows, so they stay below the port). `_audio_source_ids` is silent
+on malformed rows while the `NOTEBOOK_GET` codec warns *during decoding* (`codec/suggestions.py`),
+so the helper takes a per-family diagnostics mode and the codec's emission is preserved where the
+helper routes through it; malformed-source warning goldens are added per family so the
+observability equality test stays a check, not a choice. The `DeadlineRpcCaller`-mediated
+`NoteBackedMindMapService`/`LegacyNoteBackedService` catalog merge is the clearest inverted
+dependency but is **not** an early hoist: `_artifact_catalog_records` swallows raw
+`(RPCError, httpx.HTTPError)` into a partial-availability result, and `invoke()` today lets a
+raw `httpx` error from a failed auth refresh pass through untranslated. A service may not catch
+an `httpx` type (ADR-0035). That row therefore stays adapter-owned under the compatibility
+category until either the leak is translated at `WebTransport.call` — a reviewed behaviour
+change on every operation, its own PR — or the swallow set is expressed exactly in neutral
+reasons. Gate column (f) records, per composite, the raw native exception types it catches or
+lets leak.
 
-**P9.5 — Second backend as the same four modules (separate go/no-go).**
-`planned:_mobile/transport.py` (grpc channel, `MobileTokenProvider` bearer, the same four verbs),
-`_mobile/codec/` (generated `schema_pb2` stubs plus proto → record projection),
-`planned:_mobile/bindings.py` (leaf rows only; ~55–65 of 87 given the 14 web-only methods),
-`planned:_mobile/errors.py` (grpc-status → `BackendErrorReason`). Reads first — `GetProject`,
-`ListArtifacts`, `GetNotes`, `ListChatTurns` are live-exercised and carry no composites. Then the
-differential test: the same `Operation` and input through both tables, records diffed. This is
-the standing form of the 2026-08-07 audit that found the inverted `is_owner` flag, and it is the
-strongest justification for the whole boundary. P9.5 requires ADR-0035's "separate decision" on a
-second backend; P9.0–P9.4 do not, and are worth doing without it.
+**P9.2 stop/go review.** Held after the gate table is complete and the first three hoists have
+merged. Outcomes: GO (continue in table order), REVISE (re-plan the remaining rows), ABANDON
+(remaining product composites become `CustomBinding` rows in P9.4 under a third justification
+category, *deferred-product*, with its own ratchet that must reach zero before any second
+backend is approved; P9.3 proceeds). Decider: the plan owner. Outcome placeholder:
+
+#### P9.2 stop/go outcome — (pending)
+
+**P9.3 — Remaining leaf handlers become `CodecBinding` rows, one domain per PR.**
+`planned:_binding.py` (introduced in P9.0; neutral: imports nothing under `_web/`, `rpc/`,
+`_auth/`, or `httpx` — its neutrality is what makes the dispatch type check possible) defines:
+
+- `Transport[RequestT]` and `ErrorTranslator` protocols;
+- `CodecBinding[I, O, RequestT](definition, encode: I → CodecPayload, decode: (I, Raw) → O,
+  native: NativeCallSpec, deadline: INHERIT | IGNORE, map_error: ErrorTranslator | None)` —
+  `CodecPayload` is a frozen dataclass (`params`, `source_path`, and typed option fields
+  `allow_null`, `raise_on_null_status`, `attempt_timeout` — never `method` or `operation_variant`,
+  which only the selected `NativeCallSpec` supplies; `assemble` rejects any override) so encoder
+  returns are mypy-checked without tuple indexing; `Transport[RequestT]` — `RequestT` is invariant, since `assemble()` produces it and
+  `call()`/`stream()` consume it; `BindingTable[RequestT]`, `Transport[RequestT]` and
+  `invoke_binding` share one type parameter — declares
+  `assemble(definition, native_choice, payload, retry_flag, deadline) -> RequestT`, so request
+  assembly is backend-specific and `invoke_binding` never imports `_web/` (`WebRequest` on web);
+  `decode` receives the input because existing leaves need it (`decode_created_note`,
+  `decode_note`, `NOTEBOOK_GET`'s `include_notebook` branch); `native: NativeCallSpec` is the **sole** authority for `(method, variant)` — a constant, or a
+  finite input-keyed choice (`select(value)`) where today's handler picks its method from the
+  input, as `RESEARCH_START`, `CHAT_CONFIGURE` and `ARTIFACT_DOWNLOAD` do. Encoders return only
+  `(params, source_path, options)`; `invoke_binding` calls `transport.assemble(...)` with
+  `definition.key`, the spec's selected `(method, variant)`, the row's retry flag, the caller's
+  deadline and the encoder's output, so the method the ledger audits is the method that dispatches, and no codec
+  function names `RPCMethod`; `deadline: INHERIT | IGNORE` is a field on both binding kinds and is assigned from handler
+  code (`deadline=None` at the call site), never from the ledger: `SOURCE_WAIT` is the only
+  `IGNORE` codec row; `RESEARCH_IMPORT` and `ARTIFACT_WAIT` are `WORKFLOW_OWNED` in the ledger
+  (no client-timeout seed) but pass the caller's deadline through, so their rows are `INHERIT`
+  and the gate table re-examines both ledger entries; `CHAT_ASK` and `SOURCE_ADD_FILE` are custom
+  rows with their own budget handling. Reconciling the ledger with principle 6 is a separate
+  behaviour decision, as P4.2 records for polling followers; `map_error(value: I, raw: Exception, native: NativeCallSpec) -> BackendError` is the typed
+  hook for leaves with semantic error translation (`RESEARCH_START_UNAVAILABLE`,
+  `NOTEBOOK_NOT_FOUND`); it runs at translation time with the raw native exception and its
+  causal chain, before any `BackendError` is built, and never on success — the same form the
+  custom-row bullet uses. `forward_disable_internal_retries: bool` reproduces the kwarg the head passes today (two
+  oracles assert `kwargs["disable_internal_retries"] is True`); it is not an authority — the
+  audit checks it agrees with `resolve_effective_disable_internal_retries`, and the five live
+  `True` sites all name methods the registry already forces;
+- `CustomBinding[I, O, RequestT](definition: OperationDef[I, O], handler(value, deadline,
+  invoke: RowInvoker), native: tuple[NativeCallSpec, ...], deadline, error_mode, map_error)` —
+  the handler never sees a raw `Transport`: `RowInvoker` is scoped to the row and exposes
+  `call(spec_key, payload, ...)` / `stream(spec_key, ...)` only for the row's declared specs, so
+  the natives the catalog and policy audit derive from `native` are exactly the natives the row
+  can execute; every failure it raises is tagged with the selected spec, so `map_error` on a
+  multi-native row knows which native failed. `DeadlineRpcCaller` (the legacy `RpcCaller`
+  through which `LegacyNoteBackedService` selects its own `RPCMethod`) is adapted through the
+  invoker, declaring its methods as the row's specs, rather than reaching the transport; `error_mode` is a per-row failure-projection spec — `TRANSLATE` (the shared
+  `ErrorTranslator`, as `invoke()` applies today), `RAW_PASSTHROUGH` (the four source-add rows
+  `invoke()` deliberately re-raises raw), or `TRANSLATE` with a scrub (the chat rows, whose
+  errors are translated and have request URLs scrubbed, not passed raw) — and `map_error` runs
+  *at* translation time with the raw native exception and its causal chain, before any
+  `BackendError` is built, so equivalent projection is possible; `planned:_web/errors.py`
+  carries no operation-specific sets — that knowledge is row metadata;
+- `BindingTable`, `audit_bindings(table, supported)` and
+  `invoke_binding(table, transport, errors, op, value, deadline)` — a function, never a base
+  class. The audit lives in a module that receives registry and table as arguments; neither
+  imports the other.
+
+`StreamBinding` is not introduced: `chat.ask` buffers the streamed body today and
+`CHAT_ASK_DEF` is unary with policy `STREAM`. It arrives with ADR-0035's separate typed streaming
+protocol when a caller needs it (migration rule 4).
+
+Each converted leaf's handler method is deleted; its inline params list becomes a named
+`encode_*` in the matching `_web/codec/` module. When a chain class has no methods left it is
+deleted and its two neighbours' `bases` re-linked. The two non-uniform handlers
+(`_notebook_list`, `_source_get`) split into a row plus a helper. `SOURCE_GET` (list-then-filter)
+is a codec row under `decode(value, raw)`, not a custom row. Order by domain, counts taken from
+the gate table's leaf column: settings/suggestions, sharing, research, notes, mind maps,
+labels/collections, Studio, notebook/source reads. Typing arrives incrementally: a row built by
+`bind(AUDIO_DEF, media.audio_generate)` is checked by mypy the moment it stops coming from
+`getattr`. Two operations that are a single `_rpc_call` site in handler code but multi-native in
+the ledger are not codec rows and go to P9.4 as custom rows: `chat.ask` (ledger natives
+`GET_NOTEBOOK`, `GET_LAST_CONVERSATION_ID`, plus the streamed POST) and `source.add_file` (ledger
+natives `ADD_SOURCE_FILE`, `GET_NOTEBOOK`, `GET_USER_SETTINGS`, `UPDATE_SOURCE`; the upload
+pipeline owns the calls). `source.wait` and `artifact.wait` are single reads — the polling loops live in the facade
+and `_studio/lifecycle.py` — and are codec rows. `ARTIFACT_LIST`/`ARTIFACT_GET` reach a second
+native through a collaborator and are classified by the gate table.
+
+**P9.4 — Residual composites as `CustomBinding`; the chain is deleted.**
+The composites that stayed adapter-owned after P9.2 become `CustomBinding` rows whose handler
+receives the row-scoped `RowInvoker` (never a raw transport). `DeadlineRpcCaller`, through which the residual mind-map merge reaches `LegacyNoteBackedService`,
+is rewritten to go through the row's `RowInvoker` with its `RPCMethod`s declared as specs, and `planned:_web/bindings.py` importing
+`_note_service`/`_mind_map` is recorded in `REVIEWED_BACKEND_IMPORTS` as the compatibility-category
+inverted import the custom-row ratchet burns down. The last chain classes go; `WebRpcBackend`
+has no bases and no handler methods; `_HANDLER_NAMES` is deleted; `registry.py` keeps `_SUPPORTED_DEFINITIONS`, the
+count assertions and the three dispositions. The custom-row count becomes a guardrail ratchet
+that may only decrease, and every custom row states its justification in one sentence under one
+of three categories: *protocol* (the wire forces the sequence — canonical example: `chat.ask`'s
+conversation-id fetch after the streamed answer), *compatibility* (public exception identity or a
+raw-exception swallow cannot yet be reproduced from records), or *deferred-product* (a hoist the
+P9.2 stop/go deferred; its own ratchet, must reach zero before any second backend). `_translate_error` moves to
+`planned:_web/errors.py`, and the ten unbound test call sites are rebound in this slice.
+
+A second backend, if approved separately, is the same modules under `planned:_mobile/`: a
+transport, a codec, a binding table of leaf rows, an error mapper. Two guardrails hard-code
+`_web/` as the only binding root (`test_semantic_p7_entry_audit.py`,
+`test_no_raw_positional_rpc_indexing.py`) and would widen then. Nothing in P9.0–P9.4 depends on
+it.
 
 #### Acceptance criteria
 
-- `WebRpcBackend` has no base classes; `len(WebRpcBackend.__mro__) == 2`; `inspect` finds zero
-  methods whose name matches `_<domain>_<verb>` outside `planned:_web/bindings.py`'s custom section.
-- `planned:_web/bindings.py` contains only declarations plus the custom-handler section; the guardrail
-  caps custom rows at the P9.4 exit count and rejects any new one without a one-line protocol
-  justification.
-- A construction-time audit rejects a binding table whose key set differs from
-  `_SUPPORTED_DEFINITIONS`, and a unit test proves that a misnamed or missing handler fails at
-  construction.
-- Type check at dispatch: a fixture with a handler declared `value: VideoIn` bound to
-  `AUDIO_DEF: OperationDef[AudioIn, ...]` fails `mypy` under the repository's configuration. (The
-  current `getattr` form passes it clean — measured 2026-08-24.)
-- `planned:_binding.py` imports no module under `_web/`, `rpc/`, `_auth/`, or `httpx`; a guardrail pins
-  that import set.
-- `WebRequest`/`WebTransport` are the only types below the port that name `RPCMethod`; the
-  `_rpc_call` flag surface is gone (`outcome_unknown_on_expiry` and `_is_retry` have zero
-  references).
-- `policy.py`'s native tuples are derived from the binding table; the parity audit against
-  `IDEMPOTENCY_REGISTRY` still runs and still reports the previously reviewed divergences.
-- P9.0–P9.3 land with **no edits** to `tests/unit/test_web_backend.py` (2,348 lines) or any
-  per-slice characterization suite except the three unbound `WebRpcBackend._translate_error`
-  calls (`test_backend_compat.py` ×2, research characterization ×1), which rebind to the mapper.
-  Any other required edit is evidence that behaviour moved and stops the slice.
-- Every P9 PR that relocates a handler declares the resulting `operation_catalog.json` change as
-  an ADR-0022 derivation update (ownership moved), never as a regeneration to accept drift. The
-  catalog currently pins 319 `_web/<file>.py:<Class>.<method>` source-site strings plus 20 in
-  `test_operation_catalog.py`; each moves exactly once.
-- Loop affinity, drain/close, cancellation, retry, auth refresh, metrics and telemetry pass the
-  same equality gates P7 established; the pre-P7 observability fixture stays byte-for-byte frozen.
-- Module-size ratchet: `_web/backend.py` and every `_web/` module end under budget with no new
-  allowlist entry, and — the point — the largest *class* below the port is under 500 lines.
+- `len(WebRpcBackend.__mro__) == 2`; in `planned:_web/bindings.py`, `_web/<domain>.py` and
+  `_web/codec/` no `async def` outside the custom section sequences more than one transport call
+  (`runtime.py`, `transport.py`, `chat_transport.py` are the transport and excluded); a guardrail
+  pins both, plus an AST class-body-line ratchet for `_web/` (largest class
+  under 500 lines — a new guard, since the module ratchet measures files).
+- The custom-row ratchet starts at the P9.4 count, names its burndown issue per the Architecture
+  guardrails rule, and only decreases; each row carries a one-sentence justification under one of
+  the three categories (protocol, compatibility, deferred-product), and the deferred-product
+  sub-ratchet must reach zero before any second backend. The class-size ratchet is installed the
+  same way.
+- A construction-time audit rejects a table whose key set differs from the executable
+  (supported) dispositions in `registry.py`, and a unit test proves a misnamed or missing
+  handler fails at construction.
+- Dispatch is type-checked: a unit test runs `mypy.api.run` under `pyproject.toml` on a snippet
+  binding a `VideoIn` handler to `AUDIO_DEF` and asserts a mypy error (the CI invocation excludes
+  `tests/`, so the check must go through `mypy.api`). Spiked 2026-08-24: a `Protocol` with
+  keyword-only `deadline` unifies with bound methods; the current `getattr` form passes clean.
+- `planned:_binding.py`'s import set is pinned by a guardrail. Below the port, `RPCMethod` is
+  named only by `WebRequest`, `WebTransport`, `NativeCallSpec` values and the policy ledger; no
+  codec function, handler or row body names it.
+- `Operation` count pins move together in every PR that adds a primitive member; no member's
+  meaning changes; `service_owned` dispositions and workflow leaf sets are catalog rows.
+- Every hoisted workflow has one deadline identity across its leaves, re-binds phase errors to
+  the workflow operation, and is characterized against `RecordingBackend` with scripted
+  per-operation sequences (`set_sequence`, added in P9.2's first PR, able to script `dispatched`
+  and `outcome_unknown` on injected errors) covering server, network, rate-limit, deadline,
+  probe-failure and cancellation paths. The backend-level tests that drove that workflow through
+  `invoke()` — about a third of the recorded-kwargs assertions and roughly 30 test functions in
+  `test_web_backend.py` (not yet attributed per operation; the gate table does that) — migrate
+  to those service tests in the same PR, listed per PR.
+- Behavioural oracles are unchanged throughout P9.0–P9.4: the recorded-kwargs assertions for
+  leaf operations (66 assertion lines in 13 files by the pinned pattern
+  `\.kwargs\["(source_path|allow_null|operation_variant|outcome_unknown_on_expiry|raise_on_null_status|disable_internal_retries|attempt_timeout|read_timeout|_retry_deadline)"\]`,
+  34 of them in `test_web_backend.py`, minus the workflow-bound ones that migrate with their
+  hoist), the P7 lifecycle/concurrency suites (including the cancellation-leak regression that
+  monkeypatches `client._backend._drain_tracker.drain`), the P8 provider regressions
+  (`vars(backend)` keys, `inspect.signature(__init__)`), the P0 metrics-contract harness that
+  installs on `client._backend._kernel`, and the observability equality test (which must pass
+  without a new normalization cell). Structural tests are edited under review and listed per PR:
+  handler-name readers (`test_semantic_sharing_slice_characterization.py`,
+  `test_semantic_deadline_seeding.py` — whose reachability walk becomes row-based —
+  `test_semantic_p4_convergence_characterization.py`), the direct composite call in
+  `test_semantic_compatibility_regressions.py`, and the ten `_translate_error` sites (three
+  files). `test_web_execution_runtime.py`'s direct `_rpc_call` passes unchanged because the
+  delegate keeps the name.
+- Catalog: the AST walker (`scripts/_operation_catalog_ast.py`) derives execution authorities
+  from binding rows — today it recognises only `_rpc_call(RPCMethod.X, …)` call sites, so a
+  codec row would have zero authorities — in P9.2's first PR, before any primitive row; `SHARED_RPC_AUTHORITY_RULES`
+  / `RECENCY_CONTRACTS` sites in `scripts/_operation_catalog_authorities.py` (122 hand-written
+  `_web/` strings) re-derive from rows. Under ADR-0022 the derivation change is the reviewed
+  object and the JSON regeneration follows it; P9.2 additionally edits reviewed rows (policy,
+  composite behaviour, discriminators, authority allocation) for each hoisted workflow and lists
+  them as reviewed-metadata changes, not derivation.
+- The `json_envelope` evidence tuple pinning `_web/backend.py:note = await
+  LegacyNoteBackedService` (three spec files plus fingerprints) is retargeted if and when that
+  composite moves (P9.2, or the later leak-translation PR).
+- The P8 `KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS` inventory, `REVIEWED_BACKEND_IMPORTS`, and
+  `_REVIEWED_CODEC_VALUE_IMPORTS` are updated in every PR that adds, removes or re-imports a
+  `_web/` module — exact-set guards, updated as derivation, never loosened.
+- The catalog's per-binding override proof (`resolve_rpc_id` reaching URL, body, dispatch and
+  decoder) stays green after every relocation; `WebTransport.call` is the single resolution site
+  and the static-dataflow check is re-pointed at it in P9.1.
+- Module-size ratchet: every `_web/` module ends under budget with no new allowlist entry.
+- P9's exit report reruns the Measurements table in addition to the entry record.
 
 #### Slice, module, and test map
 
-| Slice | Boundary & purpose | Modules touched | Verification & sentinels |
-|---|---|---|---|
-| **P9.0** | Table + audit; `getattr` gone | `_web/backend.py`, `_web/registry.py` | New unit: misnamed handler fails at construction; `test_web_backend.py` untouched |
-| **P9.1** | `WebTransport`, `WebRequest`; lifecycle delegation; uploader cycle broken | `planned:_web/transport.py`, `_web/backend.py`, `_client_*` factory | P7 lifecycle/concurrency suites untouched; observability fixture frozen; uploader tests untouched |
-| **P9.2** | Leaf rows, per domain; chain classes deleted as they empty | `planned:_binding.py`, `planned:_web/bindings.py`, `_web/codec/*`, one `_web/<domain>.py` per PR | Codec goldens gain the moved inline encoders; catalog derivation update per PR; mypy dispatch fixture |
-| **P9.3** | Composites as `CustomBinding`; chain gone; `_HANDLER_NAMES` deleted | `_web/backend.py`, `_web/registry.py`, remaining `_web/<domain>.py` | `len(__mro__) == 2`; custom-row ratchet installed at 28; three `_translate_error` test rebinds |
-| **P9.4** | Composites hoisted; vocabulary narrowed; policy ledger derived | `_source_service.py`, `_notebook_mutation_service.py`, `_studio/*`, `_label_service.py`, `_web/policy.py`, `_idempotency*.py` façade | Composite decomposition table (gate); `RecordingBackend` tests per hoisted workflow with no codec in the loop; ratchet decreases; ADR-0005 parity report unchanged in its reviewed divergences |
-| **P9.5** | Mobile leaf rows over the same loop | `_mobile/` (new) | Differential test web ↔ mobile per shared read; `BackendCapabilities` audit |
+| Slice | Boundary & purpose | Modules touched | Guardrail baselines touched | Verification & sentinels |
+|---|---|---|---|---|
+| **P9.0** | Neutral binding core; resolve handlers at construction; per-call `getattr` gone | `planned:_binding.py`, `_web/backend.py`, `_web/registry.py`, `test_no_anonymous_bridges.py` (`CURRENT_PHASE`) | `planned:_binding.py` import-set guardrail installed | new unit: misnamed handler fails at construction; all oracles untouched |
+| **P9.1** | `WebTransport` (`call`/`stream` only), `WebRequest`; lifecycle and uploader callbacks stay on the shell | `planned:_web/transport.py`, `_web/backend.py`, `_web/deadline_rpc.py`, `_client_composition.py` | P8 import inventory (+`_web.transport`), `REVIEWED_BACKEND_IMPORTS`, `GENERIC_RPC_FORWARDERS` (+`WebTransport.call`), `INERT_P1_WEB_FORWARDERS` + guardrail literal | all recorded-kwargs assertions unchanged; `__init__` signature and `vars(backend)` keys unchanged; observability equality test passes with no new cell |
+| **P9.2** | Hoist composites; primitive members; `service_owned`; commit-uncertainty; workflow deadline; error rebind | `_backend.py`, `_operations.py`, `_idempotency.py`, `_web/deadlines.py`, `_web/policy.py`, `planned:_web/bindings.py` (primitive rows), `_web/codec/*`, `_source_service.py`, `_label_service.py`, `_notebook_mutation_service.py`, `_studio/*`, the facades that construct services (`_artifacts.py`, `_collections.py`, `_labels.py`, `_notebooks.py`, `_sources.py`), `_client_composition.py`, `_web/<domain>.py` per hoist | catalog AST derivation (rows as authorities) in the first PR; six count pins (incl. `_EXPECTED_SUPPORTED_COUNT`, `KNOWN_ACTIVE_SEMANTIC_OPERATIONS`); registry-closure test and p4 def/native parametrization; catalog reviewed rows; `ACTIVE_BACKEND_INVOKE_SITES`; P8 import inventory and `REVIEWED_BACKEND_IMPORTS` (removals as composites leave `_web/`); `test_semantic_deadline_seeding.py` `CLIENT_TIMEOUT` partition; `json_envelope` note evidence; `RecordingBackend.set_sequence`; `test_web_backend.py` `._backend` reader allowlist if a new helper touches it | gate table; per-workflow sequence tests replacing the workflow's backend-level tests; deadline identity + remaining-budget tests; public error text equality; observability equality (resolver collapse); ADR-0005 parity report with any divergence change listed |
+| **P9.3** | Remaining leaf rows per domain; chain classes deleted as emptied | `planned:_web/bindings.py`, `_web/codec/*`, one `_web/<domain>.py` per PR | P8 import inventory, `REVIEWED_BACKEND_IMPORTS`, `_REVIEWED_CODEC_VALUE_IMPORTS` (row derivation already landed in P9.2) | codec goldens gain moved encoders; `mypy.api` dispatch test; handler-name readers rebased on rows |
+| **P9.4** | Residual `CustomBinding`; chain gone; `_HANDLER_NAMES` deleted; errors module | `_web/backend.py`, `_web/registry.py`, `planned:_web/errors.py`, remaining `_web/<domain>.py` | P8 import inventory (removals), `REVIEWED_BACKEND_IMPORTS`, custom-row ratchet + class-size ratchet installed | `len(__mro__) == 2`; ten `_translate_error` rebinds; direct composite call in `test_semantic_compatibility_regressions.py` rebased |
+
+#### ADR dispositions
+
+| ADR | Disposition |
+|---|---|
+| ADR-0004 | Preserved. `WebTransport` keeps loop affinity with the client lifecycle. |
+| ADR-0005 | Preserved. The `RPCMethod`-keyed registry remains the web retry authority; `idempotent_create` gains a neutral commit-uncertainty predicate, not a second registry. |
+| ADR-0008 | Extended. A class-body-line ratchet for `_web/` joins the per-file ratchet. |
+| ADR-0009 | Preserved. P7's fixed middleware order relocates verbatim beneath `WebTransport.call`. |
+| ADR-0011 | Preserved. Encoders join the sanctioned `_web/codec/` home; `planned:_binding.py` performs no positional access. |
+| ADR-0012 | Preserved. New modules are underscore-private. |
+| ADR-0013 | Preserved. `WebTransport` is a single-consumer collaborator, not a session capability. |
+| ADR-0014 | Preserved. The uploader receives closures over transport and codec by direct injection. |
+| ADR-0019 | Preserved. The Studio/mind-map partial-availability distinction stays adapter-owned under the compatibility category until its swallow set is expressible in neutral reasons. |
+| ADR-0018 | Preserved. No runway changes. |
+| ADR-0022 | Extended. Catalog and policy derivations change as reviewed objects; reviewed rows change per hoisted workflow. |
+| ADR-0035 | Extended. Principle 2's composite-ownership clause is applied per composite through the gate table; any hoist of a row it names as protocol-varying requires an addendum. `Operation` stays closed and is extended by named primitives, never narrowed. Principle 5: `supports` keeps meaning invokable; `service_owned` members report `False` and their leaf conjunction is a catalog row. Principle 6: `WORKFLOW_OWNED` rows record existing deadline-discarding behaviour; reconciliation is a separate decision. |
+
+#### Rollback
+
+P9.0, P9.1, P9.3 and P9.4 revert per PR with no public or catalog-semantic change. A P9.2 PR
+reverts per composite and restores that composite's supported disposition, catalog rows and
+deadline-ledger entry; a primitive introduced by that PR alone is removed in the same revert
+with the count pins, while a shared primitive from the foundational PR stays until its last
+consumer is reverted (reverse dependency order), so no member is ever left without a web
+disposition. No dormant path or
+flag exists at any point.
 
 #### Risks specific to P9
 
-- **A concurrent editor on `backend.py`.** P9.0 and P9.1 both rewrite its head. Serialize.
-- **The custom section quietly becomes the new chain.** Mitigation: the ratchet, the
-  one-sentence justification requirement, and the invariant guardrail on method names.
-- **Narrowing a member silently changes a public wait or retry.** The composite's whole-workflow
-  `CallPolicy` moves to the service; the leaf row's policy is `READ` or `MUTATION`. The P4
-  parity audit and the P7 equality gates are the tripwire; any change to when a public method
-  returns is a separate decision, as P5 already records.
-- **The mypy `Protocol` with `async def __call__` and keyword-only parameters is fiddly.** Spike
-  it in P9.0's PR before committing the `Binding` signature; if it does not unify cleanly, bind
-  through a small generic function rather than a callable Protocol.
-- **Estimate drift.** The numbers below are measured; the projections (`_web/` ≈ 6,300 lines
-  after, `policy.py` ≈ 150, `WebRpcBackend` ≈ 300) are not, and are the only figures in this
-  section that may move.
+- **A concurrent editor on `backend.py`** — serialize (entry criterion).
+- **The custom section quietly becomes the new chain** — the ratchet, the three justification
+  categories (deferred-product must reach zero before any second backend), and the
+  workflow-shape guardrail.
+- **A hoist changes when a public method returns or retries** — the workflow `CallPolicy` stays
+  on its `OperationDef`; the P4 parity audit and P7 equality gates are the tripwire; any change to
+  a public wait or retry is a separate decision outside this plan (see P5's acceptance criteria).
+- **Estimates.** Measured: the entry record. Estimates that may move: P9.0 ≈ 40 lines; the
+  primitive count (at least five); `_web/` ≈ 6,300 lines, `policy.py` ≈ 150 lines and `WebRpcBackend` ≈ 300
+  lines at exit; the residual custom-row count — at least fourteen at P9.4 (eleven deferred-product
+  input-defaulting rows, the mind-map compatibility row, `chat.ask`, `source.add_file`), with only
+  the protocol/compatibility subset expected to stay permanently.
 
-#### P9 entry record (measured 2026-08-24 on `refactor/semantic-backend-dev`, HEAD `8e78a8b7`)
+#### P9 entry record
+
+Measured 2026-08-24 on `refactor/semantic-backend-dev` at `b4518ab6`, the commit that completed
+P8; re-measured at the merge commit before P9.0 opens.
 
 | Measure | Value |
 |---|---|
 | `WebRpcBackend.__mro__` depth (excl. `object`) | 11 |
-| Class-body lines across the chain / file lines | 4,225 / 4,966 |
-| Methods / non-dunder callables on the instance | 141 / 136 |
+| Class-body lines across the chain / file lines | 4,222 / 4,965 |
+| Methods (`vars()` per class, summed) / non-dunder callables on the instance (`dir()`) | 141 / 136 |
 | State attributes, all in the head's `__init__` | 19 |
 | `super()` calls in the chain | 0 |
 | Abstract seams (`NotImplementedError` in ancestor, body in head) | 6 |
-| Cross-class calls / of which `_rpc_call` | 105 / 88 |
-| Links with zero dependency on immediate base | 9 of 10 |
-| Registry handler names / resolved by any existing audit | 82 / 0 |
-| Leaf handlers (one native call) / unique lines | 54 / 1,201 |
-| Composite handlers (≥2 native calls) / unique lines | 28 / 2,066 |
-| Native methods used only inside composites | 10 |
-| `_rpc_call` flag usage: `source_path` · `allow_null` · `operation_variant` · `outcome_unknown_on_expiry` · `raise_on_null_status` · `disable_internal_retries` · `_is_retry` · `attempt_timeout` | 87 · 59 · 28 · 21 · 15 · 15 · 4 · 1 |
-| `policy.py` lines / `RPCMethod` references | 848 / 129 |
+| Cross-class calls / of which `_rpc_call`; total `self._rpc_call(` sites | 105 / 86; 88 |
+| Links with zero dependency on immediate base | 8 of 10 |
+| Registry handler names / leaf names no existing check resolves | 82 / 54 (the deadline-seeding ledger indirectly resolves the 28 composite names) |
+| Operations by policy ledger: single-native / multi-native | 48 / 34 |
+| Natives appearing only in multi-native bindings: by ledger / by handler code | 12 / 8 |
+| `capabilities.supports()` consumers outside the port | 0 |
+| `_rpc_call` keyword usage at the 88 call sites: `source_path` · `allow_null` · `operation_variant` · `outcome_unknown_on_expiry` · `raise_on_null_status` · `disable_internal_retries` · `attempt_timeout` · `_is_retry` | 84 · 54 · 20 · 10 · 7 · 5 · 1 · 0 |
+| `policy.py` lines / `RPCMethod` references | 833 / 129 |
 | `_idempotency.py` `RPCMethod` references | 18 |
-| Tests reaching into chain internals | 3 (all `_translate_error`, unbound) |
-| Catalog source-site strings (JSON / hand-written in test) | 319 / 20 |
+| Tests reaching into chain internals | 10 unbound `_translate_error` sites (3 files) · 1 direct composite call · 1 direct `_rpc_call` |
+| Recorded-kwargs assertion lines (pinned pattern above) | 66 in 13 files (34 in `test_web_backend.py`); about a third drive multi-native operations |
+| Direct `WebRpcBackend(...)` constructions in tests / files using `build_web_backend` | 13 files / 42 files |
+| Catalog `_web/` strings — strict `file.py:Class.method`: JSON / unit test; any `_web/*.py` path: JSON / authorities script / guardrail | 319 / 20; 504 / 122 / 4 |
 | Per-file coverage floors on `_web/` | 0 |
 
 ### Deliberately out of scope
 
 A **public vNext surface** (previously labelled P9) and a **mobile gRPC backend** (previously P10)
 remain outside this plan. Neither is required for the internal refactor and both are gated on
-decisions nobody has made. The P9 label now names the web-backend decomposition above; P9.5
-sketches what a mobile backend would cost *after* that decomposition, but building it still
-requires its own decision.
+decisions nobody has made; a second backend is the only consumer of the capability/`BackendKind`
+machinery beyond its audits. The P9 label now names the web-backend decomposition above. After
+P9.4 a second backend would be a transport, a codec, a binding table of leaf rows and an error
+mapper under its own package, plus a widening of the two guardrails that name `_web/` as the sole
+binding root — but building it still requires its own decision and evidence package.
 
 - A new public client surface, immutable models, or the ADR-0028 naming question require their own
   API ADR. Write it when there is a caller need.
@@ -2183,7 +2510,7 @@ uv run mypy src/notebooklm
 uv run pre-commit run --all-files
 ```
 
-VCR-backed behavior changes require explicit evidence and review. Mobile live checks, if P10 is
+VCR-backed behavior changes require explicit evidence and review. Mobile live checks, if a mobile backend is
 approved, use dedicated profiles/notebooks and a separately documented safe capture procedure.
 
 ## Measurements and success criteria
@@ -2512,13 +2839,13 @@ behavior only in a separate evidence-backed fix.
 **Risk:** splitting Artifact behavior produces many top-level namespaces and option classes.
 
 **Control:** keep family services internal first; evaluate a grouped `client.studio.<family>` public
-shape only in P9.
+shape only under a separate public-API decision, not in this plan.
 
 ### 9. Mobile work distracts from web simplification
 
 **Risk:** protobuf generation and bearer auth consume effort before current code benefits.
 
-**Control:** P10 is optional and blocked on fixtures. P0-P8 must be justified by improvements to the
+**Control:** A mobile backend is not a phase of this plan and is blocked on fixtures. P0–P9 must be justified by improvements to the
 current web implementation.
 
 ### 10. Undocumented backend drift invalidates the migration baseline
@@ -2539,7 +2866,7 @@ existing policy, and separate wire-fix commits from architecture commits.
   and stored data do not change.
 - Once an old path is deleted and a release ships, rollback uses git/release rollback, not a hidden
   dormant implementation or environment toggle.
-- No cross-backend mutation fallback is introduced in P10.
+- No cross-backend mutation fallback is introduced by any future backend.
 
 ## Stop conditions
 

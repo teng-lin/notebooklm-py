@@ -118,7 +118,8 @@ without moving retry authority out of the native registry. Future operation migr
 that same ledger; P5.1 through P5.8, P6.1–P6.7, and the final P7 notebook/share entry slice extend
 it to all 82 active handlers. P0–P8 are complete. P8 places an immutable
 `WebCookieGeneration`/`WebCookieProvider` port between the web session and the existing auth
-owners; P9 public-surface work and a mobile backend require separate decisions.
+owners; public-surface work and a mobile backend require separate decisions. A P9 web-backend
+decomposition is proposed in the plan and not started.
 
 The operation-catalog audit classifies only the shared generic web RPC forwarder as inert. The four
 notebook/source read handlers, three notebook-mutation handlers, URL-source composite, two Studio

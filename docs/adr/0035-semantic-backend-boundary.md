@@ -8,7 +8,10 @@ The approved P0-through-P8 sequence is complete, with P7 run after P6 and the P8
 extraction run after the runtime interface froze. P0's catalog and compatibility evidence remain
 frozen; all 82 active semantic handlers now share the P4 policy/deadline/error ledger. P8 composes,
 rather than replaces, the accepted authentication owners through an immutable generation and a
-narrow provider port. P9 public-API work and a mobile backend remain separate decisions.
+narrow provider port. Public-API work and a mobile backend remain separate decisions. A proposed P9
+(web-backend decomposition into transport, codec, and binding table) is described in the plan; if
+approved, it applies principle 2's composite-ownership clause per composite and extends `Operation`
+with named primitives rather than narrowing any member.
 
 ## Context
 
