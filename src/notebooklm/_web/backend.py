@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import reprlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
@@ -33,6 +33,14 @@ from .._backend import (
     BackendKind,
     UnsupportedOperationError,
     mark_backend_outcome_unknown,
+)
+from .._binding import (
+    BindingAuditError,
+    BindingTable,
+    OperationDisposition,
+    ResolvedHandlerBinding,
+    audit_bindings,
+    invoke_binding,
 )
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._env import get_default_language
@@ -148,7 +156,7 @@ from .deadline_rpc import DeadlineRpcCaller
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
 from .error_policy import SAFE_REASON_DIAGNOSTICS, WEB_ERROR_REASONS
 from .failure_projection import _CHAT_OPERATIONS, _capture_public_failure
-from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
+from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS, WebOperationBinding
 from .runtime import WebExecutionRuntime
 
 if TYPE_CHECKING:
@@ -221,6 +229,10 @@ class WebRpcBackend(ChatWebHandlers):
             supported_operations=WEB_SUPPORTED_OPERATIONS,
         )
         self._closed = False
+        # Resolve every registry handler name exactly once. A misnamed or
+        # missing handler fails here, at construction, rather than on that
+        # operation's first invocation.
+        self._bindings = _resolve_handler_bindings(self)
 
     @property
     def kind(self) -> BackendKind:
@@ -426,12 +438,15 @@ class WebRpcBackend(ChatWebHandlers):
                 ),
             )
 
-        handler_name = binding.handler_name
-        if handler_name is None:  # pragma: no cover - registry invariant
-            raise BackendContractError(f"{operation.key.value} has no web handler")
-        handler = getattr(self, handler_name)
         try:
-            result = await handler(value, deadline=deadline)
+            result = await invoke_binding(
+                self._bindings,
+                None,
+                None,
+                operation,
+                value,
+                deadline=deadline,
+            )
         except BackendError:
             raise
         except RPCTimeoutError as exc:
@@ -1365,6 +1380,35 @@ class WebRpcBackend(ChatWebHandlers):
             diagnostics=MappingProxyType(diagnostics),
             reason=reason,
         )
+
+
+def _resolve_handler_bindings(
+    backend: WebRpcBackend,
+    *,
+    registry: Mapping[Operation, WebOperationBinding] = WEB_OPERATION_REGISTRY,
+    supported: frozenset[Operation] = WEB_SUPPORTED_OPERATIONS,
+) -> BindingTable:
+    """Resolve registry handler names into a construction-audited binding table."""
+    rows: dict[Operation, ResolvedHandlerBinding[Any, Any]] = {}
+    for operation, binding in registry.items():
+        handler_name = binding.handler_name
+        if handler_name is None:
+            continue
+        handler = getattr(backend, handler_name, None)
+        if handler is None or not callable(handler):
+            raise BackendContractError(
+                f"{operation.value} names missing web handler {handler_name!r}",
+                operation=operation,
+            )
+        definition = binding.definition
+        if definition is not None and binding.disposition is OperationDisposition.SUPPORTED_DIRECT:
+            rows[operation] = ResolvedHandlerBinding(definition=definition, handler=handler)
+    table = BindingTable(rows)
+    try:
+        audit_bindings(table, supported)
+    except BindingAuditError as exc:
+        raise BackendContractError(f"web binding table rejected: {exc}") from exc
+    return table
 
 
 __all__ = ["WebRpcBackend"]

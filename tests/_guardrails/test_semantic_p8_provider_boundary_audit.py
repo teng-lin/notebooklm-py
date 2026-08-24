@@ -84,6 +84,7 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_artifact.payloads",
         "_auth_refresh_retry",
         "_backend",
+        "_binding",
         "_chat",
         "_chat.stream_decode",
         "_chat.stream_request",
