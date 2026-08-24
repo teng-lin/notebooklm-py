@@ -73,8 +73,10 @@ def test_settings_rows_replace_their_handlers_in_the_registry_and_table() -> Non
         Operation.SETTINGS_SET_LANGUAGE: settings_rows.SETTINGS_SET_LANGUAGE,
         Operation.ARTIFACT_SUGGEST_REPORTS: settings_rows.ARTIFACT_SUGGEST_REPORTS,
     }
-    assert dict(WEB_BINDING_ROWS) == converted
+    # Domain-scoped: other P9.3 domains add their own rows to WEB_BINDING_ROWS.
+    assert dict(settings_rows.SETTINGS_ROWS) == converted
     for operation, row in converted.items():
+        assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
         assert binding.handler_name is None
