@@ -29,6 +29,7 @@ from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
+    NOTEBOOK_CREATE_DEF,
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
     NotebookListInput,
@@ -363,41 +364,41 @@ def test_backend_resolves_every_handler_at_construction() -> None:
     assert table.custom_count == 0
     assert all(isinstance(table[op], CodecBinding) for op in row_backed)
     assert table[Operation.SETTINGS_GET] is WEB_OPERATION_REGISTRY[Operation.SETTINGS_GET].row
-    row = table[Operation.NOTEBOOK_LIST]
+    row = table[Operation.NOTEBOOK_CREATE]
     assert isinstance(row, ResolvedHandlerBinding)
-    assert row.handler == backend._notebook_list
+    assert row.handler == backend._notebook_create
     assert "_bindings" in vars(backend)
 
 
 def test_misnamed_handler_fails_at_resolution_not_first_invocation() -> None:
     backend = build_web_backend(_Executor())
     broken = dict(WEB_OPERATION_REGISTRY)
-    broken[Operation.NOTEBOOK_LIST] = registry.WebOperationBinding(
-        definition=NOTEBOOK_LIST_DEF,
-        handler_name="_notebook_list_renamed",
+    broken[Operation.NOTEBOOK_CREATE] = registry.WebOperationBinding(
+        definition=NOTEBOOK_CREATE_DEF,
+        handler_name="_notebook_create_renamed",
         unsupported_reason=None,
     )
     with pytest.raises(
-        BackendContractError, match="names missing web handler '_notebook_list_renamed'"
+        BackendContractError, match="names missing web handler '_notebook_create_renamed'"
     ):
         _resolve_handler_bindings(backend, registry=broken)
 
 
 def test_missing_handler_fails_at_construction() -> None:
     class Incomplete(WebRpcBackend):
-        _notebook_list = None  # type: ignore[assignment]
+        _notebook_create = None  # type: ignore[assignment]
 
-    with pytest.raises(BackendContractError, match="notebook.list names missing web handler"):
+    with pytest.raises(BackendContractError, match="notebook.create names missing web handler"):
         Incomplete(_Executor(), transport_factory=lambda **kwargs: object())  # type: ignore[arg-type]
 
 
 def test_table_missing_a_supported_row_is_rejected_by_the_construction_audit() -> None:
     backend = build_web_backend(_Executor())
     narrowed = dict(WEB_OPERATION_REGISTRY)
-    narrowed[Operation.NOTEBOOK_LIST] = registry.WebOperationBinding(
+    narrowed[Operation.NOTEBOOK_CREATE] = registry.WebOperationBinding(
         definition=None, handler_name=None, unsupported_reason="dropped"
     )
-    with pytest.raises(BackendContractError, match="without a row: notebook.list"):
+    with pytest.raises(BackendContractError, match="without a row: notebook.create"):
         _resolve_handler_bindings(backend, registry=narrowed)
     with pytest.raises(BackendContractError, match="not supported: notebook.list"):
         _resolve_handler_bindings(

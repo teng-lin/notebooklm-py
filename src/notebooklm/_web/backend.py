@@ -70,17 +70,8 @@ from .._records import (
     MindMapGenerateNoteResult,
     NotebookCreateInput,
     NotebookCreateResult,
-    NotebookDeleteInput,
-    NotebookDeleteResult,
-    NotebookGetInput,
-    NotebookGetResult,
-    NotebookGuideInput,
-    NotebookGuideResult,
-    NotebookListInput,
     NotebookListResult,
     NotebookRecord,
-    NotebookRemoveRecentInput,
-    NotebookRemoveRecentResult,
     NotebookUpdateInput,
     NotebookUpdateResult,
     SourceAddFailureRecord,
@@ -124,11 +115,9 @@ from .codec.mind_maps import (
 )
 from .codec.notebooks import (
     decode_notebook,
-    decode_notebook_description,
-    encode_notebook_guide,
-    encode_remove_from_recent,
+    decode_notebook_list_result,
+    encode_list_notebooks,
 )
-from .codec.suggestions import decode_prompt_source_ids
 from .deadline_rpc import DeadlineRpcCaller
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
 from .errors import error_diagnostics, translate_web_error
@@ -553,40 +542,25 @@ class WebRpcBackend(ChatWebHandlers):
             deadline=deadline,
         )
 
-    async def _notebook_list(
+    async def _list_notebooks(
         self,
-        value: NotebookListInput,
         *,
+        operation: Operation,
         deadline: RuntimeDeadline | None,
-        operation: Operation = Operation.NOTEBOOK_LIST,
     ) -> NotebookListResult:
-        del value
+        """List notebooks for a composite (create baseline/probe, quota verification).
+
+        The semantic ``notebook.list`` operation is the ``NOTEBOOK_LIST`` codec
+        row; this helper issues the same native call under the composite's own
+        operation attribution and deadline.
+        """
         result = await self._rpc_call(
             RPCMethod.LIST_NOTEBOOKS,
-            [None, 1, None, [2]],
+            encode_list_notebooks(),
             operation=operation,
             deadline=deadline,
         )
-        if not result:
-            return NotebookListResult(notebooks=())
-        if isinstance(result, list):
-            raw_notebooks = safe_index(
-                result,
-                0,
-                method_id=RPCMethod.LIST_NOTEBOOKS.value,
-                source="WebRpcBackend._notebook_list",
-            )
-            if isinstance(raw_notebooks, list):
-                return NotebookListResult(
-                    notebooks=tuple(decode_notebook(row) for row in raw_notebooks)
-                )
-            if raw_notebooks is None:
-                return NotebookListResult(notebooks=())
-        raise DecodingError(
-            "Unrecognized LIST_NOTEBOOKS payload shape",
-            raw_response=reprlib.repr(result),
-            method_id=RPCMethod.LIST_NOTEBOOKS.value,
-        )
+        return decode_notebook_list_result(result)
 
     async def _notebook_create(
         self,
@@ -597,10 +571,9 @@ class WebRpcBackend(ChatWebHandlers):
         baseline_ids: set[str] | None
         baseline_error: Exception | None = None
         try:
-            baseline = await self._notebook_list(
-                NotebookListInput(),
-                deadline=deadline,
+            baseline = await self._list_notebooks(
                 operation=Operation.NOTEBOOK_CREATE,
+                deadline=deadline,
             )
             baseline_ids = {notebook.id for notebook in baseline.notebooks}
         except Exception as exc:
@@ -633,10 +606,9 @@ class WebRpcBackend(ChatWebHandlers):
 
         async def probe() -> NotebookRecord | None:
             try:
-                current = await self._notebook_list(
-                    NotebookListInput(),
-                    deadline=deadline,
+                current = await self._list_notebooks(
                     operation=Operation.NOTEBOOK_CREATE,
+                    deadline=deadline,
                 )
             except RPCTimeoutError:
                 # The outer semantic dispatch owns timeout translation. Let it
@@ -735,10 +707,9 @@ class WebRpcBackend(ChatWebHandlers):
         if limit is None:
             return None
         try:
-            listed = await self._notebook_list(
-                NotebookListInput(),
-                deadline=deadline,
+            listed = await self._list_notebooks(
                 operation=Operation.NOTEBOOK_CREATE,
+                deadline=deadline,
             )
         except Exception:
             notebook_logger.debug(
@@ -850,112 +821,6 @@ class WebRpcBackend(ChatWebHandlers):
                 reason=BackendErrorReason.NOTEBOOK_NOT_FOUND,
             )
         return NotebookUpdateResult(notebook=notebook)
-
-    async def _notebook_delete(
-        self,
-        value: NotebookDeleteInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NotebookDeleteResult:
-        await self._rpc_call(
-            RPCMethod.DELETE_NOTEBOOK,
-            [[value.notebook_id], [2]],
-            operation=Operation.NOTEBOOK_DELETE,
-            deadline=deadline,
-        )
-        return NotebookDeleteResult()
-
-    async def _notebook_remove_recent(
-        self,
-        value: NotebookRemoveRecentInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NotebookRemoveRecentResult:
-        await self._rpc_call(
-            RPCMethod.REMOVE_RECENTLY_VIEWED,
-            encode_remove_from_recent(value.notebook_id),
-            operation=Operation.NOTEBOOK_REMOVE_RECENT,
-            deadline=deadline,
-            allow_null=True,
-        )
-        return NotebookRemoveRecentResult()
-
-    async def _notebook_guide(
-        self,
-        value: NotebookGuideInput,
-        *,
-        operation: Operation,
-        deadline: RuntimeDeadline | None,
-    ) -> NotebookGuideResult:
-        result = await self._rpc_call(
-            RPCMethod.SUMMARIZE,
-            encode_notebook_guide(value.notebook_id),
-            operation=operation,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-        )
-        return NotebookGuideResult(decode_notebook_description(result))
-
-    async def _notebook_summarize(
-        self,
-        value: NotebookGuideInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NotebookGuideResult:
-        return await self._notebook_guide(
-            value,
-            operation=Operation.NOTEBOOK_SUMMARIZE,
-            deadline=deadline,
-        )
-
-    async def _notebook_describe(
-        self,
-        value: NotebookGuideInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NotebookGuideResult:
-        return await self._notebook_guide(
-            value,
-            operation=Operation.NOTEBOOK_DESCRIBE,
-            deadline=deadline,
-        )
-
-    async def _notebook_get(
-        self,
-        value: NotebookGetInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NotebookGetResult:
-        result = await self._rpc_call(
-            RPCMethod.GET_NOTEBOOK,
-            build_get_notebook_params(value.notebook_id),
-            operation=Operation.NOTEBOOK_GET,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-        )
-        if not value.include_notebook:
-            return NotebookGetResult(
-                notebook=None,
-                source_ids=decode_prompt_source_ids(result, notebook_id=value.notebook_id),
-            )
-        source_ids: tuple[str, ...] = ()
-        notebook_row = (
-            safe_index(
-                result,
-                0,
-                method_id=RPCMethod.GET_NOTEBOOK.value,
-                source="WebRpcBackend._notebook_get",
-            )
-            if result and isinstance(result, list)
-            else None
-        )
-        if not notebook_row:
-            return NotebookGetResult(notebook=None, source_ids=source_ids)
-        notebook = decode_notebook(notebook_row, include_chat_settings=True)
-        if not notebook.id and not notebook.title:
-            return NotebookGetResult(notebook=None, source_ids=source_ids)
-        source_ids = decode_prompt_source_ids(result, notebook_id=value.notebook_id)
-        return NotebookGetResult(notebook=notebook, source_ids=source_ids)
 
     async def _source_list(
         self,

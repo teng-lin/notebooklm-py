@@ -7,19 +7,31 @@ import reprlib
 from datetime import datetime, timezone
 from typing import Any, cast
 
+from ..._binding import CodecPayload
 from ..._records import (
     NotebookChatSessionRecord,
     NotebookChatSettingsRecord,
+    NotebookDeleteInput,
+    NotebookDeleteResult,
     NotebookDescriptionRecord,
+    NotebookGetInput,
+    NotebookGetResult,
+    NotebookGuideInput,
+    NotebookGuideResult,
+    NotebookListInput,
+    NotebookListResult,
     NotebookPremiumFeaturesRecord,
     NotebookRecord,
+    NotebookRemoveRecentInput,
+    NotebookRemoveRecentResult,
     SuggestedTopicRecord,
 )
 from ..._row_adapters.chat import unwrap_chat_settings
 from ..._row_adapters.notebooks import ProjectRow
-from ...exceptions import UnknownRPCMethodError
+from ...exceptions import DecodingError, UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
 from ...rpc.types import ChatGoal, ChatResponseLength
+from .suggestions import decode_prompt_source_ids
 
 logger = logging.getLogger("notebooklm._types.notebooks")
 
@@ -35,6 +47,60 @@ def encode_notebook_guide(notebook_id: str) -> list[Any]:
 def encode_remove_from_recent(notebook_id: str) -> list[Any]:
     """Encode one idempotent recent-list removal."""
     return [notebook_id]
+
+
+def encode_list_notebooks() -> list[Any]:
+    """Encode the account-scoped ``LIST_NOTEBOOKS`` request."""
+    return [None, 1, None, [2]]
+
+
+def encode_delete_notebook(notebook_id: str) -> list[Any]:
+    """Encode one idempotent notebook deletion."""
+    return [[notebook_id], [2]]
+
+
+# Row-facing encoders (P9.3). Each returns the full request payload one codec
+# row dispatches — params plus the route and typed options exactly as the P2
+# handlers passed them — and never names a method: the row's ``NativeCallSpec``
+# is the sole method authority.
+def encode_notebook_list(value: NotebookListInput) -> CodecPayload:
+    """Payload for the ``notebook.list`` codec row."""
+    del value
+    return CodecPayload(params=encode_list_notebooks(), source_path="/")
+
+
+def encode_notebook_get(value: NotebookGetInput) -> CodecPayload:
+    """Payload for the ``notebook.get`` codec row."""
+    # Local import: ``_notebook_payloads`` reaches ``_source`` and would close an
+    # import cycle through ``_web.codec`` at module load.
+    from ..._notebook_payloads import build_get_notebook_params
+
+    return CodecPayload(
+        params=build_get_notebook_params(value.notebook_id),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def encode_notebook_delete(value: NotebookDeleteInput) -> CodecPayload:
+    """Payload for the ``notebook.delete`` codec row."""
+    return CodecPayload(params=encode_delete_notebook(value.notebook_id), source_path="/")
+
+
+def encode_notebook_remove_recent(value: NotebookRemoveRecentInput) -> CodecPayload:
+    """Payload for the ``notebook.remove_recent`` codec row (null success accepted)."""
+    return CodecPayload(
+        params=encode_remove_from_recent(value.notebook_id),
+        source_path="/",
+        allow_null=True,
+    )
+
+
+def encode_notebook_guide_request(value: NotebookGuideInput) -> CodecPayload:
+    """Payload shared by the ``notebook.summarize``/``notebook.describe`` codec rows."""
+    return CodecPayload(
+        params=encode_notebook_guide(value.notebook_id),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
 
 
 def _datetime_from_timestamp(value: object) -> datetime | None:
@@ -232,9 +298,99 @@ def decode_notebook_description(result: Any) -> NotebookDescriptionRecord:
     )
 
 
+def decode_notebook_list_result(result: Any) -> NotebookListResult:
+    """Decode the three ``LIST_NOTEBOOKS`` payload shapes: empty, ``[None]``, ``[[rows]]``."""
+    if not result:
+        return NotebookListResult(notebooks=())
+    if isinstance(result, list):
+        raw_notebooks = safe_index(
+            result,
+            0,
+            method_id=RPCMethod.LIST_NOTEBOOKS.value,
+            source="codec.notebooks.decode_notebook_list_result",
+        )
+        if isinstance(raw_notebooks, list):
+            return NotebookListResult(
+                notebooks=tuple(decode_notebook(row) for row in raw_notebooks)
+            )
+        if raw_notebooks is None:
+            return NotebookListResult(notebooks=())
+    raise DecodingError(
+        "Unrecognized LIST_NOTEBOOKS payload shape",
+        raw_response=reprlib.repr(result),
+        method_id=RPCMethod.LIST_NOTEBOOKS.value,
+    )
+
+
+def decode_notebook_list(value: NotebookListInput, result: Any) -> NotebookListResult:
+    """Row decoder for ``notebook.list``; the input carries nothing the decode needs."""
+    del value
+    return decode_notebook_list_result(result)
+
+
+def decode_notebook_get(value: NotebookGetInput, result: Any) -> NotebookGetResult:
+    """Row decoder for ``notebook.get``: the input selects the source-id-only branch."""
+    if not value.include_notebook:
+        return NotebookGetResult(
+            notebook=None,
+            source_ids=decode_prompt_source_ids(result, notebook_id=value.notebook_id),
+        )
+    source_ids: tuple[str, ...] = ()
+    notebook_row = (
+        safe_index(
+            result,
+            0,
+            method_id=RPCMethod.GET_NOTEBOOK.value,
+            source="codec.notebooks.decode_notebook_get",
+        )
+        if result and isinstance(result, list)
+        else None
+    )
+    if not notebook_row:
+        return NotebookGetResult(notebook=None, source_ids=source_ids)
+    notebook = decode_notebook(notebook_row, include_chat_settings=True)
+    if not notebook.id and not notebook.title:
+        return NotebookGetResult(notebook=None, source_ids=source_ids)
+    source_ids = decode_prompt_source_ids(result, notebook_id=value.notebook_id)
+    return NotebookGetResult(notebook=notebook, source_ids=source_ids)
+
+
+def decode_notebook_delete(value: NotebookDeleteInput, result: Any) -> NotebookDeleteResult:
+    """Row decoder for ``notebook.delete``: the acknowledgement carries no signal."""
+    del value, result
+    return NotebookDeleteResult()
+
+
+def decode_notebook_remove_recent(
+    value: NotebookRemoveRecentInput, result: Any
+) -> NotebookRemoveRecentResult:
+    """Row decoder for ``notebook.remove_recent``: null or empty success."""
+    del value, result
+    return NotebookRemoveRecentResult()
+
+
+def decode_notebook_guide(value: NotebookGuideInput, result: Any) -> NotebookGuideResult:
+    """Row decoder shared by ``notebook.summarize`` and ``notebook.describe``."""
+    del value
+    return NotebookGuideResult(decode_notebook_description(result))
+
+
 __all__ = [
     "decode_notebook",
+    "decode_notebook_delete",
     "decode_notebook_description",
+    "decode_notebook_get",
+    "decode_notebook_guide",
+    "decode_notebook_list",
+    "decode_notebook_list_result",
+    "decode_notebook_remove_recent",
+    "encode_delete_notebook",
+    "encode_list_notebooks",
+    "encode_notebook_delete",
+    "encode_notebook_get",
     "encode_notebook_guide",
+    "encode_notebook_guide_request",
+    "encode_notebook_list",
+    "encode_notebook_remove_recent",
     "encode_remove_from_recent",
 ]

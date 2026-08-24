@@ -247,8 +247,8 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_notebooks.py:NotebooksAPI.get_raw",
         "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
         "_web/backend.py:WebRpcBackend._mind_map_generate_note",
-        "_web/backend.py:WebRpcBackend._notebook_get",
         "_web/backend.py:WebRpcBackend._notebook_update",
+        "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/chat.py:ChatWebHandlers._chat_configure",
         "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
         "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
@@ -656,7 +656,7 @@ def test_get_metadata_recency_contract_pins_two_distinct_reads() -> None:
             "unit": "public_call",
             "condition": "always: concurrent notebook.get plus source listing",
             "authority_sites": [
-                "_web/backend.py:WebRpcBackend._notebook_get",
+                "_web/bindings/notebooks.py:NOTEBOOK_GET",
                 "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
             ],
         }
@@ -674,7 +674,7 @@ def test_notebook_get_recency_contract_separates_typed_and_raw_authorities() -> 
     assert (typed.minimum_calls, typed.maximum_calls, typed.authority_sites) == (
         1,
         1,
-        ("_web/backend.py:WebRpcBackend._notebook_get",),
+        ("_web/bindings/notebooks.py:NOTEBOOK_GET",),
     )
     assert raw.public_methods == ("notebooks.get_raw",)
     assert (raw.minimum_calls, raw.maximum_calls, raw.authority_sites) == (
@@ -685,12 +685,17 @@ def test_notebook_get_recency_contract_separates_typed_and_raw_authorities() -> 
 
     notebook_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_notebooks.py")
     raw_get = catalog_ast._find_class_method(notebook_tree, "NotebooksAPI", "get_raw")
-    backend_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_web" / "backend.py")
-    typed_get = catalog_ast._find_class_method(backend_tree, "WebRpcBackend", "_notebook_get")
     assert raw_get is not None
-    assert typed_get is not None
     assert catalog_ast._rpc_binding_call_count(raw_get, RPCMethod.GET_NOTEBOOK) == 1
-    assert catalog_ast._rpc_binding_call_count(typed_get, RPCMethod.GET_NOTEBOOK) == 1
+    # P9.3: the typed authority is a codec row whose spec declares exactly one native.
+    typed_row = next(
+        row
+        for row in catalog_ast.collect_binding_rows()
+        if row.site == "_web/bindings/notebooks.py:NOTEBOOK_GET"
+    )
+    assert typed_row.operation is Operation.NOTEBOOK_GET
+    assert typed_row.natives == (("GET_NOTEBOOK", None),)
+    assert not typed_row.unresolved
 
 
 def test_notebook_create_catalog_has_no_phantom_get_notebook_recency() -> None:

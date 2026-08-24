@@ -63,26 +63,26 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         ),
     ),
     (Operation.NOTEBOOK_LIST, _b(RPCMethod.LIST_NOTEBOOKS)): _rules(
-        ("_web/backend.py:WebRpcBackend._notebook_list", "public=notebooks.list")
+        ("_web/bindings/notebooks.py:NOTEBOOK_LIST", "public=notebooks.list")
     ),
     (Operation.NOTEBOOK_CREATE, _b(RPCMethod.LIST_NOTEBOOKS)): _rules(
         (
-            "_web/backend.py:WebRpcBackend._notebook_list",
+            "_web/backend.py:WebRpcBackend._list_notebooks",
             "pre-create baseline/probe or quota verification",
         )
     ),
     (Operation.COLLECTION_NOTEBOOKS, _b(RPCMethod.LIST_NOTEBOOKS)): _rules(
-        ("_web/backend.py:WebRpcBackend._notebook_list", "collection membership expansion")
+        ("_web/bindings/notebooks.py:NOTEBOOK_LIST", "collection membership expansion")
     ),
     (Operation.NOTEBOOK_GET, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/backend.py:WebRpcBackend._notebook_get", "typed notebook/source-id lookup"),
+        ("_web/bindings/notebooks.py:NOTEBOOK_GET", "typed notebook/source-id lookup"),
         ("_notebooks.py:NotebooksAPI.get_raw", "narrow raw compatibility lookup"),
     ),
     (Operation.NOTEBOOK_UPDATE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/backend.py:WebRpcBackend._notebook_update", "unconditional post-mutation read")
     ),
     (Operation.NOTEBOOK_METADATA, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/backend.py:WebRpcBackend._notebook_get", "metadata notebook branch"),
+        ("_web/bindings/notebooks.py:NOTEBOOK_GET", "metadata notebook branch"),
         (
             "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
             "metadata source branch",
@@ -143,7 +143,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         )
     ),
     (Operation.CHAT_ASK, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/backend.py:WebRpcBackend._notebook_get", "source_ids is None")
+        ("_web/bindings/notebooks.py:NOTEBOOK_GET", "source_ids is None")
     ),
     (Operation.CHAT_CONFIGURE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/chat.py:ChatWebHandlers._chat_configure", "action=GET only")
@@ -354,7 +354,7 @@ class RecencyRule:
     authority_sites: tuple[str, ...] = ()
 
 
-_GET_TYPED = "_web/backend.py:WebRpcBackend._notebook_get"
+_GET_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 _UPDATE_TYPED = "_web/backend.py:WebRpcBackend._notebook_update"
 _GET_RAW = "_notebooks.py:NotebooksAPI.get_raw"
 _GET_DATA_SOURCES = "_web/studio_data.py:StudioDataWebHandlers._data_source_ids"
@@ -749,10 +749,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ),
         ),
         (Operation.NOTEBOOK_SUMMARIZE, _b(RPCMethod.SUMMARIZE)): _rules(
-            ("_web/backend.py:WebRpcBackend._notebook_guide", "summary projection")
+            ("_web/bindings/notebooks.py:NOTEBOOK_SUMMARIZE", "summary projection")
         ),
         (Operation.NOTEBOOK_DESCRIBE, _b(RPCMethod.SUMMARIZE)): _rules(
-            ("_web/backend.py:WebRpcBackend._notebook_guide", "description/topics projection")
+            ("_web/bindings/notebooks.py:NOTEBOOK_DESCRIBE", "description/topics projection")
         ),
         (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_update", "label field-mask mutation")

@@ -1071,7 +1071,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_studio/` | Private transport-neutral Studio boundary: the P5.1 heterogeneous catalog/classifier; P5.2–P5.6 family/generation/export services; P5.7 trusted representation retrieval plus local serialization clients; P5.8 management, lifecycle, suggestions, and representation orchestration; and the P6.3 interactive mind-map family. |
 | `_studio/interactive.py` | Private P5.3 Quiz/Flashcards family service: typed generation dispatch, catalog-backed discovery, and family-usable readiness/user-state metadata without wire vocabulary. |
 | `_studio/mind_maps.py` | Private P6.3 interactive mind-map family service: catalog-backed discovery plus typed generation/tree/update/delete dispatch. |
-| `_web/backend.py` | Single web semantic backend, owner of the runtime/lifecycle/auth/metrics leaves and all 82 active semantic handlers. |
+| `_web/backend.py` | Single web semantic backend, owner of the runtime/lifecycle/auth/metrics leaves, the binding table, and the remaining handler-backed semantic operations (the P9.3 leaves are `_web/bindings/*` rows). |
 | `_web/runtime.py` | Sole batchexecute encode/dispatch/decode implementation (`WebExecutionRuntime`). |
 | `_web/transport.py` | `WebTransport` (P9.1): the web backend's two transport verbs — `call` (one deadline-bound `batchexecute` call over `WebExecutionRuntime`, tagging escaped native errors `dispatched`) and `stream` (the chat-aware authed POST) — plus the frozen `WebRequest`/`WebStreamRequest` values and `assemble` for codec rows. Lifecycle stays on `WebRpcBackend`. |
 | `_web/deadline_rpc.py` | Deadline/operation-bound compatibility caller used only inside legacy note-backed web composites. |
@@ -1084,6 +1084,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/bindings/research.py` | P9.3 research codec rows: `RESEARCH_START` (input-keyed fast/deep `NativeCallSpec` with the deep-start `map_error` that mints `RESEARCH_START_UNAVAILABLE`), `RESEARCH_POLL`, `RESEARCH_CANCEL`, `RESEARCH_IMPORT` (inherits the caller's deadline, forwards the service's `attempt_timeout`); the P6.2 research mixin these rows replace is deleted. |
 | `_web/errors.py` | Shared native-to-neutral failure translation (`translate_web_error`, `error_diagnostics`) that `WebRpcBackend._translate_error` delegates to and row-level `map_error` hooks call without importing the backend head. |
 | `_web/bindings/mind_maps.py` | P9.3 mind-map leaf codec rows: `MIND_MAP_LIST`, `MIND_MAP_GET`, `MIND_MAP_UPDATE`, `MIND_MAP_DELETE` — `encode → one native call → decode`; the two generate members stay input-defaulting handlers until their P9.4 custom rows. |
+| `_web/bindings/notebooks.py` | P9.3 notebook codec rows: `NOTEBOOK_LIST` (non-uniform decoder over the empty/`[None]`/`[[rows]]` shapes), `NOTEBOOK_GET` (input-selected source-id-only branch), `NOTEBOOK_DELETE`, `NOTEBOOK_REMOVE_RECENT`, `NOTEBOOK_SUMMARIZE`, `NOTEBOOK_DESCRIBE` — `encode → one native call → decode`; the create/update composites stay handlers and list through `_list_notebooks`. |
+| `_web/bindings/notebooks.py` | P9.3 notebook codec rows: `NOTEBOOK_LIST` (non-uniform decoder over the empty/`[None]`/`[[rows]]` shapes), `NOTEBOOK_GET` (input-selected source-id-only branch), `NOTEBOOK_DELETE`, `NOTEBOOK_REMOVE_RECENT`, `NOTEBOOK_SUMMARIZE`, `NOTEBOOK_DESCRIBE` — `encode → one native call → decode`; the create/update composites stay handlers and list through `_list_notebooks`. |
 | `_web/bindings/notes.py` | P9.3 plain-note codec rows: `NOTE_LIST`, `NOTE_GET`, `NOTE_CREATE`, `NOTE_UPDATE`, `NOTE_DELETE` over `_web/codec/notes.py`; `NoteService` sequences them above the port and the walker derives their catalog authorities from the module-level assignments. |
 | `_web/bindings/labels.py` | P9.3 labels/collections codec rows: `LABEL_LIST`, `LABEL_GET`, `LABEL_GENERATE`, `LABEL_DELETE`, `COLLECTION_LIST`, `COLLECTION_GET`, `COLLECTION_DELETE` — one `LIST_LABELS`/`CREATE_LABEL`/`DELETE_LABEL` call per row; the get rows select by exact id inside `decode`. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
@@ -1352,6 +1354,8 @@ src/notebooklm/
 │   │   ├── __init__.py          # WEB_BINDING_ROWS union
 │   │   ├── labels.py            # label/collection codec rows
 │   │   ├── mind_maps.py         # mind-map leaf codec rows
+│   │   ├── notebooks.py         # notebook read/leaf codec rows
+│   │   ├── notebooks.py         # notebook read/leaf codec rows
 │   │   ├── notes.py             # plain-note codec rows
 │   │   ├── research.py          # research codec rows (input-keyed start)
 │   │   ├── settings.py          # settings/suggestion codec rows

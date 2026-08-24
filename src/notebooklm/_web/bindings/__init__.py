@@ -16,6 +16,7 @@ from ..._binding import Binding
 from ..._operations import Operation
 from .labels import LABEL_ROWS
 from .mind_maps import MIND_MAP_ROWS
+from .notebooks import NOTEBOOK_ROWS
 from .notes import NOTE_ROWS
 from .research import RESEARCH_ROWS
 from .settings import SETTINGS_ROWS
@@ -24,6 +25,7 @@ from .sharing import SHARING_ROWS
 _DOMAIN_ROWS: tuple[Mapping[Operation, Binding], ...] = (
     LABEL_ROWS,
     MIND_MAP_ROWS,
+    NOTEBOOK_ROWS,
     NOTE_ROWS,
     RESEARCH_ROWS,
     SETTINGS_ROWS,
