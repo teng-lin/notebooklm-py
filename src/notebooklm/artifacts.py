@@ -13,13 +13,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any
 
 from ._deadline import Monotonic, RuntimeDeadline, Sleep
-from .exceptions import RateLimitError
+from .exceptions import (
+    ArtifactInProgressTimeoutError,
+    ArtifactPendingTimeoutError,
+    ArtifactTimeoutError,
+    RateLimitError,
+)
 from .types import GenerationState, GenerationStatus
 
 RATE_LIMIT_RETRY_INITIAL_DELAY = 60.0
@@ -202,6 +207,48 @@ def _generation_task_id(result: Any) -> str | None:
     return task_id if isinstance(task_id, str) and task_id else None
 
 
+def _generation_status(result: Any) -> str | None:
+    """Return a normalized kickoff status for caller-local timeout context."""
+    raw_status = (
+        result.get("status") if isinstance(result, dict) else getattr(result, "status", None)
+    )
+    value = getattr(raw_status, "value", raw_status)
+    if not isinstance(value, str):
+        return None
+    if value == "processing":
+        return "in_progress"
+    return value
+
+
+def _caller_artifact_timeout_error(
+    notebook_id: str,
+    task_id: str,
+    timeout: float,
+    kickoff_result: Any,
+    observed_transitions: Sequence[GenerationStatus],
+) -> ArtifactTimeoutError:
+    """Build a typed timeout when this caller expires before a shared poll."""
+    observed_history = tuple(
+        status
+        for transition in observed_transitions
+        if (status := _generation_status(transition)) is not None
+    )
+    kickoff_status = _generation_status(kickoff_result)
+    last_status = observed_history[-1] if observed_history else kickoff_status
+    history = observed_history or ((kickoff_status,) if kickoff_status is not None else ())
+    error_type = (
+        ArtifactInProgressTimeoutError if "in_progress" in history else ArtifactPendingTimeoutError
+    )
+    return error_type(
+        notebook_id,
+        task_id,
+        timeout,
+        last_status=last_status,
+        status_history=history,
+        status_transitions=observed_transitions,
+    )
+
+
 @contextlib.asynccontextmanager
 async def _null_wait_context(_message: str, _resume_hint: str) -> AsyncIterator[None]:
     yield
@@ -296,8 +343,13 @@ async def _run_generation_workflow(
     dispatch itself.
     """
 
+    kickoff_result: Any = None
+    observed_transitions: list[GenerationStatus] = []
+
     async def _generate(deadline: RuntimeDeadline) -> Any:
-        return await _await_with_deadline(generate_fn, deadline, artifact_type)
+        nonlocal kickoff_result
+        kickoff_result = await _await_with_deadline(generate_fn, deadline, artifact_type)
+        return kickoff_result
 
     async def _wait(
         resolved_notebook_id: str,
@@ -308,14 +360,41 @@ async def _run_generation_workflow(
     ) -> Any:
         if wait_for_completion is None:
             raise RuntimeError("artifact wait callable is required when wait=True")
-        wait_kwargs: dict[str, Any] = {"timeout": caller_timeout}
+        # The public waiter owns its typed poll timeout and shielded shared
+        # poll, but a follower deliberately inherits the leader's poll budget.
+        # Keep this workflow's own hard budget as well so a slow poll RPC or a
+        # longer-lived leader cannot overrun the generate caller. Preserve an
+        # inner typed timeout; translate only this caller-local expiry.
+        remaining = deadline.remaining()
+        if remaining <= 0.0:
+            raise _caller_artifact_timeout_error(
+                resolved_notebook_id,
+                task_id,
+                caller_timeout,
+                kickoff_result,
+                observed_transitions,
+            )
+        wait_kwargs: dict[str, Any] = {"timeout": remaining}
         if caller_interval is not None:
             wait_kwargs["initial_interval"] = caller_interval
-        return await _await_with_deadline(
-            lambda: wait_for_completion(resolved_notebook_id, task_id, **wait_kwargs),
-            deadline,
-            artifact_type,
-        )
+        wait_kwargs["on_status_change"] = observed_transitions.append
+        try:
+            return await asyncio.wait_for(
+                wait_for_completion(resolved_notebook_id, task_id, **wait_kwargs),
+                timeout=remaining,
+            )
+        except ArtifactTimeoutError:
+            raise
+        except asyncio.TimeoutError as error:
+            if not deadline.expired():
+                raise
+            raise _caller_artifact_timeout_error(
+                resolved_notebook_id,
+                task_id,
+                caller_timeout,
+                kickoff_result,
+                observed_transitions,
+            ) from error
 
     return await _run_deadline_generation_workflow(
         _generate,

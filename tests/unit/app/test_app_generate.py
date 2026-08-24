@@ -19,15 +19,21 @@ rendering assertions stay in ``tests/unit/cli/test_generate.py``.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import asyncio
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
+import notebooklm.artifacts as artifact_helpers
 from notebooklm._app.generate import (
     GenerationExecutionResult,
     _build_call_kwargs,
     build_generation_plan,
     execute_generation,
+)
+from notebooklm.exceptions import (
+    ArtifactInProgressTimeoutError,
+    ArtifactPendingTimeoutError,
 )
 from notebooklm.types import GenerationStatus, MindMapKind
 
@@ -176,12 +182,145 @@ class TestExecuteGeneration:
         assert result.generation is not None
         assert result.generation.status == "completed"
         client.artifacts.generate_audio.assert_awaited_once()
+        client.artifacts.wait_for_completion.assert_awaited_once()
+        wait_args = client.artifacts.wait_for_completion.await_args
+        assert wait_args.args == ("nb_resolved", "t1")
+        assert wait_args.kwargs["initial_interval"] == 5.0
+        assert 0.0 < wait_args.kwargs["timeout"] <= 60.0
+
+    @pytest.mark.asyncio
+    async def test_wait_receives_remaining_budget_and_preserves_typed_timeout(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class _ControlledDeadline:
+            timeout = 60.0
+
+            def __init__(self) -> None:
+                self.remaining_values = iter((60.0, 17.0))
+
+            def expired(self) -> bool:
+                return False
+
+            def remaining(self) -> float:
+                return next(self.remaining_values)
+
+            def timeout_message(self, operation: str) -> str:
+                return f"{operation} timed out after 60.0s"
+
+        deadline = _ControlledDeadline()
+
+        class _ControlledDeadlineFactory:
+            @staticmethod
+            def start(timeout: float, *, monotonic: object) -> _ControlledDeadline:
+                assert timeout == 60.0
+                return deadline
+
+        monkeypatch.setattr(artifact_helpers, "RuntimeDeadline", _ControlledDeadlineFactory)
+
+        started = GenerationStatus(task_id="t1", status="pending", error=None, error_code=None)
+        timeout_error = ArtifactPendingTimeoutError("nb_resolved", "t1", 17.0)
+        client = _make_client("generate_audio", started)
+        client.artifacts.wait_for_completion.side_effect = timeout_error
+
+        with pytest.raises(ArtifactPendingTimeoutError) as exc_info:
+            await execute_generation(
+                _audio_plan(wait=True, timeout=60.0, interval=5.0),
+                client,
+                notebook_resolver=_notebook_resolver("nb_resolved"),
+                source_resolver=_source_resolver(["s1"]),
+            )
+
+        assert exc_info.value is timeout_error
         client.artifacts.wait_for_completion.assert_awaited_once_with(
             "nb_resolved",
             "t1",
-            timeout=60.0,
+            timeout=17.0,
             initial_interval=5.0,
+            on_status_change=ANY,
         )
+
+    @pytest.mark.asyncio
+    async def test_caller_budget_preempts_a_slower_shared_wait_with_typed_timeout(self) -> None:
+        started = GenerationStatus(task_id="t1", status="pending", error=None, error_code=None)
+        leader_timeout = ArtifactPendingTimeoutError("nb_resolved", "t1", 1.0)
+        client = _make_client("generate_audio", started)
+
+        async def leader_poll() -> object:
+            await asyncio.sleep(0.2)
+            raise leader_timeout
+
+        leader_task = asyncio.create_task(leader_poll())
+
+        async def slower_shared_wait(*_args: object, **_kwargs: object) -> object:
+            return await asyncio.shield(leader_task)
+
+        client.artifacts.wait_for_completion.side_effect = slower_shared_wait
+
+        try:
+            with pytest.raises(ArtifactPendingTimeoutError) as exc_info:
+                await execute_generation(
+                    _audio_plan(wait=True, timeout=0.05, interval=0.01),
+                    client,
+                    notebook_resolver=_notebook_resolver("nb_resolved"),
+                    source_resolver=_source_resolver(["s1"]),
+                )
+
+            assert exc_info.value is not leader_timeout
+            assert exc_info.value.notebook_id == "nb_resolved"
+            assert exc_info.value.task_id == "t1"
+            assert exc_info.value.timeout == 0.05
+            assert exc_info.value.last_status == "pending"
+            assert exc_info.value.status_history == ("pending",)
+            assert not leader_task.done()
+        finally:
+            leader_task.cancel()
+            await asyncio.gather(leader_task, return_exceptions=True)
+
+    @pytest.mark.asyncio
+    async def test_caller_timeout_uses_observed_in_progress_transition(self) -> None:
+        started = GenerationStatus(task_id="t1", status="pending", error=None, error_code=None)
+        client = _make_client("generate_audio", started)
+
+        async def in_progress_wait(*_args: object, **kwargs: object) -> object:
+            callback = kwargs["on_status_change"]
+            assert callable(callback)
+            callback(GenerationStatus(task_id="t1", status="in_progress"))
+            await asyncio.sleep(0.2)
+            return GenerationStatus(task_id="t1", status="completed")
+
+        client.artifacts.wait_for_completion.side_effect = in_progress_wait
+
+        with pytest.raises(ArtifactInProgressTimeoutError) as exc_info:
+            await execute_generation(
+                _audio_plan(wait=True, timeout=0.05, interval=0.01),
+                client,
+                notebook_resolver=_notebook_resolver("nb_resolved"),
+                source_resolver=_source_resolver(["s1"]),
+            )
+
+        assert exc_info.value.last_status == "in_progress"
+        assert exc_info.value.status_history == ("in_progress",)
+        assert tuple(status.status for status in exc_info.value.status_transitions) == (
+            "in_progress",
+        )
+
+    @pytest.mark.asyncio
+    async def test_inner_bare_timeout_before_caller_deadline_propagates(self) -> None:
+        started = GenerationStatus(task_id="t1", status="pending", error=None, error_code=None)
+        inner_timeout = TimeoutError("inner waiter timeout")
+        client = _make_client("generate_audio", started)
+        client.artifacts.wait_for_completion.side_effect = inner_timeout
+
+        with pytest.raises(TimeoutError) as exc_info:
+            await execute_generation(
+                _audio_plan(wait=True, timeout=60.0),
+                client,
+                notebook_resolver=_notebook_resolver("nb_resolved"),
+                source_resolver=_source_resolver(["s1"]),
+            )
+
+        assert exc_info.value is inner_timeout
 
     @pytest.mark.asyncio
     async def test_notebook_resolver_invoked_with_json_output_flag(self):

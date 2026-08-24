@@ -167,11 +167,11 @@ class TestGenerateAudio:
         assert "https://example.com/audio.mp3" in result.output
         mock_client.artifacts.wait_for_completion.assert_awaited_once()
         kwargs = mock_client.artifacts.wait_for_completion.await_args.kwargs
-        assert kwargs.get("timeout") == 1200.0
+        assert 0.0 < kwargs["timeout"] <= 1200.0
 
     def test_generate_audio_with_wait_timeout_interval_forwarded(self, runner, mock_auth):
         """`generate audio --wait --timeout 60 --interval 5` plumbs both into
-        artifacts.wait_for_completion.
+        the remaining caller budget and interval into artifacts.wait_for_completion.
         The new `--timeout`/`--interval` flags must reach the polling call so
         that scripts can bound the wait and the cadence — not just toggle the
         wait on/off as the legacy `--wait` flag did. The CLI surface is
@@ -210,7 +210,7 @@ class TestGenerateAudio:
         assert result.exit_code == 0, result.output
         mock_client.artifacts.wait_for_completion.assert_awaited_once()
         kwargs = mock_client.artifacts.wait_for_completion.await_args.kwargs
-        assert kwargs.get("timeout") == 60.0
+        assert 0.0 < kwargs["timeout"] <= 60.0
         assert kwargs.get("initial_interval") == 5.0, (
             f"expected --interval=5 to plumb into wait_for_completion, got kwargs={kwargs}"
         )
