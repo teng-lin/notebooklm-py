@@ -234,7 +234,7 @@ def _caller_artifact_timeout_error(
         if (status := _generation_status(transition)) is not None
     )
     kickoff_status = _generation_status(kickoff_result)
-    last_status = observed_history[-1] if observed_history else kickoff_status
+    last_status = next(reversed(observed_history), kickoff_status)
     history = observed_history or ((kickoff_status,) if kickoff_status is not None else ())
     error_type = (
         ArtifactInProgressTimeoutError if "in_progress" in history else ArtifactPendingTimeoutError
