@@ -2126,7 +2126,14 @@ in `_web/bindings/<domain>.py` as module-level `CodecBinding` constants assemble
 ∪ row-backed with the count pins unchanged; `SETTINGS_GET`, `SETTINGS_GET_LIMITS`,
 `SETTINGS_SET_LANGUAGE` and `ARTIFACT_SUGGEST_REPORTS` are the first four rows; the
 `dispatched` marker now reaches `BackendError` through `_translate_error`; the per-domain steps are
-recorded in `2026-08-24-p9-3-domain-conversion-recipe.md`.*
+recorded in `2026-08-24-p9-3-domain-conversion-recipe.md`. Domains merged since: sharing
+(`SHARING_GET`, `LEGACY_SHARE_ARTIFACT`; `_sharing_status` kept for the three composites),
+research (`RESEARCH_START` input-keyed with `map_error`, `RESEARCH_POLL`, `RESEARCH_CANCEL`,
+`RESEARCH_IMPORT`; `ResearchWebHandlers` deleted, MRO 11 → 10; the shared translation moved to
+`_web/errors.py` ahead of P9.4 so a row's `map_error` can call it without importing the head),
+notes and mind maps (nine rows), labels/collections (seven rows; `_label_set_list` kept for the
+four composites' `outcome_unknown_on_expiry` threading). At `b5b0a70b`: 26 rows, 56 handler
+names, chain class-body lines 4,222 → 3,705, gate green.*
 `planned:_binding.py` (introduced in P9.0; neutral: imports nothing under `_web/`, `rpc/`,
 `_auth/`, or `httpx` — its neutrality is what makes the dispatch type check possible) defines:
 
