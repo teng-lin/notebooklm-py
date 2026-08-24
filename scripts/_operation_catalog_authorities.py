@@ -680,10 +680,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.LABEL_LIST, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "label_type=source")
+            ("_web/bindings/labels.py:LABEL_LIST", "label_type=source")
         ),
         (Operation.LABEL_GET, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "select source-label id")
+            ("_web/bindings/labels.py:LABEL_GET", "select source-label id")
         ),
         (Operation.LABEL_SOURCES, _b(RPCMethod.LIST_LABELS)): _rules(
             (
@@ -692,10 +692,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.COLLECTION_LIST, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "label_type=collection")
+            ("_web/bindings/labels.py:COLLECTION_LIST", "label_type=collection")
         ),
         (Operation.COLLECTION_GET, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "select collection id")
+            ("_web/bindings/labels.py:COLLECTION_GET", "select collection id")
         ),
         (Operation.LABEL_CREATE, _b(RPCMethod.LIST_LABELS)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_set_list", "pre-create identity baseline")
@@ -805,7 +805,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
 SHARED_RPC_AUTHORITY_RULES.update(
     {
         (Operation.LABEL_GENERATE, _b(RPCMethod.CREATE_LABEL)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_generate", "label_mode=auto-group")
+            ("_web/bindings/labels.py:LABEL_GENERATE", "label_mode=auto-group")
         ),
         (Operation.LABEL_CREATE, _b(RPCMethod.CREATE_LABEL)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_create", "label_type=source")
@@ -838,10 +838,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/backend.py:WebRpcBackend._note_delete", "kind=NOTE_BACKED")
         ),
         (Operation.LABEL_DELETE, _b(RPCMethod.DELETE_LABEL)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_delete", "label_type=source")
+            ("_web/bindings/labels.py:LABEL_DELETE", "label_type=source")
         ),
         (Operation.COLLECTION_DELETE, _b(RPCMethod.DELETE_LABEL)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_delete", "label_type=collection")
+            ("_web/bindings/labels.py:COLLECTION_DELETE", "label_type=collection")
         ),
         (Operation.ARTIFACT_DOWNLOAD, _b(RPCMethod.GET_INTERACTIVE_HTML)): _rules(
             (
