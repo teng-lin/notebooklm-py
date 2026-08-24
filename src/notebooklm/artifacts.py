@@ -314,12 +314,27 @@ async def _await_with_deadline(
     remaining = deadline.remaining()
     if remaining <= 0.0:
         raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation"))
+    completed, result = await _await_before_timeout(awaitable_factory(), remaining)
+    if completed:
+        return result
+    raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation"))
+
+
+async def _await_before_timeout(awaitable: Awaitable[Any], timeout: float) -> tuple[bool, Any]:
+    """Distinguish a child result from this caller's own timeout boundary."""
+    task = asyncio.ensure_future(awaitable)
     try:
-        return await asyncio.wait_for(awaitable_factory(), timeout=remaining)
-    except asyncio.TimeoutError as error:
-        if not deadline.expired():
-            raise
-        raise TimeoutError(deadline.timeout_message(f"{artifact_type} generation")) from error
+        done, _pending = await asyncio.wait((task,), timeout=timeout)
+    except BaseException:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        raise
+    if task in done:
+        return True, task.result()
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    return False, None
 
 
 async def _run_generation_workflow(
@@ -380,23 +395,19 @@ async def _run_generation_workflow(
         if caller_interval is not None:
             wait_kwargs["initial_interval"] = caller_interval
         wait_kwargs["on_status_change"] = observed_transitions.append
-        try:
-            return await asyncio.wait_for(
-                wait_for_completion(resolved_notebook_id, task_id, **wait_kwargs),
-                timeout=remaining,
-            )
-        except ArtifactTimeoutError:
-            raise
-        except asyncio.TimeoutError as error:
-            if not deadline.expired():
-                raise
-            raise _caller_artifact_timeout_error(
-                resolved_notebook_id,
-                task_id,
-                caller_timeout,
-                kickoff_result,
-                observed_transitions,
-            ) from error
+        completed, result = await _await_before_timeout(
+            wait_for_completion(resolved_notebook_id, task_id, **wait_kwargs),
+            remaining,
+        )
+        if completed:
+            return result
+        raise _caller_artifact_timeout_error(
+            resolved_notebook_id,
+            task_id,
+            caller_timeout,
+            kickoff_result,
+            observed_transitions,
+        )
 
     return await _run_deadline_generation_workflow(
         _generate,

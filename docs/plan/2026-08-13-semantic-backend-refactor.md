@@ -2253,7 +2253,7 @@ infrastructure. Fifteen conditional non-public variants are pinned across 14 mix
 live ids are allocated. It also records 38 private DTO -> public dataclass paths (32 linked, one
 production-dead public-valued arm, one internal-runtime-configuration path, two internal auth
 capabilities, and two adapter-dropped structured-document paths), 16 delegated-helper fingerprints,
-and the aggregate 530-node / 1,254-edge transitive-helper graph digest. Adapter
+and the aggregate 531-node / 1,256-edge transitive-helper graph digest. Adapter
 registrations and direct JSON emissions are fail-closed. `AuthTokens` remains
 out of the full-key inventory and is reachable only through the exact redacted MCP/REST
 `server_info` identity projections; credential serialization remains forbidden.
@@ -2357,7 +2357,7 @@ uv run python scripts/audit_operation_catalog.py --json | uv run python -c \
 # JSON envelope totals: CLI 31 models/133 projections, MCP 32/123, REST 32/57;
 # 313 unique ids. Sink totals: 350 = 225 projection + 117 reviewed non-public
 # + 8 infrastructure; 15 conditional non-public variants, 38 private paths,
-# 16 explicit helper fingerprints, and a 530-node / 1,254-edge helper-graph digest.
+# 16 explicit helper fingerprints, and a 531-node / 1,256-edge helper-graph digest.
 uv run python - <<'PY'
 import json
 from collections import Counter

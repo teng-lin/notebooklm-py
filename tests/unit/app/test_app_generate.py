@@ -306,6 +306,57 @@ class TestExecuteGeneration:
         )
 
     @pytest.mark.asyncio
+    async def test_caller_timer_does_not_depend_on_deadline_expired_clock_edge(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class _ClockEdgeDeadline:
+            timeout = 60.0
+
+            def __init__(self) -> None:
+                self.remaining_values = iter((60.0, 0.01))
+
+            def expired(self) -> bool:
+                return False
+
+            def remaining(self) -> float:
+                return next(self.remaining_values)
+
+            def timeout_message(self, operation: str) -> str:
+                return f"{operation} timed out after 60.0s"
+
+        deadline = _ClockEdgeDeadline()
+
+        class _ClockEdgeDeadlineFactory:
+            @staticmethod
+            def start(timeout: float, *, monotonic: object) -> _ClockEdgeDeadline:
+                assert timeout == 60.0
+                return deadline
+
+        monkeypatch.setattr(artifact_helpers, "RuntimeDeadline", _ClockEdgeDeadlineFactory)
+        started = GenerationStatus(task_id="t1", status="pending", error=None, error_code=None)
+        client = _make_client("generate_audio", started)
+
+        async def in_progress_wait(*_args: object, **kwargs: object) -> object:
+            callback = kwargs["on_status_change"]
+            assert callable(callback)
+            callback(GenerationStatus(task_id="t1", status="in_progress"))
+            await asyncio.Event().wait()
+
+        client.artifacts.wait_for_completion.side_effect = in_progress_wait
+
+        with pytest.raises(ArtifactInProgressTimeoutError) as exc_info:
+            await execute_generation(
+                _audio_plan(wait=True, timeout=60.0),
+                client,
+                notebook_resolver=_notebook_resolver("nb_resolved"),
+                source_resolver=_source_resolver(["s1"]),
+            )
+
+        assert exc_info.value.last_status == "in_progress"
+        assert exc_info.value.status_history == ("in_progress",)
+
+    @pytest.mark.asyncio
     async def test_inner_bare_timeout_before_caller_deadline_propagates(self) -> None:
         started = GenerationStatus(task_id="t1", status="pending", error=None, error_code=None)
         inner_timeout = TimeoutError("inner waiter timeout")
