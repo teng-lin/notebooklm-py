@@ -6,12 +6,17 @@ import logging
 import reprlib
 from typing import Any
 
+from ..._binding import CodecPayload
 from ..._records import (
+    LegacyShareArtifactInput,
+    LegacyShareArtifactResult,
     ShareAccessLevel,
     SharedUserRecord,
     SharePermissionLevel,
     ShareStatusRecord,
     ShareViewScope,
+    SharingGetInput,
+    SharingGetResult,
     SharingUserGrant,
 )
 from ...rpc import RPCMethod, safe_index
@@ -272,12 +277,56 @@ def decode_share_status(
     )
 
 
+# Row-facing codecs (P9.3). Each returns the full request payload one codec
+# row dispatches — params plus the notebook route and option flags exactly as
+# the handler passed them — and never names a method.
+def encode_sharing_get(value: SharingGetInput) -> CodecPayload:
+    """Payload for the ``sharing.get`` codec row."""
+    return CodecPayload(
+        params=build_get_share_status_params(value.notebook_id),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def decode_sharing_get(value: SharingGetInput, data: Any) -> SharingGetResult:
+    """Row decoder for ``sharing.get``; the notebook id comes from the input."""
+    return SharingGetResult(status=decode_share_status(data, value.notebook_id))
+
+
+def encode_legacy_share_artifact(value: LegacyShareArtifactInput) -> CodecPayload:
+    """Payload for the ``sharing.legacy_share_artifact`` codec row.
+
+    ``allow_null`` preserves the legacy status-3/null success contract.
+    """
+    return CodecPayload(
+        params=build_legacy_share_artifact_params(
+            value.notebook_id,
+            value.public,
+            value.artifact_id,
+        ),
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_legacy_share_artifact(
+    value: LegacyShareArtifactInput, data: Any
+) -> LegacyShareArtifactResult:
+    """Row decoder for ``sharing.legacy_share_artifact``: echo the requested state."""
+    del data
+    return LegacyShareArtifactResult(public=value.public, artifact_id=value.artifact_id)
+
+
 __all__ = [
     "build_get_share_status_params",
     "build_legacy_share_artifact_params",
     "build_share_grants_params",
     "build_share_view_level_params",
     "build_share_visibility_params",
+    "decode_legacy_share_artifact",
     "decode_share_status",
     "decode_shared_user",
+    "decode_sharing_get",
+    "encode_legacy_share_artifact",
+    "encode_sharing_get",
 ]
