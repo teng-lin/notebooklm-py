@@ -594,6 +594,29 @@ gate the destructive ones.
   searches common install dirs beyond `PATH`.
 - **Client doesn't see the tools.** Confirm the config was written (`notebooklm mcp install <client>`)
   and **restart the client** — most hosts only read MCP config at startup.
+- **`notebooklm-mcp` missing entirely from `claude mcp list` (Claude Code plugin path).**
+  `claude mcp list` reports two distinct states for a server that isn't working yet: one that's
+  configured but not yet authorized prints `! Needs authentication`; one that was **never
+  registered** doesn't print at all. If `notebooklm-mcp` is simply absent from the list — not
+  shown as needing auth, just missing — the [Claude Code plugin](#connect-a-client) step was never
+  run (or the client was never restarted after):
+  ```text
+  /plugin marketplace add <owner>/<repo>   # this fork/org's marketplace, e.g. bauer-automate/3P-notebooklm-py
+  /plugin install notebooklm-mcp
+  ```
+  Restart Claude Code, then re-run `claude mcp list` to confirm it now shows up (either
+  `Connected` or `! Needs authentication`).
+
+  **Before that, confirm the `claude` CLI itself is on `PATH`.** A terminal opened right after
+  `npm install -g @anthropic-ai/claude-code` can still report `'claude' is not recognized` —
+  shells load `PATH` once at startup, so an install that happened in another window doesn't
+  propagate until you open a new one. Diagnose rather than guess:
+  ```powershell
+  Get-Command claude -ErrorAction SilentlyContinue
+  npm list -g @anthropic-ai/claude-code
+  ```
+  If both confirm the package is installed but `Get-Command` finds nothing, open a fresh terminal
+  instead of reinstalling.
 - **`Unknown tool: '<name>'` after upgrading the server.** The MCP host (claude.ai, ChatGPT, …) caches
   the tool list from when it connected, so a version upgrade that **renamed or folded** a tool leaves the
   old name callable-but-failing. **Remove and re-add the connector** to refresh it — a reconnect / re-auth
