@@ -360,6 +360,8 @@ class _ReferenceCollector(ast.NodeVisitor):
                 unresolved = resolver.unresolved
             if row is value:
                 site = target.id
+            elif key_member is not None:
+                site = f"{target.id}.{key_member}"
             elif operation is not None:
                 site = f"{target.id}.{operation.name}"
             else:
@@ -831,6 +833,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
     {
         ("_binding.py", "_backend", "BackendContractError"),
         ("_binding.py", "_backend", "BackendError"),
+        ("_web/backend.py", "_binding", "Binding"),
         ("_web/backend.py", "_binding", "BindingAuditError"),
         ("_web/backend.py", "_binding", "BindingTable"),
         ("_web/backend.py", "_binding", "OperationDisposition"),
@@ -1429,18 +1432,27 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_suggestion_service.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
         ("_suggestion_service.py", "_records", "NotebookSuggestPromptsInput"),
         ("_web/backend.py", "codec", "settings"),
-        ("_web/settings_suggestions.py", "_records", "ArtifactSuggestReportsInput"),
-        ("_web/settings_suggestions.py", "_records", "ArtifactSuggestReportsResult"),
         ("_web/settings_suggestions.py", "_records", "NotebookSuggestPromptsInput"),
         ("_web/settings_suggestions.py", "_records", "NotebookSuggestPromptsResult"),
-        ("_web/settings_suggestions.py", "_records", "SettingsGetInput"),
-        ("_web/settings_suggestions.py", "_records", "SettingsGetLimitsInput"),
-        ("_web/settings_suggestions.py", "_records", "SettingsGetLimitsResult"),
-        ("_web/settings_suggestions.py", "_records", "SettingsGetResult"),
-        ("_web/settings_suggestions.py", "_records", "SettingsSetLanguageInput"),
-        ("_web/settings_suggestions.py", "_records", "SettingsSetLanguageResult"),
-        ("_web/settings_suggestions.py", "codec", "settings"),
         ("_web/settings_suggestions.py", "codec", "suggestions"),
+        # P9.3 settings/suggestions codec rows and their row-facing codec helpers.
+        ("_web/bindings/__init__.py", "_binding", "Binding"),
+        ("_web/bindings/settings.py", "_binding", "Binding"),
+        ("_web/bindings/settings.py", "_binding", "CodecBinding"),
+        ("_web/bindings/settings.py", "_binding", "NativeCallSpec"),
+        ("_web/bindings/settings.py", "_records", "ARTIFACT_SUGGEST_REPORTS_DEF"),
+        ("_web/bindings/settings.py", "_records", "SETTINGS_GET_DEF"),
+        ("_web/bindings/settings.py", "_records", "SETTINGS_GET_LIMITS_DEF"),
+        ("_web/bindings/settings.py", "_records", "SETTINGS_SET_LANGUAGE_DEF"),
+        ("_web/bindings/settings.py", "codec", "settings"),
+        ("_web/bindings/settings.py", "codec", "suggestions"),
+        ("_web/codec/settings.py", "_binding", "CodecPayload"),
+        ("_web/codec/settings.py", "_records", "SettingsGetInput"),
+        ("_web/codec/settings.py", "_records", "SettingsGetLimitsInput"),
+        ("_web/codec/settings.py", "_records", "SettingsSetLanguageInput"),
+        ("_web/codec/suggestions.py", "_binding", "CodecPayload"),
+        ("_web/codec/suggestions.py", "_records", "ArtifactSuggestReportsInput"),
+        ("_web/registry.py", "_binding", "Binding"),
         ("_web/codec/settings.py", "_records", "AccountLimitsRecord"),
         ("_web/codec/settings.py", "_records", "SettingsGetLimitsResult"),
         ("_web/codec/settings.py", "_records", "SettingsGetResult"),

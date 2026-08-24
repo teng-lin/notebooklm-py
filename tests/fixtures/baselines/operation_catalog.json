@@ -3136,7 +3136,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._artifact_suggest_reports"
+        "_web/bindings/settings.py:ARTIFACT_SUGGEST_REPORTS"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3184,8 +3184,8 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/backend.py:WebRpcBackend._notebook_limit_error",
-        "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._settings_get",
-        "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._settings_get_limits",
+        "_web/bindings/settings.py:SETTINGS_GET",
+        "_web/bindings/settings.py:SETTINGS_GET_LIMITS",
         "_web/source_variants.py:SourceVariantWebHandlers._source_file_limit"
       ],
       "golden_disposition": "golden_covered",
@@ -3771,7 +3771,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._settings_set_language"
+        "_web/bindings/settings.py:SETTINGS_SET_LANGUAGE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -5317,7 +5317,7 @@
         {
           "binding": "GET_SUGGESTED_REPORTS:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._artifact_suggest_reports",
+          "site": "_web/bindings/settings.py:ARTIFACT_SUGGEST_REPORTS",
           "transport_kind": "rpc"
         }
       ],
@@ -7339,7 +7339,7 @@
         {
           "binding": "GET_USER_SETTINGS:<default>",
           "discriminator": "settings row projection",
-          "site": "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._settings_get",
+          "site": "_web/bindings/settings.py:SETTINGS_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -7371,7 +7371,7 @@
         {
           "binding": "GET_USER_SETTINGS:<default>",
           "discriminator": "account-limit projection",
-          "site": "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._settings_get_limits",
+          "site": "_web/bindings/settings.py:SETTINGS_GET_LIMITS",
           "transport_kind": "rpc"
         }
       ],
@@ -7402,7 +7402,7 @@
         {
           "binding": "SET_USER_SETTINGS:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._settings_set_language",
+          "site": "_web/bindings/settings.py:SETTINGS_SET_LANGUAGE",
           "transport_kind": "rpc"
         }
       ],

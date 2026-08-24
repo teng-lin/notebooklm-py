@@ -913,16 +913,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.SETTINGS_GET, _b(RPCMethod.GET_USER_SETTINGS)): _rules(
-            (
-                "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._settings_get",
-                "settings row projection",
-            )
+            ("_web/bindings/settings.py:SETTINGS_GET", "settings row projection")
         ),
         (Operation.SETTINGS_GET_LIMITS, _b(RPCMethod.GET_USER_SETTINGS)): _rules(
-            (
-                "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._settings_get_limits",
-                "account-limit projection",
-            )
+            ("_web/bindings/settings.py:SETTINGS_GET_LIMITS", "account-limit projection")
         ),
         (Operation.RESEARCH_IMPORT, _b(RPCMethod.IMPORT_RESEARCH)): _rules(
             ("_web/research.py:ResearchWebHandlers._research_import", "single import attempt")
