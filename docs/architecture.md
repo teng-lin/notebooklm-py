@@ -1081,7 +1081,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/labels.py` | P6.4 source-label/collection web workflow mixin; owns both request dialects and read/create/update/delete reconciliation while keeping the composed backend below the module-size ratchet. |
 | `_web/research.py` | P6.2 Research web workflow mixin; owns fast/deep start, poll, cancel, and ordered import handlers while keeping the composed backend below the module-size ratchet. |
 | `_web/sharing.py` | P6.5 Sharing web workflow mixin; owns the status/readback and mutation request dialects while keeping the composed backend below the module-size ratchet. |
-| `_web/settings_suggestions.py` | P6.6 settings/limits/language and prompt/report suggestion web workflow mixin; owns the five account/notebook codecs while keeping the composed backend below the module-size ratchet. |
+| `_web/bindings/__init__.py` | `WEB_BINDING_ROWS` (P9.3): the union of every domain's binding rows, checked for one row per operation and canonical definitions; `_web/registry.py` partitions the supported set between these rows and the remaining handler names. |
+| `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
+| `_web/settings_suggestions.py` | P6.6 prompt-suggestion web workflow mixin; since P9.3 only the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` composite remains here (the settings and report-suggestion leaves are `_web/bindings/settings.py` rows). |
 | `_web/source_variants.py` | Web workflow mixin for URL add plus source content, freshness, refresh, Drive, upload, and remaining source variants; owns request dialects and composite reconciliation while keeping the composed backend below the module-size ratchet. |
 | `_web/policy.py` | Exact P4 ledger for all 82 active web workflows: semantic policy, every reachable native method/variant, reviewed native idempotency, and optional reported divergence. |
 | `_web/registry.py` | Closed web disposition registry over every `Operation`: 82 executable typed handlers plus explicit composite dispositions. |
@@ -1340,7 +1342,10 @@ src/notebooklm/
 │   ├── labels.py                # P6.4 source-label/collection workflow handlers
 │   ├── research.py              # P6.2 Research workflow handlers
 │   ├── sharing.py               # P6.5 Sharing workflow handlers
-│   ├── settings_suggestions.py  # P6.6 settings/suggestion workflow handlers
+│   ├── settings_suggestions.py  # P6.6 prompt-suggestion composite handler
+│   ├── bindings/                # P9.3 per-domain binding rows
+│   │   ├── __init__.py          # WEB_BINDING_ROWS union
+│   │   └── settings.py          # settings/suggestion codec rows
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)
 │   ├── registry.py              # Closed active/unsupported web dispositions
 │   ├── studio_documents.py      # P5.4 web report/video workflow handlers
