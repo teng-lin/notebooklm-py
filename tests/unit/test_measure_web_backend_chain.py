@@ -14,6 +14,8 @@ from typing import Any
 
 import pytest
 
+from notebooklm._web.backend import WebRpcBackend
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 import scripts.measure_web_backend_chain as measure_script  # noqa: E402
@@ -31,9 +33,10 @@ def measurements() -> dict[str, Any]:
 
 
 def test_chain_shape_matches_entry_record(measurements: dict[str, Any]) -> None:
-    assert measurements["mro_depth"] == 11
+    # Derived from the live class: P9.3/P9.4 delete chain classes one domain at a time.
+    assert measurements["mro_depth"] == len(WebRpcBackend.__mro__) - 1
     assert measurements["chain"][0] == "WebRpcBackend"
-    assert measurements["chain"][-1] == "StudioDocumentWebHandlers"
+    assert measurements["chain"][-1] == WebRpcBackend.__mro__[-2].__name__
     assert measurements["super_calls"] == 0
     assert measurements["ancestor_state_attributes"] == {}
     assert "_rpc_call" in measurements["abstract_seams"]
@@ -76,4 +79,4 @@ def test_main_json_flag_emits_dict(
     assert main(["--json"]) == 0
     out = capsys.readouterr().out
     assert out.lstrip().startswith("{")
-    assert '"mro_depth": 11' in out
+    assert f'"mro_depth": {len(WebRpcBackend.__mro__) - 1}' in out

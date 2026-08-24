@@ -36,6 +36,7 @@ from notebooklm._records import (
 )
 from notebooklm._web import registry
 from notebooklm._web.backend import WebRpcBackend, _resolve_handler_bindings
+from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from tests._fixtures.web_backend import build_web_backend
 
@@ -356,7 +357,9 @@ def test_backend_resolves_every_handler_at_construction() -> None:
     assert set(table) == WEB_SUPPORTED_OPERATIONS
     row_backed = {op for op, binding in WEB_OPERATION_REGISTRY.items() if binding.row is not None}
     assert table.resolved_handler_count == 82 - len(row_backed)
-    assert table.codec_count == len(row_backed) == 4
+    # Derived, not a literal: every P9.3 domain PR grows the row set.
+    assert table.codec_count == len(row_backed) == len(WEB_BINDING_ROWS)
+    assert row_backed == set(WEB_BINDING_ROWS)
     assert table.custom_count == 0
     assert all(isinstance(table[op], CodecBinding) for op in row_backed)
     assert table[Operation.SETTINGS_GET] is WEB_OPERATION_REGISTRY[Operation.SETTINGS_GET].row
