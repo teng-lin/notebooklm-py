@@ -7194,9 +7194,9 @@
       }
     ],
     "transitive_helper_graph": {
-      "aggregate_fingerprint": "sha256:eb9a5b38ef157d9ff25cbc929519afbc12d2be9948f323e134ec75d8a4efd08a",
-      "edge_count": 1256,
-      "node_count": 531,
+      "aggregate_fingerprint": "sha256:adff950f8a5fd1908d22fcc4c169c3dc30d9e44981b699c9d19264b1dc86136c",
+      "edge_count": 1258,
+      "node_count": 533,
       "root_count": 210,
       "schema_version": 1
     }

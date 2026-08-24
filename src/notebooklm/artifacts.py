@@ -64,6 +64,12 @@ _AwaitableFactory = Callable[[], Awaitable[Any]]
 _WaitContext = Callable[[str, str], AbstractAsyncContextManager[None]]
 
 
+# ``asyncio`` keeps only weak references to tasks. Timeout cleanup must retain
+# cancellation-suppressing children until they eventually settle, while still
+# returning at the caller's hard deadline.
+_DETACHED_TIMEOUT_TASKS: set[asyncio.Future[Any]] = set()
+
+
 def calculate_backoff_delay(
     attempt: int,
     initial_delay: float = RATE_LIMIT_RETRY_INITIAL_DELAY,
@@ -321,19 +327,34 @@ async def _await_with_deadline(
 
 
 async def _await_before_timeout(awaitable: Awaitable[Any], timeout: float) -> tuple[bool, Any]:
-    """Distinguish a child result from this caller's own timeout boundary."""
+    """Distinguish a child result from this caller's own hard timeout boundary.
+
+    Cancellation is requested but deliberately not awaited: a custom child
+    that suppresses ``CancelledError`` must not hold this caller open past its
+    aggregate budget. Its eventual exception is still consumed by a callback.
+    """
     task = asyncio.ensure_future(awaitable)
+
+    def _cancel_without_wait() -> None:
+        def _consume_result(done_task: asyncio.Future[Any]) -> None:
+            try:
+                if not done_task.cancelled():
+                    done_task.exception()
+            finally:
+                _DETACHED_TIMEOUT_TASKS.discard(done_task)
+
+        _DETACHED_TIMEOUT_TASKS.add(task)
+        task.add_done_callback(_consume_result)
+        task.cancel()
+
     try:
         done, _pending = await asyncio.wait((task,), timeout=timeout)
     except BaseException:
-        if not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        _cancel_without_wait()
         raise
     if task in done:
         return True, task.result()
-    task.cancel()
-    await asyncio.gather(task, return_exceptions=True)
+    _cancel_without_wait()
     return False, None
 
 
