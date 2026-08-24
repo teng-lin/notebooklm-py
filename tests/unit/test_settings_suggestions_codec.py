@@ -4,19 +4,34 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._records import AccountLimitsRecord
+from notebooklm._binding import CodecPayload
+from notebooklm._records import (
+    AccountLimitsRecord,
+    ArtifactSuggestReportsInput,
+    SettingsGetInput,
+    SettingsGetLimitsInput,
+    SettingsSetLanguageInput,
+)
 from notebooklm._web.codec.settings import (
     decode_account_limits,
     decode_get_account_limits,
     decode_get_user_settings,
     decode_set_output_language,
+    decode_settings_get,
+    decode_settings_get_limits,
+    decode_settings_set_language,
     encode_get_user_settings,
     encode_set_output_language,
+    encode_settings_get,
+    encode_settings_get_limits,
+    encode_settings_set_language,
 )
 from notebooklm._web.codec.suggestions import (
+    decode_artifact_suggest_reports,
     decode_prompt_source_ids,
     decode_prompt_suggestions,
     decode_report_suggestions,
+    encode_artifact_suggest_reports,
     encode_prompt_suggestions,
     encode_report_suggestions,
 )
@@ -31,6 +46,45 @@ def test_settings_request_codecs_match_recorded_golden_arrays_and_are_fresh() ->
     assert first is not second
     assert first[1] is not second[1]
     assert encode_set_output_language("ja") == [[[None, [[None, None, None, None, ["ja"]]]]]]
+
+
+def test_row_payloads_match_the_handler_kwargs_golden() -> None:
+    """P9.3 rows: params plus the exact route/option flags each handler passed."""
+    get = encode_settings_get(SettingsGetInput())
+    limits = encode_settings_get_limits(SettingsGetLimitsInput())
+    language = encode_settings_set_language(SettingsSetLanguageInput("ja"))
+    reports = encode_artifact_suggest_reports(ArtifactSuggestReportsInput("nb"))
+
+    assert get == CodecPayload(params=encode_get_user_settings(), source_path="/")
+    assert limits == CodecPayload(params=encode_get_user_settings(), source_path="/")
+    assert get.params is not limits.params
+    assert language == CodecPayload(
+        params=[[[None, [[None, None, None, None, ["ja"]]]]]], source_path="/"
+    )
+    assert reports == CodecPayload(params=[[2], "nb"], source_path="/notebook/nb", allow_null=True)
+    for payload in (get, limits, language):
+        assert payload.allow_null is False
+        assert payload.raise_on_null_status is False
+        assert payload.attempt_timeout is None
+    assert reports.raise_on_null_status is False
+
+
+def test_row_decoders_delegate_to_the_recorded_projections() -> None:
+    response = [[None, [True, 200, "unknown-source-limit", None, 99], [True]]]
+    assert decode_settings_get(SettingsGetInput(), response) == decode_get_user_settings(response)
+    assert decode_settings_get_limits(SettingsGetLimitsInput(), response) == (
+        decode_get_account_limits(response)
+    )
+    assert decode_settings_set_language(SettingsSetLanguageInput("ja"), [None, None, [True]]) == (
+        decode_set_output_language([None, None, [True]])
+    )
+    rows = [[["Title", "Description", "Prompt", None, None, "Advanced"]]]
+    assert decode_artifact_suggest_reports(ArtifactSuggestReportsInput("nb"), rows) == (
+        decode_report_suggestions(rows)
+    )
+    assert (
+        decode_artifact_suggest_reports(ArtifactSuggestReportsInput("nb"), None).suggestions == ()
+    )
 
 
 def test_settings_decode_preserves_unknown_limits_and_optional_language_policy() -> None:

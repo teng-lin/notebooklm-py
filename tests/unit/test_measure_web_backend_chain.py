@@ -40,14 +40,19 @@ def test_chain_shape_matches_entry_record(measurements: dict[str, Any]) -> None:
 
 
 def test_registry_and_ledger_counts(measurements: dict[str, Any]) -> None:
-    assert measurements["registry_handler_names"] == 82
+    handler_names = measurements["registry_handler_names"]
+    binding_rows = len(measurements["registry_binding_rows"])
+    # The 82 executable dispositions are partitioned between resolved handler
+    # names and binding rows; P9.3 moves them one domain at a time.
+    assert handler_names + binding_rows == 82
+    assert binding_rows >= 4
     assert (
         measurements["leaf_handlers_by_code"] + len(measurements["composite_handlers_by_code"])
-        == 82
+        == handler_names
     )
     assert (
         measurements["ledger_single_native"] + measurements["ledger_multi_native"]
-        == measurements["registry_handler_names"]
+        == handler_names + binding_rows
     )
     assert measurements["cross_class_rpc_calls"] <= measurements["rpc_call_sites"]
     assert set(measurements["rpc_call_keyword_usage"]) == set(RPC_CALL_KEYWORDS)
