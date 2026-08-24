@@ -1806,12 +1806,13 @@ already exist inside the web binding with no shared service owner.
   A second backend (the former "P10") is not part of P9 and keeps its separate decision.
 - [x] P8 complete at `9e5daef4` on `refactor/semantic-backend-dev` (owner-directed deviation:
   P9 slices land on that branch as reviewed merges rather than as a PR stack on `main`).
-- [ ] The entry record is re-measured at the merge commit with the committed measurement script
-  and matches, or is re-recorded before P9.0 opens.
-- [ ] `CURRENT_PHASE` in `tests/_guardrails/test_no_anonymous_bridges.py` is raised to 9 in
-  P9.0's PR and no `Removal: P8` bridge remains.
-- [ ] No other in-flight change touches `src/notebooklm/_web/backend.py`; P9.0 and P9.1 both
-  rewrite its head.
+- [x] The entry record is re-measured at `436573ba` with the committed measurement script
+  (`scripts/measure_web_backend_chain.py`, `uv run python scripts/measure_web_backend_chain.py`)
+  and matches every row of the table below.
+- [x] `CURRENT_PHASE` in `tests/_guardrails/test_no_anonymous_bridges.py` is raised to 9 in
+  P9.0 and no `Removal: P8` bridge remains.
+- [x] No other in-flight change touches `src/notebooklm/_web/backend.py`; P9.0 and P9.1 are
+  serialized on that file.
 - [x] The **composite decomposition table** (P9.2 gate) — recorded in
   [`2026-08-24-p9-composite-gate-table.md`](2026-08-24-p9-composite-gate-table.md) (2026-08-24; it
   re-measures the 34 multi-native members as 30 sequential / 3 branch-exclusive / 1 single, names
@@ -1841,7 +1842,16 @@ Every slice is independently green and leaves exactly one execution authority pe
 code motion with pinned behaviour; P9.2 changes ownership of workflows and is the only slice that
 touches operation semantics, which is why it carries the stop/go review.
 
-**P9.0 — Neutral binding core and handler resolution at construction.**
+**P9.0 — Neutral binding core and handler resolution at construction.** *Done 2026-08-24
+(`a06f6087`, `034dde5a`, `c78c3e88`, `ef75f2a9`; merged at `b9d31892`): `_binding.py` defines
+the three dispositions, `NativeCallSpec`/`NativeChoice`, `CodecPayload`, the three row kinds, the
+`Transport`/`ErrorTranslator`/`RowInvoker` protocols, `BindingTable`, `audit_bindings` and
+`invoke_binding`; `WebRpcBackend.__init__` resolves the 82 handler names once into a table of
+`ResolvedHandlerBinding` rows and a misnamed or missing handler fails at construction; the
+per-call `getattr` is gone; the import set of `_binding.py` is pinned by
+`tests/_guardrails/test_binding_core_boundary.py`, and `tests/unit/test_binding_core.py` runs
+`mypy.api` on a `VideoIn`-typed handler bound to `ARTIFACT_GENERATE_AUDIO_DEF` and asserts an
+error.*
 `planned:_binding.py` lands here (types, table, audit and the generic `invoke_binding` function
 as specified under P9.3 — no rows yet), so every later slice consumes it rather than defining it
 late. `WebRpcBackend.__init__` resolves every `_HANDLER_NAMES` entry once via `getattr` into a
