@@ -2,21 +2,32 @@
 
 from __future__ import annotations
 
+import logging
 import reprlib
 from typing import Any
 
+from ..._binding import CodecPayload
 from ..._chat.stream_decode import project_streaming_chat_result
 from ..._notebook_payloads import build_get_notebook_params
 from ..._records import (
     ChatAskInput,
+    ChatConfigureAction,
     ChatConfigureInput,
+    ChatConfigureResult,
     ChatConversationTurnRecord,
+    ChatDeleteHistoryInput,
+    ChatDeleteHistoryResult,
+    ChatGetConversationInput,
+    ChatGetConversationResult,
+    ChatGetHistoryInput,
     ChatGetHistoryResult,
     ChatLegacyMappingRecord,
     ChatLegacySequenceRecord,
     ChatLegacyValue,
     ChatReferenceRecord,
     ChatSavedNoteRecord,
+    ChatSaveNoteInput,
+    ChatSaveNoteResult,
     ChatSettingsRecord,
     ChatStreamAnswerRecord,
     ChatTurnDecodeErrorRecord,
@@ -38,6 +49,10 @@ from .chat_stream import (
     build_streaming_chat_request,
     parse_streaming_chat_response,
 )
+
+# The conversation-id shape warnings predate the codec rows and stay pinned
+# under the chat facade's logger name.
+chat_logger = logging.getLogger("notebooklm._chat.api")
 
 _GOAL_CODES = {
     "default": 1,
@@ -61,6 +76,32 @@ def build_get_conversation_params(notebook_id: str) -> list[Any]:
 def decode_get_conversation_result(raw: Any) -> str | None:
     """Decode the soft ``hPTbtc`` conversation-id envelope."""
     return unwrap_last_conversation_id(raw)
+
+
+def decode_conversation_id_or_warn(raw: Any, *, notebook_id: str) -> str | None:
+    """Decode the conversation id, warning on unexpected non-empty shapes.
+
+    Shared by the ``chat.get_conversation`` codec row and the ``chat.ask``
+    post-stream resolution so both surface identical diagnostics.
+    """
+    conversation_id = decode_get_conversation_result(raw)
+    if conversation_id is not None:
+        return conversation_id
+    if raw and isinstance(raw, list):
+        chat_logger.warning(
+            "hPTbtc returned an unexpected response shape; no "
+            "conversation_id extracted (notebook=%s, raw=%r)",
+            notebook_id,
+            repr(raw)[:500],
+        )
+    elif raw is not None:
+        chat_logger.warning(
+            "hPTbtc returned a non-list, non-empty response (notebook=%s, type=%s, raw=%r)",
+            notebook_id,
+            type(raw).__name__,
+            repr(raw)[:500],
+        )
+    return None
 
 
 def build_get_history_params(conversation_id: str, limit: int) -> list[Any]:
@@ -240,6 +281,105 @@ def decode_ask_response(response_text: str) -> ChatStreamAnswerRecord:
     return project_streaming_chat_result(parse_streaming_chat_response(response_text))
 
 
+# Row-facing codecs (P9.3). Each encoder returns the full request payload one
+# codec row dispatches — params plus the notebook route and option flags exactly
+# as the retired handler passed them — and never names a method; the row's
+# ``NativeCallSpec`` is the sole method authority.
+def encode_chat_get_conversation(value: ChatGetConversationInput) -> CodecPayload:
+    """Payload for the ``chat.get_conversation`` codec row."""
+    return CodecPayload(
+        params=build_get_conversation_params(value.notebook_id),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def decode_chat_get_conversation(
+    value: ChatGetConversationInput, raw: Any
+) -> ChatGetConversationResult:
+    """Row decoder for ``chat.get_conversation`` with the shape warnings retained."""
+    return ChatGetConversationResult(
+        decode_conversation_id_or_warn(raw, notebook_id=value.notebook_id)
+    )
+
+
+def encode_chat_get_history(value: ChatGetHistoryInput) -> CodecPayload:
+    """Payload for the ``chat.get_history`` codec row."""
+    return CodecPayload(
+        params=build_get_history_params(value.conversation_id, value.limit),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def decode_chat_get_history(value: ChatGetHistoryInput, raw: Any) -> ChatGetHistoryResult:
+    """Row decoder for ``chat.get_history``."""
+    del value
+    return decode_get_history_result(raw, source="ChatAPI.get_conversation_turns")
+
+
+def encode_chat_delete_history(value: ChatDeleteHistoryInput) -> CodecPayload:
+    """Payload for the ``chat.delete_history`` codec row."""
+    return CodecPayload(
+        params=build_delete_history_params(value.conversation_id),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def decode_chat_delete_history(value: ChatDeleteHistoryInput, raw: Any) -> ChatDeleteHistoryResult:
+    """Row decoder for ``chat.delete_history``; the delete echo carries nothing."""
+    del value, raw
+    return ChatDeleteHistoryResult()
+
+
+def encode_chat_configure(value: ChatConfigureInput) -> CodecPayload:
+    """Payload for the input-keyed ``chat.configure`` codec row.
+
+    ``action is GET`` reads the settings through the recency-bumping notebook
+    read; any other action replaces the settings and tolerates a null echo.
+    """
+    if value.action is ChatConfigureAction.GET:
+        return CodecPayload(
+            params=build_get_settings_params(value.notebook_id),
+            source_path=f"/notebook/{value.notebook_id}",
+        )
+    return CodecPayload(
+        params=build_configure_params(value),
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_chat_configure(value: ChatConfigureInput, raw: Any) -> ChatConfigureResult:
+    """Row decoder for ``chat.configure``; only the read branch decodes settings."""
+    if value.action is ChatConfigureAction.GET:
+        return ChatConfigureResult(settings=decode_get_settings_result(raw))
+    return ChatConfigureResult()
+
+
+def encode_chat_save_note(value: ChatSaveNoteInput) -> CodecPayload:
+    """Payload for the ``chat.save_note`` codec row (``saved_from_chat`` variant)."""
+    return CodecPayload(
+        params=build_save_note_params(
+            value.notebook_id,
+            value.answer,
+            value.references,
+            value.title,
+        ),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def decode_chat_save_note(value: ChatSaveNoteInput, raw: Any) -> ChatSaveNoteResult:
+    """Row decoder for ``chat.save_note``."""
+    return ChatSaveNoteResult(
+        note=decode_save_note_result(
+            raw,
+            notebook_id=value.notebook_id,
+            answer=value.answer,
+            requested_title=value.title,
+        )
+    )
+
+
 __all__ = [
     "build_ask_request",
     "build_configure_params",
@@ -249,8 +389,19 @@ __all__ = [
     "build_get_settings_params",
     "build_save_note_params",
     "decode_ask_response",
+    "decode_chat_configure",
+    "decode_chat_delete_history",
+    "decode_chat_get_conversation",
+    "decode_chat_get_history",
+    "decode_chat_save_note",
+    "decode_conversation_id_or_warn",
     "decode_get_conversation_result",
     "decode_get_history_result",
     "decode_get_settings_result",
     "decode_save_note_result",
+    "encode_chat_configure",
+    "encode_chat_delete_history",
+    "encode_chat_get_conversation",
+    "encode_chat_get_history",
+    "encode_chat_save_note",
 ]
