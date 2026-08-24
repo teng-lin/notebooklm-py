@@ -234,17 +234,17 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_note_service.py:LegacyNoteBackedService.create_note", "persist generated JSON")
         ),
         (Operation.NOTE_CREATE, _b(RPCMethod.CREATE_NOTE, "plain")): _rules(
-            ("_web/backend.py:WebRpcBackend._note_create", "public=notes.create")
+            ("_web/bindings/notes.py:NOTE_CREATE", "public=notes.create")
         ),
         (Operation.MIND_MAP_GENERATE_NOTE, _b(RPCMethod.CREATE_NOTE, "plain")): _rules(
             (
-                "_web/backend.py:WebRpcBackend._note_create",
+                "_web/bindings/notes.py:NOTE_CREATE",
                 "kind=NOTE_BACKED persistence",
             )
         ),
         (Operation.MIND_MAP_GENERATE_NOTE, _b(RPCMethod.UPDATE_NOTE)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._note_update",
+                "_web/bindings/notes.py:NOTE_UPDATE",
                 "kind=NOTE_BACKED persistence finalize",
             )
         ),
@@ -725,7 +725,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.MIND_MAP_UPDATE, _b(RPCMethod.RENAME_ARTIFACT)): _rules(
-            ("_web/backend.py:WebRpcBackend._mind_map_update", "kind=INTERACTIVE")
+            ("_web/bindings/mind_maps.py:MIND_MAP_UPDATE", "kind=INTERACTIVE")
         ),
         (Operation.NOTEBOOK_UPDATE, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
             ("_web/backend.py:WebRpcBackend._notebook_update", "title|emoji mutation")
@@ -761,10 +761,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/labels.py:LabelSetWebHandlers._collection_update", "collection name mutation")
         ),
         (Operation.NOTE_UPDATE, _b(RPCMethod.UPDATE_NOTE)): _rules(
-            ("_web/backend.py:WebRpcBackend._note_update", "public=notes.update")
+            ("_web/bindings/notes.py:NOTE_UPDATE", "public=notes.update")
         ),
         (Operation.NOTE_CREATE, _b(RPCMethod.UPDATE_NOTE)): _rules(
-            ("_web/backend.py:WebRpcBackend._note_update", "notes.create finalize")
+            ("_web/bindings/notes.py:NOTE_UPDATE", "notes.create finalize")
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.UPDATE_NOTE)): _rules(
             (
@@ -773,7 +773,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.MIND_MAP_UPDATE, _b(RPCMethod.UPDATE_NOTE)): _rules(
-            ("_web/backend.py:WebRpcBackend._note_update", "kind=NOTE_BACKED")
+            ("_web/bindings/notes.py:NOTE_UPDATE", "kind=NOTE_BACKED")
         ),
         (Operation.SOURCE_ADD_URL, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
@@ -820,13 +820,13 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.MIND_MAP_DELETE, _b(RPCMethod.DELETE_ARTIFACT)): _rules(
-            ("_web/backend.py:WebRpcBackend._mind_map_delete", "kind=INTERACTIVE")
+            ("_web/bindings/mind_maps.py:MIND_MAP_DELETE", "kind=INTERACTIVE")
         ),
         (Operation.NOTE_DELETE, _b(RPCMethod.DELETE_NOTE)): _rules(
-            ("_web/backend.py:WebRpcBackend._note_delete", "public=notes.delete")
+            ("_web/bindings/notes.py:NOTE_DELETE", "public=notes.delete")
         ),
         (Operation.NOTE_CREATE, _b(RPCMethod.DELETE_NOTE)): _rules(
-            ("_web/backend.py:WebRpcBackend._note_delete", "cancelled create orphan cleanup")
+            ("_web/bindings/notes.py:NOTE_DELETE", "cancelled create orphan cleanup")
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.DELETE_NOTE)): _rules(
             (
@@ -835,7 +835,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.MIND_MAP_DELETE, _b(RPCMethod.DELETE_NOTE)): _rules(
-            ("_web/backend.py:WebRpcBackend._note_delete", "kind=NOTE_BACKED")
+            ("_web/bindings/notes.py:NOTE_DELETE", "kind=NOTE_BACKED")
         ),
         (Operation.LABEL_DELETE, _b(RPCMethod.DELETE_LABEL)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_set_delete", "label_type=source")
@@ -850,10 +850,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ),
         ),
         (Operation.MIND_MAP_GET, _b(RPCMethod.GET_INTERACTIVE_HTML)): _rules(
-            ("_web/backend.py:WebRpcBackend._mind_map_get", "kind=INTERACTIVE")
+            ("_web/bindings/mind_maps.py:MIND_MAP_GET", "kind=INTERACTIVE")
         ),
         (Operation.MIND_MAP_GENERATE_INTERACTIVE, _b(RPCMethod.GET_INTERACTIVE_HTML)): _rules(
-            ("_web/backend.py:WebRpcBackend._mind_map_get", "wait=True post-generation tree")
+            ("_web/bindings/mind_maps.py:MIND_MAP_GET", "wait=True post-generation tree")
         ),
         (Operation.CHAT_ASK, _b(RPCMethod.GET_LAST_CONVERSATION_ID)): _rules(
             (
@@ -874,20 +874,20 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.NOTE_LIST, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
-            ("_web/backend.py:WebRpcBackend._note_list", "filter kind=NOTE")
+            ("_web/bindings/notes.py:NOTE_LIST", "filter kind=NOTE")
         ),
         (Operation.NOTE_GET, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
-            ("_web/backend.py:WebRpcBackend._note_get", "select note id")
+            ("_web/bindings/notes.py:NOTE_GET", "select note id")
         ),
         (Operation.MIND_MAP_LIST, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._mind_map_list",
+                "_web/bindings/mind_maps.py:MIND_MAP_LIST",
                 "filter kind=NOTE_BACKED",
             )
         ),
         (Operation.MIND_MAP_GET, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._mind_map_list",
+                "_web/bindings/mind_maps.py:MIND_MAP_LIST",
                 "auto-detect/select note-backed id",
             )
         ),
