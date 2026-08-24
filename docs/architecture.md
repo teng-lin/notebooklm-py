@@ -1079,9 +1079,10 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/error_policy.py` | Closed native-to-semantic error classification and safe-diagnostic allowlist shared by the composed web backend. |
 | `_web/failure_projection.py` | Bounded, serializable projection of public exception graphs into transport-neutral source failure records. |
 | `_web/labels.py` | P6.4 source-label/collection web workflow mixin; owns both request dialects and read/create/update/delete reconciliation while keeping the composed backend below the module-size ratchet. |
-| `_web/research.py` | P6.2 Research web workflow mixin; owns fast/deep start, poll, cancel, and ordered import handlers while keeping the composed backend below the module-size ratchet. |
 | `_web/sharing.py` | P6.5 Sharing web workflow mixin; since P9.3 only the three mutate-then-readback composites and their shared `_sharing_status` readback remain here (`SHARING_GET` and `LEGACY_SHARE_ARTIFACT` are `_web/bindings/sharing.py` rows). |
 | `_web/bindings/__init__.py` | `WEB_BINDING_ROWS` (P9.3): the union of every domain's binding rows, checked for one row per operation and canonical definitions; `_web/registry.py` partitions the supported set between these rows and the remaining handler names. |
+| `_web/bindings/research.py` | P9.3 research codec rows: `RESEARCH_START` (input-keyed fast/deep `NativeCallSpec` with the deep-start `map_error` that mints `RESEARCH_START_UNAVAILABLE`), `RESEARCH_POLL`, `RESEARCH_CANCEL`, `RESEARCH_IMPORT` (inherits the caller's deadline, forwards the service's `attempt_timeout`); the P6.2 research mixin these rows replace is deleted. |
+| `_web/errors.py` | Shared native-to-neutral failure translation (`translate_web_error`, `error_diagnostics`) that `WebRpcBackend._translate_error` delegates to and row-level `map_error` hooks call without importing the backend head. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
 | `_web/bindings/sharing.py` | P9.3 sharing codec rows: `SHARING_GET`, `LEGACY_SHARE_ARTIFACT` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the composites in `_web/sharing.py` keep their own readback helper. |
 | `_web/settings_suggestions.py` | P6.6 prompt-suggestion web workflow mixin; since P9.3 only the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` composite remains here (the settings and report-suggestion leaves are `_web/bindings/settings.py` rows). |
@@ -1339,13 +1340,14 @@ src/notebooklm/
 │   ├── chat.py                  # P6.1 Chat workflow handlers
 │   ├── chat_transport.py        # Streamed Chat transport adapter and bounded error translation
 │   ├── error_policy.py          # Closed web error classification/diagnostics ledger
+│   ├── errors.py                # Shared native-to-neutral failure translation (P9.3)
 │   ├── failure_projection.py    # Bounded public-exception graph to neutral failure records
 │   ├── labels.py                # P6.4 source-label/collection workflow handlers
-│   ├── research.py              # P6.2 Research workflow handlers
 │   ├── sharing.py               # P6.5 Sharing composite handlers (leaves are bindings/sharing.py rows)
 │   ├── settings_suggestions.py  # P6.6 prompt-suggestion composite handler
 │   ├── bindings/                # P9.3 per-domain binding rows
 │   │   ├── __init__.py          # WEB_BINDING_ROWS union
+│   │   ├── research.py          # research codec rows (input-keyed start)
 │   │   ├── settings.py          # settings/suggestion codec rows
 │   │   └── sharing.py           # sharing codec rows (status read, legacy share)
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)

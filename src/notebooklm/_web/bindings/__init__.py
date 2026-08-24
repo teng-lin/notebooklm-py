@@ -14,10 +14,12 @@ from types import MappingProxyType
 
 from ..._binding import Binding
 from ..._operations import Operation
+from .research import RESEARCH_ROWS
 from .settings import SETTINGS_ROWS
 from .sharing import SHARING_ROWS
 
 _DOMAIN_ROWS: tuple[Mapping[Operation, Binding], ...] = (
+    RESEARCH_ROWS,
     SETTINGS_ROWS,
     SHARING_ROWS,
 )

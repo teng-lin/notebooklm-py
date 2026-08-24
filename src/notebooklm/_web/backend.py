@@ -156,8 +156,8 @@ from .codec.notes import (
 from .codec.suggestions import decode_prompt_source_ids
 from .deadline_rpc import DeadlineRpcCaller
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
-from .error_policy import SAFE_REASON_DIAGNOSTICS, WEB_ERROR_REASONS
-from .failure_projection import _CHAT_OPERATIONS, _capture_public_failure
+from .errors import error_diagnostics, translate_web_error
+from .failure_projection import _capture_public_failure
 from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS, WebOperationBinding
 from .runtime import WebExecutionRuntime
 from .transport import WebRequest, WebTransport
@@ -1342,14 +1342,7 @@ class WebRpcBackend(ChatWebHandlers):
         exc: RPCError | NetworkError | IdempotencyVariantError | ChatError,
         reason: BackendErrorReason,
     ) -> MappingProxyType[str, object]:
-        diagnostics = {
-            "method_id": getattr(exc, "method_id", None),
-            "rpc_code": getattr(exc, "rpc_code", None),
-            "found_ids": getattr(exc, "found_ids", None),
-            "raw_response": getattr(exc, "raw_response", None),
-        }
-        diagnostics.update((name, getattr(exc, name)) for name in SAFE_REASON_DIAGNOSTICS[reason])
-        return MappingProxyType(diagnostics)
+        return error_diagnostics(exc, reason)
 
     def _translate_native_error(self, operation: Operation, error: Exception) -> BackendError:
         """Typed :class:`ErrorTranslator` view over the reviewed transport types."""
@@ -1366,33 +1359,8 @@ class WebRpcBackend(ChatWebHandlers):
         operation: Operation,
         exc: RPCError | NetworkError | IdempotencyVariantError | ChatError,
     ) -> BackendError:
-        reason = WEB_ERROR_REASONS.get(type(exc))
-        if reason is None:
-            raise BackendContractError(
-                f"unclassified web error type {type(exc).__module__}.{type(exc).__qualname__}",
-                operation=operation,
-            ) from exc
-        diagnostics = dict(cls._error_diagnostics(exc, reason))
-        if isinstance(exc, (RPCError, NetworkError, ChatError)):
-            diagnostics["public_error_failure"] = _capture_public_failure(
-                exc,
-                operation=operation,
-                scrub_request_urls=operation in _CHAT_OPERATIONS,
-            )
-        return BackendError(
-            # Structured subclasses such as UnknownRPCMethodError append their
-            # diagnostic fields in ``__str__``. Store only the base message so
-            # the compatibility projector can reattach those fields exactly
-            # once instead of duplicating the rendered suffix.
-            message=str(exc.args[0]) if exc.args else "",
-            operation=operation,
-            outcome_unknown=bool(getattr(exc, "unconfirmed", False)),
-            diagnostics=MappingProxyType(diagnostics),
-            reason=reason,
-            # ``WebTransport`` tags every native failure that escaped the
-            # runtime; the neutral commit-uncertainty predicate reads it here.
-            dispatched=bool(getattr(exc, "dispatched", False)),
-        )
+        """Delegate to the shared ``_web.errors`` translation (kept on the head for callers)."""
+        return translate_web_error(operation, exc)
 
 
 def _resolve_handler_bindings(
