@@ -210,7 +210,8 @@ def test_derive_row_authorities_allocates_each_native_to_its_row(tmp_path: Path)
     assert derived[(Operation.LABEL_UPDATE, (RPCMethod.UPDATE_LABEL, "remove_sources"))] == (
         "_web/bindings/settings.py:LABEL_UPDATE",
     )
-    assert len(derived) == 9
+    # 1 (SETTINGS_GET) + 2 (RESEARCH_START) + 4 (LABEL_UPDATE) + 1 (table row).
+    assert len(derived) == 8
     # Deterministic ordering: by operation value, then native text.
     assert list(derived)[0][0] is Operation.LABEL_UPDATE
 
@@ -237,8 +238,8 @@ def test_row_audit_compares_declared_natives_with_the_policy_ledger() -> None:
     )
     assert errors == [
         "research.start binding row x.py:RESEARCH_START declares natives "
-        "['START_DEEP_RESEARCH/deep', 'START_FAST_RESEARCH'] but the policy ledger expects "
-        "['START_DEEP_RESEARCH', 'START_FAST_RESEARCH']"
+        "['START_DEEP_RESEARCH:deep', 'START_FAST_RESEARCH:<default>'] but the policy ledger "
+        "expects ['START_DEEP_RESEARCH:<default>', 'START_FAST_RESEARCH:<default>']"
     ]
     assert catalog_ast.audit_row_bindings(
         [row("x.py:NO_DEF", None, (("GET_USER_SETTINGS", None),))]

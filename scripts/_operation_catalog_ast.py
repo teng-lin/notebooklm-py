@@ -358,8 +358,12 @@ class _ReferenceCollector(ast.NodeVisitor):
             resolver.resolve(_call_argument(row, -1, "native"))
             if resolver.unresolved is not None and unresolved is None:
                 unresolved = resolver.unresolved
+            # A nested row is named by the table key the reader sees, so a key that
+            # disagrees with the row's definition is reported at the offending entry.
             if row is value:
                 site = target.id
+            elif key_member is not None:
+                site = f"{target.id}.{key_member}"
             elif operation is not None:
                 site = f"{target.id}.{operation.name}"
             else:
