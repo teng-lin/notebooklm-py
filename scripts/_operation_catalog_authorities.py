@@ -309,7 +309,9 @@ NON_RPC_AUTHORITY_RULES: Mapping[Operation, tuple[tuple[str, str, str, str], ...
 # Every manually allocated non-RPC authority must contain these transport calls,
 # and every contract row must be allocated to exactly one semantic operation.
 NON_RPC_SOURCE_CONTRACTS: Mapping[str, tuple[tuple[str, ...], ...]] = {
-    "_web/chat.py:ChatWebHandlers._chat_ask": (("chat_aware_authed_post",),),
+    # P9.1: the streamed POST is the transport's ``stream`` verb; the chat
+    # handler reaches it through the shell-owned ``WebTransport``.
+    "_web/chat.py:ChatWebHandlers._chat_ask": (("_transport", "stream"),),
     "_source/drive_import.py:DriveFetcher._request": (("stream",),),
     "_source/upload.py:SourceUploadPipeline.start_resumable_upload": (("post",),),
     "_source/upload.py:SourceUploadPipeline.upload_file_streaming._do_finalize": (
