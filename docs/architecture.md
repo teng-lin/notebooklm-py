@@ -1078,13 +1078,14 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/chat.py` | P6.1 Chat web workflow mixin; owns ask/history/configuration/save-note handlers while keeping the composed backend below the module-size ratchet. |
 | `_web/error_policy.py` | Closed native-to-semantic error classification and safe-diagnostic allowlist shared by the composed web backend. |
 | `_web/failure_projection.py` | Bounded, serializable projection of public exception graphs into transport-neutral source failure records. |
-| `_web/labels.py` | P6.4 source-label/collection web workflow mixin; owns both request dialects and read/create/update/delete reconciliation while keeping the composed backend below the module-size ratchet. |
+| `_web/labels.py` | P6.4 source-label/collection web workflow mixin; since P9.3 only the four create/update composites and the shared set read they preflight through remain here (the list/get/delete/generate leaves are `_web/bindings/labels.py` rows). |
 | `_web/sharing.py` | P6.5 Sharing web workflow mixin; since P9.3 only the three mutate-then-readback composites and their shared `_sharing_status` readback remain here (`SHARING_GET` and `LEGACY_SHARE_ARTIFACT` are `_web/bindings/sharing.py` rows). |
 | `_web/bindings/__init__.py` | `WEB_BINDING_ROWS` (P9.3): the union of every domain's binding rows, checked for one row per operation and canonical definitions; `_web/registry.py` partitions the supported set between these rows and the remaining handler names. |
 | `_web/bindings/research.py` | P9.3 research codec rows: `RESEARCH_START` (input-keyed fast/deep `NativeCallSpec` with the deep-start `map_error` that mints `RESEARCH_START_UNAVAILABLE`), `RESEARCH_POLL`, `RESEARCH_CANCEL`, `RESEARCH_IMPORT` (inherits the caller's deadline, forwards the service's `attempt_timeout`); the P6.2 research mixin these rows replace is deleted. |
 | `_web/errors.py` | Shared native-to-neutral failure translation (`translate_web_error`, `error_diagnostics`) that `WebRpcBackend._translate_error` delegates to and row-level `map_error` hooks call without importing the backend head. |
 | `_web/bindings/mind_maps.py` | P9.3 mind-map leaf codec rows: `MIND_MAP_LIST`, `MIND_MAP_GET`, `MIND_MAP_UPDATE`, `MIND_MAP_DELETE` — `encode → one native call → decode`; the two generate members stay input-defaulting handlers until their P9.4 custom rows. |
 | `_web/bindings/notes.py` | P9.3 plain-note codec rows: `NOTE_LIST`, `NOTE_GET`, `NOTE_CREATE`, `NOTE_UPDATE`, `NOTE_DELETE` over `_web/codec/notes.py`; `NoteService` sequences them above the port and the walker derives their catalog authorities from the module-level assignments. |
+| `_web/bindings/labels.py` | P9.3 labels/collections codec rows: `LABEL_LIST`, `LABEL_GET`, `LABEL_GENERATE`, `LABEL_DELETE`, `COLLECTION_LIST`, `COLLECTION_GET`, `COLLECTION_DELETE` — one `LIST_LABELS`/`CREATE_LABEL`/`DELETE_LABEL` call per row; the get rows select by exact id inside `decode`. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
 | `_web/bindings/sharing.py` | P9.3 sharing codec rows: `SHARING_GET`, `LEGACY_SHARE_ARTIFACT` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the composites in `_web/sharing.py` keep their own readback helper. |
 | `_web/settings_suggestions.py` | P6.6 prompt-suggestion web workflow mixin; since P9.3 only the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` composite remains here (the settings and report-suggestion leaves are `_web/bindings/settings.py` rows). |
@@ -1107,7 +1108,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/studio_data.py` | P5.6 web handlers for data-table/mind-map generation and Drive export; composes with the media/document handlers while keeping the backend module below the size ratchet. |
 | `_web/codec/studio_documents.py` | P5.4 exact report/video request encoders and generation-status decoder over backend-neutral records. |
 | `_web/codec/notes.py` | P6.3 mixed note-row codec: normalizes flat/wrapped envelopes, classifies deleted and note-backed mind-map rows, preserves exact-id selection, and emits only neutral `NoteRecord` values; since P9.3 also the row-facing `encode_note_*`/`decode_note_*` helpers behind `_web/bindings/notes.py`. |
-| `_web/codec/labels.py` | P6.4 shared source-label/collection codec: owns both wire dialects behind `LabelKind` and emits only neutral `LabelRecord` values. |
+| `_web/codec/labels.py` | P6.4 shared source-label/collection codec: owns both wire dialects behind `LabelKind` and emits only neutral `LabelRecord` values; since P9.3 also the row-facing `encode_*`/`decode_*_result` payload builders and the dialect/scope contract guards. |
 | `_web/codec/research.py` | P6.2 DiscoverSources codec: owns fast/deep start, poll, cancel, and report-before-web import request grammar and decodes responses into neutral Research records without selecting or dispatching an RPC. |
 | `_web/codec/settings.py` | P6.6 account settings/limits/language request grammar and tolerant neutral decoders. |
 | `_web/codec/suggestions.py` | P6.6 prompt/report suggestion request grammar and neutral decoders. |
@@ -1349,6 +1350,7 @@ src/notebooklm/
 │   ├── settings_suggestions.py  # P6.6 prompt-suggestion composite handler
 │   ├── bindings/                # P9.3 per-domain binding rows
 │   │   ├── __init__.py          # WEB_BINDING_ROWS union
+│   │   ├── labels.py            # label/collection codec rows
 │   │   ├── mind_maps.py         # mind-map leaf codec rows
 │   │   ├── notes.py             # plain-note codec rows
 │   │   ├── research.py          # research codec rows (input-keyed start)

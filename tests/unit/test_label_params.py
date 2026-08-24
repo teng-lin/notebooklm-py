@@ -125,3 +125,79 @@ def test_delete_copies_the_id_list() -> None:
     out = build_delete_labels_params(NB, ids)
     assert out[2] == ids
     assert out[2] is not ids
+
+
+# -- P9.3 row-facing payloads -------------------------------------------------
+#
+# The codec rows dispatch these exact payloads; the route and option flags are
+# what the P6.4 handlers passed to ``_rpc_call``.
+
+
+def test_row_payloads_for_source_labels_carry_the_notebook_route() -> None:
+    from notebooklm._backend import BackendContractError
+    from notebooklm._binding import CodecPayload
+    from notebooklm._records import (
+        LabelDeleteInput,
+        LabelGenerateInput,
+        LabelGetInput,
+        LabelKind,
+        LabelListInput,
+    )
+    from notebooklm._web.codec.labels import (
+        encode_label_delete,
+        encode_label_generate,
+        encode_label_get,
+        encode_label_list,
+    )
+
+    assert encode_label_list(LabelListInput(LabelKind.SOURCE_LABEL, NB)) == CodecPayload(
+        params=[OPTS, NB], source_path=f"/notebook/{NB}", allow_null=False
+    )
+    assert encode_label_get(LabelGetInput(LabelKind.SOURCE_LABEL, LID, NB)) == CodecPayload(
+        params=[OPTS, NB], source_path=f"/notebook/{NB}", allow_null=False
+    )
+    assert encode_label_delete(
+        LabelDeleteInput(LabelKind.SOURCE_LABEL, (LID, "label_2"), NB)
+    ) == CodecPayload(
+        params=[OPTS, NB, [LID, "label_2"]], source_path=f"/notebook/{NB}", allow_null=True
+    )
+    assert encode_label_generate(LabelGenerateInput(NB)) == CodecPayload(
+        params=[OPTS, NB, None, None, [0]], source_path=f"/notebook/{NB}", allow_null=True
+    )
+    assert encode_label_generate(LabelGenerateInput(NB, replace_existing=True)).params == [
+        OPTS,
+        NB,
+        None,
+        None,
+        [],
+    ]
+    try:
+        encode_label_list(LabelListInput(LabelKind.SOURCE_LABEL))
+    except BackendContractError as exc:
+        assert "requires a notebook scope" in exc.message
+    else:  # pragma: no cover - guard
+        raise AssertionError("unscoped source-label list must be a contract error")
+
+
+def test_row_payloads_for_collections_carry_the_account_route() -> None:
+    from notebooklm._binding import CodecPayload
+    from notebooklm._records import LabelDeleteInput, LabelGetInput, LabelKind, LabelListInput
+    from notebooklm._web.codec.labels import (
+        _collection_opts,
+        encode_collection_delete,
+        encode_collection_get,
+        encode_collection_list,
+    )
+
+    collection_opts = _collection_opts()
+    assert encode_collection_list(LabelListInput(LabelKind.COLLECTION)) == CodecPayload(
+        params=[collection_opts, None, 3], source_path="/", allow_null=True
+    )
+    assert encode_collection_get(LabelGetInput(LabelKind.COLLECTION, "c1")) == CodecPayload(
+        params=[collection_opts, None, 3], source_path="/", allow_null=True
+    )
+    assert encode_collection_delete(
+        LabelDeleteInput(LabelKind.COLLECTION, ("c1", "c2"))
+    ) == CodecPayload(
+        params=[collection_opts, None, ["c1", "c2"], 3], source_path="/", allow_null=True
+    )

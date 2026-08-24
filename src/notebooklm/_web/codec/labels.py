@@ -25,15 +25,34 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ..._records import LabelKind, LabelRecord
+from ..._backend import BackendContractError
+from ..._binding import CodecPayload
+from ..._operations import Operation
+from ..._records import (
+    LabelDeleteInput,
+    LabelDeleteResult,
+    LabelGenerateInput,
+    LabelGenerateResult,
+    LabelGetInput,
+    LabelGetResult,
+    LabelKind,
+    LabelListInput,
+    LabelListResult,
+    LabelRecord,
+)
 from ..._row_adapters.labels import CollectionRow, LabelRow
 from ...exceptions import UnknownRPCMethodError
+from ...rpc import RPCMethod
 
 _SRC = "_web.codec.labels"
 
 # Type discriminator marking a label RPC as operating on collections (type-3
 # labels with a null notebook parent). Rides the last slot of every request.
 _COLLECTION_TYPE = 3
+
+# Collections are account-level: every collection RPC uses the home-page source
+# path, not a ``/notebook/<id>`` path (they have no notebook scope).
+_ACCOUNT_PATH = "/"
 
 
 # -- request options ---------------------------------------------------------
@@ -341,6 +360,185 @@ def decode_label(
     )
 
 
+# -- contract guards ---------------------------------------------------------
+
+
+def require_label_kind(actual: LabelKind, expected: LabelKind, operation: Operation) -> None:
+    """Fail closed when a request addresses the other dialect's operation."""
+    if actual is not expected:
+        raise BackendContractError(
+            f"{operation.value} requires a {expected.value} request, got {actual.value}",
+            operation=operation,
+        )
+
+
+def require_notebook_scope(notebook_id: str | None, operation: Operation) -> str:
+    """Source labels are notebook-scoped; a null scope is a contract error."""
+    if notebook_id is None:
+        raise BackendContractError(
+            f"{operation.value} requires a notebook scope",
+            operation=operation,
+        )
+    return notebook_id
+
+
+def _notebook_path(notebook_id: str) -> str:
+    return f"/notebook/{notebook_id}"
+
+
+# -- row-facing payloads (P9.3) -----------------------------------------------
+#
+# Each returns the full request one codec row dispatches — params, route and
+# option flags exactly as the P6.4 handlers passed them — and never a method.
+# The guards run here, before any native call, so a wrong-dialect or unscoped
+# request is still a ``BackendContractError`` raised ahead of the wire.
+
+
+def encode_label_set_list(
+    kind: LabelKind, notebook_id: str | None, operation: Operation
+) -> CodecPayload:
+    """Shared ``LIST_LABELS`` payload for either dialect (reads and composite readbacks)."""
+    if kind is LabelKind.COLLECTION:
+        # An account with zero collections may echo a null envelope, which
+        # decodes to an empty set rather than raising.
+        return CodecPayload(
+            params=build_list_collections_params(),
+            source_path=_ACCOUNT_PATH,
+            allow_null=True,
+        )
+    scoped = require_notebook_scope(notebook_id, operation)
+    return CodecPayload(
+        params=build_list_labels_params(scoped),
+        source_path=_notebook_path(scoped),
+        allow_null=False,
+    )
+
+
+def encode_label_list(value: LabelListInput) -> CodecPayload:
+    """Payload for the ``label.list`` codec row."""
+    require_label_kind(value.kind, LabelKind.SOURCE_LABEL, Operation.LABEL_LIST)
+    return encode_label_set_list(LabelKind.SOURCE_LABEL, value.notebook_id, Operation.LABEL_LIST)
+
+
+def encode_collection_list(value: LabelListInput) -> CodecPayload:
+    """Payload for the ``collection.list`` codec row."""
+    require_label_kind(value.kind, LabelKind.COLLECTION, Operation.COLLECTION_LIST)
+    return encode_label_set_list(LabelKind.COLLECTION, None, Operation.COLLECTION_LIST)
+
+
+def encode_label_get(value: LabelGetInput) -> CodecPayload:
+    """Payload for the ``label.get`` codec row (one set read; selection is in decode)."""
+    require_label_kind(value.kind, LabelKind.SOURCE_LABEL, Operation.LABEL_GET)
+    return encode_label_set_list(LabelKind.SOURCE_LABEL, value.notebook_id, Operation.LABEL_GET)
+
+
+def encode_collection_get(value: LabelGetInput) -> CodecPayload:
+    """Payload for the ``collection.get`` codec row."""
+    require_label_kind(value.kind, LabelKind.COLLECTION, Operation.COLLECTION_GET)
+    return encode_label_set_list(LabelKind.COLLECTION, None, Operation.COLLECTION_GET)
+
+
+def encode_label_delete(value: LabelDeleteInput) -> CodecPayload:
+    """Payload for the ``label.delete`` codec row (batch; absent ids are no-ops)."""
+    require_label_kind(value.kind, LabelKind.SOURCE_LABEL, Operation.LABEL_DELETE)
+    notebook_id = require_notebook_scope(value.notebook_id, Operation.LABEL_DELETE)
+    return CodecPayload(
+        params=build_delete_labels_params(notebook_id, value.label_ids),
+        source_path=_notebook_path(notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_collection_delete(value: LabelDeleteInput) -> CodecPayload:
+    """Payload for the ``collection.delete`` codec row."""
+    require_label_kind(value.kind, LabelKind.COLLECTION, Operation.COLLECTION_DELETE)
+    return CodecPayload(
+        params=build_delete_collections_params(value.label_ids),
+        source_path=_ACCOUNT_PATH,
+        allow_null=True,
+    )
+
+
+def encode_label_generate(value: LabelGenerateInput) -> CodecPayload:
+    """Payload for the ``label.generate`` codec row (CreateLabel auto-grouping mode)."""
+    return CodecPayload(
+        params=build_generate_labels_params(
+            value.notebook_id,
+            replace_existing=value.replace_existing,
+        ),
+        source_path=_notebook_path(value.notebook_id),
+        allow_null=True,
+    )
+
+
+# -- row-facing decoders (P9.3) -----------------------------------------------
+
+
+def decode_label_set_list_result(
+    data: Any, *, kind: LabelKind, notebook_id: str | None
+) -> LabelListResult:
+    """Decode one ``LIST_LABELS`` echo for either dialect into the list result."""
+    return LabelListResult(
+        labels=decode_label_list(
+            data,
+            kind=kind,
+            notebook_id=notebook_id,
+            method_id=RPCMethod.LIST_LABELS.value,
+        )
+    )
+
+
+def decode_label_list_result(value: LabelListInput, data: Any) -> LabelListResult:
+    """Row decoder for ``label.list``."""
+    return decode_label_set_list_result(
+        data, kind=LabelKind.SOURCE_LABEL, notebook_id=value.notebook_id
+    )
+
+
+def decode_collection_list_result(value: LabelListInput, data: Any) -> LabelListResult:
+    """Row decoder for ``collection.list``."""
+    del value
+    return decode_label_set_list_result(data, kind=LabelKind.COLLECTION, notebook_id=None)
+
+
+def _select_label(listed: LabelListResult, label_id: str) -> LabelGetResult:
+    """Select one group by exact id from the set read; never by name."""
+    return LabelGetResult(
+        label=next((label for label in listed.labels if label.id == label_id), None)
+    )
+
+
+def decode_label_get_result(value: LabelGetInput, data: Any) -> LabelGetResult:
+    """Row decoder for ``label.get`` (list-then-select; an absent id is ``None``)."""
+    listed = decode_label_set_list_result(
+        data, kind=LabelKind.SOURCE_LABEL, notebook_id=value.notebook_id
+    )
+    return _select_label(listed, value.label_id)
+
+
+def decode_collection_get_result(value: LabelGetInput, data: Any) -> LabelGetResult:
+    """Row decoder for ``collection.get``."""
+    listed = decode_label_set_list_result(data, kind=LabelKind.COLLECTION, notebook_id=None)
+    return _select_label(listed, value.label_id)
+
+
+def decode_label_delete_result(value: LabelDeleteInput, data: Any) -> LabelDeleteResult:
+    """Row decoder for ``label.delete``/``collection.delete``; the echo carries nothing."""
+    del value, data
+    return LabelDeleteResult()
+
+
+def decode_label_generate_result(value: LabelGenerateInput, data: Any) -> LabelGenerateResult:
+    """Row decoder for ``label.generate``: the full post-operation set echo."""
+    return LabelGenerateResult(
+        labels=decode_label_create_echo(
+            data,
+            notebook_id=value.notebook_id,
+            method_id=RPCMethod.CREATE_LABEL.value,
+        )
+    )
+
+
 __all__ = [
     "build_create_collection_params",
     "build_create_label_params",
@@ -352,7 +550,24 @@ __all__ = [
     "build_rename_collection_params",
     "build_update_collection_notebooks_params",
     "build_update_label_params",
+    "decode_collection_get_result",
+    "decode_collection_list_result",
     "decode_label",
     "decode_label_create_echo",
+    "decode_label_delete_result",
+    "decode_label_generate_result",
+    "decode_label_get_result",
     "decode_label_list",
+    "decode_label_list_result",
+    "decode_label_set_list_result",
+    "encode_collection_delete",
+    "encode_collection_get",
+    "encode_collection_list",
+    "encode_label_delete",
+    "encode_label_generate",
+    "encode_label_get",
+    "encode_label_list",
+    "encode_label_set_list",
+    "require_label_kind",
+    "require_notebook_scope",
 ]

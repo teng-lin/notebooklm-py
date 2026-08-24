@@ -2071,9 +2071,9 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/labels.py:LABEL_GENERATE",
         "_web/labels.py:LabelSetWebHandlers._collection_create",
-        "_web/labels.py:LabelSetWebHandlers._label_create",
-        "_web/labels.py:LabelSetWebHandlers._label_generate"
+        "_web/labels.py:LabelSetWebHandlers._label_create"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2103,7 +2103,9 @@
         "CollectionService",
         "LabelService"
       ],
-      "response_decoders": [],
+      "response_decoders": [
+        "_web/codec/labels.py:decode_label_generate_result"
+      ],
       "response_projectors": [],
       "route_contexts": [
         "account",
@@ -2384,7 +2386,8 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/labels.py:LabelSetWebHandlers._label_set_delete"
+        "_web/bindings/labels.py:COLLECTION_DELETE",
+        "_web/bindings/labels.py:LABEL_DELETE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "success contract returns None; the response carries no decodable row to pin",
@@ -3353,6 +3356,10 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/labels.py:COLLECTION_GET",
+        "_web/bindings/labels.py:COLLECTION_LIST",
+        "_web/bindings/labels.py:LABEL_GET",
+        "_web/bindings/labels.py:LABEL_LIST",
         "_web/labels.py:LabelSetWebHandlers._label_set_list"
       ],
       "golden_disposition": "golden_covered",
@@ -3383,7 +3390,9 @@
         "CollectionService",
         "LabelService"
       ],
-      "response_decoders": [],
+      "response_decoders": [
+        "_web/codec/labels.py:decode_label_set_list_result"
+      ],
       "response_projectors": [],
       "route_contexts": [
         "account",
@@ -5683,7 +5692,10 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_generate_result",
+        "_web/codec/labels.py:decode_label_set_list_result"
+      ],
       "route_context": "account",
       "web_paths": []
     },
@@ -5697,7 +5709,7 @@
         {
           "binding": "DELETE_LABEL:<default>",
           "discriminator": "label_type=collection",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_delete",
+          "site": "_web/bindings/labels.py:COLLECTION_DELETE",
           "transport_kind": "rpc"
         }
       ],
@@ -5726,7 +5738,7 @@
         {
           "binding": "LIST_LABELS:<default>",
           "discriminator": "select collection id",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "site": "_web/bindings/labels.py:COLLECTION_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5744,7 +5756,9 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_set_list_result"
+      ],
       "route_context": "collection",
       "web_paths": []
     },
@@ -5759,7 +5773,7 @@
         {
           "binding": "LIST_LABELS:<default>",
           "discriminator": "label_type=collection",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "site": "_web/bindings/labels.py:COLLECTION_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -5776,7 +5790,9 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_set_list_result"
+      ],
       "route_context": "account",
       "web_paths": []
     },
@@ -5816,6 +5832,7 @@
       "recency_effect": "none",
       "response_decoders_projectors": [
         "_types/notebooks.py:<module>",
+        "_web/codec/labels.py:decode_label_set_list_result",
         "_web/codec/notebooks.py:<module>"
       ],
       "route_context": "collection",
@@ -5873,7 +5890,9 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_set_list_result"
+      ],
       "route_context": "collection",
       "web_paths": []
     },
@@ -5911,7 +5930,10 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_generate_result",
+        "_web/codec/labels.py:decode_label_set_list_result"
+      ],
       "route_context": "notebook",
       "web_paths": []
     },
@@ -5925,7 +5947,7 @@
         {
           "binding": "DELETE_LABEL:<default>",
           "discriminator": "label_type=source",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_delete",
+          "site": "_web/bindings/labels.py:LABEL_DELETE",
           "transport_kind": "rpc"
         }
       ],
@@ -5956,7 +5978,7 @@
         {
           "binding": "CREATE_LABEL:<default>",
           "discriminator": "label_mode=auto-group",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_generate",
+          "site": "_web/bindings/labels.py:LABEL_GENERATE",
           "transport_kind": "rpc"
         }
       ],
@@ -5973,7 +5995,9 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_generate_result"
+      ],
       "route_context": "notebook",
       "web_paths": []
     },
@@ -5985,7 +6009,7 @@
         {
           "binding": "LIST_LABELS:<default>",
           "discriminator": "select source-label id",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "site": "_web/bindings/labels.py:LABEL_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -6003,7 +6027,9 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_set_list_result"
+      ],
       "route_context": "notebook+label",
       "web_paths": []
     },
@@ -6017,7 +6043,7 @@
         {
           "binding": "LIST_LABELS:<default>",
           "discriminator": "label_type=source",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "site": "_web/bindings/labels.py:LABEL_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -6034,7 +6060,9 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_set_list_result"
+      ],
       "route_context": "notebook",
       "web_paths": []
     },
@@ -6079,6 +6107,7 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
+        "_web/codec/labels.py:decode_label_set_list_result",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -6140,7 +6169,9 @@
       ],
       "recency_contract": [],
       "recency_effect": "none",
-      "response_decoders_projectors": [],
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_set_list_result"
+      ],
       "route_context": "notebook+label",
       "web_paths": []
     },
