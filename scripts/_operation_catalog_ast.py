@@ -490,6 +490,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/backend.py", "_binding", "audit_bindings"),
         ("_web/backend.py", "_binding", "invoke_binding"),
         ("_web/registry.py", "_binding", "OperationDisposition"),
+        ("_web/backend.py", "registry", "WebOperationBinding"),
         ("_web/deadline_rpc.py", "_backend", "BackendDeadlineExceededError"),
         ("_web/deadline_rpc.py", "backend", "WebRpcBackend"),
         ("_artifact/listing.py", "_projectors", "project_artifact"),

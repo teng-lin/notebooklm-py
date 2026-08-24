@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import reprlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
@@ -156,7 +156,7 @@ from .deadline_rpc import DeadlineRpcCaller
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
 from .error_policy import SAFE_REASON_DIAGNOSTICS, WEB_ERROR_REASONS
 from .failure_projection import _CHAT_OPERATIONS, _capture_public_failure
-from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
+from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS, WebOperationBinding
 from .runtime import WebExecutionRuntime
 
 if TYPE_CHECKING:
@@ -1382,10 +1382,15 @@ class WebRpcBackend(ChatWebHandlers):
         )
 
 
-def _resolve_handler_bindings(backend: WebRpcBackend) -> BindingTable:
+def _resolve_handler_bindings(
+    backend: WebRpcBackend,
+    *,
+    registry: Mapping[Operation, WebOperationBinding] = WEB_OPERATION_REGISTRY,
+    supported: frozenset[Operation] = WEB_SUPPORTED_OPERATIONS,
+) -> BindingTable:
     """Resolve registry handler names into a construction-audited binding table."""
     rows: dict[Operation, ResolvedHandlerBinding[Any, Any]] = {}
-    for operation, binding in WEB_OPERATION_REGISTRY.items():
+    for operation, binding in registry.items():
         handler_name = binding.handler_name
         if handler_name is None:
             continue
@@ -1400,7 +1405,7 @@ def _resolve_handler_bindings(backend: WebRpcBackend) -> BindingTable:
             rows[operation] = ResolvedHandlerBinding(definition=definition, handler=handler)
     table = BindingTable(rows)
     try:
-        audit_bindings(table, WEB_SUPPORTED_OPERATIONS)
+        audit_bindings(table, supported)
     except BindingAuditError as exc:
         raise BackendContractError(f"web binding table rejected: {exc}") from exc
     return table

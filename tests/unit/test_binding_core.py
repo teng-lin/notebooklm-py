@@ -35,7 +35,7 @@ from notebooklm._records import (
     NotebookListResult,
 )
 from notebooklm._web import registry
-from notebooklm._web.backend import WebRpcBackend
+from notebooklm._web.backend import WebRpcBackend, _resolve_handler_bindings
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from tests._fixtures.web_backend import build_web_backend
 
@@ -362,22 +362,18 @@ def test_backend_resolves_every_handler_at_construction() -> None:
     assert "_bindings" in vars(backend)
 
 
-def test_misnamed_handler_fails_at_construction_not_first_invocation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    broken = dict(registry._HANDLER_NAMES)
-    broken[Operation.NOTEBOOK_LIST] = "_notebook_list_renamed"
-    broken_registry = dict(WEB_OPERATION_REGISTRY)
-    broken_registry[Operation.NOTEBOOK_LIST] = registry.WebOperationBinding(
+def test_misnamed_handler_fails_at_resolution_not_first_invocation() -> None:
+    backend = build_web_backend(_Executor())
+    broken = dict(WEB_OPERATION_REGISTRY)
+    broken[Operation.NOTEBOOK_LIST] = registry.WebOperationBinding(
         definition=NOTEBOOK_LIST_DEF,
         handler_name="_notebook_list_renamed",
         unsupported_reason=None,
     )
-    monkeypatch.setattr("notebooklm._web.backend.WEB_OPERATION_REGISTRY", broken_registry)
     with pytest.raises(
         BackendContractError, match="names missing web handler '_notebook_list_renamed'"
     ):
-        build_web_backend(_Executor())
+        _resolve_handler_bindings(backend, registry=broken)
 
 
 def test_missing_handler_fails_at_construction() -> None:
@@ -388,16 +384,18 @@ def test_missing_handler_fails_at_construction() -> None:
         Incomplete(_Executor(), transport_factory=lambda **kwargs: object())  # type: ignore[arg-type]
 
 
-def test_table_missing_a_supported_row_is_rejected_by_the_construction_audit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_table_missing_a_supported_row_is_rejected_by_the_construction_audit() -> None:
+    backend = build_web_backend(_Executor())
     narrowed = dict(WEB_OPERATION_REGISTRY)
     narrowed[Operation.NOTEBOOK_LIST] = registry.WebOperationBinding(
         definition=None, handler_name=None, unsupported_reason="dropped"
     )
-    monkeypatch.setattr("notebooklm._web.backend.WEB_OPERATION_REGISTRY", narrowed)
     with pytest.raises(BackendContractError, match="without a row: notebook.list"):
-        build_web_backend(_Executor())
+        _resolve_handler_bindings(backend, registry=narrowed)
+    with pytest.raises(BackendContractError, match="not supported: notebook.list"):
+        _resolve_handler_bindings(
+            backend, supported=WEB_SUPPORTED_OPERATIONS - {Operation.NOTEBOOK_LIST}
+        )
 
 
 @pytest.mark.asyncio
