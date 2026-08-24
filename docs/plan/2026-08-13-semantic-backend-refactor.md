@@ -2116,7 +2116,17 @@ backend is approved; P9.3 proceeds). Decider: the plan owner. Outcome placeholde
 
 #### P9.2 stop/go outcome — (pending)
 
-**P9.3 — Remaining leaf handlers become `CodecBinding` rows, one domain per PR.**
+**P9.3 — Remaining leaf handlers become `CodecBinding` rows, one domain per PR.** *In
+progress. Execution-order deviation (2026-08-24): the P9.3 domain conversions run before the P9.2
+hoists, because P9.3 depends only on P9.2's first PR (row-derived catalog authorities, landed)
+while the hoists wait on the owner's stop/go review. Pattern PR — settings/suggestions —
+done 2026-08-24 (`b4e44d5b`, `c0e52c8c`, `852e7921`, `428493cf`; merged at `692c6830`): rows live
+in `_web/bindings/<domain>.py` as module-level `CodecBinding` constants assembled into
+`WEB_BINDING_ROWS`; `_web/registry.py` partitions the 82 supported operations into handler-backed
+∪ row-backed with the count pins unchanged; `SETTINGS_GET`, `SETTINGS_GET_LIMITS`,
+`SETTINGS_SET_LANGUAGE` and `ARTIFACT_SUGGEST_REPORTS` are the first four rows; the
+`dispatched` marker now reaches `BackendError` through `_translate_error`; the per-domain steps are
+recorded in `2026-08-24-p9-3-domain-conversion-recipe.md`.*
 `planned:_binding.py` (introduced in P9.0; neutral: imports nothing under `_web/`, `rpc/`,
 `_auth/`, or `httpx` — its neutrality is what makes the dispatch type check possible) defines:
 
