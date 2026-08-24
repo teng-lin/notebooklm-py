@@ -20,6 +20,7 @@ from .._idempotency import (
     _coerce_create_result,
     _IdempotentCreateResult,
     idempotent_create,
+    transport_may_have_committed,
 )
 from .._idempotency import mark_unconfirmed as _unconfirmed
 from .._loop_bound import LoopBoundPrimitive
@@ -814,6 +815,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         return await idempotent_create(
             _create,
             _probe,
+            may_have_committed=transport_may_have_committed,
             label=f"sources.register_file_source[{filename}]",
         )
 

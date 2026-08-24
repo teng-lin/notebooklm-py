@@ -9,9 +9,10 @@ Concrete wire adapters live above this module and are not part of the protocol.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import Enum, unique
-from typing import Protocol, TypeVar, runtime_checkable
+from types import MappingProxyType
+from typing import Final, Protocol, TypeVar, runtime_checkable
 
 from ._deadline import RuntimeDeadline
 from ._operations import Operation, OperationDef
@@ -54,6 +55,21 @@ class BackendErrorReason(str, Enum):
     SOURCE_ADD = "source_add"
     TIMEOUT = "timeout"
     UNKNOWN_RPC_METHOD = "unknown_rpc_method"
+
+
+#: Reasons under which a dispatched mutation may have committed server-side
+#: before the failure surfaced. This reproduces the web adapter's class tuple
+#: ``(RateLimitError, ServerError, NetworkError)`` — ``RPCTimeoutError`` is a
+#: ``NetworkError`` subclass there — as a closed reason set. Exact; never
+#: widened by an adapter.
+COMMIT_UNCERTAIN_REASONS: Final[frozenset[BackendErrorReason]] = frozenset(
+    {
+        BackendErrorReason.SERVER,
+        BackendErrorReason.NETWORK,
+        BackendErrorReason.RATE_LIMIT,
+        BackendErrorReason.TIMEOUT,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +128,12 @@ class BackendError(Exception):
     ``diagnostics`` is an opaque, already-scrubbed mapping.  The backend owns
     its contents; later compatibility projectors replay the same mapping rather
     than interpreting wire-specific fields in semantic services.
+
+    ``outcome_unknown`` keeps its broad meaning: the workflow's requested final
+    outcome is not fully confirmed and is unsafe to retry.  ``dispatched`` is a
+    narrower, mechanical marker — the native runtime was entered for the failing
+    call ("the runtime was entered", not "the POST was sent") — and is the
+    commit-uncertainty *trigger* consumed by :func:`may_have_committed`.
     """
 
     message: str
@@ -119,9 +141,19 @@ class BackendError(Exception):
     outcome_unknown: bool = False
     diagnostics: Mapping[str, object] | None = field(default=None, repr=False, hash=False)
     reason: BackendErrorReason | None = None
+    dispatched: bool = False
 
     def __post_init__(self) -> None:
         Exception.__init__(self, self.message)
+
+    def _message_for(self, operation: Operation | None) -> str:
+        """Return the message this error would carry if bound to ``operation``.
+
+        Subclasses whose message is derived from the operation override this so
+        :func:`rebind_operation` rebuilds it exactly as construction would.
+        """
+        del operation
+        return self.message
 
 
 class BackendContractError(BackendError):
@@ -145,6 +177,11 @@ class UnsupportedOperationError(BackendContractError):
         )
         object.__setattr__(self, "backend_kind", backend_kind)
 
+    def _message_for(self, operation: Operation | None) -> str:
+        if operation is None:
+            return self.message
+        return f"{self.backend_kind.value} backend does not support {operation.value}"
+
 
 class BackendDeadlineExceededError(BackendError):
     """A semantic invocation exhausted the caller-owned absolute deadline."""
@@ -157,6 +194,7 @@ class BackendDeadlineExceededError(BackendError):
         *,
         outcome_unknown: bool = False,
         diagnostics: Mapping[str, object] | None = None,
+        dispatched: bool = False,
     ) -> None:
         BackendError.__init__(
             self,
@@ -165,20 +203,98 @@ class BackendDeadlineExceededError(BackendError):
             outcome_unknown=outcome_unknown,
             diagnostics=diagnostics,
             reason=BackendErrorReason.TIMEOUT,
+            dispatched=dispatched,
         )
+
+    def _message_for(self, operation: Operation | None) -> str:
+        if operation is None:
+            return self.message
+        return f"{operation.value} exceeded its deadline"
+
+
+_LEAF_OPERATION_DIAGNOSTIC: Final = "leaf_operation"
+
+
+def _replace_backend_error(error: BackendError, **changes: object) -> BackendError:
+    """Copy ``error`` with ``changes`` applied, preserving its concrete subclass.
+
+    ``BackendError`` is a frozen, slotted dataclass whose subclasses take
+    constructor arguments the base fields cannot reproduce, and
+    ``BaseException.__reduce__`` would rebuild only from ``args``.  Copy field by
+    field instead, including subclass-declared slots, then re-run the
+    ``Exception`` initialiser so ``args`` tracks the (possibly rebuilt) message.
+    """
+    cls = type(error)
+    clone = cls.__new__(cls)
+    field_names = {item.name for item in fields(error)}
+    for name in field_names:
+        object.__setattr__(clone, name, changes.get(name, getattr(error, name)))
+    for klass in cls.__mro__:
+        for slot in getattr(klass, "__slots__", ()):
+            if slot in field_names or slot in {"__dict__", "__weakref__"}:
+                continue
+            if hasattr(error, slot):
+                object.__setattr__(clone, slot, getattr(error, slot))
+    Exception.__init__(clone, clone.message)
+    return clone
 
 
 def mark_backend_outcome_unknown(error: BackendError) -> BackendError:
-    """Return closed neutral evidence for a write whose outcome is unconfirmed."""
+    """Return closed neutral evidence for a write whose outcome is unconfirmed.
+
+    The returned error keeps its concrete subclass, ``dispatched`` marker,
+    reason, diagnostics and message; only ``outcome_unknown`` changes.
+    """
     if error.outcome_unknown:
         return error
-    return BackendError(
-        message=error.message,
-        operation=error.operation,
-        outcome_unknown=True,
-        diagnostics=error.diagnostics,
-        reason=error.reason,
+    return _replace_backend_error(error, outcome_unknown=True)
+
+
+def rebind_operation(error: BackendError, operation: Operation) -> BackendError:
+    """Return ``error`` attributed to the workflow ``operation``.
+
+    A service that sequences several leaf operations re-raises a leaf failure as
+    its own operation so public exception identity and catalog attribution do
+    not change.  The leaf operation is retained under the ``leaf_operation``
+    diagnostics key (the innermost leaf wins across repeated rebinding); the
+    subclass, ``dispatched``, ``outcome_unknown`` and reason are preserved, and
+    subclasses whose message names the operation have it rebuilt.
+    """
+    if error.operation is operation:
+        return error
+    diagnostics: dict[str, object] = dict(error.diagnostics or {})
+    if error.operation is not None and _LEAF_OPERATION_DIAGNOSTIC not in diagnostics:
+        diagnostics[_LEAF_OPERATION_DIAGNOSTIC] = error.operation
+    return _replace_backend_error(
+        error,
+        operation=operation,
+        message=error._message_for(operation),
+        diagnostics=MappingProxyType(diagnostics),
     )
+
+
+def may_have_committed(error: BackendError) -> bool:
+    """Whether a dispatched mutation behind ``error`` may have committed.
+
+    Exact predicate: the native runtime was entered (``dispatched``) *and* the
+    reason is one of :data:`COMMIT_UNCERTAIN_REASONS`.  A pre-dispatch deadline
+    expiry, a rejected input, or a decode failure never satisfies it, whatever
+    ``outcome_unknown`` says about the surrounding workflow.
+    """
+    return error.dispatched and error.reason in COMMIT_UNCERTAIN_REASONS
+
+
+def require_leaves(backend: BackendAdapter, *operations: Operation) -> None:
+    """Reject a workflow whose leaf conjunction the backend cannot execute.
+
+    Called before a service's first credential, file or network side effect so
+    an unsupported leaf is never discovered mid-workflow.  Raises
+    :class:`UnsupportedOperationError` for the first unsupported leaf.
+    """
+    capabilities = backend.capabilities
+    for operation in operations:
+        if not capabilities.supports(operation):
+            raise UnsupportedOperationError(operation, backend.kind)
 
 
 __all__ = [
@@ -189,6 +305,10 @@ __all__ = [
     "BackendError",
     "BackendErrorReason",
     "BackendKind",
+    "COMMIT_UNCERTAIN_REASONS",
     "mark_backend_outcome_unknown",
+    "may_have_committed",
+    "rebind_operation",
+    "require_leaves",
     "UnsupportedOperationError",
 ]

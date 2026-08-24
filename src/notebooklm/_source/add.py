@@ -13,6 +13,7 @@ from .._idempotency import (
     _CreateResultKind,
     _IdempotentCreateResult,
     idempotent_create,
+    transport_may_have_committed,
 )
 from .._idempotency import (
     mark_unconfirmed as _unconfirmed,
@@ -424,6 +425,7 @@ class SourceAddService:
         result = await idempotent_create(
             _create,
             _probe,
+            may_have_committed=transport_may_have_committed,
             label=f"sources.add_url[{url[:40]}]",
         )
         source = result.value
@@ -725,6 +727,7 @@ class SourceAddService:
         result = await idempotent_create(
             _create,
             _probe,
+            may_have_committed=transport_may_have_committed,
             label=f"sources.add_drive[{file_id}]",
         )
         source = result.value
