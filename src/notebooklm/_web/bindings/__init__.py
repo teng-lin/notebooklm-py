@@ -15,8 +15,12 @@ from types import MappingProxyType
 from ..._binding import Binding
 from ..._operations import Operation
 from .settings import SETTINGS_ROWS
+from .sharing import SHARING_ROWS
 
-_DOMAIN_ROWS: tuple[Mapping[Operation, Binding], ...] = (SETTINGS_ROWS,)
+_DOMAIN_ROWS: tuple[Mapping[Operation, Binding], ...] = (
+    SETTINGS_ROWS,
+    SHARING_ROWS,
+)
 
 
 def _assemble_rows(domains: tuple[Mapping[Operation, Binding], ...]) -> Mapping[Operation, Binding]:

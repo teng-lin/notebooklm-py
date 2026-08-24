@@ -32,6 +32,7 @@ from notebooklm._records import (
 from notebooklm._sharing import SharingAPI
 from notebooklm._sharing_service import SharingService
 from notebooklm._web.backend import WebRpcBackend
+from notebooklm._web.bindings import sharing as sharing_rows
 from notebooklm._web.codec.sharing import decode_share_status
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from notebooklm.exceptions import RPCError, ServerError
@@ -114,8 +115,8 @@ def test_sharing_facade_takes_only_the_semantic_backend() -> None:
 
 
 def test_every_sharing_operation_has_one_registered_web_binding() -> None:
-    sharing = {
-        Operation.SHARING_GET: ("_sharing_get", SHARING_GET_DEF, CallPolicy.READ),
+    """Each sharing operation is backed by exactly one handler name or one codec row."""
+    composites = {
         Operation.SHARING_SET_PUBLIC: (
             "_sharing_set_public",
             SHARING_SET_PUBLIC_DEF,
@@ -131,17 +132,30 @@ def test_every_sharing_operation_has_one_registered_web_binding() -> None:
             SHARING_UPDATE_USERS_DEF,
             CallPolicy.MUTATION,
         ),
+    }
+    for operation, (handler, definition, policy) in composites.items():
+        binding = WEB_OPERATION_REGISTRY[operation]
+        assert binding.is_supported
+        assert binding.handler_name == handler
+        assert binding.row is None
+        assert binding.definition is definition
+        assert definition.policy is policy
+        assert operation in WEB_SUPPORTED_OPERATIONS
+    # P9.3: the two leaves are codec rows, not handler names.
+    leaves = {
+        Operation.SHARING_GET: (sharing_rows.SHARING_GET, SHARING_GET_DEF, CallPolicy.READ),
         Operation.LEGACY_SHARE_ARTIFACT: (
-            "_legacy_share_artifact",
+            sharing_rows.LEGACY_SHARE_ARTIFACT,
             LEGACY_SHARE_ARTIFACT_DEF,
             CallPolicy.MUTATION,
         ),
     }
-    for operation, (handler, definition, policy) in sharing.items():
+    for operation, (row, definition, policy) in leaves.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name == handler
-        assert binding.definition is definition
+        assert binding.handler_name is None
+        assert binding.row is row
+        assert row.definition is definition
         assert definition.policy is policy
         assert operation in WEB_SUPPORTED_OPERATIONS
 
