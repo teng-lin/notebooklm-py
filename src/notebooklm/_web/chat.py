@@ -29,7 +29,6 @@ from .._records import (
 )
 from ..exceptions import ChatError, NetworkError, NotebookLMError
 from ..rpc import RPCMethod
-from .chat_transport import chat_aware_authed_post
 from .codec.chat import (
     build_ask_request,
     build_configure_params,
@@ -45,10 +44,12 @@ from .codec.chat import (
     decode_save_note_result,
 )
 from .source_variants import SourceVariantWebHandlers
+from .transport import WebStreamRequest
 
 if TYPE_CHECKING:
     from .._reqid_counter import ReqidCounter
     from .._runtime.transport import RuntimeTransport
+    from .transport import WebTransport
 
 chat_logger = logging.getLogger("notebooklm._chat.api")
 
@@ -60,6 +61,7 @@ class ChatWebHandlers(SourceVariantWebHandlers):
     _chat_reqid: ReqidCounter | None
     _chat_timeout: float | None
     _chat_response_max_bytes: int | None
+    _transport: WebTransport
 
     async def _chat_conversation_id(
         self,
@@ -229,14 +231,14 @@ class ChatWebHandlers(SourceVariantWebHandlers):
         reqid_token = None if get_request_id() is not None else set_request_id()
         try:
             try:
-                response = await chat_aware_authed_post(
-                    self._chat_transport,
-                    build_request=build_request,
-                    parse_label="chat.ask",
-                    read_timeout=attempt_timeout,
-                    max_response_bytes=self._chat_response_max_bytes,
-                    disable_read_timeout_retries=True,
-                    retry_deadline=deadline,
+                response = await self._transport.stream(
+                    WebStreamRequest(
+                        operation=Operation.CHAT_ASK,
+                        build_request=build_request,
+                        parse_label="chat.ask",
+                        read_timeout=attempt_timeout,
+                    ),
+                    deadline=deadline,
                 )
             except NetworkError as exc:
                 if (

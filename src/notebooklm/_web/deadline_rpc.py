@@ -44,7 +44,9 @@ class DeadlineRpcCaller:
     ) -> Any:
         # The semantic deadline is the only timeout authority for this composite.
         # A feature helper cannot replace it with a fresh relative timeout.
-        del read_timeout
+        # ``_is_retry`` is the runtime's own auth-refresh recursion flag; it is
+        # accepted only so this caller keeps the ``RpcCaller`` signature.
+        del read_timeout, _is_retry
         timeout_error: RPCTimeoutError | None = None
         try:
             return await self._backend._rpc_call(
@@ -54,7 +56,6 @@ class DeadlineRpcCaller:
                 deadline=self._deadline,
                 source_path=source_path,
                 allow_null=allow_null,
-                _is_retry=_is_retry,
                 disable_internal_retries=disable_internal_retries,
                 operation_variant=operation_variant,
                 raise_on_null_status=raise_on_null_status,

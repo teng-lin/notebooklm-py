@@ -459,6 +459,7 @@ GENERIC_RPC_FORWARDERS = frozenset(
     {
         "_web/deadline_rpc.py:DeadlineRpcCaller.rpc_call",
         "_web/backend.py:WebRpcBackend.public_rpc_call",
+        "_web/transport.py:WebTransport.call",
         "_notebooks.py:NotebooksAPI._rpc_call",
         "client.py:NotebookLMClient.rpc_call",
     }
@@ -470,7 +471,7 @@ GENERIC_RPC_FORWARDERS = frozenset(
 # shared forwarder remains inert until every registered operation delegates.
 INERT_P1_WEB_FORWARDERS = frozenset(
     {
-        "_web/backend.py:WebRpcBackend._rpc_call",
+        "_web/transport.py:WebTransport.call",
     }
 )
 INERT_P1_WEB_HANDLERS: frozenset[str] = frozenset()
@@ -491,6 +492,10 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/backend.py", "_binding", "invoke_binding"),
         ("_web/registry.py", "_binding", "OperationDisposition"),
         ("_web/backend.py", "registry", "WebOperationBinding"),
+        ("_web/transport.py", "_backend", "BackendContractError"),
+        ("_web/transport.py", "_backend", "BackendDeadlineExceededError"),
+        ("_web/transport.py", "_binding", "CodecPayload"),
+        ("_web/transport.py", "_binding", "NativeChoice"),
         ("_web/deadline_rpc.py", "_backend", "BackendDeadlineExceededError"),
         ("_web/deadline_rpc.py", "backend", "WebRpcBackend"),
         ("_artifact/listing.py", "_projectors", "project_artifact"),

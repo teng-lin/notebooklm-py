@@ -158,6 +158,7 @@ from .error_policy import SAFE_REASON_DIAGNOSTICS, WEB_ERROR_REASONS
 from .failure_projection import _CHAT_OPERATIONS, _capture_public_failure
 from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS, WebOperationBinding
 from .runtime import WebExecutionRuntime
+from .transport import WebRequest, WebTransport
 
 if TYPE_CHECKING:
     from .._chat import ChatAPI
@@ -229,6 +230,13 @@ class WebRpcBackend(ChatWebHandlers):
             supported_operations=WEB_SUPPORTED_OPERATIONS,
         )
         self._closed = False
+        # The transport reads the runtime through the shell on every call so
+        # a post-construction rebinding of ``_runtime`` is observed by dispatch.
+        self._transport = WebTransport(
+            runtime_provider=lambda: self._runtime,
+            chat_transport=chat_transport,
+            chat_response_max_bytes=chat_response_max_bytes,
+        )
         # Resolve every registry handler name exactly once. A misnamed or
         # missing handler fails here, at construction, rather than on that
         # operation's first invocation.
@@ -441,8 +449,8 @@ class WebRpcBackend(ChatWebHandlers):
         try:
             result = await invoke_binding(
                 self._bindings,
-                None,
-                None,
+                self._transport,
+                self._translate_native_error,
                 operation,
                 value,
                 deadline=deadline,
@@ -545,37 +553,26 @@ class WebRpcBackend(ChatWebHandlers):
         outcome_unknown_on_expiry: bool = False,
         attempt_timeout: float | None = None,
     ) -> Any:
-        read_timeout: float | None = attempt_timeout
-        if deadline is not None:
-            remaining = deadline.remaining()
-            if remaining <= 0.0:
-                raise BackendDeadlineExceededError(
-                    operation,
-                    # No native call was dispatched in this phase. Uncertainty
-                    # is therefore false unless the composite explicitly says
-                    # an earlier phase may already have committed.
-                    outcome_unknown=outcome_unknown_on_expiry,
-                    diagnostics=MappingProxyType(
-                        {
-                            "timeout": deadline.timeout,
-                            "remaining": remaining,
-                            "timeout_seconds": deadline.timeout,
-                            "method_id": method.value,
-                        }
-                    ),
-                )
-            read_timeout = remaining if read_timeout is None else min(read_timeout, remaining)
-        return await self._runtime.rpc_call(
-            method,
-            params,
-            source_path=source_path,
-            allow_null=allow_null,
-            _is_retry=_is_retry,
-            disable_internal_retries=disable_internal_retries,
-            operation_variant=operation_variant,
-            read_timeout=read_timeout,
-            raise_on_null_status=raise_on_null_status,
-            _retry_deadline=deadline,
+        """Delegate one native call to the transport under the semantic deadline.
+
+        ``_is_retry`` is accepted only for signature compatibility: it is the
+        runtime's own auth-refresh recursion flag and never a handler input.
+        """
+        del _is_retry
+        return await self._transport.call(
+            WebRequest(
+                operation=operation,
+                method=method,
+                params=params,
+                source_path=source_path,
+                operation_variant=operation_variant,
+                allow_null=allow_null,
+                raise_on_null_status=raise_on_null_status,
+                disable_internal_retries=disable_internal_retries,
+                outcome_unknown_on_expiry=outcome_unknown_on_expiry,
+                attempt_timeout=attempt_timeout,
+            ),
+            deadline=deadline,
         )
 
     async def _notebook_list(
@@ -1349,6 +1346,15 @@ class WebRpcBackend(ChatWebHandlers):
         }
         diagnostics.update((name, getattr(exc, name)) for name in SAFE_REASON_DIAGNOSTICS[reason])
         return MappingProxyType(diagnostics)
+
+    def _translate_native_error(self, operation: Operation, error: Exception) -> BackendError:
+        """Typed :class:`ErrorTranslator` view over the reviewed transport types."""
+        if not isinstance(error, (RPCError, NetworkError, IdempotencyVariantError, ChatError)):
+            raise BackendContractError(
+                f"unclassified web error type {type(error).__module__}.{type(error).__qualname__}",
+                operation=operation,
+            ) from error
+        return self._translate_error(operation, error)
 
     @classmethod
     def _translate_error(

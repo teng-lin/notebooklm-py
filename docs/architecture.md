@@ -1073,6 +1073,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_studio/mind_maps.py` | Private P6.3 interactive mind-map family service: catalog-backed discovery plus typed generation/tree/update/delete dispatch. |
 | `_web/backend.py` | Single web semantic backend, owner of the runtime/lifecycle/auth/metrics leaves and all 82 active semantic handlers. |
 | `_web/runtime.py` | Sole batchexecute encode/dispatch/decode implementation (`WebExecutionRuntime`). |
+| `_web/transport.py` | `WebTransport` (P9.1): the web backend's two transport verbs — `call` (one deadline-bound `batchexecute` call over `WebExecutionRuntime`, tagging escaped native errors `dispatched`) and `stream` (the chat-aware authed POST) — plus the frozen `WebRequest`/`WebStreamRequest` values and `assemble` for codec rows. Lifecycle stays on `WebRpcBackend`. |
 | `_web/deadline_rpc.py` | Deadline/operation-bound compatibility caller used only inside legacy note-backed web composites. |
 | `_web/chat.py` | P6.1 Chat web workflow mixin; owns ask/history/configuration/save-note handlers while keeping the composed backend below the module-size ratchet. |
 | `_web/error_policy.py` | Closed native-to-semantic error classification and safe-diagnostic allowlist shared by the composed web backend. |

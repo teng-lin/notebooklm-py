@@ -159,6 +159,7 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_web.studio_documents",
         "_web.studio_facade",
         "_web.studio_media",
+        "_web.transport",
         "_web_cookie_provider",
         "_web_request_auth",
         "exceptions",
