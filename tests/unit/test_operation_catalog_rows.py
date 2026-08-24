@@ -210,7 +210,7 @@ def test_derive_row_authorities_allocates_each_native_to_its_row(tmp_path: Path)
     assert derived[(Operation.LABEL_UPDATE, (RPCMethod.UPDATE_LABEL, "remove_sources"))] == (
         "_web/bindings/settings.py:LABEL_UPDATE",
     )
-    # 1 (SETTINGS_GET) + 2 (RESEARCH_START) + 4 (LABEL_UPDATE) + 1 (table row).
+    # SETTINGS_GET (1) + TABLE.SETTINGS_GET_LIMITS (1) + RESEARCH_START (2) + LABEL_UPDATE (4).
     assert len(derived) == 8
     # Deterministic ordering: by operation value, then native text.
     assert list(derived)[0][0] is Operation.LABEL_UPDATE
@@ -266,10 +266,16 @@ def test_row_audit_compares_declared_natives_with_the_policy_ledger() -> None:
     )
 
 
-def test_production_tree_has_no_rows_yet_and_the_audit_is_wired() -> None:
-    """P9.3 lands the first production rows; until then derivation is empty and green."""
-    assert catalog_ast.collect_binding_rows() == []
-    assert catalog_ast.derive_row_authorities() == {}
+def test_production_rows_are_derived_and_the_audit_is_wired() -> None:
+    """Every production row is a resolved authority site that agrees with the ledger."""
+    from notebooklm._web.bindings import WEB_BINDING_ROWS
+
+    rows = catalog_ast.collect_binding_rows()
+    assert {row.operation for row in rows} == set(WEB_BINDING_ROWS)
+    assert all(not row.unresolved for row in rows)
+    assert all(row.site.startswith("_web/bindings/") for row in rows)
+    derived = catalog_ast.derive_row_authorities()
+    assert {operation for operation, _native in derived} == set(WEB_BINDING_ROWS)
     assert catalog_ast.audit_row_bindings() == []
     assert catalog.audit_row_bindings is catalog_ast.audit_row_bindings
     assert catalog.collect_binding_rows is catalog_ast.collect_binding_rows

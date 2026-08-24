@@ -5,10 +5,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from ..._binding import CodecPayload
 from ..._records import (
     AccountLimitsRecord,
+    SettingsGetInput,
+    SettingsGetLimitsInput,
     SettingsGetLimitsResult,
     SettingsGetResult,
+    SettingsSetLanguageInput,
     SettingsSetLanguageResult,
     UserSettingsRecord,
 )
@@ -35,6 +39,25 @@ def encode_get_user_settings() -> list[Any]:
 def encode_set_output_language(language: str) -> list[Any]:
     """Build the exact ``MutateAccount`` language payload."""
     return [[[None, [[None, None, None, None, [language]]]]]]
+
+
+# Row-facing encoders (P9.3). Each returns the full request payload one codec
+# row dispatches — params plus the account route — and never names a method.
+def encode_settings_get(value: SettingsGetInput) -> CodecPayload:
+    """Payload for the ``settings.get`` codec row."""
+    del value
+    return CodecPayload(params=encode_get_user_settings(), source_path="/")
+
+
+def encode_settings_get_limits(value: SettingsGetLimitsInput) -> CodecPayload:
+    """Payload for the ``settings.get_limits`` codec row (same account read)."""
+    del value
+    return CodecPayload(params=encode_get_user_settings(), source_path="/")
+
+
+def encode_settings_set_language(value: SettingsSetLanguageInput) -> CodecPayload:
+    """Payload for the ``settings.set_language`` codec row."""
+    return CodecPayload(params=encode_set_output_language(value.language), source_path="/")
 
 
 def _extract_language(
@@ -130,11 +153,37 @@ def decode_set_output_language(data: Any) -> SettingsSetLanguageResult:
     )
 
 
+def decode_settings_get(value: SettingsGetInput, data: Any) -> SettingsGetResult:
+    """Row decoder for ``settings.get``; the input carries nothing the decode needs."""
+    del value
+    return decode_get_user_settings(data)
+
+
+def decode_settings_get_limits(value: SettingsGetLimitsInput, data: Any) -> SettingsGetLimitsResult:
+    """Row decoder for ``settings.get_limits``."""
+    del value
+    return decode_get_account_limits(data)
+
+
+def decode_settings_set_language(
+    value: SettingsSetLanguageInput, data: Any
+) -> SettingsSetLanguageResult:
+    """Row decoder for ``settings.set_language``."""
+    del value
+    return decode_set_output_language(data)
+
+
 __all__ = [
     "decode_account_limits",
     "decode_get_account_limits",
     "decode_get_user_settings",
     "decode_set_output_language",
+    "decode_settings_get",
+    "decode_settings_get_limits",
+    "decode_settings_set_language",
     "encode_get_user_settings",
     "encode_set_output_language",
+    "encode_settings_get",
+    "encode_settings_get_limits",
+    "encode_settings_set_language",
 ]

@@ -368,6 +368,11 @@ def measure() -> dict[str, Any]:
         for op, binding in WEB_OPERATION_REGISTRY.items()
         if binding.is_supported and binding.handler_name is not None
     }
+    row_backed = sorted(
+        op.value
+        for op, binding in WEB_OPERATION_REGISTRY.items()
+        if binding.is_supported and getattr(binding, "row", None) is not None
+    )
     reachable = {op: _reachable_rpc_sites(head, name) for op, name in supported.items()}
     composite_ops = sorted(op.value for op, sites in reachable.items() if len(sites) > 1)
     leaf_count = len(supported) - len(composite_ops)
@@ -452,6 +457,7 @@ def measure() -> dict[str, Any]:
         "links": links,
         "zero_dependency_links": zero_dependency_links,
         "registry_handler_names": len(supported),
+        "registry_binding_rows": row_backed,
         "leaf_handlers_by_code": leaf_count,
         "composite_handlers_by_code": composite_ops,
         "deadline_ledger_entries": ledger_multi_deadline,
@@ -522,7 +528,8 @@ def format_markdown(m: dict[str, Any]) -> str:
             "Registry handler names / leaf names no existing check resolves",
             f"{m['registry_handler_names']} / {m['leaf_handlers_by_code']} "
             f"({len(m['composite_handlers_by_code'])} composite by handler-code walk; "
-            f"{m['deadline_ledger_entries']} deadline-ledger entries)",
+            f"{m['deadline_ledger_entries']} deadline-ledger entries; "
+            f"{len(m['registry_binding_rows'])} binding rows)",
         ),
         (
             "Operations by policy ledger: single-native / multi-native",

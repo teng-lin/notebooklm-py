@@ -6,7 +6,9 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+from ..._binding import CodecPayload
 from ..._records import (
+    ArtifactSuggestReportsInput,
     ArtifactSuggestReportsResult,
     NotebookSuggestPromptsResult,
     PromptSuggestionRecord,
@@ -51,6 +53,19 @@ def encode_prompt_suggestions(
 def encode_report_suggestions(notebook_id: str) -> list[Any]:
     """Build the live ``GenerateReportSuggestions`` positional request."""
     return [[2], notebook_id]
+
+
+def encode_artifact_suggest_reports(value: ArtifactSuggestReportsInput) -> CodecPayload:
+    """Payload for the ``artifact.suggest_reports`` codec row (P9.3).
+
+    The notebook route and ``allow_null`` — an empty suggestion list decodes to
+    no suggestions — travel with the params so the row never names a method.
+    """
+    return CodecPayload(
+        params=encode_report_suggestions(value.notebook_id),
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
 
 
 def decode_prompt_source_ids(data: Any, *, notebook_id: str) -> tuple[str, ...]:
@@ -153,10 +168,20 @@ def decode_report_suggestions(data: Any) -> ArtifactSuggestReportsResult:
     )
 
 
+def decode_artifact_suggest_reports(
+    value: ArtifactSuggestReportsInput, data: Any
+) -> ArtifactSuggestReportsResult:
+    """Row decoder for ``artifact.suggest_reports``."""
+    del value
+    return decode_report_suggestions(data)
+
+
 __all__ = [
+    "decode_artifact_suggest_reports",
     "decode_prompt_source_ids",
     "decode_prompt_suggestions",
     "decode_report_suggestions",
+    "encode_artifact_suggest_reports",
     "encode_prompt_suggestions",
     "encode_report_suggestions",
 ]

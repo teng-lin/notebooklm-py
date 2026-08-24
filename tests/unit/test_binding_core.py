@@ -354,8 +354,12 @@ def test_backend_resolves_every_handler_at_construction() -> None:
     backend = build_web_backend(_Executor())
     table = backend._bindings
     assert set(table) == WEB_SUPPORTED_OPERATIONS
-    assert table.resolved_handler_count == 82
-    assert table.codec_count == table.custom_count == 0
+    row_backed = {op for op, binding in WEB_OPERATION_REGISTRY.items() if binding.row is not None}
+    assert table.resolved_handler_count == 82 - len(row_backed)
+    assert table.codec_count == len(row_backed) == 4
+    assert table.custom_count == 0
+    assert all(isinstance(table[op], CodecBinding) for op in row_backed)
+    assert table[Operation.SETTINGS_GET] is WEB_OPERATION_REGISTRY[Operation.SETTINGS_GET].row
     row = table[Operation.NOTEBOOK_LIST]
     assert isinstance(row, ResolvedHandlerBinding)
     assert row.handler == backend._notebook_list

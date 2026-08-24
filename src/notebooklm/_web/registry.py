@@ -1,7 +1,8 @@
 """Closed web dispositions for the semantic operation vocabulary.
 
 P2 notebook/source operations, P5 Studio family operations, and P6.1–P6.7 domain workflows have
-executable bindings. Every other operation has an unsupported disposition, and the count
+executable bindings: a legacy handler name resolved at construction, or — since P9.3 — a binding
+row from ``_web.bindings``. Every other operation has an unsupported disposition, and the count
 assertions force a deliberate registry update when the closed :class:`Operation` enum changes.
 """
 
@@ -12,7 +13,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final
 
-from .._binding import OperationDisposition
+from .._binding import Binding, OperationDisposition
 from .._operations import Operation, OperationDef
 from .._records import (
     ARTIFACT_DELETE_DEF,
@@ -98,23 +99,30 @@ from .._records import (
     SOURCE_UPDATE_DEF,
     SOURCE_WAIT_DEF,
 )
+from .bindings import WEB_BINDING_ROWS
 from .policy import audit_web_call_policy_bindings
 
 
 @dataclass(frozen=True, slots=True)
 class WebOperationBinding:
-    """One executable handler or one reviewed unsupported disposition."""
+    """One executable handler or row, or one reviewed unsupported disposition."""
 
     definition: OperationDef[Any, Any] | None
     handler_name: str | None
     unsupported_reason: str | None
+    row: Binding | None = None
 
     def __post_init__(self) -> None:
         has_definition = self.definition is not None
         has_handler = self.handler_name is not None
-        if has_definition != has_handler:
-            raise ValueError("web definitions and handler names must be present together")
-        if not has_handler and self.unsupported_reason is None:
+        has_row = self.row is not None
+        if has_handler and has_row:
+            raise ValueError("a web operation is backed by a handler name or a row, never both")
+        if has_definition != (has_handler or has_row):
+            raise ValueError("web definitions and handler names or rows must be present together")
+        if self.row is not None and self.row.definition is not self.definition:
+            raise ValueError("a web binding row must carry the registry's canonical definition")
+        if not (has_handler or has_row) and self.unsupported_reason is None:
             raise ValueError("unsupported web bindings require a reason")
 
     @property
@@ -296,10 +304,6 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.RESEARCH_CANCEL: "_research_cancel",
         Operation.RESEARCH_IMPORT: "_research_import",
         Operation.NOTEBOOK_SUGGEST_PROMPTS: "_notebook_suggest_prompts",
-        Operation.ARTIFACT_SUGGEST_REPORTS: "_artifact_suggest_reports",
-        Operation.SETTINGS_GET: "_settings_get",
-        Operation.SETTINGS_GET_LIMITS: "_settings_get_limits",
-        Operation.SETTINGS_SET_LANGUAGE: "_settings_set_language",
         Operation.ARTIFACT_REVISE_SLIDE: "_artifact_revise_slide",
         Operation.ARTIFACT_RETRY: "_artifact_retry",
         Operation.ARTIFACT_DELETE: "_artifact_delete",
@@ -308,6 +312,10 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.ARTIFACT_WAIT: "_artifact_wait",
     }
 )
+
+# Operations executed through a binding row rather than a resolved handler name.
+# ``_web.bindings`` assembles the rows; the registry only checks the partition.
+_ROW_BACKED_OPERATIONS: Final[frozenset[Operation]] = frozenset(WEB_BINDING_ROWS)
 
 _STAGED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = MappingProxyType({})
 
@@ -322,8 +330,15 @@ _EXPECTED_STAGED_COUNT: Final = 0
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
-    if set(_SUPPORTED_DEFINITIONS) != set(_HANDLER_NAMES):
-        raise RuntimeError("web definitions and handler names disagree")
+    if set(_HANDLER_NAMES) & _ROW_BACKED_OPERATIONS:
+        raise RuntimeError("a web operation cannot have both a handler name and a binding row")
+    if set(_SUPPORTED_DEFINITIONS) != set(_HANDLER_NAMES) | _ROW_BACKED_OPERATIONS:
+        raise RuntimeError("web definitions and handler names or binding rows disagree")
+    for operation, row in WEB_BINDING_ROWS.items():
+        if row.definition is not _SUPPORTED_DEFINITIONS[operation]:
+            raise RuntimeError(
+                f"{operation.value} binding row does not carry its canonical definition"
+            )
     if set(_STAGED_DEFINITIONS) != set(_STAGED_HANDLER_NAMES):
         raise RuntimeError("staged web definitions and handler names disagree")
     if set(_SUPPORTED_DEFINITIONS) & set(_STAGED_DEFINITIONS):
@@ -351,8 +366,9 @@ def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
         if definition is not None:
             registry[operation] = WebOperationBinding(
                 definition=definition,
-                handler_name=_HANDLER_NAMES[operation],
+                handler_name=_HANDLER_NAMES.get(operation),
                 unsupported_reason=None,
+                row=WEB_BINDING_ROWS.get(operation),
             )
         elif staged_definition is not None:
             registry[operation] = WebOperationBinding(

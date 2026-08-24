@@ -826,7 +826,7 @@ def test_migrated_operation_defs_match_web_binding_and_native_idempotency(
     binding = WEB_OPERATION_REGISTRY[operation_def.key]
     assert binding.is_supported is True
     assert binding.definition == operation_def
-    assert binding.handler_name is not None
+    assert (binding.handler_name is not None) != (binding.row is not None)
 
     policy_binding = WEB_CALL_POLICY_BINDINGS[operation_def.key]
     assert policy_binding.policy is operation_def.policy

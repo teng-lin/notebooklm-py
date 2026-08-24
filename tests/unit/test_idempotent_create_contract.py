@@ -273,16 +273,22 @@ async def test_adapter_predicate_ignores_backend_records_and_keeps_the_class_tup
 
 
 @pytest.mark.asyncio
-async def test_adapter_entry_point_defaults_to_the_transport_predicate() -> None:
-    """``_idempotency.idempotent_create`` keeps today's class-tuple behaviour.
+async def test_adapter_entry_point_requires_a_named_predicate() -> None:
+    """``_idempotency.idempotent_create`` has no default predicate (P9.3).
 
-    The remaining adapter-owned call site inside ``_web/backend.py`` relies on
-    this default until its slice names the predicate explicitly.
+    Every caller names its commit-uncertainty predicate; the adapter entry
+    point with the transport tuple keeps today's class-tuple behaviour.
     """
     create = AsyncMock(side_effect=NetworkError("lost response"))
     probe = AsyncMock(return_value="existing")
 
-    result = await adapter_idempotent_create(create, probe)
+    with pytest.raises(TypeError, match="may_have_committed"):
+        await adapter_idempotent_create(create, probe)  # type: ignore[call-arg]
+    probe.assert_not_awaited()
+
+    result = await adapter_idempotent_create(
+        create, probe, may_have_committed=transport_may_have_committed
+    )
 
     assert result.kind is _CreateResultKind.PROBED
     probe.assert_awaited_once()
