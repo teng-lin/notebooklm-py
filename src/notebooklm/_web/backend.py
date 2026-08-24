@@ -35,6 +35,7 @@ from .._backend import (
     mark_backend_outcome_unknown,
 )
 from .._binding import (
+    Binding,
     BindingAuditError,
     BindingTable,
     OperationDisposition,
@@ -47,6 +48,7 @@ from .._env import get_default_language
 from .._idempotency import (
     idempotent_create,
     mark_unconfirmed,
+    transport_may_have_committed,
 )
 from .._mind_map import NoteBackedMindMapService
 from .._note_service import LegacyNoteBackedService
@@ -469,6 +471,7 @@ class WebRpcBackend(ChatWebHandlers):
                     operation.key,
                     outcome_unknown=operation.policy is not CallPolicy.READ,
                     diagnostics=MappingProxyType(diagnostics),
+                    dispatched=bool(getattr(exc, "dispatched", False)),
                 ) from exc
             translated = self._translate_error(operation.key, exc)
             raise translated from exc
@@ -722,6 +725,7 @@ class WebRpcBackend(ChatWebHandlers):
         result = await idempotent_create(
             create,
             probe,
+            may_have_committed=transport_may_have_committed,
             label=f"notebook.create[{value.title!r}]",
         )
         return NotebookCreateResult(notebook=result.value)
@@ -1385,6 +1389,9 @@ class WebRpcBackend(ChatWebHandlers):
             outcome_unknown=bool(getattr(exc, "unconfirmed", False)),
             diagnostics=MappingProxyType(diagnostics),
             reason=reason,
+            # ``WebTransport`` tags every native failure that escaped the
+            # runtime; the neutral commit-uncertainty predicate reads it here.
+            dispatched=bool(getattr(exc, "dispatched", False)),
         )
 
 
@@ -1394,9 +1401,22 @@ def _resolve_handler_bindings(
     registry: Mapping[Operation, WebOperationBinding] = WEB_OPERATION_REGISTRY,
     supported: frozenset[Operation] = WEB_SUPPORTED_OPERATIONS,
 ) -> BindingTable:
-    """Resolve registry handler names into a construction-audited binding table."""
-    rows: dict[Operation, ResolvedHandlerBinding[Any, Any]] = {}
+    """Assemble the construction-audited binding table.
+
+    Row-backed operations use their ``_web.bindings`` row as-is; handler-backed
+    operations resolve their registry handler name exactly once here, so a
+    misnamed or missing handler fails at construction.
+    """
+    rows: dict[Operation, Binding] = {}
     for operation, binding in registry.items():
+        definition = binding.definition
+        executable = (
+            definition is not None and binding.disposition is OperationDisposition.SUPPORTED_DIRECT
+        )
+        if binding.row is not None:
+            if executable:
+                rows[operation] = binding.row
+            continue
         handler_name = binding.handler_name
         if handler_name is None:
             continue
@@ -1406,8 +1426,7 @@ def _resolve_handler_bindings(
                 f"{operation.value} names missing web handler {handler_name!r}",
                 operation=operation,
             )
-        definition = binding.definition
-        if definition is not None and binding.disposition is OperationDisposition.SUPPORTED_DIRECT:
+        if definition is not None and executable:
             rows[operation] = ResolvedHandlerBinding(definition=definition, handler=handler)
     table = BindingTable(rows)
     try:

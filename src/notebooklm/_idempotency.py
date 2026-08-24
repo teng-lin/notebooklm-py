@@ -101,16 +101,16 @@ async def idempotent_create(
     create: Callable[[], Awaitable[T]],
     probe: Callable[[], Awaitable[T | None]],
     *,
-    may_have_committed: CommitUncertaintyPredicate = transport_may_have_committed,
+    may_have_committed: CommitUncertaintyPredicate,
     max_attempts: int = 2,
     label: str = "create",
 ) -> _IdempotentCreateResult[T]:
     """Adapter-bound entry point for :func:`~notebooklm._idempotency_create.idempotent_create`.
 
-    The default predicate is the web transport class tuple so the remaining
-    adapter-owned call site inside ``_web/backend.py`` keeps today's behaviour
-    until its slice passes the predicate explicitly; every other caller names
-    its predicate. See the neutral module for the full contract.
+    Every caller names its commit-uncertainty predicate: the adapter-owned
+    sites pass :func:`transport_may_have_committed`, semantic services pass
+    :func:`~notebooklm._idempotency_create.semantic_may_have_committed`. One
+    implementation, two predicates. See the neutral module for the contract.
     """
     return await _neutral_idempotent_create(
         create,
