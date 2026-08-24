@@ -1075,13 +1075,14 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/runtime.py` | Sole batchexecute encode/dispatch/decode implementation (`WebExecutionRuntime`). |
 | `_web/transport.py` | `WebTransport` (P9.1): the web backend's two transport verbs — `call` (one deadline-bound `batchexecute` call over `WebExecutionRuntime`, tagging escaped native errors `dispatched`) and `stream` (the chat-aware authed POST) — plus the frozen `WebRequest`/`WebStreamRequest` values and `assemble` for codec rows. Lifecycle stays on `WebRpcBackend`. |
 | `_web/deadline_rpc.py` | Deadline/operation-bound compatibility caller used only inside legacy note-backed web composites. |
-| `_web/chat.py` | P6.1 Chat web workflow mixin; owns ask/history/configuration/save-note handlers while keeping the composed backend below the module-size ratchet. |
+| `_web/chat.py` | P6.1 Chat web workflow mixin; since P9.3 only the two-phase `CHAT_ASK` composite and its shared conversation-id helper remain here (the five unary chat leaves are `_web/bindings/chat.py` rows). |
 | `_web/error_policy.py` | Closed native-to-semantic error classification and safe-diagnostic allowlist shared by the composed web backend. |
 | `_web/failure_projection.py` | Bounded, serializable projection of public exception graphs into transport-neutral source failure records. |
 | `_web/labels.py` | P6.4 source-label/collection web workflow mixin; owns both request dialects and read/create/update/delete reconciliation while keeping the composed backend below the module-size ratchet. |
 | `_web/research.py` | P6.2 Research web workflow mixin; owns fast/deep start, poll, cancel, and ordered import handlers while keeping the composed backend below the module-size ratchet. |
 | `_web/sharing.py` | P6.5 Sharing web workflow mixin; owns the status/readback and mutation request dialects while keeping the composed backend below the module-size ratchet. |
 | `_web/bindings/__init__.py` | `WEB_BINDING_ROWS` (P9.3): the union of every domain's binding rows, checked for one row per operation and canonical definitions; `_web/registry.py` partitions the supported set between these rows and the remaining handler names. |
+| `_web/bindings/chat.py` | P9.3 chat codec rows: `CHAT_GET_CONVERSATION`, `CHAT_GET_HISTORY`, `CHAT_DELETE_HISTORY`, `CHAT_SAVE_NOTE`, and the input-keyed `CHAT_CONFIGURE` (`GET_NOTEBOOK` read or `RENAME_NOTEBOOK` mutation selected from the action) — `encode → one native call → decode`; `CHAT_ASK` stays a handler in `_web/chat.py`. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
 | `_web/settings_suggestions.py` | P6.6 prompt-suggestion web workflow mixin; since P9.3 only the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` composite remains here (the settings and report-suggestion leaves are `_web/bindings/settings.py` rows). |
 | `_web/source_variants.py` | Web workflow mixin for URL add plus source content, freshness, refresh, Drive, upload, and remaining source variants; owns request dialects and composite reconciliation while keeping the composed backend below the module-size ratchet. |
@@ -1345,6 +1346,7 @@ src/notebooklm/
 │   ├── settings_suggestions.py  # P6.6 prompt-suggestion composite handler
 │   ├── bindings/                # P9.3 per-domain binding rows
 │   │   ├── __init__.py          # WEB_BINDING_ROWS union
+│   │   ├── chat.py              # chat codec rows (configure is input-keyed)
 │   │   └── settings.py          # settings/suggestion codec rows
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)
 │   ├── registry.py              # Closed active/unsupported web dispositions

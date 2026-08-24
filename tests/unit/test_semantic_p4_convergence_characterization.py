@@ -451,15 +451,11 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
+            # P9.3 ledger correction: the history read never resolved the
+            # conversation below the port (gate table §9).
             CHAT_GET_HISTORY_DEF,
-            [
-                (RPCMethod.GET_LAST_CONVERSATION_ID, None),
-                (RPCMethod.GET_CONVERSATION_TURNS, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
+            [(RPCMethod.GET_CONVERSATION_TURNS, None)],
+            [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
             CHAT_DELETE_HISTORY_DEF,
