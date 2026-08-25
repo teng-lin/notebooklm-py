@@ -5,13 +5,6 @@ from __future__ import annotations
 import types  # ``from types import …`` reads as a public-model import to the P3 guardrail
 from typing import Any, cast
 
-from ..._artifact.payloads import (
-    build_cinematic_video_artifact_params,
-    build_report_artifact_params,
-    build_retry_artifact_params,
-    build_revise_slide_params,
-    build_video_artifact_params,
-)
 from ..._backend import BackendError, BackendErrorReason
 from ..._binding import CodecPayload
 from ..._operations import Operation
@@ -27,6 +20,13 @@ from ..._records import (
 from ...exceptions import DecodingError
 from ...rpc import ReportFormat, RPCMethod, VideoFormat, VideoStyle, safe_index
 from ...rpc.types import artifact_status_to_str
+from .artifact_payloads import (
+    build_cinematic_video_artifact_params,
+    build_report_artifact_params,
+    build_retry_artifact_params,
+    build_revise_slide_params,
+    build_video_artifact_params,
+)
 
 _VIDEO_FORMATS = {
     "explainer": VideoFormat.EXPLAINER,

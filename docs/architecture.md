@@ -1105,6 +1105,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/codec/chat_stream.py` | Retained streamed-response parser; credential-aware request construction delegates outside `_web` to `_chat/stream_request.py`. |
 | `_web/codec/studio_documents.py` | P5.4 exact report/video request encoders and generation-status decoder over backend-neutral records. |
 | `_web/codec/generation.py` | P9.4b row-facing Studio generate payloads: the option vocabularies and `validate_*`/`encode_*` builders returning the guarded `CREATE_ARTIFACT` `CodecPayload` per family, plus `decode_generation_kickoff` (null response or task id → the closed unavailable error). |
+| `_web/codec/artifact_payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
 | `_web/codec/source_ids.py` | P9.4b: the one `GET_NOTEBOOK` source-id decoder every input-defaulting row shares, with an explicit per-family `SourceIdDiagnostics` mode (silent / warn / guarded) that preserves each family's schema-drift warning surface. |
 | `_web/codec/notes.py` | P6.3 mixed note-row codec: normalizes flat/wrapped envelopes, classifies deleted and note-backed mind-map rows, preserves exact-id selection, and emits only neutral `NoteRecord` values; since P9.3 also the row-facing `encode_note_*`/`decode_note_*` helpers behind `_web/bindings/notes.py`. |
 | `_web/codec/labels.py` | P6.4 shared source-label/collection codec: owns both wire dialects behind `LabelKind` and emits only neutral `LabelRecord` values; since P9.3 also the row-facing `encode_*`/`decode_*_result` payload builders and the dialect/scope contract guards. |
@@ -1167,7 +1168,6 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_studio/downloads.py` | Representation byte retrieval client; reuses the canonical download-client factory, trusted-host predicate, and per-hop redirect guard |
 | `_studio/serialization.py` | RPC-free local serializers for Studio text, JSON, and CSV representations |
 | `_artifact/formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
-| `_artifact/payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
 | `_artifact/validation.py` | Input-validation guards for the `ArtifactsAPI` facade (`generate_report` format coercion, `export` exactly-one-of target), kept in a sibling module so the facade stays under the module-size ratchet (#1874) |
 | `_artifact/generation.py` | Retired P5.8 import-compatible helper module; family services and `_studio/management.py` own generation/management behavior. |
 | `_artifact/listing.py` | Listing and filtering operations for notebook artifacts |
@@ -1362,6 +1362,7 @@ src/notebooklm/
 │   └── codec/                   # P3 web response codecs producing neutral records/value exemptions
 │       ├── __init__.py          # Private codec re-exports
 │       ├── artifacts.py         # Artifact/mind-map/report-suggestion rows -> neutral records
+│       ├── artifact_payloads.py # Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders
 │       ├── chat.py              # Unary Chat codecs over neutral records (P6.1)
 │       ├── chat_saved_note.py   # Saved-from-Chat CREATE_NOTE encoding
 │       ├── chat_stream.py       # Retained streamed response parser
@@ -1457,7 +1458,6 @@ src/notebooklm/
 │   ├── formatters.py            # Artifact formatting helpers
 │   ├── generation.py            # Retired P5.8 import-compatible generation helper module
 │   ├── generation_workflow.py   # Shared backend-driven artifact generation workflow
-│   ├── payloads.py              # Stable artifact request payload builders
 │   ├── validation.py            # Facade input-validation guards (generate_report coercion, export exactly-one-of) (#1874)
 │   ├── listing.py               # Artifact listing helper
 │   └── polling.py               # Artifact polling coordinator

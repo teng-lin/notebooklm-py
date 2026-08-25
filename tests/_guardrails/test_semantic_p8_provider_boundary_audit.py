@@ -81,7 +81,6 @@ EXPECTED_P8_PROVIDER_DEFINITIONS: frozenset[str] = frozenset(
 KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
     {
         "_artifact.formatters",
-        "_artifact.payloads",
         "_auth_refresh_retry",
         "_backend",
         "_binding",
@@ -139,6 +138,7 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_web.bindings.studio",
         "_web.chat_transport",
         "_web.codec",
+        "_web.codec.artifact_payloads",
         "_web.codec.artifacts",
         "_web.codec.chat_saved_note",
         "_web.codec.chat_stream",

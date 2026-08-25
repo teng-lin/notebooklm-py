@@ -17,7 +17,6 @@ from typing import Any
 
 import pytest
 
-from notebooklm._artifact.payloads import build_retry_artifact_params, build_revise_slide_params
 from notebooklm._backend import (
     BackendContractError,
     BackendDeadlineExceededError,
@@ -52,6 +51,10 @@ from notebooklm._records import (
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import studio as studio_rows
+from notebooklm._web.codec.artifact_payloads import (
+    build_retry_artifact_params,
+    build_revise_slide_params,
+)
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 from notebooklm.exceptions import RPCTimeoutError, ServerError
 from notebooklm.rpc import ARTIFACT_STATUS_SUGGESTED_WIRE_NAME, RPCMethod

@@ -32,10 +32,6 @@ import json
 
 import pytest
 
-from notebooklm._artifact.payloads import (
-    build_flashcards_artifact_params,
-    build_quiz_artifact_params,
-)
 from notebooklm._row_adapters.artifacts import ArtifactRow, QuizOptionPair, ReportSuggestionRow
 from notebooklm._row_adapters.notes import NoteRow
 from notebooklm._row_adapters.sources import (
@@ -45,6 +41,10 @@ from notebooklm._row_adapters.sources import (
     interpret_source_freshness,
 )
 from notebooklm._types.common import _datetime_from_timestamp
+from notebooklm._web.codec.artifact_payloads import (
+    build_flashcards_artifact_params,
+    build_quiz_artifact_params,
+)
 from notebooklm.exceptions import DecodingError, UnknownRPCMethodError
 from notebooklm.rpc.types import (
     ArtifactStatus,
