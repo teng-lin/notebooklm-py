@@ -36,6 +36,7 @@ from notebooklm._idempotency import (
     IdempotencyPolicy,
     resolve_effective_disable_internal_retries,
 )
+from notebooklm._notebook_mutation_service import NotebookMutationService
 from notebooklm._operations import CallPolicy, Operation, OperationDef
 from notebooklm._read_services import NotebookReadService, SourceReadService
 from notebooklm._records import (
@@ -91,10 +92,10 @@ from notebooklm._records import (
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
+    NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
-    NOTEBOOK_UPDATE_DEF,
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
     RESEARCH_POLL_DEF,
@@ -123,8 +124,6 @@ from notebooklm._records import (
     NotebookGetResult,
     NotebookListResult,
     NotebookRecord,
-    NotebookUpdateInput,
-    NotebookUpdateResult,
     SourceGetResult,
     SourceListResult,
     SourceRecord,
@@ -197,7 +196,7 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         NOTEBOOK_LIST_DEF: (Operation.NOTEBOOK_LIST, CallPolicy.READ),
         NOTEBOOK_GET_DEF: (Operation.NOTEBOOK_GET, CallPolicy.MUTATION),
         NOTEBOOK_CREATE_DEF: (Operation.NOTEBOOK_CREATE, CallPolicy.MUTATION),
-        NOTEBOOK_UPDATE_DEF: (Operation.NOTEBOOK_UPDATE, CallPolicy.MUTATION),
+        NOTEBOOK_PATCH_DEF: (Operation.NOTEBOOK_PATCH, CallPolicy.MUTATION),
         NOTEBOOK_DELETE_DEF: (Operation.NOTEBOOK_DELETE, CallPolicy.MUTATION),
         NOTEBOOK_REMOVE_RECENT_DEF: (
             Operation.NOTEBOOK_REMOVE_RECENT,
@@ -373,9 +372,9 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             ],
         ),
         (
-            NOTEBOOK_UPDATE_DEF,
-            [(RPCMethod.RENAME_NOTEBOOK, None), (RPCMethod.GET_NOTEBOOK, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.IDEMPOTENT_SET_OP],
+            NOTEBOOK_PATCH_DEF,
+            [(RPCMethod.RENAME_NOTEBOOK, None)],
+            [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
             NOTEBOOK_DELETE_DEF,
@@ -1041,14 +1040,13 @@ async def test_web_rpc_backend_passes_single_deadline_without_nested_resets() ->
 
     # Advance simulated time during execution
     clock_time = 105.0
-    result = await backend.invoke(
-        NOTEBOOK_UPDATE_DEF,
-        NotebookUpdateInput(notebook_id="nb-1", title="Renamed"),
+    result = await NotebookMutationService(backend).update(
+        "nb-1",
+        title="Renamed",
         deadline=deadline,
     )
 
-    assert isinstance(result, NotebookUpdateResult)
-    assert result.notebook.title == "Renamed"
+    assert result.title == "Renamed"
     assert len(rpc_call.await_args_list) == 2
 
     # Both RPC calls received the SAME deadline object and clamped read_timeout

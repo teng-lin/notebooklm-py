@@ -84,6 +84,7 @@ class NotebookGetInput:
 
     notebook_id: str
     include_notebook: bool = True
+    require_notebook: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +152,20 @@ class NotebookUpdateResult:
 
 
 @dataclass(frozen=True, slots=True)
+class NotebookPatchInput:
+    """One notebook property-mask mutation without a readback."""
+
+    notebook_id: str
+    title: str | None = None
+    emoji: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NotebookPatchResult:
+    """Successful notebook property mutation."""
+
+
+@dataclass(frozen=True, slots=True)
 class NotebookDeleteInput:
     """Single notebook identity to delete idempotently."""
 
@@ -212,6 +227,12 @@ NOTEBOOK_UPDATE_DEF: OperationDef[NotebookUpdateInput, NotebookUpdateResult] = O
     NotebookUpdateInput,
     NotebookUpdateResult,
 )
+NOTEBOOK_PATCH_DEF: OperationDef[NotebookPatchInput, NotebookPatchResult] = OperationDef(
+    Operation.NOTEBOOK_PATCH,
+    CallPolicy.MUTATION,
+    NotebookPatchInput,
+    NotebookPatchResult,
+)
 NOTEBOOK_DELETE_DEF: OperationDef[NotebookDeleteInput, NotebookDeleteResult] = OperationDef(
     Operation.NOTEBOOK_DELETE,
     CallPolicy.MUTATION,
@@ -254,6 +275,7 @@ __all__ = [
     "NOTEBOOK_DESCRIBE_DEF",
     "NOTEBOOK_GET_DEF",
     "NOTEBOOK_LIST_DEF",
+    "NOTEBOOK_PATCH_DEF",
     "NOTEBOOK_REMOVE_RECENT_DEF",
     "NOTEBOOK_SUGGEST_PROMPTS_DEF",
     "NOTEBOOK_SUMMARIZE_DEF",
@@ -271,6 +293,8 @@ __all__ = [
     "NotebookGuideResult",
     "NotebookListInput",
     "NotebookListResult",
+    "NotebookPatchInput",
+    "NotebookPatchResult",
     "NotebookPremiumFeaturesRecord",
     "NotebookRecord",
     "NotebookRemoveRecentInput",

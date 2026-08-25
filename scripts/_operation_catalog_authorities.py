@@ -79,7 +79,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         ("_notebooks.py:NotebooksAPI.get_raw", "narrow raw compatibility lookup"),
     ),
     (Operation.NOTEBOOK_UPDATE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/bindings/notebooks.py:NOTEBOOK_UPDATE", "unconditional post-mutation read")
+        ("_web/bindings/notebooks.py:NOTEBOOK_GET", "unconditional post-mutation read")
     ),
     (Operation.NOTEBOOK_METADATA, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/bindings/notebooks.py:NOTEBOOK_GET", "metadata notebook branch"),
@@ -326,7 +326,7 @@ class RecencyRule:
 
 
 _GET_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
-_UPDATE_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_UPDATE"
+_UPDATE_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 _GET_RAW = "_notebooks.py:NotebooksAPI.get_raw"
 _GET_SOURCES = "_web/bindings/sources.py:SOURCE_LIST"
 # P9.3: source list/get/wait reads dispatch through their own codec rows.
@@ -700,7 +700,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/mind_maps.py:MIND_MAP_UPDATE", "kind=INTERACTIVE")
         ),
         (Operation.NOTEBOOK_UPDATE, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
-            ("_web/bindings/notebooks.py:NOTEBOOK_UPDATE", "title|emoji mutation")
+            ("_web/bindings/notebooks.py:NOTEBOOK_PATCH", "title|emoji mutation via leaf")
+        ),
+        (Operation.NOTEBOOK_PATCH, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
+            ("_web/bindings/notebooks.py:NOTEBOOK_PATCH", "title|emoji property mask")
         ),
         (Operation.CHAT_CONFIGURE, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
             ("_web/bindings/chat.py:CHAT_CONFIGURE", "action=SET")

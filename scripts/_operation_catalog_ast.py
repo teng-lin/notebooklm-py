@@ -2267,6 +2267,38 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_sharing_service.py", "_records", "SharingVisibility"),
     }
 )
+# P9.2-11: NotebookMutationService sequences update from PATCH + required GET;
+# the notebook row expresses the readback-only neutral miss at the leaf.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_web/backend.py", "_records", "NotebookUpdateInput"),
+        ("_web/backend.py", "_records", "NotebookUpdateResult"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_notebook_mutation_service.py", "_backend", "BackendDeadlineExceededError"),
+        ("_notebook_mutation_service.py", "_backend", "BackendError"),
+        ("_notebook_mutation_service.py", "_backend", "BackendErrorReason"),
+        ("_notebook_mutation_service.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_notebook_mutation_service.py", "_backend", "rebind_operation"),
+        ("_notebook_mutation_service.py", "_backend", "require_leaves"),
+        ("_notebook_mutation_service.py", "_records", "NOTEBOOK_GET_DEF"),
+        ("_notebook_mutation_service.py", "_records", "NOTEBOOK_PATCH_DEF"),
+        ("_notebook_mutation_service.py", "_records", "NotebookGetInput"),
+        ("_notebook_mutation_service.py", "_records", "NotebookPatchInput"),
+        ("_web/bindings/notebooks.py", "_backend", "BackendError"),
+        ("_web/bindings/notebooks.py", "_backend", "BackendErrorReason"),
+        ("_web/bindings/notebooks.py", "_binding", "NativeChoice"),
+        ("_web/bindings/notebooks.py", "_records", "NOTEBOOK_PATCH_DEF"),
+        ("_web/bindings/notebooks.py", "_records", "NotebookGetInput"),
+        ("_web/codec/notebooks.py", "_backend", "BackendError"),
+        ("_web/codec/notebooks.py", "_backend", "BackendErrorReason"),
+        ("_web/codec/notebooks.py", "_records", "NotebookPatchInput"),
+        ("_web/codec/notebooks.py", "_records", "NotebookPatchResult"),
+        ("_web/registry.py", "_records", "NOTEBOOK_PATCH_DEF"),
+    }
+)
 
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose
@@ -2993,26 +3025,17 @@ def audit_recency_contracts() -> list[str]:
             "the notebook lookup + source list tasks"
         )
 
-    notebook_rows_tree = _parse(SRC_ROOT / "_web" / "bindings" / "notebooks.py")
-    update_row = _find_module_assignment(notebook_rows_tree, "NOTEBOOK_UPDATE")
-    update_fn = _find_module_function(notebook_rows_tree, "_notebook_update")
-    # P9.4b: the update composite is a custom row; its handler issues exactly one
-    # unconditional ``invoke.call("readback", …)`` and the row declares that
-    # spec as GET_NOTEBOOK.
-    if (
-        update_row is None
-        or update_fn is None
-        or _native_choice_count(update_row, RPCMethod.GET_NOTEBOOK) != 1
-        or _invoker_call_count(notebook_rows_tree, update_fn, "readback") != 1
-    ):
-        errors.append(
-            "NOTEBOOK_UPDATE row must perform exactly one unconditional GET_NOTEBOOK readback"
-        )
+    service_tree = _parse(SRC_ROOT / "_notebook_mutation_service.py")
+    update_fn = _find_class_method(service_tree, "NotebookMutationService", "update")
+    if update_fn is None or _definition_invoke_call_count(update_fn, "NOTEBOOK_GET_DEF") != 1:
+        errors.append("NotebookMutationService.update must invoke NOTEBOOK_GET_DEF exactly once")
     elif any(
         argument.arg == "return_object"
         for argument in (*update_fn.args.args, *update_fn.args.kwonlyargs)
     ):
-        errors.append("NOTEBOOK_UPDATE recency contract forbids a return_object bypass")
+        errors.append(
+            "NotebookMutationService.update recency contract forbids a return_object bypass"
+        )
 
     chat_tree = _parse(SRC_ROOT / "_chat" / "api.py")
     expected_chat_gets = {"configure": 0, "set_mode": 0, "get_settings": 0}
@@ -3152,3 +3175,17 @@ def _rpc_binding_call_count(node: ast.AST, method: RPCMethod) -> int:
         ):
             count += 1
     return count
+
+
+def _definition_invoke_call_count(node: ast.AST, definition_name: str) -> int:
+    """Count direct ``backend.invoke(DEF, ...)`` calls inside one workflow."""
+    return sum(
+        1
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr == "invoke"
+        and call.args
+        and isinstance(call.args[0], ast.Name)
+        and call.args[0].id == definition_name
+    )

@@ -6,6 +6,7 @@ import logging
 import reprlib
 import types  # ``from types import …`` reads as a public-model import to the P3 guardrail
 from datetime import datetime, timezone
+from types import MappingProxyType
 from typing import Any, cast
 
 from ..._backend import BackendError, BackendErrorReason
@@ -24,6 +25,8 @@ from ..._records import (
     NotebookGuideResult,
     NotebookListInput,
     NotebookListResult,
+    NotebookPatchInput,
+    NotebookPatchResult,
     NotebookPremiumFeaturesRecord,
     NotebookRecord,
     NotebookRemoveRecentInput,
@@ -85,6 +88,21 @@ def encode_notebook_get(value: NotebookGetInput) -> CodecPayload:
     return CodecPayload(
         params=build_get_notebook_params(value.notebook_id),
         source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def encode_notebook_patch(value: NotebookPatchInput) -> CodecPayload:
+    """Payload for one title/emoji property-mask mutation."""
+    from ..._notebook_payloads import build_update_notebook_params
+
+    return CodecPayload(
+        params=build_update_notebook_params(
+            value.notebook_id,
+            title=value.title,
+            emoji=value.emoji,
+        ),
+        source_path="/",
+        allow_null=True,
     )
 
 
@@ -354,12 +372,42 @@ def decode_notebook_get(value: NotebookGetInput, result: Any) -> NotebookGetResu
         else None
     )
     if not notebook_row:
+        if value.require_notebook:
+            raise BackendError(
+                message=f"Notebook not found: {value.notebook_id}",
+                operation=Operation.NOTEBOOK_GET,
+                diagnostics=MappingProxyType(
+                    {
+                        "notebook_id": value.notebook_id,
+                        "method_id": RPCMethod.GET_NOTEBOOK.value,
+                    }
+                ),
+                reason=BackendErrorReason.NOT_FOUND,
+            )
         return NotebookGetResult(notebook=None, source_ids=source_ids)
     notebook = decode_notebook(notebook_row, include_chat_settings=True)
     if not notebook.id and not notebook.title:
+        if value.require_notebook:
+            raise BackendError(
+                message=f"Notebook not found: {value.notebook_id}",
+                operation=Operation.NOTEBOOK_GET,
+                diagnostics=MappingProxyType(
+                    {
+                        "notebook_id": value.notebook_id,
+                        "method_id": RPCMethod.GET_NOTEBOOK.value,
+                    }
+                ),
+                reason=BackendErrorReason.NOT_FOUND,
+            )
         return NotebookGetResult(notebook=None, source_ids=source_ids)
     source_ids = decode_prompt_source_ids(result, notebook_id=value.notebook_id)
     return NotebookGetResult(notebook=notebook, source_ids=source_ids)
+
+
+def decode_notebook_patch(value: NotebookPatchInput, result: Any) -> NotebookPatchResult:
+    """The mutate acknowledgement carries no semantic value."""
+    del value, result
+    return NotebookPatchResult()
 
 
 def decode_notebook_delete(value: NotebookDeleteInput, result: Any) -> NotebookDeleteResult:
@@ -504,6 +552,7 @@ __all__ = [
     "decode_notebook_guide",
     "decode_notebook_list",
     "decode_notebook_list_result",
+    "decode_notebook_patch",
     "decode_notebook_remove_recent",
     "decode_notebook_source_ids_silent",
     "decode_notebook_update_readback",
@@ -515,6 +564,7 @@ __all__ = [
     "encode_notebook_guide",
     "encode_notebook_guide_request",
     "encode_notebook_list",
+    "encode_notebook_patch",
     "encode_notebook_remove_recent",
     "encode_notebook_snapshot",
     "encode_notebook_update_mutation",

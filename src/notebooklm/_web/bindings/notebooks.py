@@ -5,15 +5,16 @@ is the sole authority for the native it dispatches, so the method the policy
 ledger audits is the method that runs.  The rows are module-level assignments
 because the operation-catalog walker derives execution authorities from them.
 ``NOTEBOOK_LIST`` is the non-uniform row: its decoder accepts the empty,
-``[None]`` and ``[[rows]]`` payload shapes.  ``NOTEBOOK_GET`` needs the input to
-select its source-id-only branch.
+``[None]`` and ``[[rows]]`` payload shapes. ``NOTEBOOK_GET`` needs the input to
+select its source-id-only branch and exposes a required-readback mode whose
+neutral not-found mapping is consumed only by the service-owned update workflow.
+``NOTEBOOK_PATCH`` is the one-call property-mask primitive.
 
-``NOTEBOOK_CREATE`` and ``NOTEBOOK_UPDATE`` are :class:`CustomBinding` rows
-(P9.4b): the create row declares its ``list``/``create``/``limits`` specs and
+``NOTEBOOK_CREATE`` remains a :class:`CustomBinding` row (P9.4b): it declares
+its ``list``/``create``/``limits`` specs and
 sequences snapshot → guarded create → probe/reconcile (plus the quota-limit
-diagnosis) through the row-scoped invoker exactly as the P2 handler did; the
-update row declares ``mutate``/``readback``.  Both are *deferred-product* rows
-— gate table §4 orders their hoists as P9.2-11/12, after the stop/go review.
+diagnosis) through the row-scoped invoker exactly as the P2 handler did. It is
+a *deferred-product* row until its P9.2-12 hoist.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from ..._binding import (
     CodecPayload,
     CustomBinding,
     NativeCallSpec,
+    NativeChoice,
     RowInvoker,
 )
 from ..._deadline import RuntimeDeadline
@@ -40,14 +42,13 @@ from ..._records import (
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
+    NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
-    NOTEBOOK_UPDATE_DEF,
     NotebookCreateInput,
     NotebookCreateResult,
+    NotebookGetInput,
     NotebookRecord,
-    NotebookUpdateInput,
-    NotebookUpdateResult,
 )
 from ...exceptions import (
     AuthError,
@@ -67,6 +68,37 @@ notebook_logger = logging.getLogger("notebooklm._notebooks")
 
 _CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
 
+
+def _map_required_get_not_found(
+    value: NotebookGetInput,
+    raw: Exception,
+    native: NativeChoice[RPCMethod],
+) -> BackendError | None:
+    """Expose status-5 neutrally only for a mutation readback leaf."""
+    del native
+    if (
+        not value.require_notebook
+        or not isinstance(raw, ClientError)
+        or normalize_grpc_status(raw.rpc_code) is not GrpcStatusCode.NOT_FOUND
+    ):
+        return None
+    diagnostics = dict(error_diagnostics(raw, BackendErrorReason.CLIENT))
+    diagnostics.update(
+        {
+            "notebook_id": value.notebook_id,
+            "detail": str(raw),
+            "original_message": str(raw.args[0]) if raw.args else str(raw),
+        }
+    )
+    return BackendError(
+        message=str(raw.args[0]) if raw.args else "",
+        operation=Operation.NOTEBOOK_GET,
+        outcome_unknown=bool(getattr(raw, "unconfirmed", False)),
+        diagnostics=MappingProxyType(diagnostics),
+        reason=BackendErrorReason.NOT_FOUND,
+        dispatched=bool(getattr(raw, "dispatched", False)),
+    )
+
 NOTEBOOK_LIST = CodecBinding(
     definition=NOTEBOOK_LIST_DEF,
     encode=notebooks_codec.encode_notebook_list,
@@ -79,6 +111,14 @@ NOTEBOOK_GET = CodecBinding(
     encode=notebooks_codec.encode_notebook_get,
     decode=notebooks_codec.decode_notebook_get,
     native=NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK),
+    map_error=_map_required_get_not_found,
+)
+
+NOTEBOOK_PATCH = CodecBinding(
+    definition=NOTEBOOK_PATCH_DEF,
+    encode=notebooks_codec.encode_notebook_patch,
+    decode=notebooks_codec.decode_notebook_patch,
+    native=NativeCallSpec.constant(RPCMethod.RENAME_NOTEBOOK),
 )
 
 NOTEBOOK_DELETE = CodecBinding(
@@ -115,8 +155,6 @@ NOTEBOOK_DESCRIBE = CodecBinding(
 _LIST = "list"
 _CREATE = "create"
 _LIMITS = "limits"
-_MUTATE = "mutate"
-_READBACK = "readback"
 
 
 async def _notebook_create(
@@ -284,36 +322,6 @@ async def _notebook_create(
     return NotebookCreateResult(notebook=result.value)
 
 
-async def _notebook_update(
-    value: NotebookUpdateInput,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-) -> NotebookUpdateResult:
-    """Property mutation, then one unconditional readback (recency contract)."""
-    await invoke.call(
-        _MUTATE, notebooks_codec.encode_notebook_update_mutation(value), deadline=deadline
-    )
-    try:
-        result = await invoke.call(
-            _READBACK,
-            notebooks_codec.encode_notebook_update_readback(value),
-            deadline=deadline,
-            outcome_unknown_on_expiry=True,
-        )
-    except ClientError as exc:
-        if normalize_grpc_status(exc.rpc_code) is not GrpcStatusCode.NOT_FOUND:
-            raise
-        diagnostics = dict(error_diagnostics(exc, BackendErrorReason.CLIENT))
-        diagnostics.update(
-            {
-                "detail": str(exc),
-                "original_message": str(exc.args[0]) if exc.args else str(exc),
-            }
-        )
-        raise notebooks_codec.notebook_update_not_found(value, diagnostics) from exc
-    return notebooks_codec.decode_notebook_update_readback(value, result)
-
-
 NOTEBOOK_CREATE = CustomBinding(
     definition=NOTEBOOK_CREATE_DEF,
     handler=_notebook_create,
@@ -326,27 +334,16 @@ NOTEBOOK_CREATE = CustomBinding(
     category="deferred-product",
 )
 
-NOTEBOOK_UPDATE = CustomBinding(
-    definition=NOTEBOOK_UPDATE_DEF,
-    handler=_notebook_update,
-    native=(
-        NativeCallSpec.constant(RPCMethod.RENAME_NOTEBOOK, key=_MUTATE),
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_READBACK),
-    ),
-    justification="Hoist candidate P9.2-11 per gate table §4; awaits the stop/go review.",
-    category="deferred-product",
-)
-
 NOTEBOOK_ROWS: Mapping[Operation, Binding] = MappingProxyType(
     {
         NOTEBOOK_LIST.definition.key: NOTEBOOK_LIST,
         NOTEBOOK_GET.definition.key: NOTEBOOK_GET,
+        NOTEBOOK_PATCH.definition.key: NOTEBOOK_PATCH,
         NOTEBOOK_DELETE.definition.key: NOTEBOOK_DELETE,
         NOTEBOOK_REMOVE_RECENT.definition.key: NOTEBOOK_REMOVE_RECENT,
         NOTEBOOK_SUMMARIZE.definition.key: NOTEBOOK_SUMMARIZE,
         NOTEBOOK_DESCRIBE.definition.key: NOTEBOOK_DESCRIBE,
         NOTEBOOK_CREATE.definition.key: NOTEBOOK_CREATE,
-        NOTEBOOK_UPDATE.definition.key: NOTEBOOK_UPDATE,
     }
 )
 
@@ -356,8 +353,8 @@ __all__ = [
     "NOTEBOOK_DESCRIBE",
     "NOTEBOOK_GET",
     "NOTEBOOK_LIST",
+    "NOTEBOOK_PATCH",
     "NOTEBOOK_REMOVE_RECENT",
     "NOTEBOOK_ROWS",
     "NOTEBOOK_SUMMARIZE",
-    "NOTEBOOK_UPDATE",
 ]

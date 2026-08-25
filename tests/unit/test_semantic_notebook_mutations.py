@@ -13,17 +13,20 @@ from notebooklm._operations import Operation
 from notebooklm._records import (
     NOTEBOOK_CREATE_DEF,
     NOTEBOOK_DELETE_DEF,
+    NOTEBOOK_GET_DEF,
+    NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
-    NOTEBOOK_UPDATE_DEF,
     NotebookCreateInput,
     NotebookCreateResult,
     NotebookDeleteInput,
     NotebookDeleteResult,
+    NotebookGetInput,
+    NotebookGetResult,
+    NotebookPatchInput,
+    NotebookPatchResult,
     NotebookRecord,
     NotebookRemoveRecentInput,
     NotebookRemoveRecentResult,
-    NotebookUpdateInput,
-    NotebookUpdateResult,
 )
 from notebooklm.exceptions import ValidationError
 from tests._fixtures.recording_backend import BackendInvocation, RecordingBackend
@@ -35,7 +38,8 @@ async def test_mutation_service_records_typed_calls_deadline_and_projects_result
     created = NotebookRecord("nb-created", "Created")
     updated = NotebookRecord("nb-created", "Renamed")
     backend.set_result(NOTEBOOK_CREATE_DEF, NotebookCreateResult(created))
-    backend.set_result(NOTEBOOK_UPDATE_DEF, NotebookUpdateResult(updated))
+    backend.set_result(NOTEBOOK_PATCH_DEF, NotebookPatchResult())
+    backend.set_result(NOTEBOOK_GET_DEF, NotebookGetResult(updated))
     backend.set_result(NOTEBOOK_DELETE_DEF, NotebookDeleteResult())
     backend.set_result(NOTEBOOK_REMOVE_RECENT_DEF, NotebookRemoveRecentResult())
     service = NotebookMutationService(backend)
@@ -51,8 +55,13 @@ async def test_mutation_service_records_typed_calls_deadline_and_projects_result
     assert backend.invocations == [
         BackendInvocation(Operation.NOTEBOOK_CREATE, NotebookCreateInput("Created"), deadline),
         BackendInvocation(
-            Operation.NOTEBOOK_UPDATE,
-            NotebookUpdateInput("nb-created", title="Renamed"),
+            Operation.NOTEBOOK_PATCH,
+            NotebookPatchInput("nb-created", title="Renamed"),
+            deadline,
+        ),
+        BackendInvocation(
+            Operation.NOTEBOOK_GET,
+            NotebookGetInput("nb-created", require_notebook=True),
             deadline,
         ),
         BackendInvocation(Operation.NOTEBOOK_DELETE, NotebookDeleteInput("nb-created"), deadline),
@@ -67,10 +76,8 @@ async def test_mutation_service_records_typed_calls_deadline_and_projects_result
 @pytest.mark.asyncio
 async def test_empty_change_fails_before_backend_invocation() -> None:
     backend = RecordingBackend()
-    backend.set_result(
-        NOTEBOOK_UPDATE_DEF,
-        NotebookUpdateResult(NotebookRecord("nb", "unused")),
-    )
+    backend.set_result(NOTEBOOK_PATCH_DEF, NotebookPatchResult())
+    backend.set_result(NOTEBOOK_GET_DEF, NotebookGetResult(NotebookRecord("nb", "unused")))
 
     with pytest.raises(ValidationError, match="At least one"):
         await NotebookMutationService(backend).update("nb")
@@ -81,17 +88,23 @@ async def test_empty_change_fails_before_backend_invocation() -> None:
 @pytest.mark.asyncio
 async def test_empty_title_remains_a_valid_legacy_mutation_value() -> None:
     backend = RecordingBackend()
-    backend.set_result(NOTEBOOK_UPDATE_DEF, NotebookUpdateResult(NotebookRecord("nb", "")))
+    backend.set_result(NOTEBOOK_PATCH_DEF, NotebookPatchResult())
+    backend.set_result(NOTEBOOK_GET_DEF, NotebookGetResult(NotebookRecord("nb", "")))
 
     updated = await NotebookMutationService(backend).update_title("nb", "")
 
     assert updated.title == ""
     assert backend.invocations == [
         BackendInvocation(
-            Operation.NOTEBOOK_UPDATE,
-            NotebookUpdateInput("nb", title=""),
+            Operation.NOTEBOOK_PATCH,
+            NotebookPatchInput("nb", title=""),
             None,
-        )
+        ),
+        BackendInvocation(
+            Operation.NOTEBOOK_GET,
+            NotebookGetInput("nb", require_notebook=True),
+            None,
+        ),
     ]
 
 

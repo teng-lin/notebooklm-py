@@ -95,12 +95,21 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
     OperationSpec(
         Operation.NOTEBOOK_UPDATE,
         CallPolicy.MUTATION,
-        "NotebookService",
+        "NotebookMutationService",
         "notebook",
         "Title and emoji updates share MutateProject; the facade always re-reads the model.",
         _p("notebooks", "update", "rename", "set_emoji"),
         (_b(RPCMethod.RENAME_NOTEBOOK), _b(RPCMethod.GET_NOTEBOOK)),
         recency_effect="exactly one GET_NOTEBOOK after every successful mutation",
+    ),
+    OperationSpec(
+        Operation.NOTEBOOK_PATCH,
+        CallPolicy.MUTATION,
+        "NotebookMutationService",
+        "notebook",
+        "P9.2 primitive: applies one title/emoji property mask without a readback.",
+        (),
+        (_b(RPCMethod.RENAME_NOTEBOOK),),
     ),
     OperationSpec(
         Operation.NOTEBOOK_DELETE,

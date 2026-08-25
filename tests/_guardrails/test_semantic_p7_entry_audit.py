@@ -44,7 +44,7 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.NOTEBOOK_LIST,
         Operation.NOTEBOOK_GET,
         Operation.NOTEBOOK_CREATE,
-        Operation.NOTEBOOK_UPDATE,
+        Operation.NOTEBOOK_PATCH,
         Operation.NOTEBOOK_DELETE,
         Operation.NOTEBOOK_REMOVE_RECENT,
         Operation.NOTEBOOK_SUMMARIZE,

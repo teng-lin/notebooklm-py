@@ -12,11 +12,10 @@ import pytest
 
 from notebooklm._binding import CodecBinding, CustomBinding
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from notebooklm._notebook_mutation_service import NotebookMutationService
 from notebooklm._operations import Operation
 from notebooklm._records import (
-    NOTEBOOK_UPDATE_DEF,
     SOURCE_WAIT_DEF,
-    NotebookUpdateInput,
     SourceWaitSnapshotInput,
 )
 from notebooklm._web.backend import WebRpcBackend
@@ -33,7 +32,6 @@ from notebooklm.rpc import RPCMethod
 _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
     {
         Operation.NOTEBOOK_CREATE,
-        Operation.NOTEBOOK_UPDATE,
         Operation.NOTEBOOK_SUGGEST_PROMPTS,
         Operation.SOURCE_ADD_URL,
         Operation.SOURCE_ADD_URL_BATCH,
@@ -186,13 +184,11 @@ async def test_seeded_composite_shares_identity_and_consumes_remaining_budget() 
         deadline_factory=factory,
     )
 
-    result = await backend.invoke(
-        NOTEBOOK_UPDATE_DEF,
-        NotebookUpdateInput("nb-1", title="Renamed"),
-        deadline=None,
+    result = await NotebookMutationService(backend, deadline_factory=factory).update(
+        "nb-1", title="Renamed"
     )
 
-    assert result.notebook.title == "Renamed"
+    assert result.title == "Renamed"
     first_deadline = calls[0][1]["_retry_deadline"]
     assert isinstance(first_deadline, RuntimeDeadline)
     assert calls[1][1]["_retry_deadline"] is first_deadline
@@ -210,9 +206,12 @@ async def test_explicit_deadline_is_never_replaced_by_composition_factory() -> N
         deadline_factory=RuntimeDeadlineFactory(lambda: pytest.fail("factory was called")),
     )
 
-    await backend.invoke(
-        NOTEBOOK_UPDATE_DEF,
-        NotebookUpdateInput("nb-1", title="Renamed"),
+    await NotebookMutationService(
+        backend,
+        deadline_factory=RuntimeDeadlineFactory(lambda: pytest.fail("factory was called")),
+    ).update(
+        "nb-1",
+        title="Renamed",
         deadline=deadline,
     )
 

@@ -368,6 +368,8 @@ def project_backend_error(error: BackendError) -> Exception:
                 operation=error.operation,
             )
         method_id = cast(str | None, _optional(error, diagnostics, "method_id", str))
+        if method_id is None:
+            method_id = RPCMethod.GET_NOTEBOOK.value
         raw_response = cast(str | None, _optional(error, diagnostics, "raw_response", str))
         rpc_code = cast(
             str | int | None,
@@ -518,6 +520,15 @@ def project_backend_error(error: BackendError) -> Exception:
         projected.recoverable = bool(recoverable)
         return _preserve_outcome(error, projected)
     if reason is BackendErrorReason.CLIENT:
+        return _preserve_outcome(
+            error,
+            ClientError(
+                error.message,
+                status_code=_required_int(error, diagnostics, "status_code"),
+                **rpc,
+            ),
+        )
+    if reason is BackendErrorReason.NOT_FOUND:
         return _preserve_outcome(
             error,
             ClientError(

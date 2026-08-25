@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 from ._backend import BackendAdapter, BackendError
 from ._backend_compat import project_backend_call, project_backend_error
+from ._deadline import RuntimeDeadlineFactory
 from ._notebook_guide_service import NotebookGuideService
 from ._notebook_metadata import (
     NotebookMetadataService,
@@ -78,6 +79,7 @@ class NotebooksAPI:
         metadata_service: NotebookMetadataService | None = None,
         share_manager: ShareManager | None = None,
         _backend: BackendAdapter | None = None,
+        _deadline_factory: RuntimeDeadlineFactory | None = None,
     ) -> None:
         """Initialize the notebooks API.
 
@@ -95,7 +97,11 @@ class NotebooksAPI:
         """
         self._legacy_rpc = legacy_rpc
         self._read_service = NotebookReadService(_backend) if _backend is not None else None
-        self._mutation_service = NotebookMutationService(_backend) if _backend is not None else None
+        self._mutation_service = (
+            NotebookMutationService(_backend, deadline_factory=_deadline_factory)
+            if _backend is not None
+            else None
+        )
         self._guide_service = NotebookGuideService(_backend) if _backend is not None else None
         self._suggestion_service = SuggestionService(_backend) if _backend is not None else None
         self._sources = sources_api

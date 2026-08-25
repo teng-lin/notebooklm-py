@@ -35,7 +35,6 @@ from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_payloads import (
     build_create_notebook_params,
     build_get_notebook_params,
-    build_update_notebook_params,
 )
 from notebooklm._operations import CallPolicy, Operation, OperationDef
 from notebooklm._records import (
@@ -91,10 +90,10 @@ from notebooklm._records import (
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
+    NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
-    NOTEBOOK_UPDATE_DEF,
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
     RESEARCH_POLL_DEF,
@@ -143,7 +142,6 @@ from notebooklm._records import (
     NotebookListResult,
     NotebookRemoveRecentInput,
     NotebookRemoveRecentResult,
-    NotebookUpdateInput,
     NoteCreateInput,
     NoteDeleteInput,
     NoteGetInput,
@@ -181,7 +179,6 @@ from notebooklm.exceptions import (
     IdempotencyVariantError,
     NetworkError,
     NotebookLMError,
-    NotebookNotFoundError,
     RateLimitError,
     RPCError,
     RPCResponseTooLargeError,
@@ -240,7 +237,7 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.NOTEBOOK_LIST,
         Operation.NOTEBOOK_GET,
         Operation.NOTEBOOK_CREATE,
-        Operation.NOTEBOOK_UPDATE,
+        Operation.NOTEBOOK_PATCH,
         Operation.NOTEBOOK_DELETE,
         Operation.NOTEBOOK_REMOVE_RECENT,
         Operation.NOTEBOOK_SUMMARIZE,
@@ -326,7 +323,7 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.NOTEBOOK_LIST: NOTEBOOK_LIST_DEF,
         Operation.NOTEBOOK_GET: NOTEBOOK_GET_DEF,
         Operation.NOTEBOOK_CREATE: NOTEBOOK_CREATE_DEF,
-        Operation.NOTEBOOK_UPDATE: NOTEBOOK_UPDATE_DEF,
+        Operation.NOTEBOOK_PATCH: NOTEBOOK_PATCH_DEF,
         Operation.NOTEBOOK_DELETE: NOTEBOOK_DELETE_DEF,
         Operation.NOTEBOOK_REMOVE_RECENT: NOTEBOOK_REMOVE_RECENT_DEF,
         Operation.NOTEBOOK_SUMMARIZE: NOTEBOOK_SUMMARIZE_DEF,
@@ -1371,57 +1368,6 @@ async def test_notebook_create_adopts_unique_baseline_diff_after_transport_loss(
 
 
 @pytest.mark.asyncio
-async def test_notebook_title_update_mutates_then_reads_back() -> None:
-    executor = _RecordingExecutor(None, [["Renamed", [], "nb-1"]])
-
-    result = await _backend(executor).invoke(
-        NOTEBOOK_UPDATE_DEF,
-        NotebookUpdateInput("nb-1", title="Renamed"),
-        deadline=None,
-    )
-
-    assert (result.notebook.id, result.notebook.title) == ("nb-1", "Renamed")
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.RENAME_NOTEBOOK,
-        RPCMethod.GET_NOTEBOOK,
-    ]
-    assert executor.calls[0].params == build_update_notebook_params("nb-1", title="Renamed")
-    assert executor.calls[1].params == build_get_notebook_params("nb-1")
-    assert executor.calls[0].kwargs["source_path"] == "/"
-    assert executor.calls[0].kwargs["allow_null"] is True
-    assert executor.calls[1].kwargs["source_path"] == "/notebook/nb-1"
-
-
-@pytest.mark.asyncio
-async def test_notebook_update_readback_not_found_preserves_public_error_context() -> None:
-    original = ClientError(
-        "not found",
-        status_code=404,
-        method_id=RPCMethod.GET_NOTEBOOK.value,
-        raw_response="scrubbed response",
-        rpc_code=5,
-    )
-    executor = _RecordingExecutor(None, original)
-
-    with pytest.raises(BackendError) as exc_info:
-        await _backend(executor).invoke(
-            NOTEBOOK_UPDATE_DEF,
-            NotebookUpdateInput("nb-missing", title="Renamed"),
-            deadline=None,
-        )
-
-    projected = project_backend_error(exc_info.value)
-
-    assert isinstance(projected, NotebookNotFoundError)
-    assert projected.notebook_id == "nb-missing"
-    assert projected.method_id == RPCMethod.GET_NOTEBOOK.value
-    assert isinstance(projected.__cause__, ClientError)
-    assert projected.__cause__.status_code == 404
-    assert projected.__cause__.rpc_code == 5
-    assert projected.__cause__.raw_response == "scrubbed response"
-
-
-@pytest.mark.asyncio
 async def test_notebook_delete_is_one_id_and_returns_empty_result() -> None:
     executor = _RecordingExecutor(None)
 
@@ -1994,6 +1940,7 @@ def test_web_error_reasons_are_closed_and_preserve_reconstruction_evidence(
         BackendErrorReason.NETWORK,
         BackendErrorReason.NOTEBOOK_LIMIT,
         BackendErrorReason.NOTEBOOK_NOT_FOUND,
+        BackendErrorReason.NOT_FOUND,
         BackendErrorReason.SOURCE_NOT_FOUND,
         BackendErrorReason.RATE_LIMIT,
         BackendErrorReason.RESEARCH_START_UNAVAILABLE,

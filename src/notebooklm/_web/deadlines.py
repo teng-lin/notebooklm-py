@@ -28,7 +28,6 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
     MappingProxyType(
         {
             Operation.NOTEBOOK_CREATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.NOTEBOOK_UPDATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.NOTEBOOK_SUGGEST_PROMPTS: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SOURCE_ADD_URL: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SOURCE_ADD_URL_BATCH: SemanticDeadlineAuthority.CLIENT_TIMEOUT,

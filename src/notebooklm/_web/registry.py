@@ -75,6 +75,7 @@ from .._records import (
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
+    NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
@@ -170,7 +171,7 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.NOTEBOOK_LIST: NOTEBOOK_LIST_DEF,
         Operation.NOTEBOOK_GET: NOTEBOOK_GET_DEF,
         Operation.NOTEBOOK_CREATE: NOTEBOOK_CREATE_DEF,
-        Operation.NOTEBOOK_UPDATE: NOTEBOOK_UPDATE_DEF,
+        Operation.NOTEBOOK_PATCH: NOTEBOOK_PATCH_DEF,
         Operation.NOTEBOOK_DELETE: NOTEBOOK_DELETE_DEF,
         Operation.NOTEBOOK_REMOVE_RECENT: NOTEBOOK_REMOVE_RECENT_DEF,
         Operation.NOTEBOOK_SUMMARIZE: NOTEBOOK_SUMMARIZE_DEF,
@@ -273,6 +274,7 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
         Operation.SHARING_SET_VIEW_LEVEL: SHARING_SET_VIEW_LEVEL_DEF,
         Operation.ARTIFACT_RENAME: ARTIFACT_RENAME_DEF,
+        Operation.NOTEBOOK_UPDATE: NOTEBOOK_UPDATE_DEF,
     }
 )
 _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
@@ -313,6 +315,10 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "service-owned since P9.2-10: StudioManagementService.rename sequences "
             "artifact.patch_title and artifact.catalog"
         ),
+        Operation.NOTEBOOK_UPDATE: (
+            "service-owned since P9.2-11: NotebookMutationService.update sequences "
+            "notebook.patch and notebook.get"
+        ),
     }
 )
 
@@ -320,13 +326,13 @@ _STAGED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapping
 
 _STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 
-# The frozen catalog currently contains 94 operations (87 product members plus seven
+# The frozen catalog currently contains 95 operations (87 product members plus eight
 # P9.2 primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 94
+_EXPECTED_OPERATION_COUNT: Final = 95
 _EXPECTED_SUPPORTED_COUNT: Final = 80
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 9
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 10
 _EXPECTED_STAGED_COUNT: Final = 0
 
 

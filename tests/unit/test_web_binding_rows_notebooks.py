@@ -5,7 +5,8 @@ conversion oracles: the identical keyword set reaches the runtime for every
 converted operation (including explicit ``False``/``None`` values and the
 route), the payloads are byte-for-byte the handlers' params, the non-uniform
 ``NOTEBOOK_LIST`` decoder still accepts its three payload shapes, the
-``NOTEBOOK_GET`` decoder still branches on the input, the ``notebook.create``
+``NOTEBOOK_GET`` decoder still branches on the input, the ``NOTEBOOK_PATCH``
+primitive preserves the property-mask payload, the ``notebook.create``
 composite still lists through a helper under its own attribution, failure
 projection is what ``invoke()`` produced for handler rows, and the
 ``dispatched`` marker reaches the neutral error.
@@ -34,6 +35,7 @@ from notebooklm._records import (
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
+    NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
     NotebookCreateInput,
@@ -42,6 +44,7 @@ from notebooklm._records import (
     NotebookGetInput,
     NotebookGuideInput,
     NotebookListInput,
+    NotebookPatchInput,
     NotebookRemoveRecentInput,
     NotebookRemoveRecentResult,
 )
@@ -93,6 +96,7 @@ class _RecordingExecutor:
 _CONVERTED: dict[Operation, CodecBinding[Any, Any, RPCMethod]] = {
     Operation.NOTEBOOK_LIST: notebook_rows.NOTEBOOK_LIST,
     Operation.NOTEBOOK_GET: notebook_rows.NOTEBOOK_GET,
+    Operation.NOTEBOOK_PATCH: notebook_rows.NOTEBOOK_PATCH,
     Operation.NOTEBOOK_DELETE: notebook_rows.NOTEBOOK_DELETE,
     Operation.NOTEBOOK_REMOVE_RECENT: notebook_rows.NOTEBOOK_REMOVE_RECENT,
     Operation.NOTEBOOK_SUMMARIZE: notebook_rows.NOTEBOOK_SUMMARIZE,
@@ -102,6 +106,7 @@ _CONVERTED: dict[Operation, CodecBinding[Any, Any, RPCMethod]] = {
 _EXPECTED_NATIVES = {
     Operation.NOTEBOOK_LIST: RPCMethod.LIST_NOTEBOOKS,
     Operation.NOTEBOOK_GET: RPCMethod.GET_NOTEBOOK,
+    Operation.NOTEBOOK_PATCH: RPCMethod.RENAME_NOTEBOOK,
     Operation.NOTEBOOK_DELETE: RPCMethod.DELETE_NOTEBOOK,
     Operation.NOTEBOOK_REMOVE_RECENT: RPCMethod.REMOVE_RECENTLY_VIEWED,
     Operation.NOTEBOOK_SUMMARIZE: RPCMethod.SUMMARIZE,
@@ -114,7 +119,7 @@ _EXPECTED_NATIVES = {
 
 def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
     assert {op: WEB_BINDING_ROWS[op] for op in _CONVERTED} == _CONVERTED
-    # P9.4b adds the NOTEBOOK_CREATE/NOTEBOOK_UPDATE custom rows to the same table.
+    # P9.4b keeps NOTEBOOK_CREATE as the remaining custom row in this table.
     assert {op: row for op, row in notebook_rows.NOTEBOOK_ROWS.items() if op in _CONVERTED} == (
         _CONVERTED
     )
@@ -130,7 +135,11 @@ def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
         choice = row.native.select(None)
         assert (choice.method, choice.variant) == (_EXPECTED_NATIVES[operation], None)
         assert row.forward_disable_internal_retries is False
-        assert row.map_error is None
+        assert row.map_error is (
+            notebook_rows._map_required_get_not_found
+            if operation is Operation.NOTEBOOK_GET
+            else None
+        )
     for name in (
         "_notebook_list",
         "_notebook_get",
@@ -141,11 +150,12 @@ def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
         "_notebook_describe",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # P9.4b: the two composites are custom rows, not handler names.
-    for operation in (Operation.NOTEBOOK_CREATE, Operation.NOTEBOOK_UPDATE):
-        binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.handler_name is None
-        assert binding.row is not None
+    create = WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_CREATE]
+    assert create.handler_name is None
+    assert create.row is notebook_rows.NOTEBOOK_CREATE
+    update = WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_UPDATE]
+    assert update.handler_name is None and update.row is None
+    assert update.service_owned is True
     for name in ("_list_notebooks", "_notebook_create", "_notebook_update"):
         assert not hasattr(WebRpcBackend, name)
     backend = build_web_backend(_RecordingExecutor())
@@ -169,6 +179,12 @@ def test_notebook_payload_goldens() -> None:
     )
     recent = notebooks_codec.encode_notebook_remove_recent(NotebookRemoveRecentInput("nb_123"))
     assert recent == CodecPayload(params=["nb_123"], source_path="/", allow_null=True)
+    patch = notebooks_codec.encode_notebook_patch(
+        NotebookPatchInput("nb_123", title="New", emoji=None)
+    )
+    assert patch == CodecPayload(
+        params=[["nb_123", "New", None], [["title"]]], source_path="/", allow_null=True
+    )
     guide = notebooks_codec.encode_notebook_guide_request(NotebookGuideInput("nb_123"))
     assert guide == CodecPayload(params=["nb_123", [2]], source_path="/notebook/nb_123")
     for payload in (get, guide):

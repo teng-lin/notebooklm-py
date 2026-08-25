@@ -23,6 +23,7 @@ class Operation(str, Enum):
     NOTEBOOK_GET = "notebook.get"
     NOTEBOOK_CREATE = "notebook.create"
     NOTEBOOK_UPDATE = "notebook.update"
+    NOTEBOOK_PATCH = "notebook.patch"
     NOTEBOOK_DELETE = "notebook.delete"
     NOTEBOOK_REMOVE_RECENT = "notebook.remove_recent"
     NOTEBOOK_SUMMARIZE = "notebook.summarize"

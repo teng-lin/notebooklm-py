@@ -52,6 +52,7 @@ SAFE_REASON_DIAGNOSTICS: dict[BackendErrorReason, tuple[str, ...]] = {
     BackendErrorReason.DECODING: (),
     BackendErrorReason.IDEMPOTENCY_VARIANT: (),
     BackendErrorReason.NETWORK: (),
+    BackendErrorReason.NOT_FOUND: ("status_code",),
     BackendErrorReason.RATE_LIMIT: ("retry_after",),
     BackendErrorReason.RESPONSE_TOO_LARGE: ("limit_bytes", "bytes_read"),
     BackendErrorReason.RPC: (),

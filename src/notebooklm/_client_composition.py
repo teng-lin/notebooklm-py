@@ -270,6 +270,7 @@ def compose_client(
         sources_api=client.sources,
         share_manager=ShareManager(backend=client._backend),
         _backend=client._backend,
+        _deadline_factory=deadline_factory,
     )
     # P6.3 note wiring keeps semantic NOTE_* ownership disjoint from the
     # deferred MIND_MAP_* slice. NotesAPI receives the backend-neutral

@@ -105,12 +105,9 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_USER_SETTINGS, _IDEMPOTENT, "quota diagnosis"),
             ),
         ),
-        Operation.NOTEBOOK_UPDATE: WebCallPolicyBinding(
+        Operation.NOTEBOOK_PATCH: WebCallPolicyBinding(
             CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.RENAME_NOTEBOOK, _IDEMPOTENT, "property mutation"),
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "post-mutation readback"),
-            ),
+            (_native(RPCMethod.RENAME_NOTEBOOK, _IDEMPOTENT, "property mutation"),),
         ),
         Operation.NOTEBOOK_DELETE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
@@ -881,6 +878,17 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.ARTIFACT_PATCH_TITLE, None),
                     _leaf(Operation.ARTIFACT_CATALOG, None),
+                ),
+            ),
+            Operation.NOTEBOOK_UPDATE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.RENAME_NOTEBOOK, _IDEMPOTENT, "property mutation"),
+                    _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "post-mutation readback"),
+                ),
+                (
+                    _leaf(Operation.NOTEBOOK_PATCH, None),
+                    _leaf(Operation.NOTEBOOK_GET, None),
                 ),
             ),
         }

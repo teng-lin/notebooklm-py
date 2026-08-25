@@ -2,18 +2,32 @@
 
 from __future__ import annotations
 
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from ._backend import BackendAdapter
-from ._deadline import RuntimeDeadline
+from ._backend import (
+    BackendAdapter,
+    BackendDeadlineExceededError,
+    BackendError,
+    BackendErrorReason,
+    mark_backend_outcome_unknown,
+    rebind_operation,
+    require_leaves,
+)
+from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ._operations import Operation
 from ._projectors import project_notebook
 from ._records import (
     NOTEBOOK_CREATE_DEF,
     NOTEBOOK_DELETE_DEF,
+    NOTEBOOK_GET_DEF,
+    NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
     NOTEBOOK_UPDATE_DEF,
     NotebookCreateInput,
     NotebookDeleteInput,
+    NotebookGetInput,
+    NotebookPatchInput,
     NotebookRemoveRecentInput,
     NotebookUpdateInput,
 )
@@ -26,10 +40,16 @@ if TYPE_CHECKING:
 class NotebookMutationService:
     """Validate notebook mutations and invoke their typed backend operations."""
 
-    __slots__ = ("_backend",)
+    __slots__ = ("_backend", "_deadline_factory")
 
-    def __init__(self, backend: BackendAdapter) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        *,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
+    ) -> None:
         self._backend = backend
+        self._deadline_factory = deadline_factory
 
     async def create(
         self,
@@ -52,14 +72,72 @@ class NotebookMutationService:
         emoji: str | None = None,
         deadline: RuntimeDeadline | None = None,
     ) -> Notebook:
+        """Patch notebook properties, then read the complete model back once."""
         if title is None and emoji is None:
             raise ValidationError("At least one of title or emoji must be provided")
-        result = await self._backend.invoke(
-            NOTEBOOK_UPDATE_DEF,
-            NotebookUpdateInput(notebook_id, title=title, emoji=emoji),
-            deadline=deadline,
+        value = NotebookUpdateInput(notebook_id, title=title, emoji=emoji)
+        workflow = NOTEBOOK_UPDATE_DEF.key
+        require_leaves(self._backend, NOTEBOOK_PATCH_DEF.key, NOTEBOOK_GET_DEF.key)
+        deadline = self._start_deadline(deadline)
+        write_dispatched = False
+        try:
+            await self._backend.invoke(
+                NOTEBOOK_PATCH_DEF,
+                NotebookPatchInput(
+                    value.notebook_id,
+                    title=value.title,
+                    emoji=value.emoji,
+                ),
+                deadline=deadline,
+            )
+            write_dispatched = True
+            result = await self._backend.invoke(
+                NOTEBOOK_GET_DEF,
+                NotebookGetInput(value.notebook_id, require_notebook=True),
+                deadline=deadline,
+            )
+            if result.notebook is None:
+                raise self._not_found(value)
+            return project_notebook(result.notebook)
+        except BackendError as error:
+            if error.operation is workflow:
+                raise
+            leaf_cause = error.__cause__
+            if error.reason is BackendErrorReason.NOT_FOUND:
+                raise self._not_found(value, leaf_error=error) from leaf_cause
+            if write_dispatched and isinstance(error, BackendDeadlineExceededError):
+                error = mark_backend_outcome_unknown(error)
+            raise rebind_operation(error, workflow) from leaf_cause
+
+    def _start_deadline(self, deadline: RuntimeDeadline | None) -> RuntimeDeadline | None:
+        """Mint the one workflow deadline unless the caller supplied its own."""
+        if deadline is not None or self._deadline_factory is None:
+            return deadline
+        return self._deadline_factory.start()
+
+    @staticmethod
+    def _not_found(
+        value: NotebookUpdateInput,
+        *,
+        leaf_error: BackendError | None = None,
+    ) -> BackendError:
+        diagnostics = dict(leaf_error.diagnostics or {}) if leaf_error is not None else {}
+        # The domain-specific projector reconstructs the legacy ClientError
+        # cause from the copied RPC fields; generic leaf projection evidence
+        # belongs to reason=NOT_FOUND and must not be replayed as this reason.
+        diagnostics.pop("public_error_failure", None)
+        diagnostics.update(
+            {
+                "notebook_id": value.notebook_id,
+                "leaf_operation": Operation.NOTEBOOK_GET,
+            }
         )
-        return project_notebook(result.notebook)
+        return BackendError(
+            message=f"Notebook not found: {value.notebook_id}",
+            operation=Operation.NOTEBOOK_UPDATE,
+            diagnostics=MappingProxyType(diagnostics),
+            reason=BackendErrorReason.NOTEBOOK_NOT_FOUND,
+        )
 
     async def update_title(
         self,

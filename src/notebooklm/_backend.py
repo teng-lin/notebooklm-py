@@ -44,6 +44,7 @@ class BackendErrorReason(str, Enum):
     LABEL_AMBIGUOUS_CREATE = "label_ambiguous_create"
     LABEL_NOT_FOUND = "label_not_found"
     NETWORK = "network"
+    NOT_FOUND = "not_found"
     NOTEBOOK_LIMIT = "notebook_limit"
     NOTEBOOK_NOT_FOUND = "notebook_not_found"
     SOURCE_NOT_FOUND = "source_not_found"
