@@ -176,7 +176,6 @@ def test_emptied_chain_classes_are_gone_and_the_chain_re_links() -> None:
     chain = [klass.__name__ for klass in WebRpcBackend.__mro__]
     assert chain == [
         "WebRpcBackend",
-        "LabelSetWebHandlers",
         "object",
     ]
     for name in (

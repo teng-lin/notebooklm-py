@@ -6,9 +6,9 @@
 These tests pin the conversion oracles: the identical keyword set reaches the
 runtime for both dialects (route, ``allow_null``, explicit ``False``/``None``
 values), the dialect and scope contract errors still fire before any wire
-call, the get rows select by exact id inside ``decode``, failure projection is
-what ``invoke()`` produced for handler rows, and ``collection.create`` still
-runs through the retained ``_label_set_list`` helper.
+call, the get rows select by exact id inside ``decode``, and failure projection
+is what ``invoke()`` produced for handler rows. Both create workflows now live
+above the port in ``LabelSetService``.
 """
 
 from __future__ import annotations
@@ -46,8 +46,6 @@ from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import labels as label_rows
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
-from notebooklm._web.sharing import SharingWebHandlers
-from notebooklm._web.studio_data import StudioDataWebHandlers
 from notebooklm.exceptions import RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.web_backend import build_web_backend
@@ -149,7 +147,7 @@ def test_label_rows_replace_their_handlers_in_the_registry_and_table() -> None:
         assert WEB_OPERATION_REGISTRY[operation].service_owned is True
     for name in ("_label_create", "_label_update", "_collection_create", "_collection_update"):
         assert not hasattr(WebRpcBackend, name)
-    assert SharingWebHandlers.__base__ is StudioDataWebHandlers
+    assert WebRpcBackend.__mro__ == (WebRpcBackend, object)
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.LABEL_LIST] is label_rows.LABEL_LIST
 

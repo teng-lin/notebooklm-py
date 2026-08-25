@@ -61,7 +61,6 @@ from .codec.artifacts import decode_artifact_catalog, encode_studio_catalog_para
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
 from .errors import error_diagnostics, translate_web_error
 from .failure_projection import _capture_public_failure
-from .labels import LabelSetWebHandlers
 from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS, WebOperationBinding
 from .runtime import WebExecutionRuntime
 from .transport import WebRequest, WebTransport
@@ -117,7 +116,7 @@ def _row_error_projection(row: Binding | None, operation: Operation) -> tuple[bo
     return operation in _RAW_PASSTHROUGH_HANDLER_OPERATIONS, None
 
 
-class WebRpcBackend(LabelSetWebHandlers):
+class WebRpcBackend:
     """Typed semantic binding owning web execution through its runtime."""
 
     def __init__(

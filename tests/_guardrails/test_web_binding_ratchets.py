@@ -50,9 +50,9 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 # --- 1. residual composites ---------------------------------------------------
 
 #: custom rows + handler-backed operations at P9.4a; shrinks with every hoist.
-#: Sharing hoists removed three custom rows and the label-create hoist removed
-#: one handler from the P9.2 stop/go baseline.
-RESIDUAL_COMPOSITE_CEILING = 24
+#: Sharing hoists removed three custom rows; the label- and collection-create
+#: hoists removed the final two handlers from the P9.2 stop/go baseline.
+RESIDUAL_COMPOSITE_CEILING = 23
 #: Exact custom-row counts per justification category: five source-add rows,
 #: ``CHAT_ASK``, the Studio
 #: generation/prompt/rename rows, and the notebook/mind-map/catalog composites.
@@ -81,11 +81,7 @@ _OWNER_VERBS = {
 }
 #: ``file.py:Class.method`` handler-backed composites that still sequence more
 #: than one transport call; each P9.4b PR removes the entries it converts.
-MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
-    {
-        "labels.py:LabelSetWebHandlers._collection_create",
-    }
-)
+MULTI_CALL_HANDLER_ALLOWLIST = frozenset()
 
 
 def _attribute_parts(node: ast.AST) -> tuple[str, ...]:

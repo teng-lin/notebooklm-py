@@ -151,9 +151,6 @@ ALLOWLIST: tuple[str, ...] = (
     "_web/codec/studio_documents.py:decode_generation_status",
     "_web/codec/suggestions.py:decode_prompt_suggestions",
     "_web/codec/suggestions.py:decode_report_suggestions",
-    "_web/labels.py:LabelSetWebHandlers._collection_create",
-    "_web/labels.py:LabelSetWebHandlers._label_create",
-    "_web/labels.py:LabelSetWebHandlers._label_set_list",
 )
 
 
