@@ -163,7 +163,6 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_web.policy",
         "_web.registry",
         "_web.runtime",
-        "_web.sharing",
         "_web.settings_suggestions",
         "_web.source_variants",
         "_web.studio_data",

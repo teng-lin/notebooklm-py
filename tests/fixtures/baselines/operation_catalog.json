@@ -2992,7 +2992,9 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/sharing.py:SHARING_GET",
-        "_web/sharing.py:SharingWebHandlers._sharing_status"
+        "_web/bindings/sharing.py:SHARING_SET_PUBLIC",
+        "_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL",
+        "_web/bindings/sharing.py:SHARING_UPDATE_USERS"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3648,7 +3650,7 @@
       "execution_authorities": [
         "_web/backend.py:WebRpcBackend._notebook_update",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
-        "_web/sharing.py:SharingWebHandlers._sharing_set_view_level"
+        "_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -3873,8 +3875,8 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/sharing.py:SharingWebHandlers._sharing_set_public",
-        "_web/sharing.py:SharingWebHandlers._sharing_update_users"
+        "_web/bindings/sharing.py:SHARING_SET_PUBLIC",
+        "_web/bindings/sharing.py:SHARING_UPDATE_USERS"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -7561,13 +7563,13 @@
         {
           "binding": "GET_SHARE_STATUS:<default>",
           "discriminator": "post-public-mutation read",
-          "site": "_web/sharing.py:SharingWebHandlers._sharing_status",
+          "site": "_web/bindings/sharing.py:SHARING_SET_PUBLIC",
           "transport_kind": "rpc"
         },
         {
           "binding": "SHARE_NOTEBOOK:<default>",
           "discriminator": "visibility entry",
-          "site": "_web/sharing.py:SharingWebHandlers._sharing_set_public",
+          "site": "_web/bindings/sharing.py:SHARING_SET_PUBLIC",
           "transport_kind": "rpc"
         }
       ],
@@ -7602,13 +7604,13 @@
         {
           "binding": "GET_SHARE_STATUS:<default>",
           "discriminator": "post-view-level-mutation read",
-          "site": "_web/sharing.py:SharingWebHandlers._sharing_status",
+          "site": "_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL",
           "transport_kind": "rpc"
         },
         {
           "binding": "RENAME_NOTEBOOK:<default>",
           "discriminator": "share-view-level payload",
-          "site": "_web/sharing.py:SharingWebHandlers._sharing_set_view_level",
+          "site": "_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL",
           "transport_kind": "rpc"
         }
       ],
@@ -7645,13 +7647,13 @@
         {
           "binding": "GET_SHARE_STATUS:<default>",
           "discriminator": "post-user-grant mutation read",
-          "site": "_web/sharing.py:SharingWebHandlers._sharing_status",
+          "site": "_web/bindings/sharing.py:SHARING_UPDATE_USERS",
           "transport_kind": "rpc"
         },
         {
           "binding": "SHARE_NOTEBOOK:<default>",
           "discriminator": "user grant/upsert and removal entries",
-          "site": "_web/sharing.py:SharingWebHandlers._sharing_update_users",
+          "site": "_web/bindings/sharing.py:SHARING_UPDATE_USERS",
           "transport_kind": "rpc"
         }
       ],
