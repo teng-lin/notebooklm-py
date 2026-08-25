@@ -8,6 +8,10 @@ import pytest
 
 from notebooklm._artifact import downloads as artifact_downloads
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._web.codec.artifacts import (
+    decode_artifact_representation,
+    decode_mind_map_representation,
+)
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import (
     ArtifactDownloadError,
@@ -18,19 +22,35 @@ from notebooklm.types import (
 from tests._fixtures.web_backend import build_web_backend
 
 
+def _representations(rows):
+    """Decode raw ``LIST_ARTIFACTS`` rows into the neutral prefetch handoff.
+
+    P10 R1.1 deleted the facade's raw-row fallback: ``download_<x>(...,
+    artifacts_data=)`` now takes the decoded ``ArtifactRepresentationRecord``s
+    its production producer (``ArtifactsAPI._list_for_download``) already
+    holds. These tests keep their recorded wire rows and run them through the
+    same codec the producer does, so the decode step stays characterized here.
+    """
+    return [decode_artifact_representation(row) for row in rows]
+
+
+def _mind_map_representations(rows):
+    """Decode raw note rows into ``MindMapRepresentationRecord``s (see above)."""
+    decoded = (decode_mind_map_representation(row) for row in rows)
+    return [record for record in decoded if record is not None]
+
+
 @pytest.fixture
 def mock_artifacts_api():
     """Create an ArtifactsAPI with mocked core.
 
     After Phase 5 (refactor-history.md Migration Plan steps 6-7), ``ArtifactsAPI``
-    takes ``mind_maps: NoteBackedMindMapService`` and
-    ``note_service: NoteService`` instead of the single
-    ``mind_map_service`` parameter. Mind-map persistence goes through
-    ``note_service.create_note``; the download path consumes
-    ``mind_maps.list_mind_maps`` / ``mind_maps.extract_content``. Tests
-    that exercise mind-map creation drive responses through
-    ``mock_core.rpc_executor.rpc_call`` (via ``side_effect``) since both new
-    services delegate down to that single RPC seam.
+    takes ``mind_maps: NoteBackedMindMapService`` instead of the single
+    ``mind_map_service`` parameter, and P10 R1.1 made ``_backend`` its only
+    construction path. The download path consumes ``mind_maps.list_mind_maps``
+    / ``mind_maps.extract_content``. Tests that exercise mind-map creation
+    drive responses through ``mock_core.rpc_executor.rpc_call`` (via
+    ``side_effect``) since the services delegate down to that single RPC seam.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import LegacyNoteBackedService
@@ -49,12 +69,10 @@ def mock_artifacts_api():
     note_service = LegacyNoteBackedService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     api = ArtifactsAPI(
-        rpc=mock_core,
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=mock_notebooks,
         mind_maps=mind_maps,
-        note_service=note_service,
         _backend=build_web_backend(mock_core),
     )
     return api, mock_core
@@ -166,7 +184,7 @@ class TestDownloadVideo:
                 api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
             ):
                 result = await api.download_video(
-                    "nb_123", output_path, artifacts_data=artifacts_data
+                    "nb_123", output_path, artifacts_data=_representations(artifacts_data)
                 )
 
             assert result == output_path
@@ -187,7 +205,10 @@ class TestDownloadVideo:
         artifacts_data = [["other_id", "Video", 3, None, 3, None, None, None, []]]
         with pytest.raises(ArtifactNotReadyError):
             await api.download_video(
-                "nb_123", "/tmp/video.mp4", artifact_id="video_001", artifacts_data=artifacts_data
+                "nb_123",
+                "/tmp/video.mp4",
+                artifact_id="video_001",
+                artifacts_data=_representations(artifacts_data),
             )
 
 
@@ -222,7 +243,7 @@ class TestDownloadInfographic:
                 api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
             ):
                 result = await api.download_infographic(
-                    "nb_123", output_path, artifacts_data=artifacts_data
+                    "nb_123", output_path, artifacts_data=_representations(artifacts_data)
                 )
 
             assert result == output_path
@@ -266,7 +287,7 @@ class TestDownloadInfographic:
                 api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
             ) as mock_dl:
                 result = await api.download_infographic(
-                    "nb_123", output_path, artifacts_data=artifacts_data
+                    "nb_123", output_path, artifacts_data=_representations(artifacts_data)
                 )
 
             assert result == output_path
@@ -303,7 +324,7 @@ class TestDownloadSlideDeck:
                 api._downloads, "download_url", new_callable=AsyncMock, return_value=output_path
             ):
                 result = await api.download_slide_deck(
-                    "nb_123", output_path, artifacts_data=[artifact]
+                    "nb_123", output_path, artifacts_data=_representations([artifact])
                 )
 
             assert result == output_path
@@ -328,7 +349,10 @@ class TestDownloadSlideDeck:
 
         with pytest.raises(ArtifactNotReadyError):
             await api.download_slide_deck(
-                "nb_123", "/tmp/slides.pdf", artifact_id="slides_001", artifacts_data=[artifact]
+                "nb_123",
+                "/tmp/slides.pdf",
+                artifact_id="slides_001",
+                artifacts_data=_representations([artifact]),
             )
 
     @pytest.mark.asyncio
@@ -342,7 +366,9 @@ class TestDownloadSlideDeck:
         artifact.append(["only", "two"])  # Invalid: needs 4 elements
 
         with pytest.raises(ArtifactParseError):
-            await api.download_slide_deck("nb_123", "/tmp/slides.pdf", artifacts_data=[artifact])
+            await api.download_slide_deck(
+                "nb_123", "/tmp/slides.pdf", artifacts_data=_representations([artifact])
+            )
 
 
 class TestMindMapGeneration:
@@ -549,7 +575,9 @@ class TestDownloadReport:
                 ]
             ]
 
-            result = await api.download_report("nb_123", output_path, artifacts_data=artifacts_data)
+            result = await api.download_report(
+                "nb_123", output_path, artifacts_data=_representations(artifacts_data)
+            )
 
             assert result == output_path
             # Verify file was written
@@ -573,7 +601,10 @@ class TestDownloadReport:
         artifacts_data = [["other_id", "Report", 2, None, 3, None, None, ["content"]]]
         with pytest.raises(ArtifactNotReadyError):
             await api.download_report(
-                "nb_123", "/tmp/report.md", artifact_id="report_001", artifacts_data=artifacts_data
+                "nb_123",
+                "/tmp/report.md",
+                artifact_id="report_001",
+                artifacts_data=_representations(artifacts_data),
             )
 
     @pytest.mark.asyncio
@@ -598,7 +629,9 @@ class TestDownloadReport:
                 ]
             ]
 
-            result = await api.download_report("nb_123", output_path, artifacts_data=artifacts_data)
+            result = await api.download_report(
+                "nb_123", output_path, artifacts_data=_representations(artifacts_data)
+            )
 
             assert result == output_path
             with open(output_path, encoding="utf-8") as f:
@@ -629,7 +662,9 @@ class TestDownloadMindMap:
                     [None, json_content, None, None, "Mind Map Title"],
                 ]
             ]
-            result = await api.download_mind_map("nb_123", output_path, mind_maps=rows)
+            result = await api.download_mind_map(
+                "nb_123", output_path, mind_maps=_mind_map_representations(rows)
+            )
 
             assert result == output_path
             # Verify JSON was written correctly
@@ -660,7 +695,9 @@ class TestDownloadMindMap:
                 "nb_123",
                 "/tmp/mindmap.json",
                 artifact_id="mindmap_001",
-                mind_maps=[["other_id", [None, '{"children": []}', None, None, "Other"]]],
+                mind_maps=_mind_map_representations(
+                    [["other_id", [None, '{"children": []}', None, None, "Other"]]]
+                ),
                 artifacts_data=[],
             )
 
@@ -709,7 +746,9 @@ class TestDownloadDataTable:
             data_table_structure = [[[[[0, 100, None, None, [6, 7, rows_data]]]]]]
             artifact.append(data_table_structure)
 
-            result = await api.download_data_table("nb_123", output_path, artifacts_data=[artifact])
+            result = await api.download_data_table(
+                "nb_123", output_path, artifacts_data=_representations([artifact])
+            )
 
             assert result == output_path
             # Verify CSV was written correctly
@@ -740,7 +779,10 @@ class TestDownloadDataTable:
 
         with pytest.raises(ArtifactNotReadyError):
             await api.download_data_table(
-                "nb_123", "/tmp/data.csv", artifact_id="table_001", artifacts_data=[artifact]
+                "nb_123",
+                "/tmp/data.csv",
+                artifact_id="table_001",
+                artifacts_data=_representations([artifact]),
             )
 
     @pytest.mark.asyncio
@@ -759,7 +801,9 @@ class TestDownloadDataTable:
         artifact.append(data_table_structure)
 
         with pytest.raises(ArtifactParseError):
-            await api.download_data_table("nb_123", "/tmp/data.csv", artifacts_data=[artifact])
+            await api.download_data_table(
+                "nb_123", "/tmp/data.csv", artifacts_data=_representations([artifact])
+            )
 
 
 class TestStoragePathEncapsulation:

@@ -474,8 +474,10 @@ multi-capability feature takes its collaborators by keyword-only
 constructor argument:
 
 - `ArtifactsAPI` takes the client-owned `BackendAdapter` plus
-  `drain: TransportDrainTracker` and `lifecycle: ClientLifecycle`; its deprecated
-  `rpc=` constructor keyword remains only for source-compatible manual construction.
+  `drain: TransportDrainTracker` and `lifecycle: ClientLifecycle`. The client
+  composition root is its only construction path — P10 R1.1 deleted the
+  deprecated `rpc=`/`note_service=` keywords and the partial `WebRpcBackend`
+  they built, so tests construct the backend explicitly instead.
 - `SourceUploadPipeline` takes transport-neutral registration/list/rename callbacks plus its upload collaborators; its deprecated `rpc=` keyword is ignored for source compatibility.
 - `ChatAPI` takes `backend: BackendAdapter` plus focused streamed-transport,
   request-id, and loop-guard collaborators.

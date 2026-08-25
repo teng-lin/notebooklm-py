@@ -10,7 +10,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 # ``_mind_map`` re-exported as ``_artifacts._mind_map`` for legacy monkeypatch seams (runtime uses injected services).
 from . import _mind_map  # noqa: F401 — re-exported as facade attribute
@@ -26,7 +26,6 @@ from ._backend_compat import project_backend_call, project_backend_error
 from ._deadline import RuntimeDeadlineFactory
 from ._lookup import unwrap_or_raise
 from ._mind_map import NoteBackedMindMapService
-from ._note_service import LegacyNoteBackedService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._projectors import project_artifact, project_generation_status, project_report_suggestion
@@ -41,7 +40,6 @@ from ._records import (
     MindMapGenerateInput,
     MindMapRepresentationRecord,
 )
-from ._row_adapters.notes import NoteRow
 from ._studio import (
     ArtifactLifecycleService,
     ArtifactRepresentationService,
@@ -59,8 +57,6 @@ from ._studio import (
 )
 from ._studio.downloads import StudioDownloadClient
 from ._types.research import MindMapResult
-from ._web.backend import WebRpcBackend
-from ._web.codec.artifacts import decode_artifact_representation, decode_mind_map_representation
 from .artifacts import RateLimitRetryEvent
 from .exceptions import (
     ArtifactFeatureUnavailableError,
@@ -127,12 +123,10 @@ class ArtifactsAPI:
     def __init__(
         self,
         *,
-        rpc: object | None = None,
         drain: "TransportDrainTracker",
         lifecycle: "ClientLifecycle",
         notebooks: NotebookSourceIdProvider,
         mind_maps: NoteBackedMindMapService,
-        note_service: LegacyNoteBackedService,
         storage_path: Path | None = None,
         _backend: BackendAdapter | None = None,
         deadline_factory: RuntimeDeadlineFactory | None = None,
@@ -140,9 +134,6 @@ class ArtifactsAPI:
         """Initialize the artifacts API.
 
         Args:
-            rpc: Deprecated compatibility constructor input. Artifact behavior
-                uses only ``_backend``; the value is retained for source
-                compatibility while test callers migrate to backend fakes.
             drain: Transport drain coordinator — owns ``operation_scope`` (used
                 by the polling service) and ``register_drain_hook`` (used here
                 to register the polling-service close-time cleanup hook).
@@ -151,23 +142,17 @@ class ArtifactsAPI:
             notebooks: Source-id resolver. Required — wire from
                 ``NotebookLMClient`` (no implicit fallback). Threaded into the
                 generation service.
-            mind_maps: Deprecated manual-construction collaborator retained for
-                the legacy ``get_prompt`` fallback; production behavior uses the
-                semantic Studio catalog/representation services.
-            note_service: Deprecated source-compatible constructor input. P5.8
-                moved mind-map persistence behind the semantic backend.
+            mind_maps: Note-backed mind-map facade behind ``_list_mind_maps``.
+                Retired in P10 R4.2, when the mind-map workflows move above the
+                port and ``NotesAPI`` stops sharing this graph.
             storage_path: Path to storage state file for loading download cookies.
             _backend: Private semantic backend used by Studio catalog reads.
             deadline_factory: Client-scoped factory for service-owned workflow deadlines.
         """
-        self._legacy_constructor = _backend is None
-        if _backend is None and rpc is not None:
-            _backend = WebRpcBackend(cast(Any, rpc), transport_factory=lambda **_kwargs: object())
         self._drain = drain
         self._lifecycle = lifecycle
         self._notebooks = notebooks
         self._mind_maps = mind_maps
-        del note_service
         self._backend = _backend
         self._catalog = StudioCatalog(_backend) if _backend is not None else None
         self._data_tables = (
@@ -378,10 +363,6 @@ class ArtifactsAPI:
             raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
         record = await project_backend_call(self._catalog.get_record(notebook_id, artifact_id))
         if record is None:
-            if self._legacy_constructor:
-                rows = await self._mind_maps.list_mind_maps(notebook_id)
-                if any(NoteRow(row).id == artifact_id for row in rows):
-                    return None
             raise ArtifactNotFoundError(artifact_id)
         return record.generation_prompt
 
@@ -1271,14 +1252,10 @@ class ArtifactsAPI:
     def _representation_records(
         rows: builtins.list[Any] | None,
     ) -> tuple[ArtifactRepresentationRecord, ...] | None:
+        """Freeze the neutral download prefetch handoff (already decoded)."""
         if rows is None:
             return None
-        return tuple(
-            row
-            if isinstance(row, ArtifactRepresentationRecord)
-            else decode_artifact_representation(row)
-            for row in rows
-        )
+        return tuple(rows)
 
     @staticmethod
     def _artifact_records(
@@ -1301,20 +1278,10 @@ class ArtifactsAPI:
     def _mind_map_records(
         rows: builtins.list[Any] | None,
     ) -> tuple[MindMapRepresentationRecord, ...] | None:
+        """Freeze the neutral mind-map prefetch handoff (already decoded)."""
         if rows is None:
             return None
-        return tuple(
-            record
-            for row in rows
-            if (
-                record := (
-                    row
-                    if isinstance(row, MindMapRepresentationRecord)
-                    else decode_mind_map_representation(row)
-                )
-            )
-            is not None
-        )
+        return tuple(rows)
 
     def _get_artifact_type_name(self, artifact_type: int) -> str:
         """Human-readable name for an ``ArtifactTypeCode``, else the raw int as str."""

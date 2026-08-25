@@ -52,7 +52,6 @@ from notebooklm._collections import CollectionsAPI
 from notebooklm._labels import LabelsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
-from notebooklm._note_service import LegacyNoteBackedService
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._notes import NotesAPI
 from notebooklm._sources import SourcesAPI
@@ -101,12 +100,10 @@ def _make_artifacts_api() -> ArtifactsAPI:
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
-        rpc=core,
         drain=core,
         lifecycle=core,
         notebooks=notebooks,
         mind_maps=mind_maps,
-        note_service=MagicMock(spec=LegacyNoteBackedService),
         _backend=build_web_backend(core.rpc_executor),
     )
 

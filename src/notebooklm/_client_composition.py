@@ -287,7 +287,6 @@ def compose_client(
         lifecycle=internals.lifecycle,
         notebooks=client.notebooks,
         mind_maps=mind_maps,
-        note_service=legacy_note_backed,
         storage_path=storage_path,
         _backend=client._backend,
         deadline_factory=deadline_factory,

@@ -7,7 +7,6 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
 from notebooklm._mind_map import NoteBackedMindMapService
-from notebooklm._note_service import NoteService
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._runtime.contracts import LoopGuard
 from notebooklm._sources import SourcesAPI
@@ -197,12 +196,10 @@ class TestGetSuggestedReportFormats:
         rpc_call = AsyncMock(return_value=mock_response)
         core = make_fake_core(rpc_call=rpc_call)
         artifacts = ArtifactsAPI(
-            rpc=core.rpc_executor,
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
-            note_service=MagicMock(spec=NoteService),
             _backend=build_web_backend(core.rpc_executor),
         )
 

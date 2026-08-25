@@ -23,7 +23,6 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._lookup import unwrap_or_raise
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._mind_maps_api import MindMapsAPI
-from notebooklm._note_service import LegacyNoteBackedService
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import ClientError, NotebookNotFoundError, RPCError
@@ -88,12 +87,10 @@ def artifacts_api():
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
-        rpc=core,
         drain=core,
         lifecycle=core,
         notebooks=notebooks,
         mind_maps=mind_maps,
-        note_service=MagicMock(spec=LegacyNoteBackedService),
         _backend=build_web_backend(core.rpc_executor),
     )
 
