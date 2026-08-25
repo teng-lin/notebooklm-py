@@ -1263,19 +1263,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/errors.py", "_backend", "BackendContractError"),
         ("_web/errors.py", "_backend", "BackendError"),
         ("_web/errors.py", "_backend", "BackendErrorReason"),
-        ("_web/sharing.py", "_records", "ShareStatusRecord"),
-        ("_web/sharing.py", "_records", "ShareViewScope"),
-        ("_web/sharing.py", "_records", "SharingSetPublicInput"),
-        ("_web/sharing.py", "_records", "SharingSetPublicResult"),
-        ("_web/sharing.py", "_records", "SharingSetViewLevelInput"),
-        ("_web/sharing.py", "_records", "SharingSetViewLevelResult"),
-        ("_web/sharing.py", "_records", "SharingUpdateUsersInput"),
-        ("_web/sharing.py", "_records", "SharingUpdateUsersResult"),
-        ("_web/sharing.py", "codec.sharing", "build_get_share_status_params"),
-        ("_web/sharing.py", "codec.sharing", "build_share_grants_params"),
-        ("_web/sharing.py", "codec.sharing", "build_share_view_level_params"),
-        ("_web/sharing.py", "codec.sharing", "build_share_visibility_params"),
-        ("_web/sharing.py", "codec.sharing", "decode_share_status"),
         ("_web/codec/notes.py", "_records", "NoteRecord"),
         ("_web/codec/notes.py", "_records", "MindMapRecord"),
         ("_web/registry.py", "_records", "MIND_MAP_DELETE_DEF"),
@@ -2033,6 +2020,28 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
         ("_idempotency_create.py", "_backend", "BackendError"),
         ("_idempotency_create.py", "_backend", "may_have_committed"),
+    }
+)
+# P9.4a: the head projects a custom row's ``error_mode``; the sharing composites
+# are ``CustomBinding`` rows whose handlers and phase payloads name the records.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_web/backend.py", "_binding", "CustomBinding"),
+        ("_web/backend.py", "_binding", "ErrorMode"),
+        ("_web/bindings/sharing.py", "_binding", "CustomBinding"),
+        ("_web/bindings/sharing.py", "_binding", "RowInvoker"),
+        ("_web/bindings/sharing.py", "_records", "SHARING_SET_PUBLIC_DEF"),
+        ("_web/bindings/sharing.py", "_records", "SHARING_SET_VIEW_LEVEL_DEF"),
+        ("_web/bindings/sharing.py", "_records", "SHARING_UPDATE_USERS_DEF"),
+        ("_web/bindings/sharing.py", "_records", "SharingSetPublicInput"),
+        ("_web/bindings/sharing.py", "_records", "SharingSetPublicResult"),
+        ("_web/bindings/sharing.py", "_records", "SharingSetViewLevelInput"),
+        ("_web/bindings/sharing.py", "_records", "SharingSetViewLevelResult"),
+        ("_web/bindings/sharing.py", "_records", "SharingUpdateUsersInput"),
+        ("_web/bindings/sharing.py", "_records", "SharingUpdateUsersResult"),
+        ("_web/codec/sharing.py", "_records", "SharingSetPublicInput"),
+        ("_web/codec/sharing.py", "_records", "SharingSetViewLevelInput"),
+        ("_web/codec/sharing.py", "_records", "SharingUpdateUsersInput"),
     }
 )
 

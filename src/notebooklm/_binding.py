@@ -165,6 +165,7 @@ class Transport(Protocol[MethodT, RequestT]):
         *,
         retry_flag: bool,
         deadline: RuntimeDeadline | None,
+        outcome_unknown_on_expiry: bool = False,
     ) -> RequestT: ...
 
     async def call(self, request: RequestT, *, deadline: RuntimeDeadline | None) -> Any: ...
@@ -190,7 +191,15 @@ class ErrorMapper(Protocol[InputT_contra, MethodT]):
 
 
 class RowInvoker(Protocol):
-    """Invocation-scoped access to exactly the natives one custom row declared."""
+    """Invocation-scoped access to exactly the natives one custom row declared.
+
+    ``disable_internal_retries`` and ``outcome_unknown_on_expiry`` are the two
+    request options a composite sets per phase today (the write phase of a
+    probe-then-create disables replay; a readback after a dispatched write marks
+    a pre-dispatch expiry as commit-uncertain).  ``collaborator`` returns one of
+    the row's declared, backend-supplied collaborators (never the transport or
+    the runtime).
+    """
 
     async def call(
         self,
@@ -199,6 +208,8 @@ class RowInvoker(Protocol):
         *,
         value: Any = None,
         deadline: RuntimeDeadline | None,
+        disable_internal_retries: bool = False,
+        outcome_unknown_on_expiry: bool = False,
     ) -> Any: ...
 
     async def stream(
@@ -208,7 +219,11 @@ class RowInvoker(Protocol):
         *,
         value: Any = None,
         deadline: RuntimeDeadline | None,
+        disable_internal_retries: bool = False,
+        outcome_unknown_on_expiry: bool = False,
     ) -> Any: ...
+
+    def collaborator(self, name: str) -> Any: ...
 
 
 class BoundHandler(Protocol[InputT_contra, OutputT_co]):
@@ -271,6 +286,10 @@ class CustomBinding(Generic[InputT, OutputT, MethodT]):
     deadline: DeadlineMode = DeadlineMode.INHERIT
     error_mode: ErrorMode = ErrorMode.TRANSLATE
     map_error: ErrorMapper[InputT, MethodT] | None = None
+    #: Closed, named set of backend collaborators the handler may reach through
+    #: ``invoke.collaborator(name)``; audited at construction against what the
+    #: backend provides, so a row can never reach an object it did not declare.
+    collaborators: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.category not in CUSTOM_CATEGORIES:
@@ -280,6 +299,9 @@ class CustomBinding(Generic[InputT, OutputT, MethodT]):
         keys = [spec.key for spec in self.native]
         if any(key is None for key in keys) or len(set(keys)) != len(keys):
             raise ValueError("custom binding natives carry unique, non-empty keys")
+        names = self.collaborators
+        if any(not name for name in names) or len(set(names)) != len(names):
+            raise ValueError("custom binding collaborators are unique, non-empty names")
 
     def spec(self, key: str) -> NativeCallSpec[MethodT]:
         for candidate in self.native:
@@ -347,8 +369,18 @@ class BindingTable(Mapping[Operation, Binding]):
         return MappingProxyType(counts)
 
 
-def audit_bindings(table: Mapping[Operation, Binding], supported: frozenset[Operation]) -> None:
-    """Reject a table whose keys differ from the executable dispositions."""
+def audit_bindings(
+    table: Mapping[Operation, Binding],
+    supported: frozenset[Operation],
+    *,
+    collaborators: frozenset[str] | None = None,
+) -> None:
+    """Reject a table whose keys differ from the executable dispositions.
+
+    When ``collaborators`` names what the backend provides, every custom row's
+    declared collaborator set must be a subset of it, so an undeclared or
+    unprovided collaborator fails at construction, never mid-workflow.
+    """
     keys = frozenset(table)
     problems: list[str] = []
     if missing := supported - keys:
@@ -360,6 +392,15 @@ def audit_bindings(table: Mapping[Operation, Binding], supported: frozenset[Oper
         for key, row in table.items()
         if row.definition.key is not key
     )
+    if collaborators is not None:
+        for key, row in table.items():
+            if not isinstance(row, CustomBinding):
+                continue
+            if unprovided := set(row.collaborators) - collaborators:
+                problems.append(
+                    f"row {key.value} declares collaborators the backend does not provide: "
+                    + ", ".join(sorted(unprovided))
+                )
     if problems:
         raise BindingAuditError("; ".join(problems))
 
@@ -385,17 +426,33 @@ def _tag_native(error: BaseException, native: NativeChoice[Any]) -> None:
 class _RowScopedInvoker:
     """The only transport view a custom handler receives."""
 
-    __slots__ = ("_errors", "_row", "_transport")
+    __slots__ = ("_collaborators", "_errors", "_row", "_transport")
 
     def __init__(
         self,
         row: CustomBinding[Any, Any, Any],
         transport: Transport[Any, Any],
         errors: ErrorTranslator | None,
+        collaborators: Mapping[str, Any] | None = None,
     ) -> None:
         self._row = row
         self._transport = transport
         self._errors = errors
+        self._collaborators: Mapping[str, Any] = MappingProxyType(dict(collaborators or {}))
+
+    def collaborator(self, name: str) -> Any:
+        """Return one declared, backend-supplied collaborator; reject the rest."""
+        if name not in self._row.collaborators:
+            raise BackendContractError(
+                f"{self._row.definition.key.value} declares no collaborator {name!r}",
+                operation=self._row.definition.key,
+            )
+        if name not in self._collaborators:
+            raise BackendContractError(
+                f"{self._row.definition.key.value} collaborator {name!r} was not provided",
+                operation=self._row.definition.key,
+            )
+        return self._collaborators[name]
 
     def _prepare(
         self,
@@ -403,6 +460,9 @@ class _RowScopedInvoker:
         payload: CodecPayload,
         value: Any,
         deadline: RuntimeDeadline | None,
+        *,
+        disable_internal_retries: bool,
+        outcome_unknown_on_expiry: bool,
     ) -> tuple[NativeChoice[Any], Any]:
         spec = self._row.spec(spec_key)
         choice = spec.select(value)
@@ -410,10 +470,19 @@ class _RowScopedInvoker:
             self._row.definition,
             choice,
             payload,
-            retry_flag=False,
+            retry_flag=disable_internal_retries,
             deadline=deadline,
+            outcome_unknown_on_expiry=outcome_unknown_on_expiry,
         )
         return choice, request
+
+    def _failed(self, exc: BaseException, value: Any, choice: NativeChoice[Any]) -> None:
+        """Tag the failure with its native and apply the row's semantic mapper."""
+        _tag_native(exc, choice)
+        if self._row.map_error is not None and isinstance(exc, Exception):
+            mapped = self._row.map_error(value, exc, choice)
+            if mapped is not None:
+                raise mapped from exc
 
     async def call(
         self,
@@ -422,12 +491,21 @@ class _RowScopedInvoker:
         *,
         value: Any = None,
         deadline: RuntimeDeadline | None,
+        disable_internal_retries: bool = False,
+        outcome_unknown_on_expiry: bool = False,
     ) -> Any:
-        choice, request = self._prepare(spec_key, payload, value, deadline)
+        choice, request = self._prepare(
+            spec_key,
+            payload,
+            value,
+            deadline,
+            disable_internal_retries=disable_internal_retries,
+            outcome_unknown_on_expiry=outcome_unknown_on_expiry,
+        )
         try:
             return await self._transport.call(request, deadline=deadline)
         except BaseException as exc:
-            _tag_native(exc, choice)
+            self._failed(exc, value, choice)
             raise
 
     async def stream(
@@ -437,12 +515,21 @@ class _RowScopedInvoker:
         *,
         value: Any = None,
         deadline: RuntimeDeadline | None,
+        disable_internal_retries: bool = False,
+        outcome_unknown_on_expiry: bool = False,
     ) -> Any:
-        choice, request = self._prepare(spec_key, payload, value, deadline)
+        choice, request = self._prepare(
+            spec_key,
+            payload,
+            value,
+            deadline,
+            disable_internal_retries=disable_internal_retries,
+            outcome_unknown_on_expiry=outcome_unknown_on_expiry,
+        )
         try:
             return await self._transport.stream(request, deadline=deadline)
         except BaseException as exc:
-            _tag_native(exc, choice)
+            self._failed(exc, value, choice)
             raise
 
 
@@ -454,12 +541,13 @@ async def invoke_binding(
     value: InputT,
     *,
     deadline: RuntimeDeadline | None,
+    collaborators: Mapping[str, Any] | None = None,
 ) -> OutputT:
     """Dispatch one validated operation through its row — a function, never a base class.
 
     ``errors`` is the shared translator that row-level ``error_mode`` projection
-    consumes; until the residual custom rows land, the backend head still owns
-    translation and passes it through unchanged.
+    consumes (the backend head applies the projection); ``collaborators`` is the
+    backend-supplied, named set a custom row may reach through its invoker.
     """
     row = table.get(operation.key)
     if row is None:
@@ -500,7 +588,7 @@ async def invoke_binding(
                     raise mapped from exc
             raise
         return row.decode(value, raw)
-    invoker = _RowScopedInvoker(row, transport, errors)
+    invoker = _RowScopedInvoker(row, transport, errors, collaborators)
     return await row.handler(value, row_deadline, invoker)
 
 

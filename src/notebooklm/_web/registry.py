@@ -258,9 +258,6 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.LABEL_UPDATE: "_label_update",
         Operation.COLLECTION_CREATE: "_collection_create",
         Operation.COLLECTION_UPDATE: "_collection_update",
-        Operation.SHARING_SET_PUBLIC: "_sharing_set_public",
-        Operation.SHARING_SET_VIEW_LEVEL: "_sharing_set_view_level",
-        Operation.SHARING_UPDATE_USERS: "_sharing_update_users",
         Operation.NOTEBOOK_SUGGEST_PROMPTS: "_notebook_suggest_prompts",
         Operation.ARTIFACT_RENAME: "_artifact_rename",
     }

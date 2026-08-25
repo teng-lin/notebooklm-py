@@ -732,16 +732,16 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SHARING_SET_VIEW_LEVEL, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
             (
-                "_web/sharing.py:SharingWebHandlers._sharing_set_view_level",
+                "_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL",
                 "share-view-level payload",
             )
         ),
         (Operation.SHARING_SET_PUBLIC, _b(RPCMethod.SHARE_NOTEBOOK)): _rules(
-            ("_web/sharing.py:SharingWebHandlers._sharing_set_public", "visibility entry")
+            ("_web/bindings/sharing.py:SHARING_SET_PUBLIC", "visibility entry")
         ),
         (Operation.SHARING_UPDATE_USERS, _b(RPCMethod.SHARE_NOTEBOOK)): _rules(
             (
-                "_web/sharing.py:SharingWebHandlers._sharing_update_users",
+                "_web/bindings/sharing.py:SHARING_UPDATE_USERS",
                 "user grant/upsert and removal entries",
             ),
         ),
@@ -883,13 +883,13 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/sharing.py:SHARING_GET", "public=sharing.get_status")
         ),
         (Operation.SHARING_SET_PUBLIC, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
-            ("_web/sharing.py:SharingWebHandlers._sharing_status", "post-public-mutation read")
+            ("_web/bindings/sharing.py:SHARING_SET_PUBLIC", "post-public-mutation read")
         ),
         (Operation.SHARING_SET_VIEW_LEVEL, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
-            ("_web/sharing.py:SharingWebHandlers._sharing_status", "post-view-level-mutation read")
+            ("_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL", "post-view-level-mutation read")
         ),
         (Operation.SHARING_UPDATE_USERS, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
-            ("_web/sharing.py:SharingWebHandlers._sharing_status", "post-user-grant mutation read")
+            ("_web/bindings/sharing.py:SHARING_UPDATE_USERS", "post-user-grant mutation read")
         ),
         (Operation.NOTEBOOK_CREATE, _b(RPCMethod.GET_USER_SETTINGS)): _rules(
             ("_web/backend.py:WebRpcBackend._notebook_limit_error", "quota-error diagnosis only")

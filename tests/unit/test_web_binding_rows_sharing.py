@@ -38,7 +38,6 @@ from notebooklm._records import (
     SharingGetInput,
     SharingSetPublicInput,
 )
-from notebooklm._web import sharing as sharing_handlers
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import sharing as sharing_rows
@@ -92,12 +91,17 @@ class _RecordingExecutor:
 # --- registry partition ------------------------------------------------------
 
 
-def test_sharing_leaves_are_rows_and_composites_stay_handlers() -> None:
+def test_sharing_leaves_are_codec_rows_and_composites_are_custom_rows() -> None:
     converted = {
         Operation.SHARING_GET: sharing_rows.SHARING_GET,
         Operation.LEGACY_SHARE_ARTIFACT: sharing_rows.LEGACY_SHARE_ARTIFACT,
     }
-    assert dict(sharing_rows.SHARING_ROWS) == converted
+    custom = {
+        Operation.SHARING_SET_PUBLIC: sharing_rows.SHARING_SET_PUBLIC,
+        Operation.SHARING_SET_VIEW_LEVEL: sharing_rows.SHARING_SET_VIEW_LEVEL,
+        Operation.SHARING_UPDATE_USERS: sharing_rows.SHARING_UPDATE_USERS,
+    }
+    assert dict(sharing_rows.SHARING_ROWS) == {**converted, **custom}
     for operation, row in converted.items():
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
@@ -114,18 +118,21 @@ def test_sharing_leaves_are_rows_and_composites_stay_handlers() -> None:
     assert sharing_rows.LEGACY_SHARE_ARTIFACT.native.select(None).method is (
         RPCMethod.SHARE_ARTIFACT
     )
-    for name in ("_sharing_get", "_legacy_share_artifact"):
-        assert not hasattr(WebRpcBackend, name)
-        assert not hasattr(sharing_handlers.SharingWebHandlers, name)
-    for operation, handler in (
-        (Operation.SHARING_SET_PUBLIC, "_sharing_set_public"),
-        (Operation.SHARING_SET_VIEW_LEVEL, "_sharing_set_view_level"),
-        (Operation.SHARING_UPDATE_USERS, "_sharing_update_users"),
+    for name in (
+        "_sharing_get",
+        "_legacy_share_artifact",
+        "_sharing_status",
+        "_sharing_set_public",
+        "_sharing_set_view_level",
+        "_sharing_update_users",
     ):
+        assert not hasattr(WebRpcBackend, name)
+    # P9.4: the three composites are custom rows, not handler names.
+    for operation, row in custom.items():
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.handler_name == handler
-        assert binding.row is None
-    assert hasattr(sharing_handlers.SharingWebHandlers, "_sharing_status")
+        assert binding.handler_name is None
+        assert binding.row is row
+        assert WEB_BINDING_ROWS[operation] is row
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.SHARING_GET] is sharing_rows.SHARING_GET
     assert backend._bindings[Operation.LEGACY_SHARE_ARTIFACT] is sharing_rows.LEGACY_SHARE_ARTIFACT
@@ -213,7 +220,7 @@ async def test_sharing_rows_forward_the_identical_keyword_set() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sharing_composite_readback_still_goes_through_the_handler_helper() -> None:
+async def test_sharing_composite_readback_still_issues_the_status_read() -> None:
     executor = _RecordingExecutor([], _SHARE_STATUS_PAYLOAD)
     backend = build_web_backend(executor)
 

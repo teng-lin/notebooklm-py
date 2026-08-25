@@ -115,29 +115,32 @@ def test_sharing_facade_takes_only_the_semantic_backend() -> None:
 
 
 def test_every_sharing_operation_has_one_registered_web_binding() -> None:
-    """Each sharing operation is backed by exactly one handler name or one codec row."""
+    """Each sharing operation is backed by exactly one row: codec leaf or custom composite."""
+    # P9.4: the three mutate-then-readback composites are deferred-product custom rows.
     composites = {
         Operation.SHARING_SET_PUBLIC: (
-            "_sharing_set_public",
+            sharing_rows.SHARING_SET_PUBLIC,
             SHARING_SET_PUBLIC_DEF,
             CallPolicy.MUTATION,
         ),
         Operation.SHARING_SET_VIEW_LEVEL: (
-            "_sharing_set_view_level",
+            sharing_rows.SHARING_SET_VIEW_LEVEL,
             SHARING_SET_VIEW_LEVEL_DEF,
             CallPolicy.MUTATION,
         ),
         Operation.SHARING_UPDATE_USERS: (
-            "_sharing_update_users",
+            sharing_rows.SHARING_UPDATE_USERS,
             SHARING_UPDATE_USERS_DEF,
             CallPolicy.MUTATION,
         ),
     }
-    for operation, (handler, definition, policy) in composites.items():
+    for operation, (row, definition, policy) in composites.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name == handler
-        assert binding.row is None
+        assert binding.handler_name is None
+        assert binding.row is row
+        assert row.category == "deferred-product"
+        assert {spec.key for spec in row.native} == {"mutate", "readback"}
         assert binding.definition is definition
         assert definition.policy is policy
         assert operation in WEB_SUPPORTED_OPERATIONS

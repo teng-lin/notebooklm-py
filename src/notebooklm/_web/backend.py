@@ -38,6 +38,8 @@ from .._binding import (
     Binding,
     BindingAuditError,
     BindingTable,
+    CustomBinding,
+    ErrorMode,
     OperationDisposition,
     ResolvedHandlerBinding,
     audit_bindings,
@@ -136,6 +138,43 @@ source_logger = logging.getLogger("notebooklm").getChild("_sources")
 artifact_logger = logging.getLogger("notebooklm._artifact.listing")
 
 _CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
+
+# Handler-backed composites whose established public leaves ``invoke()`` re-raises
+# unchanged (callers inspect ``source_id``/``stage`` and the causal chain). A
+# custom row states the same choice as ``ErrorMode.RAW_PASSTHROUGH`` metadata;
+# this set only covers operations that have not yet become rows (P9.4b).
+_RAW_PASSTHROUGH_HANDLER_OPERATIONS: frozenset[Operation] = frozenset(
+    {
+        Operation.SOURCE_ADD_URL_BATCH,
+        Operation.SOURCE_ADD_TEXT,
+        Operation.SOURCE_ADD_DRIVE,
+        Operation.SOURCE_ADD_FILE,
+    }
+)
+
+#: The closed set of collaborator names the head supplies to custom rows. A row
+#: declaring any other name is rejected by the construction-time audit.
+ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset(
+    {"source_uploader", "deadline_factory", "capture_public_failure"}
+)
+
+
+def _row_error_projection(row: Binding | None, operation: Operation) -> tuple[bool, bool | None]:
+    """Return ``(raw_passthrough, scrub_request_urls)`` for one operation's failures.
+
+    A custom row carries its own projection as ``error_mode`` metadata:
+    ``RAW_PASSTHROUGH`` re-raises the native exception unchanged,
+    ``TRANSLATE_SCRUBBED`` translates with request URLs scrubbed, ``TRANSLATE``
+    translates plainly. A handler-backed composite still relies on the head's
+    operation sets (``None`` defers the scrub decision to the chat set) until
+    its row lands.
+    """
+    if isinstance(row, CustomBinding):
+        return (
+            row.error_mode is ErrorMode.RAW_PASSTHROUGH,
+            row.error_mode is ErrorMode.TRANSLATE_SCRUBBED,
+        )
+    return operation in _RAW_PASSTHROUGH_HANDLER_OPERATIONS, None
 
 
 class WebRpcBackend(ChatWebHandlers):
@@ -363,6 +402,21 @@ class WebRpcBackend(ChatWebHandlers):
         """Project the bounded public error graph for source workflow receipts."""
         return _capture_public_failure(exc, operation=operation)
 
+    def _row_collaborators(self) -> Mapping[str, object]:
+        """The closed, named collaborator set a custom row may declare and reach.
+
+        Built per invocation so the head keeps no extra instance state (the P8
+        ``vars(backend)`` regressions pin the attribute set); the names are
+        audited against every custom row's declaration at construction.
+        """
+        return MappingProxyType(
+            {
+                "source_uploader": self._source_uploader,
+                "deadline_factory": self._deadline_factory,
+                "capture_public_failure": self._capture_public_failure,
+            }
+        )
+
     async def invoke(
         self,
         operation: OperationDef[Any, Any],
@@ -408,6 +462,9 @@ class WebRpcBackend(ChatWebHandlers):
                 ),
             )
 
+        raw_passthrough, scrub_request_urls = _row_error_projection(
+            self._bindings.get(operation.key), operation.key
+        )
         try:
             result = await invoke_binding(
                 self._bindings,
@@ -416,10 +473,13 @@ class WebRpcBackend(ChatWebHandlers):
                 operation,
                 value,
                 deadline=deadline,
+                collaborators=self._row_collaborators(),
             )
         except BackendError:
             raise
         except RPCTimeoutError as exc:
+            if raw_passthrough:
+                raise
             if deadline is not None and deadline.expired():
                 diagnostics = dict(self._error_diagnostics(exc, BackendErrorReason.TIMEOUT))
                 diagnostics.update({"timeout": deadline.timeout, "remaining": deadline.remaining()})
@@ -433,7 +493,9 @@ class WebRpcBackend(ChatWebHandlers):
                     diagnostics=MappingProxyType(diagnostics),
                     dispatched=bool(getattr(exc, "dispatched", False)),
                 ) from exc
-            translated = self._translate_error(operation.key, exc)
+            translated = translate_web_error(
+                operation.key, exc, scrub_request_urls=scrub_request_urls
+            )
             raise translated from exc
         except NotebookLMError as exc:
             # Source registration/upload compatibility requires the original
@@ -441,12 +503,7 @@ class WebRpcBackend(ChatWebHandlers):
             # file registration where callers inspect source_id/stage and the
             # original causal chain. These workflows are backend-owned, but
             # deliberately re-raise their established public leaves unchanged.
-            if operation.key in {
-                Operation.SOURCE_ADD_URL_BATCH,
-                Operation.SOURCE_ADD_TEXT,
-                Operation.SOURCE_ADD_DRIVE,
-                Operation.SOURCE_ADD_FILE,
-            }:
+            if raw_passthrough:
                 raise
             # Catch the closed library family rather than a broad ``RPCError``
             # wrap.  ``_translate_error`` still accepts only the exact reviewed
@@ -456,7 +513,9 @@ class WebRpcBackend(ChatWebHandlers):
                     f"unclassified web error type {type(exc).__module__}.{type(exc).__qualname__}",
                     operation=operation.key,
                 ) from exc
-            translated = self._translate_error(operation.key, exc)
+            translated = translate_web_error(
+                operation.key, exc, scrub_request_urls=scrub_request_urls
+            )
             raise translated from exc
 
         if type(result) is not operation.output_type:
@@ -1052,7 +1111,7 @@ def _resolve_handler_bindings(
             rows[operation] = ResolvedHandlerBinding(definition=definition, handler=handler)
     table = BindingTable(rows)
     try:
-        audit_bindings(table, supported)
+        audit_bindings(table, supported, collaborators=ROW_COLLABORATOR_NAMES)
     except BindingAuditError as exc:
         raise BackendContractError(f"web binding table rejected: {exc}") from exc
     return table
