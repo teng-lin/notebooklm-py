@@ -141,15 +141,14 @@ I2_FORBIDDEN_DOMAIN_PACKAGES: frozenset[str] = frozenset(
 
 #: Shrinking seed: the ``_web`` files that import a domain package today, as
 #: paths relative to ``src/notebooklm/_web``. ``codec/chat_stream.py`` and
-#: ``codec/chat.py`` retire in R2.1, ``backend.py`` in R2.3/R3.1,
+#: ``codec/chat.py`` retired in R2.1 (the codec now owns the streamed-ask wire
+#: and emits records); ``backend.py`` retires in R2.3/R3.1,
 #: ``bindings/mind_maps.py`` in R4.2 and ``bindings/sources.py`` in R3.5.
 I2_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
         "backend.py",
         "bindings/mind_maps.py",
         "bindings/sources.py",
-        "codec/chat.py",
-        "codec/chat_stream.py",
     }
 )
 
