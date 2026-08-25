@@ -176,10 +176,8 @@ def test_emptied_chain_classes_are_gone_and_the_chain_re_links() -> None:
     chain = [klass.__name__ for klass in WebRpcBackend.__mro__]
     assert chain == [
         "WebRpcBackend",
-        "ChatWebHandlers",
         "SourceVariantWebHandlers",
         "LabelSetWebHandlers",
-        "StudioDataWebHandlers",
         "object",
     ]
     for name in (
@@ -201,9 +199,8 @@ def test_emptied_chain_classes_are_gone_and_the_chain_re_links() -> None:
         "_artifact_rename",
     ):
         assert not hasattr(WebRpcBackend, name), name
-    # The head's mind-map kickoffs still reach the two seams the root keeps.
-    assert hasattr(WebRpcBackend, "_audio_source_ids")
-    assert hasattr(WebRpcBackend, "_artifact_feature_unavailable")
+    assert not hasattr(WebRpcBackend, "_audio_source_ids")
+    assert not hasattr(WebRpcBackend, "_artifact_feature_unavailable")
 
 
 # --- generate families: sequence and kwargs ----------------------------------------

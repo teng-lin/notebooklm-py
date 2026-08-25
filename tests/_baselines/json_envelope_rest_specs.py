@@ -396,7 +396,7 @@ REST_PROJECTION_SPECS: tuple[dict[str, object], ...] = (
             "paths have no Note contribution"
         ),
         "evidence": (
-            "notebooklm/_web/backend.py:note = await LegacyNoteBackedService",
+            "notebooklm/_web/bindings/mind_maps.py:note = await _note_service",
             'notebooklm/server/routes/artifacts.py:payload["mind_map"] = to_jsonable',
         ),
     },

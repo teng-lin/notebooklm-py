@@ -43,7 +43,6 @@ from notebooklm._records import (
     ArtifactReviseSlideInput,
     DriveExportInput,
 )
-from notebooklm._web import studio_data
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import studio as studio_rows
@@ -138,21 +137,19 @@ def test_studio_leaves_are_rows_and_composites_stay_handlers() -> None:
         "_feature_unavailable",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # P9.4b: rename and the generate families are custom rows; the mind-map
-    # compatibility composite and the catalog merge stay handlers.
-    assert hasattr(studio_data.StudioDataWebHandlers, "_mind_map_generate")
+    # P9.4b: rename, generate families, and mind-map/catalog composites are custom rows.
     assert WEB_OPERATION_REGISTRY[Operation.ARTIFACT_RENAME].row is studio_rows.ARTIFACT_RENAME
     assert WEB_OPERATION_REGISTRY[Operation.ARTIFACT_GENERATE_DATA_TABLE].row is (
         studio_rows.ARTIFACT_GENERATE_DATA_TABLE
     )
-    for operation, handler in (
-        (Operation.ARTIFACT_GENERATE_MIND_MAP, "_mind_map_generate"),
-        (Operation.ARTIFACT_LIST, "_artifact_list"),
-        (Operation.ARTIFACT_GET, "_artifact_get"),
+    for operation in (
+        Operation.ARTIFACT_GENERATE_MIND_MAP,
+        Operation.ARTIFACT_LIST,
+        Operation.ARTIFACT_GET,
     ):
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.handler_name == handler
-        assert binding.row is None
+        assert binding.handler_name is None
+        assert binding.row is not None
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.ARTIFACT_DOWNLOAD] is studio_rows.ARTIFACT_DOWNLOAD
 

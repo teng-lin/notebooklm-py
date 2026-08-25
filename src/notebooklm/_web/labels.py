@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from types import MappingProxyType
+from typing import Any
 
 from .._backend import BackendContractError, BackendError, BackendErrorReason
 from .._deadline import RuntimeDeadline
@@ -32,20 +34,19 @@ from .codec.labels import (
     require_label_kind,
     require_notebook_scope,
 )
-from .studio_data import StudioDataWebHandlers
 
 # Collections are account-level: every collection RPC uses the home-page source
 # path, not a ``/notebook/<id>`` path (they have no notebook scope).
 _ACCOUNT_PATH = "/"
 
 
-class LabelSetWebHandlers(StudioDataWebHandlers):
+class LabelSetWebHandlers:
     """Composite source-label/collection handlers mixed into the web backend.
 
-    Since P9.3 the leaf reads, the batch deletes and auto-grouping are codec
-    rows in ``_web/bindings/labels.py``; only the four create/update composites
-    remain here, with the shared set read they preflight and read back through.
+    Only the four create/update composites and their shared set read remain.
     """
+
+    _rpc_call: Callable[..., Awaitable[Any]]
 
     # -- labels and collections ---------------------------------------------
     #

@@ -232,14 +232,7 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
 
 _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
     {
-        Operation.NOTEBOOK_CREATE: "_notebook_create",
-        Operation.NOTEBOOK_UPDATE: "_notebook_update",
         Operation.SOURCE_UPDATE: "_source_update",
-        Operation.MIND_MAP_GENERATE_NOTE: "_mind_map_generate_note",
-        Operation.MIND_MAP_GENERATE_INTERACTIVE: "_mind_map_generate_interactive",
-        Operation.ARTIFACT_LIST: "_artifact_list",
-        Operation.ARTIFACT_GET: "_artifact_get",
-        Operation.ARTIFACT_GENERATE_MIND_MAP: "_mind_map_generate",
         Operation.LABEL_CREATE: "_label_create",
         Operation.LABEL_UPDATE: "_label_update",
         Operation.COLLECTION_CREATE: "_collection_create",

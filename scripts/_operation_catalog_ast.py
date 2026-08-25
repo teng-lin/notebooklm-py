@@ -808,7 +808,6 @@ def audit_row_bindings(rows: Sequence[BindingRowSite] | None = None) -> list[str
 
 GENERIC_RPC_FORWARDERS = frozenset(
     {
-        "_web/deadline_rpc.py:DeadlineRpcCaller.rpc_call",
         "_web/backend.py:WebRpcBackend.public_rpc_call",
         "_web/transport.py:WebTransport.call",
         "_notebooks.py:NotebooksAPI._rpc_call",
@@ -865,6 +864,56 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/bindings/sources.py", "_records", "SourceRecord"),
         ("_web/bindings/sources.py", "_records", "SourceUrlBatchItemRecord"),
         ("_web/bindings/sources.py", "codec", "settings"),
+        # P9.4b: notebook and mind-map/catalog composites became custom rows; the
+        # legacy note family reaches the transport through the row-scoped caller.
+        ("_web/bindings/_invoker_caller.py", "_backend", "BackendContractError"),
+        ("_web/bindings/_invoker_caller.py", "_backend", "BackendDeadlineExceededError"),
+        ("_web/bindings/_invoker_caller.py", "_binding", "CodecPayload"),
+        ("_web/bindings/_invoker_caller.py", "_binding", "RowInvoker"),
+        ("_web/bindings/mind_maps.py", "_binding", "CustomBinding"),
+        ("_web/bindings/mind_maps.py", "_binding", "RowInvoker"),
+        ("_web/bindings/mind_maps.py", "_note_service", "LegacyNoteBackedService"),
+        ("_web/bindings/mind_maps.py", "_records", "ARTIFACT_GENERATE_MIND_MAP_DEF"),
+        ("_web/bindings/mind_maps.py", "_records", "ARTIFACT_GET_DEF"),
+        ("_web/bindings/mind_maps.py", "_records", "ARTIFACT_LIST_DEF"),
+        ("_web/bindings/mind_maps.py", "_records", "ArtifactGetInput"),
+        ("_web/bindings/mind_maps.py", "_records", "ArtifactGetResult"),
+        ("_web/bindings/mind_maps.py", "_records", "ArtifactListInput"),
+        ("_web/bindings/mind_maps.py", "_records", "ArtifactListResult"),
+        ("_web/bindings/mind_maps.py", "_records", "ArtifactRecord"),
+        ("_web/bindings/mind_maps.py", "_records", "MIND_MAP_GENERATE_INTERACTIVE_DEF"),
+        ("_web/bindings/mind_maps.py", "_records", "MIND_MAP_GENERATE_NOTE_DEF"),
+        ("_web/bindings/mind_maps.py", "_records", "MindMapGenerateInput"),
+        ("_web/bindings/mind_maps.py", "_records", "MindMapGenerateInteractiveInput"),
+        ("_web/bindings/mind_maps.py", "_records", "MindMapGenerateInteractiveResult"),
+        ("_web/bindings/mind_maps.py", "_records", "MindMapGenerateNoteInput"),
+        ("_web/bindings/mind_maps.py", "_records", "MindMapGenerateNoteResult"),
+        ("_web/bindings/mind_maps.py", "_records", "MindMapGenerateResult"),
+        ("_web/bindings/mind_maps.py", "codec", "artifacts"),
+        ("_web/bindings/mind_maps.py", "codec", "notebooks"),
+        ("_web/bindings/notebooks.py", "_backend", "BackendError"),
+        ("_web/bindings/notebooks.py", "_backend", "BackendErrorReason"),
+        ("_web/bindings/notebooks.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_web/bindings/notebooks.py", "_binding", "CodecPayload"),
+        ("_web/bindings/notebooks.py", "_binding", "CustomBinding"),
+        ("_web/bindings/notebooks.py", "_binding", "RowInvoker"),
+        ("_web/bindings/notebooks.py", "_records", "NOTEBOOK_CREATE_DEF"),
+        ("_web/bindings/notebooks.py", "_records", "NOTEBOOK_UPDATE_DEF"),
+        ("_web/bindings/notebooks.py", "_records", "NotebookCreateInput"),
+        ("_web/bindings/notebooks.py", "_records", "NotebookCreateResult"),
+        ("_web/bindings/notebooks.py", "_records", "NotebookRecord"),
+        ("_web/bindings/notebooks.py", "_records", "NotebookUpdateInput"),
+        ("_web/bindings/notebooks.py", "_records", "NotebookUpdateResult"),
+        ("_web/bindings/notebooks.py", "codec", "settings"),
+        ("_web/codec/mind_maps.py", "_records", "MindMapGenerateInput"),
+        ("_web/codec/mind_maps.py", "_records", "MindMapGenerateInteractiveInput"),
+        ("_web/codec/mind_maps.py", "_records", "MindMapGenerateNoteInput"),
+        ("_web/codec/mind_maps.py", "_records", "MindMapGenerateNoteResult"),
+        ("_web/codec/notebooks.py", "_backend", "BackendError"),
+        ("_web/codec/notebooks.py", "_backend", "BackendErrorReason"),
+        ("_web/codec/notebooks.py", "_records", "NotebookCreateInput"),
+        ("_web/codec/notebooks.py", "_records", "NotebookUpdateInput"),
+        ("_web/codec/notebooks.py", "_records", "NotebookUpdateResult"),
         ("_binding.py", "_backend", "BackendContractError"),
         ("_binding.py", "_backend", "BackendError"),
         ("_web/backend.py", "_binding", "Binding"),
@@ -883,8 +932,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/transport.py", "_binding", "NativeChoice"),
         ("_web/transport.py", "_binding", "StreamPayload"),
         ("_web/transport.py", "_binding", "StreamSpec"),
-        ("_web/deadline_rpc.py", "_backend", "BackendDeadlineExceededError"),
-        ("_web/deadline_rpc.py", "backend", "WebRpcBackend"),
         ("_artifact/listing.py", "_projectors", "project_artifact"),
         ("_artifacts.py", "_backend", "BackendAdapter"),
         ("_artifacts.py", "_backend", "BackendContractError"),
@@ -1231,23 +1278,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/backend.py", "_backend", "BackendKind"),
         ("_web/backend.py", "_backend", "UnsupportedOperationError"),
         ("_web/failure_projection.py", "_backend", "BackendContractError"),
-        ("_web/backend.py", "_backend", "mark_backend_outcome_unknown"),
-        ("_web/backend.py", "_note_service", "LegacyNoteBackedService"),
-        ("_web/backend.py", "_records", "ArtifactGetInput"),
-        ("_web/backend.py", "_records", "ArtifactGetResult"),
-        ("_web/backend.py", "_records", "ArtifactListInput"),
-        ("_web/backend.py", "_records", "ArtifactListResult"),
         ("_web/backend.py", "_records", "ArtifactRecord"),
-        ("_web/backend.py", "_records", "MindMapGenerateInteractiveInput"),
-        ("_web/backend.py", "_records", "MindMapGenerateInteractiveResult"),
-        ("_web/backend.py", "_records", "MindMapGenerateNoteInput"),
-        ("_web/backend.py", "_records", "MindMapGenerateNoteResult"),
-        ("_web/backend.py", "_records", "NotebookCreateInput"),
-        ("_web/backend.py", "_records", "NotebookCreateResult"),
-        ("_web/backend.py", "_records", "NotebookListResult"),
-        ("_web/backend.py", "_records", "NotebookRecord"),
-        ("_web/backend.py", "_records", "NotebookUpdateInput"),
-        ("_web/backend.py", "_records", "NotebookUpdateResult"),
         # P9.3 research codec rows, their row-facing codec helpers, and the shared
         # ``_web/errors.py`` translation the ``RESEARCH_START`` ``map_error`` consumes.
         # P9.3 notebook codec rows and their row-facing codec helpers.
@@ -1314,8 +1345,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/failure_projection.py", "_records", "SourceAddFailureKind"),
         ("_web/failure_projection.py", "_records", "SourceAddFailureRecord"),
         ("_web/source_variants.py", "_records", "SourceRecord"),
-        ("_web/studio_data.py", "_records", "MindMapGenerateInput"),
-        ("_web/studio_data.py", "_records", "MindMapGenerateResult"),
         ("_web/backend.py", "registry", "WEB_OPERATION_REGISTRY"),
         ("_web/backend.py", "registry", "WEB_SUPPORTED_OPERATIONS"),
         ("_web/codec/artifacts.py", "_records", "ArtifactInfographicRecord"),
@@ -1424,7 +1453,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_suggestion_service.py", "_records", "ArtifactSuggestReportsInput"),
         ("_suggestion_service.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
         ("_suggestion_service.py", "_records", "NotebookSuggestPromptsInput"),
-        ("_web/backend.py", "codec", "settings"),
         # P9.3 settings/suggestions codec rows and their row-facing codec helpers.
         ("_web/bindings/__init__.py", "_binding", "Binding"),
         ("_web/bindings/labels.py", "_binding", "Binding"),
@@ -1782,8 +1810,6 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/codec/generation.py", "studio_documents", "encode_video_generation"),
         ("_web/codec/source_ids.py", "_binding", "CodecPayload"),
         ("_web/codec/suggestions.py", "_records", "NotebookSuggestPromptsInput"),
-        ("_web/studio_data.py", "_backend", "BackendError"),
-        ("_web/studio_data.py", "_backend", "BackendErrorReason"),
     }
 )
 
@@ -2824,20 +2850,26 @@ def audit_recency_contracts() -> list[str]:
             "the notebook lookup + source list tasks"
         )
 
-    backend_tree = _parse(SRC_ROOT / "_web" / "backend.py")
-    update_fn = _find_class_method(backend_tree, "WebRpcBackend", "_notebook_update")
-    if update_fn is None or _rpc_binding_call_count(update_fn, RPCMethod.GET_NOTEBOOK) != 1:
+    notebook_rows_tree = _parse(SRC_ROOT / "_web" / "bindings" / "notebooks.py")
+    update_row = _find_module_assignment(notebook_rows_tree, "NOTEBOOK_UPDATE")
+    update_fn = _find_module_function(notebook_rows_tree, "_notebook_update")
+    # P9.4b: the update composite is a custom row; its handler issues exactly one
+    # unconditional ``invoke.call("readback", …)`` and the row declares that
+    # spec as GET_NOTEBOOK.
+    if (
+        update_row is None
+        or update_fn is None
+        or _native_choice_count(update_row, RPCMethod.GET_NOTEBOOK) != 1
+        or _invoker_call_count(notebook_rows_tree, update_fn, "readback") != 1
+    ):
         errors.append(
-            "WebRpcBackend._notebook_update must perform exactly one unconditional "
-            "GET_NOTEBOOK call"
+            "NOTEBOOK_UPDATE row must perform exactly one unconditional GET_NOTEBOOK readback"
         )
     elif any(
         argument.arg == "return_object"
         for argument in (*update_fn.args.args, *update_fn.args.kwonlyargs)
     ):
-        errors.append(
-            "WebRpcBackend._notebook_update recency contract forbids a return_object bypass"
-        )
+        errors.append("NOTEBOOK_UPDATE recency contract forbids a return_object bypass")
 
     chat_tree = _parse(SRC_ROOT / "_chat" / "api.py")
     expected_chat_gets = {"configure": 0, "set_mode": 0, "get_settings": 0}
@@ -2879,6 +2911,40 @@ def _find_module_assignment(tree: ast.Module, name: str) -> ast.expr | None:
         ):
             return value
     return None
+
+
+def _find_module_function(
+    tree: ast.Module, name: str
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    """Return the module-level function ``name``, if any."""
+    return next(
+        (
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
+        ),
+        None,
+    )
+
+
+def _invoker_call_count(tree: ast.Module, node: ast.AST, spec_key: str) -> int:
+    """Count ``invoke.call(<spec_key>, …)`` sites (the custom-row transport verb).
+
+    The key may be a string literal or a module-level constant bound to one.
+    """
+
+    def key_of(argument: ast.AST | None) -> str | None:
+        if isinstance(argument, ast.Name):
+            argument = _find_module_assignment(tree, argument.id)
+        return _literal_string(argument) if argument is not None else None
+
+    return sum(
+        1
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call)
+        and _attribute_parts(call.func)[-2:] == ("invoke", "call")
+        and key_of(call.args[0] if call.args else None) == spec_key
+    )
 
 
 def _native_choice_count(node: ast.AST, method: RPCMethod) -> int:

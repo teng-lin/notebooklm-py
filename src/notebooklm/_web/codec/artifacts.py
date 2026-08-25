@@ -477,11 +477,21 @@ def encode_artifact_catalog_readback(notebook_id: str) -> CodecPayload:
     )
 
 
-def decode_artifact_catalog(result: object, *, source: str) -> tuple[ArtifactRecord, ...]:
+def encode_artifact_catalog(notebook_id: str) -> CodecPayload:
+    """The guarded ``LIST_ARTIFACTS`` read the catalog composites issue (null success accepted)."""
+
+    return CodecPayload(
+        params=encode_studio_catalog_params(notebook_id),
+        source_path=f"/notebook/{notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_artifact_catalog(result: object, *, source: str) -> list[ArtifactRecord]:
     """Decode one ``LIST_ARTIFACTS`` catalog read into Studio artifact records."""
 
     rows = decode_studio_rows(result, source=source)
-    return tuple(decode_artifact(row) for row in rows if isinstance(row, list) and row)
+    return [decode_artifact(row) for row in rows if isinstance(row, list) and row]
 
 
 def artifact_not_found(operation: Operation, artifact_id: str, *, method_id: str) -> BackendError:
@@ -616,7 +626,9 @@ def decode_artifact_download(
 
 
 __all__ = [
+    "artifact_not_found",
     "decode_artifact",
+    "decode_artifact_catalog",
     "decode_artifact_delete",
     "decode_artifact_download",
     "decode_artifact_export",
@@ -629,9 +641,12 @@ __all__ = [
     "decode_mind_map_representations",
     "decode_report_suggestion",
     "decode_studio_rows",
+    "encode_artifact_catalog",
+    "encode_artifact_catalog_readback",
     "encode_artifact_delete",
     "encode_artifact_download",
     "encode_artifact_export",
+    "encode_artifact_rename",
     "encode_artifact_wait",
     "encode_studio_catalog_params",
 ]

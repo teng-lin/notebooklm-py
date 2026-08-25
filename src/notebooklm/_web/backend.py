@@ -12,18 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import reprlib
 from collections.abc import Callable, Mapping
-from datetime import datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-import httpx
-
-from .._artifact.payloads import (
-    build_interactive_mind_map_artifact_params,
-    build_mind_map_params,
-)
 from .._backend import (
     BackendCapabilities,
     BackendContractError,
@@ -32,7 +24,6 @@ from .._backend import (
     BackendErrorReason,
     BackendKind,
     UnsupportedOperationError,
-    mark_backend_outcome_unknown,
 )
 from .._binding import (
     Binding,
@@ -47,77 +38,25 @@ from .._binding import (
     row_invoker,
 )
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from .._env import get_default_language
-from .._idempotency import (
-    idempotent_create,
-    mark_unconfirmed,
-    transport_may_have_committed,
-)
-from .._mind_map import NoteBackedMindMapService
-from .._note_service import LegacyNoteBackedService
-from .._notebook_payloads import (
-    build_create_notebook_params,
-    build_get_notebook_params,
-    build_update_notebook_params,
-)
 from .._operations import CallPolicy, Operation, OperationDef
 from .._records import (
-    ArtifactGetInput,
-    ArtifactGetResult,
-    ArtifactListInput,
-    ArtifactListResult,
     ArtifactRecord,
-    MindMapGenerateInteractiveInput,
-    MindMapGenerateInteractiveResult,
-    MindMapGenerateNoteInput,
-    MindMapGenerateNoteResult,
-    NotebookCreateInput,
-    NotebookCreateResult,
-    NotebookListResult,
-    NotebookRecord,
-    NotebookUpdateInput,
-    NotebookUpdateResult,
     SourceAddFailureRecord,
-)
-from .._row_adapters.artifacts import (
-    unwrap_artifact_rows,
 )
 from .._runtime.config import assert_resolved_read_timeout
 from .._web_cookie_provider import WebCookieProvider, WebCookieSession
 from ..exceptions import (
-    AuthError,
     ChatError,
-    ClientError,
-    DecodingError,
     IdempotencyVariantError,
     NetworkError,
     NotebookLMError,
-    RateLimitError,
     RPCError,
     RPCTimeoutError,
-    ServerError,
 )
-from ..rpc import (
-    ARTIFACT_STATUS_SUGGESTED_WIRE_NAME,
-    GrpcStatusCode,
-    RPCMethod,
-    normalize_grpc_status,
-    safe_index,
-)
+from ..rpc import RPCMethod
 from ..types import ClientMetricsSnapshot
 from .bindings.sources import upload_backend
-from .codec import settings as settings_codec
-from .codec.artifacts import decode_artifact, decode_mind_map_artifact
-from .codec.mind_maps import (
-    decode_created_interactive_id,
-    decode_generated_tree,
-)
-from .codec.notebooks import (
-    decode_notebook,
-    decode_notebook_list_result,
-    encode_list_notebooks,
-)
-from .deadline_rpc import DeadlineRpcCaller
+from .codec.artifacts import decode_artifact_catalog, encode_studio_catalog_params
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
 from .errors import error_diagnostics, translate_web_error
 from .failure_projection import _capture_public_failure
@@ -135,11 +74,7 @@ if TYPE_CHECKING:
     from .._source.upload import SourceUploadPipeline
     from .._transport_drain import TransportDrainTracker
 
-notebook_logger = logging.getLogger("notebooklm._notebooks")
 source_logger = logging.getLogger("notebooklm").getChild("_sources")
-artifact_logger = logging.getLogger("notebooklm._artifact.listing")
-
-_CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
 
 # Handler-backed composites whose established public leaves ``invoke()`` re-raises
 # unchanged. Empty since the source-add family became ``ErrorMode.RAW_PASSTHROUGH``
@@ -584,286 +519,6 @@ class WebRpcBackend(SourceVariantWebHandlers):
             deadline=deadline,
         )
 
-    async def _list_notebooks(
-        self,
-        *,
-        operation: Operation,
-        deadline: RuntimeDeadline | None,
-    ) -> NotebookListResult:
-        """List notebooks for a composite (create baseline/probe, quota verification).
-
-        The semantic ``notebook.list`` operation is the ``NOTEBOOK_LIST`` codec
-        row; this helper issues the same native call under the composite's own
-        operation attribution and deadline.
-        """
-        result = await self._rpc_call(
-            RPCMethod.LIST_NOTEBOOKS,
-            encode_list_notebooks(),
-            operation=operation,
-            deadline=deadline,
-        )
-        return decode_notebook_list_result(result)
-
-    async def _notebook_create(
-        self,
-        value: NotebookCreateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NotebookCreateResult:
-        baseline_ids: set[str] | None
-        baseline_error: Exception | None = None
-        try:
-            baseline = await self._list_notebooks(
-                operation=Operation.NOTEBOOK_CREATE,
-                deadline=deadline,
-            )
-            baseline_ids = {notebook.id for notebook in baseline.notebooks}
-        except Exception as exc:
-            baseline_ids = None
-            baseline_error = exc
-            notebook_logger.warning(
-                "create: baseline list() failed (%s); the idempotency probe can no "
-                "longer tell a notebook this call created from one that was already "
-                "there, so a transport failure will surface as an ambiguity error "
-                "instead of recovering",
-                type(exc).__name__,
-                exc_info=True,
-            )
-
-        async def create() -> NotebookRecord:
-            try:
-                result = await self._rpc_call(
-                    RPCMethod.CREATE_NOTEBOOK,
-                    build_create_notebook_params(value.title),
-                    operation=Operation.NOTEBOOK_CREATE,
-                    deadline=deadline,
-                    disable_internal_retries=True,
-                )
-            except RPCError as exc:
-                limit_error = await self._notebook_limit_error(exc, deadline=deadline)
-                if limit_error is not None:
-                    raise limit_error from None
-                raise
-            return decode_notebook(result)
-
-        async def probe() -> NotebookRecord | None:
-            try:
-                current = await self._list_notebooks(
-                    operation=Operation.NOTEBOOK_CREATE,
-                    deadline=deadline,
-                )
-            except RPCTimeoutError:
-                # The outer semantic dispatch owns timeout translation. Let it
-                # retain notebook.create attribution and mark the post-write
-                # reconciliation outcome unknown.
-                raise
-            except (AuthError, RateLimitError, ServerError, NetworkError) as exc:
-                notebook_logger.warning(
-                    "create: probe list() failed with transport/auth error; "
-                    "propagating so the caller can avoid a duplicate-resource retry"
-                )
-                mark_unconfirmed(exc)
-                raise
-            except BackendError as exc:
-                raise mark_backend_outcome_unknown(exc) from exc
-            except Exception as exc:
-                notebook_logger.warning(
-                    "create: probe list() failed with a non-transport error (%s); the "
-                    "create cannot be confirmed, so it will not be retried",
-                    type(exc).__name__,
-                    exc_info=True,
-                )
-                raise mark_unconfirmed(
-                    RPCError(
-                        "UNRESOLVED — do not blindly retry; check your notebook list "
-                        f"first. Cannot confirm notebook with title {value.title!r}: the "
-                        "create failed at the transport level and may or may not have "
-                        "committed, and the idempotency probe that would settle it "
-                        f"failed too ({type(exc).__name__}). No FURTHER attempt was made.",
-                        method_id=RPCMethod.CREATE_NOTEBOOK.value,
-                    )
-                ) from exc
-            matches = tuple(
-                notebook for notebook in current.notebooks if notebook.title == value.title
-            )
-            if baseline_ids is not None:
-                matches = tuple(notebook for notebook in matches if notebook.id not in baseline_ids)
-            elif matches:
-                raise mark_unconfirmed(
-                    RPCError(
-                        f"Cannot disambiguate notebook with title {value.title!r} — check your "
-                        "notebook list before retrying: the pre-create baseline snapshot failed "
-                        f"({type(baseline_error).__name__}), so "
-                        f"{', '.join(f'{item.id} ({item.title!r})' for item in matches)} may "
-                        "either predate this create or be the notebook it just created.",
-                        method_id=RPCMethod.CREATE_NOTEBOOK.value,
-                    )
-                )
-            if len(matches) == 1:
-                return next(iter(matches))
-            if len(matches) > 1:
-                raise mark_unconfirmed(
-                    RPCError(
-                        f"Cannot disambiguate notebook with title {value.title!r}: "
-                        f"probe found {len(matches)} new notebooks with this title",
-                        method_id=RPCMethod.CREATE_NOTEBOOK.value,
-                    )
-                )
-            return None
-
-        result = await idempotent_create(
-            create,
-            probe,
-            may_have_committed=transport_may_have_committed,
-            label=f"notebook.create[{value.title!r}]",
-        )
-        return NotebookCreateResult(notebook=result.value)
-
-    async def _notebook_limit_error(
-        self,
-        error: RPCError,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> BackendError | None:
-        if (
-            error.method_id != RPCMethod.CREATE_NOTEBOOK.value
-            or error.rpc_code != _CREATE_NOTEBOOK_QUOTA_RPC_CODE
-        ):
-            return None
-        try:
-            settings = await self._rpc_call(
-                RPCMethod.GET_USER_SETTINGS,
-                settings_codec.encode_get_user_settings(),
-                operation=Operation.NOTEBOOK_CREATE,
-                deadline=deadline,
-                source_path="/",
-            )
-            limit = settings_codec.decode_account_limits(settings).notebook_limit
-        except Exception:
-            notebook_logger.debug(
-                "Could not fetch account limits after CREATE_NOTEBOOK failure; "
-                "leaving original RPC error unchanged",
-                exc_info=True,
-            )
-            return None
-        if limit is None:
-            return None
-        try:
-            listed = await self._list_notebooks(
-                operation=Operation.NOTEBOOK_CREATE,
-                deadline=deadline,
-            )
-        except Exception:
-            notebook_logger.debug(
-                "Could not list notebooks after CREATE_NOTEBOOK failure; "
-                "leaving original RPC error unchanged",
-                exc_info=True,
-            )
-            return None
-        owned_count = sum(1 for notebook in listed.notebooks if notebook.is_owner)
-        if owned_count < max(limit - 1, 0):
-            return None
-
-        original = self._translate_error(Operation.NOTEBOOK_CREATE, error)
-        return BackendError(
-            message="notebook limit reached",
-            operation=Operation.NOTEBOOK_CREATE,
-            diagnostics=MappingProxyType(
-                {
-                    "current_count": owned_count,
-                    "limit": limit,
-                    "original_message": original.message,
-                    "original_reason": original.reason.value
-                    if original.reason is not None
-                    else None,
-                    "original_diagnostics": dict(original.diagnostics or {}),
-                }
-            ),
-            reason=BackendErrorReason.NOTEBOOK_LIMIT,
-        )
-
-    async def _notebook_update(
-        self,
-        value: NotebookUpdateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> NotebookUpdateResult:
-        await self._rpc_call(
-            RPCMethod.RENAME_NOTEBOOK,
-            build_update_notebook_params(
-                value.notebook_id,
-                title=value.title,
-                emoji=value.emoji,
-            ),
-            operation=Operation.NOTEBOOK_UPDATE,
-            deadline=deadline,
-            source_path="/",
-            allow_null=True,
-        )
-        try:
-            result = await self._rpc_call(
-                RPCMethod.GET_NOTEBOOK,
-                build_get_notebook_params(value.notebook_id),
-                operation=Operation.NOTEBOOK_UPDATE,
-                deadline=deadline,
-                source_path=f"/notebook/{value.notebook_id}",
-                outcome_unknown_on_expiry=True,
-            )
-        except ClientError as exc:
-            if normalize_grpc_status(exc.rpc_code) is not GrpcStatusCode.NOT_FOUND:
-                raise
-            diagnostics = dict(self._error_diagnostics(exc, BackendErrorReason.CLIENT))
-            diagnostics.update(
-                {
-                    "notebook_id": value.notebook_id,
-                    "method_id": RPCMethod.GET_NOTEBOOK.value,
-                    "detail": str(exc),
-                    "original_message": str(exc.args[0]) if exc.args else str(exc),
-                }
-            )
-            raise BackendError(
-                message=f"Notebook not found: {value.notebook_id}",
-                operation=Operation.NOTEBOOK_UPDATE,
-                diagnostics=MappingProxyType(diagnostics),
-                reason=BackendErrorReason.NOTEBOOK_NOT_FOUND,
-            ) from exc
-        notebook_row = (
-            safe_index(
-                result,
-                0,
-                method_id=RPCMethod.GET_NOTEBOOK.value,
-                source="WebRpcBackend._notebook_update",
-            )
-            if result and isinstance(result, list)
-            else None
-        )
-        if not notebook_row:
-            raise BackendError(
-                message=f"Notebook not found: {value.notebook_id}",
-                operation=Operation.NOTEBOOK_UPDATE,
-                diagnostics=MappingProxyType(
-                    {
-                        "notebook_id": value.notebook_id,
-                        "method_id": RPCMethod.GET_NOTEBOOK.value,
-                    }
-                ),
-                reason=BackendErrorReason.NOTEBOOK_NOT_FOUND,
-            )
-        notebook = decode_notebook(notebook_row, include_chat_settings=True)
-        if not notebook.id and not notebook.title:
-            raise BackendError(
-                message=f"Notebook not found: {value.notebook_id}",
-                operation=Operation.NOTEBOOK_UPDATE,
-                diagnostics=MappingProxyType(
-                    {
-                        "notebook_id": value.notebook_id,
-                        "method_id": RPCMethod.GET_NOTEBOOK.value,
-                    }
-                ),
-                reason=BackendErrorReason.NOTEBOOK_NOT_FOUND,
-            )
-        return NotebookUpdateResult(notebook=notebook)
-
     async def _artifact_catalog_records(
         self,
         notebook_id: str,
@@ -873,169 +528,30 @@ class WebRpcBackend(SourceVariantWebHandlers):
         include_mind_maps: bool,
         outcome_unknown_on_expiry: bool = False,
     ) -> tuple[ArtifactRecord, ...]:
+        """Catalog readback for the remaining handler-backed ``ARTIFACT_RENAME`` composite.
+
+        P9.4b moved ``ARTIFACT_LIST``/``ARTIFACT_GET`` — and with them the
+        note-backed mind-map merge — into custom rows; this seam keeps exactly
+        the plain catalog read the rename readback issues.
+        """
+        if include_mind_maps:
+            raise BackendContractError(
+                f"{operation.value} cannot merge note-backed mind maps through the "
+                "handler seam; the ARTIFACT_LIST/ARTIFACT_GET rows own that path",
+                operation=operation,
+            )
         result = await self._rpc_call(
             RPCMethod.LIST_ARTIFACTS,
-            [
-                [2],
-                notebook_id,
-                f'NOT artifact.status = "{ARTIFACT_STATUS_SUGGESTED_WIRE_NAME}"',
-            ],
+            encode_studio_catalog_params(notebook_id),
             operation=operation,
             deadline=deadline,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
             outcome_unknown_on_expiry=outcome_unknown_on_expiry,
         )
-        if isinstance(result, list):
-            rows = unwrap_artifact_rows(
-                result,
-                method_id=RPCMethod.LIST_ARTIFACTS.value,
-                source="WebRpcBackend._artifact_catalog_records",
-            )
-        elif not result:
-            rows = []
-        else:
-            raise DecodingError(
-                "Unrecognized LIST_ARTIFACTS payload shape",
-                raw_response=reprlib.repr(result),
-                method_id=RPCMethod.LIST_ARTIFACTS.value,
-            )
-
-        artifacts = [decode_artifact(row) for row in rows if isinstance(row, list) and row]
-        if include_mind_maps:
-            caller = DeadlineRpcCaller(self, deadline, operation)
-            mind_maps = NoteBackedMindMapService(LegacyNoteBackedService(cast(Any, caller)))
-            try:
-                mind_map_rows = await mind_maps.list_mind_maps(notebook_id)
-                artifacts.extend(
-                    artifact
-                    for row in mind_map_rows
-                    if (artifact := decode_mind_map_artifact(row)) is not None
-                )
-            except DecodingError:
-                raise
-            except (RPCError, httpx.HTTPError) as exc:
-                # Most transport failures are normalized before this composite,
-                # but an auth-refresh failure deliberately re-raises its original
-                # HTTPStatusError. Preserve the legacy partial-availability net
-                # for that raw leaf as well as ordinary RPC failures.
-                artifact_logger.warning("Failed to fetch mind maps: %s", exc)
-        return tuple(artifacts)
-
-    async def _artifact_list(
-        self,
-        value: ArtifactListInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> ArtifactListResult:
-        records = await self._artifact_catalog_records(
-            value.notebook_id,
-            operation=Operation.ARTIFACT_LIST,
-            deadline=deadline,
-            include_mind_maps=value.family in {None, "mind_map"},
+        return tuple(
+            decode_artifact_catalog(result, source="WebRpcBackend._artifact_catalog_records")
         )
-        return ArtifactListResult(artifacts=records)
-
-    async def _artifact_get(
-        self,
-        value: ArtifactGetInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> ArtifactGetResult:
-        records = await self._artifact_catalog_records(
-            value.notebook_id,
-            operation=Operation.ARTIFACT_GET,
-            deadline=deadline,
-            include_mind_maps=True,
-        )
-        return ArtifactGetResult(
-            artifact=next((item for item in records if item.id == value.artifact_id), None)
-        )
-
-    async def _persist_generated_mind_map(
-        self,
-        notebook_id: str,
-        *,
-        title: str,
-        content: str,
-        operation: Operation,
-        deadline: RuntimeDeadline | None,
-    ) -> tuple[str | None, datetime | None]:
-        caller = DeadlineRpcCaller(self, deadline, operation)
-        note = await LegacyNoteBackedService(cast(Any, caller)).create_note(
-            notebook_id,
-            title=title,
-            content=content,
-        )
-        return note.id or None, note.created_at
-
-    async def _mind_map_generate_note(
-        self,
-        value: MindMapGenerateNoteInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> MindMapGenerateNoteResult:
-        source_ids = value.source_ids
-        if source_ids is None:
-            notebook = await self._rpc_call(
-                RPCMethod.GET_NOTEBOOK,
-                build_get_notebook_params(value.notebook_id),
-                operation=Operation.MIND_MAP_GENERATE_NOTE,
-                deadline=deadline,
-                source_path=f"/notebook/{value.notebook_id}",
-            )
-            source_ids = self._audio_source_ids(notebook)
-        result = await self._rpc_call(
-            RPCMethod.GENERATE_MIND_MAP,
-            build_mind_map_params(
-                list(source_ids),
-                language=(get_default_language() if value.language is None else value.language),
-                instructions=value.instructions,
-            ),
-            operation=Operation.MIND_MAP_GENERATE_NOTE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-            operation_variant=None,
-        )
-        return MindMapGenerateNoteResult(decode_generated_tree(result))
-
-    async def _mind_map_generate_interactive(
-        self,
-        value: MindMapGenerateInteractiveInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> MindMapGenerateInteractiveResult:
-        source_ids = value.source_ids
-        if source_ids is None:
-            notebook = await self._rpc_call(
-                RPCMethod.GET_NOTEBOOK,
-                build_get_notebook_params(value.notebook_id),
-                operation=Operation.MIND_MAP_GENERATE_INTERACTIVE,
-                deadline=deadline,
-                source_path=f"/notebook/{value.notebook_id}",
-            )
-            source_ids = self._audio_source_ids(notebook)
-        result = await self._rpc_call(
-            RPCMethod.CREATE_ARTIFACT,
-            build_interactive_mind_map_artifact_params(
-                value.notebook_id,
-                list(source_ids),
-                instructions=value.instructions,
-            ),
-            operation=Operation.MIND_MAP_GENERATE_INTERACTIVE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-            operation_variant=None,
-        )
-        mind_map_id = decode_created_interactive_id(result)
-        if mind_map_id is None:
-            raise self._artifact_feature_unavailable(
-                Operation.MIND_MAP_GENERATE_INTERACTIVE,
-                "mind_map",
-            )
-        return MindMapGenerateInteractiveResult(mind_map_id)
 
     @staticmethod
     def _error_diagnostics(

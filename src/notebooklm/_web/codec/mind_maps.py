@@ -7,10 +7,19 @@ import logging
 import reprlib
 from typing import Any
 
+from ..._artifact.payloads import (
+    build_interactive_mind_map_artifact_params,
+    build_mind_map_params,
+)
 from ..._binding import CodecPayload
+from ..._env import get_default_language
 from ..._records import (
     MindMapDeleteInput,
     MindMapDeleteResult,
+    MindMapGenerateInput,
+    MindMapGenerateInteractiveInput,
+    MindMapGenerateNoteInput,
+    MindMapGenerateNoteResult,
     MindMapGetInput,
     MindMapGetResult,
     MindMapListInput,
@@ -176,17 +185,117 @@ def decode_mind_map_delete(value: MindMapDeleteInput, data: Any) -> MindMapDelet
     return MindMapDeleteResult()
 
 
+# Composite-facing payloads (P9.4b). The generate custom rows dispatch these per
+# phase through their row-scoped invoker: an optional ``GET_NOTEBOOK`` read when
+# ``source_ids`` is omitted, then the one generation native.
+def encode_notebook_sources_read(notebook_id: str) -> CodecPayload:
+    """The ``GET_NOTEBOOK`` read a generate composite issues to default its sources."""
+    from ..._notebook_payloads import build_get_notebook_params
+
+    return CodecPayload(
+        params=build_get_notebook_params(notebook_id),
+        source_path=_notebook_route(notebook_id),
+    )
+
+
+def encode_mind_map_generate_note(
+    value: MindMapGenerateNoteInput, source_ids: tuple[str, ...]
+) -> CodecPayload:
+    """Payload for the ``GENERATE_MIND_MAP`` phase of ``mind_map.generate_note``."""
+    return CodecPayload(
+        params=build_mind_map_params(
+            list(source_ids),
+            language=(get_default_language() if value.language is None else value.language),
+            instructions=value.instructions,
+        ),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def decode_mind_map_generate_note(result: Any) -> MindMapGenerateNoteResult:
+    """Decode the optional JSON leaf of a note-backed generation."""
+    return MindMapGenerateNoteResult(decode_generated_tree(result))
+
+
+def encode_mind_map_generate_interactive(
+    value: MindMapGenerateInteractiveInput, source_ids: tuple[str, ...]
+) -> CodecPayload:
+    """Payload for the ``CREATE_ARTIFACT`` phase of ``mind_map.generate_interactive``."""
+    return CodecPayload(
+        params=build_interactive_mind_map_artifact_params(
+            value.notebook_id,
+            list(source_ids),
+            instructions=value.instructions,
+        ),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_artifact_mind_map_generate(
+    value: MindMapGenerateInput, source_ids: tuple[str, ...]
+) -> CodecPayload:
+    """Payload for the ``GENERATE_MIND_MAP`` phase of ``artifact.generate_mind_map``."""
+    return CodecPayload(
+        params=build_mind_map_params(
+            list(source_ids),
+            language=(get_default_language() if value.language is None else value.language),
+            instructions=value.instructions,
+        ),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
+def decode_artifact_mind_map_leaf(result: Any) -> tuple[str, object, str] | None:
+    """Decode ``artifact.generate_mind_map``'s leaf into ``(json, data, title)``.
+
+    ``None`` means the leaf was absent (the semantic result is empty).  The JSON
+    text is what the composite persists as the note content; ``data`` is the
+    parsed tree (or the raw string when it does not parse); ``title`` is the
+    tree's ``name`` when present, else ``"Mind Map"``.
+    """
+    mind_map_json = unwrap_mind_map_generation_leaf(
+        result,
+        method_id=RPCMethod.GENERATE_MIND_MAP.value,
+        source="ArtifactsAPI",
+    )
+    if mind_map_json is MIND_MAP_LEAF_ABSENT:
+        return None
+    if isinstance(mind_map_json, str):
+        try:
+            mind_map_data: object = json.loads(mind_map_json)
+        except json.JSONDecodeError:
+            mind_map_data = mind_map_json
+    else:
+        mind_map_data = mind_map_json
+        mind_map_json = json.dumps(mind_map_json)
+    title = "Mind Map"
+    if isinstance(mind_map_data, dict):
+        name = mind_map_data.get("name")
+        if isinstance(name, str) and name:
+            title = name
+    return mind_map_json, mind_map_data, title
+
+
 __all__ = [
+    "decode_artifact_mind_map_leaf",
     "decode_created_interactive_id",
     "decode_generated_tree",
     "decode_interactive_tree",
     "decode_mind_map_delete",
+    "decode_mind_map_generate_note",
     "decode_mind_map_get",
     "decode_mind_map_list",
     "decode_mind_map_update",
+    "encode_artifact_mind_map_generate",
     "encode_mind_map_delete",
+    "encode_mind_map_generate_interactive",
+    "encode_mind_map_generate_note",
     "encode_mind_map_get",
     "encode_mind_map_list",
     "encode_mind_map_update",
+    "encode_notebook_sources_read",
     "extract_interactive_tree_leaf",
 ]

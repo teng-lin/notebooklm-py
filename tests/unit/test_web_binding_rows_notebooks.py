@@ -114,7 +114,10 @@ _EXPECTED_NATIVES = {
 
 def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
     assert {op: WEB_BINDING_ROWS[op] for op in _CONVERTED} == _CONVERTED
-    assert dict(notebook_rows.NOTEBOOK_ROWS) == _CONVERTED
+    # P9.4b adds the NOTEBOOK_CREATE/NOTEBOOK_UPDATE custom rows to the same table.
+    assert {op: row for op, row in notebook_rows.NOTEBOOK_ROWS.items() if op in _CONVERTED} == (
+        _CONVERTED
+    )
     for operation, row in _CONVERTED.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
@@ -138,14 +141,13 @@ def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
         "_notebook_describe",
     ):
         assert not hasattr(WebRpcBackend, name)
-    for operation, handler in (
-        (Operation.NOTEBOOK_CREATE, "_notebook_create"),
-        (Operation.NOTEBOOK_UPDATE, "_notebook_update"),
-    ):
+    # P9.4b: the two composites are custom rows, not handler names.
+    for operation in (Operation.NOTEBOOK_CREATE, Operation.NOTEBOOK_UPDATE):
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.handler_name == handler
-        assert binding.row is None
-    assert hasattr(WebRpcBackend, "_list_notebooks")
+        assert binding.handler_name is None
+        assert binding.row is not None
+    for name in ("_list_notebooks", "_notebook_create", "_notebook_update"):
+        assert not hasattr(WebRpcBackend, name)
     backend = build_web_backend(_RecordingExecutor())
     for operation, row in _CONVERTED.items():
         assert backend._bindings[operation] is row

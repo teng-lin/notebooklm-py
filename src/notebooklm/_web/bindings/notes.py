@@ -6,7 +6,7 @@ ledger audits is the method that runs.  The rows are module-level assignments
 because the operation-catalog walker derives execution authorities from them.
 ``NoteService`` sequences ``NOTE_CREATE``/``NOTE_UPDATE``/``NOTE_DELETE`` above
 the port; ``LegacyNoteBackedService`` still reaches the same natives through
-``DeadlineRpcCaller`` for the deferred compatibility callers.
+the row-scoped ``InvokerRpcCaller`` for the deferred compatibility rows.
 """
 
 from __future__ import annotations

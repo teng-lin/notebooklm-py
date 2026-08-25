@@ -67,7 +67,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.NOTEBOOK_CREATE, _b(RPCMethod.LIST_NOTEBOOKS)): _rules(
         (
-            "_web/backend.py:WebRpcBackend._list_notebooks",
+            "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
             "pre-create baseline/probe or quota verification",
         )
     ),
@@ -79,7 +79,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         ("_notebooks.py:NotebooksAPI.get_raw", "narrow raw compatibility lookup"),
     ),
     (Operation.NOTEBOOK_UPDATE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/backend.py:WebRpcBackend._notebook_update", "unconditional post-mutation read")
+        ("_web/bindings/notebooks.py:NOTEBOOK_UPDATE", "unconditional post-mutation read")
     ),
     (Operation.NOTEBOOK_METADATA, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/bindings/notebooks.py:NOTEBOOK_GET", "metadata notebook branch"),
@@ -179,27 +179,30 @@ SHARED_RPC_AUTHORITY_RULES.update(
     {
         (Operation.MIND_MAP_GENERATE_INTERACTIVE, _b(RPCMethod.CREATE_ARTIFACT)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
+                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
                 "kind=INTERACTIVE",
             )
         ),
         (Operation.MIND_MAP_GENERATE_INTERACTIVE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
+                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
                 "kind=INTERACTIVE and source_ids is None",
             )
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.GENERATE_MIND_MAP)): _rules(
-            ("_web/studio_data.py:StudioDataWebHandlers._mind_map_generate", "semantic facade")
+            ("_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP", "semantic facade")
         ),
         (Operation.MIND_MAP_GENERATE_NOTE, _b(RPCMethod.GENERATE_MIND_MAP)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._mind_map_generate_note",
+                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
                 "kind=NOTE_BACKED",
             )
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.CREATE_NOTE, "plain")): _rules(
-            ("_note_service.py:LegacyNoteBackedService.create_note", "persist generated JSON")
+            (
+                "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+                "persist generated JSON through the legacy note family",
+            )
         ),
         (Operation.NOTE_CREATE, _b(RPCMethod.CREATE_NOTE, "plain")): _rules(
             ("_web/bindings/notes.py:NOTE_CREATE", "public=notes.create")
@@ -217,11 +220,11 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-            ("_web/studio_data.py:StudioDataWebHandlers._data_source_ids", "source_ids is None")
+            ("_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP", "source_ids is None")
         ),
         (Operation.MIND_MAP_GENERATE_NOTE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._mind_map_generate_note",
+                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
                 "kind=NOTE_BACKED and source_ids is None",
             )
         ),
@@ -323,9 +326,8 @@ class RecencyRule:
 
 
 _GET_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
-_UPDATE_TYPED = "_web/backend.py:WebRpcBackend._notebook_update"
+_UPDATE_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_UPDATE"
 _GET_RAW = "_notebooks.py:NotebooksAPI.get_raw"
-_GET_DATA_SOURCES = "_web/studio_data.py:StudioDataWebHandlers._data_source_ids"
 _GET_SOURCES = "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
 # P9.3: the three source leaves read through their own codec rows; composites
 # and the upload pipeline keep reading through the retained snapshot helper.
@@ -535,10 +537,9 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
 }
 
 for _operation in (*_GENERATION_OPERATIONS, Operation.ARTIFACT_GENERATE_MIND_MAP):
-    # P9.4b: the generate rows read default sources through their own spec; the
-    # note-backed mind-map compatibility composite still reads through its helper.
+    # P9.4b: every generate row reads default sources through its own declared spec.
     _recency_site = (
-        _GET_DATA_SOURCES
+        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP"
         if _operation is Operation.ARTIFACT_GENERATE_MIND_MAP
         else f"_web/bindings/studio.py:{_operation.name}"
     )
@@ -557,9 +558,9 @@ for _operation, _kind in (
     (Operation.MIND_MAP_GENERATE_INTERACTIVE, "INTERACTIVE"),
 ):
     _recency_site = (
-        "_web/backend.py:WebRpcBackend._mind_map_generate_note"
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
         if _operation is Operation.MIND_MAP_GENERATE_NOTE
-        else "_web/backend.py:WebRpcBackend._mind_map_generate_interactive"
+        else "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE"
     )
     RECENCY_CONTRACTS[_operation] = (
         RecencyRule(
@@ -575,23 +576,23 @@ for _operation, _kind in (
 SHARED_RPC_AUTHORITY_RULES.update(
     {
         (Operation.ARTIFACT_LIST, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
-            ("_web/backend.py:WebRpcBackend._artifact_catalog_records", "heterogeneous list")
+            ("_web/bindings/mind_maps.py:ARTIFACT_LIST", "heterogeneous list")
         ),
         (Operation.ARTIFACT_GET, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+                "_web/bindings/mind_maps.py:ARTIFACT_GET",
                 "select artifact for get/get_or_none/get_prompt",
             ),
         ),
         (Operation.ARTIFACT_LIST, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
             (
-                "_note_service.py:LegacyNoteBackedService.fetch_note_rows",
+                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
                 "merge note-backed mind maps",
             )
         ),
         (Operation.ARTIFACT_GET, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
             (
-                "_note_service.py:LegacyNoteBackedService.fetch_note_rows",
+                "_web/bindings/mind_maps.py:ARTIFACT_GET",
                 "select note-backed mind map",
             )
         ),
@@ -618,19 +619,19 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.MIND_MAP_LIST, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
                 "filter interactive maps",
             )
         ),
         (Operation.MIND_MAP_GET, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
                 "auto-detect/select interactive id",
             )
         ),
         (Operation.MIND_MAP_GENERATE_INTERACTIVE, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
                 "post-create settle/id match",
             )
         ),
@@ -680,7 +681,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/mind_maps.py:MIND_MAP_UPDATE", "kind=INTERACTIVE")
         ),
         (Operation.NOTEBOOK_UPDATE, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
-            ("_web/backend.py:WebRpcBackend._notebook_update", "title|emoji mutation")
+            ("_web/bindings/notebooks.py:NOTEBOOK_UPDATE", "title|emoji mutation")
         ),
         (Operation.CHAT_CONFIGURE, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
             ("_web/bindings/chat.py:CHAT_CONFIGURE", "action=SET")
@@ -847,7 +848,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/sharing.py:SHARING_UPDATE_USERS", "post-user-grant mutation read")
         ),
         (Operation.NOTEBOOK_CREATE, _b(RPCMethod.GET_USER_SETTINGS)): _rules(
-            ("_web/backend.py:WebRpcBackend._notebook_limit_error", "quota-error diagnosis only")
+            ("_web/bindings/notebooks.py:NOTEBOOK_CREATE", "quota-error diagnosis only")
         ),
         (Operation.SOURCE_ADD_FILE, _b(RPCMethod.GET_USER_SETTINGS)): _rules(
             (

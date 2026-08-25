@@ -51,21 +51,21 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 
 #: custom rows + handler-backed operations at P9.4a; shrinks with every hoist.
 RESIDUAL_COMPOSITE_CEILING = 31
-#: Exact custom-row counts per justification category (P9.4a: the three sharing
-#: mutate-then-readback composites; P9.4b: the five source-add rows — four
-#: *protocol*, ``CHAT_ASK`` *protocol*, ``SOURCE_ADD_TEXT`` *compatibility* — and the Studio generate
-#: families, prompt suggestions and rename as *deferred-product*). P9.4b PRs
-#: raise these as handlers convert; P9.2 hoists lower ``deferred-product``,
-#: which must reach zero before any second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 5, "compatibility": 1, "deferred-product": 13}
+#: Exact custom-row counts per justification category: the three sharing
+#: mutate-then-readback composites, five source-add rows, ``CHAT_ASK``, the Studio
+#: generation/prompt/rename rows, and the notebook/mind-map/catalog composites.
+#: P9.4b PRs raise these as handlers convert;
+#: P9.2 hoists lower ``deferred-product``, which must reach zero before any
+#: second backend.
+CUSTOM_ROW_COUNTS = {"protocol": 5, "compatibility": 4, "deferred-product": 17}
 
 # --- 2. class size ---------------------------------------------------------------
 
 CLASS_BODY_LINE_CEILING = 500
 #: Measured at P9.4a; shrink-only. ``WebExecutionRuntime`` is the transport engine
-#: and shrinks on its own schedule; the three chain classes are P9.4b targets.
+#: and shrinks on its own schedule; the remaining chain classes are P9.4b targets
+#: (``WebRpcBackend`` dropped under the ceiling with the P9.4b notebook/mind-map rows).
 OVERSIZED_CLASS_CEILINGS = {
-    "backend.py:WebRpcBackend": 880,
     "labels.py:LabelSetWebHandlers": 522,
     "runtime.py:WebExecutionRuntime": 597,
 }
@@ -82,16 +82,10 @@ _OWNER_VERBS = {
 #: than one transport call; each P9.4b PR removes the entries it converts.
 MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
     {
-        "backend.py:WebRpcBackend._mind_map_generate_interactive",
-        "backend.py:WebRpcBackend._mind_map_generate_note",
-        "backend.py:WebRpcBackend._notebook_create",
-        "backend.py:WebRpcBackend._notebook_limit_error",
-        "backend.py:WebRpcBackend._notebook_update",
         "labels.py:LabelSetWebHandlers._collection_create",
         "labels.py:LabelSetWebHandlers._collection_update",
         "labels.py:LabelSetWebHandlers._label_create",
         "labels.py:LabelSetWebHandlers._label_update",
-        "studio_data.py:StudioDataWebHandlers._mind_map_generate",
     }
 )
 
