@@ -12,6 +12,7 @@ from ._records import (
     SOURCE_GET_DEF,
     SOURCE_LIST_DEF,
     NotebookGetInput,
+    NotebookGetResult,
     NotebookListInput,
     NotebookRecord,
     SourceGetInput,
@@ -48,6 +49,24 @@ class NotebookReadService:
             deadline=deadline,
         )
         return result.notebook
+
+    async def get_raw(
+        self,
+        notebook_id: str,
+        *,
+        deadline: RuntimeDeadline | None = None,
+    ) -> NotebookGetResult:
+        """Return one notebook snapshot with its payload left undecoded.
+
+        The result's ``raw`` field is the compatibility payload
+        ``NotebooksAPI.get_raw`` publishes; ``notebook`` and ``source_ids``
+        stay empty because this branch runs no positional decode.
+        """
+        return await self._backend.invoke(
+            NOTEBOOK_GET_DEF,
+            NotebookGetInput(notebook_id, include_notebook=False, include_raw=True),
+            deadline=deadline,
+        )
 
     async def get_source_ids(
         self,

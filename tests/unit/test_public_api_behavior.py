@@ -161,7 +161,6 @@ def _make_notebooks_api() -> NotebooksAPI:
     # factory is already arranged for a miss (see ``_arrange_notebooks_miss``).
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[]]))
     return NotebooksAPI(
-        core.rpc_executor,
         sources_api=MagicMock(),
         _backend=build_web_backend(core.rpc_executor),
     )

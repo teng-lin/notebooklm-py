@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from types import MappingProxyType
-from typing import TYPE_CHECKING
 
 from ._backend import (
     BackendAdapter,
@@ -19,7 +18,6 @@ from ._backend import (
 from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ._idempotency_create import idempotent_create, semantic_may_have_committed
 from ._operations import Operation
-from ._projectors import project_notebook
 from ._records import (
     NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_CREATE_DEF,
@@ -42,9 +40,6 @@ from ._records import (
     SettingsGetLimitsInput,
 )
 from .exceptions import ValidationError
-
-if TYPE_CHECKING:
-    from .types import Notebook
 
 logger = logging.getLogger("notebooklm._notebooks")
 
@@ -81,7 +76,7 @@ class NotebookMutationService:
         title: str,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> Notebook:
+    ) -> NotebookRecord:
         """Snapshot, allocate once, and reconcile any uncertain commit."""
         value = NotebookCreateInput(title)
         workflow = NOTEBOOK_CREATE_DEF.key
@@ -215,7 +210,7 @@ class NotebookMutationService:
             may_have_committed=semantic_may_have_committed,
             label=f"notebook.create[{value.title!r}]",
         )
-        return project_notebook(result.value)
+        return result.value
 
     async def _notebook_limit_error(
         self,
@@ -341,8 +336,8 @@ class NotebookMutationService:
         title: str | None = None,
         emoji: str | None = None,
         deadline: RuntimeDeadline | None = None,
-    ) -> Notebook:
-        """Patch notebook properties, then read the complete model back once."""
+    ) -> NotebookRecord:
+        """Patch notebook properties, then read the complete record back once."""
         if title is None and emoji is None:
             raise ValidationError("At least one of title or emoji must be provided")
         value = NotebookUpdateInput(notebook_id, title=title, emoji=emoji)
@@ -368,7 +363,7 @@ class NotebookMutationService:
             )
             if result.notebook is None:
                 raise self._not_found(value)
-            return project_notebook(result.notebook)
+            return result.notebook
         except BackendError as error:
             if error.operation is workflow:
                 raise
@@ -415,7 +410,7 @@ class NotebookMutationService:
         title: str,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> Notebook:
+    ) -> NotebookRecord:
         """Compatibility convenience over the generic property mutation."""
         return await self.update(notebook_id, title=title, deadline=deadline)
 

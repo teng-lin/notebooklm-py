@@ -27,9 +27,10 @@ one that forbids the neutral direction too.
 
 **I9 — no ``Legacy*`` class below ``_app``** except the enumerated exemptions:
 the legacy-mapping records consumed only by ``_backend_compat``/the projectors
-and the auth storage-migration types. The two deletion targets that P10 owns
-are recorded separately from the exemptions so they cannot be quietly
-reclassified as permanent.
+and the auth storage-migration types. The deletion targets that P10 owns are
+recorded separately from the exemptions so they cannot be quietly reclassified
+as permanent. ``NotebookLegacyRpc`` left that set in R6.2 when
+``NotebooksAPI.get_raw`` moved onto the ``NOTEBOOK_GET`` row.
 
 **I10 is deliberately not enforced here.** The plan's tenth invariant caps
 ``src/notebooklm/_records.py`` at 1,500 lines; that is already
@@ -90,14 +91,11 @@ I1_FORBIDDEN_FIRST_PARTY_ROOTS: frozenset[str] = frozenset(
 I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
         "_note_service.py",
-        "_notebook_guide_service.py",
-        "_notebook_mutation_service.py",
         "_research_service.py",
         "_studio/catalog.py",
         "_studio/lifecycle.py",
         "_studio/mind_maps.py",
         "_studio/representations.py",
-        "_suggestion_service.py",
     }
 )
 
@@ -188,11 +186,12 @@ I9_EXEMPT_LEGACY_CLASSES: frozenset[str] = frozenset(
 #: P10 deletion targets, recorded separately from the exemptions so neither can
 #: be reclassified as permanent by editing one set. ``LegacyNoteBackedService``
 #: goes in R4.2 (its wire graph moves above the port with the mind-map
-#: workflows); ``NotebookLegacyRpc`` goes in R6.2 with ``NotebooksAPI.get_raw``.
+#: workflows). ``NotebookLegacyRpc`` was deleted in R6.2: ``NotebooksAPI.get_raw``
+#: now reads through the ``NOTEBOOK_GET`` row, so the facade needs no raw-call
+#: collaborator at all.
 I9_DELETION_TARGETS: frozenset[str] = frozenset(
     {
         "_note_service.py::LegacyNoteBackedService",
-        "_notebooks.py::NotebookLegacyRpc",
     }
 )
 
@@ -328,8 +327,8 @@ def _i2_domain_violations() -> dict[str, list[tuple[int, str]]]:
 def _legacy_classes(root: Path) -> dict[str, tuple[str, int]]:
     """``<relpath>::<class>`` → ``(relpath, lineno)`` for every ``Legacy`` class.
 
-    Matched on *containment*, not prefix: ``NotebookLegacyRpc`` is one of the
-    plan's two named deletion targets and a prefix match would miss it.
+    Matched on *containment*, not prefix: R6.2's deletion target was named
+    ``NotebookLegacyRpc``, and a prefix match would have missed it.
     """
     found: dict[str, tuple[str, int]] = {}
     for path in sorted(root.rglob("*.py")):

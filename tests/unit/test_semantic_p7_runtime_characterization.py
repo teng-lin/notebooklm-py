@@ -85,7 +85,7 @@ def test_atomic_runtime_is_complete_before_backend_publication() -> None:
     client = NotebookLMClient(auth=_make_auth(), max_concurrent_rpcs=4)
     backend = client._backend
 
-    assert backend._runtime is client.notebooks._legacy_rpc
+    assert backend._runtime is client.sources._rpc
     assert backend._chat_transport is backend._runtime._transport
     # P8 moved the lifecycle-opened semaphore behind the credential provider;
     # the semantic backend consumes the already-wired middleware chain and
@@ -105,7 +105,9 @@ def test_rpc_executor_and_middleware_chain_ordering_invariants() -> None:
     client = NotebookLMClient(auth=_make_auth())
 
     # RpcExecutor is shared identically across client and features
-    assert client.notebooks._legacy_rpc is client._backend._runtime
+    # R6.2: the notebook facade holds no executor at all — every notebook read,
+    # ``get_raw`` included, goes through the semantic backend.
+    assert not hasattr(client.notebooks, "_legacy_rpc")
     assert client.notebooks._share_manager._backend is client._backend
     assert client.sources._rpc is client._backend._runtime
     assert not hasattr(client.artifacts, "_rpc")

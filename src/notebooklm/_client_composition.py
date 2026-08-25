@@ -264,7 +264,6 @@ def compose_client(
         _backend=client._backend,
     )
     client.notebooks = NotebooksAPI(
-        internals.executor,
         sources_api=client.sources,
         share_manager=ShareManager(backend=client._backend),
         _backend=client._backend,

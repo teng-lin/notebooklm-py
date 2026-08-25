@@ -178,4 +178,8 @@ def test_every_unsupported_operation_states_why_rather_than_a_generic_string() -
         assert "without a typed def" in reason, operation_value
     assert "R6.4" in reasons["research.wait"]
     assert "R6.4" in reasons["research.import_verify"]
-    assert "R6.2" in reasons["notebook.metadata"]
+    # R6.2 resolved notebook.metadata rather than deferring it: the composition
+    # runs over two replaceable public-model seams, so its reason names them
+    # instead of pointing at a later slice.
+    assert "R6.2" not in reasons["notebook.metadata"]
+    assert "NotebookSourceLister" in reasons["notebook.metadata"]

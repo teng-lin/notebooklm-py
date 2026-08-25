@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from ._backend import BackendAdapter
 from ._deadline import RuntimeDeadline
-from ._projectors import project_prompt_suggestions, project_report_suggestions
 from ._records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
     ArtifactSuggestReportsInput,
     NotebookSuggestPromptsInput,
+    PromptSuggestionRecord,
+    ReportSuggestionRecord,
 )
 from .exceptions import ValidationError
-from .types import PromptSuggestion, ReportSuggestion
 
 # Required backend mode/surface discriminator. Live captures identify modes
 # 1/2/5/6 as Audio Deep Dive/Brief/Critique/Debate, 3/10 as Video
@@ -35,7 +35,7 @@ def validate_prompt_suggestion_mode(mode: int) -> None:
 
 
 class SuggestionService:
-    """Invoke typed suggestion operations and project existing public models."""
+    """Invoke typed suggestion operations and return their neutral records."""
 
     __slots__ = ("_backend",)
 
@@ -50,7 +50,7 @@ class SuggestionService:
         mode: int = PROMPT_SUGGESTIONS_DEFAULT_MODE,
         query: str | None = None,
         deadline: RuntimeDeadline | None = None,
-    ) -> list[PromptSuggestion]:
+    ) -> list[PromptSuggestionRecord]:
         validate_prompt_suggestion_mode(mode)
         result = await self._backend.invoke(
             NOTEBOOK_SUGGEST_PROMPTS_DEF,
@@ -62,20 +62,20 @@ class SuggestionService:
             ),
             deadline=deadline,
         )
-        return project_prompt_suggestions(result.suggestions)
+        return list(result.suggestions)
 
     async def suggest_reports(
         self,
         notebook_id: str,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> list[ReportSuggestion]:
+    ) -> list[ReportSuggestionRecord]:
         result = await self._backend.invoke(
             ARTIFACT_SUGGEST_REPORTS_DEF,
             ArtifactSuggestReportsInput(notebook_id),
             deadline=deadline,
         )
-        return project_report_suggestions(result.suggestions)
+        return list(result.suggestions)
 
 
 __all__ = [

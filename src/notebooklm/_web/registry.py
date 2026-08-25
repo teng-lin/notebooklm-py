@@ -320,9 +320,10 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     {
         Operation.NOTEBOOK_METADATA: (
             "facade composition without a typed def: NotebooksAPI.get_metadata delegates to "
-            "NotebookMetadataService, which gathers the public notebooks.get and sources.list "
-            "reads concurrently (_notebook_metadata.py); R6.2 decides whether it earns a typed "
-            "NOTEBOOK_METADATA_DEF workflow"
+            "NotebookMetadataService, which concurrently gathers the late-bound public "
+            "notebooks.get and the injected NotebookSourceLister.list (_notebook_metadata.py); "
+            "both collaborators are replaceable public-model seams rather than typed leaves, so "
+            "the composition stays untyped and no NOTEBOOK_METADATA_DEF exists"
         ),
         Operation.LABEL_SOURCES: (
             "facade composition without a typed def: LabelsAPI.sources joins the label's "

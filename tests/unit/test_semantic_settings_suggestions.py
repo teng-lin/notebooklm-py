@@ -8,7 +8,12 @@ import pytest
 
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
-from notebooklm._projectors import project_account_limits, project_user_settings
+from notebooklm._projectors import (
+    project_account_limits,
+    project_prompt_suggestions,
+    project_report_suggestions,
+    project_user_settings,
+)
 from notebooklm._records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
@@ -111,7 +116,11 @@ def test_settings_records_project_to_the_public_models_the_facade_returns() -> N
 
 
 @pytest.mark.asyncio
-async def test_suggestion_service_preserves_models_unknowns_and_deadline_identity() -> None:
+async def test_suggestion_service_preserves_records_unknowns_and_deadline_identity() -> None:
+    """R6.2: the service hands back records; the projections it used to build
+    are asserted here on ``_projectors`` so the unknown-level passthrough and
+    the field order this test pinned survive the move above the port.
+    """
     backend = RecordingBackend()
     backend.set_result(
         NOTEBOOK_SUGGEST_PROMPTS_DEF,
@@ -133,15 +142,20 @@ async def test_suggestion_service_preserves_models_unknowns_and_deadline_identit
     service = SuggestionService(backend)
     deadline = RuntimeDeadline(timeout=4.0, started_at=10.0, monotonic=lambda: 11.0)
 
-    assert await service.suggest_prompts(
+    prompts = await service.suggest_prompts(
         "nb",
         source_ids=["src"],
         mode=7,
         query=" steer ",
         deadline=deadline,
-    ) == [PromptSuggestion("Title", "Prompt")]
+    )
+    assert prompts == [PromptSuggestionRecord("Title", "Prompt")]
+    assert project_prompt_suggestions(tuple(prompts)) == [PromptSuggestion("Title", "Prompt")]
     reports = await service.suggest_reports("nb", deadline=deadline)
-    assert reports == [ReportSuggestion("Report", "Description", "Prompt", "unknown-level")]
+    assert reports == [ReportSuggestionRecord("Report", "Description", "Prompt", "unknown-level")]
+    assert project_report_suggestions(tuple(reports)) == [
+        ReportSuggestion("Report", "Description", "Prompt", "unknown-level")
+    ]
     assert all(invocation.deadline is deadline for invocation in backend.invocations)
     prompt_input = backend.invocations[0].value
     assert prompt_input.source_ids == ("src",)

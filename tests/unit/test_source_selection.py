@@ -1288,7 +1288,6 @@ class TestGetSourceIds:
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
         api = NotebooksAPI(
-            core.rpc_executor,
             _backend=build_web_backend(core.rpc_executor),
         )
 
@@ -1320,7 +1319,6 @@ class TestGetSourceIds:
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
         api = NotebooksAPI(
-            core.rpc_executor,
             _backend=build_web_backend(core.rpc_executor),
         )
 
@@ -1339,7 +1337,6 @@ class TestGetSourceIds:
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
         api = NotebooksAPI(
-            core.rpc_executor,
             _backend=build_web_backend(core.rpc_executor),
         )
 
@@ -1358,7 +1355,6 @@ class TestGetSourceIds:
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
         api = NotebooksAPI(
-            core.rpc_executor,
             _backend=build_web_backend(core.rpc_executor),
         )
 

@@ -109,7 +109,6 @@ async def test_notebook_reads_pin_requests_projection_and_backend_order() -> Non
     )
     rpc = MagicMock(rpc_call=rpc_call)
     api = NotebooksAPI(
-        rpc,
         sources_api=MagicMock(),
         _backend=build_web_backend(rpc),
     )
