@@ -2157,8 +2157,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
     }
 )
 
-# P9.2-2: LabelSetService sequences label.update from the leaves; the backend
-# head lets codec rows raise the transport's pre-dispatch expiry.
+# P9.2-2: LabelSetService sequences label.update from the leaves.
 REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
         ("_label_service.py", "_backend", "BackendContractError"),
@@ -2170,7 +2169,13 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_label_service.py", "_backend", "require_leaves"),
         ("_label_service.py", "_records", "LABEL_MUTATE_DEF"),
         ("_label_service.py", "_records", "LabelMutateInput"),
-        ("_web/backend.py", "_binding", "CodecBinding"),
+    }
+)
+# P10 R0.3: the port owns the one pre-dispatch expiry check, so ``invoke_binding``
+# raises the deadline failure the backend head used to duplicate.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_binding.py", "_backend", "BackendDeadlineExceededError"),
     }
 )
 # P9.2 primitives: the foundational leaf rows and their codec/record imports.

@@ -29,7 +29,6 @@ from .._binding import (
     Binding,
     BindingAuditError,
     BindingTable,
-    CodecBinding,
     CustomBinding,
     ErrorMode,
     OperationDisposition,
@@ -368,24 +367,10 @@ class WebRpcBackend:
             deadline = self._deadline_factory.start()
         if self._closed:
             raise BackendContractError("WebRpcBackend is closed")
-        # A codec row lets ``WebTransport.call`` raise the pre-dispatch expiry so
-        # the error names the blocked native (``method_id``) exactly as the
-        # composite handlers' ``_rpc_call`` did; nothing is dispatched either way.
-        if (
-            deadline is not None
-            and deadline.expired()
-            and not isinstance(binding.row, CodecBinding)
-        ):
-            raise BackendDeadlineExceededError(
-                operation.key,
-                diagnostics=MappingProxyType(
-                    {
-                        "timeout": deadline.timeout,
-                        "remaining": deadline.remaining(),
-                        "timeout_seconds": deadline.timeout,
-                    }
-                ),
-            )
+        # The pre-dispatch expiry check is ``invoke_binding``'s alone: it runs
+        # after the row's ``DeadlineMode`` and native selection, so a codec row's
+        # failure still names the blocked native (``method_id``) exactly as the
+        # composite handlers' ``_rpc_call`` did. Nothing is dispatched either way.
 
         raw_passthrough, scrub_request_urls = _row_error_projection(
             self._bindings.get(operation.key), operation.key

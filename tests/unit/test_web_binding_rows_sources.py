@@ -356,6 +356,21 @@ async def test_source_wait_ignores_the_caller_deadline_like_the_handler_did() ->
 
 
 @pytest.mark.asyncio
+async def test_source_wait_dispatches_after_expiry_because_its_row_ignores_the_deadline() -> None:
+    """The one ``DeadlineMode.IGNORE`` row never meets the pre-dispatch expiry check."""
+    executor = _RecordingExecutor(_snapshot(*_ROWS))
+    backend = build_web_backend(executor)
+    deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 16.0)
+
+    waited = await backend.invoke(SOURCE_WAIT_DEF, SourceWaitSnapshotInput(_NB), deadline=deadline)
+
+    assert [item.id for item in waited.sources] == ["src-web", "src-pdf"]
+    (call,) = executor.calls
+    assert call.method is RPCMethod.GET_NOTEBOOK
+    assert call.kwargs == _BASE_KWARGS
+
+
+@pytest.mark.asyncio
 async def test_inheriting_rows_clamp_read_timeout_to_the_shared_deadline() -> None:
     executor = _RecordingExecutor(_snapshot(*_ROWS))
     backend = build_web_backend(executor)

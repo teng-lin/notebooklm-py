@@ -23,7 +23,7 @@ from enum import Enum, unique
 from types import MappingProxyType
 from typing import Any, Final, Generic, Literal, Protocol, TypeVar
 
-from ._backend import BackendContractError, BackendError
+from ._backend import BackendContractError, BackendDeadlineExceededError, BackendError
 from ._deadline import RuntimeDeadline
 from ._operations import Operation, OperationDef
 
@@ -421,6 +421,50 @@ def _names(operations: frozenset[Operation]) -> str:
     return ", ".join(sorted(operation.value for operation in operations))
 
 
+def _native_method_id(native: NativeChoice[Any]) -> Any:
+    """The wire identity of a selected native, without naming a wire enum.
+
+    ``MethodT`` is a backend's own method type; every backend models it as an
+    enum whose ``value`` is the identity its failures report, so read that when
+    it exists and fall back to the method itself when it does not.
+    """
+    method = native.method
+    return getattr(method, "value", method)
+
+
+def _raise_if_expired(
+    operation: Operation,
+    deadline: RuntimeDeadline | None,
+    *,
+    native: NativeChoice[Any] | None,
+) -> None:
+    """Fail one invocation before dispatch when its deadline is already spent.
+
+    This is the port's single pre-dispatch expiry check.  Every row kind reaches
+    it after its :class:`DeadlineMode` has been applied and, for a codec row,
+    after the native has been selected — a keyed spec picks the native from the
+    input, so the check must run late enough to name the native it blocked.
+    A row that declares several natives, or that streams, resolves none here and
+    its failure therefore carries no ``method_id``.
+    """
+    if deadline is None:
+        return
+    remaining = deadline.remaining()
+    if remaining > 0.0:
+        return
+    # No native call was dispatched. Uncertainty stays false; a composite that
+    # may already have committed an earlier phase says so per phase through
+    # ``RowInvoker.call(outcome_unknown_on_expiry=True)``.
+    diagnostics: dict[str, Any] = {
+        "timeout": deadline.timeout,
+        "remaining": remaining,
+        "timeout_seconds": deadline.timeout,
+    }
+    if native is not None:
+        diagnostics["method_id"] = _native_method_id(native)
+    raise BackendDeadlineExceededError(operation, diagnostics=MappingProxyType(diagnostics))
+
+
 def _tag_native(error: BaseException, native: NativeChoice[Any] | StreamSpec) -> None:
     """Attach the selected native (or stream spec) to a failure for row attribution."""
     try:
@@ -584,6 +628,10 @@ async def invoke_binding(
     ``errors`` is the shared translator that row-level ``error_mode`` projection
     consumes (the backend head applies the projection); ``collaborators`` is the
     backend-supplied, named set a custom row may reach through its invoker.
+
+    This is also where an already-spent deadline fails: one check, applied to
+    every row kind after its ``DeadlineMode`` and native selection, so a backend
+    head never needs a second one.
     """
     row = table.get(operation.key)
     if row is None:
@@ -605,14 +653,17 @@ async def invoke_binding(
     if isinstance(row, CodecBinding):
         payload = row.encode(value)
         choice = row.native.select(value)
-        request = transport.assemble(
-            row.definition,
-            choice,
-            payload,
-            retry_flag=row.forward_disable_internal_retries,
-            deadline=row_deadline,
-        )
         try:
+            # Inside the row's failure handling so an expiry is attributed and
+            # mapped exactly like any other failure of this native.
+            _raise_if_expired(operation.key, row_deadline, native=choice)
+            request = transport.assemble(
+                row.definition,
+                choice,
+                payload,
+                retry_flag=row.forward_disable_internal_retries,
+                deadline=row_deadline,
+            )
             raw = await transport.call(request, deadline=row_deadline)
         except BaseException as exc:
             _tag_native(exc, choice)
@@ -622,6 +673,8 @@ async def invoke_binding(
                     raise mapped from exc
             raise
         return row.decode(value, raw)
+    # A custom row resolves no single native here: its handler chooses per phase.
+    _raise_if_expired(operation.key, row_deadline, native=None)
     invoker = _RowScopedInvoker(row, transport, errors, collaborators)
     return await row.handler(value, row_deadline, invoker)
 
