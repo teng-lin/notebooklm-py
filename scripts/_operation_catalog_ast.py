@@ -1230,15 +1230,47 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_sharing_service.py", "_records", "SharingUpdateUsersInput"),
         ("_sharing_service.py", "_records", "SharingUserGrant"),
         ("_research.py", "_backend", "BackendAdapter"),
+        ("_client_composition.py", "_read_services", "SourceReadService"),
+        ("_research.py", "_projectors", "project_research_task"),
+        ("_research.py", "_read_services", "SourceReadService"),
+        ("_research.py", "_records", "ResearchImportBatchInput"),
+        ("_research.py", "_records", "ResearchImportCandidate"),
+        ("_research.py", "_records", "ResearchImportVerifyInput"),
+        ("_research.py", "_records", "ResearchImportVerifyResult"),
+        ("_research.py", "_records", "ResearchImportedSourceRecord"),
+        ("_research.py", "_records", "ResearchMode"),
+        ("_research.py", "_records", "ResearchSearchSource"),
+        ("_research.py", "_records", "ResearchSourceRecord"),
+        ("_research.py", "_records", "ResearchStartInput"),
+        ("_research.py", "_records", "ResearchTaskSelectionResult"),
+        ("_research.py", "_records", "ResearchWaitInput"),
+        ("_research.py", "_records", "SourceRecord"),
+        ("_research.py", "_research_service", "SourceRecordLister"),
+        ("_research_import.py", "_records", "ResearchImportCandidate"),
+        ("_research_import.py", "_records", "ResearchImportedSourceRecord"),
+        ("_research_import.py", "_records", "ResearchPresentSourceRecord"),
+        ("_research_import.py", "_records", "ResearchSourceRecord"),
+        ("_research_import.py", "_records", "SourceRecord"),
+        ("_research_service.py", "_records", "RESEARCH_TERMINAL_STATUSES"),
+        ("_research_service.py", "_records", "ResearchImportBatchInput"),
+        ("_research_service.py", "_records", "ResearchImportCandidate"),
+        ("_research_service.py", "_records", "ResearchImportVerifyInput"),
+        ("_research_service.py", "_records", "ResearchImportVerifyResult"),
+        ("_research_service.py", "_records", "ResearchImportedSourceRecord"),
+        ("_research_service.py", "_records", "ResearchPresentSourceRecord"),
+        ("_research_service.py", "_records", "ResearchStartResult"),
+        ("_research_service.py", "_records", "ResearchTaskRecord"),
+        ("_research_service.py", "_records", "ResearchTaskSelectionResult"),
+        ("_research_service.py", "_records", "ResearchTaskStatus"),
+        ("_research_service.py", "_records", "ResearchWaitInput"),
+        ("_research_service.py", "_records", "SourceRecord"),
         ("_research.py", "_backend_compat", "project_backend_call"),
-        ("_research.py", "_research_service", "_INITIAL_INTERVAL_UNSET"),
         ("_research.py", "_research_service", "ResearchService"),
         ("_research_service.py", "_backend", "BackendAdapter"),
         ("_research_service.py", "_backend", "BACKEND_STATUS_DIAGNOSTIC"),
         ("_research_service.py", "_backend", "BackendError"),
         ("_research_service.py", "_backend", "BackendErrorReason"),
         ("_research_service.py", "_backend", "BackendStatus"),
-        ("_research_service.py", "_projectors", "project_research_task"),
         ("_research_service.py", "_records", "RESEARCH_CANCEL_DEF"),
         ("_research_service.py", "_records", "RESEARCH_IMPORT_DEF"),
         ("_research_service.py", "_records", "RESEARCH_POLL_DEF"),
@@ -1247,9 +1279,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_research_service.py", "_records", "ResearchImportEntry"),
         ("_research_service.py", "_records", "ResearchImportEntryKind"),
         ("_research_service.py", "_records", "ResearchImportInput"),
-        ("_research_service.py", "_records", "ResearchMode"),
         ("_research_service.py", "_records", "ResearchPollInput"),
-        ("_research_service.py", "_records", "ResearchSearchSource"),
         ("_research_service.py", "_records", "ResearchStartInput"),
         ("_source/listing.py", "_projectors", "project_source"),
         ("_source/listing.py", "_records", "SourceRecord"),
@@ -2380,7 +2410,12 @@ _KEYWORD_BACKEND_FACADES = frozenset(
         "StudioCatalog",
     }
 )
-_POSITIONAL_BACKEND_FACADES = frozenset({"CollectionsAPI", "LabelsAPI"})
+# ``SourceReadService`` is not a facade: P10 R6.4 has the composition root build
+# one semantic read service directly and hand it to ``ResearchAPI`` as the
+# neutral source lister its import reconciliation probes, replacing the public
+# ``sources.list`` facade call the research service used to make (defect S7).
+# It binds the backend positionally like the two migrated facades below.
+_POSITIONAL_BACKEND_FACADES = frozenset({"CollectionsAPI", "LabelsAPI", "SourceReadService"})
 
 
 def audit_inert_p1_backend_dataflow(

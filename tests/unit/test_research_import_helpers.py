@@ -11,12 +11,16 @@ functions in isolation.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._operations import Operation
+from notebooklm._records import (
+    ResearchImportCandidate,
+    ResearchImportedSourceRecord,
+    ResearchSourceRecord,
+    SourceRecord,
+)
 from notebooklm._research_import import (
     _import_research_read_timeout,
     _reconcile_import_probe,
@@ -27,7 +31,6 @@ from notebooklm._runtime.config import (
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
 )
-from notebooklm._types.research import ResearchSource
 from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import RPCError
 
@@ -106,73 +109,82 @@ class TestIsImportResearchFailedPrecondition:
         assert _is_import_research_failed_precondition(bare) is False
 
 
-def _src(id_: str, url: str | None, title: str = "T") -> MagicMock:
-    return MagicMock(id=id_, url=url, title=title)
+def _src(id_: str, url: str | None, title: str = "T") -> SourceRecord:
+    """One notebook row the probe reads.
+
+    A real ``SourceRecord`` rather than a ``MagicMock``: P10 R6.4 retyped the
+    probe onto the neutral records, and a mock would answer any attribute the
+    helper grew by accident.
+    """
+    return SourceRecord(id=id_, url=url, title=title)
+
+
+def _candidate(url: str, title: str, *, report: bool = False) -> ResearchImportCandidate:
+    """One requested entry, already lifted out of its public form by the facade."""
+    return ResearchImportCandidate(
+        source=ResearchSourceRecord(url=url, title=title, result_type=1), report=report
+    )
+
+
+def _entry(id_: str, title: str) -> ResearchImportedSourceRecord:
+    return ResearchImportedSourceRecord(id=id_, title=title)
 
 
 class TestReconcileImportProbe:
     def test_full_match_returns_fully_verified_entries(self):
-        source = ResearchSource(url="https://example.com/a", title="A")
+        candidate = _candidate("https://example.com/a", "A")
         outcome = _reconcile_import_probe(
             current=[_src("src_a", "https://example.com/a")],
             baseline_ids=set(),
             requested_urls_norm={"https://example.com/a"},
             requested_no_url_count=0,
-            source_inputs=[{"url": "https://example.com/a", "title": "A"}],
-            source_models=[source],
+            candidates=[candidate],
             already_verified_ids=set(),
             allow_duplicate=False,
         )
-        assert outcome.fully_verified_entries == [{"id": "src_a", "title": "T"}]
+        assert outcome.fully_verified_entries == [_entry("src_a", "T")]
         assert outcome.filtered is False
 
     def test_no_match_leaves_state_unchanged(self):
-        source = ResearchSource(url="https://example.com/a", title="A")
+        candidate = _candidate("https://example.com/a", "A")
         outcome = _reconcile_import_probe(
             current=[],
             baseline_ids=set(),
             requested_urls_norm={"https://example.com/a"},
             requested_no_url_count=0,
-            source_inputs=[{"url": "https://example.com/a", "title": "A"}],
-            source_models=[source],
+            candidates=[candidate],
             already_verified_ids=set(),
             allow_duplicate=False,
         )
         assert outcome.fully_verified_entries is None
         assert outcome.filtered is False
-        assert outcome.source_models == [source]
+        assert outcome.candidates == [candidate]
 
     def test_partial_match_filters_and_reports_committed_subset(self):
-        source_a = ResearchSource(url="https://example.com/a", title="A")
-        source_b = ResearchSource(url="https://example.com/b", title="B")
+        candidate_a = _candidate("https://example.com/a", "A")
+        candidate_b = _candidate("https://example.com/b", "B")
         outcome = _reconcile_import_probe(
             current=[_src("src_a", "https://example.com/a")],
             baseline_ids=set(),
             requested_urls_norm={"https://example.com/a", "https://example.com/b"},
             requested_no_url_count=0,
-            source_inputs=[
-                {"url": "https://example.com/a", "title": "A"},
-                {"url": "https://example.com/b", "title": "B"},
-            ],
-            source_models=[source_a, source_b],
+            candidates=[candidate_a, candidate_b],
             already_verified_ids=set(),
             allow_duplicate=False,
         )
         assert outcome.fully_verified_entries is None
         assert outcome.filtered is True
         assert outcome.removed_count == 1
-        assert outcome.newly_verified == [{"id": "src_a", "title": "T"}]
-        assert outcome.source_models == [source_b]
+        assert outcome.newly_verified == [_entry("src_a", "T")]
+        assert outcome.candidates == [candidate_b]
 
     def test_filtering_down_to_empty_returns_success_with_empty_list(self):
-        source = ResearchSource(url="https://example.com/a", title="A")
         outcome = _reconcile_import_probe(
             current=[_src("src_a", "https://example.com/a")],
             baseline_ids=None,  # baseline snapshot failed; falls back to current_urls_norm
             requested_urls_norm={"https://example.com/a"},
             requested_no_url_count=0,
-            source_inputs=[{"url": "https://example.com/a", "title": "A"}],
-            source_models=[source],
+            candidates=[_candidate("https://example.com/a", "A")],
             already_verified_ids=set(),
             allow_duplicate=False,
         )
@@ -180,18 +192,15 @@ class TestReconcileImportProbe:
         assert outcome.filtered is True
 
     def test_already_verified_ids_are_not_double_counted(self):
-        source_a = ResearchSource(url="https://example.com/a", title="A")
-        source_b = ResearchSource(url="https://example.com/b", title="B")
         outcome = _reconcile_import_probe(
             current=[_src("src_a", "https://example.com/a")],
             baseline_ids=set(),
             requested_urls_norm={"https://example.com/a", "https://example.com/b"},
             requested_no_url_count=0,
-            source_inputs=[
-                {"url": "https://example.com/a", "title": "A"},
-                {"url": "https://example.com/b", "title": "B"},
+            candidates=[
+                _candidate("https://example.com/a", "A"),
+                _candidate("https://example.com/b", "B"),
             ],
-            source_models=[source_a, source_b],
             already_verified_ids={"src_a"},  # already accounted for in a prior iteration
             allow_duplicate=False,
         )

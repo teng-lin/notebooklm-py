@@ -15,13 +15,16 @@ logger = logging.getLogger("notebooklm._notebooks")
 
 
 class NotebookSourceLister(Protocol):
-    """Structural source-listing dependency shared across feature APIs.
+    """Structural source-listing dependency for public metadata composition.
 
-    Consumed by :class:`NotebookMetadataService` for metadata composition
-    and by :meth:`ResearchAPI.import_sources_with_verification` for
-    snapshot/probe around ``IMPORT_RESEARCH`` (issue #315). Implementations
-    are injected by the client composition root, so feature APIs do not
-    construct or depend on a web/RPC adapter.
+    Consumed by :class:`NotebookMetadataService`, which builds a *public*
+    :class:`~notebooklm.types.NotebookMetadata` and so needs public
+    :class:`~notebooklm.types.Source` rows. Research's import reconciliation
+    used to share it; P10 R6.4 moved that seam onto the neutral
+    ``SourceRecordLister`` in ``_research_service.py``, because a semantic
+    service must not consume public models. Implementations are injected by the
+    client composition root, so feature APIs do not construct or depend on a
+    web/RPC adapter.
     """
 
     async def list(self, notebook_id: str, *, strict: bool = False) -> builtins.list[Source]:

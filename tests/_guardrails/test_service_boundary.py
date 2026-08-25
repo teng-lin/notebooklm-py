@@ -87,12 +87,17 @@ I1_FORBIDDEN_FIRST_PARTY_ROOTS: frozenset[str] = frozenset(
 #: leave as their retiring slice lands (R5.2 for ``_studio``, R6.1-R6.4 for the
 #: root services, R6.6 for ``_note_service``); nothing may be added. The plan's
 #: §6 target is an empty set beside the permanent exemption below.
+#:
+#: ``_research_service.py`` left in R6.4: its wait and verification workflows
+#: now take neutral inputs and return ``*Result`` records, its source probe
+#: reads ``SourceRecord`` rows off the semantic read service instead of calling
+#: the public ``sources.list`` facade, and both exception projection and the
+#: public argument validation moved up to ``ResearchAPI``.
 I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
         "_note_service.py",
         "_notebook_guide_service.py",
         "_notebook_mutation_service.py",
-        "_research_service.py",
         "_studio/catalog.py",
         "_studio/lifecycle.py",
         "_studio/mind_maps.py",

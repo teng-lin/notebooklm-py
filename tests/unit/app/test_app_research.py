@@ -600,7 +600,7 @@ async def test_wait_runs_inside_injected_wait_context() -> None:
 
 async def test_import_research_sources_reports_already_present() -> None:
     from notebooklm._app.research import ResearchImportOutcome, import_research_sources
-    from notebooklm._research_import import _imported_result
+    from notebooklm._research import _imported_result
 
     client = MagicMock()
     client.research = MagicMock()
