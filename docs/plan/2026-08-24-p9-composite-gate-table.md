@@ -1,6 +1,6 @@
 # P9.2 composite decomposition gate table
 
-**Status:** review artifact for the P9.2 gate (entry criterion of
+**Status:** approved at the P9.2 stop/go review on 2026-08-24 (entry criterion of
 [the semantic backend refactor plan](2026-08-13-semantic-backend-refactor.md), "P9 — Decompose the
 web backend"). Measured 2026-08-24 on `refactor/semantic-backend-dev` at `436573ba`. Every row is
 derived from code, not from the plan's prose; where the code contradicts the plan the last section
@@ -607,8 +607,10 @@ Total **51 codec rows** + 11 hoists + 20 custom rows = 82. The plan's "54 leaf n
    first exercise of contract 3's constructor plumbing (`_sources.py`, `_client_composition.py`).
    Single consumer, one new primitive, one pinned reason.
 
-If the review outcome is REVISE or ABANDON, the remaining nine hoist rows become
-`CustomBinding` rows under *deferred-product* and the residual count in §4 rises from 20 to 29
+The review outcome was **GO** on 2026-08-24 after the three hoists matched the §4 count,
+deadline, error, catalog, and MRO gates. If the outcome had been REVISE or ABANDON, the remaining
+eight hoist rows would have become `CustomBinding` rows under *deferred-product* and the residual
+count in §4 would have risen from 20 to 28
 (with `LABEL_MUTATE`, `LABEL_ALLOCATE` and `SHARING_MUTATE` already landed as codec rows).
 
 ## 9. Where the code contradicts the plan's assumptions
