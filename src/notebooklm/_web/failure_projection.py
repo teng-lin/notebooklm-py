@@ -12,7 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from .._backend import BackendContractError
+from .._backend import BackendContractError, BackendError
 from .._operations import Operation
 from .._records import SourceAddFailureKind, SourceAddFailureRecord
 from .._transport_errors import (
@@ -141,6 +141,12 @@ def _capture_public_failure(
     capture_links = isinstance(exc, NotebookLMError)
     explicit = exc.__cause__ if capture_links else None
     context = exc.__context__ if capture_links else None
+    # A leaf invoked while a semantic workflow handles an earlier leaf inherits
+    # that private BackendError as Python's implicit context. The workflow
+    # carries the earlier public failure separately as bounded neutral evidence;
+    # never descend back into a private backend record here.
+    if isinstance(context, BackendError):
+        context = None
     # ``WebExecutionRuntime`` raises the public RPC error explicitly from the
     # original httpx leaf while a private ``TransportServerError`` is the
     # suppressed implicit context. The neutral record preserves the explicit

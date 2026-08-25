@@ -67,7 +67,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.NOTEBOOK_CREATE, _b(RPCMethod.LIST_NOTEBOOKS)): _rules(
         (
-            "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
+            "_web/bindings/notebooks.py:NOTEBOOK_LIST",
             "pre-create baseline/probe or quota verification",
         )
     ),
@@ -828,6 +828,12 @@ SHARED_RPC_AUTHORITY_RULES.update(
 
 SHARED_RPC_AUTHORITY_RULES.update(
     {
+        (Operation.NOTEBOOK_CREATE, _b(RPCMethod.CREATE_NOTEBOOK)): _rules(
+            ("_web/bindings/notebooks.py:NOTEBOOK_ALLOCATE", "guarded allocation attempts")
+        ),
+        (Operation.NOTEBOOK_ALLOCATE, _b(RPCMethod.CREATE_NOTEBOOK)): _rules(
+            ("_web/bindings/notebooks.py:NOTEBOOK_ALLOCATE", "one guarded allocation attempt")
+        ),
         (Operation.LABEL_GENERATE, _b(RPCMethod.CREATE_LABEL)): _rules(
             ("_web/bindings/labels.py:LABEL_GENERATE", "label_mode=auto-group")
         ),
@@ -937,7 +943,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.NOTEBOOK_CREATE, _b(RPCMethod.GET_USER_SETTINGS)): _rules(
-            ("_web/bindings/notebooks.py:NOTEBOOK_CREATE", "quota-error diagnosis only")
+            ("_web/bindings/settings.py:SETTINGS_GET_LIMITS", "quota-error diagnosis only")
         ),
         (Operation.SOURCE_ADD_FILE, _b(RPCMethod.GET_USER_SETTINGS)): _rules(
             (

@@ -33,7 +33,6 @@ from notebooklm._backend import (
 from notebooklm._backend_compat import project_backend_error
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_payloads import (
-    build_create_notebook_params,
     build_get_notebook_params,
 )
 from notebooklm._operations import CallPolicy, Operation, OperationDef
@@ -85,7 +84,7 @@ from notebooklm._records import (
     NOTE_GET_DEF,
     NOTE_LIST_DEF,
     NOTE_UPDATE_DEF,
-    NOTEBOOK_CREATE_DEF,
+    NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_DELETE_DEF,
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_GET_DEF,
@@ -133,7 +132,6 @@ from notebooklm._records import (
     MindMapGetInput,
     MindMapListInput,
     MindMapUpdateInput,
-    NotebookCreateInput,
     NotebookDeleteInput,
     NotebookDeleteResult,
     NotebookGetInput,
@@ -236,7 +234,7 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
     assert {
         Operation.NOTEBOOK_LIST,
         Operation.NOTEBOOK_GET,
-        Operation.NOTEBOOK_CREATE,
+        Operation.NOTEBOOK_ALLOCATE,
         Operation.NOTEBOOK_PATCH,
         Operation.NOTEBOOK_DELETE,
         Operation.NOTEBOOK_REMOVE_RECENT,
@@ -322,7 +320,7 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
     } == {
         Operation.NOTEBOOK_LIST: NOTEBOOK_LIST_DEF,
         Operation.NOTEBOOK_GET: NOTEBOOK_GET_DEF,
-        Operation.NOTEBOOK_CREATE: NOTEBOOK_CREATE_DEF,
+        Operation.NOTEBOOK_ALLOCATE: NOTEBOOK_ALLOCATE_DEF,
         Operation.NOTEBOOK_PATCH: NOTEBOOK_PATCH_DEF,
         Operation.NOTEBOOK_DELETE: NOTEBOOK_DELETE_DEF,
         Operation.NOTEBOOK_REMOVE_RECENT: NOTEBOOK_REMOVE_RECENT_DEF,
@@ -1316,58 +1314,6 @@ async def test_notebook_get_empty_payload_is_typed_not_found_state() -> None:
 
 
 @pytest.mark.asyncio
-async def test_notebook_create_uses_baseline_and_disables_executor_retries() -> None:
-    created_row = [
-        "Daily News",
-        None,
-        "nb-new",
-        None,
-        None,
-        [None, False, None, None, None, [1704067200, 0]],
-    ]
-    executor = _RecordingExecutor([], created_row)
-
-    result = await _backend(executor).invoke(
-        NOTEBOOK_CREATE_DEF,
-        NotebookCreateInput("Daily News"),
-        deadline=None,
-    )
-
-    assert (result.notebook.id, result.notebook.title) == ("nb-new", "Daily News")
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.LIST_NOTEBOOKS,
-        RPCMethod.CREATE_NOTEBOOK,
-    ]
-    assert executor.calls[1].params == build_create_notebook_params("Daily News")
-    assert executor.calls[1].kwargs["disable_internal_retries"] is True
-
-
-@pytest.mark.asyncio
-async def test_notebook_create_adopts_unique_baseline_diff_after_transport_loss() -> None:
-    old_row = ["Daily News", [], "nb-old"]
-    new_row = ["Daily News", [], "nb-landed"]
-    executor = _RecordingExecutor(
-        [[old_row]],
-        ServerError("bad gateway", status_code=502),
-        [[old_row, new_row]],
-    )
-
-    result = await _backend(executor).invoke(
-        NOTEBOOK_CREATE_DEF,
-        NotebookCreateInput("Daily News"),
-        deadline=None,
-    )
-
-    assert result.notebook.id == "nb-landed"
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.LIST_NOTEBOOKS,
-        RPCMethod.CREATE_NOTEBOOK,
-        RPCMethod.LIST_NOTEBOOKS,
-    ]
-    assert sum(call.method is RPCMethod.CREATE_NOTEBOOK for call in executor.calls) == 1
-
-
-@pytest.mark.asyncio
 async def test_notebook_delete_is_one_id_and_returns_empty_result() -> None:
     executor = _RecordingExecutor(None)
 
@@ -1659,78 +1605,6 @@ async def test_url_handler_title_failure_is_best_effort_and_never_reposts() -> N
         RPCMethod.ADD_SOURCE,
         RPCMethod.UPDATE_SOURCE,
     ]
-
-
-@pytest.mark.asyncio
-async def test_notebook_create_marks_neutral_probe_failure_unconfirmed() -> None:
-    probe_error = BackendError(
-        "probe deadline",
-        operation=Operation.NOTEBOOK_CREATE,
-        reason=BackendErrorReason.TIMEOUT,
-        diagnostics={"timeout_seconds": 3.0},
-    )
-    executor = _RecordingExecutor(
-        [],
-        ServerError("create response lost", status_code=502),
-        probe_error,
-    )
-
-    with pytest.raises(BackendError) as caught:
-        await _backend(executor).invoke(
-            NOTEBOOK_CREATE_DEF,
-            NotebookCreateInput("Daily News"),
-            deadline=None,
-        )
-
-    assert caught.value is not probe_error
-    assert caught.value.reason is BackendErrorReason.TIMEOUT
-    assert caught.value.outcome_unknown is True
-
-
-@pytest.mark.asyncio
-async def test_notebook_create_reconciliation_deadline_keeps_parent_attribution() -> None:
-    clock = [0.0]
-    timeout = RPCTimeoutError(
-        "reconciliation timed out",
-        method_id=RPCMethod.LIST_NOTEBOOKS.value,
-        timeout_seconds=5.0,
-    )
-
-    class _ReconciliationTimeoutExecutor(_RecordingExecutor):
-        async def rpc_call(
-            self,
-            method: RPCMethod,
-            params: list[Any],
-            **kwargs: Any,
-        ) -> Any:
-            self.calls.append(_Call(method=method, params=params, kwargs=kwargs))
-            if len(self.calls) == 1:
-                return []
-            if len(self.calls) == 2:
-                raise ServerError("create response lost", status_code=502)
-            clock[0] = 6.0
-            raise timeout
-
-    executor = _ReconciliationTimeoutExecutor()
-    deadline = RuntimeDeadline(timeout=5.0, started_at=0.0, monotonic=lambda: clock[0])
-
-    with pytest.raises(BackendDeadlineExceededError) as caught:
-        await _backend(executor).invoke(
-            NOTEBOOK_CREATE_DEF,
-            NotebookCreateInput("Daily News"),
-            deadline=deadline,
-        )
-
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.LIST_NOTEBOOKS,
-        RPCMethod.CREATE_NOTEBOOK,
-        RPCMethod.LIST_NOTEBOOKS,
-    ]
-    assert all(call.kwargs["_retry_deadline"] is deadline for call in executor.calls)
-    assert caught.value.operation is Operation.NOTEBOOK_CREATE
-    assert caught.value.reason is BackendErrorReason.TIMEOUT
-    assert caught.value.outcome_unknown is True
-    assert caught.value.__cause__ is timeout
 
 
 @pytest.mark.asyncio

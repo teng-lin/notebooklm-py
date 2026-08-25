@@ -87,7 +87,7 @@ from notebooklm._records import (
     NOTE_GET_DEF,
     NOTE_LIST_DEF,
     NOTE_UPDATE_DEF,
-    NOTEBOOK_CREATE_DEF,
+    NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_DELETE_DEF,
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_GET_DEF,
@@ -195,7 +195,7 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
     expected_migrated: dict[OperationDef[Any, Any], tuple[Operation, CallPolicy]] = {
         NOTEBOOK_LIST_DEF: (Operation.NOTEBOOK_LIST, CallPolicy.READ),
         NOTEBOOK_GET_DEF: (Operation.NOTEBOOK_GET, CallPolicy.MUTATION),
-        NOTEBOOK_CREATE_DEF: (Operation.NOTEBOOK_CREATE, CallPolicy.MUTATION),
+        NOTEBOOK_ALLOCATE_DEF: (Operation.NOTEBOOK_ALLOCATE, CallPolicy.MUTATION),
         NOTEBOOK_PATCH_DEF: (Operation.NOTEBOOK_PATCH, CallPolicy.MUTATION),
         NOTEBOOK_DELETE_DEF: (Operation.NOTEBOOK_DELETE, CallPolicy.MUTATION),
         NOTEBOOK_REMOVE_RECENT_DEF: (
@@ -359,17 +359,9 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
-            NOTEBOOK_CREATE_DEF,
-            [
-                (RPCMethod.LIST_NOTEBOOKS, None),
-                (RPCMethod.CREATE_NOTEBOOK, None),
-                (RPCMethod.GET_USER_SETTINGS, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.PROBE_THEN_CREATE,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
+            NOTEBOOK_ALLOCATE_DEF,
+            [(RPCMethod.CREATE_NOTEBOOK, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             NOTEBOOK_PATCH_DEF,

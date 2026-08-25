@@ -726,14 +726,16 @@ def test_notebook_create_catalog_has_no_phantom_get_notebook_recency() -> None:
         (RPCMethod.GET_NOTEBOOK, None),
     ) not in catalog_authorities.SHARED_RPC_AUTHORITY_RULES
 
-    # P9.4b: the create composite is a custom row; neither its declared specs nor
-    # its handler body reach GET_NOTEBOOK.
-    rows_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_web" / "bindings" / "notebooks.py")
-    create_row = catalog_ast._find_module_assignment(rows_tree, "NOTEBOOK_CREATE")
-    create_handler = catalog_ast._find_module_function(rows_tree, "_notebook_create")
-    assert create_row is not None and create_handler is not None
-    assert catalog_ast._native_choice_count(create_row, RPCMethod.GET_NOTEBOOK) == 0
-    assert catalog_ast._rpc_binding_call_count(create_handler, RPCMethod.GET_NOTEBOOK) == 0
+    backend_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_web" / "backend.py")
+    assert catalog_ast._find_class_method(backend_tree, "WebRpcBackend", "_notebook_create") is None
+    service_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_notebook_mutation_service.py")
+    create_workflow = catalog_ast._find_class_method(
+        service_tree,
+        "NotebookMutationService",
+        "create",
+    )
+    assert create_workflow is not None
+    assert catalog_ast._definition_invoke_call_count(create_workflow, "NOTEBOOK_GET_DEF") == 0
 
 
 @pytest.mark.repo_lint

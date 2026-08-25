@@ -251,6 +251,15 @@ def mark_backend_outcome_unknown(error: BackendError) -> BackendError:
     return _replace_backend_error(error, outcome_unknown=True)
 
 
+def annotate_backend_error(error: BackendError, **diagnostics: object) -> BackendError:
+    """Copy ``error`` with additional bounded neutral diagnostic evidence."""
+    if not diagnostics:
+        return error
+    merged = dict(error.diagnostics or {})
+    merged.update(diagnostics)
+    return _replace_backend_error(error, diagnostics=MappingProxyType(merged))
+
+
 def rebind_operation(error: BackendError, operation: Operation) -> BackendError:
     """Return ``error`` attributed to the workflow ``operation``.
 
@@ -307,6 +316,7 @@ __all__ = [
     "BackendErrorReason",
     "BackendKind",
     "COMMIT_UNCERTAIN_REASONS",
+    "annotate_backend_error",
     "mark_backend_outcome_unknown",
     "may_have_committed",
     "rebind_operation",

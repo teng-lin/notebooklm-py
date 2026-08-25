@@ -2296,6 +2296,43 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/registry.py", "_records", "NOTEBOOK_PATCH_DEF"),
     }
 )
+# P9.2-12: NotebookMutationService owns snapshot, allocate, reconciliation,
+# and quota diagnosis; the web backend retains only the neutral allocate leaf.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_web/backend.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_web/backend.py", "_records", "NotebookCreateInput"),
+        ("_web/backend.py", "_records", "NotebookCreateResult"),
+        ("_web/backend.py", "_records", "NotebookListResult"),
+        ("_web/backend.py", "_records", "NotebookRecord"),
+        ("_web/backend.py", "codec", "settings"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_notebook_mutation_service.py", "_backend", "annotate_backend_error"),
+        ("_notebook_mutation_service.py", "_records", "NOTEBOOK_ALLOCATE_DEF"),
+        ("_notebook_mutation_service.py", "_records", "NOTEBOOK_LIST_DEF"),
+        ("_notebook_mutation_service.py", "_records", "NotebookAllocateInput"),
+        ("_notebook_mutation_service.py", "_records", "NotebookListInput"),
+        ("_notebook_mutation_service.py", "_records", "NotebookRecord"),
+        ("_notebook_mutation_service.py", "_records", "SETTINGS_GET_LIMITS_DEF"),
+        ("_notebook_mutation_service.py", "_records", "SettingsGetLimitsInput"),
+        ("_web/bindings/notebooks.py", "_records", "NOTEBOOK_ALLOCATE_DEF"),
+        ("_web/bindings/notebooks.py", "_records", "NotebookAllocateInput"),
+        ("_web/codec/notebooks.py", "_records", "NotebookAllocateInput"),
+        ("_web/codec/notebooks.py", "_records", "NotebookAllocateResult"),
+        ("_web/failure_projection.py", "_backend", "BackendError"),
+        ("_web/registry.py", "_records", "NOTEBOOK_ALLOCATE_DEF"),
+    }
+)
+ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
+    {
+        "_notebook_mutation_service.py:NotebookMutationService._notebook_limit_error",
+        "_notebook_mutation_service.py:NotebookMutationService.create.allocate",
+        "_notebook_mutation_service.py:NotebookMutationService.create.probe",
+    }
+)
 
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose

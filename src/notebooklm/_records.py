@@ -96,6 +96,7 @@ from ._note_records import (
     NoteUpdateResult,
 )
 from ._notebook_records import (
+    NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_CREATE_DEF,
     NOTEBOOK_DELETE_DEF,
     NOTEBOOK_DESCRIBE_DEF,
@@ -106,6 +107,8 @@ from ._notebook_records import (
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
     NOTEBOOK_UPDATE_DEF,
+    NotebookAllocateInput,
+    NotebookAllocateResult,
     NotebookChatSessionRecord,
     NotebookChatSettingsRecord,
     NotebookCreateInput,
@@ -1207,6 +1210,7 @@ __all__ = [
     "ARTIFACT_REVISE_SLIDE_DEF",
     "ARTIFACT_SUGGEST_REPORTS_DEF",
     "ARTIFACT_WAIT_DEF",
+    "NOTEBOOK_ALLOCATE_DEF",
     "NOTEBOOK_GET_DEF",
     "NOTEBOOK_LIST_DEF",
     "NOTEBOOK_PATCH_DEF",
@@ -1349,6 +1353,8 @@ __all__ = [
     "LabelRecord",
     "LabelUpdateInput",
     "LabelUpdateResult",
+    "NotebookAllocateInput",
+    "NotebookAllocateResult",
     "NotebookChatSessionRecord",
     "NotebookChatSettingsRecord",
     "NotebookCreateInput",

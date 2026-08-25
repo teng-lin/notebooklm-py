@@ -97,13 +97,9 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.MUTATION,
             (_native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "read with recency side effect"),),
         ),
-        Operation.NOTEBOOK_CREATE: WebCallPolicyBinding(
+        Operation.NOTEBOOK_ALLOCATE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.LIST_NOTEBOOKS, _IDEMPOTENT, "baseline/probe/quota read"),
-                _native(RPCMethod.CREATE_NOTEBOOK, _PROBE_CREATE, "guarded create"),
-                _native(RPCMethod.GET_USER_SETTINGS, _IDEMPOTENT, "quota diagnosis"),
-            ),
+            (_native(RPCMethod.CREATE_NOTEBOOK, _PROBE_CREATE, "guarded create"),),
         ),
         Operation.NOTEBOOK_PATCH: WebCallPolicyBinding(
             CallPolicy.MUTATION,
@@ -753,6 +749,19 @@ def _leaf(operation: Operation, *variants: str | None) -> WorkflowLeaf:
 SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]] = (
     MappingProxyType(
         {
+            Operation.NOTEBOOK_CREATE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.LIST_NOTEBOOKS, _IDEMPOTENT, "baseline/probe/quota read"),
+                    _native(RPCMethod.CREATE_NOTEBOOK, _PROBE_CREATE, "guarded create"),
+                    _native(RPCMethod.GET_USER_SETTINGS, _IDEMPOTENT, "quota diagnosis"),
+                ),
+                (
+                    _leaf(Operation.NOTEBOOK_LIST, None),
+                    _leaf(Operation.NOTEBOOK_ALLOCATE, None),
+                    _leaf(Operation.SETTINGS_GET_LIMITS, None),
+                ),
+            ),
             Operation.LABEL_CREATE: WorkflowPolicyBinding(
                 CallPolicy.MUTATION,
                 (

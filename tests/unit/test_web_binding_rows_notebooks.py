@@ -5,11 +5,10 @@ conversion oracles: the identical keyword set reaches the runtime for every
 converted operation (including explicit ``False``/``None`` values and the
 route), the payloads are byte-for-byte the handlers' params, the non-uniform
 ``NOTEBOOK_LIST`` decoder still accepts its three payload shapes, the
-``NOTEBOOK_GET`` decoder still branches on the input, the ``NOTEBOOK_PATCH``
-primitive preserves the property-mask payload, the ``notebook.create``
-composite still lists through a helper under its own attribution, failure
-projection is what ``invoke()`` produced for handler rows, and the
-``dispatched`` marker reaches the neutral error.
+``NOTEBOOK_GET`` decoder still branches on the input, guarded notebook
+allocation disables internal retries, failure projection is what ``invoke()``
+produced for handler rows, and the ``dispatched`` marker reaches the neutral
+error.
 """
 
 from __future__ import annotations
@@ -27,23 +26,29 @@ from notebooklm._backend import (
 )
 from notebooklm._binding import CodecBinding, CodecPayload, DeadlineMode
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._notebook_payloads import build_get_notebook_params
+from notebooklm._notebook_payloads import (
+    build_create_notebook_params,
+    build_get_notebook_params,
+    build_update_notebook_params,
+)
 from notebooklm._operations import CallPolicy, Operation
 from notebooklm._records import (
-    NOTEBOOK_CREATE_DEF,
+    NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_DELETE_DEF,
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
+    NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
-    NotebookCreateInput,
+    NotebookAllocateInput,
     NotebookDeleteInput,
     NotebookDeleteResult,
     NotebookGetInput,
     NotebookGuideInput,
     NotebookListInput,
     NotebookPatchInput,
+    NotebookPatchResult,
     NotebookRemoveRecentInput,
     NotebookRemoveRecentResult,
 )
@@ -51,8 +56,8 @@ from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import notebooks as notebook_rows
 from notebooklm._web.codec import notebooks as notebooks_codec
-from notebooklm._web.registry import WEB_OPERATION_REGISTRY
-from notebooklm.exceptions import DecodingError, RPCTimeoutError, ServerError
+from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
+from notebooklm.exceptions import ClientError, DecodingError, RPCError, RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.web_backend import build_web_backend
 
@@ -95,6 +100,7 @@ class _RecordingExecutor:
 _CONVERTED: dict[Operation, CodecBinding[Any, Any, RPCMethod]] = {
     Operation.NOTEBOOK_LIST: notebook_rows.NOTEBOOK_LIST,
     Operation.NOTEBOOK_GET: notebook_rows.NOTEBOOK_GET,
+    Operation.NOTEBOOK_ALLOCATE: notebook_rows.NOTEBOOK_ALLOCATE,
     Operation.NOTEBOOK_PATCH: notebook_rows.NOTEBOOK_PATCH,
     Operation.NOTEBOOK_DELETE: notebook_rows.NOTEBOOK_DELETE,
     Operation.NOTEBOOK_REMOVE_RECENT: notebook_rows.NOTEBOOK_REMOVE_RECENT,
@@ -105,6 +111,7 @@ _CONVERTED: dict[Operation, CodecBinding[Any, Any, RPCMethod]] = {
 _EXPECTED_NATIVES = {
     Operation.NOTEBOOK_LIST: RPCMethod.LIST_NOTEBOOKS,
     Operation.NOTEBOOK_GET: RPCMethod.GET_NOTEBOOK,
+    Operation.NOTEBOOK_ALLOCATE: RPCMethod.CREATE_NOTEBOOK,
     Operation.NOTEBOOK_PATCH: RPCMethod.RENAME_NOTEBOOK,
     Operation.NOTEBOOK_DELETE: RPCMethod.DELETE_NOTEBOOK,
     Operation.NOTEBOOK_REMOVE_RECENT: RPCMethod.REMOVE_RECENTLY_VIEWED,
@@ -118,10 +125,7 @@ _EXPECTED_NATIVES = {
 
 def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
     assert {op: WEB_BINDING_ROWS[op] for op in _CONVERTED} == _CONVERTED
-    # P9.4b keeps NOTEBOOK_CREATE as the remaining custom row in this table.
-    assert {op: row for op, row in notebook_rows.NOTEBOOK_ROWS.items() if op in _CONVERTED} == (
-        _CONVERTED
-    )
+    assert dict(notebook_rows.NOTEBOOK_ROWS) == _CONVERTED
     for operation, row in _CONVERTED.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
@@ -133,12 +137,12 @@ def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
         assert row.native.is_constant
         choice = row.native.select(None)
         assert (choice.method, choice.variant) == (_EXPECTED_NATIVES[operation], None)
-        assert row.forward_disable_internal_retries is False
-        assert row.map_error is (
-            notebook_rows._map_required_get_not_found
-            if operation is Operation.NOTEBOOK_GET
-            else None
-        )
+        assert row.forward_disable_internal_retries is (operation is Operation.NOTEBOOK_ALLOCATE)
+        mapped = operation in {
+            Operation.NOTEBOOK_GET,
+            Operation.NOTEBOOK_ALLOCATE,
+        }
+        assert (row.map_error is not None) is mapped
     for name in (
         "_notebook_list",
         "_notebook_get",
@@ -149,13 +153,12 @@ def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
         "_notebook_describe",
     ):
         assert not hasattr(WebRpcBackend, name)
-    create = WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_CREATE]
-    assert create.handler_name is None
-    assert create.row is notebook_rows.NOTEBOOK_CREATE
-    update = WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_UPDATE]
-    assert update.handler_name is None and update.row is None
-    assert update.service_owned is True
-    for name in ("_list_notebooks", "_notebook_create", "_notebook_update"):
+    for operation in (Operation.NOTEBOOK_CREATE, Operation.NOTEBOOK_UPDATE):
+        workflow = WEB_OPERATION_REGISTRY[operation]
+        assert workflow.service_owned is True
+        assert workflow.handler_name is None and workflow.row is None
+        assert operation in WEB_SERVICE_OWNED_OPERATIONS
+    for name in ("_notebook_create", "_notebook_update", "_list_notebooks"):
         assert not hasattr(WebRpcBackend, name)
     backend = build_web_backend(_RecordingExecutor())
     for operation, row in _CONVERTED.items():
@@ -173,19 +176,24 @@ def test_notebook_payload_goldens() -> None:
     assert get == CodecPayload(
         params=build_get_notebook_params("nb_123"), source_path="/notebook/nb_123"
     )
+    assert notebooks_codec.encode_notebook_patch(
+        NotebookPatchInput("nb_123", title="Renamed", emoji="📖")
+    ) == CodecPayload(
+        params=build_update_notebook_params("nb_123", title="Renamed", emoji="📖"),
+        source_path="/",
+        allow_null=True,
+    )
+    assert notebooks_codec.encode_notebook_allocate(
+        NotebookAllocateInput("Daily News")
+    ) == CodecPayload(
+        params=build_create_notebook_params("Daily News"),
+        source_path="/",
+    )
     assert notebooks_codec.encode_notebook_delete(NotebookDeleteInput("nb_123")) == CodecPayload(
         params=[["nb_123"], [2]], source_path="/"
     )
     recent = notebooks_codec.encode_notebook_remove_recent(NotebookRemoveRecentInput("nb_123"))
     assert recent == CodecPayload(params=["nb_123"], source_path="/", allow_null=True)
-    patch = notebooks_codec.encode_notebook_patch(
-        NotebookPatchInput("nb_123", title="New", emoji=None)
-    )
-    assert patch == CodecPayload(
-        params=["nb_123", [[None, None, None, [None, "New"]]]],
-        source_path="/",
-        allow_null=True,
-    )
     guide = notebooks_codec.encode_notebook_guide_request(NotebookGuideInput("nb_123"))
     assert guide == CodecPayload(params=["nb_123", [2]], source_path="/notebook/nb_123")
     for payload in (get, guide):
@@ -228,6 +236,32 @@ def test_notebook_get_decoder_branches_on_include_notebook() -> None:
     assert blank.notebook is None
 
 
+@pytest.mark.parametrize("raw", [None, [], [None], [["", [], ""]]])
+def test_required_notebook_get_decoder_raises_neutral_leaf_miss(raw: Any) -> None:
+    value = NotebookGetInput("nb_123", require_notebook=True)
+    with pytest.raises(BackendError) as caught:
+        notebooks_codec.decode_notebook_get(value, raw)
+    assert caught.value.operation is Operation.NOTEBOOK_GET
+    assert caught.value.reason is BackendErrorReason.NOT_FOUND
+    assert dict(caught.value.diagnostics or {}) == {
+        "notebook_id": "nb_123",
+        "method_id": RPCMethod.GET_NOTEBOOK.value,
+    }
+
+
+def test_notebook_patch_decoder_accepts_null_success() -> None:
+    assert (
+        notebooks_codec.decode_notebook_patch(NotebookPatchInput("nb_123", title="Renamed"), None)
+        == NotebookPatchResult()
+    )
+
+
+def test_notebook_allocate_decoder_returns_the_created_record() -> None:
+    raw = ["New", [], "nb_new", None, None, [1]]
+    result = notebooks_codec.decode_notebook_allocate(NotebookAllocateInput("New"), raw)
+    assert (result.notebook.id, result.notebook.title) == ("nb_new", "New")
+
+
 def test_notebook_guide_decoder_projects_summary_and_topics() -> None:
     result = notebooks_codec.decode_notebook_guide(NotebookGuideInput("nb_123"), _GUIDE_RESPONSE)
     assert result.description.summary == "A summary"
@@ -242,12 +276,17 @@ def test_notebook_guide_decoder_projects_summary_and_topics() -> None:
 @pytest.mark.asyncio
 async def test_notebook_rows_forward_the_identical_keyword_set() -> None:
     executor = _RecordingExecutor(
-        _LIST_RESPONSE, _GET_RESPONSE, None, None, _GUIDE_RESPONSE, _GUIDE_RESPONSE
+        _LIST_RESPONSE, _GET_RESPONSE, None, None, None, _GUIDE_RESPONSE, _GUIDE_RESPONSE
     )
     backend = build_web_backend(executor)
 
     listed = await backend.invoke(NOTEBOOK_LIST_DEF, NotebookListInput(), deadline=None)
     got = await backend.invoke(NOTEBOOK_GET_DEF, NotebookGetInput("nb_123"), deadline=None)
+    patched = await backend.invoke(
+        NOTEBOOK_PATCH_DEF,
+        NotebookPatchInput("nb_123", title="Renamed", emoji="📖"),
+        deadline=None,
+    )
     deleted = await backend.invoke(
         NOTEBOOK_DELETE_DEF, NotebookDeleteInput("nb_123"), deadline=None
     )
@@ -263,18 +302,24 @@ async def test_notebook_rows_forward_the_identical_keyword_set() -> None:
 
     assert [notebook.id for notebook in listed.notebooks] == ["nb_123"]
     assert got.notebook is not None and got.notebook.id == "nb_123"
+    assert patched == NotebookPatchResult()
     assert deleted == NotebookDeleteResult()
     assert removed == NotebookRemoveRecentResult()
     assert summary.description.summary == "A summary"
     assert description.description.summary == "A summary"
 
-    list_call, get_call, delete_call, recent_call, summarize_call, describe_call = executor.calls
+    list_call, get_call, patch_call, delete_call, recent_call, summarize_call, describe_call = (
+        executor.calls
+    )
     assert list_call.method is RPCMethod.LIST_NOTEBOOKS
     assert list_call.params == [None, 1, None, [2]]
     assert list_call.kwargs == {**_BASE_KWARGS, "source_path": "/"}
     assert get_call.method is RPCMethod.GET_NOTEBOOK
     assert get_call.params == build_get_notebook_params("nb_123")
     assert get_call.kwargs == {**_BASE_KWARGS, "source_path": "/notebook/nb_123"}
+    assert patch_call.method is RPCMethod.RENAME_NOTEBOOK
+    assert patch_call.params == build_update_notebook_params("nb_123", title="Renamed", emoji="📖")
+    assert patch_call.kwargs == {**_BASE_KWARGS, "source_path": "/", "allow_null": True}
     assert delete_call.method is RPCMethod.DELETE_NOTEBOOK
     assert delete_call.params == [["nb_123"], [2]]
     assert delete_call.kwargs == {**_BASE_KWARGS, "source_path": "/"}
@@ -288,20 +333,132 @@ async def test_notebook_rows_forward_the_identical_keyword_set() -> None:
 
 
 @pytest.mark.asyncio
-async def test_notebook_create_composite_still_lists_through_the_helper() -> None:
+async def test_notebook_allocate_is_one_guarded_call_with_byte_identical_kwargs() -> None:
     created_row: list[Any] = ["New", [], "nb_new", None, None, [1]]
-    executor = _RecordingExecutor([[]], created_row)
+    executor = _RecordingExecutor(created_row)
     backend = build_web_backend(executor)
 
-    result = await backend.invoke(NOTEBOOK_CREATE_DEF, NotebookCreateInput("New"), deadline=None)
+    result = await backend.invoke(
+        NOTEBOOK_ALLOCATE_DEF,
+        NotebookAllocateInput("New"),
+        deadline=None,
+    )
 
     assert result.notebook.id == "nb_new"
-    baseline, create = executor.calls
-    assert baseline.method is RPCMethod.LIST_NOTEBOOKS
-    assert baseline.params == [None, 1, None, [2]]
-    assert baseline.kwargs == {**_BASE_KWARGS, "source_path": "/"}
+    (create,) = executor.calls
     assert create.method is RPCMethod.CREATE_NOTEBOOK
-    assert create.kwargs["disable_internal_retries"] is True
+    assert create.params == build_create_notebook_params("New")
+    assert create.kwargs == {
+        **_BASE_KWARGS,
+        "source_path": "/",
+        "disable_internal_retries": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_allocate_maps_only_guarded_code_three_to_quota_rejection() -> None:
+    original = RPCError(
+        "invalid argument",
+        method_id=RPCMethod.CREATE_NOTEBOOK.value,
+        rpc_code=3,
+    )
+    backend = build_web_backend(_RecordingExecutor(original))
+
+    with pytest.raises(BackendError) as caught:
+        await backend.invoke(
+            NOTEBOOK_ALLOCATE_DEF,
+            NotebookAllocateInput("New"),
+            deadline=None,
+        )
+
+    error = caught.value
+    assert error.operation is Operation.NOTEBOOK_ALLOCATE
+    assert error.reason is BackendErrorReason.RPC
+    assert error.__cause__ is original
+    assert error.diagnostics is not None
+    assert error.diagnostics["quota_rejection"] is True
+    assert error.diagnostics["method_id"] == RPCMethod.CREATE_NOTEBOOK.value
+    assert error.diagnostics["rpc_code"] == 3
+
+
+@pytest.mark.parametrize(
+    "original",
+    [
+        RPCError("other code", method_id=RPCMethod.CREATE_NOTEBOOK.value, rpc_code=13),
+        RPCError("other method", method_id=RPCMethod.GET_NOTEBOOK.value, rpc_code=3),
+    ],
+)
+@pytest.mark.asyncio
+async def test_allocate_does_not_tag_non_quota_rpc_rejections(original: RPCError) -> None:
+    backend = build_web_backend(_RecordingExecutor(original))
+    with pytest.raises(BackendError) as caught:
+        await backend.invoke(
+            NOTEBOOK_ALLOCATE_DEF,
+            NotebookAllocateInput("New"),
+            deadline=None,
+        )
+    assert caught.value.reason is BackendErrorReason.RPC
+    assert "quota_rejection" not in (caught.value.diagnostics or {})
+
+
+@pytest.mark.asyncio
+async def test_allocate_server_error_is_dispatched_and_commit_uncertain() -> None:
+    original = ServerError("boom", method_id=RPCMethod.CREATE_NOTEBOOK.value)
+    backend = build_web_backend(_RecordingExecutor(original))
+    with pytest.raises(BackendError) as caught:
+        await backend.invoke(
+            NOTEBOOK_ALLOCATE_DEF,
+            NotebookAllocateInput("New"),
+            deadline=None,
+        )
+    assert caught.value.operation is Operation.NOTEBOOK_ALLOCATE
+    assert caught.value.reason is BackendErrorReason.SERVER
+    assert caught.value.dispatched is True
+    assert caught.value.outcome_unknown is False
+    assert may_have_committed(caught.value) is True
+    assert caught.value.__cause__ is original
+
+
+@pytest.mark.asyncio
+async def test_allocate_timeout_after_dispatch_uses_mutation_uncertainty() -> None:
+    clock = [11.0]
+    original = RPCTimeoutError("slow", method_id=RPCMethod.CREATE_NOTEBOOK.value)
+    executor = _RecordingExecutor(original)
+    backend = build_web_backend(executor)
+    deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: clock[0])
+
+    async def rpc_call(method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
+        clock[0] = 16.0
+        return await _RecordingExecutor.rpc_call(executor, method, params, **kwargs)
+
+    backend._runtime = type("Runtime", (), {"rpc_call": staticmethod(rpc_call)})()  # type: ignore[assignment]
+    with pytest.raises(BackendDeadlineExceededError) as caught:
+        await backend.invoke(
+            NOTEBOOK_ALLOCATE_DEF,
+            NotebookAllocateInput("New"),
+            deadline=deadline,
+        )
+    assert caught.value.operation is Operation.NOTEBOOK_ALLOCATE
+    assert caught.value.dispatched is True
+    assert caught.value.outcome_unknown is True
+    assert may_have_committed(caught.value) is True
+
+
+@pytest.mark.asyncio
+async def test_allocate_predispatch_expiry_never_enters_the_runtime() -> None:
+    executor = _RecordingExecutor()
+    backend = build_web_backend(executor)
+    deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 16.0)
+    with pytest.raises(BackendDeadlineExceededError) as caught:
+        await backend.invoke(
+            NOTEBOOK_ALLOCATE_DEF,
+            NotebookAllocateInput("New"),
+            deadline=deadline,
+        )
+    assert executor.calls == []
+    assert caught.value.operation is Operation.NOTEBOOK_ALLOCATE
+    assert caught.value.dispatched is False
+    assert caught.value.outcome_unknown is False
 
 
 @pytest.mark.asyncio
@@ -337,6 +494,76 @@ async def test_codec_row_server_error_translates_like_a_handler_and_is_dispatche
     assert error.dispatched is True
     assert may_have_committed(error) is True
     assert isinstance(error.__cause__, ServerError)
+
+
+@pytest.mark.asyncio
+async def test_required_get_maps_only_status_five_to_neutral_not_found() -> None:
+    original = ClientError(
+        "not found",
+        status_code=404,
+        method_id=RPCMethod.GET_NOTEBOOK.value,
+        raw_response="scrubbed response",
+        rpc_code=5,
+    )
+    backend = build_web_backend(_RecordingExecutor(original))
+
+    with pytest.raises(BackendError) as caught:
+        await backend.invoke(
+            NOTEBOOK_GET_DEF,
+            NotebookGetInput("nb_123", require_notebook=True),
+            deadline=None,
+        )
+
+    error = caught.value
+    assert error.reason is BackendErrorReason.NOT_FOUND
+    assert error.operation is Operation.NOTEBOOK_GET
+    assert error.__cause__ is original
+    assert error.diagnostics is not None
+    assert error.diagnostics["status_code"] == 404
+    assert error.diagnostics["rpc_code"] == 5
+    assert error.diagnostics["raw_response"] == "scrubbed response"
+    assert error.diagnostics["original_message"] == "not found"
+
+
+@pytest.mark.asyncio
+async def test_ordinary_get_keeps_status_five_on_the_legacy_client_error_path() -> None:
+    original = ClientError(
+        "not found",
+        status_code=404,
+        method_id=RPCMethod.GET_NOTEBOOK.value,
+        rpc_code=5,
+    )
+    backend = build_web_backend(_RecordingExecutor(original))
+
+    with pytest.raises(BackendError) as caught:
+        await backend.invoke(
+            NOTEBOOK_GET_DEF,
+            NotebookGetInput("nb_123"),
+            deadline=None,
+        )
+
+    assert caught.value.reason is BackendErrorReason.CLIENT
+    assert caught.value.__cause__ is original
+
+
+@pytest.mark.asyncio
+async def test_patch_server_error_is_dispatched_without_inventing_outcome_unknown() -> None:
+    original = ServerError("boom", method_id=RPCMethod.RENAME_NOTEBOOK.value)
+    backend = build_web_backend(_RecordingExecutor(original))
+
+    with pytest.raises(BackendError) as caught:
+        await backend.invoke(
+            NOTEBOOK_PATCH_DEF,
+            NotebookPatchInput("nb_123", title="Renamed"),
+            deadline=None,
+        )
+
+    assert caught.value.operation is Operation.NOTEBOOK_PATCH
+    assert caught.value.reason is BackendErrorReason.SERVER
+    assert caught.value.dispatched is True
+    assert caught.value.outcome_unknown is False
+    assert may_have_committed(caught.value) is True
+    assert caught.value.__cause__ is original
 
 
 @pytest.mark.asyncio

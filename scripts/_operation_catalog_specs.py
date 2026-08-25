@@ -81,7 +81,7 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
     OperationSpec(
         Operation.NOTEBOOK_CREATE,
         CallPolicy.MUTATION,
-        "NotebookService",
+        "NotebookMutationService",
         "account",
         "Takes an unconditional LIST_NOTEBOOKS baseline, creates once, probes on ambiguity, and "
         "may read account settings and list again only to diagnose quota failures.",
@@ -91,6 +91,15 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
             _b(RPCMethod.LIST_NOTEBOOKS),
             _b(RPCMethod.GET_USER_SETTINGS),
         ),
+    ),
+    OperationSpec(
+        Operation.NOTEBOOK_ALLOCATE,
+        CallPolicy.MUTATION,
+        "NotebookMutationService",
+        "account",
+        "P9.2 primitive: performs one guarded CREATE_NOTEBOOK attempt without reconciliation.",
+        (),
+        (_b(RPCMethod.CREATE_NOTEBOOK),),
     ),
     OperationSpec(
         Operation.NOTEBOOK_UPDATE,

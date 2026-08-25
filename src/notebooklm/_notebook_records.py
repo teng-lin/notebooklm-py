@@ -136,6 +136,20 @@ class NotebookCreateResult:
 
 
 @dataclass(frozen=True, slots=True)
+class NotebookAllocateInput:
+    """One native notebook allocation attempt."""
+
+    title: str
+
+
+@dataclass(frozen=True, slots=True)
+class NotebookAllocateResult:
+    """Notebook returned by one successful allocation attempt."""
+
+    notebook: NotebookRecord
+
+
+@dataclass(frozen=True, slots=True)
 class NotebookUpdateInput:
     """Notebook identity and optional title/emoji replacements."""
 
@@ -221,6 +235,12 @@ NOTEBOOK_CREATE_DEF: OperationDef[NotebookCreateInput, NotebookCreateResult] = O
     NotebookCreateInput,
     NotebookCreateResult,
 )
+NOTEBOOK_ALLOCATE_DEF: OperationDef[NotebookAllocateInput, NotebookAllocateResult] = OperationDef(
+    Operation.NOTEBOOK_ALLOCATE,
+    CallPolicy.MUTATION,
+    NotebookAllocateInput,
+    NotebookAllocateResult,
+)
 NOTEBOOK_UPDATE_DEF: OperationDef[NotebookUpdateInput, NotebookUpdateResult] = OperationDef(
     Operation.NOTEBOOK_UPDATE,
     CallPolicy.MUTATION,
@@ -270,6 +290,7 @@ NOTEBOOK_SUGGEST_PROMPTS_DEF: OperationDef[
 
 
 __all__ = [
+    "NOTEBOOK_ALLOCATE_DEF",
     "NOTEBOOK_CREATE_DEF",
     "NOTEBOOK_DELETE_DEF",
     "NOTEBOOK_DESCRIBE_DEF",
@@ -282,6 +303,8 @@ __all__ = [
     "NOTEBOOK_UPDATE_DEF",
     "NotebookChatSessionRecord",
     "NotebookChatSettingsRecord",
+    "NotebookAllocateInput",
+    "NotebookAllocateResult",
     "NotebookCreateInput",
     "NotebookCreateResult",
     "NotebookDeleteInput",

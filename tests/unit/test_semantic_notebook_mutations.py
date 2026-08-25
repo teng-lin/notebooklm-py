@@ -11,22 +11,28 @@ from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_mutation_service import NotebookMutationService
 from notebooklm._operations import Operation
 from notebooklm._records import (
-    NOTEBOOK_CREATE_DEF,
+    NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_DELETE_DEF,
     NOTEBOOK_GET_DEF,
+    NOTEBOOK_LIST_DEF,
     NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
-    NotebookCreateInput,
-    NotebookCreateResult,
+    SETTINGS_GET_LIMITS_DEF,
+    AccountLimitsRecord,
+    NotebookAllocateInput,
+    NotebookAllocateResult,
     NotebookDeleteInput,
     NotebookDeleteResult,
     NotebookGetInput,
     NotebookGetResult,
+    NotebookListInput,
+    NotebookListResult,
     NotebookPatchInput,
     NotebookPatchResult,
     NotebookRecord,
     NotebookRemoveRecentInput,
     NotebookRemoveRecentResult,
+    SettingsGetLimitsResult,
 )
 from notebooklm.exceptions import ValidationError
 from tests._fixtures.recording_backend import BackendInvocation, RecordingBackend
@@ -37,7 +43,12 @@ async def test_mutation_service_records_typed_calls_deadline_and_projects_result
     backend = RecordingBackend()
     created = NotebookRecord("nb-created", "Created")
     updated = NotebookRecord("nb-created", "Renamed")
-    backend.set_result(NOTEBOOK_CREATE_DEF, NotebookCreateResult(created))
+    backend.set_result(NOTEBOOK_LIST_DEF, NotebookListResult(()))
+    backend.set_result(NOTEBOOK_ALLOCATE_DEF, NotebookAllocateResult(created))
+    backend.set_result(
+        SETTINGS_GET_LIMITS_DEF,
+        SettingsGetLimitsResult(AccountLimitsRecord()),
+    )
     backend.set_result(NOTEBOOK_PATCH_DEF, NotebookPatchResult())
     backend.set_result(NOTEBOOK_GET_DEF, NotebookGetResult(updated))
     backend.set_result(NOTEBOOK_DELETE_DEF, NotebookDeleteResult())
@@ -53,7 +64,12 @@ async def test_mutation_service_records_typed_calls_deadline_and_projects_result
     assert (created_model.id, created_model.title) == ("nb-created", "Created")
     assert (updated_model.id, updated_model.title) == ("nb-created", "Renamed")
     assert backend.invocations == [
-        BackendInvocation(Operation.NOTEBOOK_CREATE, NotebookCreateInput("Created"), deadline),
+        BackendInvocation(Operation.NOTEBOOK_LIST, NotebookListInput(), deadline),
+        BackendInvocation(
+            Operation.NOTEBOOK_ALLOCATE,
+            NotebookAllocateInput("Created"),
+            deadline,
+        ),
         BackendInvocation(
             Operation.NOTEBOOK_PATCH,
             NotebookPatchInput("nb-created", title="Renamed"),

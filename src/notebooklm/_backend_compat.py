@@ -111,6 +111,34 @@ def _preserve_outcome(error: BackendError, projected: Exception) -> Exception:
         projected.__cause__ = replayed.__cause__
         projected.__context__ = replayed.__context__
         projected.__suppress_context__ = replayed.__suppress_context__
+    create_context_record = diagnostics.get("create_context_failure")
+    if create_context_record is not None and not isinstance(
+        create_context_record, SourceAddFailureRecord
+    ):
+        raise BackendContractError(
+            "notebook-create context evidence has invalid type",
+            operation=error.operation,
+        )
+    create_context = (
+        _project_source_add_record(create_context_record)
+        if isinstance(create_context_record, SourceAddFailureRecord)
+        else None
+    )
+    probe_record = diagnostics.get("reconciliation_probe_failure")
+    if probe_record is not None and not isinstance(probe_record, SourceAddFailureRecord):
+        raise BackendContractError(
+            "notebook-create probe evidence has invalid type",
+            operation=error.operation,
+        )
+    if isinstance(probe_record, SourceAddFailureRecord):
+        probe = _project_source_add_record(probe_record)
+        if create_context is not None:
+            probe.__context__ = create_context
+        projected.__cause__ = probe
+        projected.__context__ = probe
+        projected.__suppress_context__ = True
+    elif create_context is not None:
+        projected.__context__ = create_context
     if error.outcome_unknown:
         projected.unconfirmed = True  # type: ignore[attr-defined]
     return projected
@@ -158,6 +186,14 @@ def _required_int(
 def _rpc_diagnostics(error: BackendError) -> dict[str, Any]:
     diagnostics = _diagnostics(error)
     method_id = _optional(error, diagnostics, "method_id", str)
+    reconciliation = _optional(
+        error,
+        diagnostics,
+        "notebook_create_reconciliation_unresolved",
+        bool,
+    )
+    if method_id is None and reconciliation is True:
+        method_id = RPCMethod.CREATE_NOTEBOOK.value
     raw_response = _optional(error, diagnostics, "raw_response", str)
     rpc_code = _optional(error, diagnostics, "rpc_code", (str, int))
     found_ids = diagnostics.get("found_ids")
