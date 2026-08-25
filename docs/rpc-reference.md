@@ -63,7 +63,7 @@
 | `Zbrupe` | CANCEL_RESEARCH | Cancel in-flight research run | `_research.py` |
 | `rc3d8d` | RENAME_ARTIFACT | Rename artifact | `_artifacts.py` |
 | `Krh3pd` | EXPORT_ARTIFACT | Export to Docs/Sheets | `_artifacts.py` |
-| `RGP97b` | SHARE_ARTIFACT | Legacy notebook/artifact share-link toggle | `_web/sharing.py` |
+| `RGP97b` | SHARE_ARTIFACT | Legacy notebook/artifact share-link toggle | `_web/bindings/sharing.py` |
 | `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_web/codec/sharing.py` |
 | `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_web/codec/sharing.py` |
 | `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
