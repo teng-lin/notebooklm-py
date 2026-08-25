@@ -19,7 +19,6 @@ from notebooklm._operations import OperationDef
 from notebooklm._records import (
     ARTIFACT_RENAME_DEF,
     COLLECTION_CREATE_DEF,
-    SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
     ArtifactRenameInput,
@@ -27,7 +26,6 @@ from notebooklm._records import (
     LabelKind,
     SharePermissionLevel,
     ShareViewScope,
-    SharingSetPublicInput,
     SharingSetViewLevelInput,
     SharingUpdateUsersInput,
     SharingUserGrant,
@@ -75,15 +73,6 @@ _COLLECTION_ROW = ["Existing", None, "collection-1", ""]
         "blocked_method",
     ),
     [
-        pytest.param(
-            SHARING_SET_PUBLIC_DEF,
-            SharingSetPublicInput("nb-1", True),
-            (None,),
-            1,
-            (RPCMethod.SHARE_NOTEBOOK,),
-            RPCMethod.GET_SHARE_STATUS,
-            id="sharing-visibility-readback",
-        ),
         pytest.param(
             SHARING_SET_VIEW_LEVEL_DEF,
             SharingSetViewLevelInput("nb-1", ShareViewScope.CHAT_ONLY),

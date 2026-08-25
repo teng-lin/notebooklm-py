@@ -710,13 +710,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.READ,
             (_native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "sharing status read"),),
         ),
-        Operation.SHARING_SET_PUBLIC: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded link mutation"),
-                _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
-            ),
-        ),
         Operation.SHARING_SET_VIEW_LEVEL: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (
@@ -845,6 +838,17 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.SOURCE_PATCH_TITLE, None),
                     _leaf(Operation.SOURCE_GET, None),
+                ),
+            ),
+            Operation.SHARING_SET_PUBLIC: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded link mutation"),
+                    _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
+                ),
+                (
+                    _leaf(Operation.SHARING_MUTATE, None),
+                    _leaf(Operation.SHARING_GET, None),
                 ),
             ),
         }

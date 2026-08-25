@@ -5,6 +5,11 @@ a grant batch is coherent, and what each intent logs — and invokes only typed
 operation definitions through :class:`~notebooklm._backend.BackendAdapter`. It
 holds no wire vocabulary: the ``SHARE_NOTEBOOK`` / ``GET_SHARE_STATUS`` /
 ``MutateProject`` grammar lives in ``_web/codec/sharing.py``.
+
+Since P9.2 the public-link visibility workflow is service-owned: this service
+sequences one ``sharing.mutate`` leaf and one ``sharing.get`` readback above
+the port, starts one deadline for both leaves, and rebinds leaf failures to the
+workflow operation while retaining the blocked leaf in diagnostics.
 """
 
 from __future__ import annotations
@@ -13,21 +18,33 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from ._backend import BackendAdapter
-from ._deadline import RuntimeDeadline
+from ._backend import (
+    BackendAdapter,
+    BackendDeadlineExceededError,
+    BackendError,
+    mark_backend_outcome_unknown,
+    rebind_operation,
+    require_leaves,
+)
+from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ._operations import Operation
 from ._projectors import project_share_status
 from ._records import (
     SHARING_GET_DEF,
+    SHARING_MUTATE_DEF,
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
     SharePermissionLevel,
+    ShareStatusRecord,
     ShareViewScope,
     SharingGetInput,
+    SharingMutateInput,
     SharingSetPublicInput,
     SharingSetViewLevelInput,
     SharingUpdateUsersInput,
     SharingUserGrant,
+    SharingVisibility,
 )
 
 if TYPE_CHECKING:
@@ -45,10 +62,16 @@ logger = logging.getLogger("notebooklm._sharing")
 class SharingService:
     """Validate sharing intents and invoke their typed backend operations."""
 
-    __slots__ = ("_backend",)
+    __slots__ = ("_backend", "_deadline_factory")
 
-    def __init__(self, backend: BackendAdapter) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        *,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
+    ) -> None:
         self._backend = backend
+        self._deadline_factory = deadline_factory
 
     async def get_status(
         self,
@@ -72,12 +95,57 @@ class SharingService:
         deadline: RuntimeDeadline | None = None,
     ) -> ShareStatus:
         logger.debug("Setting notebook %s public=%s", notebook_id, public)
-        result = await self._backend.invoke(
-            SHARING_SET_PUBLIC_DEF,
-            SharingSetPublicInput(notebook_id, public),
+        value = SharingSetPublicInput(notebook_id, public)
+        status = await self._mutate_then_read_status(
+            value.notebook_id,
+            SharingVisibility(value.public),
+            workflow=SHARING_SET_PUBLIC_DEF.key,
             deadline=deadline,
         )
-        return project_share_status(result.status)
+        return project_share_status(status)
+
+    def _start_deadline(self, deadline: RuntimeDeadline | None) -> RuntimeDeadline | None:
+        """Mint the workflow deadline unless the caller already supplied one."""
+        if deadline is not None or self._deadline_factory is None:
+            return deadline
+        return self._deadline_factory.start()
+
+    async def _mutate_then_read_status(
+        self,
+        notebook_id: str,
+        mutation: SharingVisibility,
+        *,
+        workflow: Operation,
+        deadline: RuntimeDeadline | None,
+    ) -> ShareStatusRecord:
+        """Run one sharing mutation and its mandatory status readback.
+
+        The mutation echo carries no useful status. A successful write followed
+        by a readback deadline therefore leaves the requested final outcome
+        unconfirmed, even when the read itself expired before dispatch.
+        """
+        require_leaves(self._backend, SHARING_MUTATE_DEF.key, SHARING_GET_DEF.key)
+        deadline = self._start_deadline(deadline)
+        write_completed = False
+        try:
+            await self._backend.invoke(
+                SHARING_MUTATE_DEF,
+                SharingMutateInput(notebook_id, mutation),
+                deadline=deadline,
+            )
+            write_completed = True
+            result = await self._backend.invoke(
+                SHARING_GET_DEF,
+                SharingGetInput(notebook_id),
+                deadline=deadline,
+            )
+            return result.status
+        except BackendError as error:
+            if error.operation is workflow:
+                raise
+            if write_completed and isinstance(error, BackendDeadlineExceededError):
+                error = mark_backend_outcome_unknown(error)
+            raise rebind_operation(error, workflow) from error.__cause__
 
     async def set_view_level(
         self,

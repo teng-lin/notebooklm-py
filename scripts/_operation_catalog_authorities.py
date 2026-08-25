@@ -697,7 +697,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.SHARING_SET_PUBLIC, _b(RPCMethod.SHARE_NOTEBOOK)): _rules(
-            ("_web/bindings/sharing.py:SHARING_SET_PUBLIC", "visibility entry")
+            (
+                "_web/bindings/primitives.py:SHARING_MUTATE",
+                "visibility entry via sharing.mutate",
+            )
         ),
         (Operation.SHARING_UPDATE_USERS, _b(RPCMethod.SHARE_NOTEBOOK)): _rules(
             (
@@ -886,7 +889,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/sharing.py:SHARING_GET", "public=sharing.get_status")
         ),
         (Operation.SHARING_SET_PUBLIC, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
-            ("_web/bindings/sharing.py:SHARING_SET_PUBLIC", "post-public-mutation read")
+            (
+                "_web/bindings/sharing.py:SHARING_GET",
+                "post-public-mutation read via sharing.get",
+            )
         ),
         (Operation.SHARING_SET_VIEW_LEVEL, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
             ("_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL", "post-view-level-mutation read")

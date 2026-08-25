@@ -1,13 +1,13 @@
-"""P9.3 sharing: the two sharing leaves dispatch as codec rows exactly as the handlers did.
+"""P9.3 sharing leaves and the remaining P9.4 custom rows.
 
 ``SHARING_GET`` and ``LEGACY_SHARE_ARTIFACT`` are ``encode → one native call →
-decode`` rows in ``_web/bindings/sharing.py``.  These tests pin the conversion
+decode`` rows in ``_web/bindings/sharing.py``. These tests pin the conversion
 oracles: the identical keyword set reaches the runtime (including explicit
 ``False``/``None`` values and the notebook route), the payload builders are
 unchanged, failure projection is what ``invoke()`` produced for handler rows,
-and the ``dispatched`` marker reaches the neutral ``BackendError``.  The three
-mutate-then-readback composites stay handlers and keep issuing their own
-``GET_SHARE_STATUS`` readback through ``_sharing_status``.
+and the ``dispatched`` marker reaches the neutral ``BackendError``. The
+view-level and user-grant composites stay custom rows; public visibility is
+service-owned since P9.2-5.
 """
 
 from __future__ import annotations
@@ -29,14 +29,12 @@ from notebooklm._operations import Operation
 from notebooklm._records import (
     LEGACY_SHARE_ARTIFACT_DEF,
     SHARING_GET_DEF,
-    SHARING_SET_PUBLIC_DEF,
     LegacyShareArtifactInput,
     LegacyShareArtifactResult,
     ShareAccessLevel,
     SharePermissionLevel,
     ShareViewScope,
     SharingGetInput,
-    SharingSetPublicInput,
 )
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
@@ -97,7 +95,6 @@ def test_sharing_leaves_are_codec_rows_and_composites_are_custom_rows() -> None:
         Operation.LEGACY_SHARE_ARTIFACT: sharing_rows.LEGACY_SHARE_ARTIFACT,
     }
     custom = {
-        Operation.SHARING_SET_PUBLIC: sharing_rows.SHARING_SET_PUBLIC,
         Operation.SHARING_SET_VIEW_LEVEL: sharing_rows.SHARING_SET_VIEW_LEVEL,
         Operation.SHARING_UPDATE_USERS: sharing_rows.SHARING_UPDATE_USERS,
     }
@@ -127,7 +124,7 @@ def test_sharing_leaves_are_codec_rows_and_composites_are_custom_rows() -> None:
         "_sharing_update_users",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # P9.4: the three composites are custom rows, not handler names.
+    # P9.4: the two remaining composites are custom rows, not handler names.
     for operation, row in custom.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.handler_name is None
@@ -217,24 +214,6 @@ async def test_sharing_rows_forward_the_identical_keyword_set() -> None:
         "source_path": "/notebook/nb_123",
         "allow_null": True,
     }
-
-
-@pytest.mark.asyncio
-async def test_sharing_composite_readback_still_issues_the_status_read() -> None:
-    executor = _RecordingExecutor([], _SHARE_STATUS_PAYLOAD)
-    backend = build_web_backend(executor)
-
-    result = await backend.invoke(
-        SHARING_SET_PUBLIC_DEF, SharingSetPublicInput("nb_123", public=True), deadline=None
-    )
-
-    assert result.status.is_public is True
-    mutate, readback = executor.calls
-    assert mutate.method is RPCMethod.SHARE_NOTEBOOK
-    assert mutate.kwargs["allow_null"] is True
-    assert readback.method is RPCMethod.GET_SHARE_STATUS
-    assert readback.params == ["nb_123", [2]]
-    assert readback.kwargs == {**_BASE_KWARGS, "source_path": "/notebook/nb_123"}
 
 
 @pytest.mark.asyncio

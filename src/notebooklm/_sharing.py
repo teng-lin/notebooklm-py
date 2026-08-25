@@ -2,6 +2,7 @@
 
 from ._backend import BackendAdapter
 from ._backend_compat import project_backend_call
+from ._deadline import RuntimeDeadlineFactory
 from ._records import SharePermissionLevel, ShareViewScope
 from ._sharing_service import SharingService
 from .rpc.types import SharePermission, ShareViewLevel
@@ -47,7 +48,12 @@ class SharingAPI:
             )
     """
 
-    def __init__(self, *, _backend: BackendAdapter):
+    def __init__(
+        self,
+        *,
+        _backend: BackendAdapter,
+        _deadline_factory: RuntimeDeadlineFactory | None = None,
+    ):
         """Initialize the sharing API.
 
         Args:
@@ -56,7 +62,7 @@ class SharingAPI:
                 it; this facade owns public signatures, the public enum to
                 neutral vocabulary translation, and error compatibility only.
         """
-        self._service = SharingService(_backend)
+        self._service = SharingService(_backend, deadline_factory=_deadline_factory)
 
     @staticmethod
     def _permission_level(permission: SharePermission) -> SharePermissionLevel:

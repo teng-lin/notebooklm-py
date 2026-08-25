@@ -328,7 +328,10 @@ def compose_client(
     client.settings = SettingsAPI(_backend=client._backend)
     # Sharing is fully migrated to the semantic backend: it takes the
     # client-owned adapter and no RpcCaller at all (P6.5).
-    client.sharing = SharingAPI(_backend=client._backend)
+    client.sharing = SharingAPI(
+        _backend=client._backend,
+        _deadline_factory=deadline_factory,
+    )
     # Source labels. Takes a narrow ``list_sources`` callable (not the whole
     # SourcesAPI) for the membership->Source join in ``labels.sources()``;
     # wired after ``client.sources`` exists. Same client/bound loop (ADR-0004).

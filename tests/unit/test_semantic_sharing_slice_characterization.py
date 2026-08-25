@@ -34,7 +34,11 @@ from notebooklm._sharing_service import SharingService
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import sharing as sharing_rows
 from notebooklm._web.codec.sharing import decode_share_status
-from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
+from notebooklm._web.registry import (
+    WEB_OPERATION_REGISTRY,
+    WEB_SERVICE_OWNED_OPERATIONS,
+    WEB_SUPPORTED_OPERATIONS,
+)
 from notebooklm.exceptions import RPCError, ServerError
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import ShareAccess, SharePermission, ShareViewLevel
@@ -110,19 +114,15 @@ def test_sharing_public_signatures_are_frozen() -> None:
 def test_sharing_facade_takes_only_the_semantic_backend() -> None:
     """The domain is fully migrated: no RpcCaller reaches this facade."""
     parameters = inspect.signature(SharingAPI.__init__).parameters
-    assert list(parameters) == ["self", "_backend"]
+    assert list(parameters) == ["self", "_backend", "_deadline_factory"]
     assert parameters["_backend"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["_deadline_factory"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 def test_every_sharing_operation_has_one_registered_web_binding() -> None:
     """Each sharing operation is backed by exactly one row: codec leaf or custom composite."""
-    # P9.4: the three mutate-then-readback composites are deferred-product custom rows.
+    # P9.4: the two remaining composites are deferred-product custom rows.
     composites = {
-        Operation.SHARING_SET_PUBLIC: (
-            sharing_rows.SHARING_SET_PUBLIC,
-            SHARING_SET_PUBLIC_DEF,
-            CallPolicy.MUTATION,
-        ),
         Operation.SHARING_SET_VIEW_LEVEL: (
             sharing_rows.SHARING_SET_VIEW_LEVEL,
             SHARING_SET_VIEW_LEVEL_DEF,
@@ -144,6 +144,12 @@ def test_every_sharing_operation_has_one_registered_web_binding() -> None:
         assert binding.definition is definition
         assert definition.policy is policy
         assert operation in WEB_SUPPORTED_OPERATIONS
+    public = WEB_OPERATION_REGISTRY[Operation.SHARING_SET_PUBLIC]
+    assert public.service_owned is True
+    assert public.definition is SHARING_SET_PUBLIC_DEF
+    assert public.handler_name is None and public.row is None
+    assert Operation.SHARING_SET_PUBLIC in WEB_SERVICE_OWNED_OPERATIONS
+    assert Operation.SHARING_SET_PUBLIC not in WEB_SUPPORTED_OPERATIONS
     # P9.3: the two leaves are codec rows, not handler names.
     leaves = {
         Operation.SHARING_GET: (sharing_rows.SHARING_GET, SHARING_GET_DEF, CallPolicy.READ),

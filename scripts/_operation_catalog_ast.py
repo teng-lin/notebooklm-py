@@ -109,6 +109,7 @@ class BindingRowSite:
     site: str
     operation: Operation | None
     natives: tuple[NativeName, ...]
+    decoders: tuple[str, ...] = ()
     unresolved: bool = False
 
 
@@ -370,11 +371,34 @@ class _ReferenceCollector(ast.NodeVisitor):
                 site = f"{target.id}.{index}"
             if unresolved is not None:
                 self.unresolved_rpc_calls.append((site, unresolved))
+            decoder_node = _call_argument(row, 2, "decode")
+            decoder_call = (
+                _attribute_parts(decoder_node.func) if isinstance(decoder_node, ast.Call) else ()
+            )
+            # Direct decoder references are already catalogued from their own
+            # RPCMethod use. Only metadata-bound partials need their row native
+            # threaded into decoder evidence.
+            decoders = (
+                tuple(
+                    sorted(
+                        {
+                            ".".join(parts)
+                            for item in ast.walk(decoder_node)
+                            if isinstance(item, (ast.Name, ast.Attribute))
+                            and (parts := _attribute_parts(item))
+                            and parts[-1].startswith("decode_")
+                        }
+                    )
+                )
+                if decoder_call[-1:] == ("partial",)
+                else ()
+            )
             self.binding_rows.append(
                 BindingRowSite(
                     site=site,
                     operation=operation,
                     natives=tuple(resolver.natives),
+                    decoders=decoders,
                     unresolved=unresolved is not None,
                 )
             )
@@ -678,10 +702,54 @@ def collect_rpc_references() -> dict[RPCMethod, dict[str, list[str]]]:
                     inventory[RPCMethod[method_name]]["execution_authorities"].add(
                         f"{relative}:{row.site}"
                     )
+                    inventory[RPCMethod[method_name]]["decoders"].update(
+                        _resolve_row_decoder_sites(path, relative, row.decoders)
+                    )
     return {
         method: {role: sorted(sites) for role, sites in sorted(roles.items())}
         for method, roles in inventory.items()
     }
+
+
+def _resolve_row_decoder_sites(
+    path: Path,
+    relative: str,
+    references: tuple[str, ...],
+) -> set[str]:
+    """Resolve row ``decode=`` references to their codec function sites.
+
+    This makes a row's selected native metadata the decoder-attribution
+    authority. A codec can therefore receive a method id from its binding
+    without importing ``RPCMethod`` solely so the catalog can discover it.
+    """
+    if not references:
+        return set()
+    package = ["notebooklm", *Path(relative).parent.parts]
+    aliases: dict[str, tuple[str, ...]] = {}
+    for node in _parse(path).body:
+        if isinstance(node, ast.ImportFrom):
+            keep = len(package) - max(node.level - 1, 0)
+            base = (*package[:keep], *((node.module or "").split(".") if node.module else ()))
+            for alias in node.names:
+                aliases[alias.asname or alias.name] = (*base, alias.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                aliases[alias.asname or alias.name.split(".")[0]] = tuple(alias.name.split("."))
+
+    sites: set[str] = set()
+    for reference in references:
+        parts = reference.split(".")
+        imported = aliases.get(parts[0])
+        if imported is None:
+            continue
+        candidate = (*imported, *parts[1:-1])
+        module_path = SRC_ROOT.parent.joinpath(*candidate).with_suffix(".py")
+        if not module_path.exists() and len(imported) > 1:
+            candidate = (*imported[:-1], *parts[1:-1])
+            module_path = SRC_ROOT.parent.joinpath(*candidate).with_suffix(".py")
+        if module_path.exists():
+            sites.add(f"{module_path.relative_to(SRC_ROOT).as_posix()}:{parts[-1]}")
+    return sites
 
 
 _NATIVE_SITE_EXCLUDED_PREFIXES = ("_row_adapters/", "_types/", "rpc/")
@@ -1166,6 +1234,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_sharing_service.py", "_records", "SHARING_SET_VIEW_LEVEL_DEF"),
         ("_sharing_service.py", "_records", "SHARING_UPDATE_USERS_DEF"),
         ("_sharing_service.py", "_records", "SharePermissionLevel"),
+        ("_sharing_service.py", "_records", "ShareStatusRecord"),
         ("_sharing_service.py", "_records", "ShareViewScope"),
         ("_sharing_service.py", "_records", "SharingGetInput"),
         ("_sharing_service.py", "_records", "SharingSetPublicInput"),
@@ -1911,8 +1980,8 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_studio/representations.py:ArtifactRepresentationService._list_representations",
         "_mutation_services.py:SourceUrlMutationService.add_url",
         "_sharing_service.py:SharingService.get_status",
+        "_sharing_service.py:SharingService._mutate_then_read_status",
         "_sharing_service.py:SharingService.remove_user",
-        "_sharing_service.py:SharingService.set_public",
         "_sharing_service.py:SharingService.set_users",
         "_sharing_service.py:SharingService.set_view_level",
         "_settings_service.py:SettingsService.get_account_limits",
@@ -2187,6 +2256,21 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/codec/sources.py", "_records", "SourcePatchTitleInput"),
         ("_web/codec/sources.py", "_records", "SourcePatchTitleResult"),
         ("_web/registry.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
+    }
+)
+
+# P9.2-5: SharingService sequences sharing.set_public from the closed
+# sharing.mutate primitive and the sharing.get readback leaf.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_sharing_service.py", "_backend", "BackendDeadlineExceededError"),
+        ("_sharing_service.py", "_backend", "BackendError"),
+        ("_sharing_service.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_sharing_service.py", "_backend", "rebind_operation"),
+        ("_sharing_service.py", "_backend", "require_leaves"),
+        ("_sharing_service.py", "_records", "SHARING_MUTATE_DEF"),
+        ("_sharing_service.py", "_records", "SharingMutateInput"),
+        ("_sharing_service.py", "_records", "SharingVisibility"),
     }
 )
 
