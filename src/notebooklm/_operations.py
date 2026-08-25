@@ -62,6 +62,9 @@ class Operation(str, Enum):
     ARTIFACT_RETRY = "artifact.retry"
     ARTIFACT_DELETE = "artifact.delete"
     ARTIFACT_RENAME = "artifact.rename"
+    # P9.2 primitives: one native call each, sequenced by artifact.rename.
+    ARTIFACT_PATCH_TITLE = "artifact.patch_title"
+    ARTIFACT_CATALOG = "artifact.catalog"
     ARTIFACT_EXPORT = "artifact.export"
     ARTIFACT_DOWNLOAD = "artifact.download"
     ARTIFACT_WAIT = "artifact.wait"

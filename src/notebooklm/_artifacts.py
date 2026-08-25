@@ -23,6 +23,7 @@ from ._artifact.generation_workflow import ArtifactGenerationWorkflow
 from ._artifact.listing import ArtifactListingService
 from ._backend import BackendAdapter, BackendContractError, BackendError, BackendErrorReason
 from ._backend_compat import project_backend_call, project_backend_error
+from ._deadline import RuntimeDeadlineFactory
 from ._lookup import unwrap_or_raise
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import LegacyNoteBackedService
@@ -134,6 +135,7 @@ class ArtifactsAPI:
         note_service: LegacyNoteBackedService,
         storage_path: Path | None = None,
         _backend: BackendAdapter | None = None,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
     ) -> None:
         """Initialize the artifacts API.
 
@@ -156,6 +158,7 @@ class ArtifactsAPI:
                 moved mind-map persistence behind the semantic backend.
             storage_path: Path to storage state file for loading download cookies.
             _backend: Private semantic backend used by Studio catalog reads.
+            deadline_factory: Client-scoped factory for service-owned workflow deadlines.
         """
         self._legacy_constructor = _backend is None
         if _backend is None and rpc is not None:
@@ -205,7 +208,11 @@ class ArtifactsAPI:
         )
         self._poll_registry = PollRegistry()
         self._listing = ArtifactListingService()
-        self._management = StudioManagementService(_backend) if _backend is not None else None
+        self._management = (
+            StudioManagementService(_backend, deadline_factory=deadline_factory)
+            if _backend is not None
+            else None
+        )
         self._suggestions = ReportSuggestionService(_backend) if _backend is not None else None
         self._lifecycle_service = ArtifactLifecycleService(
             _backend,

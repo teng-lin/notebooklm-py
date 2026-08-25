@@ -289,6 +289,7 @@ def compose_client(
         note_service=legacy_note_backed,
         storage_path=storage_path,
         _backend=client._backend,
+        deadline_factory=deadline_factory,
     )
     # P6.1: ChatAPI keeps loop-bound orchestration and client-local state, but
     # delegates all six semantic operations to the client-owned backend.

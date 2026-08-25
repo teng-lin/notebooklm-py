@@ -116,10 +116,11 @@ the active bindings: whole-workflow `CallPolicy` values, exact native idempotenc
 caller-owned absolute deadline identity, and closed public-error projection are audited together
 without moving retry authority out of the native registry. Future operation migrations must extend
 that same ledger; P5.1 through P5.8, P6.1–P6.7, and the final P7 notebook/share entry slice extend
-it to all 82 active handlers. P0–P8 are complete. P8 places an immutable
+it to the active semantic surface. P0–P8 are complete. P8 places an immutable
 `WebCookieGeneration`/`WebCookieProvider` port between the web session and the existing auth
-owners; public-surface work and a mobile backend require separate decisions. A P9 web-backend
-decomposition is proposed in the plan and not started.
+owners; public-surface work and a mobile backend require separate decisions. P9.2/P9.3 are in
+progress: codec rows own the converted leaves, while label/collection update and artifact rename
+are service-owned workflows whose leaf conjunctions are audited transitively.
 
 The operation-catalog audit classifies only the shared generic web RPC forwarder as inert. The four
 notebook/source read handlers, three notebook-mutation handlers, URL-source composite, two Studio
@@ -596,7 +597,7 @@ Beyond the backend-owned runtime graph, feature APIs are implemented via dedicat
 | `ArtifactRepresentationService` | [`_studio/representations.py`](../src/notebooklm/_studio/representations.py) | Backend-neutral P5.8 representation discovery, family selection, trusted remote byte dispatch, and local serialization orchestration. |
 | `StudioDownloadClient` | [`_studio/downloads.py`](../src/notebooklm/_studio/downloads.py) | Trusted remote byte retrieval with shared factory/allowlist and per-hop redirect validation for both httpx and curl_cffi. |
 | `StudioSerializationClient` | [`_studio/serialization.py`](../src/notebooklm/_studio/serialization.py) | RPC-free local text, JSON, and CSV representation serialization. |
-| `StudioManagementService` / `ReportSuggestionService` | [`_studio/management.py`](../src/notebooklm/_studio/management.py) | Typed P5.8 revise/retry/rename/delete and report-suggestion operations. |
+| `StudioManagementService` / `ReportSuggestionService` | [`_studio/management.py`](../src/notebooklm/_studio/management.py) | Typed revise/retry/delete and report-suggestion operations plus the service-owned artifact rename workflow: patch title, plain catalog readback, one deadline, and neutral leaf-error rebinding. |
 | `ArtifactLifecycleService` | [`_studio/lifecycle.py`](../src/notebooklm/_studio/lifecycle.py) | Typed lifecycle status observation plus the unchanged lifecycle-terminal public polling contract. |
 | `ReportFamilyService` / `VideoFamilyService` | [`_studio/documents.py`](../src/notebooklm/_studio/documents.py) | Backend-neutral P5.4 report/video generation, catalog filtering, and family metadata/availability rules. |
 | `VisualFamilyService` | [`_studio/visuals.py`](../src/notebooklm/_studio/visuals.py) | Backend-neutral P5.5 infographic/slide-deck generation, catalog filtering, usable readiness, and accessibility metadata. |
@@ -1089,14 +1090,14 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; since P9.4b also the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` *deferred-product* custom row (conditional `GET_NOTEBOOK` read, then `SUGGEST_PROMPTS`). The walker derives their catalog authorities from these module-level assignments. |
 | `_web/bindings/sharing.py` | P9.3 sharing codec rows: `SHARING_GET`, `LEGACY_SHARE_ARTIFACT` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; all three sharing composites are service-owned since P9.2-5/6/7. |
 | `_web/bindings/sources.py` | P9.3 source codec rows: `SOURCE_LIST`, `SOURCE_GET` (exact-id select inside `decode`), `SOURCE_WAIT` (the one `DeadlineMode.IGNORE` row), `SOURCE_DELETE`, `SOURCE_REFRESH`, `SOURCE_CHECK_FRESHNESS`, `SOURCE_GET_GUIDE`, `SOURCE_GET_FULLTEXT`; and, since P9.4b, the source-add family as `CustomBinding` rows (`SOURCE_ADD_URL`, `SOURCE_ADD_URL_BATCH`, `SOURCE_ADD_DRIVE`, `SOURCE_ADD_FILE` *protocol*; `SOURCE_ADD_TEXT` *compatibility*) whose handlers sequence their declared `snapshot`/`create`/`rename`/`register`/`limits` specs through the row-scoped invoker; `upload_backend()` builds the upload pipeline's callbacks over a `SOURCE_ADD_FILE` invoker. Since P9.2-4 `SOURCE_GET` is also the null-echo hydration leaf for service-owned `SOURCE_UPDATE`. |
-| `_web/bindings/studio.py` | P9.3 Studio leaf codec rows: `ARTIFACT_EXPORT`, `ARTIFACT_REVISE_SLIDE`, `ARTIFACT_RETRY`, `ARTIFACT_DELETE`, `ARTIFACT_WAIT` (inherits the caller's deadline; the polling loop stays in `_studio/lifecycle.py`), and the input-keyed `ARTIFACT_DOWNLOAD` (`LIST_ARTIFACTS` / `GET_NOTES_AND_MIND_MAPS` / `GET_INTERACTIVE_HTML` chosen from `value.action`); since P9.4b also the *deferred-product* custom rows for the eight `CREATE_ARTIFACT` generate families (conditional `GET_NOTEBOOK` default-source read, then the guarded kickoff) and `ARTIFACT_RENAME` (title set, then `LIST_ARTIFACTS` readback). |
-| `_web/policy.py` | Exact P4 ledger for all 79 directly supported web operations plus the eight service-owned workflows: semantic policy, every reachable native method/variant, reviewed native idempotency, and optional reported divergence. |
-| `_web/registry.py` | Closed web disposition registry over all 92 operations: 79 directly supported, eight service-owned, and five explicitly unsupported. |
+| `_web/bindings/studio.py` | P9.3 Studio leaf codec rows plus the P9.2 `ARTIFACT_PATCH_TITLE` and plain `ARTIFACT_CATALOG` primitives consumed by service-owned artifact rename. Existing rows cover export, revise, retry, delete, wait (caller deadline), and input-keyed download; since P9.4b the eight generation families remain *deferred-product* custom rows. |
+| `_web/policy.py` | Exact P4 ledger for all 80 directly supported web operations plus the nine service-owned workflows: semantic policy, every reachable native method/variant, reviewed native idempotency, and optional reported divergence. |
+| `_web/registry.py` | Closed web disposition registry over all 94 operations: 80 directly supported, nine service-owned, and five explicitly unsupported. |
 | `_studio/catalog.py` | Typed P5.1 Studio list/get service over neutral artifact operation records. |
 | `_studio/classifiers.py` | Closed neutral-artifact family classifier shared by Studio catalog selection. |
 | `_studio/data_views.py` | P5.6 typed data-table and mind-map generation plus dual-backing catalog selection. |
 | `_studio/exports.py` | P5.6 explicit Drive-export service over the typed semantic operation. |
-| `_studio/management.py` | P5.8 management, slide revision, retry, and report-suggestion services over typed backend operations. |
+| `_studio/management.py` | Management, slide revision, retry, and report-suggestion services; owns artifact rename's patch-then-catalog sequence, deadline identity, not-found evidence, and post-write uncertainty. |
 | `_studio/lifecycle.py` | P5.8 lifecycle status service and unchanged public lifecycle-terminal polling coordination. |
 | `_studio/representations.py` | P5.8 neutral artifact/mind-map representation selection and dispatch to P5.7 retrieval/serialization clients. |
 | `_web/codec/` | P3/P6 web response ownership: notebook, source, artifact, Chat, label, collection, sharing, Research, settings, suggestions, and report/guide codecs return frozen neutral records; `documents.py` alone returns the approved exported `StructuredDocument` value exemption. Codec bindings are tied to cassette-backed golden families and never call public parsing factories. |
@@ -1352,9 +1353,9 @@ src/notebooklm/
 │   │   ├── primitives.py        # P9.2 primitive rows (labels, sharing, source patch-title)
 │   │   ├── research.py          # research codec rows (input-keyed start)
 │   │   ├── settings.py          # settings/suggestion codec rows
-│   │   ├── sharing.py           # sharing codec rows + custom mutate-then-readback rows (P9.4)
+│   │   ├── sharing.py           # sharing codec rows (status read, legacy share)
 │   │   ├── sources.py           # source read/wait/mutation codec rows + source-add custom rows
-│   │   └── studio.py            # Studio leaf codec rows + generate/rename custom rows
+│   │   └── studio.py            # Studio leaf rows + generate custom rows + artifact primitives
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)
 │   ├── registry.py              # Closed active/unsupported web dispositions
 │   ├── transport.py             # P9.1 WebTransport call/stream verbs, WebRequest/WebStreamRequest

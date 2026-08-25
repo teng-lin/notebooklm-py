@@ -44,7 +44,6 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.ARTIFACT_GENERATE_SLIDE_DECK: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GENERATE_DATA_TABLE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GENERATE_MIND_MAP: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_RENAME: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.MIND_MAP_GENERATE_NOTE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.MIND_MAP_GENERATE_INTERACTIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             # Source file registration/upload, source polling, artifact shared-leader

@@ -12,6 +12,8 @@ from ..._backend import BackendContractError, BackendError, BackendErrorReason
 from ..._binding import CodecPayload
 from ..._operations import Operation
 from ..._records import (
+    ArtifactCatalogInput,
+    ArtifactCatalogResult,
     ArtifactDeleteInput,
     ArtifactDeleteResult,
     ArtifactDownloadInput,
@@ -20,6 +22,8 @@ from ..._records import (
     ArtifactMediaRecord,
     ArtifactParseFailureKind,
     ArtifactParseFailureRecord,
+    ArtifactPatchTitleInput,
+    ArtifactPatchTitleResult,
     ArtifactPollInput,
     ArtifactPollResult,
     ArtifactRecord,
@@ -529,6 +533,43 @@ def decode_artifact_delete(value: ArtifactDeleteInput, result: object) -> Artifa
     return ArtifactDeleteResult()
 
 
+def encode_artifact_patch_title(value: ArtifactPatchTitleInput) -> CodecPayload:
+    """Payload for the one-call ``artifact.patch_title`` primitive."""
+
+    return CodecPayload(
+        params=[[value.artifact_id, value.new_title], [["title"]]],
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_artifact_patch_title(
+    value: ArtifactPatchTitleInput, result: object
+) -> ArtifactPatchTitleResult:
+    """Decode the title set-op acknowledgement, whose response carries no signal."""
+
+    del value, result
+    return ArtifactPatchTitleResult()
+
+
+def encode_artifact_catalog(value: ArtifactCatalogInput) -> CodecPayload:
+    """Payload for one plain Studio catalog read without note-backed mind maps."""
+
+    return CodecPayload(
+        params=encode_studio_catalog_params(value.notebook_id),
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_artifact_catalog(value: ArtifactCatalogInput, result: object) -> ArtifactCatalogResult:
+    """Decode one plain Studio catalog snapshot in backend order."""
+
+    del value
+    rows = decode_studio_rows(result, source="WebRpcBackend._artifact_catalog_records")
+    return ArtifactCatalogResult(artifacts=tuple(decode_artifact(row) for row in rows if row))
+
+
 def encode_artifact_export(value: DriveExportInput) -> CodecPayload:
     """Payload for the ``artifact.export`` codec row (Google Drive companion export)."""
 
@@ -634,6 +675,7 @@ __all__ = [
     "decode_artifact_export",
     "decode_artifact_representation",
     "decode_artifact_poll",
+    "decode_artifact_patch_title",
     "decode_artifact_wait",
     "decode_interactive_content",
     "decode_mind_map_artifact",
@@ -643,10 +685,11 @@ __all__ = [
     "decode_studio_rows",
     "encode_artifact_catalog",
     "encode_artifact_catalog_readback",
+    "encode_artifact_rename",
     "encode_artifact_delete",
     "encode_artifact_download",
     "encode_artifact_export",
-    "encode_artifact_rename",
+    "encode_artifact_patch_title",
     "encode_artifact_wait",
     "encode_studio_catalog_params",
 ]

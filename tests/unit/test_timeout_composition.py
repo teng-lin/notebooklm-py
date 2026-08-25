@@ -198,6 +198,8 @@ class TestConstructorWiring:
 
         assert client._backend._chat_timeout == 600.0
         assert client.research._base_timeout == 600.0
+        assert client.artifacts._management is not None
+        assert client.artifacts._management._deadline_factory is client._backend._deadline_factory
 
     def test_import_research_timeout_kwarg_is_forwarded(self, auth_tokens):
         client = NotebookLMClient(auth_tokens, timeout=600.0, import_research_timeout=900.0)

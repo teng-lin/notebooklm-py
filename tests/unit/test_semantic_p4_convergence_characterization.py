@@ -39,6 +39,7 @@ from notebooklm._idempotency import (
 from notebooklm._operations import CallPolicy, Operation, OperationDef
 from notebooklm._read_services import NotebookReadService, SourceReadService
 from notebooklm._records import (
+    ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,
     ARTIFACT_EXPORT_DEF,
@@ -53,7 +54,7 @@ from notebooklm._records import (
     ARTIFACT_GENERATE_VIDEO_DEF,
     ARTIFACT_GET_DEF,
     ARTIFACT_LIST_DEF,
-    ARTIFACT_RENAME_DEF,
+    ARTIFACT_PATCH_TITLE_DEF,
     ARTIFACT_RETRY_DEF,
     ARTIFACT_REVISE_SLIDE_DEF,
     ARTIFACT_SUGGEST_REPORTS_DEF,
@@ -299,7 +300,8 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         ARTIFACT_RETRY_DEF: (Operation.ARTIFACT_RETRY, CallPolicy.STATEFUL_START),
         ARTIFACT_DELETE_DEF: (Operation.ARTIFACT_DELETE, CallPolicy.MUTATION),
-        ARTIFACT_RENAME_DEF: (Operation.ARTIFACT_RENAME, CallPolicy.MUTATION),
+        ARTIFACT_PATCH_TITLE_DEF: (Operation.ARTIFACT_PATCH_TITLE, CallPolicy.MUTATION),
+        ARTIFACT_CATALOG_DEF: (Operation.ARTIFACT_CATALOG, CallPolicy.READ),
         ARTIFACT_DOWNLOAD_DEF: (Operation.ARTIFACT_DOWNLOAD, CallPolicy.READ),
         ARTIFACT_WAIT_DEF: (Operation.ARTIFACT_WAIT, CallPolicy.READ),
         NOTE_LIST_DEF: (Operation.NOTE_LIST, CallPolicy.READ),
@@ -575,9 +577,14 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
-            ARTIFACT_RENAME_DEF,
-            [(RPCMethod.RENAME_ARTIFACT, None), (RPCMethod.LIST_ARTIFACTS, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.IDEMPOTENT_SET_OP],
+            ARTIFACT_PATCH_TITLE_DEF,
+            [(RPCMethod.RENAME_ARTIFACT, None)],
+            [IdempotencyPolicy.IDEMPOTENT_SET_OP],
+        ),
+        (
+            ARTIFACT_CATALOG_DEF,
+            [(RPCMethod.LIST_ARTIFACTS, None)],
+            [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
             ARTIFACT_DOWNLOAD_DEF,

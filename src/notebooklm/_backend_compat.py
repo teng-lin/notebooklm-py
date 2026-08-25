@@ -57,6 +57,9 @@ _LABEL_NOT_FOUND_PHASE_METHOD_IDS: Mapping[str | None, str] = {
     "membership_readback": RPCMethod.UPDATE_LABEL.value,
     "field_readback": RPCMethod.LIST_LABELS.value,
 }
+_ARTIFACT_NOT_FOUND_PHASE_METHOD_IDS: Mapping[str | None, str] = {
+    "rename_readback": RPCMethod.RENAME_ARTIFACT.value,
+}
 
 # The service-owned source.update workflow reports only semantic absence. Its
 # legacy method diagnostic belongs at this compatibility boundary, beside the
@@ -269,12 +272,19 @@ def project_backend_error(error: BackendError) -> Exception:
                 "artifact-not-found compatibility error lacks artifact_id",
                 operation=error.operation,
             )
+        artifact_method_id = cast(str | None, _optional(error, diagnostics, "method_id", str))
+        if artifact_method_id is None:
+            # The service-owned rename workflow records the neutral phase; the
+            # compatibility projector owns the legacy wire-method diagnostic.
+            artifact_method_id = _ARTIFACT_NOT_FOUND_PHASE_METHOD_IDS.get(
+                cast(str | None, _optional(error, diagnostics, "phase", str))
+            )
         return _preserve_outcome(
             error,
             ArtifactNotFoundError(
                 cast(str, artifact_id),
                 cast(str | None, _optional(error, diagnostics, "artifact_type", str)),
-                method_id=cast(str | None, _optional(error, diagnostics, "method_id", str)),
+                method_id=artifact_method_id,
                 raw_response=cast(str | None, _optional(error, diagnostics, "raw_response", str)),
             ),
         )

@@ -538,6 +538,34 @@ class ArtifactDeleteResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ArtifactPatchTitleInput:
+    """One Studio artifact title set-op."""
+
+    notebook_id: str
+    artifact_id: str
+    new_title: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactPatchTitleResult:
+    """Successful Studio artifact title set-op acknowledgement."""
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactCatalogInput:
+    """Notebook whose plain Studio catalog is requested without mind-map merging."""
+
+    notebook_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactCatalogResult:
+    """Plain Studio catalog in backend order."""
+
+    artifacts: tuple[ArtifactRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ArtifactRenameInput:
     """Identity and replacement title for one Studio artifact."""
 
@@ -912,6 +940,20 @@ ARTIFACT_DELETE_DEF: OperationDef[ArtifactDeleteInput, ArtifactDeleteResult] = O
     ArtifactDeleteInput,
     ArtifactDeleteResult,
 )
+ARTIFACT_PATCH_TITLE_DEF: OperationDef[ArtifactPatchTitleInput, ArtifactPatchTitleResult] = (
+    OperationDef(
+        Operation.ARTIFACT_PATCH_TITLE,
+        CallPolicy.MUTATION,
+        ArtifactPatchTitleInput,
+        ArtifactPatchTitleResult,
+    )
+)
+ARTIFACT_CATALOG_DEF: OperationDef[ArtifactCatalogInput, ArtifactCatalogResult] = OperationDef(
+    Operation.ARTIFACT_CATALOG,
+    CallPolicy.READ,
+    ArtifactCatalogInput,
+    ArtifactCatalogResult,
+)
 ARTIFACT_RENAME_DEF: OperationDef[ArtifactRenameInput, ArtifactRenameResult] = OperationDef(
     Operation.ARTIFACT_RENAME,
     CallPolicy.MUTATION,
@@ -1121,6 +1163,7 @@ MIND_MAP_DELETE_DEF: OperationDef[MindMapDeleteInput, MindMapDeleteResult] = Ope
 
 
 __all__ = [
+    "ARTIFACT_CATALOG_DEF",
     "ARTIFACT_DELETE_DEF",
     "ARTIFACT_DOWNLOAD_DEF",
     "CHAT_ASK_DEF",
@@ -1141,6 +1184,7 @@ __all__ = [
     "ARTIFACT_GENERATE_SLIDE_DECK_DEF",
     "ARTIFACT_GENERATE_VIDEO_DEF",
     "ARTIFACT_LIST_DEF",
+    "ARTIFACT_PATCH_TITLE_DEF",
     "COLLECTION_CREATE_DEF",
     "COLLECTION_DELETE_DEF",
     "COLLECTION_GET_DEF",
@@ -1214,6 +1258,8 @@ __all__ = [
     "MIND_MAP_UPDATE_DEF",
     "AccountLimitsRecord",
     "ArtifactSuggestReportsInput",
+    "ArtifactCatalogInput",
+    "ArtifactCatalogResult",
     "ArtifactGetInput",
     "ArtifactGetResult",
     "ArtifactDeleteInput",
@@ -1226,6 +1272,8 @@ __all__ = [
     "ArtifactMediaRecord",
     "ArtifactPollInput",
     "ArtifactPollResult",
+    "ArtifactPatchTitleInput",
+    "ArtifactPatchTitleResult",
     "ArtifactRecord",
     "ArtifactRenameInput",
     "ArtifactRenameResult",

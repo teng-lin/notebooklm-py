@@ -1,8 +1,8 @@
-"""P9.3 Studio: the six Studio leaves dispatch as codec rows exactly as the handlers did.
+"""P9.3/P9.2 Studio leaves dispatch as codec rows exactly as their handlers did.
 
 ``ARTIFACT_DOWNLOAD`` is the input-keyed row (one of three natives chosen from
 ``value.action``); ``ARTIFACT_WAIT`` inherits the caller's deadline; the other
-four are constant rows.  These tests pin the conversion oracles: the identical
+the remaining rows are constant. These tests pin the conversion oracles: the identical
 keyword set reaches the runtime (including explicit ``False``/``None`` values,
 ``allow_null`` and ``raise_on_null_status``), the payload builders are
 unchanged, the closed ``ARTIFACT_FEATURE_UNAVAILABLE`` error keeps its shape,
@@ -29,15 +29,21 @@ from notebooklm._binding import CodecBinding, DeadlineMode, NativeChoice
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
+    ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,
     ARTIFACT_EXPORT_DEF,
+    ARTIFACT_PATCH_TITLE_DEF,
     ARTIFACT_RETRY_DEF,
     ARTIFACT_REVISE_SLIDE_DEF,
     ARTIFACT_WAIT_DEF,
+    ArtifactCatalogInput,
+    ArtifactCatalogResult,
     ArtifactDeleteInput,
     ArtifactDeleteResult,
     ArtifactDownloadInput,
+    ArtifactPatchTitleInput,
+    ArtifactPatchTitleResult,
     ArtifactPollInput,
     ArtifactRetryInput,
     ArtifactReviseSlideInput,
@@ -87,12 +93,14 @@ class _RecordingExecutor:
 # --- registry partition ------------------------------------------------------
 
 
-def test_studio_leaves_are_rows_and_composites_stay_handlers() -> None:
+def test_studio_leaves_are_rows_and_rename_is_service_owned() -> None:
     converted = {
+        Operation.ARTIFACT_CATALOG: studio_rows.ARTIFACT_CATALOG,
         Operation.ARTIFACT_EXPORT: studio_rows.ARTIFACT_EXPORT,
         Operation.ARTIFACT_REVISE_SLIDE: studio_rows.ARTIFACT_REVISE_SLIDE,
         Operation.ARTIFACT_RETRY: studio_rows.ARTIFACT_RETRY,
         Operation.ARTIFACT_DELETE: studio_rows.ARTIFACT_DELETE,
+        Operation.ARTIFACT_PATCH_TITLE: studio_rows.ARTIFACT_PATCH_TITLE,
         Operation.ARTIFACT_WAIT: studio_rows.ARTIFACT_WAIT,
         Operation.ARTIFACT_DOWNLOAD: studio_rows.ARTIFACT_DOWNLOAD,
     }
@@ -114,6 +122,8 @@ def test_studio_leaves_are_rows_and_composites_stay_handlers() -> None:
         (studio_rows.ARTIFACT_REVISE_SLIDE, RPCMethod.REVISE_SLIDE),
         (studio_rows.ARTIFACT_RETRY, RPCMethod.RETRY_ARTIFACT),
         (studio_rows.ARTIFACT_DELETE, RPCMethod.DELETE_ARTIFACT),
+        (studio_rows.ARTIFACT_PATCH_TITLE, RPCMethod.RENAME_ARTIFACT),
+        (studio_rows.ARTIFACT_CATALOG, RPCMethod.LIST_ARTIFACTS),
         (studio_rows.ARTIFACT_WAIT, RPCMethod.LIST_ARTIFACTS),
     ):
         assert row.native.is_constant
@@ -133,12 +143,12 @@ def test_studio_leaves_are_rows_and_composites_stay_handlers() -> None:
         "_artifact_delete",
         "_artifact_wait",
         "_artifact_download",
+        "_artifact_rename",
         "_studio_rows",
         "_feature_unavailable",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # P9.4b: rename, generate families, and mind-map/catalog composites are custom rows.
-    assert WEB_OPERATION_REGISTRY[Operation.ARTIFACT_RENAME].row is studio_rows.ARTIFACT_RENAME
+    # P9.4b generation and mind-map/catalog composites remain custom rows.
     assert WEB_OPERATION_REGISTRY[Operation.ARTIFACT_GENERATE_DATA_TABLE].row is (
         studio_rows.ARTIFACT_GENERATE_DATA_TABLE
     )
@@ -150,6 +160,9 @@ def test_studio_leaves_are_rows_and_composites_stay_handlers() -> None:
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.handler_name is None
         assert binding.row is not None
+    rename = WEB_OPERATION_REGISTRY[Operation.ARTIFACT_RENAME]
+    assert rename.service_owned is True
+    assert rename.handler_name is None and rename.row is None
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.ARTIFACT_DOWNLOAD] is studio_rows.ARTIFACT_DOWNLOAD
 
@@ -176,6 +189,33 @@ def test_download_selector_rejects_unknown_actions_before_dispatch() -> None:
 
 
 # --- dispatch oracles ------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_artifact_rename_primitives_preserve_byte_identical_web_kwargs() -> None:
+    executor = _RecordingExecutor(None, [])
+    backend = build_web_backend(executor)
+
+    patched = await backend.invoke(
+        ARTIFACT_PATCH_TITLE_DEF,
+        ArtifactPatchTitleInput("nb", "artifact-id", "Renamed"),
+        deadline=None,
+    )
+    catalog = await backend.invoke(
+        ARTIFACT_CATALOG_DEF,
+        ArtifactCatalogInput("nb"),
+        deadline=None,
+    )
+
+    assert patched == ArtifactPatchTitleResult()
+    assert catalog == ArtifactCatalogResult(artifacts=())
+    patch_call, catalog_call = executor.calls
+    assert patch_call.method is RPCMethod.RENAME_ARTIFACT
+    assert patch_call.params == [["artifact-id", "Renamed"], [["title"]]]
+    assert patch_call.kwargs == _BASE_KWARGS
+    assert catalog_call.method is RPCMethod.LIST_ARTIFACTS
+    assert catalog_call.params == _CATALOG_PARAMS
+    assert catalog_call.kwargs == _BASE_KWARGS
 
 
 @pytest.mark.asyncio

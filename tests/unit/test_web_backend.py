@@ -39,6 +39,7 @@ from notebooklm._notebook_payloads import (
 )
 from notebooklm._operations import CallPolicy, Operation, OperationDef
 from notebooklm._records import (
+    ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,
     ARTIFACT_EXPORT_DEF,
@@ -53,7 +54,7 @@ from notebooklm._records import (
     ARTIFACT_GENERATE_VIDEO_DEF,
     ARTIFACT_GET_DEF,
     ARTIFACT_LIST_DEF,
-    ARTIFACT_RENAME_DEF,
+    ARTIFACT_PATCH_TITLE_DEF,
     ARTIFACT_RETRY_DEF,
     ARTIFACT_REVISE_SLIDE_DEF,
     ARTIFACT_SUGGEST_REPORTS_DEF,
@@ -121,7 +122,6 @@ from notebooklm._records import (
     ArtifactDeleteInput,
     ArtifactDownloadInput,
     ArtifactPollInput,
-    ArtifactRenameInput,
     ArtifactRetryInput,
     ArtifactReviseSlideInput,
     ArtifactSuggestReportsInput,
@@ -255,6 +255,8 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.NOTE_DELETE,
         Operation.ARTIFACT_LIST,
         Operation.ARTIFACT_GET,
+        Operation.ARTIFACT_CATALOG,
+        Operation.ARTIFACT_PATCH_TITLE,
         Operation.ARTIFACT_GENERATE_AUDIO,
         Operation.ARTIFACT_GENERATE_QUIZ,
         Operation.ARTIFACT_GENERATE_FLASHCARDS,
@@ -296,7 +298,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_REVISE_SLIDE,
         Operation.ARTIFACT_RETRY,
         Operation.ARTIFACT_DELETE,
-        Operation.ARTIFACT_RENAME,
         Operation.ARTIFACT_DOWNLOAD,
         Operation.ARTIFACT_WAIT,
         Operation.SOURCE_ADD_URL_BATCH,
@@ -340,6 +341,8 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.NOTE_DELETE: NOTE_DELETE_DEF,
         Operation.ARTIFACT_LIST: ARTIFACT_LIST_DEF,
         Operation.ARTIFACT_GET: ARTIFACT_GET_DEF,
+        Operation.ARTIFACT_CATALOG: ARTIFACT_CATALOG_DEF,
+        Operation.ARTIFACT_PATCH_TITLE: ARTIFACT_PATCH_TITLE_DEF,
         Operation.ARTIFACT_GENERATE_AUDIO: ARTIFACT_GENERATE_AUDIO_DEF,
         Operation.ARTIFACT_GENERATE_QUIZ: ARTIFACT_GENERATE_QUIZ_DEF,
         Operation.ARTIFACT_GENERATE_FLASHCARDS: ARTIFACT_GENERATE_FLASHCARDS_DEF,
@@ -381,7 +384,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_REVISE_SLIDE: ARTIFACT_REVISE_SLIDE_DEF,
         Operation.ARTIFACT_RETRY: ARTIFACT_RETRY_DEF,
         Operation.ARTIFACT_DELETE: ARTIFACT_DELETE_DEF,
-        Operation.ARTIFACT_RENAME: ARTIFACT_RENAME_DEF,
         Operation.ARTIFACT_DOWNLOAD: ARTIFACT_DOWNLOAD_DEF,
         Operation.ARTIFACT_WAIT: ARTIFACT_WAIT_DEF,
         Operation.SOURCE_ADD_URL_BATCH: SOURCE_ADD_URL_BATCH_DEF,
@@ -507,25 +509,6 @@ async def test_artifact_interactive_options_block_drift_fails_loud(action: str) 
         )
 
     assert caught.value.reason is BackendErrorReason.UNKNOWN_RPC_METHOD
-
-
-@pytest.mark.asyncio
-async def test_artifact_rename_missing_target_uses_closed_backend_reason() -> None:
-    executor = _RecordingExecutor(None, [])
-    with pytest.raises(BackendError) as info:
-        await _backend(executor).invoke(
-            ARTIFACT_RENAME_DEF,
-            ArtifactRenameInput("nb", "missing", "Title"),
-            deadline=None,
-        )
-
-    assert info.value.reason is BackendErrorReason.ARTIFACT_NOT_FOUND
-    assert info.value.diagnostics == {
-        "artifact_id": "missing",
-        "artifact_type": None,
-        "method_id": RPCMethod.RENAME_ARTIFACT.value,
-        "raw_response": None,
-    }
 
 
 @pytest.mark.asyncio

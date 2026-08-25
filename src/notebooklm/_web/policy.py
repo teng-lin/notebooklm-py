@@ -567,12 +567,13 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.MUTATION,
             (_native(RPCMethod.DELETE_ARTIFACT, _IDEMPOTENT, "idempotent deletion"),),
         ),
-        Operation.ARTIFACT_RENAME: WebCallPolicyBinding(
+        Operation.ARTIFACT_PATCH_TITLE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.RENAME_ARTIFACT, _IDEMPOTENT, "title set operation"),
-                _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "post-mutation readback"),
-            ),
+            (_native(RPCMethod.RENAME_ARTIFACT, _IDEMPOTENT, "title set operation"),),
+        ),
+        Operation.ARTIFACT_CATALOG: WebCallPolicyBinding(
+            CallPolicy.READ,
+            (_native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "plain Studio catalog read"),),
         ),
         Operation.ARTIFACT_DOWNLOAD: WebCallPolicyBinding(
             CallPolicy.READ,
@@ -869,6 +870,17 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.SHARING_PATCH_VIEW_LEVEL, None),
                     _leaf(Operation.SHARING_GET, None),
+                ),
+            ),
+            Operation.ARTIFACT_RENAME: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.RENAME_ARTIFACT, _IDEMPOTENT, "title set operation"),
+                    _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "post-mutation readback"),
+                ),
+                (
+                    _leaf(Operation.ARTIFACT_PATCH_TITLE, None),
+                    _leaf(Operation.ARTIFACT_CATALOG, None),
                 ),
             ),
         }

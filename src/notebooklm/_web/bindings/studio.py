@@ -8,14 +8,12 @@ because the operation-catalog walker derives execution authorities from them.
 chosen from ``value.action`` (catalog read, note-backed mind-map read, or
 interactive content read).  ``ARTIFACT_WAIT`` inherits the caller's deadline —
 the polling loop lives above the port in ``_studio/lifecycle.py`` (gate table
-§6).  Since P9.4b the eight ``CREATE_ARTIFACT`` generate families and
-``ARTIFACT_RENAME`` are :class:`CustomBinding` rows: each declares exactly its
-natives under named spec keys and its handler sequences them through the
-row-scoped invoker with the same options the P5 handlers set.  The generate rows
-are input-defaulting members kept adapter-owned under P9.2 contract 1 and the
-rename row is a hoist candidate (P9.2-10), so all nine are *deferred-product*
-rows.  Only the ``ARTIFACT_GENERATE_MIND_MAP`` compatibility composite and the
-``ARTIFACT_LIST`` / ``ARTIFACT_GET`` catalog merge stay handlers.
+§6). ``ARTIFACT_PATCH_TITLE`` and ``ARTIFACT_CATALOG`` are the one-call leaves
+sequenced by the service-owned ``ARTIFACT_RENAME`` workflow. Since P9.4b the
+eight ``CREATE_ARTIFACT`` generate families are *deferred-product*
+:class:`CustomBinding` rows; ``ARTIFACT_GENERATE_MIND_MAP`` and the
+``ARTIFACT_LIST`` / ``ARTIFACT_GET`` catalog merge are custom rows in the
+mind-map binding module.
 """
 
 from __future__ import annotations
@@ -36,6 +34,7 @@ from ..._deadline import RuntimeDeadline
 from ..._env import get_default_language
 from ..._operations import Operation
 from ..._records import (
+    ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,
     ARTIFACT_EXPORT_DEF,
@@ -47,13 +46,11 @@ from ..._records import (
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
     ARTIFACT_GENERATE_VIDEO_DEF,
-    ARTIFACT_RENAME_DEF,
+    ARTIFACT_PATCH_TITLE_DEF,
     ARTIFACT_RETRY_DEF,
     ARTIFACT_REVISE_SLIDE_DEF,
     ARTIFACT_WAIT_DEF,
     ArtifactDownloadInput,
-    ArtifactRenameInput,
-    ArtifactRenameResult,
     AudioGenerateInput,
     AudioGenerateResult,
     DataTableGenerateInput,
@@ -125,6 +122,20 @@ ARTIFACT_DELETE = CodecBinding(
     native=NativeCallSpec.constant(RPCMethod.DELETE_ARTIFACT),
 )
 
+ARTIFACT_PATCH_TITLE = CodecBinding(
+    definition=ARTIFACT_PATCH_TITLE_DEF,
+    encode=artifacts_codec.encode_artifact_patch_title,
+    decode=artifacts_codec.decode_artifact_patch_title,
+    native=NativeCallSpec.constant(RPCMethod.RENAME_ARTIFACT),
+)
+
+ARTIFACT_CATALOG = CodecBinding(
+    definition=ARTIFACT_CATALOG_DEF,
+    encode=artifacts_codec.encode_artifact_catalog,
+    decode=artifacts_codec.decode_artifact_catalog,
+    native=NativeCallSpec.constant(RPCMethod.LIST_ARTIFACTS),
+)
+
 ARTIFACT_WAIT = CodecBinding(
     definition=ARTIFACT_WAIT_DEF,
     encode=artifacts_codec.encode_artifact_wait,
@@ -146,11 +157,9 @@ ARTIFACT_DOWNLOAD = CodecBinding(
 
 # --- P9.4b custom rows -----------------------------------------------------------
 # Spec keys shared by every generate row: the conditional default-source read and
-# the guarded kickoff. The rename row sets a title then reads the catalog back.
+# the guarded kickoff.
 _SOURCES = "sources"
 _CREATE = "create"
-_RENAME = "rename"
-_READBACK = "readback"
 
 _INPUT_DEFAULTING = (
     "Input-defaulting member kept adapter-owned under P9.2 contract 1; hoisting needs a "
@@ -390,27 +399,6 @@ async def _generate_video(
     )
 
 
-async def _rename_artifact(
-    value: ArtifactRenameInput, deadline: RuntimeDeadline | None, invoke: RowInvoker
-) -> ArtifactRenameResult:
-    await invoke.call(_RENAME, artifacts_codec.encode_artifact_rename(value), deadline=deadline)
-    raw = await invoke.call(
-        _READBACK,
-        artifacts_codec.encode_artifact_catalog_readback(value.notebook_id),
-        deadline=deadline,
-        outcome_unknown_on_expiry=True,
-    )
-    records = artifacts_codec.decode_artifact_catalog(raw, source="ARTIFACT_RENAME.readback")
-    artifact = next((item for item in records if item.id == value.artifact_id), None)
-    if artifact is None:
-        # The diagnostics name the mutation's native, taken from the row's own spec.
-        rename_native = ARTIFACT_RENAME.spec(_RENAME).select(None).method
-        raise artifacts_codec.artifact_not_found(
-            Operation.ARTIFACT_RENAME, value.artifact_id, method_id=rename_native.value
-        )
-    return ArtifactRenameResult(artifact=artifact)
-
-
 ARTIFACT_GENERATE_AUDIO = CustomBinding(
     definition=ARTIFACT_GENERATE_AUDIO_DEF,
     handler=_generate_audio,
@@ -499,23 +487,14 @@ ARTIFACT_GENERATE_DATA_TABLE = CustomBinding(
     category="deferred-product",
 )
 
-ARTIFACT_RENAME = CustomBinding(
-    definition=ARTIFACT_RENAME_DEF,
-    handler=_rename_artifact,
-    native=(
-        NativeCallSpec.constant(RPCMethod.RENAME_ARTIFACT, key=_RENAME),
-        NativeCallSpec.constant(RPCMethod.LIST_ARTIFACTS, key=_READBACK),
-    ),
-    justification="Hoist candidate P9.2-10 per gate table §4; awaits the stop/go review.",
-    category="deferred-product",
-)
-
 STUDIO_ROWS: Mapping[Operation, Binding] = MappingProxyType(
     {
+        ARTIFACT_CATALOG.definition.key: ARTIFACT_CATALOG,
         ARTIFACT_EXPORT.definition.key: ARTIFACT_EXPORT,
         ARTIFACT_REVISE_SLIDE.definition.key: ARTIFACT_REVISE_SLIDE,
         ARTIFACT_RETRY.definition.key: ARTIFACT_RETRY,
         ARTIFACT_DELETE.definition.key: ARTIFACT_DELETE,
+        ARTIFACT_PATCH_TITLE.definition.key: ARTIFACT_PATCH_TITLE,
         ARTIFACT_WAIT.definition.key: ARTIFACT_WAIT,
         ARTIFACT_DOWNLOAD.definition.key: ARTIFACT_DOWNLOAD,
         ARTIFACT_GENERATE_AUDIO.definition.key: ARTIFACT_GENERATE_AUDIO,
@@ -526,11 +505,11 @@ STUDIO_ROWS: Mapping[Operation, Binding] = MappingProxyType(
         ARTIFACT_GENERATE_INFOGRAPHIC.definition.key: ARTIFACT_GENERATE_INFOGRAPHIC,
         ARTIFACT_GENERATE_SLIDE_DECK.definition.key: ARTIFACT_GENERATE_SLIDE_DECK,
         ARTIFACT_GENERATE_DATA_TABLE.definition.key: ARTIFACT_GENERATE_DATA_TABLE,
-        ARTIFACT_RENAME.definition.key: ARTIFACT_RENAME,
     }
 )
 
 __all__ = [
+    "ARTIFACT_CATALOG",
     "ARTIFACT_DELETE",
     "ARTIFACT_DOWNLOAD",
     "ARTIFACT_EXPORT",
@@ -542,7 +521,7 @@ __all__ = [
     "ARTIFACT_GENERATE_REPORT",
     "ARTIFACT_GENERATE_SLIDE_DECK",
     "ARTIFACT_GENERATE_VIDEO",
-    "ARTIFACT_RENAME",
+    "ARTIFACT_PATCH_TITLE",
     "ARTIFACT_RETRY",
     "ARTIFACT_REVISE_SLIDE",
     "ARTIFACT_WAIT",

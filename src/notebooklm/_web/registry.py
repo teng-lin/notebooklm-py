@@ -18,6 +18,7 @@ from typing import Any, Final
 from .._binding import Binding, OperationDisposition
 from .._operations import Operation, OperationDef
 from .._records import (
+    ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
     ARTIFACT_DOWNLOAD_DEF,
     ARTIFACT_EXPORT_DEF,
@@ -32,6 +33,7 @@ from .._records import (
     ARTIFACT_GENERATE_VIDEO_DEF,
     ARTIFACT_GET_DEF,
     ARTIFACT_LIST_DEF,
+    ARTIFACT_PATCH_TITLE_DEF,
     ARTIFACT_RENAME_DEF,
     ARTIFACT_RETRY_DEF,
     ARTIFACT_REVISE_SLIDE_DEF,
@@ -206,6 +208,8 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.MIND_MAP_DELETE: MIND_MAP_DELETE_DEF,
         Operation.ARTIFACT_LIST: ARTIFACT_LIST_DEF,
         Operation.ARTIFACT_GET: ARTIFACT_GET_DEF,
+        Operation.ARTIFACT_CATALOG: ARTIFACT_CATALOG_DEF,
+        Operation.ARTIFACT_PATCH_TITLE: ARTIFACT_PATCH_TITLE_DEF,
         Operation.ARTIFACT_GENERATE_AUDIO: ARTIFACT_GENERATE_AUDIO_DEF,
         Operation.ARTIFACT_GENERATE_QUIZ: ARTIFACT_GENERATE_QUIZ_DEF,
         Operation.ARTIFACT_GENERATE_FLASHCARDS: ARTIFACT_GENERATE_FLASHCARDS_DEF,
@@ -241,7 +245,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.ARTIFACT_REVISE_SLIDE: ARTIFACT_REVISE_SLIDE_DEF,
         Operation.ARTIFACT_RETRY: ARTIFACT_RETRY_DEF,
         Operation.ARTIFACT_DELETE: ARTIFACT_DELETE_DEF,
-        Operation.ARTIFACT_RENAME: ARTIFACT_RENAME_DEF,
         Operation.ARTIFACT_DOWNLOAD: ARTIFACT_DOWNLOAD_DEF,
         Operation.ARTIFACT_WAIT: ARTIFACT_WAIT_DEF,
     }
@@ -269,6 +272,7 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
         Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
         Operation.SHARING_SET_VIEW_LEVEL: SHARING_SET_VIEW_LEVEL_DEF,
+        Operation.ARTIFACT_RENAME: ARTIFACT_RENAME_DEF,
     }
 )
 _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
@@ -305,6 +309,10 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "service-owned since P9.2-7: SharingService.set_view_level sequences "
             "sharing.patch_view_level and sharing.get"
         ),
+        Operation.ARTIFACT_RENAME: (
+            "service-owned since P9.2-10: StudioManagementService.rename sequences "
+            "artifact.patch_title and artifact.catalog"
+        ),
     }
 )
 
@@ -312,13 +320,13 @@ _STAGED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapping
 
 _STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 
-# The frozen catalog currently contains 92 operations (87 product members plus five
+# The frozen catalog currently contains 94 operations (87 product members plus seven
 # P9.2 primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 92
-_EXPECTED_SUPPORTED_COUNT: Final = 79
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 8
+_EXPECTED_OPERATION_COUNT: Final = 94
+_EXPECTED_SUPPORTED_COUNT: Final = 80
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 9
 _EXPECTED_STAGED_COUNT: Final = 0
 
 

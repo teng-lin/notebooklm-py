@@ -1,5 +1,17 @@
 {
   "active_web_policy_bindings": {
+    "artifact.catalog": {
+      "call_policy": "read",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "plain Studio catalog read",
+          "rpc_method": "LIST_ARTIFACTS",
+          "variant": null
+        }
+      ]
+    },
     "artifact.delete": {
       "call_policy": "mutation",
       "known_divergence": null,
@@ -264,9 +276,35 @@
         }
       ]
     },
+    "artifact.patch_title": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "title set operation",
+          "rpc_method": "RENAME_ARTIFACT",
+          "variant": null
+        }
+      ]
+    },
     "artifact.rename": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "artifact.patch_title"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "artifact.catalog"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -280,7 +318,8 @@
           "rpc_method": "LIST_ARTIFACTS",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "artifact.retry": {
       "call_policy": "stateful_start",
@@ -3519,11 +3558,10 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._artifact_catalog_records",
         "_web/bindings/mind_maps.py:ARTIFACT_GET",
         "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+        "_web/bindings/studio.py:ARTIFACT_CATALOG",
         "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
-        "_web/bindings/studio.py:ARTIFACT_RENAME",
         "_web/bindings/studio.py:ARTIFACT_WAIT"
       ],
       "golden_disposition": "golden_covered",
@@ -3576,6 +3614,7 @@
       "rpc_id": "gArtLc",
       "rpc_method": "LIST_ARTIFACTS",
       "semantic_operations": [
+        "artifact.catalog",
         "artifact.download",
         "artifact.get",
         "artifact.list",
@@ -3838,7 +3877,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/mind_maps.py:MIND_MAP_UPDATE",
-        "_web/bindings/studio.py:ARTIFACT_RENAME"
+        "_web/bindings/studio.py:ARTIFACT_PATCH_TITLE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -3872,6 +3911,7 @@
       "rpc_id": "rc3d8d",
       "rpc_method": "RENAME_ARTIFACT",
       "semantic_operations": [
+        "artifact.patch_title",
         "artifact.rename",
         "mind_map.update"
       ],
@@ -4662,6 +4702,36 @@
     }
   ],
   "operations": [
+    {
+      "app_callers": [],
+      "composite_behavior": "P9.2 primitive: one plain Studio catalog read consumed by artifact.rename.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "LIST_ARTIFACTS:<default>",
+          "discriminator": "plain Studio catalog read",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "artifact.catalog",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "owner": "StudioManagementService",
+      "policy": "read",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [
+        "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifacts.py:decode_studio_rows"
+      ],
+      "route_context": "notebook",
+      "web_paths": []
+    },
     {
       "app_callers": [
         "_app/artifacts.py:delete_artifact"
@@ -5523,6 +5593,33 @@
       "web_paths": []
     },
     {
+      "app_callers": [],
+      "composite_behavior": "P9.2 primitive: one artifact title set-op consumed by artifact.rename.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "RENAME_ARTIFACT:<default>",
+          "discriminator": "one title set-op",
+          "site": "_web/bindings/studio.py:ARTIFACT_PATCH_TITLE",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "artifact.patch_title",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "RENAME_ARTIFACT:<default>"
+      ],
+      "owner": "StudioManagementService",
+      "policy": "mutation",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [],
+      "route_context": "notebook+artifact",
+      "web_paths": []
+    },
+    {
       "app_callers": [
         "_app/artifacts.py:rename_artifact"
       ],
@@ -5531,14 +5628,14 @@
       "execution_authorities": [
         {
           "binding": "LIST_ARTIFACTS:<default>",
-          "discriminator": "post-mutation readback",
-          "site": "_web/bindings/studio.py:ARTIFACT_RENAME",
+          "discriminator": "post-mutation readback via leaf",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         },
         {
           "binding": "RENAME_ARTIFACT:<default>",
-          "discriminator": "public=artifacts.rename",
-          "site": "_web/bindings/studio.py:ARTIFACT_RENAME",
+          "discriminator": "public=artifacts.rename via leaf",
+          "site": "_web/bindings/studio.py:ARTIFACT_PATCH_TITLE",
           "transport_kind": "rpc"
         }
       ],

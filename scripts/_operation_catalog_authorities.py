@@ -602,7 +602,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.ARTIFACT_RENAME, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
-            ("_web/bindings/studio.py:ARTIFACT_RENAME", "post-mutation readback")
+            ("_web/bindings/studio.py:ARTIFACT_CATALOG", "post-mutation readback via leaf")
+        ),
+        (Operation.ARTIFACT_CATALOG, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
+            ("_web/bindings/studio.py:ARTIFACT_CATALOG", "plain Studio catalog read")
         ),
         (Operation.ARTIFACT_DOWNLOAD, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
@@ -685,7 +688,13 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/research.py:RESEARCH_POLL", "one read per wait poll tick")
         ),
         (Operation.ARTIFACT_RENAME, _b(RPCMethod.RENAME_ARTIFACT)): _rules(
-            ("_web/bindings/studio.py:ARTIFACT_RENAME", "public=artifacts.rename")
+            (
+                "_web/bindings/studio.py:ARTIFACT_PATCH_TITLE",
+                "public=artifacts.rename via leaf",
+            )
+        ),
+        (Operation.ARTIFACT_PATCH_TITLE, _b(RPCMethod.RENAME_ARTIFACT)): _rules(
+            ("_web/bindings/studio.py:ARTIFACT_PATCH_TITLE", "one title set-op")
         ),
         (Operation.MIND_MAP_UPDATE, _b(RPCMethod.RENAME_ARTIFACT)): _rules(
             ("_web/bindings/mind_maps.py:MIND_MAP_UPDATE", "kind=INTERACTIVE")
