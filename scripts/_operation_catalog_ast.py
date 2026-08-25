@@ -1135,7 +1135,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_mind_map.py", "_note_service", "LegacyNoteBackedService"),
         ("_mind_map.py", "_note_service", "NoteRowKind"),
         ("_notebook_mutation_service.py", "_backend", "BackendAdapter"),
-        ("_notebook_mutation_service.py", "_projectors", "project_notebook"),
         ("_notebook_mutation_service.py", "_records", "NOTEBOOK_CREATE_DEF"),
         ("_notebook_mutation_service.py", "_records", "NOTEBOOK_DELETE_DEF"),
         ("_notebook_mutation_service.py", "_records", "NOTEBOOK_UPDATE_DEF"),
@@ -1155,6 +1154,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_notebooks.py", "_read_services", "SourceReadService"),
         ("_notebooks.py", "_projectors", "project_notebook"),
         ("_notebooks.py", "_projectors", "project_notebook_description"),
+        ("_notebooks.py", "_projectors", "project_prompt_suggestions"),
         ("_notebooks.py", "_projectors", "project_source"),
         ("_mutation_services.py", "_backend", "BackendAdapter"),
         ("_mutation_services.py", "_records", "SOURCE_ADD_URL_DEF"),
@@ -1504,12 +1504,12 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_settings_service.py", "_records", "SettingsGetLimitsInput"),
         ("_settings_service.py", "_records", "SettingsSetLanguageInput"),
         ("_suggestion_service.py", "_backend", "BackendAdapter"),
-        ("_suggestion_service.py", "_projectors", "project_prompt_suggestions"),
-        ("_suggestion_service.py", "_projectors", "project_report_suggestions"),
         ("_suggestion_service.py", "_records", "ARTIFACT_SUGGEST_REPORTS_DEF"),
         ("_suggestion_service.py", "_records", "ArtifactSuggestReportsInput"),
         ("_suggestion_service.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
         ("_suggestion_service.py", "_records", "NotebookSuggestPromptsInput"),
+        ("_suggestion_service.py", "_records", "PromptSuggestionRecord"),
+        ("_suggestion_service.py", "_records", "ReportSuggestionRecord"),
         # P9.3 settings/suggestions codec rows and their row-facing codec helpers.
         ("_web/bindings/__init__.py", "_binding", "Binding"),
         ("_web/bindings/labels.py", "_binding", "Binding"),
@@ -2006,13 +2006,10 @@ INERT_P1_BACKEND_INVOKE_SITES: frozenset[str] = frozenset()
 # Final notebook semantic slice: guide generation, recent-list removal, and
 # source-id extraction now cross the typed backend boundary instead of the
 # public facade owning raw positional/RPC execution.
-REVIEWED_BACKEND_IMPORTS -= frozenset(
-    {("_notebooks.py", "_projectors", "project_notebook_description")}
-)
 REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
         ("_notebook_guide_service.py", "_backend", "BackendAdapter"),
-        ("_notebook_guide_service.py", "_projectors", "project_notebook_description"),
+        ("_notebook_guide_service.py", "_records", "NotebookDescriptionRecord"),
         ("_notebook_guide_service.py", "_records", "NOTEBOOK_DESCRIBE_DEF"),
         ("_notebook_guide_service.py", "_records", "NOTEBOOK_SUMMARIZE_DEF"),
         ("_notebook_guide_service.py", "_records", "NotebookGuideInput"),

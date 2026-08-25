@@ -16,7 +16,12 @@ from ._notebook_payloads import build_create_notebook_params as build_create_not
 from ._notebook_payloads import (
     build_get_notebook_params,
 )
-from ._projectors import project_notebook, project_source
+from ._projectors import (
+    project_notebook,
+    project_notebook_description,
+    project_prompt_suggestions,
+    project_source,
+)
 from ._read_services import NotebookReadService, SourceReadService
 from ._sharing_manager import ShareManager
 from ._suggestion_service import PROMPT_SUGGESTIONS_DEFAULT_MODE, SuggestionService
@@ -247,7 +252,7 @@ class NotebooksAPI:
         .. versionadded:: 0.8.0
         """
         logger.debug("Suggesting prompts for notebook %s (mode=%d)", notebook_id, mode)
-        return await project_backend_call(
+        records = await project_backend_call(
             self._require_suggestion_service().suggest_prompts(
                 notebook_id,
                 source_ids=source_ids,
@@ -255,6 +260,7 @@ class NotebooksAPI:
                 query=query,
             )
         )
+        return project_prompt_suggestions(tuple(records))
 
     async def list(self) -> list[Notebook]:
         """List notebooks (most-recently-viewed first).
@@ -315,14 +321,14 @@ class NotebooksAPI:
         logger.debug("Creating notebook: %s", title)
         public_error: Exception | None = None
         try:
-            notebook = await self._require_mutation_service().create(title)
+            record = await self._require_mutation_service().create(title)
         except BackendError as error:
             public_error = project_backend_error(error)
         else:
-            if notebook.id and notebook.chat_sessions:
-                self._created_chat_session_ids[notebook.id] = notebook.chat_sessions[0].id
-            logger.debug("Created notebook: %s", notebook.id)
-            return notebook
+            if record.id and record.chat_sessions:
+                self._created_chat_session_ids[record.id] = record.chat_sessions[0].id
+            logger.debug("Created notebook: %s", record.id)
+            return project_notebook(record)
         # Raise outside the private BackendError catch frame so a reviewed
         # reconstructed quota cause/context graph remains the public graph.
         assert public_error is not None
@@ -471,13 +477,15 @@ class NotebooksAPI:
         logger.debug("Updating notebook %s (title=%r, emoji=%r)", notebook_id, title, emoji)
         public_error: Exception | None = None
         try:
-            return await self._require_mutation_service().update(
+            record = await self._require_mutation_service().update(
                 notebook_id,
                 title=title,
                 emoji=emoji,
             )
         except BackendError as error:
             public_error = project_backend_error(error)
+        else:
+            return project_notebook(record)
         assert public_error is not None
         raise public_error
 
@@ -495,9 +503,11 @@ class NotebooksAPI:
         """Get AI-generated summary and suggested topics for a notebook."""
         public_error: Exception | None = None
         try:
-            return await self._require_guide_service().get_description(notebook_id)
+            record = await self._require_guide_service().get_description(notebook_id)
         except BackendError as error:
             public_error = project_backend_error(error)
+        else:
+            return project_notebook_description(record)
         assert public_error is not None
         raise public_error
 
