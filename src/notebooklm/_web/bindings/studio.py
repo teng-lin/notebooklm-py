@@ -131,8 +131,8 @@ ARTIFACT_PATCH_TITLE = CodecBinding(
 
 ARTIFACT_CATALOG = CodecBinding(
     definition=ARTIFACT_CATALOG_DEF,
-    encode=artifacts_codec.encode_artifact_catalog,
-    decode=artifacts_codec.decode_artifact_catalog,
+    encode=artifacts_codec.encode_artifact_catalog_row,
+    decode=artifacts_codec.decode_artifact_catalog_row,
     native=NativeCallSpec.constant(RPCMethod.LIST_ARTIFACTS),
 )
 

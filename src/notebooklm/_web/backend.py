@@ -40,10 +40,7 @@ from .._binding import (
 )
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._operations import CallPolicy, Operation, OperationDef
-from .._records import (
-    ArtifactRecord,
-    SourceAddFailureRecord,
-)
+from .._records import SourceAddFailureRecord
 from .._runtime.config import assert_resolved_read_timeout
 from .._web_cookie_provider import WebCookieProvider, WebCookieSession
 from ..exceptions import (
@@ -57,7 +54,6 @@ from ..exceptions import (
 from ..rpc import RPCMethod
 from ..types import ClientMetricsSnapshot
 from .bindings.sources import upload_backend
-from .codec.artifacts import decode_artifact_catalog, encode_studio_catalog_params
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
 from .errors import error_diagnostics, translate_web_error
 from .failure_projection import _capture_public_failure
@@ -524,40 +520,6 @@ class WebRpcBackend:
                 attempt_timeout=attempt_timeout,
             ),
             deadline=deadline,
-        )
-
-    async def _artifact_catalog_records(
-        self,
-        notebook_id: str,
-        *,
-        operation: Operation,
-        deadline: RuntimeDeadline | None,
-        include_mind_maps: bool,
-        outcome_unknown_on_expiry: bool = False,
-    ) -> tuple[ArtifactRecord, ...]:
-        """Catalog readback for the remaining handler-backed ``ARTIFACT_RENAME`` composite.
-
-        P9.4b moved ``ARTIFACT_LIST``/``ARTIFACT_GET`` — and with them the
-        note-backed mind-map merge — into custom rows; this seam keeps exactly
-        the plain catalog read the rename readback issues.
-        """
-        if include_mind_maps:
-            raise BackendContractError(
-                f"{operation.value} cannot merge note-backed mind maps through the "
-                "handler seam; the ARTIFACT_LIST/ARTIFACT_GET rows own that path",
-                operation=operation,
-            )
-        result = await self._rpc_call(
-            RPCMethod.LIST_ARTIFACTS,
-            encode_studio_catalog_params(notebook_id),
-            operation=operation,
-            deadline=deadline,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            outcome_unknown_on_expiry=outcome_unknown_on_expiry,
-        )
-        return tuple(
-            decode_artifact_catalog(result, source="WebRpcBackend._artifact_catalog_records")
         )
 
     @staticmethod

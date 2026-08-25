@@ -1,10 +1,10 @@
-"""P9.4b: the Studio generate families, prompt suggestions and rename as custom rows.
+"""P9.4b: the Studio generate families and prompt suggestions as custom rows.
 
-The eight ``CREATE_ARTIFACT`` generate members, ``NOTEBOOK_SUGGEST_PROMPTS`` and
-``ARTIFACT_RENAME`` dispatch as ``CustomBinding`` rows exactly as the P5/P6
+The eight ``CREATE_ARTIFACT`` generate members and ``NOTEBOOK_SUGGEST_PROMPTS``
+dispatch as ``CustomBinding`` rows exactly as the P5/P6
 handlers did.  These tests pin the conversion oracles: the identical keyword set
-reaches the runtime for every phase (the conditional default-source read, the
-guarded kickoff, the title set and its readback), option validation rejects an
+reaches the runtime for every phase (the conditional default-source read and
+the guarded kickoff), option validation rejects an
 unreviewed input before any native call, the null-kickoff projection is the
 closed unavailable error, failures stay tagged with the selected spec and carry
 the ``dispatched`` marker, the deadline projection is the handler's, and the
@@ -39,9 +39,7 @@ from notebooklm._records import (
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
     ARTIFACT_GENERATE_VIDEO_DEF,
-    ARTIFACT_RENAME_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
-    ArtifactRenameInput,
     AudioGenerateInput,
     DataTableGenerateInput,
     InfographicGenerateInput,
@@ -134,7 +132,7 @@ _GENERATE_IDS = [definition.key.value for definition, _factory, _kind in _GENERA
 # --- registry partition ----------------------------------------------------------
 
 
-def test_generate_families_rename_and_prompts_are_deferred_product_custom_rows() -> None:
+def test_generate_families_and_prompts_are_deferred_product_custom_rows() -> None:
     rows = {
         Operation.ARTIFACT_GENERATE_AUDIO: studio_rows.ARTIFACT_GENERATE_AUDIO,
         Operation.ARTIFACT_GENERATE_QUIZ: studio_rows.ARTIFACT_GENERATE_QUIZ,
@@ -145,7 +143,6 @@ def test_generate_families_rename_and_prompts_are_deferred_product_custom_rows()
         Operation.ARTIFACT_GENERATE_SLIDE_DECK: studio_rows.ARTIFACT_GENERATE_SLIDE_DECK,
         Operation.ARTIFACT_GENERATE_DATA_TABLE: studio_rows.ARTIFACT_GENERATE_DATA_TABLE,
         Operation.NOTEBOOK_SUGGEST_PROMPTS: settings_rows.NOTEBOOK_SUGGEST_PROMPTS,
-        Operation.ARTIFACT_RENAME: studio_rows.ARTIFACT_RENAME,
     }
     for operation, row in rows.items():
         assert WEB_BINDING_ROWS[operation] is row
@@ -166,10 +163,6 @@ def test_generate_families_rename_and_prompts_are_deferred_product_custom_rows()
     prompts = settings_rows.NOTEBOOK_SUGGEST_PROMPTS
     assert [spec.key for spec in prompts.native] == ["sources", "suggest"]
     assert prompts.spec("suggest").select(None) == NativeChoice(RPCMethod.SUGGEST_PROMPTS)
-    rename = studio_rows.ARTIFACT_RENAME
-    assert [spec.key for spec in rename.native] == ["rename", "readback"]
-    assert rename.spec("rename").select(None) == NativeChoice(RPCMethod.RENAME_ARTIFACT)
-    assert rename.spec("readback").select(None) == NativeChoice(RPCMethod.LIST_ARTIFACTS)
 
 
 def test_emptied_chain_classes_are_gone_and_the_chain_re_links() -> None:
@@ -484,59 +477,6 @@ async def test_suggest_prompts_with_explicit_sources_issues_one_call() -> None:
 
     assert result.suggestions == ()
     assert [call.method for call in executor.calls] == [RPCMethod.SUGGEST_PROMPTS]
-
-
-# --- rename ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_rename_sets_the_title_then_reads_the_catalog_back() -> None:
-    executor = _RecordingExecutor(None, [])
-    backend = build_web_backend(executor)
-
-    with pytest.raises(BackendError) as caught:
-        await backend.invoke(
-            ARTIFACT_RENAME_DEF, ArtifactRenameInput("nb", "missing", "Title"), deadline=None
-        )
-
-    assert caught.value.reason is BackendErrorReason.ARTIFACT_NOT_FOUND
-    assert caught.value.diagnostics == {
-        "artifact_id": "missing",
-        "artifact_type": None,
-        "method_id": RPCMethod.RENAME_ARTIFACT.value,
-        "raw_response": None,
-    }
-    rename, readback = executor.calls
-    assert rename.method is RPCMethod.RENAME_ARTIFACT
-    assert rename.params == [["missing", "Title"], [["title"]]]
-    assert rename.kwargs == {**_BASE_KWARGS, "source_path": "/notebook/nb", "allow_null": True}
-    assert readback.method is RPCMethod.LIST_ARTIFACTS
-    assert readback.kwargs == {**_BASE_KWARGS, "source_path": "/notebook/nb", "allow_null": True}
-
-
-@pytest.mark.asyncio
-async def test_rename_pre_dispatch_expiry_on_the_readback_is_commit_uncertain() -> None:
-    clock = [11.0]
-    executor = _RecordingExecutor(None)
-    backend = build_web_backend(executor)
-    deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: clock[0])
-
-    async def rpc_call(method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
-        clock[0] = 16.0
-        return await _RecordingExecutor.rpc_call(executor, method, params, **kwargs)
-
-    backend._runtime = type("Runtime", (), {"rpc_call": staticmethod(rpc_call)})()  # type: ignore[assignment]
-
-    with pytest.raises(BackendDeadlineExceededError) as caught:
-        await backend.invoke(
-            ARTIFACT_RENAME_DEF, ArtifactRenameInput("nb", "art", "Title"), deadline=deadline
-        )
-
-    assert [call.method for call in executor.calls] == [RPCMethod.RENAME_ARTIFACT]
-    assert caught.value.outcome_unknown is True
-    assert caught.value.dispatched is False
-    assert caught.value.diagnostics is not None
-    assert caught.value.diagnostics["method_id"] == RPCMethod.LIST_ARTIFACTS.value
 
 
 # --- the collapsed source-id decoder: one helper, three diagnostics modes ----------------

@@ -104,7 +104,6 @@ SPEC_SUBSCRIPTS: frozenset[str] = frozenset({"NativeChoice"})
 #     uv run python -c "from tests._guardrails.test_no_rpc_method_below_port \
 #         import measured_sites; print(*measured_sites(), sep='\n')"
 ALLOWLIST: tuple[str, ...] = (
-    "_web/backend.py:WebRpcBackend._artifact_catalog_records",
     "_web/backend.py:WebRpcBackend._rpc_call",
     "_web/backend.py:WebRpcBackend.public_rpc_call",
     "_web/bindings/_invoker_caller.py:InvokerRpcCaller.__init__",

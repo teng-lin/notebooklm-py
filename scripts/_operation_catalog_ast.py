@@ -1345,7 +1345,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/backend.py", "_backend", "BackendKind"),
         ("_web/backend.py", "_backend", "UnsupportedOperationError"),
         ("_web/failure_projection.py", "_backend", "BackendContractError"),
-        ("_web/backend.py", "_records", "ArtifactRecord"),
         # P9.3 research codec rows, their row-facing codec helpers, and the shared
         # ``_web/errors.py`` translation the ``RESEARCH_START`` ``map_error`` consumes.
         # P9.3 notebook codec rows and their row-facing codec helpers.
@@ -1844,9 +1843,6 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/studio.py", "_records", "ARTIFACT_GENERATE_REPORT_DEF"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_GENERATE_SLIDE_DECK_DEF"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_GENERATE_VIDEO_DEF"),
-        ("_web/bindings/studio.py", "_records", "ARTIFACT_RENAME_DEF"),
-        ("_web/bindings/studio.py", "_records", "ArtifactRenameInput"),
-        ("_web/bindings/studio.py", "_records", "ArtifactRenameResult"),
         ("_web/bindings/studio.py", "_records", "AudioGenerateInput"),
         ("_web/bindings/studio.py", "_records", "AudioGenerateResult"),
         ("_web/bindings/studio.py", "_records", "DataTableGenerateInput"),
@@ -1861,9 +1857,6 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/studio.py", "_records", "VideoGenerateResult"),
         ("_web/bindings/studio.py", "_records", "VisualGenerateResult"),
         ("_web/bindings/studio.py", "codec", "generation"),
-        ("_web/codec/artifacts.py", "_backend", "BackendError"),
-        ("_web/codec/artifacts.py", "_backend", "BackendErrorReason"),
-        ("_web/codec/artifacts.py", "_records", "ArtifactRenameInput"),
         ("_web/codec/generation.py", "_backend", "BackendContractError"),
         ("_web/codec/generation.py", "_binding", "CodecPayload"),
         ("_web/codec/generation.py", "_records", "AudioGenerateInput"),

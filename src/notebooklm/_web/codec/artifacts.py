@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import logging
 import reprlib
-import types  # ``from types import …`` reads as a public-model import to the P3 guardrail
 from typing import Any
 
 from ..._artifact.formatters import _parse_data_table
-from ..._backend import BackendContractError, BackendError, BackendErrorReason
+from ..._backend import BackendContractError
 from ..._binding import CodecPayload
 from ..._operations import Operation
 from ..._records import (
@@ -27,7 +26,6 @@ from ..._records import (
     ArtifactPollInput,
     ArtifactPollResult,
     ArtifactRecord,
-    ArtifactRenameInput,
     ArtifactRepresentationRecord,
     ArtifactSlideRecord,
     ArtifactUserStateRecord,
@@ -461,26 +459,6 @@ def decode_studio_rows(result: object, *, source: str) -> list[list[object]]:
     )
 
 
-def encode_artifact_rename(value: ArtifactRenameInput) -> CodecPayload:
-    """Payload for the ``artifact.rename`` title set (P9.4b custom row, spec ``"rename"``)."""
-
-    return CodecPayload(
-        params=[[value.artifact_id, value.new_title], [["title"]]],
-        source_path=f"/notebook/{value.notebook_id}",
-        allow_null=True,
-    )
-
-
-def encode_artifact_catalog_readback(notebook_id: str) -> CodecPayload:
-    """Payload for a composite's post-mutation ``LIST_ARTIFACTS`` readback."""
-
-    return CodecPayload(
-        params=encode_studio_catalog_params(notebook_id),
-        source_path=f"/notebook/{notebook_id}",
-        allow_null=True,
-    )
-
-
 def encode_artifact_catalog(notebook_id: str) -> CodecPayload:
     """The guarded ``LIST_ARTIFACTS`` read the catalog composites issue (null success accepted)."""
 
@@ -496,24 +474,6 @@ def decode_artifact_catalog(result: object, *, source: str) -> list[ArtifactReco
 
     rows = decode_studio_rows(result, source=source)
     return [decode_artifact(row) for row in rows if isinstance(row, list) and row]
-
-
-def artifact_not_found(operation: Operation, artifact_id: str, *, method_id: str) -> BackendError:
-    """The closed ``ARTIFACT_NOT_FOUND`` error a composite raises after its readback."""
-
-    return BackendError(
-        message=f"Artifact not found: {artifact_id}",
-        operation=operation,
-        diagnostics=types.MappingProxyType(
-            {
-                "artifact_id": artifact_id,
-                "artifact_type": None,
-                "method_id": method_id,
-                "raw_response": None,
-            }
-        ),
-        reason=BackendErrorReason.ARTIFACT_NOT_FOUND,
-    )
 
 
 def encode_artifact_delete(value: ArtifactDeleteInput) -> CodecPayload:
@@ -552,7 +512,7 @@ def decode_artifact_patch_title(
     return ArtifactPatchTitleResult()
 
 
-def encode_artifact_catalog(value: ArtifactCatalogInput) -> CodecPayload:
+def encode_artifact_catalog_row(value: ArtifactCatalogInput) -> CodecPayload:
     """Payload for one plain Studio catalog read without note-backed mind maps."""
 
     return CodecPayload(
@@ -562,7 +522,9 @@ def encode_artifact_catalog(value: ArtifactCatalogInput) -> CodecPayload:
     )
 
 
-def decode_artifact_catalog(value: ArtifactCatalogInput, result: object) -> ArtifactCatalogResult:
+def decode_artifact_catalog_row(
+    value: ArtifactCatalogInput, result: object
+) -> ArtifactCatalogResult:
     """Decode one plain Studio catalog snapshot in backend order."""
 
     del value
@@ -667,9 +629,9 @@ def decode_artifact_download(
 
 
 __all__ = [
-    "artifact_not_found",
     "decode_artifact",
     "decode_artifact_catalog",
+    "decode_artifact_catalog_row",
     "decode_artifact_delete",
     "decode_artifact_download",
     "decode_artifact_export",
@@ -684,8 +646,7 @@ __all__ = [
     "decode_report_suggestion",
     "decode_studio_rows",
     "encode_artifact_catalog",
-    "encode_artifact_catalog_readback",
-    "encode_artifact_rename",
+    "encode_artifact_catalog_row",
     "encode_artifact_delete",
     "encode_artifact_download",
     "encode_artifact_export",
