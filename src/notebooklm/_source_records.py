@@ -453,3 +453,120 @@ SOURCE_PATCH_TITLE_DEF: OperationDef[SourcePatchTitleInput, SourcePatchTitleResu
     SourcePatchTitleResult,
     tier=OperationTier.PRIMITIVE,
 )
+
+
+SOURCE_LIST_DEF: OperationDef[SourceListInput, SourceListResult] = OperationDef(
+    Operation.SOURCE_LIST,
+    # Both source reads use GET_NOTEBOOK and therefore update notebook recency.
+    CallPolicy.MUTATION,
+    SourceListInput,
+    SourceListResult,
+)
+
+
+SOURCE_GET_DEF: OperationDef[SourceGetInput, SourceGetResult] = OperationDef(
+    Operation.SOURCE_GET,
+    CallPolicy.MUTATION,
+    SourceGetInput,
+    SourceGetResult,
+)
+
+
+SOURCE_ADD_URL_DEF: OperationDef[SourceAddUrlInput, SourceAddUrlResult] = OperationDef(
+    Operation.SOURCE_ADD_URL,
+    CallPolicy.MUTATION,
+    SourceAddUrlInput,
+    SourceAddUrlResult,
+)
+
+
+SOURCE_ADD_URL_BATCH_DEF: OperationDef[SourceAddUrlBatchInput, SourceAddUrlBatchResult] = (
+    OperationDef(
+        Operation.SOURCE_ADD_URL_BATCH,
+        CallPolicy.MUTATION,
+        SourceAddUrlBatchInput,
+        SourceAddUrlBatchResult,
+    )
+)
+
+
+SOURCE_ADD_TEXT_DEF: OperationDef[SourceAddTextInput, SourceAddTextResult] = OperationDef(
+    Operation.SOURCE_ADD_TEXT,
+    CallPolicy.MUTATION,
+    SourceAddTextInput,
+    SourceAddTextResult,
+)
+
+
+SOURCE_ADD_DRIVE_DEF: OperationDef[SourceAddDriveInput, SourceAddDriveResult] = OperationDef(
+    Operation.SOURCE_ADD_DRIVE,
+    CallPolicy.MUTATION,
+    SourceAddDriveInput,
+    SourceAddDriveResult,
+)
+
+
+SOURCE_ADD_FILE_DEF: OperationDef[SourceAddFileInput, SourceAddFileResult] = OperationDef(
+    Operation.SOURCE_ADD_FILE,
+    CallPolicy.MUTATION,
+    SourceAddFileInput,
+    SourceAddFileResult,
+)
+
+
+SOURCE_DELETE_DEF: OperationDef[SourceDeleteInput, SourceDeleteResult] = OperationDef(
+    Operation.SOURCE_DELETE,
+    CallPolicy.MUTATION,
+    SourceDeleteInput,
+    SourceDeleteResult,
+)
+
+
+SOURCE_UPDATE_DEF: OperationDef[SourceUpdateInput, SourceUpdateResult] = OperationDef(
+    Operation.SOURCE_UPDATE,
+    CallPolicy.MUTATION,
+    SourceUpdateInput,
+    SourceUpdateResult,
+)
+
+
+SOURCE_REFRESH_DEF: OperationDef[SourceRefreshInput, SourceRefreshResult] = OperationDef(
+    Operation.SOURCE_REFRESH,
+    CallPolicy.MUTATION,
+    SourceRefreshInput,
+    SourceRefreshResult,
+)
+
+
+SOURCE_CHECK_FRESHNESS_DEF: OperationDef[SourceFreshnessInput, SourceFreshnessResult] = (
+    OperationDef(
+        Operation.SOURCE_CHECK_FRESHNESS,
+        CallPolicy.READ,
+        SourceFreshnessInput,
+        SourceFreshnessResult,
+    )
+)
+
+
+SOURCE_GET_GUIDE_DEF: OperationDef[SourceGuideInput, SourceGuideResult] = OperationDef(
+    Operation.SOURCE_GET_GUIDE,
+    CallPolicy.STATEFUL_START,
+    SourceGuideInput,
+    SourceGuideResult,
+)
+
+
+SOURCE_GET_FULLTEXT_DEF: OperationDef[SourceFulltextInput, SourceFulltextResult] = OperationDef(
+    Operation.SOURCE_GET_FULLTEXT,
+    CallPolicy.READ,
+    SourceFulltextInput,
+    SourceFulltextResult,
+)
+
+
+SOURCE_WAIT_DEF: OperationDef[SourceWaitSnapshotInput, SourceWaitSnapshotResult] = OperationDef(
+    Operation.SOURCE_WAIT,
+    CallPolicy.MUTATION,
+    SourceWaitSnapshotInput,
+    SourceWaitSnapshotResult,
+)

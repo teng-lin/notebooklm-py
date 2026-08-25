@@ -1045,15 +1045,17 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_backend_compat.py` | Private compatibility projector from closed semantic `BackendErrorReason` + safe diagnostics back to the existing public exception subclasses at migrated facade boundaries. |
 | `_backend.py` | Private protocol-neutral semantic port: backend kind/capabilities, typed `BackendAdapter.invoke`, and the minimal scrubbed error/deadline handoff used by the P2 slice. |
 | `_binding.py` | Neutral binding vocabulary (P9.0/P9.4c): `OperationDisposition`, `NativeCallSpec`, `CodecPayload`, the `CodecBinding` / `CustomBinding` row kinds, `BindingTable`, the construction-time `audit_bindings`, and the `invoke_binding` dispatch function; imports no `_web/`, `rpc/`, `_auth/`, or `httpx` module. |
-| `_records.py` | Compatibility re-export hub for frozen, slotted, protocol-neutral input/output records and `OperationDef` values for P2 notebook/source operations, P5.1–P5.8 Studio families, and P6.1–P6.7 domain workflows, plus P3 decoded values and closed URL-source error evidence. Large domain families live in sibling record modules so this hub remains under the module-size ratchet. |
+| `_records.py` | Compatibility re-export hub for frozen, slotted, protocol-neutral input/output records and `OperationDef` values for P2 notebook/source operations, P5.1–P5.8 Studio families, and P6.1–P6.7 domain workflows, plus P3 decoded values and closed URL-source error evidence. R1.4 drained the last records and `OperationDef` values into sibling `_*_records.py` domain modules, so this file only re-exports them and stays well under the module-size ratchet. |
+| `_artifact_records.py` | Neutral Studio artifact records — parse-failure evidence, artifact/representation/metadata values, and the twenty-two typed artifact operation definitions (R1.4) — re-exported from `_records.py`. |
 | `_chat_records.py` | P6.1 neutral Chat records and six typed operation definitions, re-exported from `_records.py`. |
 | `_label_records.py` | P6.4 neutral source-label/collection records and eleven typed operation definitions, re-exported from `_records.py`. |
+| `_mind_map_records.py` | Neutral mind-map records and the six typed `mind_map.*` operation definitions (R1.4), re-exported from `_records.py`. |
 | `_note_records.py` | P6.3 neutral plain-note records and five typed operation definitions, re-exported from `_records.py`. |
 | `_notebook_records.py` | P2/P6.6 neutral notebook records and nine typed operation definitions, re-exported from `_records.py`. |
 | `_research_records.py` | P6.2 neutral Research records and four typed operation definitions, re-exported from `_records.py`. |
 | `_settings_records.py` | P6.6 neutral account-settings records and three typed operation definitions, re-exported from `_records.py`. |
 | `_sharing_records.py` | P6.5 neutral Sharing records and seven typed operation definitions, including the two P9.2 primitives, re-exported from `_records.py` while keeping the shared record module below the size ratchet. |
-| `_source_records.py` | Frozen, slotted, protocol-neutral source read/add/content/refresh/Drive/upload records, including the P9.2 `SOURCE_PATCH_TITLE` primitive DTOs, split from `_records.py` to keep the shared record surface below the module-size ratchet. |
+| `_source_records.py` | Frozen, slotted, protocol-neutral source read/add/content/refresh/Drive/upload records, including the P9.2 `SOURCE_PATCH_TITLE` primitive DTOs and the fourteen typed source operation definitions (R1.4), split from `_records.py` to keep the shared record surface below the module-size ratchet. |
 | `_backoff.py` | Shared capped exponential-backoff calculation with deterministic test injection |
 | `_reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
 | `_runtime/auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
@@ -1293,10 +1295,10 @@ src/notebooklm/
 ├── _notebook_metadata.py        # Metadata protocols
 ├── _operations.py               # Closed semantic operation/call-policy vocabulary (P0)
 ├── _projectors.py               # Neutral record-to-public compatibility projectors (P2/P3/P5/P6)
-├── _artifact_records.py         # Neutral artifact parse-failure records split from the shared record hub
+├── _artifact_records.py         # Neutral Studio artifact records/operation definitions split from the record hub
 ├── _notebook_records.py         # Neutral notebook inputs/results/records and typed operation definitions
 ├── _note_records.py             # Neutral plain-note inputs/results/records and typed operation definitions
-├── _source_records.py           # Neutral source records, including source.patch_title primitive DTOs
+├── _source_records.py           # Neutral source records/operation definitions, incl. source.patch_title DTOs
 ├── _notebook_mutation_service.py # Transport-neutral notebook mutation service (P2.2)
 ├── _notebook_guide_service.py   # Transport-neutral notebook summary/description service
 ├── _mutation_services.py        # Transport-neutral URL-source mutation service (P2.3, live)
@@ -1304,6 +1306,7 @@ src/notebooklm/
 ├── _source_service.py           # Source leaves plus service-owned source.update workflow
 ├── _label_service.py            # Transport-neutral source-label/collection service (P6.4)
 ├── _label_records.py            # Neutral source-label/collection records/operation definitions (P6.4)
+├── _mind_map_records.py         # Neutral mind-map records/operation definitions (R1.4)
 ├── _research_service.py         # Transport-neutral Research service (P6.2)
 ├── _research_records.py         # Neutral Research records/operation definitions (P6.2)
 ├── _research_neutral.py         # Research public-model to neutral-record conversion helpers
