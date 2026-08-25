@@ -189,7 +189,7 @@ class SourcesAPI:
         )
         public_error: Exception | None = None
         try:
-            return await self._require_read_service().list(
+            records = await self._require_read_service().list(
                 notebook_id,
                 strict=strict,
                 statuses=(
@@ -205,6 +205,8 @@ class SourcesAPI:
             )
         except BackendError as error:
             public_error = self._compat_read_error(error)
+        else:
+            return [project_source(record) for record in records]
         assert public_error is not None
         raise public_error
 
@@ -253,9 +255,11 @@ class SourcesAPI:
 
         public_error: Exception | None = None
         try:
-            return await self._require_read_service().get(notebook_id, source_id)
+            record = await self._require_read_service().get(notebook_id, source_id)
         except BackendError as error:
             public_error = self._compat_read_error(error)
+        else:
+            return None if record is None else project_source(record)
         assert public_error is not None
         raise public_error
 
