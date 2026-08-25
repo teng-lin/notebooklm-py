@@ -906,16 +906,21 @@ def test_call_policy_does_not_control_transport_retries() -> None:
 # =============================================================================
 
 
-def test_exact_known_divergences_inventory_is_two_and_passes_audit() -> None:
-    """Only the two still-reviewed policy/authority divergences remain."""
-    assert len(DIVERGENCE_KINDS) == 2
+def test_exact_known_divergences_inventory_is_three_and_passes_audit() -> None:
+    """Only the three still-reviewed policy/authority divergences remain.
+
+    P9.4 added ``chat.ask``: its row dispatches only ``GET_LAST_CONVERSATION_ID``
+    and the streamed query, while the ledger keeps the facade's ``GET_NOTEBOOK``
+    recency read because the catalog's recency contract is keyed on it.
+    """
+    assert len(DIVERGENCE_KINDS) == 3
 
     described_divergences = {
         spec.operation: (spec.known_divergence, DIVERGENCE_KINDS.get(spec.operation))
         for spec in OPERATION_SPECS
         if spec.known_divergence is not None
     }
-    assert len(described_divergences) == 2
+    assert len(described_divergences) == 3
     assert set(described_divergences) == set(DIVERGENCE_KINDS)
 
     # Exact operations with reviewed divergences
@@ -931,8 +936,11 @@ def test_exact_known_divergences_inventory_is_two_and_passes_audit() -> None:
     assert policy_divergences[0][1] is not None
     assert "AT_LEAST_ONCE_ACCEPTED" in policy_divergences[0][1]
 
-    assert len(authority_divergences) == 1
-    assert authority_divergences[0][0] is Operation.ARTIFACT_DOWNLOAD
+    assert {op for op, _detail in authority_divergences} == {
+        Operation.ARTIFACT_DOWNLOAD,
+        Operation.CHAT_ASK,
+    }
+    assert all(detail for _op, detail in authority_divergences)
 
 
 def test_app_generation_workflow_entry_is_not_exported() -> None:

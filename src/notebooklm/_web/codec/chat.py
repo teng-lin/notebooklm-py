@@ -293,6 +293,14 @@ def encode_chat_get_conversation(value: ChatGetConversationInput) -> CodecPayloa
     )
 
 
+def encode_ask_conversation_readback(notebook_id: str) -> CodecPayload:
+    """Payload for ``chat.ask``'s post-stream conversation-id read (phase two)."""
+    return CodecPayload(
+        params=build_get_conversation_params(notebook_id),
+        source_path=f"/notebook/{notebook_id}",
+    )
+
+
 def decode_chat_get_conversation(
     value: ChatGetConversationInput, raw: Any
 ) -> ChatGetConversationResult:
@@ -400,6 +408,7 @@ __all__ = [
     "decode_get_settings_result",
     "decode_save_note_result",
     "encode_chat_configure",
+    "encode_ask_conversation_readback",
     "encode_chat_delete_history",
     "encode_chat_get_conversation",
     "encode_chat_get_history",

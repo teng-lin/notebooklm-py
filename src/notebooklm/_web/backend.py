@@ -106,7 +106,6 @@ from ..rpc import (
 )
 from ..types import ClientMetricsSnapshot
 from .bindings.sources import upload_backend
-from .chat import ChatWebHandlers
 from .codec import settings as settings_codec
 from .codec.artifacts import decode_artifact, decode_mind_map_artifact
 from .codec.mind_maps import (
@@ -124,6 +123,7 @@ from .errors import error_diagnostics, translate_web_error
 from .failure_projection import _capture_public_failure
 from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS, WebOperationBinding
 from .runtime import WebExecutionRuntime
+from .source_variants import SourceVariantWebHandlers
 from .transport import WebRequest, WebTransport
 
 if TYPE_CHECKING:
@@ -149,7 +149,17 @@ _RAW_PASSTHROUGH_HANDLER_OPERATIONS: frozenset[Operation] = frozenset()
 #: The closed set of collaborator names the head supplies to custom rows. A row
 #: declaring any other name is rejected by the construction-time audit.
 ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset(
-    {"source_uploader", "deadline_factory", "capture_public_failure"}
+    {
+        "source_uploader",
+        "deadline_factory",
+        "capture_public_failure",
+        # ``chat.ask`` (P9.4b): the request-id counter, the configured chat read
+        # timeout, and whether the composed chat transport exists — never the
+        # transport itself.
+        "chat_reqid",
+        "chat_timeout",
+        "chat_transport_composed",
+    }
 )
 
 
@@ -171,7 +181,7 @@ def _row_error_projection(row: Binding | None, operation: Operation) -> tuple[bo
     return operation in _RAW_PASSTHROUGH_HANDLER_OPERATIONS, None
 
 
-class WebRpcBackend(ChatWebHandlers):
+class WebRpcBackend(SourceVariantWebHandlers):
     """Typed semantic binding owning web execution through its runtime."""
 
     def __init__(
@@ -391,19 +401,8 @@ class WebRpcBackend(ChatWebHandlers):
         return _capture_public_failure(exc, operation=operation)
 
     def _row_collaborators(self) -> Mapping[str, object]:
-        """The closed, named collaborator set a custom row may declare and reach.
-
-        Built per invocation so the head keeps no extra instance state (the P8
-        ``vars(backend)`` regressions pin the attribute set); the names are
-        audited against every custom row's declaration at construction.
-        """
-        return MappingProxyType(
-            {
-                "source_uploader": self._source_uploader,
-                "deadline_factory": self._deadline_factory,
-                "capture_public_failure": self._capture_public_failure,
-            }
-        )
+        """The closed, named collaborator set a custom row may declare and reach."""
+        return _row_collaborators_of(self)
 
     async def invoke(
         self,
@@ -1088,6 +1087,26 @@ def _configure_default_upload_backend(backend: WebRpcBackend) -> None:
         list_sources=default.list_sources,
         register_file_source=default.register_file_source,
         rename_source=default.rename_source,
+    )
+
+
+def _row_collaborators_of(backend: WebRpcBackend) -> Mapping[str, object]:
+    """Build ``ROW_COLLABORATOR_NAMES`` → object for one invocation.
+
+    Built per invocation so the head keeps no extra instance state (the P8
+    ``vars(backend)`` regressions pin the attribute set); the names are audited
+    against every custom row's declaration at construction, and the transport
+    and runtime are never among them.
+    """
+    return MappingProxyType(
+        {
+            "source_uploader": backend._source_uploader,
+            "deadline_factory": backend._deadline_factory,
+            "capture_public_failure": backend._capture_public_failure,
+            "chat_reqid": backend._chat_reqid,
+            "chat_timeout": backend._chat_timeout,
+            "chat_transport_composed": backend._chat_transport is not None,
+        }
     )
 
 

@@ -235,7 +235,6 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.NOTEBOOK_CREATE: "_notebook_create",
         Operation.NOTEBOOK_UPDATE: "_notebook_update",
         Operation.SOURCE_UPDATE: "_source_update",
-        Operation.CHAT_ASK: "_chat_ask",
         Operation.MIND_MAP_GENERATE_NOTE: "_mind_map_generate_note",
         Operation.MIND_MAP_GENERATE_INTERACTIVE: "_mind_map_generate_interactive",
         Operation.ARTIFACT_LIST: "_artifact_list",

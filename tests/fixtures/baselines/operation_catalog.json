@@ -332,7 +332,7 @@
     },
     "chat.ask": {
       "call_policy": "stream",
-      "known_divergence": null,
+      "known_divergence": "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the CHAT_ASK row dispatches",
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -1674,6 +1674,12 @@
       "operation": "artifact.download"
     },
     {
+      "detail": "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the CHAT_ASK row dispatches",
+      "disposition": "known_divergence",
+      "kind": "authority",
+      "operation": "chat.ask"
+    },
+    {
       "detail": "Semantic mutation is backed by AT_LEAST_ONCE_ACCEPTED native retry; P4 records parity but must not change behavior.",
       "disposition": "known_divergence",
       "kind": "policy",
@@ -2755,8 +2761,8 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/chat.py:CHAT_GET_CONVERSATION",
-        "_web/chat.py:ChatWebHandlers._chat_conversation_id"
+        "_web/bindings/chat.py:CHAT_ASK",
+        "_web/bindings/chat.py:CHAT_GET_CONVERSATION"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -5445,7 +5451,7 @@
         {
           "binding": "GET_LAST_CONVERSATION_ID:<default>",
           "discriminator": "post-stream resolution when no server-issued id is already known",
-          "site": "_web/chat.py:ChatWebHandlers._chat_conversation_id",
+          "site": "_web/bindings/chat.py:CHAT_ASK",
           "transport_kind": "rpc"
         },
         {
@@ -5457,13 +5463,13 @@
         {
           "binding": "streamed_query",
           "discriminator": "adapter-owned GenerateFreeFormStreamed phase; bytes are incrementally buffered",
-          "site": "_web/chat.py:ChatWebHandlers._chat_ask",
+          "site": "_web/bindings/chat.py:_ask",
           "transport_kind": "stream"
         }
       ],
       "key": "chat.ask",
-      "known_divergence": null,
-      "known_divergence_kind": null,
+      "known_divergence": "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the CHAT_ASK row dispatches",
+      "known_divergence_kind": "authority",
       "native_bindings": [
         "GET_LAST_CONVERSATION_ID:<default>",
         "GET_NOTEBOOK:<default>"

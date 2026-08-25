@@ -21,6 +21,8 @@ from notebooklm._binding import (
     NativeChoice,
     OperationDisposition,
     ResolvedHandlerBinding,
+    StreamPayload,
+    StreamSpec,
     audit_bindings,
     bind,
     invoke_binding,
@@ -77,6 +79,9 @@ class _FakeTransport:
         if isinstance(response, BaseException):
             raise response
         return response
+
+    def assemble_stream(self, definition, spec, payload, *, deadline):
+        return (definition.key, spec, payload, deadline)
 
     async def stream(self, request, *, deadline):
         return await self.call(request, deadline=deadline)
@@ -316,7 +321,15 @@ async def test_custom_rows_only_reach_their_declared_specs_and_tag_failures() ->
         except BackendContractError as exc:
             seen.append(str(exc))
         try:
-            await invoke.stream("stream", CodecPayload(params=["b"]), deadline=deadline)
+            await invoke.stream(
+                "undeclared-stream", StreamPayload(build_request=lambda s: s), deadline=deadline
+            )
+        except BackendContractError as exc:
+            seen.append(str(exc))
+        try:
+            await invoke.stream(
+                "stream", StreamPayload(build_request=lambda s: s), deadline=deadline
+            )
         except RuntimeError as exc:
             seen.append(repr(getattr(exc, "binding_native", None)))
         return first
@@ -324,10 +337,8 @@ async def test_custom_rows_only_reach_their_declared_specs_and_tag_failures() ->
     row: CustomBinding[Any, Any, str] = CustomBinding(
         definition=NOTEBOOK_GET_DEF,
         handler=handler,
-        native=(
-            NativeCallSpec.constant("LIST", key="list"),
-            NativeCallSpec.constant("STREAM", key="stream"),
-        ),
+        native=(NativeCallSpec.constant("LIST", key="list"),),
+        streams=(StreamSpec(key="stream", label="fake.stream"),),
         justification="The wire forces a fetch after the streamed answer.",
         category="protocol",
     )
@@ -344,11 +355,12 @@ async def test_custom_rows_only_reach_their_declared_specs_and_tag_failures() ->
     assert seen == [
         "v",
         "notebook.get declares no native spec 'undeclared'",
-        "NativeChoice(method='STREAM', variant=None)",
+        "notebook.get declares no stream spec 'undeclared-stream'",
+        "StreamSpec(key='stream', label='fake.stream')",
     ]
     assert [request[1] for request in transport.requests] == [
         NativeChoice("LIST"),
-        NativeChoice("STREAM"),
+        StreamSpec(key="stream", label="fake.stream"),
     ]
 
 

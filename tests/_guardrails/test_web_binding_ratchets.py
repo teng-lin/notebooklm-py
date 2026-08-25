@@ -53,11 +53,11 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 RESIDUAL_COMPOSITE_CEILING = 31
 #: Exact custom-row counts per justification category (P9.4a: the three sharing
 #: mutate-then-readback composites; P9.4b: the five source-add rows — four
-#: *protocol*, ``SOURCE_ADD_TEXT`` *compatibility* — and the Studio generate
+#: *protocol*, ``CHAT_ASK`` *protocol*, ``SOURCE_ADD_TEXT`` *compatibility* — and the Studio generate
 #: families, prompt suggestions and rename as *deferred-product*). P9.4b PRs
 #: raise these as handlers convert; P9.2 hoists lower ``deferred-product``,
 #: which must reach zero before any second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 4, "compatibility": 1, "deferred-product": 13}
+CUSTOM_ROW_COUNTS = {"protocol": 5, "compatibility": 1, "deferred-product": 13}
 
 # --- 2. class size ---------------------------------------------------------------
 
@@ -65,7 +65,7 @@ CLASS_BODY_LINE_CEILING = 500
 #: Measured at P9.4a; shrink-only. ``WebExecutionRuntime`` is the transport engine
 #: and shrinks on its own schedule; the three chain classes are P9.4b targets.
 OVERSIZED_CLASS_CEILINGS = {
-    "backend.py:WebRpcBackend": 891,
+    "backend.py:WebRpcBackend": 886,
     "labels.py:LabelSetWebHandlers": 522,
     "runtime.py:WebExecutionRuntime": 597,
 }
@@ -87,7 +87,6 @@ MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
         "backend.py:WebRpcBackend._notebook_create",
         "backend.py:WebRpcBackend._notebook_limit_error",
         "backend.py:WebRpcBackend._notebook_update",
-        "chat.py:ChatWebHandlers._chat_ask",
         "labels.py:LabelSetWebHandlers._collection_create",
         "labels.py:LabelSetWebHandlers._collection_update",
         "labels.py:LabelSetWebHandlers._label_create",
