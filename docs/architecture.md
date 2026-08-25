@@ -1150,6 +1150,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_research_task_parser.py` | Internal parser for research task result-type selection |
 | `_notebooks.py` | `client.notebooks` API + source-id resolver |
 | `_notebook_payloads.py` | Stable `batchexecute` notebook RPC request payload builders (currently `SUGGEST_PROMPTS`) |
+| `_markdown.py` | Neutral HTML-to-Markdown conversion policy for source fulltext, including Markdown-source and LaTeX/table handling |
 | `_sources.py` | `client.sources` API |
 | `_artifacts.py` | `client.artifacts` compatibility facade — validates public inputs, delegates to typed Studio services, and projects existing public return/error types without native RPC authority. |
 | `_chat/api.py` | `client.chat` API |
@@ -1177,7 +1178,6 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_source/batch.py` | True-batch URL `ADD_SOURCE` service for the existing MCP/REST batch endpoints: typed positional outcomes, omitted-row reconciliation, and fail-closed transport/duplicate ambiguity policy |
 | `_source/drive_import.py` | Auto-route add-from-Drive (#1884): download + upload the upload-only Drive types (epub/docx/txt/…); native import (`add_drive`) instead takes Docs/Slides/Sheets + PDF by reference; header-first cookie-authed streaming fetch behind injected seams |
 | `_source/content.py` | Core service layer for fetching source HTML/markdown content |
-| `_source/markdown.py` | Source fulltext HTML-to-Markdown conversion policy, including Markdown-source and LaTeX/table handling |
 | `_source/listing.py` | Core service layer for listing notebook sources |
 | `_source/polling.py` | Poll coordination service for active source conversions |
 | `_source/upload.py` | Concurrency-gated upload pipeline for source files |
@@ -1446,7 +1446,6 @@ src/notebooklm/
 │   ├── add.py                   # Source addition coordinator
 │   ├── batch.py                 # True-batch URL ADD_SOURCE coordinator + typed positional outcomes for MCP/REST batch adapters (#2115)
 │   ├── content.py               # Source content fetcher
-│   ├── markdown.py               # Source fulltext HTML-to-Markdown conversion policy
 │   ├── drive_import.py          # Auto-route add-from-Drive (#1884): DriveImportService + DriveFetcher — parse id/URL, cookie-authed header-first streaming download of the upload-only Drive types (epub/docx/txt/…), confirm-token handling + 0600 temp cleanup, then hand to add_file (native Docs/Slides/Sheets → pointer error)
 │   ├── listing.py               # Source listing helper
 │   ├── polling.py               # Source polling coordinator
@@ -1543,6 +1542,7 @@ src/notebooklm/
 │   └── sources.py
 ├── _notebooks.py                # NotebooksAPI
 ├── _notebook_payloads.py        # batchexecute notebook RPC payload builders (SUGGEST_PROMPTS)
+├── _markdown.py                 # Neutral HTML-to-Markdown conversion policy for source fulltext
 ├── _sources.py                  # SourcesAPI
 ├── _artifacts.py                # ArtifactsAPI
 ├── _research.py                 # ResearchAPI
