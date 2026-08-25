@@ -1719,7 +1719,6 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_chat/api.py", "_records", "ChatSaveNoteInput"),
         ("_chat/history.py", "_records", "ChatGetHistoryResult"),
         ("_chat/history.py", "_records", "ChatTurnDecodeErrorRecord"),
-        ("_chat/notes.py", "_projectors", "chat_reference_record"),
         ("_chat/service.py", "_backend", "BackendAdapter"),
         ("_chat/service.py", "_records", "CHAT_ASK_DEF"),
         ("_chat/service.py", "_records", "CHAT_CONFIGURE_DEF"),

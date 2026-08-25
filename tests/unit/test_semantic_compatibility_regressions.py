@@ -12,7 +12,6 @@ import pytest
 
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._backend import BackendError, BackendErrorReason
-from notebooklm._chat import notes as chat_notes
 from notebooklm._chat import wire as chat_wire
 from notebooklm._kernel import Kernel
 from notebooklm._records import ARTIFACT_LIST_DEF, ArtifactListInput
@@ -21,7 +20,7 @@ from notebooklm._web.codec import chat_stream
 from notebooklm._web_cookie_provider import WebCookieGeneration
 from notebooklm.exceptions import NetworkError
 from notebooklm.rpc import RPCMethod
-from notebooklm.types import ChatReference, ConnectionLimits
+from notebooklm.types import ConnectionLimits
 from tests._fixtures.web_backend import build_web_backend
 
 
@@ -138,15 +137,6 @@ def test_chat_wire_injects_compat_stripper_without_mutating_codec_global(
     assert not worker.is_alive()
     assert observed == [result]
     assert calls == ["wire", compat_strip]
-
-
-def test_chat_reference_compat_mapping_preserves_positional_identity() -> None:
-    """Equal unnumbered references still map positional fallback to its own object."""
-    first = ChatReference(source_id="source", chunk_id="chunk")
-    second = ChatReference(source_id="source", chunk_id="chunk")
-    assert first == second and first is not second
-
-    assert chat_notes._resolve_reference([first, second], 2) is second
 
 
 def test_backend_session_rejects_foreign_loop_open_and_close() -> None:

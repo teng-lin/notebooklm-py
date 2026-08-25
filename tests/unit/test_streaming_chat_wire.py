@@ -678,7 +678,8 @@ def test_skipped_citation_row_leaves_numbering_hole_for_markers(caplog) -> None:
     the skipped row leaves a hole: marker ``[2]`` resolves to ``None`` and
     its anchor is dropped — never mis-anchored.
     """
-    from notebooklm._chat.notes import _resolve_reference
+    from notebooklm._projectors import chat_reference_record
+    from notebooklm._web.codec.chat_saved_note import _resolve_reference
 
     good_1 = _citation(source_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", chunk_id="chunk-1")
     bad_2 = ["present-but-unusable"]
@@ -698,10 +699,11 @@ def test_skipped_citation_row_leaves_numbering_hole_for_markers(caplog) -> None:
 
     # Downstream marker resolution: the hole yields None (anchor skipped),
     # the surviving markers resolve to their own chunks.
-    resolved_1 = _resolve_reference(result.references, 1)
+    records = tuple(chat_reference_record(ref) for ref in result.references)
+    resolved_1 = _resolve_reference(records, 1)
     assert resolved_1 is not None and resolved_1.chunk_id == "chunk-1"
-    assert _resolve_reference(result.references, 2) is None
-    resolved_3 = _resolve_reference(result.references, 3)
+    assert _resolve_reference(records, 2) is None
+    resolved_3 = _resolve_reference(records, 3)
     assert resolved_3 is not None and resolved_3.chunk_id == "chunk-3"
 
 
