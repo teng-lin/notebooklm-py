@@ -87,6 +87,7 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
     import notebooklm._artifacts as artifacts
     import notebooklm._mind_map as mind_map
     import notebooklm._studio.representations as artifact_representations
+    import notebooklm._web.codec.artifact_formatters as codec_artifact_formatters
     import notebooklm._web.codec.artifacts as artifact_codec
     import notebooklm.auth as auth
 
@@ -117,7 +118,7 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
         artifact_representations._format_interactive_content
         is artifact_formatters._format_interactive_content
     )
-    assert artifact_codec._parse_data_table is artifact_formatters._parse_data_table
+    assert artifact_codec._parse_data_table is codec_artifact_formatters._parse_data_table
 
 
 def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:
