@@ -64,9 +64,9 @@ CUSTOM_ROW_COUNTS = {"protocol": 5, "compatibility": 4, "deferred-product": 11}
 # --- 2. class size ---------------------------------------------------------------
 
 CLASS_BODY_LINE_CEILING = 500
-#: Measured at P9.4a; shrink-only. ``WebExecutionRuntime`` is the transport engine
-#: and shrinks on its own schedule; the remaining chain classes are P9.4b targets
-#: (``WebRpcBackend`` dropped under the ceiling with the P9.4b notebook/mind-map rows).
+#: Reviewed P9.4 transport-engine exception, measured exactly and shrink-only.
+#: Every semantic feature/adapter class is below 500 lines at the terminal boundary;
+#: decomposing ``WebExecutionRuntime`` is separate transport work.
 OVERSIZED_CLASS_CEILINGS = {
     "runtime.py:WebExecutionRuntime": 597,
 }

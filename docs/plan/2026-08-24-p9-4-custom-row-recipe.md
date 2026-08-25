@@ -1,9 +1,10 @@
 # P9.4 custom-row conversion recipe
 
-**Status:** row conversion completed 2026-08-24 at `771056fe`; the later P9.2 hoists closed the
-zero-handler/direct-shell exit architecture at `b2b6fa94`. At the P9.4 conversion point there were
-26 custom rows and five P9.2-hoist handlers; the final integrated state is 20 custom rows and zero
-handlers. This file is the frozen execution recipe.
+**Status:** row conversion completed 2026-08-24 at `771056fe`; the later P9.2 hoists reached the
+zero-handler/direct-shell intermediate at `b2b6fa94`, and P9.4c closed the row-only terminal
+architecture at `9ce52421`. At the P9.4 conversion point there were 26 custom rows and five
+P9.2-hoist handlers; the final integrated state is 20 custom rows and zero handlers. This file is
+the frozen execution recipe.
 
 The sharing composites PR (P9.4a) was the pattern. Each P9.4b domain PR converted the remaining
 handler-backed composites of its domain into `CustomBinding` rows, deleted emptied chain classes,
@@ -57,8 +58,10 @@ goldens.
 
 - Delete the converted handler methods; when a chain class is empty delete it and re-link its
   neighbour's base (`class Next(Deleted)` → `class Next(DeletedBase)`). The MRO shrinks by one per
-  emptied class; after the later P9.2 hoists, `WebRpcBackend` ends with no bases at `b2b6fa94`.
+  emptied class; after the later P9.2 hoists, `WebRpcBackend` had no bases at `b2b6fa94`.
 - Remove the converted operations from `_HANDLER_NAMES` in `_web/registry.py` (pins unchanged).
+  P9.4c at `9ce52421` deleted the now-empty handler/staged containers and the resolved-handler
+  binding kind itself.
 
 ## 4. Ratchets (`tests/_guardrails/test_web_binding_ratchets.py`)
 
@@ -67,7 +70,8 @@ goldens.
 - `MULTI_CALL_HANDLER_ALLOWLIST`: remove every converted `file.py:Class.method` entry (a
   function bound as `handler=` of a `CustomBinding` is exempt by construction).
 - `OVERSIZED_CLASS_CEILINGS`: tighten the shrunk class's ceiling, or remove the entry once it is
-  under 500 body lines or deleted.
+  under 500 body lines or deleted. `WebExecutionRuntime` is the reviewed transport-engine
+  exception at an exact shrink-only 597-line ceiling; it is outside the semantic binding cleanup.
 
 ## 5. Catalog, inventories, docs
 

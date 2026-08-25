@@ -96,6 +96,8 @@ def test_backend_type_surface_is_protocol_narrow_and_shallow_repr_is_redacted() 
     signature = inspect.signature(WebRpcBackend.__init__)
     assert signature.parameters["provider"].annotation == "WebCookieProvider | None"
     assert signature.parameters["session"].annotation == "WebCookieSession | None"
+    assert signature.parameters["transport_factory"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert "_transport_factory" not in vars(backend)
 
     introspection = repr((backend, vars(backend), provider, vars(provider), session, vars(session)))
     for secret in ("cookie-old", "csrf-old", "session-old"):

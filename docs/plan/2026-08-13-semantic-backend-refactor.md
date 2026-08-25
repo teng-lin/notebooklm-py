@@ -4,7 +4,7 @@
 **Implementation status:** P0's catalog and compatibility-contract evidence are complete and
 frozen. P1–P9 are implemented on `refactor/semantic-backend-dev` with per-phase completion
 evidence recorded below; they are not yet merged to `main`. P9's implementation is complete at
-`b2b6fa94`; its focused integration gate is green and the phase-ending canonical repository gate
+`9ce52421`; its focused integration gate is green and the phase-ending canonical repository gate
 is still to be recorded in the exit report.
 **Planning date:** 2026-08-13
 **Planning base:** `main` at `3bb0c185` (re-pinned; the original `dd710a09` base had drifted).
@@ -1762,7 +1762,7 @@ from the first only below the port. Below the port, domain vocabulary appears on
 including a capped `CustomBinding` section; no `_web/` class or free function outside a custom-row
 handler sequences more than one transport call.
 
-**Status:** proposed and approved 2026-08-24; implementation complete at `b2b6fa94` on
+**Status:** proposed and approved 2026-08-24; implementation complete at `9ce52421` on
 `refactor/semantic-backend-dev`. The entry and exit records are measured below. The focused
 integration gate is green; the phase-ending canonical repository gate remains to be recorded.
 Owner-directed deviation: P9 opened on the P0–P8 development branch before that branch merged to
@@ -2255,8 +2255,10 @@ native through a collaborator and are classified by the gate table.
 **P9.4 — Residual composites as `CustomBinding`; the chain is deleted.** *The P9.4 row
 conversion completed 2026-08-24 at `771056fe` with 26 custom rows (5 protocol + 4 compatibility +
 17 deferred-product) and five P9.2-hoist handlers, for 31 residual composites. The later P9.2
-hoists closed the exit architecture at `b2b6fa94`: 20 custom rows (5 + 4 + 11), zero handlers,
-and a direct `WebRpcBackend -> object` MRO.*
+hoists reached 20 custom rows (5 + 4 + 11), zero handlers, and a direct
+`WebRpcBackend -> object` MRO at `b2b6fa94`. P9.4c then closed the terminal architecture at
+`9ce52421` by deleting the empty handler/staged registries, `ResolvedHandlerBinding`/`bind`,
+construction-time `getattr` resolution, and the dead `_transport_factory` instance state.*
 The composites that stayed adapter-owned after P9.2 are `CustomBinding` rows whose handler receives
 the row-scoped `RowInvoker` (never a raw transport). `DeadlineRpcCaller`, through which the residual
 mind-map merge reached `LegacyNoteBackedService`, was replaced by an invoker-backed caller with its
@@ -2282,20 +2284,23 @@ it.
 - `len(WebRpcBackend.__mro__) == 2`; in `planned:_web/bindings.py`, `_web/<domain>.py` and
   `_web/codec/` no `async def` outside the custom section sequences more than one transport call
   (`runtime.py`, `transport.py`, `chat_transport.py` are the transport and excluded); a guardrail
-  pins both, plus an AST class-body-line ratchet for `_web/` (largest class
-  under 500 lines — a new guard, since the module ratchet measures files).
+  pins both, plus an AST class-body-line ratchet for `_web/`. The approved P9.4 recipe reconciles
+  the original broad "largest class under 500" projection as: every feature/adapter class is
+  under 500 body lines, while transport-engine `WebExecutionRuntime` is the one reviewed
+  exception at an exact shrink-only 597-line ceiling. Its later decomposition is transport work,
+  not unfinished semantic binding work.
 - The custom-row ratchet starts at the P9.4 count, names its burndown issue per the Architecture
   guardrails rule, and only decreases; each row carries a one-sentence justification under one of
   the three categories (protocol, compatibility, deferred-product), and the deferred-product
   sub-ratchet must reach zero before any second backend. The class-size ratchet is installed the
   same way.
 - A construction-time audit rejects a table whose key set differs from the executable
-  (supported) dispositions in `registry.py`, and a unit test proves a misnamed or missing
-  handler fails at construction.
+  (supported) dispositions in `registry.py`, and unit tests prove a missing row and a mismatched
+  canonical definition fail at construction.
 - Dispatch is type-checked: a unit test runs `mypy.api.run` under `pyproject.toml` on a snippet
-  binding a `VideoIn` handler to `AUDIO_DEF` and asserts a mypy error (the CI invocation excludes
-  `tests/`, so the check must go through `mypy.api`). Spiked 2026-08-24: a `Protocol` with
-  keyword-only `deadline` unifies with bound methods; the current `getattr` form passes clean.
+  giving an audio `CodecBinding` a `VideoGenerateInput` encoder and asserts a mypy error (the CI
+  invocation excludes `tests/`, so the check must go through `mypy.api`). The row-only terminal
+  form has no string handler lookup or resolved-handler escape hatch.
 - `planned:_binding.py`'s import set is pinned by a guardrail. Below the port, `RPCMethod` is
   named only by `WebRequest`, `WebTransport`, `NativeCallSpec` values and the policy ledger; no
   codec function, handler or row body names it.
@@ -2352,7 +2357,7 @@ it.
 | **P9.1** | `WebTransport` (`call`/`stream` only), `WebRequest`; lifecycle and uploader callbacks stay on the shell | `planned:_web/transport.py`, `_web/backend.py`, `_web/deadline_rpc.py`, `_client_composition.py` | P8 import inventory (+`_web.transport`), `REVIEWED_BACKEND_IMPORTS`, `GENERIC_RPC_FORWARDERS` (+`WebTransport.call`), `INERT_P1_WEB_FORWARDERS` + guardrail literal | all recorded-kwargs assertions unchanged; `__init__` signature and `vars(backend)` keys unchanged; observability equality test passes with no new cell |
 | **P9.2** | Hoist composites; primitive members; `service_owned`; commit-uncertainty; workflow deadline; error rebind | `_backend.py`, `_operations.py`, `_idempotency.py`, `_web/deadlines.py`, `_web/policy.py`, `planned:_web/bindings.py` (primitive rows), `_web/codec/*`, `_source_service.py`, `_label_service.py`, `_notebook_mutation_service.py`, `_studio/*`, the facades that construct services (`_artifacts.py`, `_collections.py`, `_labels.py`, `_notebooks.py`, `_sources.py`), `_client_composition.py`, `_web/<domain>.py` per hoist | catalog AST derivation (rows as authorities) in the first PR; six count pins (incl. `_EXPECTED_SUPPORTED_COUNT`, `KNOWN_ACTIVE_SEMANTIC_OPERATIONS`); registry-closure test and p4 def/native parametrization; catalog reviewed rows; `ACTIVE_BACKEND_INVOKE_SITES`; P8 import inventory and `REVIEWED_BACKEND_IMPORTS` (removals as composites leave `_web/`); `test_semantic_deadline_seeding.py` `CLIENT_TIMEOUT` partition; `json_envelope` note evidence; `RecordingBackend.set_sequence`; `test_web_backend.py` `._backend` reader allowlist if a new helper touches it | gate table; per-workflow sequence tests replacing the workflow's backend-level tests; deadline identity + remaining-budget tests; public error text equality; observability equality (resolver collapse); ADR-0005 parity report with any divergence change listed |
 | **P9.3** | Remaining leaf rows per domain; chain classes deleted as emptied | `planned:_web/bindings.py`, `_web/codec/*`, one `_web/<domain>.py` per PR | P8 import inventory, `REVIEWED_BACKEND_IMPORTS`, `_REVIEWED_CODEC_VALUE_IMPORTS` (row derivation already landed in P9.2) | codec goldens gain moved encoders; `mypy.api` dispatch test; handler-name readers rebased on rows |
-| **P9.4** | Residual `CustomBinding`; chain gone; `_HANDLER_NAMES` deleted; errors module | `_web/backend.py`, `_web/registry.py`, `planned:_web/errors.py`, remaining `_web/<domain>.py` | P8 import inventory (removals), `REVIEWED_BACKEND_IMPORTS`, custom-row ratchet + class-size ratchet installed | `len(__mro__) == 2`; ten `_translate_error` rebinds; direct composite call in `test_semantic_compatibility_regressions.py` rebased |
+| **P9.4** | Residual `CustomBinding`; chain and handler/staged scaffolding gone; row-only binding core; dead `_transport_factory` state deleted | `_binding.py`, `_web/backend.py`, `_web/registry.py`, `planned:_web/errors.py`, remaining `_web/<domain>.py` | P8 import inventory (removals), `REVIEWED_BACKEND_IMPORTS`, custom-row ratchet + class-size ratchet installed | `len(__mro__) == 2`; table keys/definitions audited; typed `CodecBinding` mismatch rejected; ten `_translate_error` rebinds |
 
 #### ADR dispositions
 
@@ -2391,8 +2396,8 @@ flag exists at any point.
   on its `OperationDef`; the P4 parity audit and P7 equality gates are the tripwire; any change to
   a public wait or retry is a separate decision outside this plan (see P5's acceptance criteria).
 - **Entry estimates versus exit.** The entry projections were planning inputs, not gates. At
-  `b2b6fa94` the vocabulary has nine primitives; `_web/` has 13,801 Python lines; `policy.py` has
-  1,122 lines; `WebRpcBackend` has 434 class-body lines in a 639-line file; and the residual count
+  `9ce52421` the vocabulary has nine primitives; `_web/` has 13,725 Python lines; `policy.py` has
+  1,120 lines; `WebRpcBackend` has 434 class-body lines in a 613-line file; and the residual count
   is 20 custom rows. The residual partition is the gate table's measured 5 protocol + 4
   compatibility + 11 deferred-product, not the original floor of fourteen. Only the
   protocol/compatibility subset is expected to stay permanently; the deferred-product ratchet must
@@ -2428,16 +2433,16 @@ P8; re-measured at the merge commit before P9.0 opens.
 
 #### P9 exit record
 
-Measured 2026-08-24 on `refactor/semantic-backend-dev` at `b2b6fa94` with
+Measured 2026-08-24 on `refactor/semantic-backend-dev` at `9ce52421` with
 `scripts/measure_web_backend_chain.py`, the disposition/ratchet guards, and the operation-catalog
 audit. This is the exit comparison for the historical entry record above.
 
 | Measure | P9 exit value |
 |---|---|
 | `WebRpcBackend.__mro__` depth (excl. `object`) | 1 (`WebRpcBackend -> object`) |
-| Class-body lines across the chain / file lines | 434 / 639 |
-| Methods (`vars()` per class, summed) / non-dunder callables on the instance (`dir()`) | 13 / 14 (22 `vars()` entries counting properties, classmethods and `__init__`) |
-| State attributes, all in the head's `__init__` | 21 |
+| Class-body lines across the chain / file lines | 434 / 613 |
+| Methods (`vars()` per class, summed) / non-dunder callables on the instance (`dir()`) | 13 / 13 (22 `vars()` entries counting properties, classmethods and `__init__`) |
+| State attributes, all in the head's `__init__` | 20 |
 | `super()` calls / abstract seams | 0 / 0 |
 | Cross-class calls / of which `_rpc_call`; total `self._rpc_call(` sites | 0 / 0; 0 |
 | Links with zero dependency on immediate base | 0 of 0 |
@@ -2446,11 +2451,11 @@ audit. This is the exit comparison for the historical entry record above.
 | Natives appearing only in multi-native bindings: by ledger / by handler code | 7 / 0 |
 | `capabilities.supports()` consumers outside the port | 1 |
 | `_rpc_call` keyword usage at the zero call sites | all zero |
-| `policy.py` lines / `RPCMethod.` member refs / any `RPCMethod` token | 1,122 / 141 / 148 |
+| `policy.py` lines / `RPCMethod.` member refs / any `RPCMethod` token | 1,120 / 141 / 148 |
 | `_idempotency.py` `RPCMethod` tokens / member refs | 18 / 0 |
 | Tests reaching into chain internals | 0 unbound `_translate_error` sites |
 | Recorded-kwargs assertion lines (pinned pattern) | 123 in 26 files (29 in `test_web_backend.py`) |
-| Files with direct `WebRpcBackend(...)` constructions / files using `build_web_backend` | 13 / 68 |
+| Files with direct `WebRpcBackend(...)` constructions / files using `build_web_backend` | 13 / 67 |
 | Catalog `_web/` strings — strict `file.py:Class.method`: JSON / unit test; any `_web/*.py` path: JSON / authorities script / guardrail | 56 / 0; 658 / 139 / 67 |
 | Per-file coverage floors on `_web/` | 0 |
 
@@ -2464,8 +2469,9 @@ local-only), ten root-client members, 169 allocated authority rows, 44 multi-aut
 20 multi-site native rows, two authority divergences, one policy divergence, four honest golden
 gaps, and 56/56 override proof.
 
-The final integrated focused gate passed 329 tests in 15.53 seconds; the catalog audit and Ruff on
-the touched set are green. This record does **not** claim the phase-ending canonical repository
+The P9.2 integrated focused gate passed 329 tests in 15.53 seconds, and the terminal P9.4c focused
+gate passed 784 tests in 12.97 seconds; the catalog audit, Ruff, and mypy on the touched set are
+green. This record does **not** claim the phase-ending canonical repository
 gate: the full pytest run, full Ruff check and format check, mypy, pre-commit, optional-adapter
 coverage and per-file floors, public API compatibility, metrics/event, exception-lattice,
 secret-regression, and cassette-rewrite rows remain to be recorded before that gate is closed.
@@ -3023,6 +3029,6 @@ These are design-review stop conditions, not reasons to bypass tests or broaden 
 The per-phase **Acceptance criteria** above are the definition of done; this plan does not maintain
 a second copy of them. The internal refactor may be declared successful after P8 -- neither a
 breaking public API nor a second backend is required to realize its primary architectural benefit.
-P9's implementation is additionally complete at `b2b6fa94`; its phase-ending canonical repository
+P9's implementation is additionally complete at `9ce52421`; its phase-ending canonical repository
 verification remains explicitly open in the P9 exit record rather than being implied by the focused
 integration gate.

@@ -116,11 +116,11 @@ the active bindings: whole-workflow `CallPolicy` values, exact native idempotenc
 caller-owned absolute deadline identity, and closed public-error projection are audited together
 without moving retry authority out of the native registry. Future operation migrations must extend
 that same ledger; P5.1 through P5.8, P6.1–P6.7, and the final P7 notebook/share entry slice extend
-it to the active semantic surface. P0–P8 are complete. P8 places an immutable
+it to the active semantic surface. P0–P9 are complete. P8 places an immutable
 `WebCookieGeneration`/`WebCookieProvider` port between the web session and the existing auth
-owners; public-surface work and a mobile backend require separate decisions. P9.2/P9.3 are in
-progress: codec rows own the converted leaves, while label/collection update and artifact rename
-are service-owned workflows whose leaf conjunctions are audited transitively.
+owners; public-surface work and a mobile backend require separate decisions. P9 leaves a row-only
+web backend: 80 typed binding rows execute directly, eleven workflows are service-owned above the
+port, and their leaf conjunctions are audited transitively.
 
 The operation-catalog audit classifies only the shared generic web RPC forwarder as inert. The four
 notebook/source read handlers, three notebook-mutation handlers, URL-source composite, two Studio
@@ -197,7 +197,7 @@ Most public methods (`client.notebooks.list()`, `client.sources.rename()`,
                                  v
 +----------------------------------------------------------------+
 | BackendAdapter.invoke(OperationDef, typed input, deadline)     |
-|   WebRpcBackend selects one registered handler + web codec      |
+|   WebRpcBackend selects one typed row from its audited table    |
 +----------------------------------------------------------------+
                                  |
                                  v
@@ -247,8 +247,8 @@ Most public methods (`client.notebooks.list()`, `client.sources.rename()`,
 ```
 
 Production feature services depend on `BackendAdapter`, never on the web wire or the execution
-runtime. `WebRpcBackend` owns the one `WebExecutionRuntime` and delegates registered semantic
-handlers through it. `_rpc_executor.py::RpcExecutor` is a behaviorless compatibility subclass; it
+runtime. `WebRpcBackend` owns the one `WebExecutionRuntime` and dispatches typed binding rows
+through it. `_rpc_executor.py::RpcExecutor` is a behaviorless compatibility subclass; it
 does not retain a second encode/dispatch/decode authority.
 
 `NotebookLMClient.rpc_call(method, params)` is the public raw-RPC escape hatch.
