@@ -35,7 +35,6 @@ from notebooklm._records import (
 )
 from notebooklm._research import ResearchAPI
 from notebooklm._research_service import ResearchService
-from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.codec.research import (
     build_report_import_entry,
     build_web_import_entry,
@@ -47,6 +46,7 @@ from notebooklm._web.codec.research import (
     encode_research_poll_params,
     encode_research_start_params,
 )
+from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import (
     AmbiguousResearchTaskError,
     DecodingError,
@@ -441,7 +441,7 @@ def test_transport_classification_refuses_to_mint_the_domain_reason() -> None:
     original-call evidence it reconstructs ``__cause__`` from.
     """
     with pytest.raises(BackendContractError, match="unclassified web error type"):
-        WebRpcBackend._translate_error(
+        translate_web_error(
             Operation.RESEARCH_START,
             ResearchStartUnavailableError("nb", "deep"),
         )

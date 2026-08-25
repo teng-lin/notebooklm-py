@@ -168,6 +168,7 @@ from notebooklm._source.upload_payloads import build_template_block
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import studio as studio_rows_module
+from notebooklm._web.errors import translate_web_error
 from notebooklm._web.registry import (
     WEB_OPERATION_REGISTRY,
     WEB_STAGED_OPERATIONS,
@@ -1980,7 +1981,7 @@ def test_web_error_reasons_are_closed_and_preserve_reconstruction_evidence(
     reason: BackendErrorReason,
     specific_diagnostics: dict[str, object],
 ) -> None:
-    translated = WebRpcBackend._translate_error(Operation.NOTEBOOK_LIST, error)
+    translated = translate_web_error(Operation.NOTEBOOK_LIST, error)
 
     assert translated.reason is reason
     assert translated.message == str(error.args[0])
@@ -2050,7 +2051,7 @@ def test_translated_server_error_preserves_http_status_cause() -> None:
     error.__context__ = cause
     error.__suppress_context__ = True
 
-    translated = WebRpcBackend._translate_error(Operation.NOTEBOOK_LIST, error)
+    translated = translate_web_error(Operation.NOTEBOOK_LIST, error)
     projected = project_backend_error(translated)
 
     assert isinstance(projected, ServerError)
@@ -2099,7 +2100,7 @@ def test_translated_transport_error_drops_suppressed_private_context(
     error.__context__ = private
     error.__suppress_context__ = True
 
-    translated = WebRpcBackend._translate_error(Operation.NOTEBOOK_LIST, error)
+    translated = translate_web_error(Operation.NOTEBOOK_LIST, error)
     projected = project_backend_error(translated)
 
     assert type(projected) is public_type
@@ -2122,7 +2123,7 @@ def test_translated_network_error_omits_private_transport_wrapper_context() -> N
     error.__context__ = transport
     error.__suppress_context__ = True
 
-    translated = WebRpcBackend._translate_error(Operation.NOTEBOOK_LIST, error)
+    translated = translate_web_error(Operation.NOTEBOOK_LIST, error)
     projected = project_backend_error(translated)
 
     assert isinstance(projected, NetworkError)
@@ -2141,7 +2142,7 @@ def test_translated_error_rejects_unreviewed_context_without_public_cause() -> N
     error.__suppress_context__ = True
 
     with pytest.raises(BackendContractError, match="unsupported public failure type"):
-        WebRpcBackend._translate_error(Operation.NOTEBOOK_LIST, error)
+        translate_web_error(Operation.NOTEBOOK_LIST, error)
 
 
 @pytest.mark.parametrize(
@@ -2163,7 +2164,7 @@ def test_translated_decode_drift_preserves_reviewed_builtin_cause(cause: Excepti
     error.__context__ = cause
     error.__suppress_context__ = True
 
-    translated = WebRpcBackend._translate_error(Operation.NOTEBOOK_GET, error)
+    translated = translate_web_error(Operation.NOTEBOOK_GET, error)
     projected = project_backend_error(translated)
 
     assert isinstance(projected, UnknownRPCMethodError)
@@ -2199,7 +2200,7 @@ def test_unreviewed_rpc_error_subclass_fails_closed() -> None:
         pass
 
     with pytest.raises(BackendContractError, match="unclassified web error type"):
-        WebRpcBackend._translate_error(Operation.NOTEBOOK_LIST, _UnreviewedRPCError("new"))
+        translate_web_error(Operation.NOTEBOOK_LIST, _UnreviewedRPCError("new"))
 
 
 @pytest.mark.asyncio

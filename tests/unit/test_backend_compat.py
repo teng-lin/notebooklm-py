@@ -23,7 +23,7 @@ from notebooklm._backend_compat import (
 )
 from notebooklm._operations import Operation
 from notebooklm._records import SourceAddFailureKind, SourceAddFailureRecord
-from notebooklm._web.backend import WebRpcBackend
+from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import (
     ArtifactFeatureUnavailableError,
     ArtifactNotFoundError,
@@ -229,7 +229,7 @@ async def test_project_backend_call_preserves_projector_authored_graph(
 
 
 def _round_trip(error: RPCError | NetworkError) -> Exception:
-    neutral = WebRpcBackend._translate_error(Operation.NOTEBOOK_GET, error)
+    neutral = translate_web_error(Operation.NOTEBOOK_GET, error)
     return project_backend_error(neutral)
 
 
@@ -354,7 +354,7 @@ def test_unknown_rpc_base_message_is_not_rendered_with_diagnostics_twice() -> No
         source="decoder",
     )
 
-    neutral = WebRpcBackend._translate_error(Operation.NOTEBOOK_GET, original)
+    neutral = translate_web_error(Operation.NOTEBOOK_GET, original)
     projected = project_backend_error(neutral)
 
     assert neutral.message == "unknown shape"
