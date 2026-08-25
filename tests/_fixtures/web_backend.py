@@ -10,10 +10,6 @@ from notebooklm._runtime.transport import RuntimeTransport
 from notebooklm._web.backend import WebRpcBackend
 
 
-def _unused_transport_factory(**_kwargs: object) -> object:
-    return object()
-
-
 def build_web_backend(
     rpc: object,
     *,
@@ -26,7 +22,6 @@ def build_web_backend(
     """Wrap a fake ``rpc_call`` owner exactly as production assembly does."""
     return WebRpcBackend(
         cast(RpcExecutor, rpc),
-        transport_factory=_unused_transport_factory,
         source_uploader=source_uploader,
         chat_transport=cast(RuntimeTransport | None, chat_transport),
         chat_reqid=cast(ReqidCounter | None, chat_reqid),

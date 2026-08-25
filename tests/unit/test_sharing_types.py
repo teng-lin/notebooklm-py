@@ -586,7 +586,6 @@ class TestSharingAPIValidation:
     def _api(rpc_call: AsyncMock) -> SharingAPI:
         backend = WebRpcBackend(
             MagicMock(rpc_call=rpc_call),
-            transport_factory=lambda **_kwargs: object(),
         )
         return SharingAPI(_backend=backend)
 

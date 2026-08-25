@@ -58,7 +58,7 @@ SHARE_STATUS_PAYLOAD: list[Any] = [
 
 def _api(rpc_call: AsyncMock) -> SharingAPI:
     executor = MagicMock(rpc_call=rpc_call)
-    backend = WebRpcBackend(executor, transport_factory=lambda **_kwargs: object())
+    backend = WebRpcBackend(executor)
     return SharingAPI(_backend=backend)
 
 
@@ -163,7 +163,6 @@ async def test_legacy_share_artifact_preserves_status_three_null_success() -> No
     rpc_call = AsyncMock(return_value=None)
     backend = WebRpcBackend(
         MagicMock(rpc_call=rpc_call),
-        transport_factory=lambda **_kwargs: object(),
     )
 
     result = await backend.invoke(

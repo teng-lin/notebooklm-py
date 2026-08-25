@@ -32,7 +32,7 @@ from notebooklm.rpc import RPCMethod
 
 def _api(rpc_call: AsyncMock) -> NotebooksAPI:
     executor = MagicMock(rpc_call=rpc_call)
-    backend = WebRpcBackend(executor, transport_factory=lambda **_kwargs: object())
+    backend = WebRpcBackend(executor)
     return NotebooksAPI(executor, sources_api=MagicMock(), _backend=backend)
 
 

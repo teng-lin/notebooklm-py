@@ -512,7 +512,6 @@ async def test_backend_closes_only_a_provider_it_created() -> None:
     injected = _RecordingProvider()
     injected_backend = WebRpcBackend(
         object(),  # type: ignore[arg-type]
-        transport_factory=lambda **_kwargs: object(),
         provider=injected,  # type: ignore[arg-type]
     )
     await injected_backend.close()
@@ -521,7 +520,6 @@ async def test_backend_closes_only_a_provider_it_created() -> None:
     owned = _RecordingProvider()
     owned_backend = WebRpcBackend(
         object(),  # type: ignore[arg-type]
-        transport_factory=lambda **_kwargs: object(),
         provider=owned,  # type: ignore[arg-type]
         owns_provider=True,
     )

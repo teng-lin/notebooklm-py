@@ -30,7 +30,7 @@ async def test_backend_semantic_dispatch_uses_owned_runtime_and_parent_deadline(
     """Backend dispatch bypasses the compatibility alias and preserves budget identity."""
     owner = _Owner()
     runtime = _executor(owner)
-    backend = WebRpcBackend(runtime, transport_factory=lambda **_kwargs: object())
+    backend = WebRpcBackend(runtime)
 
     class _ForbiddenCompatibilityExecutor:
         async def rpc_call(self, *_args: object, **_kwargs: object) -> Any:

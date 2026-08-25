@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -113,7 +113,6 @@ class WebRpcBackend:
         self,
         runtime: WebExecutionRuntime,
         *,
-        transport_factory: Callable[..., object],
         source_uploader: Any | None = None,
         chat_transport: RuntimeTransport | None = None,
         chat_reqid: ReqidCounter | None = None,
@@ -142,10 +141,9 @@ class WebRpcBackend:
         self._drain_tracker = drain_tracker
         self._reqid = reqid
         self._pipeline = pipeline
-        # P9.4c keeps the established constructor signature while deleting the
-        # dead instance state; direct-HTTP owners receive their factories from
-        # their own composition paths.
-        del transport_factory
+        # P9.4c deleted the dead ``_transport_factory`` instance state and P10
+        # R1.2 the constructor input that fed it; direct-HTTP owners receive
+        # their factories from their own composition paths.
         self._source_uploader = source_uploader
         self._chat_transport = chat_transport
         self._chat_reqid = chat_reqid

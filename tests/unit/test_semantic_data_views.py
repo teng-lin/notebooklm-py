@@ -45,7 +45,7 @@ class _Executor:
 
 
 def _backend(executor: _Executor) -> WebRpcBackend:
-    return WebRpcBackend(executor, transport_factory=lambda **_: object())  # type: ignore[arg-type]
+    return WebRpcBackend(executor)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio

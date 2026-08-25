@@ -15,7 +15,7 @@ def make_note_stack(
 ) -> tuple[NoteService, LegacyNoteBackedService, NoteBackedMindMapService, NotesAPI]:
     """Mirror the production split while sharing one recording executor."""
 
-    backend = WebRpcBackend(core.rpc_executor, transport_factory=lambda **_kwargs: object())
+    backend = WebRpcBackend(core.rpc_executor)
     notes = NoteService(backend)
     legacy = LegacyNoteBackedService(core)
     mind_maps = NoteBackedMindMapService(legacy)
