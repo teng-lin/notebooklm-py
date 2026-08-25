@@ -310,6 +310,43 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     }
 )
 
+# The remaining operations have no typed ``OperationDef`` at all: each is a
+# composition a facade or a semantic service performs over *public* methods, so
+# there is nothing for ``invoke`` to accept and nothing for ``capabilities`` to
+# advertise. A generic "not migrated" string hid why, which is exactly the
+# distinction P10/N2 asks the registry to make: each entry now says what runs
+# the operation today and, where a later slice changes that, which one.
+_UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
+    {
+        Operation.NOTEBOOK_METADATA: (
+            "facade composition without a typed def: NotebooksAPI.get_metadata delegates to "
+            "NotebookMetadataService, which gathers the public notebooks.get and sources.list "
+            "reads concurrently (_notebook_metadata.py); R6.2 decides whether it earns a typed "
+            "NOTEBOOK_METADATA_DEF workflow"
+        ),
+        Operation.LABEL_SOURCES: (
+            "facade composition without a typed def: LabelsAPI.sources joins the label's "
+            "membership ids against the public source listing client-side and issues no native "
+            "call of its own"
+        ),
+        Operation.COLLECTION_NOTEBOOKS: (
+            "facade composition without a typed def: CollectionsAPI.notebooks joins the "
+            "collection's membership ids against the public notebook listing client-side and "
+            "issues no native call of its own"
+        ),
+        Operation.RESEARCH_WAIT: (
+            "facade/service workflow without a typed def: ResearchService polls research.poll "
+            "under its own total budget; R6.4 adds typed inputs/results and flips it to "
+            "service-owned"
+        ),
+        Operation.RESEARCH_IMPORT_VERIFY: (
+            "facade/service workflow without a typed def: ResearchService sequences "
+            "research.import and a source-listing probe within one budget; R6.4 adds typed "
+            "inputs/results and flips it to service-owned"
+        ),
+    }
+)
+
 # The frozen catalog currently contains 96 operations (87 product members plus nine
 # P9.2 primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
@@ -344,6 +381,13 @@ def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
         raise RuntimeError(
             "the web handler set changed; update the reviewed supported-operation count"
         )
+    if set(_UNSUPPORTED_REASONS) != (
+        set(Operation) - set(_SUPPORTED_DEFINITIONS) - set(_SERVICE_OWNED_DEFINITIONS)
+    ):
+        raise RuntimeError(
+            "every operation without a web row or a service-owned workflow needs its own "
+            "reviewed unsupported reason"
+        )
     if policy_errors := audit_web_call_policy_bindings(
         _SUPPORTED_DEFINITIONS, workflows=_SERVICE_OWNED_DEFINITIONS
     ):
@@ -368,7 +412,7 @@ def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
         else:
             registry[operation] = WebOperationBinding(
                 definition=None,
-                unsupported_reason="not migrated to the semantic backend",
+                unsupported_reason=_UNSUPPORTED_REASONS[operation],
             )
     if set(registry) != set(Operation):
         raise RuntimeError("web operation registry is not closed over Operation")

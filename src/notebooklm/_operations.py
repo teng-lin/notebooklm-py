@@ -139,6 +139,21 @@ class CallPolicy(str, Enum):
     STREAM = "stream"
 
 
+@unique
+class OperationTier(str, Enum):
+    """Whether an operation is a product feature or a decomposition leaf.
+
+    ``PRODUCT`` operations back a public client method.  ``PRIMITIVE``
+    operations are the P9.2 decomposition leaves: single-native building blocks
+    a semantic service sequences to run a product workflow.  Facades never
+    invoke a primitive directly — the tier is what makes that rule checkable
+    instead of conventional.
+    """
+
+    PRODUCT = "product"
+    PRIMITIVE = "primitive"
+
+
 @dataclass(frozen=True, slots=True)
 class OperationDef(Generic[InputT, OutputT]):
     """Typed definition passed to a future semantic backend adapter.
@@ -146,12 +161,16 @@ class OperationDef(Generic[InputT, OutputT]):
     Concrete input/output types are introduced only when an operation is
     migrated.  Keeping this definition free of RPC, HTTP, CLI, MCP, and REST
     types is the dependency-direction invariant established in P0.
+
+    ``tier`` separates product operations from the P9.2 decomposition leaves;
+    it defaults to :attr:`OperationTier.PRODUCT` so only a leaf declares it.
     """
 
     key: Operation
     policy: CallPolicy
     input_type: type[InputT]
     output_type: type[OutputT]
+    tier: OperationTier = OperationTier.PRODUCT
 
 
-__all__ = ["CallPolicy", "Operation", "OperationDef"]
+__all__ = ["CallPolicy", "Operation", "OperationDef", "OperationTier"]

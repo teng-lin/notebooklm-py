@@ -135,7 +135,7 @@ from ._notebook_records import (
     PromptSuggestionRecord,
     SuggestedTopicRecord,
 )
-from ._operations import CallPolicy, Operation, OperationDef
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 from ._research_records import (
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
@@ -202,6 +202,7 @@ from ._sharing_records import (
     SharingVisibility,
 )
 from ._source_records import (
+    SOURCE_PATCH_TITLE_DEF,
     SourceAddCommitState,
     SourceAddDriveInput,
     SourceAddDriveResult,
@@ -950,6 +951,7 @@ ARTIFACT_PATCH_TITLE_DEF: OperationDef[ArtifactPatchTitleInput, ArtifactPatchTit
         CallPolicy.MUTATION,
         ArtifactPatchTitleInput,
         ArtifactPatchTitleResult,
+        tier=OperationTier.PRIMITIVE,
     )
 )
 ARTIFACT_CATALOG_DEF: OperationDef[ArtifactCatalogInput, ArtifactCatalogResult] = OperationDef(
@@ -957,6 +959,7 @@ ARTIFACT_CATALOG_DEF: OperationDef[ArtifactCatalogInput, ArtifactCatalogResult] 
     CallPolicy.READ,
     ArtifactCatalogInput,
     ArtifactCatalogResult,
+    tier=OperationTier.PRIMITIVE,
 )
 ARTIFACT_RENAME_DEF: OperationDef[ArtifactRenameInput, ArtifactRenameResult] = OperationDef(
     Operation.ARTIFACT_RENAME,
@@ -1085,12 +1088,6 @@ SOURCE_UPDATE_DEF: OperationDef[SourceUpdateInput, SourceUpdateResult] = Operati
     CallPolicy.MUTATION,
     SourceUpdateInput,
     SourceUpdateResult,
-)
-SOURCE_PATCH_TITLE_DEF: OperationDef[SourcePatchTitleInput, SourcePatchTitleResult] = OperationDef(
-    Operation.SOURCE_PATCH_TITLE,
-    CallPolicy.MUTATION,
-    SourcePatchTitleInput,
-    SourcePatchTitleResult,
 )
 SOURCE_REFRESH_DEF: OperationDef[SourceRefreshInput, SourceRefreshResult] = OperationDef(
     Operation.SOURCE_REFRESH,

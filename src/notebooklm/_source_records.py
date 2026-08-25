@@ -8,6 +8,7 @@ from datetime import datetime
 from enum import Enum, unique
 from pathlib import Path
 
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 from ._types.documents import StructuredDocument
 
 
@@ -443,3 +444,12 @@ class SourceFulltextRecord:
 @dataclass(frozen=True, slots=True)
 class SourceFulltextResult:
     fulltext: SourceFulltextRecord
+
+
+SOURCE_PATCH_TITLE_DEF: OperationDef[SourcePatchTitleInput, SourcePatchTitleResult] = OperationDef(
+    Operation.SOURCE_PATCH_TITLE,
+    CallPolicy.MUTATION,
+    SourcePatchTitleInput,
+    SourcePatchTitleResult,
+    tier=OperationTier.PRIMITIVE,
+)

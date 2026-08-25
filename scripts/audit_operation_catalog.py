@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY
-from notebooklm._operations import CallPolicy, Operation
+from notebooklm._operations import CallPolicy, Operation, OperationTier
 from notebooklm._web.policy import (
     WEB_CALL_POLICY_BINDINGS,
     audit_web_call_policy_bindings,
@@ -110,9 +110,28 @@ else:  # pragma: no cover - direct script execution
         native_key_text,
     )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _EXPECTED_OPERATION_COUNT = 96
 _native_key_text = native_key_text
+
+
+def operation_tier(operation: Operation) -> OperationTier:
+    """The reviewed tier of ``operation``, read from its live typed definition.
+
+    An operation without a typed definition is a product composition by
+    construction: a P9.2 decomposition leaf exists only as an ``OperationDef``,
+    so there is nothing to be a leaf *of* when the def is absent.
+    """
+    definition = WEB_OPERATION_REGISTRY[operation].definition
+    return OperationTier.PRODUCT if definition is None else definition.tier
+
+
+def product_operations() -> frozenset[Operation]:
+    """Every operation that is not a P9.2 decomposition leaf."""
+    return frozenset(
+        operation for operation in Operation if operation_tier(operation) is OperationTier.PRODUCT
+    )
+
 
 __all__ = [
     "CLIENT_PUBLIC_MEMBER_DISPOSITIONS",
@@ -139,6 +158,8 @@ __all__ = [
     "derive_row_authorities",
     "load_rpc_registry_evidence",
     "main",
+    "operation_tier",
+    "product_operations",
 ]
 
 
@@ -320,6 +341,7 @@ def build_operation_catalog(
 
     operation_rows: list[dict[str, Any]] = []
     for spec in sorted(OPERATION_SPECS, key=lambda item: item.operation.value):
+        binding = WEB_OPERATION_REGISTRY[spec.operation]
         native_methods = {method for method, _variant in spec.native_bindings}
         authorities = _operation_authorities(spec, native_execution_sites, shared_bindings)
         decoders = {
@@ -338,6 +360,10 @@ def build_operation_catalog(
                 "key": spec.operation.value,
                 "owner": spec.owner,
                 "policy": spec.policy.value,
+                "tier": operation_tier(spec.operation).value,
+                "unsupported_reason": (
+                    binding.unsupported_reason if binding.definition is None else None
+                ),
                 "route_context": spec.route_context,
                 "disposition": spec.disposition.value,
                 "public_methods": sorted(spec.public_methods),
