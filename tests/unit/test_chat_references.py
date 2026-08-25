@@ -1,6 +1,9 @@
 """Unit tests for chat reference and citation parsing.
 
-Tests the _parse_citations method and related ChatReference functionality.
+Tests the codec's ``parse_citations`` and related ChatReference functionality.
+P10 R2.1 deleted the delegating ``ChatAPI._parse_citations`` /
+``ChatAPI._parse_ask_response_with_references`` wrappers these cases used to
+reach the parser through; they now call the codec directly.
 """
 
 import json
@@ -8,6 +11,14 @@ import json
 import pytest
 
 from notebooklm import AskResult, ChatReference, NotebookLMClient
+from notebooklm._web.codec.chat_stream import parse_citations, parse_streaming_chat_response
+
+
+def _parse_ask_response_with_references(response_text):
+    """The 3-tuple shape the deleted ``ChatAPI._parse_ask_response_with_references``
+    wrapper returned (P10 R2.1), read off the codec parse result these cases pin."""
+    result = parse_streaming_chat_response(response_text)
+    return result.answer, result.references, result.conversation_id
 
 
 @pytest.fixture
@@ -17,12 +28,10 @@ def chat_api(auth_tokens):
 
 
 class TestParseCitations:
-    """Unit tests for the _parse_citations method."""
+    """Unit tests for the codec's ``parse_citations``."""
 
     def test_parse_citations_basic(self, auth_tokens):
         """Test parsing citations from a well-formed response."""
-        client = NotebookLMClient(auth_tokens)
-        chat_api = client.chat
 
         # Build a mock "first" structure with citations
         # Structure: first[4][3] contains citation array
@@ -65,7 +74,7 @@ class TestParseCitations:
             ],
         ]
 
-        refs = chat_api._parse_citations(first)
+        refs = parse_citations(first)
 
         assert len(refs) == 1
         assert refs[0].source_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -76,8 +85,6 @@ class TestParseCitations:
 
     def test_parse_citations_multiple(self, auth_tokens):
         """Test parsing multiple citations."""
-        client = NotebookLMClient(auth_tokens)
-        chat_api = client.chat
 
         first = [
             "Answer with [1] and [2]",
@@ -120,7 +127,7 @@ class TestParseCitations:
             ],
         ]
 
-        refs = chat_api._parse_citations(first)
+        refs = parse_citations(first)
 
         assert len(refs) == 2
         assert refs[0].source_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -130,8 +137,6 @@ class TestParseCitations:
 
     def test_parse_citations_no_citations(self, auth_tokens):
         """Test parsing when no citations are present."""
-        client = NotebookLMClient(auth_tokens)
-        chat_api = client.chat
 
         # first[4] exists but first[4][3] is empty
         first = [
@@ -142,28 +147,24 @@ class TestParseCitations:
             [[], None, None, [], 1],
         ]
 
-        refs = chat_api._parse_citations(first)
+        refs = parse_citations(first)
         assert len(refs) == 0
 
     def test_parse_citations_missing_type_info(self, auth_tokens):
         """Test parsing when first[4] is missing or malformed."""
-        client = NotebookLMClient(auth_tokens)
-        chat_api = client.chat
 
         # first[4] doesn't exist
         first = ["Answer", None, [], None]
-        refs = chat_api._parse_citations(first)
+        refs = parse_citations(first)
         assert len(refs) == 0
 
         # first[4] is not a list
         first = ["Answer", None, [], None, "not a list"]
-        refs = chat_api._parse_citations(first)
+        refs = parse_citations(first)
         assert len(refs) == 0
 
     def test_parse_citations_missing_source_id(self, auth_tokens):
         """Test that citations without valid source IDs are skipped."""
-        client = NotebookLMClient(auth_tokens)
-        chat_api = client.chat
 
         first = [
             "Answer",
@@ -192,13 +193,11 @@ class TestParseCitations:
             ],
         ]
 
-        refs = chat_api._parse_citations(first)
+        refs = parse_citations(first)
         assert len(refs) == 0  # Invalid UUID should be skipped
 
     def test_parse_citations_missing_text(self, auth_tokens):
         """Test citations with missing text are still parsed."""
-        client = NotebookLMClient(auth_tokens)
-        chat_api = client.chat
 
         first = [
             "Answer",
@@ -227,7 +226,7 @@ class TestParseCitations:
             ],
         ]
 
-        refs = chat_api._parse_citations(first)
+        refs = parse_citations(first)
         assert len(refs) == 1
         assert refs[0].source_id == "12345678-1234-1234-1234-123456789012"
         assert refs[0].cited_text is None  # Text not available
@@ -268,9 +267,7 @@ class TestAnswerExtraction:
             ]
         ]
 
-        answer, refs, _ = chat_api._parse_ask_response_with_references(
-            self._build_response(inner_data)
-        )
+        answer, refs, _ = _parse_ask_response_with_references(self._build_response(inner_data))
         assert answer == "This is a valid answer from NotebookLM about the topic."
 
     def test_extract_answer_with_different_marker_value(self, chat_api):
@@ -285,9 +282,7 @@ class TestAnswerExtraction:
             ]
         ]
 
-        answer, refs, _ = chat_api._parse_ask_response_with_references(
-            self._build_response(inner_data)
-        )
+        answer, refs, _ = _parse_ask_response_with_references(self._build_response(inner_data))
         assert answer == "The answer text that should be extracted regardless of marker."
 
     def test_extract_short_answer(self, chat_api):
@@ -305,9 +300,7 @@ class TestAnswerExtraction:
             ]
         ]
 
-        answer, refs, _ = chat_api._parse_ask_response_with_references(
-            self._build_response(inner_data)
-        )
+        answer, refs, _ = _parse_ask_response_with_references(self._build_response(inner_data))
         assert answer == "OK"
 
     def test_extract_answer_no_type_info_at_all(self, chat_api):
@@ -322,9 +315,7 @@ class TestAnswerExtraction:
             ]
         ]
 
-        answer, refs, _ = chat_api._parse_ask_response_with_references(
-            self._build_response(inner_data)
-        )
+        answer, refs, _ = _parse_ask_response_with_references(self._build_response(inner_data))
         assert answer == "An answer with no type_info metadata at all in the response."
 
     def test_shorter_marked_answer_beats_longer_unmarked(self, chat_api):
@@ -350,7 +341,7 @@ class TestAnswerExtraction:
             ]
         ]
 
-        answer, refs, _ = chat_api._parse_ask_response_with_references(
+        answer, refs, _ = _parse_ask_response_with_references(
             self._build_response(unmarked_data, marked_data)
         )
         assert answer == "The actual short answer."
@@ -398,7 +389,7 @@ class TestAnswerExtraction:
             ]
         ]
 
-        answer, refs, _ = chat_api._parse_ask_response_with_references(
+        answer, refs, _ = _parse_ask_response_with_references(
             self._build_response(empty_data, none_data, int_data, valid_data)
         )
         assert answer == "The valid answer after invalid chunks."
@@ -424,7 +415,7 @@ class TestAnswerExtraction:
             ]
         ]
 
-        answer, refs, _ = chat_api._parse_ask_response_with_references(
+        answer, refs, _ = _parse_ask_response_with_references(
             self._build_response(unmarked_data, marked_data)
         )
         assert answer == "This is the real answer with proper marker."
@@ -698,7 +689,7 @@ class TestMultiChunkReferenceInflation:
         )
 
         response = self._build_multi_chunk_response(short_chunk, long_chunk)
-        answer, refs, _ = chat_api._parse_ask_response_with_references(response)
+        answer, refs, _ = _parse_ask_response_with_references(response)
 
         assert answer == "This is the longer final answer from NotebookLM."
         # One citation from the winning chunk only — not 2 (one per chunk)
@@ -718,7 +709,7 @@ class TestMultiChunkReferenceInflation:
         ]
 
         response = self._build_multi_chunk_response(*chunks)
-        _, refs, _ = chat_api._parse_ask_response_with_references(response)
+        _, refs, _ = _parse_ask_response_with_references(response)
 
         # Should have exactly 1 reference from the longest (last) chunk, not 6
         assert len(refs) == 1, f"Expected 1 reference, got {len(refs)}"
@@ -734,7 +725,7 @@ class TestMultiChunkReferenceInflation:
         )
 
         response = self._build_multi_chunk_response(short_chunk, long_chunk)
-        answer, refs, _ = chat_api._parse_ask_response_with_references(response)
+        answer, refs, _ = _parse_ask_response_with_references(response)
 
         assert answer == "This is definitively the longer, winning answer text."
         assert len(refs) == 1

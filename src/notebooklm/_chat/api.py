@@ -33,37 +33,21 @@ from .._records import (
     ChatHistoryPairRecord,
     ChatSaveNoteInput,
 )
-from .._request_types import AuthSnapshot
 from .._runtime.contracts import LoopGuard
 from ..exceptions import ChatError, NetworkError, ValidationError
 from ..types import (
     AskResult,
     ChatGoal,
     ChatMode,
-    ChatReference,
     ChatResponseLength,
     ChatSettings,
     ConversationTurn,
     Note,
 )
 from .deleted_tracker import RecentlyDeletedConversations
-from .history import (
-    count_prior_recorded_turns,
-    parse_legacy_turns_to_qa_pairs,
-    parse_recorded_turns_to_qa_pairs,
-)
+from .history import count_prior_recorded_turns, parse_recorded_turns_to_qa_pairs
+from .history_legacy import parse_legacy_turns_to_qa_pairs
 from .service import ChatService
-from .wire import (
-    build_streaming_chat_request,
-    extract_answer_and_refs_from_chunk,
-    extract_text_passages,
-    extract_uuid_from_nested,
-    parse_citations,
-    parse_single_citation,
-    parse_streaming_chat_response,
-    project_legacy_conversation_history,
-    raise_if_rate_limited,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -762,69 +746,3 @@ class ChatAPI(LoopBoundPrimitive):
             ChatHistoryPairRecord(question=turn["query"], answer=turn["answer"])
             for turn in self._cache.get_cached_conversation(conversation_id)
         )
-
-    def _build_conversation_history(self, conversation_id: str) -> list | None:
-        """Compatibility projection of cached follow-up context onto legacy rows."""
-        return project_legacy_conversation_history(
-            self._conversation_history_records(conversation_id)
-        )
-
-    def _build_chat_request(
-        self,
-        *,
-        snapshot: AuthSnapshot,
-        notebook_id: str,
-        question: str,
-        source_ids: list[str],
-        conversation_history: list | None,
-        conversation_id: str | None,
-        reqid: int,
-    ) -> tuple[str, str, dict[str, str]]:
-        """Compatibility wrapper for streamed-chat request construction."""
-        return build_streaming_chat_request(
-            snapshot=snapshot,
-            notebook_id=notebook_id,
-            question=question,
-            source_ids=source_ids,
-            conversation_history=conversation_history,
-            conversation_id=conversation_id,
-            reqid=reqid,
-        )
-
-    def _parse_ask_response_with_references(
-        self, response_text: str
-    ) -> tuple[str, list[ChatReference], str | None]:
-        """Compatibility wrapper preserving the old tuple return shape.
-
-        Deliberately still a 3-tuple: the answer document added by #2120 is
-        read from :func:`parse_streaming_chat_response` directly on the ask
-        path, so this legacy shape does not have to grow a fourth element.
-        """
-        result = parse_streaming_chat_response(response_text)
-        return result.answer, result.references, result.conversation_id
-
-    def _extract_answer_and_refs_from_chunk(
-        self, json_str: str
-    ) -> tuple[str | None, bool, list[ChatReference], str | None]:
-        """Compatibility wrapper for streamed-chat chunk parsing."""
-        return extract_answer_and_refs_from_chunk(json_str)
-
-    def _raise_if_rate_limited(self, error_payload: list) -> None:
-        """Compatibility wrapper for streamed-chat error payload parsing."""
-        raise_if_rate_limited(error_payload)
-
-    def _parse_citations(self, first: list) -> list[ChatReference]:
-        """Compatibility wrapper for streamed-chat citation parsing."""
-        return parse_citations(first)
-
-    def _parse_single_citation(self, cite: Any) -> ChatReference | None:
-        """Compatibility wrapper for single streamed-chat citation parsing."""
-        return parse_single_citation(cite)
-
-    def _extract_text_passages(self, cite_inner: list) -> tuple[str | None, int | None, int | None]:
-        """Compatibility wrapper for streamed-chat citation text extraction."""
-        return extract_text_passages(cite_inner)
-
-    def _extract_uuid_from_nested(self, data: Any, max_depth: int = 10) -> str | None:
-        """Compatibility wrapper for streamed-chat source UUID extraction."""
-        return extract_uuid_from_nested(data, max_depth)

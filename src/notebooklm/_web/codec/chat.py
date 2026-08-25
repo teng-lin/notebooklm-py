@@ -46,7 +46,7 @@ from ...rpc import RPCMethod, safe_index
 from .chat_saved_note import build_save_note_params as _encode_save_note_params
 from .chat_stream import (
     _extract_next_turn_content,
-    build_streaming_chat_request,
+    encode_ask_stream,
     parse_streaming_chat_response,
 )
 
@@ -265,7 +265,7 @@ def build_ask_request(
         for turn in value.conversation_history:
             conversation_history.append([turn.answer, None, 2])
             conversation_history.append([turn.question, None, 1])
-    return build_streaming_chat_request(
+    return encode_ask_stream(
         snapshot=snapshot,
         notebook_id=value.notebook_id,
         question=value.question,

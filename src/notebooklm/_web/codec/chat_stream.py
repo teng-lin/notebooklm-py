@@ -1,8 +1,12 @@
 """Web codec for NotebookLM's streamed ``GenerateFreeFormStreamed`` calls.
 
-This module owns only streamed-chat wire request construction and response
-parsing. Conversation flow, caching, source resolution, and ``AskResult``
-construction stay in :mod:`notebooklm._chat`.
+This module owns streamed-chat wire request construction and response parsing
+outright — the positional 9-slot ask grammar included (P10 R2.1, moved here
+from ``_chat/stream_request.py``). Conversation flow, caching, source
+resolution, and ``AskResult`` construction stay in :mod:`notebooklm._chat`.
+
+The encoder consumes an already-acquired runtime auth snapshot; it neither
+acquires nor persists credentials.
 """
 
 from __future__ import annotations
@@ -12,16 +16,12 @@ import logging
 import math
 import re
 import reprlib
-from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Protocol
+from urllib.parse import quote, urlencode
 
-from ..._chat.stream_request import (
-    AuthSnapshotLike as AuthSnapshotLike,
-)
-from ..._chat.stream_request import (
-    build_streaming_chat_request as build_streaming_chat_request,
-)
+from ..._auth.account import format_authuser_value
+from ..._env import get_default_bl, get_default_language
 from ..._row_adapters.chat import (
     AnswerRow,
     CitationDetail,
@@ -40,7 +40,8 @@ from ..._types.documents import (
 from ...exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
 from ...rpc._safe_index import safe_index
 from ...rpc.decoder import strip_anti_xssi
-from ...rpc.types import RPCMethod
+from ...rpc.encoder import nest_source_ids
+from ...rpc.types import RPCMethod, get_query_url
 from ...types import ChatReference, ConversationTurnKey, NextStepSuggestion
 
 # Deliberate: use the ``notebooklm._chat`` logger namespace (not this module's)
@@ -59,6 +60,68 @@ _UUID_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
+
+
+class AuthSnapshotLike(Protocol):
+    """Structural auth snapshot accepted by the streamed-ask encoder."""
+
+    @property
+    def csrf_token(self) -> str: ...
+
+    @property
+    def session_id(self) -> str: ...
+
+    @property
+    def authuser(self) -> int: ...
+
+    @property
+    def account_email(self) -> str | None: ...
+
+
+def encode_ask_stream(
+    *,
+    snapshot: AuthSnapshotLike,
+    notebook_id: str,
+    question: str,
+    source_ids: list[str],
+    conversation_history: list | None,
+    conversation_id: str | None,
+    reqid: int,
+) -> tuple[str, str, dict[str, str]]:
+    """Assemble ``(url, body, extra_headers)`` for one streamed-Chat attempt."""
+    sources_array = nest_source_ids(source_ids, 2)
+    params: list[Any] = [
+        sources_array,
+        question,
+        conversation_history,
+        [2, None, [1], [1]],
+        conversation_id,
+        None,
+        None,
+        notebook_id,
+        1,
+    ]
+    params_json = json.dumps(params, separators=(",", ":"))
+    f_req_json = json.dumps([None, params_json], separators=(",", ":"))
+    body_parts = [f"f.req={quote(f_req_json, safe='')}"]
+    if snapshot.csrf_token:
+        body_parts.append(f"at={quote(snapshot.csrf_token, safe='')}")
+    body = "&".join(body_parts) + "&"
+
+    url_params: dict[str, str] = {
+        "bl": get_default_bl(),
+        "hl": get_default_language(),
+        "_reqid": str(reqid),
+        "rt": "c",
+    }
+    if snapshot.session_id:
+        url_params["f.sid"] = snapshot.session_id
+    if snapshot.account_email or snapshot.authuser:
+        url_params["authuser"] = format_authuser_value(
+            snapshot.authuser,
+            snapshot.account_email,
+        )
+    return f"{get_query_url()}?{urlencode(url_params)}", body, {}
 
 
 @dataclass(frozen=True)
@@ -128,11 +191,7 @@ class _ChunkExtraction:
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
 
 
-def parse_streaming_chat_response(
-    response_text: str,
-    *,
-    _strip_anti_xssi: Callable[[str], str] | None = None,
-) -> StreamingChatParseResult:
+def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResult:
     """Parse a streamed-chat response into answer, references, and conversation ID.
 
     Failure contract (see :class:`notebooklm.exceptions.ChatResponseParseError`):
@@ -167,8 +226,11 @@ def parse_streaming_chat_response(
     # owner of the )]}' prefix removal. For the real chat wire format the
     # prefix is always followed by a newline, so the subsequent ``.strip()``
     # yields a byte-for-byte-identical result to the prior blind ``[4:]`` slice.
-    strip = strip_anti_xssi if _strip_anti_xssi is None else _strip_anti_xssi
-    response_text = strip(response_text)
+    # Resolved as a module global on every call, which is the seam
+    # ``test_chat_parser_uses_shared_strip_anti_xssi`` monkeypatches. The
+    # ``_strip_anti_xssi`` injection parameter this replaced existed solely for
+    # the deleted ``_chat/wire.py`` compatibility wrapper (P10 R2.1).
+    response_text = strip_anti_xssi(response_text)
 
     lines = response_text.strip().split("\n")
     final_marked_answer = ""

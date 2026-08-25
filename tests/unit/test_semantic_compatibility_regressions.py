@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from typing import Any
 
 import httpx
@@ -12,11 +11,9 @@ import pytest
 
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._backend import BackendError, BackendErrorReason
-from notebooklm._chat import wire as chat_wire
 from notebooklm._kernel import Kernel
 from notebooklm._records import ARTIFACT_LIST_DEF, ArtifactListInput
 from notebooklm._runtime.web_backend_session import WebBackendSession
-from notebooklm._web.codec import chat_stream
 from notebooklm._web_cookie_provider import WebCookieGeneration
 from notebooklm.exceptions import NetworkError
 from notebooklm.rpc import RPCMethod
@@ -95,48 +92,6 @@ async def test_artifact_partial_availability_does_not_swallow_network_error(
     assert caught.value.reason is BackendErrorReason.NETWORK
     assert isinstance(caught.value.__cause__, NetworkError)
     assert str(caught.value.__cause__) == "connection reset"
-
-
-def test_chat_wire_injects_compat_stripper_without_mutating_codec_global(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A compatibility parse cannot race a direct codec parse via global mutation."""
-    entered = threading.Event()
-    release = threading.Event()
-    calls: list[object] = []
-    result = chat_stream.StreamingChatParseResult("answer", [], None)
-    original_strip = chat_stream.strip_anti_xssi
-
-    def compat_strip(response_text: str) -> str:
-        return response_text
-
-    def blocking_parser(
-        response_text: str,
-        *,
-        _strip_anti_xssi: object = None,
-    ) -> chat_stream.StreamingChatParseResult:
-        calls.extend((response_text, _strip_anti_xssi))
-        entered.set()
-        assert release.wait(timeout=1.0)
-        return result
-
-    monkeypatch.setattr(chat_wire, "strip_anti_xssi", compat_strip)
-    monkeypatch.setattr(chat_stream, "parse_streaming_chat_response", blocking_parser)
-    observed: list[chat_stream.StreamingChatParseResult] = []
-    worker = threading.Thread(
-        target=lambda: observed.append(chat_wire.parse_streaming_chat_response("wire"))
-    )
-    worker.start()
-    try:
-        assert entered.wait(timeout=1.0)
-        assert chat_stream.strip_anti_xssi is original_strip
-    finally:
-        release.set()
-        worker.join(timeout=1.0)
-
-    assert not worker.is_alive()
-    assert observed == [result]
-    assert calls == ["wire", compat_strip]
 
 
 def test_backend_session_rejects_foreign_loop_open_and_close() -> None:

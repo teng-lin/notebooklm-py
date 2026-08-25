@@ -36,7 +36,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
 WEB_ROOT = SRC_ROOT / "_web"
-CHAT_STREAM_REQUEST_PATH = SRC_ROOT / "_chat" / "stream_request.py"
+CHAT_STREAM_REQUEST_PATH = SRC_ROOT / "_web" / "codec" / "chat_stream.py"
 WEB_REQUEST_AUTH_PATH = SRC_ROOT / "_web_request_auth.py"
 SOURCE_UPLOAD_PATH = SRC_ROOT / "_source" / "upload.py"
 DRIVE_IMPORT_PATH = SRC_ROOT / "_source" / "drive_import.py"
@@ -80,28 +80,27 @@ EXPECTED_P8_PROVIDER_DEFINITIONS: frozenset[str] = frozenset(
 #: a credential-acquisition dependency.
 KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
     {
+        "_auth.account",
         "_auth_refresh_retry",
         "_backend",
         "_binding",
         "_chat",
         "_chat.stream_decode",
-        "_chat.stream_request",
         "_client_metrics",
         "_deadline",
         "_env",
         "_idempotency",
         "_logging",
         "_markdown",
-        "_runtime.pipeline",
         "_mind_map",
         "_note_service",
         "_notebook_payloads",
         "_operations",
         "_projectors",
         "_records",
-        "_research_neutral",
         "_reqid_counter",
         "_request_types",
+        "_research_neutral",
         "_row_adapters.artifacts",
         "_row_adapters.chat",
         "_row_adapters.documents",
@@ -112,6 +111,7 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_row_adapters.sources",
         "_runtime.config",
         "_runtime.contracts",
+        "_runtime.pipeline",
         "_runtime.transport",
         "_source.add",
         "_source.batch",
@@ -168,6 +168,7 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "rpc",
         "rpc._safe_index",
         "rpc.decoder",
+        "rpc.encoder",
         "rpc.types",
         "types",
     }
@@ -213,10 +214,24 @@ CREDENTIAL_IDENTIFIERS: frozenset[str] = frozenset(
     }
 )
 
-#: Credential materialization lives outside ``_web``. The backend consumes the
-#: opaque builder and provider ports, so no module in the package needs to name
-#: a credential field.
-EXPECTED_WEB_CREDENTIAL_IDENTIFIERS: dict[str, frozenset[str]] = {}
+#: Credential *acquisition* lives outside ``_web``: the backend consumes the
+#: opaque builder and provider ports. Exactly one module inside the package
+#: reads an already-acquired snapshot, and it reads exactly four route/token
+#: values — the streamed-chat encoder P10 R2.1 moved in from
+#: ``_chat/stream_request.py`` (the move the note on
+#: :data:`KNOWN_CHAT_STREAM_REQUEST_IMPORTS` anticipated). Compared with ``==``
+#: below, so a fifth identifier, or a second module, fails closed.
+EXPECTED_WEB_CREDENTIAL_IDENTIFIERS: dict[str, frozenset[str]] = {
+    "codec/chat_stream.py": frozenset({"account_email", "authuser", "csrf_token", "session_id"}),
+}
+
+#: The same single exemption on the import side: ``_auth.account`` supplies the
+#: pure ``format_authuser_value`` route formatter and nothing that acquires,
+#: refreshes, persists or re-mints a credential. Keyed by module so the rest of
+#: ``_web/`` stays fail-closed.
+EXPECTED_WEB_CREDENTIAL_IMPORTS: dict[str, frozenset[str]] = {
+    "codec/chat_stream.py": frozenset({"_auth.account"}),
+}
 
 #: Existing auth/persistence owners must not be retained as backend attributes
 #: or types. A provider composes these accepted owners; merely renaming an
@@ -266,15 +281,24 @@ KNOWN_DIRECT_LEG_CREDENTIAL_IDENTIFIERS: dict[str, frozenset[str]] = {
 }
 
 #: Streamed Chat must materialize four already-acquired route/token values into
-#: its request. The builder deliberately sits outside ``_web`` until P8 adds a
-#: provider-owned private session, so this exact transitive boundary is audited
-#: independently rather than escaping the package-only scan above.
+#: its request. The encoder sat outside ``_web`` until a provider-owned private
+#: session existed; P10 R2.1 moved it into the streamed-chat codec, so this pin
+#: now audits that module directly — a per-module surface tighter than the
+#: package-wide baseline above, listing every first-party name the module that
+#: touches credentials may reach.
 KNOWN_CHAT_STREAM_REQUEST_IMPORTS: frozenset[str] = frozenset(
     {
         "_auth.account",
         "_env",
+        "_row_adapters.chat",
+        "_row_adapters.documents",
+        "_types.documents",
+        "exceptions",
+        "rpc._safe_index",
+        "rpc.decoder",
         "rpc.encoder",
         "rpc.types",
+        "types",
     }
 )
 KNOWN_CHAT_STREAM_CREDENTIAL_IDENTIFIERS: frozenset[str] = frozenset(
@@ -458,6 +482,17 @@ def collect_first_party_imports(package_root: Path, src_root: Path = SRC_ROOT) -
     return imports
 
 
+def unexpected_credential_imports(package_root: Path, src_root: Path = SRC_ROOT) -> set[str]:
+    """Module-qualified credential imports outside the reviewed exemption."""
+    unexpected: set[str] = set()
+    for path in _python_files(package_root):
+        module = path.relative_to(package_root).as_posix()
+        allowed = EXPECTED_WEB_CREDENTIAL_IMPORTS.get(module, frozenset())
+        found = credential_imports(collect_first_party_imports(path, src_root=src_root))
+        unexpected.update(found - allowed)
+    return unexpected
+
+
 def credential_imports(imports: set[str]) -> set[str]:
     """Select imports that would give a module credential acquisition powers."""
     return {
@@ -600,7 +635,7 @@ def evaluate_p8_boundary(
 ) -> P8EntryReport:
     """Inventory the P8 provider boundary as it stands today."""
     backend_imports = collect_first_party_imports(web_root, src_root=src_root)
-    forbidden = credential_imports(backend_imports)
+    forbidden = unexpected_credential_imports(web_root, src_root=src_root)
     identifiers = unexpected_credential_identifiers(web_root)
     provider = collect_symbol_definitions(P8_PROVIDER_SYMBOLS, src_root=src_root)
 

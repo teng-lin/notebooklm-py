@@ -10,8 +10,8 @@ conversation-history rows (:class:`ConversationTurnRow` /
 :func:`unwrap_conversation_turns`) come from a regular ``batchexecute`` RPC and
 carry ``RPCMethod.GET_CONVERSATION_TURNS`` as their drift-diagnostic method id.
 
-These adapters centralise the positional knowledge that ``_chat/wire.py``
-previously open-coded as scattered single-level subscripts (``first[4]``,
+These adapters centralise the positional knowledge that the streamed-chat
+parser previously open-coded as scattered single-level subscripts (``first[4]``,
 ``cite[1]``, ``cite_inner[5]``, ``passage_data[0]`` …). Consumer sites should
 wrap the raw lists in the typed views below and read named properties so a
 future Google reshape of the chat wire format is a one-place fix here, and so
@@ -546,7 +546,7 @@ class StreamFrameRow:
     Frames arrive as ``["wrb.fr", None, inner_json, ...]`` (a successful RPC
     result) or ``["er", rpc_id, code, ...]`` (a server-side error). This adapter
     centralises the ``item[0]`` tag, ``item[2]`` inner-JSON / error-code, and
-    ``item[5]`` error-payload reads so ``_chat/wire.py`` stops open-coding them
+    ``item[5]`` error-payload reads so the streamed-chat parser stops open-coding them
     (issue #1491).
 
     The ``tag`` read goes through ``safe_index`` because the caller already
@@ -613,7 +613,7 @@ class StreamEnvelopeRow:
     answer the optional-field questions with their empty defaults.
 
     This adapter owns only the ``isFinalResponse`` read; the ``inner_data[0]``
-    answer-row descent stays in ``_chat/wire.py``, which raises its own typed
+    answer-row descent stays in the streamed-chat parser, which raises its own typed
     drift error for a non-list answer row (a contract this positional view has
     no business restating).
     """
@@ -971,7 +971,7 @@ class AnswerRow:
           container belongs is structural wire drift, not a citation-less
           answer, and raises :class:`UnknownRPCMethodError`. Precedent: the
           :func:`unwrap_conversation_turns` container raise above and the
-          ``inner_data[0]`` non-list raise in ``_chat/wire.py`` — this
+          ``inner_data[0]`` non-list raise in the streamed-chat parser — this
           parser family treats reshaped containers as a raise, never a
           silent ``[]``.
         """

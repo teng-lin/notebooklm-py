@@ -1071,7 +1071,6 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_research_service.py` | Private P6.2 transport-neutral Research start/poll/wait/cancel/import service; wait and verified import remain service compositions over typed backend operations. |
 | `_settings_service.py` | Private P6.6 transport-neutral account settings/limits/language service over three typed backend operations. |
 | `_chat/service.py` | Private P6.1 transport-neutral Chat ask/history/configuration/save-note service over six typed backend operations. |
-| `_chat/stream_request.py` | Credential-aware streamed-Chat request encoder kept outside `_web`; consumes an injected auth snapshot without acquiring or persisting credentials. |
 | `_chat/stream_decode.py` | Projects the retained streamed parser result into neutral Chat records outside the web provider boundary. |
 | `_sharing_service.py` | Private P6.5 transport-neutral sharing service; since P9.2-5/6/7 it owns all three sharing composites over `SHARING_MUTATE` or `SHARING_PATCH_VIEW_LEVEL` plus `SHARING_GET`, including one workflow deadline, view-level replacement, and leaf-error rebinding. |
 | `_suggestion_service.py` | Private P6.6 transport-neutral notebook-prompt and report-format suggestion service over two typed backend operations. |
@@ -1108,7 +1107,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_studio/representations.py` | P5.8 neutral artifact/mind-map representation selection and dispatch to P5.7 retrieval/serialization clients. |
 | `_web/codec/` | P3/P6 web response ownership: notebook, source, artifact, Chat, label, collection, sharing, Research, settings, suggestions, and report/guide codecs return frozen neutral records; `documents.py` alone returns the approved exported `StructuredDocument` value exemption. Codec bindings are tied to cassette-backed golden families and never call public parsing factories. |
 | `_web/codec/chat.py` | P6.1 unary Chat request/response codec over neutral records, retaining the streamed parser as a monkeypatchable compatibility seam. |
-| `_web/codec/chat_stream.py` | Retained streamed-response parser; credential-aware request construction delegates outside `_web` to `_chat/stream_request.py`. |
+| `_web/codec/chat_stream.py` | Streamed-chat codec: owns both the 9-slot positional ask grammar (`encode_ask_stream`, consuming an injected auth snapshot without acquiring or persisting credentials) and the streamed-response parser. |
 | `_web/codec/studio_documents.py` | P5.4 exact report/video request encoders and generation-status decoder over backend-neutral records. |
 | `_web/codec/generation.py` | P9.4b row-facing Studio generate payloads: the option vocabularies and `validate_*`/`encode_*` builders returning the guarded `CREATE_ARTIFACT` `CodecPayload` per family, plus `decode_generation_kickoff` (null response or task id → the closed unavailable error). |
 | `_web/codec/artifact_formatters.py` | Positional `LIST_ARTIFACTS` rich-text data-table decoders (`_extract_data_table_rows` / `_parse_data_table`) behind `_web/codec/artifacts.py`; split out of `_artifact/formatters.py` so the pure presentation helpers above the port stay RPC-free. |
@@ -1145,7 +1144,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_types/labels.py` | `Label` pure-value type (source-label topic grouping; `source_ids` only, no artifact members) re-exported by `types.py` |
 | `_types/collections.py` | `Collection` pure-value type (account-level notebook grouping; `notebook_ids`, no notebook parent) re-exported by `types.py`; decodes positionally (its own strict descent, not `LabelRow` — populated members are bare notebook-id strings, not `LabelRow`'s wrapped-singleton source ids) |
 | `_row_adapters/artifacts.py` | `ArtifactRow` typed view over raw positional artifact RPC rows, plus `ReportSuggestionRow` over `GET_SUGGESTED_REPORTS` rows |
-| `_row_adapters/chat.py` | Streamed-chat row adapters (`AnswerRow` / `CitationRow` / `CitationDetail` / `StreamFrameRow` / `ErrorPayloadRow`) that centralise the chat wire positions `_chat/wire.py` used to open-code (#1491). `AnswerRow.document` and `CitationDetail.fragment_elements` delegate the document tree to `_row_adapters/documents.py` (#2120) |
+| `_row_adapters/chat.py` | Streamed-chat row adapters (`AnswerRow` / `CitationRow` / `CitationDetail` / `StreamFrameRow` / `ErrorPayloadRow`) that centralise the chat wire positions the streamed-chat parser used to open-code (#1491). `AnswerRow.document` and `CitationDetail.fragment_elements` delegate the document tree to `_row_adapters/documents.py` (#2120) |
 | `_row_adapters/documents.py` | `TailwindDoc` tree adapters (`DocumentBodyRow` / `StructuralElementRow` / `ParagraphRow` / `ParagraphElementRow` / `TextRunRow` / `TableRow` / `BulletInfoRow` / `AnnotationEntryRow`) plus the `build_document` / `build_blocks` builders. One decoder for all three carriers of the tree — source fulltext, chat-answer `responseDoc`, and a citation's `TailwindDocFragment` — so citation offsets on both sides share a coordinate space (#2128, #2120) |
 | `_row_adapters/labels.py` | `LabelRow` strict typed view over the raw positional label tuple `[name, sources, id, emoji]` (fails loud on schema drift) |
 | `_row_adapters/notebooks.py` | `SUGGEST_PROMPTS` (`otmP3b`) suggestion-row view (`PromptSuggestionRow` / `unwrap_prompt_suggestions`) backing `NotebooksAPI.suggest_prompts` |
@@ -1194,8 +1193,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_sharing_manager.py` | Direct sharing management logic |
 | `_version_check.py` | Dynamic client-side version deprecation guard |
 | `_version_info.py` | Human-facing `version_string()` — package version + short git commit (embedded by `hatch_build.py` at build time, or live `git` from a checkout) |
-| `_chat/history.py` | Server-backed complete-history snapshot and user-question turn counting for authoritative `AskResult.turn_number` values |
-| `_chat/wire.py` | Streamed-chat wire request construction + response parsing for the chat client |
+| `_chat/history.py` | Record-only turn counting and question/answer pairing for authoritative `AskResult.turn_number` values; imports records and nothing else |
+| `_chat/history_legacy.py` | The raw-payload half of the same helpers, retained for the `ChatAPI._parse_turns_to_qa_pairs` compatibility method; carries the `_row_adapters` / codec dependency the record half must not have |
 | `_chat/deleted_tracker.py` | Bounded `RecentlyDeletedConversations` set — `delete_conversation` records the id (under the conversation lock) so a concurrent null-conversation ask, after acquiring that lock, detects a mid-flight delete and drops `resolved_id_override` to recover the server's real conversation id post-POST (#1875) |
 | `_runtime/pipeline.py` | Composes the runtime behaviors in the canonical ADR-0009 order |
 | `_runtime/*_behavior.py` | Modular runtime behaviors (drain, metrics, semaphore, retry, auth refresh, tracing) |
@@ -1311,7 +1310,6 @@ src/notebooklm/
 ├── _chat_records.py             # Neutral Chat records/operation definitions (P6.1)
 ├── _chat/                       # Chat facade/service plus retained compatibility wire seams
 │   ├── service.py               # Transport-neutral six-operation Chat service (P6.1)
-│   ├── stream_request.py        # Credential-aware streamed request encoding outside _web
 │   └── stream_decode.py         # Stream parser result -> neutral Chat records
 ├── _sharing_service.py          # Transport-neutral Sharing service (P6.5)
 ├── _sharing_records.py          # Neutral Sharing records/operation definitions (P6.5)
@@ -1479,8 +1477,8 @@ src/notebooklm/
 ├── _chat/                       # Chat-feature subpackage — facade + helpers unified (#1328)
 │   ├── __init__.py              # Re-exports ChatAPI so `from ._chat import ChatAPI` keeps resolving
 │   ├── api.py                   # ChatAPI facade (was _chat.py)
-│   ├── history.py               # Server-backed complete-history turn counting
-│   ├── wire.py                  # Streamed-chat wire request/response parser
+│   ├── history.py               # Record-only turn counting and Q/A pairing
+│   ├── history_legacy.py        # Raw-payload half, for the compatibility parser
 │   └── deleted_tracker.py       # Bounded RecentlyDeletedConversations set — serializes null-ask vs delete (#1875)
 ├── _auth/                       # Auth subpackage (forwarded through auth.py facade)
 │   ├── __init__.py

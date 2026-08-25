@@ -1740,7 +1740,6 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_chat/stream_decode.py", "_records", "ChatReferenceRecord"),
         ("_chat/stream_decode.py", "_records", "ChatStreamAnswerRecord"),
         ("_chat/stream_decode.py", "_records", "ChatTurnKeyRecord"),
-        ("_chat/wire.py", "_records", "ChatHistoryPairRecord"),
         ("_projectors.py", "_records", "ChatAskResultRecord"),
         ("_projectors.py", "_records", "ChatGetHistoryResult"),
         ("_projectors.py", "_records", "ChatLegacyMappingRecord"),
