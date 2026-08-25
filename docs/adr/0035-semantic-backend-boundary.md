@@ -13,6 +13,9 @@ provider port. P9 applies principle 2's composite-ownership clause per composite
 `Operation` with named primitives rather than narrowing any member. Public-API work and a mobile
 backend remain separate decisions.
 
+Programme P10 (semantic-boundary remediation) executes under the amendments recorded in
+[Addenda (P10, 2026-08-25)](#addenda-p10-2026-08-25); the status of this record stays `Accepted`.
+
 ## Context
 
 The application layer established by ADR-0021 is neutral across CLI, MCP, and REST, but the
@@ -27,7 +30,10 @@ The existing runtime composition and middleware chain protect those behaviors, s
 that graph before semantic callers have moved would combine two independent migrations.
 
 The governing implementation plan is
-[`2026-08-13-semantic-backend-refactor.md`](../plan/2026-08-13-semantic-backend-refactor.md).
+[`2026-08-13-semantic-backend-refactor.md`](../plan/2026-08-13-semantic-backend-refactor.md). Its
+P0-through-P9 sequence left the residual boundary defects that programme P10 addresses; the P10
+plan is
+[`2026-08-25-p10-semantic-remediation.md`](../plan/2026-08-25-p10-semantic-remediation.md).
 
 ## Decision
 
@@ -48,7 +54,8 @@ CLI / MCP / REST
   type, and semantic `CallPolicy`; it is not a raw-invocation API.
 - Semantic services may depend on `BackendAdapter`, neutral records, a clock/deadline, and
   public model projectors. They may not name `RPCMethod`, web arrays, protobuf messages, HTTP,
-  cookies, or a backend kind.
+  cookies, or a backend kind. *(Amended by [addendum D7](#d7--projection-is-a-facade-responsibility-not-a-service-dependency):
+  public model projectors are no longer a permitted service dependency.)*
 - A backend binding owns protocol dispatch, authentication dependencies, wire encoding and
   decoding, and native-to-neutral error translation. It returns typed neutral records, never
   raw wire values.
@@ -212,7 +219,7 @@ accept drift. P0 measurements are taken at this PR's merge base.
 | ADR | Disposition |
 | --- | --- |
 | ADR-0004 | Preserved. Backend and provider objects remain loop-affine with the client lifecycle. |
-| ADR-0005 | Preserved as the web retry authority. `CallPolicy` is a derived semantic view, never a second idempotency registry; P4's active-binding ledger audits exact parity and reports divergences without moving enforcement. |
+| ADR-0005 | Preserved as the web retry authority. `CallPolicy` is a derived semantic view, never a second idempotency registry; P4's active-binding ledger audits exact parity and reports divergences without moving enforcement. Amended by [addendum D3](#d3--the-policy-ledger-splits-into-a-derived-half-and-a-reviewed-half-outside-production): the ledger's reviewed half moves out of production and the audit runs as a test, with enforcement still unmoved. |
 | ADR-0008 | Preserved. Every code-motion PR retightens a reduced module ceiling. |
 | ADR-0009 | Preserved through P6. P7 may supersede the generic chain structure only when equivalent behavioral gates land in the same PR. |
 | ADR-0011 | Preserved. P3 moves/extends sanctioned strict-decode homes and the positional-index guard together. |
@@ -263,3 +270,189 @@ selected protocol.
 **Expose operations as a generic public dispatch API.** Rejected. It would freeze an internal
 registry, recreate `rpc_call()` with a different enum, and let untyped callers bypass domain
 validation and compatibility projection.
+
+## Addenda (P10, 2026-08-25)
+
+Programme P10 is the remediation of the boundary defects P0-through-P9 left behind
+([`2026-08-25-p10-semantic-remediation.md`](../plan/2026-08-25-p10-semantic-remediation.md), §1).
+Nine governance decisions were taken before any P10 code moves. Seven amend text or a frozen
+classification; two confirm an existing ruling and are recorded here so the set is complete. The
+sections above are unchanged apart from short pointer notes at the amended locations; where an
+addendum amends the governing plan rather than this record, it says so.
+
+"Principle N" below refers to the numbered architectural principles in
+[`2026-08-13-semantic-backend-refactor.md`](../plan/2026-08-13-semantic-backend-refactor.md), which
+this record's Status section already treats as binding (`P9 applies principle 2's
+composite-ownership clause per composite`).
+
+### D1 — Studio generation inputs are resolved above the port
+
+**Decision.** The Studio generation operations (the eight `artifact.generate_*` families,
+both `mind_map.generate_*` members, and `notebook.suggest_prompts`) keep their existing
+`OperationDef`s. Their input records become **required and pre-resolved**: source-id and language
+resolution and option validation happen in the semantic service, and each generation row collapses
+to a single-native `CodecBinding`. The "`None` = all sources" convenience stops being a port-level
+contract and becomes a **documented service-level default**. Source-scope defaulting is a service
+concern.
+
+**What it amends.** Not this record's text: an input-defaulting row that issues its own
+`GET_NOTEBOOK` read to fill in a caller's omission performs none of the four things the Decision
+assigns to a backend binding (protocol dispatch, authentication dependencies, wire coding,
+native-to-neutral error translation). The addendum settles an ambiguity the plan left open, and
+settles it **against** the plan's stated preference for per-family `PRIMITIVE` leaves; it also
+retires the plan's `deferred-product` custom-row category, whose eleven rows exist only to carry
+this defaulting.
+
+**Rationale.** Which sources a product action applies to is a semantic decision, so it belongs
+above the port with the rest of input validation. The rejected alternative reaches the same end
+state by adding roughly eleven `Operation` members plus their count pins, catalog rows and
+capability entries, and would leave the optional-input contract at the port for the lifetime of
+those members. A third option — one generic family-keyed kickoff leaf — is rejected outright
+because `OperationDef` binds exactly one concrete input type.
+
+### D2 — The value-type exemption is not extended to the chat value types
+
+**Decision.** The exported-value-type exemption in *Compatibility and document graph* stays
+scoped exactly to the structured-document graph. It is **not** extended to the frozen
+`ConversationTurnKey` / `NextStepSuggestion` types. The chat codec emits the neutral
+`ChatTurnKeyRecord` / `ChatNextStepRecord` records that already exist, projected at the facade.
+
+**What it amends.** Nothing. It confirms the exemption's closed scope against a proposal to widen
+it, and is recorded because the alternative was live during P10 planning.
+
+**Rationale.** The exemption is evidence-backed and fail-closed on one criterion: the canonical
+module imports only a closed standard-library set. The chat value-type module imports `rpc.types`,
+so it fails that criterion on its face. The neutral records and their projectors already exist, so
+widening the exemption would buy nothing and would convert a guarded, one-off exception into a
+precedent that any frozen public type can be constructed in a codec.
+
+### D3 — The policy ledger splits into a derived half and a reviewed half outside production
+
+**Decision.** The **actual** native set per operation is *derived* from the binding rows'
+`NativeCallSpec.choices`. The **expected** natives, roles, per-native expected policy, workflow
+leaf edges and reviewed `known_divergence` entries stay hand-written and independent of both the
+rows and the registry, but move **out of production** into a hand-reviewed intent module under
+`scripts/` (beside the existing hand-reviewed catalog-spec metadata) plus a stored ADR-0022
+baseline under `tests/fixtures/baselines/`. The production policy module in `_web/` is **deleted**.
+`CallPolicy` stays a field on each `OperationDef`. The parity audit compares actual-against-expected
+natives and expected-against-registry policy, distinguishes direct-row parity from end-to-end
+operation authority, and **runs as a test** rather than at registry construction.
+
+**What it amends.** The ADR-0005 row of *Existing ADR dispositions* — "P4's active-binding ledger
+audits exact parity and reports divergences without moving enforcement". The ledger's location and
+trigger change; enforcement does not. ADR-0005 remains the web retry authority and `CallPolicy`
+remains a derived semantic view, never a second idempotency registry.
+
+**Rationale.** An audit whose two sides are both derived from the rows compares the rows with
+themselves and proves nothing, so the reviewed half must stay hand-written. But keeping it in
+production duplicates the registry (79 of 80 natives are derivable), hand-lists `RPCMethod` below
+the port in a module the boundary is trying to empty, and forces every row change to hand-edit a
+1,120-line ledger. Moving the reviewed half to the script side preserves the audit's independence,
+removes the duplication from shipped code, and takes an audit out of the import path of registry
+construction. `scripts/` never imports `tests/`, so the intent module and the stored baseline stay
+on the correct side of that rule.
+
+### D5 — Source registration is no longer classified as protocol-varying
+
+**Decision.** Retire the protocol-variance classification of source registration for
+`SOURCE_ADD_URL`, `SOURCE_ADD_URL_BATCH`, `SOURCE_ADD_DRIVE` and `SOURCE_ADD_TEXT`, and authorise a
+`SOURCE_REGISTER` primitive leaf so those four workflows are sequenced by a semantic service above
+the port. `source.add_file` is unaffected — see D4.
+
+**What it amends.** Principle 2's composite-ownership clause, which names "source
+registration/reconciliation" among the examples an adapter handler may own, and the per-composite
+application of that clause recorded in this record's Status section and in the P9.2 gate table's
+backend-identity column.
+
+**Rationale.** The variance the classification protects is the hypothetical mobile tentative-source
+commit; no such backend exists or is authorised. The cost is real and present: four registration
+workflows run below the port on **public** models and leak public exceptions through the source
+service via `RAW_PASSTHROUGH` rows, which contradicts this record's own rule that a backend binding
+"returns typed neutral records, never raw wire values". If a second backend ever needs a different
+registration choreography, principle 2's clause can be re-applied to that backend's binding without
+restoring public models below this one's port.
+
+### D6 — Capabilities gain an additive `available()` view
+
+**Decision.** `BackendCapabilities.supports(op)` keeps its meaning: *directly invokable through
+this backend*. Add `BackendCapabilities.workflows: frozenset[Operation]` and
+`available(op) = supports(op) or op in workflows`. The plan's rule-4 deferral of a workflow-aware
+capability view is lifted, since P10 supplies the consumer that deferral was waiting for.
+
+**What it amends.** Principle 5 as applied by the plan's ADR-0035 disposition row ("`supports` keeps
+meaning invokable; `service_owned` members report `False` and their leaf conjunction is a catalog
+row"). The invokability meaning is preserved exactly; the amendment is the additive second view and
+the lifted deferral.
+
+**Rationale.** With `supports()` alone the registry cannot distinguish "not a product feature" from
+"available, through a service workflow" — the research wait and import-verify operations are
+implemented in a service while the registry reports them unsupported. Redefining `supports()` to
+mean the union was rejected: `invoke()` gates on it, the recording backend gates its own `invoke` on
+it, and the leaf-preflight helper and its call sites all read it, so widening it would make the
+backend claim it can directly invoke workflows it refuses. An additive view fixes reporting without
+touching enforcement; `workflows` is a data field asserted by tests and reported by the catalog
+audit, and no product code branches on it.
+
+### D7 — Projection is a facade responsibility, not a service dependency
+
+**Decision.** Remove "public model projectors" from the permitted semantic-service dependencies
+listed in the *Boundary and dependency direction* section. A semantic service returns neutral
+records and results, neutral enums, built-in scalars and collections of them, or `None`;
+record-to-public-model projection happens at the compatibility facade above it. Named, enumerated
+exemptions (the byte-download clients) are carried by a shrink-only guardrail allowlist.
+
+**What it amends.** The Decision bullet "Semantic services may depend on `BackendAdapter`, neutral
+records, a clock/deadline, and public model projectors."
+
+**Rationale.** That permission is the mechanism behind the residual defect it was meant to bound:
+thirteen service modules import the projector module, public types, or `httpx`, and only two return
+records at all. Without this addendum, P10's service-boundary invariant would enforce a rule this
+record explicitly permits. Confining projection to the facade is what makes the service layer
+neutral in the sense the boundary was introduced for — the record-to-public-model translation layer
+itself stays, as a compatibility tax owed to the public contract, and is retired only on an
+ADR-0018 runway.
+
+### D9 — `chat.ask` is no longer classified as protocol-varying
+
+**Decision.** `chat.ask` stops being an adapter-owned composite. The product operation becomes
+service-owned over a `CHAT_STREAM_ANSWER` primitive carried by a stream-native binding kind, with
+the streamed request grammar and answer decoding owned by the chat codec.
+
+**What it amends.** The same principle-2 composite-ownership clause as D5, and the plan's naming of
+chat among the plausibly protocol-varying composites, together with the P9.2 gate table's ruling
+for that row.
+
+**Rationale.** Identical in shape to D5: the protocol variance is hypothetical, while the cost is a
+present leak. Because batchexecute is the only native call kind a row can declare, the chat row is a
+custom row that must be handed transport internals through head-injected collaborators — a request
+counter, a timeout, and a composed transport — none of which any other row needs. This record
+already anticipates the fix in the abstract ("Streaming may use a separate typed method or
+context-manager protocol when chat is migrated. Do not force streams through a unary `invoke()`
+result"); a stream-native binding kind is the row-level expression of that, and it is what lets the
+answer workflow's locks, cache, session hint and follow-up handling sit in a service rather than in
+the public facade.
+
+### D4 — `source.add_file` stays adapter-owned (confirmation)
+
+**Decision.** `source.add_file` remains a `protocol` custom row. Its result and failure graph
+becomes neutral during P10, but the composite itself is not hoisted.
+
+**What it amends.** Nothing. It confirms that principle 2's composite-ownership clause continues to
+apply to this row, and marks it as the deliberate exception to D5 rather than an oversight.
+
+**Rationale.** The signed-URL broker, byte transfer and commit choreography is genuinely
+protocol-shaped, so a second backend would not run the same sequence — the exact test the clause
+states. Making its records neutral removes the public-model leak without claiming a backend
+identity the upload flow does not have.
+
+### D8 — P10 is the programme phase token (confirmation)
+
+**Decision.** This programme's phase token is **P10**. The anonymous-bridge guardrail's current
+phase advances from 9 to 10, and every transitional module or branch introduced during P10 carries
+a `Removal: P10` marker and is deleted within the programme. There are no one-release shims.
+
+**What it amends.** Nothing; it records the token so the migration rule and the guardrail agree.
+
+**Rationale.** The guardrail dates transitional code against a declared phase, so a programme that
+introduces transitional code must own a token. No `Removal: P9` marker survives in the package, so
+the bump turns nothing red on the way in and makes every P10 bridge fail closed on the way out.

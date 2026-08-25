@@ -120,7 +120,11 @@ it to the active semantic surface. P0–P9 are complete. P8 places an immutable
 `WebCookieGeneration`/`WebCookieProvider` port between the web session and the existing auth
 owners; public-surface work and a mobile backend require separate decisions. P9 leaves a row-only
 web backend: 80 typed binding rows execute directly, eleven workflows are service-owned above the
-port, and their leaf conjunctions are audited transitively.
+port, and their leaf conjunctions are audited transitively. Programme **P10**
+([plan](./plan/2026-08-25-p10-semantic-remediation.md)) remediates the boundary defects that
+sequence left behind, under the governance addenda appended to
+[ADR-0035](./adr/0035-semantic-backend-boundary.md#addenda-p10-2026-08-25); it has not started, so
+everything described below is the P9 end state.
 
 The operation-catalog audit classifies only the shared generic web RPC forwarder as inert. The four
 notebook/source read handlers, three notebook-mutation handlers, URL-source composite, two Studio
