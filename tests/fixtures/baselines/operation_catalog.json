@@ -1720,7 +1720,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._source_add_drive.create_source"
+        "_web/bindings/sources.py:SOURCE_ADD_DRIVE"
       ],
       "golden_disposition": "not_recorded",
       "golden_evidence": [],
@@ -1763,7 +1763,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._source_add_text.create_source"
+        "_web/bindings/sources.py:SOURCE_ADD_TEXT"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -1811,8 +1811,8 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._create_url_source",
-        "_web/source_variants.py:SourceVariantWebHandlers._source_add_url_batch.create_sources"
+        "_web/bindings/sources.py:SOURCE_ADD_URL",
+        "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -1861,7 +1861,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._source_register_file"
+        "_web/bindings/sources.py:SOURCE_ADD_FILE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2809,6 +2809,10 @@
         "_web/backend.py:WebRpcBackend._notebook_update",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
+        "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
+        "_web/bindings/sources.py:SOURCE_ADD_FILE",
+        "_web/bindings/sources.py:SOURCE_ADD_URL",
+        "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT",
@@ -3189,7 +3193,7 @@
         "_web/backend.py:WebRpcBackend._notebook_limit_error",
         "_web/bindings/settings.py:SETTINGS_GET",
         "_web/bindings/settings.py:SETTINGS_GET_LIMITS",
-        "_web/source_variants.py:SourceVariantWebHandlers._source_file_limit"
+        "_web/bindings/sources.py:SOURCE_ADD_FILE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -4364,7 +4368,9 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public",
+        "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
+        "_web/bindings/sources.py:SOURCE_ADD_FILE",
+        "_web/bindings/sources.py:SOURCE_ADD_URL",
         "_web/source_variants.py:SourceVariantWebHandlers._source_update"
       ],
       "golden_disposition": "golden_covered",
@@ -4394,7 +4400,10 @@
       "owners": [
         "SourceService"
       ],
-      "response_decoders": [],
+      "response_decoders": [
+        "_web/codec/sources.py:decode_renamed_source",
+        "_web/codec/sources.py:rename_target_missing"
+      ],
       "response_projectors": [],
       "route_contexts": [
         "notebook",
@@ -7691,19 +7700,19 @@
         {
           "binding": "ADD_SOURCE:drive",
           "discriminator": "direct semantic binding",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_add_drive.create_source",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "unconditional baseline plus ambiguity probes",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_SOURCE:<default>",
           "discriminator": "optional post-create title",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
           "transport_kind": "rpc"
         }
       ],
@@ -7723,7 +7732,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_ADD_DRIVE"
           ],
           "condition": "one baseline plus ambiguity probes and, when wait=True, one snapshot per facade-owned readiness poll tick",
           "maximum_calls": null,
@@ -7744,7 +7753,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/sources.py:decode_add_source_records",
+        "_web/codec/sources.py:decode_renamed_source",
         "_web/codec/sources.py:decode_source_snapshot",
+        "_web/codec/sources.py:rename_target_missing",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
       "route_context": "notebook",
@@ -7767,25 +7778,25 @@
         {
           "binding": "ADD_SOURCE_FILE:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_register_file",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_FILE",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "unconditional baseline plus registration probes",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_FILE",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_USER_SETTINGS:<default>",
           "discriminator": "invalid-argument diagnosis only",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_file_limit",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_FILE",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_SOURCE:<default>",
           "discriminator": "optional post-upload title",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_FILE",
           "transport_kind": "rpc"
         },
         {
@@ -7825,7 +7836,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_ADD_FILE"
           ],
           "condition": "one baseline plus registration/reconciliation probes; a custom title may add registration ticks even when wait=False, and wait=True adds facade-owned readiness ticks",
           "maximum_calls": null,
@@ -7846,7 +7857,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/settings.py:decode_get_user_settings",
+        "_web/codec/sources.py:decode_renamed_source",
         "_web/codec/sources.py:decode_source_snapshot",
+        "_web/codec/sources.py:rename_target_missing",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
       "route_context": "notebook+upload-session",
@@ -7865,7 +7878,7 @@
         {
           "binding": "ADD_SOURCE:text",
           "discriminator": "direct semantic binding",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_add_text.create_source",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_TEXT",
           "transport_kind": "rpc"
         }
       ],
@@ -7910,19 +7923,19 @@
         {
           "binding": "ADD_SOURCE:url",
           "discriminator": "web or YouTube URL payload selected by semantic flag",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._create_url_source",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_URL",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "unconditional baseline plus ambiguity probes",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_URL",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_SOURCE:<default>",
           "discriminator": "optional post-create title",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_URL",
           "transport_kind": "rpc"
         }
       ],
@@ -7942,7 +7955,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_ADD_URL"
           ],
           "condition": "one baseline plus ambiguity probes and, when wait=True, one snapshot per facade-owned readiness poll tick",
           "maximum_calls": null,
@@ -7963,7 +7976,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/sources.py:decode_add_source_records",
+        "_web/codec/sources.py:decode_renamed_source",
         "_web/codec/sources.py:decode_source_snapshot",
+        "_web/codec/sources.py:rename_target_missing",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
       "route_context": "notebook",
@@ -7977,13 +7992,13 @@
         {
           "binding": "ADD_SOURCE:url",
           "discriminator": "one non-replayed batch payload",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_add_url_batch.create_sources",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "one snapshot only for omitted-row reconciliation",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+          "site": "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
           "transport_kind": "rpc"
         }
       ],
@@ -8000,7 +8015,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH"
           ],
           "condition": "one snapshot only when ADD_SOURCE omits positional outcomes",
           "maximum_calls": 1,
@@ -8349,7 +8364,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/sources.py:decode_renamed_source",
         "_web/codec/sources.py:decode_source_snapshot",
+        "_web/codec/sources.py:rename_target_missing",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
       "route_context": "notebook+source",
