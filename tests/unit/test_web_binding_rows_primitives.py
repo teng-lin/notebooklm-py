@@ -39,9 +39,11 @@ from notebooklm._records import (
     LabelMutateInput,
     LabelMutateResult,
     SharePermissionLevel,
+    SharingGrants,
     SharingMutateInput,
     SharingMutateResult,
     SharingUserGrant,
+    SharingVisibility,
 )
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import primitives as primitive_rows
@@ -338,21 +340,32 @@ async def test_label_allocate_requires_a_notebook_scope_for_source_labels() -> N
 @pytest.mark.asyncio
 async def test_sharing_mutate_sends_the_visibility_or_grant_envelope() -> None:
     grant = SharingUserGrant("reader@example.com", SharePermissionLevel.VIEWER)
-    executor = _RecordingExecutor(None, None)
+    executor = _RecordingExecutor(None, None, None)
     backend = build_web_backend(executor)
 
     visibility = await backend.invoke(
-        SHARING_MUTATE_DEF, SharingMutateInput(_NB, public=True), deadline=None
+        SHARING_MUTATE_DEF,
+        SharingMutateInput(_NB, SharingVisibility(public=True)),
+        deadline=None,
     )
     grants = await backend.invoke(
         SHARING_MUTATE_DEF,
-        SharingMutateInput(_NB, grants=(grant,), notify=False, welcome_message="hi"),
+        SharingMutateInput(
+            _NB,
+            SharingGrants(grants=(grant,), notify=False, welcome_message="hi"),
+        ),
+        deadline=None,
+    )
+    empty_grants = await backend.invoke(
+        SHARING_MUTATE_DEF,
+        SharingMutateInput(_NB, SharingGrants(grants=(), notify=False)),
         deadline=None,
     )
 
     assert visibility == SharingMutateResult()
     assert grants == SharingMutateResult()
-    first, second = executor.calls
+    assert empty_grants == SharingMutateResult()
+    first, second, third = executor.calls
     assert first.method is RPCMethod.SHARE_NOTEBOOK
     assert first.params == sharing_codec.build_share_visibility_params(_NB, True)
     assert first.kwargs == {**_BASE_KWARGS, "source_path": f"/notebook/{_NB}", "allow_null": True}
@@ -361,29 +374,18 @@ async def test_sharing_mutate_sends_the_visibility_or_grant_envelope() -> None:
         _NB, (grant,), notify=False, welcome_message="hi"
     )
     assert second.kwargs == first.kwargs
+    assert third.params == sharing_codec.build_share_grants_params(
+        _NB, (), notify=False, welcome_message=""
+    )
+    assert third.kwargs == first.kwargs
 
 
-@pytest.mark.parametrize(
-    "value",
-    [
-        pytest.param(SharingMutateInput(_NB), id="neither"),
-        pytest.param(
-            SharingMutateInput(
-                _NB,
-                public=False,
-                grants=(SharingUserGrant("a@example.com", SharePermissionLevel.VIEWER),),
-            ),
-            id="both",
-        ),
-    ],
-)
 @pytest.mark.asyncio
-async def test_sharing_mutate_rejects_ambiguous_forms_before_dispatch(
-    value: SharingMutateInput,
-) -> None:
+async def test_sharing_mutate_rejects_a_value_outside_the_closed_union_before_dispatch() -> None:
     executor = _RecordingExecutor()
     backend = build_web_backend(executor)
-    with pytest.raises(BackendContractError, match="exactly one of a visibility") as caught:
+    value = SharingMutateInput(_NB, object())  # type: ignore[arg-type]
+    with pytest.raises(BackendContractError, match="SharingVisibility or SharingGrants") as caught:
         await backend.invoke(SHARING_MUTATE_DEF, value, deadline=None)
     assert caught.value.operation is Operation.SHARING_MUTATE
     assert executor.calls == []
@@ -428,7 +430,9 @@ async def test_primitive_timeout_after_expiry_is_a_dispatched_mutation_deadline_
 
     with pytest.raises(BackendDeadlineExceededError) as caught:
         await backend.invoke(
-            SHARING_MUTATE_DEF, SharingMutateInput(_NB, public=True), deadline=deadline
+            SHARING_MUTATE_DEF,
+            SharingMutateInput(_NB, SharingVisibility(public=True)),
+            deadline=deadline,
         )
 
     error = caught.value

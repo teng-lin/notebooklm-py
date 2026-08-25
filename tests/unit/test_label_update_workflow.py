@@ -435,6 +435,26 @@ async def test_readback_failure_after_a_write_is_rebound_without_re_marking() ->
 
 
 @pytest.mark.asyncio
+async def test_unknown_readback_keeps_the_leaf_native_cause_across_error_copies() -> None:
+    native = RPCTimeoutError("slow", method_id=RPCMethod.LIST_LABELS.value)
+    leaf = _deadline_error(Operation.LABEL_GET, dispatched=False, method_id="list")
+    try:
+        raise leaf from native
+    except BackendDeadlineExceededError as caused_leaf:
+        leaf = caused_leaf
+    backend = RecordingBackend()
+    backend.set_sequence(LABEL_GET_DEF, [leaf])
+    backend.set_result(LABEL_MUTATE_DEF, _DONE)
+
+    with pytest.raises(BackendDeadlineExceededError) as caught:
+        await _service(backend).update("l1", _NB, add_member_ids=("s2",))
+
+    assert caught.value.operation is Operation.LABEL_UPDATE
+    assert caught.value.outcome_unknown is True
+    assert caught.value.__cause__ is native
+
+
+@pytest.mark.asyncio
 async def test_cancellation_propagates_without_rebinding() -> None:
     class _Cancelling(RecordingBackend):
         async def invoke(self, *_args: object, **_kwargs: object) -> object:  # type: ignore[override]

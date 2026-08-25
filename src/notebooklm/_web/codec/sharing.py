@@ -19,12 +19,14 @@ from ..._records import (
     ShareViewScope,
     SharingGetInput,
     SharingGetResult,
+    SharingGrants,
     SharingMutateInput,
     SharingMutateResult,
     SharingSetPublicInput,
     SharingSetViewLevelInput,
     SharingUpdateUsersInput,
     SharingUserGrant,
+    SharingVisibility,
 )
 from ...rpc import RPCMethod, safe_index
 from ...rpc.types import ShareAccess, SharePermission, ShareViewLevel
@@ -391,23 +393,24 @@ __all__ = [
 def encode_sharing_mutate(value: SharingMutateInput) -> CodecPayload:
     """Payload for the ``sharing.mutate`` row: one ``SHARE_NOTEBOOK`` set-op.
 
-    Exactly one of ``public`` (link visibility) or ``grants`` (individual
-    users) is requested; ``allow_null`` preserves the status-3/null success
-    the visibility and grant envelopes both return.
+    The input's closed mutation union selects visibility or individual-user
+    grants; ``allow_null`` preserves the status-3/null success both envelopes
+    return.
     """
-    if (value.public is None) == (not value.grants):
-        raise BackendContractError(
-            "sharing.mutate requires exactly one of a visibility or a grant set",
-            operation=Operation.SHARING_MUTATE,
-        )
-    if value.public is not None:
-        params = build_share_visibility_params(value.notebook_id, value.public)
-    else:
+    mutation = value.mutation
+    if type(mutation) is SharingVisibility:
+        params = build_share_visibility_params(value.notebook_id, mutation.public)
+    elif type(mutation) is SharingGrants:
         params = build_share_grants_params(
             value.notebook_id,
-            value.grants,
-            notify=value.notify,
-            welcome_message=value.welcome_message,
+            mutation.grants,
+            notify=mutation.notify,
+            welcome_message=mutation.welcome_message,
+        )
+    else:
+        raise BackendContractError(
+            "sharing.mutate requires a SharingVisibility or SharingGrants mutation",
+            operation=Operation.SHARING_MUTATE,
         )
     return CodecPayload(
         params=params,

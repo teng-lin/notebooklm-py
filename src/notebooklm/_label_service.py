@@ -327,13 +327,17 @@ class LabelSetService:
         except BackendError as error:
             if error.operation is workflow:
                 raise
+            # ``mark_backend_outcome_unknown`` and ``rebind_operation`` rebuild
+            # frozen error records. Save the leaf's reviewed native cause before
+            # either copy so the workflow keeps the same causal chain.
+            leaf_cause = error.__cause__
             if write_dispatched and isinstance(error, BackendDeadlineExceededError):
                 # A later phase expired after an earlier write: the requested
                 # final outcome is unconfirmed and unsafe to retry blindly. A
                 # failing write's own uncertainty (``may_have_committed``) is
                 # already carried by the leaf error and needs no re-marking.
                 error = mark_backend_outcome_unknown(error)
-            raise rebind_operation(error, workflow) from error.__cause__
+            raise rebind_operation(error, workflow) from leaf_cause
 
     async def _mutate(self, value: LabelMutateInput, *, deadline: RuntimeDeadline | None) -> None:
         await self._backend.invoke(LABEL_MUTATE_DEF, value, deadline=deadline)

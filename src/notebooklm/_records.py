@@ -180,6 +180,7 @@ from ._sharing_records import (
     ShareViewScope,
     SharingGetInput,
     SharingGetResult,
+    SharingGrants,
     SharingMutateInput,
     SharingMutateResult,
     SharingSetPublicInput,
@@ -189,6 +190,7 @@ from ._sharing_records import (
     SharingUpdateUsersInput,
     SharingUpdateUsersResult,
     SharingUserGrant,
+    SharingVisibility,
 )
 from ._source_records import (
     SourceAddCommitState,
@@ -1179,6 +1181,8 @@ __all__ = [
     "SHARING_SET_PUBLIC_DEF",
     "SHARING_SET_VIEW_LEVEL_DEF",
     "SHARING_UPDATE_USERS_DEF",
+    "SharingGrants",
+    "SharingVisibility",
     "SOURCE_ADD_URL_BATCH_DEF",
     "SOURCE_ADD_TEXT_DEF",
     "SOURCE_ADD_DRIVE_DEF",

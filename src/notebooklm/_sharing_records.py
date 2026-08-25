@@ -128,19 +128,32 @@ class SharingUpdateUsersResult:
 
 
 @dataclass(frozen=True, slots=True)
-class SharingMutateInput:
-    """One ``SHARE_NOTEBOOK`` set-op (P9.2 primitive): visibility or grants.
+class SharingVisibility:
+    """One public-link visibility mutation for ``SHARING_MUTATE``."""
 
-    Exactly one form is requested per call: ``public`` sets link visibility,
-    ``grants`` upserts/removes individual users (with ``notify`` and
-    ``welcome_message`` as the grant options).
+    public: bool
+
+
+@dataclass(frozen=True, slots=True)
+class SharingGrants:
+    """One individual-user grant mutation for ``SHARING_MUTATE``."""
+
+    grants: tuple[SharingUserGrant, ...]
+    notify: bool = True
+    welcome_message: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SharingMutateInput:
+    """One ``SHARE_NOTEBOOK`` set-op (P9.2 primitive).
+
+    The closed mutation union makes visibility and grant envelopes mutually
+    exclusive by construction. In particular, an empty grant batch remains a
+    grant mutation rather than becoming indistinguishable from a missing form.
     """
 
     notebook_id: str
-    public: bool | None = None
-    grants: tuple[SharingUserGrant, ...] = ()
-    notify: bool = True
-    welcome_message: str = ""
+    mutation: SharingVisibility | SharingGrants
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +235,7 @@ __all__ = [
     "ShareStatusRecord",
     "ShareViewScope",
     "SharedUserRecord",
+    "SharingGrants",
     "SharingGetInput",
     "SharingGetResult",
     "SharingSetPublicInput",
@@ -233,4 +247,5 @@ __all__ = [
     "SharingMutateInput",
     "SharingMutateResult",
     "SharingUserGrant",
+    "SharingVisibility",
 ]
