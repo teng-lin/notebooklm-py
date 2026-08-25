@@ -91,22 +91,22 @@ ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset(
 )
 
 
-def _row_error_projection(row: Binding | None, operation: Operation) -> tuple[bool, bool | None]:
-    """Return ``(raw_passthrough, scrub_request_urls)`` for one operation's failures.
+def _row_error_projection(row: Binding | None, operation: Operation) -> bool | None:
+    """Return ``scrub_request_urls`` for one operation's failures.
 
     A custom row carries its own projection as ``error_mode`` metadata:
-    ``RAW_PASSTHROUGH`` re-raises the native exception unchanged,
     ``TRANSLATE_SCRUBBED`` translates with request URLs scrubbed, ``TRANSLATE``
-    translates plainly. ``operation`` remains in this private helper's shape
-    for the characterization tests that compare every row's projection.
+    translates plainly. Every row translates (P10 invariant I8): a row that owns
+    a public compatibility leaf raises its own ``BackendError`` rather than
+    letting the native exception escape the port. A codec row answers ``None``,
+    keeping the shared translator's operation-specific default. ``operation``
+    remains in this private helper's shape for the characterization tests that
+    compare every row's projection.
     """
     del operation
     if isinstance(row, CustomBinding):
-        return (
-            row.error_mode is ErrorMode.RAW_PASSTHROUGH,
-            row.error_mode is ErrorMode.TRANSLATE_SCRUBBED,
-        )
-    return False, None
+        return row.error_mode is ErrorMode.TRANSLATE_SCRUBBED
+    return None
 
 
 class WebRpcBackend:
@@ -369,9 +369,7 @@ class WebRpcBackend:
         # failure still names the blocked native (``method_id``) exactly as the
         # composite handlers' ``_rpc_call`` did. Nothing is dispatched either way.
 
-        raw_passthrough, scrub_request_urls = _row_error_projection(
-            self._bindings.get(operation.key), operation.key
-        )
+        scrub_request_urls = _row_error_projection(self._bindings.get(operation.key), operation.key)
         try:
             result = await invoke_binding(
                 self._bindings,
@@ -385,8 +383,6 @@ class WebRpcBackend:
         except BackendError:
             raise
         except RPCTimeoutError as exc:
-            if raw_passthrough:
-                raise
             if deadline is not None and deadline.expired():
                 diagnostics = dict(self._error_diagnostics(exc, BackendErrorReason.TIMEOUT))
                 diagnostics.update({"timeout": deadline.timeout, "remaining": deadline.remaining()})
@@ -405,13 +401,6 @@ class WebRpcBackend:
             )
             raise translated from exc
         except NotebookLMError as exc:
-            # Source registration/upload compatibility requires the original
-            # exception object (not merely its class/payload), especially after
-            # file registration where callers inspect source_id/stage and the
-            # original causal chain. These workflows are backend-owned, but
-            # deliberately re-raise their established public leaves unchanged.
-            if raw_passthrough:
-                raise
             # Catch the closed library family rather than a broad ``RPCError``
             # wrap.  ``_translate_error`` still accepts only the exact reviewed
             # transport types and fails closed for any semantic exception.

@@ -29,6 +29,7 @@ from .exceptions import (
     LabelError,
     LabelNotFoundError,
     NetworkError,
+    NonIdempotentRetryError,
     NotebookLimitError,
     NotebookNotFoundError,
     NotFoundError,
@@ -43,6 +44,7 @@ from .exceptions import (
     SourceProcessingError,
     SourceTimeoutError,
     UnknownRPCMethodError,
+    ValidationError,
 )
 from .rpc import RPCMethod
 
@@ -727,6 +729,12 @@ def _project_source_add_record(record: SourceAddFailureRecord) -> Exception:
             method_id=rpc["method_id"],
             raw_response=record.raw_response,
         )
+    elif kind is SourceAddFailureKind.VALIDATION:
+        projected = ValidationError(*record.args)
+    elif kind is SourceAddFailureKind.NON_IDEMPOTENT_RETRY:
+        projected = NonIdempotentRetryError(*record.args)
+    elif kind is SourceAddFailureKind.IDEMPOTENCY_VARIANT:
+        projected = IdempotencyVariantError(*record.args)
     elif kind is SourceAddFailureKind.SOURCE_PROCESSING:
         if record.source_id is None or record.status is None:
             raise BackendContractError("source-processing failure lacks source_id/status")

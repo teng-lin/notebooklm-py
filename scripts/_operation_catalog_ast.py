@@ -906,7 +906,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/bindings/sources.py", "_backend", "BackendErrorReason"),
         ("_web/bindings/sources.py", "_binding", "CodecPayload"),
         ("_web/bindings/sources.py", "_binding", "CustomBinding"),
-        ("_web/bindings/sources.py", "_binding", "ErrorMode"),
         ("_web/bindings/sources.py", "_binding", "RowInvoker"),
         ("_web/bindings/sources.py", "_projectors", "project_source"),
         ("_web/bindings/sources.py", "_records", "SOURCE_ADD_DRIVE_DEF"),

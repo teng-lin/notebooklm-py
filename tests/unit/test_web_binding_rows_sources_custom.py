@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from notebooklm._backend import (
@@ -29,8 +30,10 @@ from notebooklm._backend import (
     BackendErrorReason,
     may_have_committed,
 )
+from notebooklm._backend_compat import project_backend_error
 from notebooklm._binding import CustomBinding, ErrorMode
 from notebooklm._deadline import RuntimeDeadline
+from notebooklm._idempotency import mark_unconfirmed
 from notebooklm._operations import Operation
 from notebooklm._records import (
     SOURCE_ADD_DRIVE_DEF,
@@ -40,6 +43,7 @@ from notebooklm._records import (
     SOURCE_ADD_URL_DEF,
     SourceAddCommitState,
     SourceAddDriveInput,
+    SourceAddFailureRecord,
     SourceAddFileInput,
     SourceAddTextInput,
     SourceAddTitleState,
@@ -47,12 +51,19 @@ from notebooklm._records import (
     SourceAddUrlInput,
     SourceFileInputKind,
 )
+from notebooklm._source._upload_decode import raise_partial_upload_failure
 from notebooklm._source_upload_port import SourceUploadBackend
 from notebooklm._web.backend import ROW_COLLABORATOR_NAMES, WebRpcBackend, _row_error_projection
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import sources as source_rows
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
-from notebooklm.exceptions import RPCTimeoutError, ServerError
+from notebooklm.exceptions import (
+    NetworkError,
+    NonIdempotentRetryError,
+    RPCTimeoutError,
+    ServerError,
+    ValidationError,
+)
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Source, SourceStatus
 from tests._fixtures.web_backend import build_web_backend
@@ -166,21 +177,21 @@ def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
         Operation.SOURCE_ADD_URL_BATCH: (
             source_rows.SOURCE_ADD_URL_BATCH,
             "protocol",
-            ErrorMode.RAW_PASSTHROUGH,
+            ErrorMode.TRANSLATE,
             {("create", RPCMethod.ADD_SOURCE, "url"), ("snapshot", RPCMethod.GET_NOTEBOOK, None)},
             ("capture_public_failure",),
         ),
         Operation.SOURCE_ADD_TEXT: (
             source_rows.SOURCE_ADD_TEXT,
             "compatibility",
-            ErrorMode.RAW_PASSTHROUGH,
+            ErrorMode.TRANSLATE,
             {("create", RPCMethod.ADD_SOURCE, "text")},
             (),
         ),
         Operation.SOURCE_ADD_DRIVE: (
             source_rows.SOURCE_ADD_DRIVE,
             "protocol",
-            ErrorMode.RAW_PASSTHROUGH,
+            ErrorMode.TRANSLATE,
             {
                 ("create", RPCMethod.ADD_SOURCE, "drive"),
                 ("snapshot", RPCMethod.GET_NOTEBOOK, None),
@@ -191,7 +202,7 @@ def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
         Operation.SOURCE_ADD_FILE: (
             source_rows.SOURCE_ADD_FILE,
             "protocol",
-            ErrorMode.RAW_PASSTHROUGH,
+            ErrorMode.TRANSLATE,
             {
                 ("register", RPCMethod.ADD_SOURCE_FILE, None),
                 ("snapshot", RPCMethod.GET_NOTEBOOK, None),
@@ -217,9 +228,8 @@ def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
             for spec in row.native
             for choice in spec.choices
         } == specs
-        raw, scrub = _row_error_projection(row, operation)
-        assert raw is (error_mode is ErrorMode.RAW_PASSTHROUGH)
-        assert scrub is False
+        # P10 invariant I8: no row asks the head to pass a native failure through.
+        assert _row_error_projection(row, operation) is False
     for name in (
         "_source_add_url",
         "_source_add_url_batch",
@@ -426,17 +436,23 @@ async def test_add_file_callback_failures_are_tagged_with_the_selected_spec(
     error = ServerError("boom", method_id=RPCMethod.ADD_SOURCE_FILE.value)
     backend = build_web_backend(_RecordingExecutor(error), source_uploader=uploader)
 
-    with pytest.raises(ServerError) as caught:
+    with pytest.raises(BackendError) as caught:
         await backend.invoke(
             SOURCE_ADD_FILE_DEF,
             SourceAddFileInput(_NB, SourceFileInputKind.LOCAL, file_path=tmp_path / "f.txt"),
             deadline=None,
         )
 
-    # Raw passthrough: the native error itself, tagged with the register spec.
-    assert caught.value is error
-    assert caught.value.binding_native.method is RPCMethod.ADD_SOURCE_FILE  # type: ignore[attr-defined]
-    assert caught.value.dispatched is True  # type: ignore[attr-defined]
+    # I8: the callback failure leaves as neutral evidence, still tagged with the
+    # register spec on the private cause, and replays field-for-field at the facade.
+    _assert_neutral_source_add_failure(
+        caught.value,
+        operation=Operation.SOURCE_ADD_FILE,
+        native=error,
+    )
+    assert error.binding_native.method is RPCMethod.ADD_SOURCE_FILE  # type: ignore[attr-defined]
+    assert error.dispatched is True  # type: ignore[attr-defined]
+    assert caught.value.dispatched is True
     assert uploader.active is None
 
 
@@ -452,6 +468,95 @@ async def test_add_file_without_a_pipeline_is_a_contract_error_before_any_call()
             deadline=None,
         )
     assert executor.calls == []
+
+
+# --- the replay oracle -----------------------------------------------------------------
+#
+# P10 R3.1 replaced the ``ErrorMode.RAW_PASSTHROUGH`` object-identity contract
+# (``caught.value is error``) with a *value* contract: the row captures the
+# public leaf as a ``SourceAddFailureRecord`` and ``_backend_compat`` replays an
+# equal — never identical — exception at the facade. This oracle is the pin for
+# "equal": every field below is captured by ``_web/failure_projection.py`` and
+# restored by ``_backend_compat._project_source_add_record``.
+
+_MISSING = object()
+
+#: Every public attribute ``SourceAddFailureRecord`` carries for a source-add
+#: leaf. ``getattr`` with a sentinel so a field absent on both sides matches and
+#: a field present on only one side fails.
+_REPLAYED_ATTRIBUTES: tuple[str, ...] = (
+    # RPCError diagnostics
+    "method_id",
+    "rpc_id",
+    "raw_response",
+    "rpc_code",
+    "found_ids",
+    # upload/registration tagging (raise_partial_upload_failure)
+    "source_id",
+    "stage",
+    "unconfirmed",
+    # SourceAddError
+    "url",
+    "cause",
+    # per-family fields
+    "recoverable",
+    "retry_after",
+    "status_code",
+    "timeout_seconds",
+    "limit_bytes",
+    "bytes_read",
+    "status",
+    "timeout",
+    "last_status",
+    "path",
+    "source",
+    "data_at_failure",
+    "original_error",
+)
+
+
+def _assert_replays(replayed: BaseException | None, original: BaseException | None) -> None:
+    """Assert one public failure graph was reconstructed field-for-field."""
+    if original is None or replayed is None:
+        assert replayed is None and original is None
+        return
+    assert type(replayed) is type(original)
+    assert replayed.args == original.args
+    assert str(replayed) == str(original)
+    for name in _REPLAYED_ATTRIBUTES:
+        expected = getattr(original, name, _MISSING)
+        actual = getattr(replayed, name, _MISSING)
+        if isinstance(expected, BaseException) or isinstance(actual, BaseException):
+            _assert_replays(
+                actual if isinstance(actual, BaseException) else None,
+                expected if isinstance(expected, BaseException) else None,
+            )
+            continue
+        assert actual == expected, name
+    assert replayed.__suppress_context__ == original.__suppress_context__
+    _assert_replays(replayed.__cause__, original.__cause__)
+    _assert_replays(replayed.__context__, original.__context__)
+
+
+def _assert_neutral_source_add_failure(
+    error: BackendError,
+    *,
+    operation: Operation,
+    native: BaseException,
+    outcome_unknown: bool = False,
+) -> None:
+    """The row reported one neutral SOURCE_ADD reason that replays ``native``."""
+    assert type(error) is BackendError
+    assert error.operation is operation
+    assert error.reason is BackendErrorReason.SOURCE_ADD
+    assert error.outcome_unknown is outcome_unknown
+    assert error.diagnostics is not None
+    record = error.diagnostics["source_add_failure"]
+    assert isinstance(record, SourceAddFailureRecord)
+    # The native object itself remains reachable as the private cause, still
+    # carrying the row's spec tagging; nothing above the port reads it.
+    assert error.__cause__ is native
+    _assert_replays(project_backend_error(error), native)
 
 
 # --- failure projection --------------------------------------------------------------------
@@ -486,28 +591,146 @@ async def test_add_url_translates_the_public_leaf_and_carries_the_dispatched_mar
     assert error.__cause__.binding_native.method is RPCMethod.ADD_SOURCE  # type: ignore[attr-defined]
 
 
+class _FailingUploader(_Uploader):
+    """A pipeline double whose upload leg fails after registration."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__()
+        self.error = error
+
+    async def _add_file_result(
+        self, notebook_id: str, file_path: str | Path, **kwargs: Any
+    ) -> object:
+        assert self.active is not None, "upload ran outside the row's bound backend"
+        self.calls.append((notebook_id, file_path, kwargs))
+        raise self.error
+
+
+def _partial_upload_failure() -> NetworkError:
+    """The exact post-registration graph ``raise_partial_upload_failure`` builds.
+
+    ``httpx.RequestError`` mid-body → a ``NetworkError`` normalisation that keeps
+    the httpx leaf as both ``original_error`` and ``__cause__``, tagged with the
+    retained ``source_id``/``stage`` and marked unconfirmed by the pipeline.
+    """
+    request = httpx.Request("POST", "https://upload.example/x?upload_id=secret")
+    leaf = httpx.ReadError("connection reset", request=request)
+    try:
+        raise_partial_upload_failure(
+            leaf, "f.txt", source_id="retained-id", stage="upload_finalize"
+        )
+    except NetworkError as exc:
+        mark_unconfirmed(exc)
+        return exc
+    raise AssertionError("raise_partial_upload_failure did not raise")
+
+
 @pytest.mark.asyncio
-async def test_add_text_passes_the_native_failure_through_raw() -> None:
+async def test_add_file_replays_the_post_registration_upload_graph(tmp_path: Path) -> None:
+    """The permanent D4 row: every field of the Scotty failure graph survives.
+
+    This is the parity evidence R3.1 owes for deleting ``RAW_PASSTHROUGH`` on
+    ``source.add_file``: the exception the facade raises after the neutral
+    round trip is field-for-field the exception the pipeline raised, including
+    the retained ``source_id``/``stage``, the unconfirmed marker, the httpx
+    ``original_error`` and the causal chain.
+    """
+    native = _partial_upload_failure()
+    uploader = _FailingUploader(native)
+    backend = build_web_backend(_RecordingExecutor(), source_uploader=uploader)
+
+    with pytest.raises(BackendError) as caught:
+        await backend.invoke(
+            SOURCE_ADD_FILE_DEF,
+            SourceAddFileInput(_NB, SourceFileInputKind.LOCAL, file_path=tmp_path / "f.txt"),
+            deadline=None,
+        )
+
+    _assert_neutral_source_add_failure(
+        caught.value,
+        operation=Operation.SOURCE_ADD_FILE,
+        native=native,
+        outcome_unknown=True,
+    )
+    replayed = project_backend_error(caught.value)
+    # Spelled out, not just asserted through the oracle: these are the fields the
+    # upload recovery contract documents for a partial upload.
+    assert type(replayed) is NetworkError
+    assert replayed.source_id == "retained-id"  # type: ignore[attr-defined]
+    assert replayed.stage == "upload_finalize"  # type: ignore[attr-defined]
+    assert replayed.unconfirmed is True  # type: ignore[attr-defined]
+    assert isinstance(replayed.original_error, httpx.ReadError)
+    assert replayed.__cause__ is replayed.original_error
+    assert replayed.__suppress_context__ is True
+    assert uploader.active is None
+
+
+@pytest.mark.asyncio
+async def test_add_file_replays_a_rejected_title_as_validation_error(tmp_path: Path) -> None:
+    """``ValidationError`` is outside the four reviewed families and still survives."""
+    backend = build_web_backend(_RecordingExecutor(), source_uploader=_Uploader())
+
+    with pytest.raises(BackendError) as caught:
+        await backend.invoke(
+            SOURCE_ADD_FILE_DEF,
+            SourceAddFileInput(
+                _NB,
+                SourceFileInputKind.LOCAL,
+                file_path=tmp_path / "f.txt",
+                title="   ",
+                wait=True,
+            ),
+            deadline=None,
+        )
+
+    replayed = project_backend_error(caught.value)
+    assert type(replayed) is ValidationError
+    assert str(replayed) == "Title cannot be empty or whitespace-only"
+
+
+@pytest.mark.asyncio
+async def test_add_text_replays_a_refused_replay_as_non_idempotent_retry_error() -> None:
+    """``NonIdempotentRetryError`` is outside the four reviewed families too."""
+    executor = _RecordingExecutor()
+
+    with pytest.raises(BackendError) as caught:
+        await build_web_backend(executor).invoke(
+            SOURCE_ADD_TEXT_DEF,
+            SourceAddTextInput(_NB, "T", "body", idempotent=True),
+            deadline=None,
+        )
+
+    assert executor.calls == []
+    replayed = project_backend_error(caught.value)
+    assert type(replayed) is NonIdempotentRetryError
+
+
+@pytest.mark.asyncio
+async def test_add_text_reports_the_native_failure_as_neutral_evidence() -> None:
     error = ServerError("down", method_id=RPCMethod.ADD_SOURCE.value)
     executor = _RecordingExecutor(error)
 
-    with pytest.raises(ServerError) as caught:
+    with pytest.raises(BackendError) as caught:
         await build_web_backend(executor).invoke(
             SOURCE_ADD_TEXT_DEF, SourceAddTextInput(_NB, "T", "body"), deadline=None
         )
 
-    # RAW_PASSTHROUGH: the very object the runtime raised, never a BackendError.
-    assert caught.value is error
+    # I8: never the native object itself — an equal replay built from the record.
+    assert project_backend_error(caught.value) is not error
+    _assert_neutral_source_add_failure(
+        caught.value,
+        operation=Operation.SOURCE_ADD_TEXT,
+        native=error,
+    )
     assert error.dispatched is True  # type: ignore[attr-defined]
     assert error.binding_native.method is RPCMethod.ADD_SOURCE  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
-async def test_add_url_batch_rename_free_timeout_after_expiry_passes_through_raw() -> None:
+async def test_add_url_batch_rename_free_timeout_after_expiry_is_not_a_deadline_error() -> None:
     clock = [11.0]
-    executor = _RecordingExecutor(
-        RPCTimeoutError("slow", method_id=RPCMethod.ADD_SOURCE.value),
-    )
+    native = RPCTimeoutError("slow", method_id=RPCMethod.ADD_SOURCE.value)
+    executor = _RecordingExecutor(native)
     backend = build_web_backend(executor)
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: clock[0])
 
@@ -517,17 +740,28 @@ async def test_add_url_batch_rename_free_timeout_after_expiry_passes_through_raw
 
     backend._runtime = type("Runtime", (), {"rpc_call": staticmethod(rpc_call)})()  # type: ignore[assignment]
 
-    # RAW_PASSTHROUGH: the batch service marks the whole write unconfirmed and
-    # re-raises the native timeout; the head never projects it as a deadline error.
-    with pytest.raises(RPCTimeoutError) as caught:
+    # The batch service marks the whole write unconfirmed and re-raises the native
+    # timeout with a rewritten message; the row claims it as its own SOURCE_ADD
+    # failure, so the head never projects it as a deadline error.
+    with pytest.raises(BackendError) as caught:
         await backend.invoke(
             SOURCE_ADD_URL_BATCH_DEF,
             SourceAddUrlBatchInput(_NB, ("https://a.example/",)),
             deadline=deadline,
         )
-    assert getattr(caught.value, "unconfirmed", False) is True
-    assert caught.value.dispatched is True  # type: ignore[attr-defined]
-    assert caught.value.binding_native.method is RPCMethod.ADD_SOURCE  # type: ignore[attr-defined]
+    assert not isinstance(caught.value, BackendDeadlineExceededError)
+    _assert_neutral_source_add_failure(
+        caught.value,
+        operation=Operation.SOURCE_ADD_URL_BATCH,
+        native=native,
+        outcome_unknown=True,
+    )
+    replayed = project_backend_error(caught.value)
+    assert isinstance(replayed, RPCTimeoutError)
+    assert replayed.unconfirmed is True  # type: ignore[attr-defined]
+    assert native.args[0].startswith("UNRESOLVED")
+    assert native.dispatched is True  # type: ignore[attr-defined]
+    assert native.binding_native.method is RPCMethod.ADD_SOURCE  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

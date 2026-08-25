@@ -17,12 +17,17 @@ policy ledger lists under spec keys (``snapshot``, ``create``, ``rename``,
 with the same options the P6.7 handlers set.  Four are *protocol* rows — source
 registration has a tentative-source mobile variant (ADR-0035 principle 2) — and
 ``SOURCE_ADD_TEXT`` is a *compatibility* row (its ``SourceAddError`` wrap is not
-yet expressible as ``map_error``); all but ``SOURCE_ADD_URL`` re-raise their
-established public leaves raw (``ErrorMode.RAW_PASSTHROUGH``).  The upload
-pipeline is reached only as the ``SOURCE_ADD_FILE`` row's declared collaborator
-and runs its callbacks through that row's invoker for the invocation (plan open
-item 1). ``SOURCE_UPDATE`` is service-owned since P9.2-4 and hydrates through
-the ``SOURCE_GET`` row on a null patch-title echo.
+yet expressible as ``map_error``).  All five translate (P10 invariant I8): the
+established public leaves the family owns — ``SourceAddError``, the unconfirmed
+transport four-tuple, ``ValidationError``, ``NonIdempotentRetryError`` — are
+captured by ``_source_add_failure`` as bounded neutral evidence under
+``BackendErrorReason.SOURCE_ADD`` and replayed by ``_backend_compat`` at the
+facade, so no public exception object crosses the port.  The upload pipeline is
+reached only as the ``SOURCE_ADD_FILE`` row's declared collaborator and runs its
+callbacks through that row's invoker for the invocation (plan open item 1); its
+own Scotty legs keep their raw ``httpx`` semantics below this boundary.
+``SOURCE_UPDATE`` is service-owned since P9.2-4 and hydrates through the
+``SOURCE_GET`` row on a null patch-title echo.
 """
 
 from __future__ import annotations
@@ -40,7 +45,6 @@ from ..._binding import (
     CodecPayload,
     CustomBinding,
     DeadlineMode,
-    ErrorMode,
     NativeCallSpec,
     RowInvoker,
 )
@@ -95,6 +99,7 @@ from ...rpc.types import drive_source_status_to_str, source_status_to_str
 from ...types import Source
 from ..codec import settings as settings_codec
 from ..codec import sources as sources_codec
+from ..failure_projection import _capture_public_failure
 
 source_logger = logging.getLogger("notebooklm").getChild("_sources")
 
@@ -165,6 +170,42 @@ _REGISTER = "register"
 _LIMITS = "limits"
 _CAPTURE_PUBLIC_FAILURE = "capture_public_failure"
 _SOURCE_UPLOADER = "source_uploader"
+
+
+def _source_add_failure(exc: NotebookLMError, operation: Operation) -> BackendError:
+    """Neutralise one source-add public failure at the row boundary (I8).
+
+    The source-add family owns established public leaves (``SourceAddError``
+    and the transport four-tuple after a partial upload, ``ValidationError`` on
+    rejected input, ``NonIdempotentRetryError`` on a refused replay) that the
+    shared ``translate_web_error`` families deliberately do not classify.  The
+    row therefore captures the bounded public graph itself and reports one
+    neutral ``SOURCE_ADD`` reason; ``_backend_compat`` replays an equal — not
+    identical — public exception at the facade.  Nothing above the port sees a
+    public exception object escape the backend.
+
+    The projector is imported directly rather than reached through the
+    ``capture_public_failure`` row collaborator (as ``_add_url`` and
+    ``_add_url_batch``'s per-item captures still do): that collaborator leaves
+    ``ROW_COLLABORATOR_NAMES`` with the last source-add hoist, and
+    ``SOURCE_ADD_FILE`` — which needs this — is permanent under D4.  Both reach
+    the same ``_web.failure_projection`` function; the collaborator seam buys a
+    custom row nothing that a sibling ``_web`` import does not already give it.
+    """
+    return BackendError(
+        # Structured subclasses render their diagnostic fields in ``__str__``;
+        # store only the base message so the compatibility projector reattaches
+        # them exactly once, exactly as ``translate_web_error`` does.
+        message=str(exc.args[0]) if exc.args else "",
+        operation=operation,
+        outcome_unknown=bool(getattr(exc, "unconfirmed", False)),
+        diagnostics=MappingProxyType(
+            {"source_add_failure": _capture_public_failure(exc, operation=operation)}
+        ),
+        reason=BackendErrorReason.SOURCE_ADD,
+        # ``WebTransport`` tags every native failure that escaped the runtime.
+        dispatched=bool(getattr(exc, "dispatched", False)),
+    )
 
 
 def _source_record(source: Source) -> SourceRecord:
@@ -450,14 +491,20 @@ async def _add_url_batch(
             else [source for source in sources if source.status in statuses]
         )
 
-    outcomes = await SourceBatchAddService().add_urls(
-        value.notebook_id,
-        value.urls,
-        create_sources=create_sources,
-        list_sources=list_sources,
-        extract_youtube_video_id=_youtube_video_id_extractor(adder),
-        logger=source_logger,
-    )
+    try:
+        outcomes = await SourceBatchAddService().add_urls(
+            value.notebook_id,
+            value.urls,
+            create_sources=create_sources,
+            list_sources=list_sources,
+            extract_youtube_video_id=_youtube_video_id_extractor(adder),
+            logger=source_logger,
+        )
+    except NotebookLMError as exc:
+        # The batch service marks the whole write unconfirmed and re-raises the
+        # native failure with a rewritten message; the row carries that leaf as
+        # neutral evidence instead of letting it escape the port.
+        raise _source_add_failure(exc, Operation.SOURCE_ADD_URL_BATCH) from exc
     return SourceAddUrlBatchResult(
         tuple(
             SourceUrlBatchItemRecord(
@@ -491,17 +538,22 @@ async def _add_text(
         records = sources_codec.decode_add_source_records(payload) if payload is not None else ()
         return _first_projected_source(records)
 
-    source = await SourceAddService().add_text(
-        value.notebook_id,
-        value.title,
-        value.content,
-        wait=False,
-        wait_timeout=value.wait_timeout,
-        idempotent=value.idempotent,
-        create_source=create_source,
-        wait_until_ready=_facade_owned_wait,
-        logger=source_logger,
-    )
+    try:
+        source = await SourceAddService().add_text(
+            value.notebook_id,
+            value.title,
+            value.content,
+            wait=False,
+            wait_timeout=value.wait_timeout,
+            idempotent=value.idempotent,
+            create_source=create_source,
+            wait_until_ready=_facade_owned_wait,
+            logger=source_logger,
+        )
+    except NotebookLMError as exc:
+        # ``NonIdempotentRetryError`` on a refused replay and the ``SourceAddError``
+        # wrap both leave through this one neutral reason.
+        raise _source_add_failure(exc, Operation.SOURCE_ADD_TEXT) from exc
     return SourceAddTextResult(_source_record(source))
 
 
@@ -537,48 +589,53 @@ async def _add_drive(
             hydrate_on_null=False,
         )
 
-    if value.finalize_source is not None:
-        source = await honor_requested_title(
-            rename_source,
-            value.notebook_id,
-            project_source(value.finalize_source),
-            value.title,
-            source_logger,
+    try:
+        if value.finalize_source is not None:
+            source = await honor_requested_title(
+                rename_source,
+                value.notebook_id,
+                project_source(value.finalize_source),
+                value.title,
+                source_logger,
+            )
+            return SourceAddDriveResult(_source_record(source))
+
+        result = cast(
+            _IdempotentCreateResult[Source],
+            await adder.add_drive(
+                value.notebook_id,
+                value.file_id,
+                value.title,
+                mime_type=value.mime_type,
+                wait=False,
+                wait_timeout=value.wait_timeout,
+                create_source=create_source,
+                list_sources=lambda notebook_id: _snapshot_sources(
+                    invoke, notebook_id, deadline=deadline
+                ),
+                wait_until_ready=_facade_owned_wait,
+                logger=source_logger,
+                return_result=True,
+            ),
+        )
+
+        source = (
+            result.value
+            if value.wait
+            else await honor_requested_title_if_fresh(
+                rename_source,
+                value.notebook_id,
+                result,
+                value.title,
+                source_logger,
+                probe_proves_freshness=True,
+            )
         )
         return SourceAddDriveResult(_source_record(source))
-
-    result = cast(
-        _IdempotentCreateResult[Source],
-        await adder.add_drive(
-            value.notebook_id,
-            value.file_id,
-            value.title,
-            mime_type=value.mime_type,
-            wait=False,
-            wait_timeout=value.wait_timeout,
-            create_source=create_source,
-            list_sources=lambda notebook_id: _snapshot_sources(
-                invoke, notebook_id, deadline=deadline
-            ),
-            wait_until_ready=_facade_owned_wait,
-            logger=source_logger,
-            return_result=True,
-        ),
-    )
-
-    source = (
-        result.value
-        if value.wait
-        else await honor_requested_title_if_fresh(
-            rename_source,
-            value.notebook_id,
-            result,
-            value.title,
-            source_logger,
-            probe_proves_freshness=True,
-        )
-    )
-    return SourceAddDriveResult(_source_record(source))
+    except NotebookLMError as exc:
+        # Rejected input, the ``SourceAddError`` wrap and the unconfirmed transport
+        # four-tuple all leave as neutral evidence under one reason.
+        raise _source_add_failure(exc, Operation.SOURCE_ADD_DRIVE) from exc
 
 
 def upload_backend(invoke: RowInvoker) -> SourceUploadBackend:
@@ -641,93 +698,102 @@ async def _add_file(
             "source.add_file requires the composition-root upload pipeline",
             operation=Operation.SOURCE_ADD_FILE,
         )
-    backend = upload_backend(invoke)
-    if value.finalize_source is not None:
-        source = await honor_requested_title(
-            backend.rename_source,
-            value.notebook_id,
-            project_source(value.finalize_source),
-            value.title,
-            source_logger,
-        )
-        return SourceAddFileResult(_source_record(source))
-    if value.wait and value.title is not None and not value.title.strip():
-        # The title is deferred until after the facade-owned readiness wait,
-        # but validation must still happen before upload registration.
-        raise ValidationError("Title cannot be empty or whitespace-only")
-    transient_error_types: tuple[int | None, ...] = ()
-    deferred_title: str | None = None
-    # Open item 1: every callback the pipeline issues for this invocation —
-    # registration, listing, rename, limit lookup — runs through this row's
-    # invoker under its declared specs and failure tagging.
-    with uploader.bind_backend(backend):
-        if value.kind is SourceFileInputKind.LOCAL:
-            if value.file_path is None:
-                raise BackendContractError(
-                    "local source.add_file input lacks file_path",
-                    operation=Operation.SOURCE_ADD_FILE,
-                )
-            upload_result = await uploader._add_file_result(
+    try:
+        backend = upload_backend(invoke)
+        if value.finalize_source is not None:
+            source = await honor_requested_title(
+                backend.rename_source,
                 value.notebook_id,
-                value.file_path,
-                mime_type=value.mime_type,
-                wait=False,
-                wait_timeout=value.wait_timeout,
-                title=(None if value.wait else value.title),
-                on_progress=value.on_progress,
+                project_source(value.finalize_source),
+                value.title,
+                source_logger,
             )
-            source = upload_result.source
-            transient_error_types = upload_result.transient_error_types
-        else:
-            if value.document_id is None:
-                raise BackendContractError(
-                    "Drive source.add_file input lacks document_id",
-                    operation=Operation.SOURCE_ADD_FILE,
-                )
-
-            async def add_downloaded_file(
-                notebook_id: str,
-                file_path: Any,
-                *,
-                title: str | None,
-                wait: bool,
-                wait_timeout: float,
-            ) -> Source:
-                nonlocal deferred_title, transient_error_types
-                upload_title = title
-                if value.wait:
-                    # DriveImportService resolves a missing public title to the
-                    # Drive filename. Retain that choice for the facade-owned
-                    # post-readiness rename, but do not let the upload pipeline
-                    # perform its own registration wait + rename first.
-                    deferred_title = title.strip() if title else None
-                    upload_title = None
+            return SourceAddFileResult(_source_record(source))
+        if value.wait and value.title is not None and not value.title.strip():
+            # The title is deferred until after the facade-owned readiness wait,
+            # but validation must still happen before upload registration.
+            raise ValidationError("Title cannot be empty or whitespace-only")
+        transient_error_types: tuple[int | None, ...] = ()
+        deferred_title: str | None = None
+        # Open item 1: every callback the pipeline issues for this invocation —
+        # registration, listing, rename, limit lookup — runs through this row's
+        # invoker under its declared specs and failure tagging.
+        with uploader.bind_backend(backend):
+            if value.kind is SourceFileInputKind.LOCAL:
+                if value.file_path is None:
+                    raise BackendContractError(
+                        "local source.add_file input lacks file_path",
+                        operation=Operation.SOURCE_ADD_FILE,
+                    )
                 upload_result = await uploader._add_file_result(
-                    notebook_id,
-                    file_path,
-                    title=upload_title,
-                    wait=wait,
-                    wait_timeout=wait_timeout,
-                )
-                transient_error_types = upload_result.transient_error_types
-                return upload_result.source
-
-            service = uploader.create_drive_import_service(
-                add_file=add_downloaded_file,
-            )
-            async with uploader.get_download_semaphore():
-                source = await service.add_drive_file(
                     value.notebook_id,
-                    value.document_id,
-                    title=(None if value.wait else value.title),
+                    value.file_path,
+                    mime_type=value.mime_type,
                     wait=False,
                     wait_timeout=value.wait_timeout,
+                    title=(None if value.wait else value.title),
+                    on_progress=value.on_progress,
                 )
-    return SourceAddFileResult(
-        _source_record(source),
-        transient_error_types,
-        deferred_title if value.kind is SourceFileInputKind.DRIVE_DOWNLOAD else None,
-    )
+                source = upload_result.source
+                transient_error_types = upload_result.transient_error_types
+            else:
+                if value.document_id is None:
+                    raise BackendContractError(
+                        "Drive source.add_file input lacks document_id",
+                        operation=Operation.SOURCE_ADD_FILE,
+                    )
+
+                async def add_downloaded_file(
+                    notebook_id: str,
+                    file_path: Any,
+                    *,
+                    title: str | None,
+                    wait: bool,
+                    wait_timeout: float,
+                ) -> Source:
+                    nonlocal deferred_title, transient_error_types
+                    upload_title = title
+                    if value.wait:
+                        # DriveImportService resolves a missing public title to the
+                        # Drive filename. Retain that choice for the facade-owned
+                        # post-readiness rename, but do not let the upload pipeline
+                        # perform its own registration wait + rename first.
+                        deferred_title = title.strip() if title else None
+                        upload_title = None
+                    upload_result = await uploader._add_file_result(
+                        notebook_id,
+                        file_path,
+                        title=upload_title,
+                        wait=wait,
+                        wait_timeout=wait_timeout,
+                    )
+                    transient_error_types = upload_result.transient_error_types
+                    return upload_result.source
+
+                service = uploader.create_drive_import_service(
+                    add_file=add_downloaded_file,
+                )
+                async with uploader.get_download_semaphore():
+                    source = await service.add_drive_file(
+                        value.notebook_id,
+                        value.document_id,
+                        title=(None if value.wait else value.title),
+                        wait=False,
+                        wait_timeout=value.wait_timeout,
+                    )
+        return SourceAddFileResult(
+            _source_record(source),
+            transient_error_types,
+            deferred_title if value.kind is SourceFileInputKind.DRIVE_DOWNLOAD else None,
+        )
+    except NotebookLMError as exc:
+        # ``source.add_file`` stays adapter-owned (D4), so this is the one
+        # permanent source-add translation: the Scotty pipeline's post-registration
+        # graph (``source_id``/``stage``-tagged transport leaves, the rejected-input
+        # ``ValidationError``, the ``SourceAddError`` wrap) becomes neutral evidence
+        # here. The pipeline's own legs keep their raw ``httpx`` semantics: only
+        # this row boundary translates.
+        raise _source_add_failure(exc, Operation.SOURCE_ADD_FILE) from exc
 
 
 _PROTOCOL_JUSTIFICATION = (
@@ -757,7 +823,6 @@ SOURCE_ADD_URL_BATCH = CustomBinding(
     ),
     justification=_PROTOCOL_JUSTIFICATION,
     category="protocol",
-    error_mode=ErrorMode.RAW_PASSTHROUGH,
     collaborators=(_CAPTURE_PUBLIC_FAILURE,),
 )
 
@@ -770,7 +835,6 @@ SOURCE_ADD_TEXT = CustomBinding(
         "that public leaf; not yet expressible as map_error (gate table §3.13)."
     ),
     category="compatibility",
-    error_mode=ErrorMode.RAW_PASSTHROUGH,
 )
 
 SOURCE_ADD_DRIVE = CustomBinding(
@@ -783,7 +847,6 @@ SOURCE_ADD_DRIVE = CustomBinding(
     ),
     justification=_PROTOCOL_JUSTIFICATION,
     category="protocol",
-    error_mode=ErrorMode.RAW_PASSTHROUGH,
 )
 
 SOURCE_ADD_FILE = CustomBinding(
@@ -800,7 +863,6 @@ SOURCE_ADD_FILE = CustomBinding(
         "gate table §3.13, ADR-0035 principle 2."
     ),
     category="protocol",
-    error_mode=ErrorMode.RAW_PASSTHROUGH,
     collaborators=(_SOURCE_UPLOADER,),
 )
 

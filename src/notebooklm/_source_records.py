@@ -123,6 +123,11 @@ class SourceAddFailureKind(str, Enum):
 
     SOURCE_ADD = "source_add"
     SOURCE_NOT_FOUND = "source_not_found"
+    # Rejected input and a refused non-idempotent replay: raised by the
+    # source-add family itself, outside the reviewed transport four-tuple.
+    VALIDATION = "validation"
+    NON_IDEMPOTENT_RETRY = "non_idempotent_retry"
+    IDEMPOTENCY_VARIANT = "idempotency_variant"
     SOURCE_PROCESSING = "source_processing"
     SOURCE_TIMEOUT = "source_timeout"
     AUTH = "auth"
