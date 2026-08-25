@@ -789,7 +789,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.UPDATE_NOTE)): _rules(
             (
-                "_note_service.py:LegacyNoteBackedService.update_note",
+                "_mind_map.py:LegacyNoteBackedService.update_note",
                 "persist generated JSON and title",
             )
         ),
@@ -866,7 +866,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.DELETE_NOTE)): _rules(
             (
-                "_note_service.py:LegacyNoteBackedService.delete_note",
+                "_mind_map.py:LegacyNoteBackedService.delete_note",
                 "cancelled generated-note cleanup",
             )
         ),

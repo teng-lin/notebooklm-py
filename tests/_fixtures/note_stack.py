@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from notebooklm._mind_map import NoteBackedMindMapService
-from notebooklm._note_service import LegacyNoteBackedService, NoteService
+from notebooklm._mind_map import LegacyNoteBackedService, NoteBackedMindMapService
+from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
 from notebooklm._web.backend import WebRpcBackend
 

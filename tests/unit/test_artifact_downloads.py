@@ -52,8 +52,7 @@ def mock_artifacts_api():
     drive responses through ``mock_core.rpc_executor.rpc_call`` (via
     ``side_effect``) since the services delegate down to that single RPC seam.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import LegacyNoteBackedService
+    from notebooklm._mind_map import LegacyNoteBackedService, NoteBackedMindMapService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(

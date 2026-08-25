@@ -94,7 +94,6 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_markdown",
         "_runtime.pipeline",
         "_mind_map",
-        "_note_service",
         "_notebook_payloads",
         "_operations",
         "_projectors",

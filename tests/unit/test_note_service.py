@@ -1,6 +1,12 @@
 """Unit tests for the deferred note-backed wire compatibility service.
 
-``NoteService`` owns the raw note-row fetch + classify + CRUD
+The class under test is ``LegacyNoteBackedService`` (aliased ``NoteService``
+below for historical continuity). Since P10 R4.1 it lives in
+:mod:`notebooklm._mind_map`, beside the ``NoteBackedMindMapService`` adapter
+that is its only consumer, so that the semantic :mod:`notebooklm._note_service`
+carries no wire imports.
+
+It owns the raw note-row fetch + classify + CRUD
 primitives shared by ``NotesAPI`` (Phase 6 retypes it) and
 ``NoteBackedMindMapService`` (the mind-map adapter the artifact
 download path uses).
@@ -14,14 +20,16 @@ cancel-shielded ``create_note`` are all exercised here; Phase 6
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, call
 
 import pytest
 
-from notebooklm._note_service import LegacyNoteBackedService as NoteService
-from notebooklm._note_service import NoteRowKind
+from notebooklm._mind_map import LegacyNoteBackedService as NoteService
+from notebooklm._mind_map import NoteRowKind
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Note
@@ -413,3 +421,64 @@ class TestPrivacy:
 
         assert "NoteRowKind" not in dir(notebooklm)
         assert "NoteRowKind" not in dir(notebooklm.types)
+
+
+#: ``src/notebooklm/_note_service.py``, located from this test file.
+_NOTE_SERVICE_PATH = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_note_service.py"
+
+#: The top-level ``notebooklm`` roots a neutral semantic service may not import,
+#: mirroring ``tests/_guardrails/test_service_boundary.py``'s I1 rule. Repeated
+#: here (not imported) because that guardrail is ``repo_lint``-marked and so is
+#: excluded from the required pull-request suite, while R4.1's acceptance
+#: criterion has to hold on every commit.
+_WIRE_ROOTS = frozenset({"rpc", "_row_adapters"})
+_PROJECTION_ROOTS = frozenset({"_backend_compat", "_projectors", "_types", "_web", "types"})
+
+
+def _runtime_import_roots(path: Path) -> set[str]:
+    """Return the first-party roots ``path`` imports outside ``TYPE_CHECKING``."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    guarded = {
+        node
+        for branch in ast.walk(tree)
+        if isinstance(branch, ast.If)
+        and any(
+            isinstance(name, ast.Name) and name.id == "TYPE_CHECKING"
+            for name in ast.walk(branch.test)
+        )
+        for statement in branch.body
+        for node in ast.walk(statement)
+    }
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if node in guarded:
+            continue
+        if isinstance(node, ast.ImportFrom) and node.level == 1 and node.module:
+            roots.add(node.module.split(".")[0])
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("notebooklm."):
+                    roots.add(alias.name.split(".")[1])
+    return roots
+
+
+class TestSemanticNoteServiceCarriesNoWireImports:
+    """R4.1 acceptance: the semantic note module names no wire module."""
+
+    def test_note_service_module_imports_no_rpc_or_row_adapter_module(self) -> None:
+        """``NoteRow``/``safe_index``/``RPCMethod`` left with the legacy class."""
+
+        assert not (_runtime_import_roots(_NOTE_SERVICE_PATH) & _WIRE_ROOTS)
+
+    def test_only_the_projection_pair_survives_for_r66_to_remove(self) -> None:
+        """Pin the residue so R4.1's gain cannot be silently given back.
+
+        ``_note_service`` still reaches ``rpc``/``_row_adapters`` *transitively*
+        through these two, which is why the module stays on the I1 seed
+        allowlist until R6.6 switches ``NoteService`` to record returns. The
+        set shrinks; it must never grow.
+        """
+
+        survivors = _runtime_import_roots(_NOTE_SERVICE_PATH) & _PROJECTION_ROOTS
+        assert survivors == {"_projectors", "types"}

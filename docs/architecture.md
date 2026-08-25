@@ -319,7 +319,7 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 | Source URL/text/Drive add | `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` because those flows have stable probes. Text-source adds are intentionally non-idempotent unless the caller handles dedupe externally. |
 | Artifact generation | P5.2–P5.6 route every family kickoff through transport-neutral family services and the typed web backend while preserving established payload builders and public `GenerationStatus`. P5.8 routes revision, retry, rename, delete, suggestions, lifecycle status reads, and representation discovery through typed Studio services; `_artifact/generation.py` and `_artifact/downloads.py` retain import-compatible helper exports only and own no native RPC authority. `ArtifactLifecycleService` composes the existing `ArtifactPollingService`, `operation_scope(...)`, and feature-local `PollRegistry`, so public `wait_for_completion()` remains lifecycle-terminal; family-usable readiness does not alter that wait condition. |
 | Artifact download | P5.8 routes every family through `ArtifactRepresentationService` and typed `artifact.download` catalog/content actions. It delegates remote bytes to `StudioDownloadClient` and local report/interactive/table/map formats to `StudioSerializationClient`, preserving storage cookies, trusted-host checks, per-hop redirect validation, exact latest-created selection, and the explicit prefetched no-refetch path. |
-| Notes and mind maps | Backend-neutral `NoteService` invokes typed NOTE_* operations for `NotesAPI` and note-backed MIND_MAP_* workflows for `MindMapsAPI`; `MindMapFamilyService` owns its interactive Studio branch. Since P9.3 the plain-note leaves and the four mind-map leaves are `_web/bindings/notes.py` / `_web/bindings/mind_maps.py` codec rows over the mixed note-row codec; since P9.4b the two input-defaulting generate composites, `ARTIFACT_GENERATE_MIND_MAP` and the `ARTIFACT_LIST`/`ARTIFACT_GET` catalog merges are `_web/bindings/mind_maps.py` custom rows that reach the legacy note family through the row-scoped `InvokerRpcCaller`. `LegacyNoteBackedService` remains bounded to deferred saved-chat/artifact compatibility callers and is absent from `MindMapsAPI`. |
+| Notes and mind maps | Backend-neutral `NoteService` invokes typed NOTE_* operations for `NotesAPI` and note-backed MIND_MAP_* workflows for `MindMapsAPI`; `MindMapFamilyService` owns its interactive Studio branch. Since P9.3 the plain-note leaves and the four mind-map leaves are `_web/bindings/notes.py` / `_web/bindings/mind_maps.py` codec rows over the mixed note-row codec; since P9.4b the two input-defaulting generate composites, `ARTIFACT_GENERATE_MIND_MAP` and the `ARTIFACT_LIST`/`ARTIFACT_GET` catalog merges are `_web/bindings/mind_maps.py` custom rows that reach the legacy note family through the row-scoped `InvokerRpcCaller`. `LegacyNoteBackedService` (in `_mind_map.py` since P10 R4.1, beside its only consumer) remains bounded to deferred saved-chat/artifact compatibility callers and is absent from `MindMapsAPI`. |
 
 ## Cross-cutting policies
 
@@ -598,8 +598,8 @@ Beyond the backend-owned runtime graph, feature APIs are implemented via dedicat
 
 | Service / Module | Module | Responsibility |
 |-------------------|--------|----------------|
-| `NoteService` | [`_note_service.py`](../src/notebooklm/_note_service.py) | Backend-neutral plain-note and note-backed-mind-map workflows, including shielded create finalization and cancellation cleanup. The same module's private `LegacyNoteBackedService` is restricted to deferred saved-chat/artifact compatibility callers. |
-| `NoteBackedMindMapService` | [`_mind_map.py`](../src/notebooklm/_mind_map.py) | Deferred note-backed compatibility adapter retained outside the migrated `MindMapsAPI` path. |
+| `NoteService` | [`_note_service.py`](../src/notebooklm/_note_service.py) | Backend-neutral plain-note and note-backed-mind-map workflows, including shielded create finalization and cancellation cleanup. Carries no wire imports. |
+| `NoteBackedMindMapService` | [`_mind_map.py`](../src/notebooklm/_mind_map.py) | Deferred note-backed compatibility adapter retained outside the migrated `MindMapsAPI` path. The same module's private `LegacyNoteBackedService` is the raw note-row implementation it adapts, restricted to deferred saved-chat/artifact compatibility callers. |
 | `ArtifactRepresentationService` | [`_studio/representations.py`](../src/notebooklm/_studio/representations.py) | Backend-neutral P5.8 representation discovery, family selection, trusted remote byte dispatch, and local serialization orchestration. |
 | `StudioDownloadClient` | [`_studio/downloads.py`](../src/notebooklm/_studio/downloads.py) | Trusted remote byte retrieval with shared factory/allowlist and per-hop redirect validation for both httpx and curl_cffi. |
 | `StudioSerializationClient` | [`_studio/serialization.py`](../src/notebooklm/_studio/serialization.py) | RPC-free local text, JSON, and CSV representation serialization. |
@@ -1169,8 +1169,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_labels.py` | `client.labels` API — source labels (topic groupings); pure-RPC like `SharingAPI`, plus a narrow `list_sources` callable for the membership→`Source` join in `sources()` |
 | `_collections.py` | `client.collections` API — account-level notebook groups; reuses the label RPCs (type-3, null notebook parent, `source_path="/"`), plus a narrow `list_notebooks` callable for the membership→`Notebook` join in `notebooks()` |
 | `_settings.py` | `client.settings` transport-free compatibility facade over the P6.6 semantic Settings service. |
-| `_note_service.py` | Semantic note/note-backed-mind-map workflow plus bounded legacy compatibility owner |
-| `_mind_map.py` | Deferred note-backed compatibility adapter outside the migrated mind-map facade |
+| `_note_service.py` | Semantic note/note-backed-mind-map workflow |
+| `_mind_map.py` | Deferred note-backed compatibility adapter outside the migrated mind-map facade, plus the bounded `LegacyNoteBackedService` raw note-row owner it wraps |
 | `_mind_maps_api.py` | `client.mind_maps` API — transport-free dual-service facade over semantic note-backed and interactive Studio mind maps (#1256) |
 | `_artifact/downloads.py` | Retired P5.8 compatibility exports for public download result/security helpers; representation orchestration lives in `_studio/representations.py`. |
 | `_artifact/_redirect_guard.py` | Per-redirect-hop host/scheme revalidation for downloads — rejects off-allowlist / non-HTTPS redirect targets before the request is sent (#1521) |
@@ -1289,8 +1289,8 @@ src/notebooklm/
 ├── _conversation_cache.py       # Per-instance true-LRU conversation cache (bounded conversation count + per-conversation turns)
 ├── _polling_registry.py         # Artifact polling helpers
 ├── _cookie_persistence.py       # Cookie-jar persistence + __Secure-1PSIDTS rotation
-├── _note_service.py             # Semantic NoteService + deferred LegacyNoteBackedService
-├── _mind_map.py                 # Deferred NoteBackedMindMapService compatibility adapter
+├── _note_service.py             # Semantic NoteService (backend-neutral)
+├── _mind_map.py                 # Deferred NoteBackedMindMapService + LegacyNoteBackedService
 ├── _mind_maps_api.py            # MindMapsAPI — semantic dual-service facade (#1256)
 ├── _notebook_metadata.py        # Metadata protocols
 ├── _operations.py               # Closed semantic operation/call-policy vocabulary (P0)

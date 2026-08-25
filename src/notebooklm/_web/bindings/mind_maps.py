@@ -27,8 +27,7 @@ import httpx
 
 from ..._binding import Binding, CodecBinding, CustomBinding, NativeCallSpec, RowInvoker
 from ..._deadline import RuntimeDeadline
-from ..._mind_map import NoteBackedMindMapService
-from ..._note_service import LegacyNoteBackedService
+from ..._mind_map import LegacyNoteBackedService, NoteBackedMindMapService
 from ..._operations import Operation
 from ..._records import (
     ARTIFACT_GENERATE_MIND_MAP_DEF,

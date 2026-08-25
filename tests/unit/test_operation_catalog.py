@@ -605,8 +605,8 @@ def test_operation_authorities_are_exact_discriminated_and_include_non_rpc_paths
     # so their direct sites — the legacy note family the row drives and the row
     # itself — are derived.
     assert {row["site"] for row in note_backed["execution_authorities"]} == {
-        "_note_service.py:LegacyNoteBackedService.delete_note",
-        "_note_service.py:LegacyNoteBackedService.update_note",
+        "_mind_map.py:LegacyNoteBackedService.delete_note",
+        "_mind_map.py:LegacyNoteBackedService.update_note",
         "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
     }
     assert "CREATE_ARTIFACT:<default>" not in note_backed["native_bindings"]
