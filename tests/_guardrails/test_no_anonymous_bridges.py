@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
-CURRENT_PHASE = 9
+CURRENT_PHASE = 10
 
 pytestmark = pytest.mark.repo_lint
 
@@ -52,7 +52,7 @@ def test_temporary_modules_name_a_nonexpired_removal_phase() -> None:
 
 def test_detector_distinguishes_named_bridges_from_ordinary_identifiers(tmp_path: Path) -> None:
     (tmp_path / "named.py").write_text(
-        '"""Transitional compatibility projector.\n\nRemoval: P9\n"""\n',
+        '"""Transitional compatibility projector.\n\nRemoval: P10\n"""\n',
         encoding="utf-8",
     )
     (tmp_path / "anonymous.py").write_text(
