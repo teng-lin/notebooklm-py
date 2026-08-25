@@ -2114,7 +2114,23 @@ merged. Outcomes: GO (continue in table order), REVISE (re-plan the remaining ro
 category, *deferred-product*, with its own ratchet that must reach zero before any second
 backend is approved; P9.3 proceeds). Decider: the plan owner. Outcome placeholder:
 
-#### P9.2 stop/go outcome — (pending)
+#### P9.2 stop/go outcome — GO (2026-08-24)
+
+The plan owner authorized the remaining hoists to proceed in parallel and in the gate table's
+integration order. The first three hoists are merged at `eed7a59b`: `LABEL_UPDATE`,
+`COLLECTION_UPDATE`, and `SOURCE_UPDATE` are service-owned, while `LABEL_MUTATE`,
+`LABEL_ALLOCATE`, `SHARING_MUTATE`, and `SOURCE_PATCH_TITLE` are typed primitive rows.
+
+The stop/go measurements match the gate table exactly: 91 operations = 83 supported-direct +
+3 service-owned + 5 unsupported; 81 binding rows; only `LABEL_CREATE` and
+`COLLECTION_CREATE` remain handler-backed; 25 client-timeout seeds; 28 residual composites,
+partitioned as 5 protocol + 4 compatibility + 17 deferred-product custom rows. The backend MRO
+is `WebRpcBackend -> LabelSetWebHandlers -> object`, with zero unbound `_translate_error` sites.
+The exact `RPCMethod` guard has no allowlist growth. Focused validation covered 182
+workflow/binding tests, 10 exact-method/ratchet tests, 68 P7/P8/catalog guardrails, and 53
+P7/P8 runtime/observability tests; the catalog audit, Ruff, and mypy are green.
+
+**Decision: GO.** Continue with P9.2-5 through P9.2-12 in table order.
 
 **P9.3 — Remaining leaf handlers become `CodecBinding` rows, one domain per PR.** *In
 progress. Execution-order deviation (2026-08-24): the P9.3 domain conversions run before the P9.2
