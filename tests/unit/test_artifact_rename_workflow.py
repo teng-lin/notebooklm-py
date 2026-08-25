@@ -75,7 +75,7 @@ def _ops(backend: RecordingBackend) -> list[Operation]:
 def test_artifact_rename_is_service_owned_with_exact_leaf_edges() -> None:
     binding = WEB_OPERATION_REGISTRY[Operation.ARTIFACT_RENAME]
     assert binding.service_owned is True and binding.is_supported is False
-    assert binding.handler_name is None and binding.row is None
+    assert binding.row is None
     assert Operation.ARTIFACT_RENAME in WEB_SERVICE_OWNED_OPERATIONS
     assert Operation.ARTIFACT_RENAME not in WEB_CALL_POLICY_BINDINGS
     workflow = SERVICE_OWNED_WORKFLOW_BINDINGS[Operation.ARTIFACT_RENAME]

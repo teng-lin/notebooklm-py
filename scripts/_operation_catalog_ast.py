@@ -973,7 +973,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/backend.py", "_binding", "BindingAuditError"),
         ("_web/backend.py", "_binding", "BindingTable"),
         ("_web/backend.py", "_binding", "OperationDisposition"),
-        ("_web/backend.py", "_binding", "ResolvedHandlerBinding"),
         ("_web/backend.py", "_binding", "audit_bindings"),
         ("_web/backend.py", "_binding", "invoke_binding"),
         ("_web/backend.py", "_binding", "row_invoker"),

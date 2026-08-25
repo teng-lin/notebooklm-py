@@ -110,7 +110,7 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
         assert isinstance(row, CustomBinding)
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.handler_name is None and binding.row is row
+        assert binding.row is row
         assert row.category == category
         assert row.justification.strip()
         assert row.collaborators == ()

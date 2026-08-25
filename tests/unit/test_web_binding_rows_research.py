@@ -92,7 +92,6 @@ def test_research_rows_replace_their_handlers_in_the_registry_and_table() -> Non
     for operation, row in converted.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition

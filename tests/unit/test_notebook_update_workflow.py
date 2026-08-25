@@ -62,7 +62,7 @@ def test_update_is_service_owned_and_declares_the_exact_leaf_conjunction() -> No
     binding = WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_UPDATE]
     assert binding.service_owned is True
     assert binding.is_supported is False
-    assert binding.handler_name is None and binding.row is None
+    assert binding.row is None
     assert Operation.NOTEBOOK_UPDATE in WEB_SERVICE_OWNED_OPERATIONS
     workflow = SERVICE_OWNED_WORKFLOW_BINDINGS[Operation.NOTEBOOK_UPDATE]
     assert [(leaf.operation, leaf.allowed_variants) for leaf in workflow.leaf_operations] == [

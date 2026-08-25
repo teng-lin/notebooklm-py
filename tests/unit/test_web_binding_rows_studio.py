@@ -110,7 +110,6 @@ def test_studio_leaves_are_rows_and_rename_is_service_owned() -> None:
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition
@@ -158,11 +157,10 @@ def test_studio_leaves_are_rows_and_rename_is_service_owned() -> None:
         Operation.ARTIFACT_GET,
     ):
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.handler_name is None
         assert binding.row is not None
     rename = WEB_OPERATION_REGISTRY[Operation.ARTIFACT_RENAME]
     assert rename.service_owned is True
-    assert rename.handler_name is None and rename.row is None
+    assert rename.row is None
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.ARTIFACT_DOWNLOAD] is studio_rows.ARTIFACT_DOWNLOAD
 

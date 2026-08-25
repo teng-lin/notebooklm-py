@@ -132,7 +132,7 @@ def test_every_sharing_operation_has_one_registered_web_binding() -> None:
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.service_owned is True
         assert binding.definition is definition
-        assert binding.handler_name is None and binding.row is None
+        assert binding.row is None
         assert operation in WEB_SERVICE_OWNED_OPERATIONS
         assert operation not in WEB_SUPPORTED_OPERATIONS
     # P9.3: the two leaves are codec rows, not handler names.
@@ -152,7 +152,6 @@ def test_every_sharing_operation_has_one_registered_web_binding() -> None:
     for operation, (row, definition, policy) in leaves.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert row.definition is definition
         assert definition.policy is policy

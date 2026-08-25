@@ -95,7 +95,7 @@ def test_create_is_service_owned_and_declares_all_conditional_leaves() -> None:
     binding = WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_CREATE]
     assert binding.service_owned is True
     assert binding.is_supported is False
-    assert binding.handler_name is None and binding.row is None
+    assert binding.row is None
     assert Operation.NOTEBOOK_CREATE in WEB_SERVICE_OWNED_OPERATIONS
     workflow = SERVICE_OWNED_WORKFLOW_BINDINGS[Operation.NOTEBOOK_CREATE]
     assert [(leaf.operation, leaf.allowed_variants) for leaf in workflow.leaf_operations] == [

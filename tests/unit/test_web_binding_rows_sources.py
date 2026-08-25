@@ -147,7 +147,6 @@ def test_source_leaves_are_rows_and_composites_stay_handlers() -> None:
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition
@@ -191,7 +190,6 @@ def test_source_leaves_are_rows_and_composites_stay_handlers() -> None:
         Operation.SOURCE_ADD_FILE,
     ):
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.handler_name is None
         assert isinstance(binding.row, CustomBinding)
     assert WEB_OPERATION_REGISTRY[Operation.SOURCE_UPDATE].service_owned is True
     backend = build_web_backend(_RecordingExecutor())

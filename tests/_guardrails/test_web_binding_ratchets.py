@@ -6,9 +6,8 @@ only move them in the direction the plan requires:
 
 1. **Residual composites.** ``RESIDUAL_COMPOSITE_CEILING`` is the number of
    supported operations that are *not* single-native codec rows — the
-   ``CustomBinding`` rows plus the still-handler-backed composites. P9.4b
-   converts handlers into custom rows one domain at a time (the residual is
-   unchanged) and every P9.2 hoist removes one (the residual shrinks). Per
+   ``CustomBinding`` rows. P9.4b converted handlers into custom rows one domain
+   at a time (the residual was unchanged) and every P9.2 hoist removed one. Per
    category the custom-row counts are exact literals that each PR updates as
    derivation; the *deferred-product* count must reach zero before any second
    backend is approved (plan, P9.4 acceptance criteria).
@@ -49,7 +48,7 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 
 # --- 1. residual composites ---------------------------------------------------
 
-#: custom rows + handler-backed operations at P9.4a; shrinks with every hoist.
+#: Custom rows at P9.4c; shrinks with every later hoist.
 #: Sharing, artifact-rename, and notebook create/update hoists removed six
 #: custom rows; the label- and collection-create hoists removed the final two
 #: handlers from the P9.2 stop/go baseline.
@@ -80,8 +79,8 @@ _OWNER_VERBS = {
     "_transport": frozenset({"call", "stream"}),
     "invoke": frozenset({"call", "stream"}),
 }
-#: ``file.py:Class.method`` handler-backed composites that still sequence more
-#: than one transport call; each P9.4b PR removes the entries it converts.
+#: Historical ``file.py:Class.method`` handler-backed composites that sequenced
+#: more than one transport call; empty since P9.4c deleted handler dispatch.
 MULTI_CALL_HANDLER_ALLOWLIST = frozenset()
 
 
@@ -191,12 +190,7 @@ def _custom_rows() -> list[CustomBinding]:
 
 def test_residual_composites_only_shrink() -> None:
     custom = _custom_rows()
-    handler_backed = [
-        operation
-        for operation, binding in WEB_OPERATION_REGISTRY.items()
-        if binding.is_supported and binding.handler_name is not None
-    ]
-    residual = len(custom) + len(handler_backed)
+    residual = len(custom)
     assert residual <= RESIDUAL_COMPOSITE_CEILING, (
         f"residual composites grew to {residual} (ceiling {RESIDUAL_COMPOSITE_CEILING}); "
         "a supported operation must be a single-native codec row or a justified custom row"

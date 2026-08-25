@@ -79,7 +79,6 @@ def test_settings_rows_replace_their_handlers_in_the_registry_and_table() -> Non
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition
@@ -94,7 +93,6 @@ def test_settings_rows_replace_their_handlers_in_the_registry_and_table() -> Non
     ):
         assert not hasattr(WebRpcBackend, name)
     # P9.4b: the input-defaulting composite is a custom row, not a handler.
-    assert WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_SUGGEST_PROMPTS].handler_name is None
     assert WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_SUGGEST_PROMPTS].row is (
         settings_rows.NOTEBOOK_SUGGEST_PROMPTS
     )

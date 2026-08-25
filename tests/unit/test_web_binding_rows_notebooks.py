@@ -129,7 +129,6 @@ def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
     for operation, row in _CONVERTED.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition
@@ -156,7 +155,7 @@ def test_notebook_rows_replace_their_handlers_and_composites_stay() -> None:
     for operation in (Operation.NOTEBOOK_CREATE, Operation.NOTEBOOK_UPDATE):
         workflow = WEB_OPERATION_REGISTRY[operation]
         assert workflow.service_owned is True
-        assert workflow.handler_name is None and workflow.row is None
+        assert workflow.row is None
         assert operation in WEB_SERVICE_OWNED_OPERATIONS
     for name in ("_notebook_create", "_notebook_update", "_list_notebooks"):
         assert not hasattr(WebRpcBackend, name)

@@ -1,6 +1,6 @@
 """P9 exit-boundary pins for ``scripts/measure_web_backend_chain.py``.
 
-The script re-measures the P9 records in
+The script re-measures the P9 entry record and terminal exit shape in
 ``docs/plan/2026-08-13-semantic-backend-refactor.md``. These tests pin only the
 structural relationships that must continue to hold after the decomposition;
 they are not a second copy of the table.
@@ -33,8 +33,8 @@ def measurements() -> dict[str, Any]:
     return measure()
 
 
-def test_chain_shape_matches_entry_record(measurements: dict[str, Any]) -> None:
-    # Derived from the final live class after P9.3/P9.4 deleted the inheritance chain.
+def test_chain_shape_matches_terminal_exit(measurements: dict[str, Any]) -> None:
+    # P9.4c terminal shape: the chain and its abstract seams are gone.
     assert measurements["mro_depth"] == len(WebRpcBackend.__mro__) - 1
     assert measurements["chain"][0] == "WebRpcBackend"
     assert measurements["chain"][-1] == WebRpcBackend.__mro__[-2].__name__
@@ -46,9 +46,8 @@ def test_chain_shape_matches_entry_record(measurements: dict[str, Any]) -> None:
 def test_registry_and_ledger_counts(measurements: dict[str, Any]) -> None:
     handler_names = measurements["registry_handler_names"]
     binding_rows = len(measurements["registry_binding_rows"])
-    # The executable dispositions are partitioned between resolved handler
-    # names and binding rows; P9.3 moves them one domain at a time and the
-    # P9.2 primitives grow the supported set.
+    # Every executable disposition is a binding row after P9.4c.
+    assert handler_names == 0
     assert handler_names + binding_rows == len(WEB_SUPPORTED_OPERATIONS)
     assert binding_rows >= 4
     assert (

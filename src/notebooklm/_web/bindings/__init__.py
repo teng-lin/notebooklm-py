@@ -1,10 +1,9 @@
 """Web binding rows, one module per domain (P9.3).
 
-``WEB_BINDING_ROWS`` is the union of every domain's rows.  ``_web/registry.py``
-requires each supported operation to be backed by exactly one of a legacy
-handler name or a row here, so a row and a handler can never both claim an
-operation; the construction-time audit in ``_binding`` then checks the
-assembled table against the supported disposition set.
+``WEB_BINDING_ROWS`` is the union of every domain's rows. ``_web/registry.py``
+requires its key set to equal the directly supported definitions, and the
+construction-time audit in ``_binding`` checks the assembled table against the
+supported disposition set.
 """
 
 from __future__ import annotations

@@ -117,7 +117,6 @@ def test_chat_rows_replace_their_handlers_in_the_registry_and_table() -> None:
     for operation, row in converted.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition
@@ -140,7 +139,6 @@ def test_chat_rows_replace_their_handlers_in_the_registry_and_table() -> None:
     ):
         assert not hasattr(WebRpcBackend, name)
     # The two-phase streamed composite is the P9.4 protocol custom row.
-    assert WEB_OPERATION_REGISTRY[Operation.CHAT_ASK].handler_name is None
     assert WEB_OPERATION_REGISTRY[Operation.CHAT_ASK].row is chat_rows.CHAT_ASK
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.CHAT_CONFIGURE] is chat_rows.CHAT_CONFIGURE

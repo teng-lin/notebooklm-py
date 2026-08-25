@@ -362,16 +362,13 @@ def measure() -> dict[str, Any]:
         links.append({"child": child.__name__, "base": base.__name__, "uses": used})
     zero_dependency_links = sum(1 for link in links if not link["uses"])
 
-    # Registry handler names and the handler-code leaf/composite split.
-    supported = {
-        op: binding.handler_name
-        for op, binding in WEB_OPERATION_REGISTRY.items()
-        if binding.is_supported and binding.handler_name is not None
-    }
+    # P9.4c deletes handler-name dispatch. Keep the entry-record dimensions in
+    # the exit report as zero-valued historical measurements.
+    supported: dict[Any, str] = {}
     row_backed = sorted(
         op.value
         for op, binding in WEB_OPERATION_REGISTRY.items()
-        if binding.is_supported and getattr(binding, "row", None) is not None
+        if binding.is_supported and binding.row is not None
     )
     reachable = {op: _reachable_rpc_sites(head, name) for op, name in supported.items()}
     composite_ops = sorted(op.value for op, sites in reachable.items() if len(sites) > 1)

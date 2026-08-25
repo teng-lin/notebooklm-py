@@ -138,7 +138,7 @@ def test_chat_ask_is_the_protocol_custom_row_and_the_chat_mixin_is_gone() -> Non
     row = chat_rows.CHAT_ASK
     binding = WEB_OPERATION_REGISTRY[Operation.CHAT_ASK]
     assert WEB_BINDING_ROWS[Operation.CHAT_ASK] is row
-    assert binding.is_supported and binding.handler_name is None and binding.row is row
+    assert binding.is_supported and binding.row is row
     assert isinstance(row, CustomBinding)
     assert row.category == "protocol"
     assert row.error_mode is ErrorMode.TRANSLATE_SCRUBBED

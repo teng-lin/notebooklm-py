@@ -27,7 +27,7 @@ from notebooklm._operations import Operation
 from notebooklm._records import SHARING_SET_PUBLIC_DEF, SharingSetPublicInput
 from notebooklm._web.backend import (
     ROW_COLLABORATOR_NAMES,
-    _resolve_handler_bindings,
+    _build_binding_table,
     _row_error_projection,
 )
 from notebooklm._web.bindings import WEB_BINDING_ROWS
@@ -37,7 +37,6 @@ from notebooklm._web.registry import (
     WebOperationBinding,
 )
 from notebooklm.rpc import RPCMethod
-from tests._fixtures.web_backend import build_web_backend
 
 
 class _RecordingExecutor:
@@ -86,7 +85,7 @@ def test_sharing_composites_are_service_owned_not_custom_rows() -> None:
     ):
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.service_owned is True
-        assert binding.handler_name is None and binding.row is None
+        assert binding.row is None
         assert operation not in WEB_BINDING_ROWS
         assert operation not in WEB_SUPPORTED_OPERATIONS
 
@@ -153,26 +152,22 @@ def _custom_row_with_collaborators(*names: str) -> CustomBinding[Any, Any, Any]:
 
 
 def test_an_undeclared_or_unprovided_collaborator_fails_at_construction() -> None:
-    backend = build_web_backend(_RecordingExecutor())
     registry = dict(WEB_OPERATION_REGISTRY)
     registry[Operation.SHARING_SET_PUBLIC] = WebOperationBinding(
         definition=SHARING_SET_PUBLIC_DEF,
-        handler_name=None,
         unsupported_reason=None,
         row=_custom_row_with_collaborators("not_a_collaborator"),
     )
     supported = WEB_SUPPORTED_OPERATIONS | {Operation.SHARING_SET_PUBLIC}
     with pytest.raises(BackendContractError, match="does not provide: not_a_collaborator"):
-        _resolve_handler_bindings(backend, registry=MappingProxyType(registry), supported=supported)
+        _build_binding_table(registry=MappingProxyType(registry), supported=supported)
 
     registry[Operation.SHARING_SET_PUBLIC] = WebOperationBinding(
         definition=SHARING_SET_PUBLIC_DEF,
-        handler_name=None,
         unsupported_reason=None,
         row=_custom_row_with_collaborators(*sorted(ROW_COLLABORATOR_NAMES)),
     )
-    table = _resolve_handler_bindings(
-        backend,
+    table = _build_binding_table(
         registry=MappingProxyType(registry),
         supported=supported,
     )

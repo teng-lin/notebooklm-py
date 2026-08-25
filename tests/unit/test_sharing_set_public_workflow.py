@@ -101,7 +101,7 @@ def test_set_public_is_service_owned_with_the_exact_leaf_conjunction() -> None:
     binding = WEB_OPERATION_REGISTRY[Operation.SHARING_SET_PUBLIC]
     assert binding.service_owned is True
     assert binding.is_supported is False
-    assert binding.handler_name is None and binding.row is None
+    assert binding.row is None
     assert Operation.SHARING_SET_PUBLIC in WEB_SERVICE_OWNED_OPERATIONS
     assert Operation.SHARING_SET_PUBLIC not in WEB_CALL_POLICY_BINDINGS
 

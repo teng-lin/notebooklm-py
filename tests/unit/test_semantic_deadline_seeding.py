@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import ast
-import inspect
-import textwrap
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -64,33 +61,6 @@ _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS = frozenset(
 )
 
 
-def _reachable_native_sites(method_name: str, seen: tuple[str, ...] = ()) -> set[tuple[str, int]]:
-    """Find syntactically reachable ``self._rpc_call`` sites on the concrete backend."""
-
-    if method_name in seen:
-        return set()
-    method = getattr(WebRpcBackend, method_name, None)
-    if method is None:
-        return set()
-    source = textwrap.dedent(inspect.getsource(method))
-    node = ast.parse(source).body[0]
-    sites: set[tuple[str, int]] = set()
-    callees: set[str] = set()
-    for call in ast.walk(node):
-        if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute):
-            continue
-        owner = call.func.value
-        if not isinstance(owner, ast.Name) or owner.id != "self":
-            continue
-        if call.func.attr == "_rpc_call":
-            sites.add((method.__qualname__, call.lineno))
-        elif call.func.attr.startswith("_"):
-            callees.add(call.func.attr)
-    for callee in callees:
-        sites.update(_reachable_native_sites(callee, (*seen, method_name)))
-    return sites
-
-
 def test_multi_native_deadline_authority_ledger_is_closed_and_active() -> None:
     """New syntactic composites require an explicit reviewed deadline authority."""
 
@@ -110,13 +80,9 @@ def test_multi_native_deadline_authority_ledger_is_closed_and_active() -> None:
         for operation in SEMANTIC_DEADLINE_AUTHORITIES
     )
 
-    syntactic_composites = {
-        operation
-        for operation, binding in WEB_OPERATION_REGISTRY.items()
-        if binding.is_supported
-        and binding.handler_name is not None
-        and len(_reachable_native_sites(binding.handler_name)) > 1
-    }
+    # P9.4c deleted the last handler-name dispatch path; every remaining
+    # composite declares its shape in a CustomBinding row.
+    syntactic_composites: set[Operation] = set()
     # P9.3: a row-backed operation whose ``NativeCallSpec`` is input-keyed declares
     # more than one native without any ``self`` walk; those rows are the
     # branch-exclusive members by construction (one call per input).

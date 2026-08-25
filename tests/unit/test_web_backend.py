@@ -164,7 +164,6 @@ from notebooklm._web.bindings import studio as studio_rows_module
 from notebooklm._web.errors import translate_web_error
 from notebooklm._web.registry import (
     WEB_OPERATION_REGISTRY,
-    WEB_STAGED_OPERATIONS,
     WEB_SUPPORTED_OPERATIONS,
 )
 from notebooklm.exceptions import (
@@ -406,7 +405,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         for binding in WEB_OPERATION_REGISTRY.values()
         if not binding.is_supported
     )
-    assert not WEB_STAGED_OPERATIONS
     assert WEB_OPERATION_REGISTRY[Operation.SOURCE_ADD_URL].definition is SOURCE_ADD_URL_DEF
 
 

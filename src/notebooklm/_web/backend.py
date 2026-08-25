@@ -33,7 +33,6 @@ from .._binding import (
     CustomBinding,
     ErrorMode,
     OperationDisposition,
-    ResolvedHandlerBinding,
     audit_bindings,
     invoke_binding,
     row_invoker,
@@ -72,11 +71,6 @@ if TYPE_CHECKING:
 
 source_logger = logging.getLogger("notebooklm").getChild("_sources")
 
-# Handler-backed composites whose established public leaves ``invoke()`` re-raises
-# unchanged. Empty since the source-add family became ``ErrorMode.RAW_PASSTHROUGH``
-# custom rows (P9.4b); kept so the head's projection stays row-metadata-driven.
-_RAW_PASSTHROUGH_HANDLER_OPERATIONS: frozenset[Operation] = frozenset()
-
 #: The closed set of collaborator names the head supplies to custom rows. A row
 #: declaring any other name is rejected by the construction-time audit.
 ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset(
@@ -100,16 +94,16 @@ def _row_error_projection(row: Binding | None, operation: Operation) -> tuple[bo
     A custom row carries its own projection as ``error_mode`` metadata:
     ``RAW_PASSTHROUGH`` re-raises the native exception unchanged,
     ``TRANSLATE_SCRUBBED`` translates with request URLs scrubbed, ``TRANSLATE``
-    translates plainly. A handler-backed composite still relies on the head's
-    operation sets (``None`` defers the scrub decision to the chat set) until
-    its row lands.
+    translates plainly. ``operation`` remains in this private helper's shape
+    for the characterization tests that compare every row's projection.
     """
+    del operation
     if isinstance(row, CustomBinding):
         return (
             row.error_mode is ErrorMode.RAW_PASSTHROUGH,
             row.error_mode is ErrorMode.TRANSLATE_SCRUBBED,
         )
-    return operation in _RAW_PASSTHROUGH_HANDLER_OPERATIONS, None
+    return False, None
 
 
 class WebRpcBackend:
@@ -148,7 +142,10 @@ class WebRpcBackend:
         self._drain_tracker = drain_tracker
         self._reqid = reqid
         self._pipeline = pipeline
-        self._transport_factory = transport_factory
+        # P9.4c keeps the established constructor signature while deleting the
+        # dead instance state; direct-HTTP owners receive their factories from
+        # their own composition paths.
+        del transport_factory
         self._source_uploader = source_uploader
         self._chat_transport = chat_transport
         self._chat_reqid = chat_reqid
@@ -166,10 +163,7 @@ class WebRpcBackend:
             chat_transport=chat_transport,
             chat_response_max_bytes=chat_response_max_bytes,
         )
-        # Resolve every registry handler name exactly once. A misnamed or
-        # missing handler fails here, at construction, rather than on that
-        # operation's first invocation.
-        self._bindings = _resolve_handler_bindings(self)
+        self._bindings = _build_binding_table()
         _configure_default_upload_backend(self)
 
     @property
@@ -595,39 +589,19 @@ def _row_collaborators_of(backend: WebRpcBackend) -> Mapping[str, object]:
     )
 
 
-def _resolve_handler_bindings(
-    backend: WebRpcBackend,
+def _build_binding_table(
     *,
     registry: Mapping[Operation, WebOperationBinding] = WEB_OPERATION_REGISTRY,
     supported: frozenset[Operation] = WEB_SUPPORTED_OPERATIONS,
 ) -> BindingTable:
-    """Assemble the construction-audited binding table.
-
-    Row-backed operations use their ``_web.bindings`` row as-is; handler-backed
-    operations resolve their registry handler name exactly once here, so a
-    misnamed or missing handler fails at construction.
-    """
+    """Assemble and construction-audit the closed row-only binding table."""
     rows: dict[Operation, Binding] = {}
     for operation, binding in registry.items():
-        definition = binding.definition
-        executable = (
-            definition is not None and binding.disposition is OperationDisposition.SUPPORTED_DIRECT
-        )
-        if binding.row is not None:
-            if executable:
-                rows[operation] = binding.row
+        if binding.disposition is not OperationDisposition.SUPPORTED_DIRECT:
             continue
-        handler_name = binding.handler_name
-        if handler_name is None:
-            continue
-        handler = getattr(backend, handler_name, None)
-        if handler is None or not callable(handler):
-            raise BackendContractError(
-                f"{operation.value} names missing web handler {handler_name!r}",
-                operation=operation,
-            )
-        if definition is not None and executable:
-            rows[operation] = ResolvedHandlerBinding(definition=definition, handler=handler)
+        row = binding.row
+        if row is not None:
+            rows[operation] = row
     table = BindingTable(rows)
     try:
         audit_bindings(table, supported, collaborators=ROW_COLLABORATOR_NAMES)

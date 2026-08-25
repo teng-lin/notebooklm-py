@@ -148,7 +148,6 @@ def test_generate_families_and_prompts_are_deferred_product_custom_rows() -> Non
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CustomBinding)
         assert row.definition is binding.definition

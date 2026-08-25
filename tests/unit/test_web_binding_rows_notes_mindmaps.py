@@ -129,7 +129,6 @@ def test_note_and_mind_map_rows_replace_their_handlers_in_the_registry_and_table
     for operation, row in _CONVERTED.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition
@@ -153,7 +152,6 @@ def test_note_and_mind_map_rows_replace_their_handlers_in_the_registry_and_table
         assert not hasattr(WebRpcBackend, name)
     # P9.4b: the input-defaulting generate composites are custom rows.
     for operation in (Operation.MIND_MAP_GENERATE_NOTE, Operation.MIND_MAP_GENERATE_INTERACTIVE):
-        assert WEB_OPERATION_REGISTRY[operation].handler_name is None
         assert WEB_OPERATION_REGISTRY[operation].row is not None
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.NOTE_CREATE] is note_rows.NOTE_CREATE

@@ -204,7 +204,7 @@ def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
     for operation, (row, category, error_mode, specs, collaborators) in expected.items():
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.is_supported and binding.handler_name is None and binding.row is row
+        assert binding.is_supported and binding.row is row
         assert isinstance(row, CustomBinding)
         assert row.definition is binding.definition
         assert row.category == category

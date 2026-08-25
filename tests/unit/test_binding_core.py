@@ -1,4 +1,4 @@
-"""P9.0: neutral binding core, construction-time handler resolution, typed dispatch."""
+"""P9 binding core: row-only construction audit and typed dispatch."""
 
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from notebooklm._binding import (
     StreamPayload,
     StreamSpec,
     audit_bindings,
-    bind,
     invoke_binding,
 )
 from notebooklm._deadline import RuntimeDeadline
@@ -36,7 +35,7 @@ from notebooklm._records import (
     NotebookListResult,
 )
 from notebooklm._web import registry
-from notebooklm._web.backend import _resolve_handler_bindings
+from notebooklm._web.backend import _build_binding_table
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from tests._fixtures.web_backend import build_web_backend
@@ -85,9 +84,13 @@ class _FakeTransport:
         return await self.call(request, deadline=deadline)
 
 
-async def _list_handler(value: NotebookListInput, *, deadline: RuntimeDeadline | None):
-    del value, deadline
-    return NotebookListResult(notebooks=())
+def _list_codec_row() -> CodecBinding[NotebookListInput, NotebookListResult, str]:
+    return CodecBinding(
+        definition=NOTEBOOK_LIST_DEF,
+        encode=lambda value: CodecPayload(params=[]),
+        decode=lambda value, raw: NotebookListResult(notebooks=()),
+        native=NativeCallSpec.constant("LIST_NOTEBOOKS"),
+    )
 
 
 # --- table + audit -----------------------------------------------------------
@@ -110,7 +113,7 @@ def test_registry_dispositions_are_three_way_and_supported_set_is_direct() -> No
 
 
 def test_audit_rejects_missing_and_extra_rows_in_both_directions() -> None:
-    row = bind(NOTEBOOK_LIST_DEF, _list_handler)
+    row = _list_codec_row()
     with pytest.raises(BindingAuditError, match="without a row: notebook.get"):
         audit_bindings(
             BindingTable({Operation.NOTEBOOK_LIST: row}),
@@ -148,18 +151,17 @@ def test_table_counts_each_row_kind_and_custom_category() -> None:
     )
     table = BindingTable(
         {
-            Operation.NOTEBOOK_LIST: bind(NOTEBOOK_LIST_DEF, _list_handler),
             Operation.NOTEBOOK_GET: codec,
             Operation.ARTIFACT_GENERATE_AUDIO: custom_row,
         }
     )
-    assert (table.resolved_handler_count, table.codec_count, table.custom_count) == (1, 1, 1)
+    assert (table.codec_count, table.custom_count) == (1, 1)
     assert dict(table.custom_count_by_category()) == {
         "protocol": 0,
         "compatibility": 0,
         "deferred-product": 1,
     }
-    assert repr(table) == "BindingTable(rows=3, resolved_handlers=1, codec=1, custom=1)"
+    assert repr(table) == "BindingTable(rows=2, codec=1, custom=1)"
     with pytest.raises(TypeError):
         table._rows[Operation.NOTE_LIST] = codec  # type: ignore[index]
 
@@ -212,17 +214,6 @@ def test_native_call_spec_is_constant_or_finite_input_keyed() -> None:
 
 
 # --- invoke_binding ----------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_invoke_binding_dispatches_resolved_handler_rows_without_transport() -> None:
-    table = BindingTable({Operation.NOTEBOOK_LIST: bind(NOTEBOOK_LIST_DEF, _list_handler)})
-    result = await invoke_binding(
-        table, None, None, NOTEBOOK_LIST_DEF, NotebookListInput(), deadline=None
-    )
-    assert result == NotebookListResult(notebooks=())
-    with pytest.raises(BackendContractError, match="has no binding row"):
-        await invoke_binding(table, None, None, NOTEBOOK_GET_DEF, object(), deadline=None)
 
 
 @pytest.mark.asyncio
@@ -363,16 +354,14 @@ async def test_custom_rows_only_reach_their_declared_specs_and_tag_failures() ->
     ]
 
 
-# --- construction-time resolution --------------------------------------------
+# --- construction-time row audit ---------------------------------------------
 
 
-def test_backend_resolves_every_handler_at_construction() -> None:
+def test_backend_audits_every_row_at_construction() -> None:
     backend = build_web_backend(_Executor())
     table = backend._bindings
     assert set(table) == WEB_SUPPORTED_OPERATIONS
     row_backed = {op for op, binding in WEB_OPERATION_REGISTRY.items() if binding.row is not None}
-    assert table.resolved_handler_count == 0
-    # Derived, not a literal: every P9.3/P9.4 domain PR grows the row set.
     assert table.codec_count + table.custom_count == len(row_backed) == len(WEB_BINDING_ROWS)
     assert row_backed == set(WEB_BINDING_ROWS)
     assert table.custom_count == sum(
@@ -387,17 +376,14 @@ def test_backend_resolves_every_handler_at_construction() -> None:
 
 
 def test_table_missing_a_supported_row_is_rejected_by_the_construction_audit() -> None:
-    backend = build_web_backend(_Executor())
     narrowed = dict(WEB_OPERATION_REGISTRY)
     narrowed[Operation.NOTEBOOK_LIST] = registry.WebOperationBinding(
-        definition=None, handler_name=None, unsupported_reason="dropped"
+        definition=None, unsupported_reason="dropped"
     )
     with pytest.raises(BackendContractError, match="without a row: notebook.list"):
-        _resolve_handler_bindings(backend, registry=narrowed)
+        _build_binding_table(registry=narrowed)
     with pytest.raises(BackendContractError, match="not supported: notebook.list"):
-        _resolve_handler_bindings(
-            backend, supported=WEB_SUPPORTED_OPERATIONS - {Operation.NOTEBOOK_LIST}
-        )
+        _build_binding_table(supported=WEB_SUPPORTED_OPERATIONS - {Operation.NOTEBOOK_LIST})
 
 
 @pytest.mark.asyncio
@@ -406,7 +392,8 @@ async def test_invoke_dispatches_through_the_table_without_getattr() -> None:
     backend = build_web_backend(executor)
     calls: list[NotebookListInput] = []
 
-    async def replacement(value, *, deadline):
+    async def replacement(value, deadline, invoke):
+        del deadline, invoke
         calls.append(value)
         return NotebookListResult(notebooks=())
 
@@ -414,7 +401,16 @@ async def test_invoke_dispatches_through_the_table_without_getattr() -> None:
         backend,
         "_bindings",
         BindingTable(
-            {**backend._bindings, Operation.NOTEBOOK_LIST: bind(NOTEBOOK_LIST_DEF, replacement)}
+            {
+                **backend._bindings,
+                Operation.NOTEBOOK_LIST: CustomBinding(
+                    definition=NOTEBOOK_LIST_DEF,
+                    handler=replacement,
+                    native=(),
+                    justification="Synthetic row proves dispatch does not use attribute lookup.",
+                    category="compatibility",
+                ),
+            }
         ),
     )
     result = await backend.invoke(NOTEBOOK_LIST_DEF, NotebookListInput(), deadline=None)
@@ -426,8 +422,7 @@ async def test_invoke_dispatches_through_the_table_without_getattr() -> None:
 # --- typed dispatch ----------------------------------------------------------
 
 _MYPY_SNIPPET = """
-from notebooklm._binding import bind
-from notebooklm._deadline import RuntimeDeadline
+from notebooklm._binding import CodecBinding, CodecPayload, NativeCallSpec
 from notebooklm._records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     AudioGenerateInput,
@@ -436,21 +431,24 @@ from notebooklm._records import (
 )
 
 
-async def audio(value: AudioGenerateInput, *, deadline: RuntimeDeadline | None) -> AudioGenerateResult:
+def encode_audio(value: AudioGenerateInput) -> CodecPayload:
+    return CodecPayload(params=[])
+
+
+def encode_video(value: VideoGenerateInput) -> CodecPayload:
+    return CodecPayload(params=[])
+
+
+def decode_audio(value: AudioGenerateInput, raw: object) -> AudioGenerateResult:
     raise NotImplementedError
 
 
-async def video(value: VideoGenerateInput, *, deadline: RuntimeDeadline | None) -> AudioGenerateResult:
-    raise NotImplementedError
-
-
-class Handlers:
-    async def audio(self, value: AudioGenerateInput, *, deadline: RuntimeDeadline | None) -> AudioGenerateResult:
-        raise NotImplementedError
-
-
-good = bind(ARTIFACT_GENERATE_AUDIO_DEF, audio)
-bound = bind(ARTIFACT_GENERATE_AUDIO_DEF, Handlers().audio)
+good: CodecBinding[AudioGenerateInput, AudioGenerateResult, str] = CodecBinding(
+    definition=ARTIFACT_GENERATE_AUDIO_DEF,
+    encode=encode_audio,
+    decode=decode_audio,
+    native=NativeCallSpec.constant("CREATE_ARTIFACT"),
+)
 {bad_line}
 """
 
@@ -478,9 +476,13 @@ def test_dispatch_is_type_checked_by_mypy(tmp_path: Path) -> None:
 
     clean_output, clean_status = run("")
     assert clean_status == 0, clean_output
-    bad_output, bad_status = run("bad = bind(ARTIFACT_GENERATE_AUDIO_DEF, video)")
+    bad_output, bad_status = run(
+        """bad: CodecBinding[AudioGenerateInput, AudioGenerateResult, str] = CodecBinding(
+    definition=ARTIFACT_GENERATE_AUDIO_DEF,
+    encode=encode_video,
+    decode=decode_audio,
+    native=NativeCallSpec.constant(\"CREATE_ARTIFACT\"),
+)"""
+    )
     assert bad_status != 0
-    # mypy reports the mismatch either as an arg-type error or, when the
-    # protocol's input parameter cannot unify, as an inference failure on
-    # ``bind``; both mean the pairing was rejected at type-check time.
-    assert "snippet.py:27: error:" in bad_output, bad_output
+    assert "snippet.py:" in bad_output and "error:" in bad_output, bad_output

@@ -90,7 +90,7 @@ def test_label_update_is_service_owned_and_not_invokable() -> None:
     binding = WEB_OPERATION_REGISTRY[Operation.LABEL_UPDATE]
     assert binding.service_owned is True
     assert binding.is_supported is False
-    assert binding.handler_name is None and binding.row is None
+    assert binding.row is None
     assert Operation.LABEL_UPDATE in WEB_SERVICE_OWNED_OPERATIONS
     assert Operation.LABEL_UPDATE not in WEB_CALL_POLICY_BINDINGS
     workflow = SERVICE_OWNED_WORKFLOW_BINDINGS[Operation.LABEL_UPDATE]

@@ -1,15 +1,13 @@
 """Neutral binding vocabulary shared by every semantic backend.
 
 A binding row ties one closed :class:`~notebooklm._operations.OperationDef` to
-the way a backend executes it.  Three row kinds exist:
+the way a backend executes it. Two row kinds exist:
 
 * :class:`CodecBinding` — ``encode → one native call → decode``; the row's
   :class:`NativeCallSpec` is the sole authority for the native method.
 * :class:`CustomBinding` — a handler that may sequence several declared
   natives through a row-scoped :class:`RowInvoker`; every such row states a
   one-sentence justification under a closed category so the count can ratchet.
-* :class:`ResolvedHandlerBinding` — a P1–P6 handler method resolved once at
-  construction; it exists only while the P9.3/P9.4 conversions replace it.
 
 This module is deliberately backend-agnostic: it names no wire enum, no HTTP
 client, and no ``_web`` module.  Request assembly is delegated to the backend's
@@ -264,17 +262,6 @@ class RowInvoker(Protocol):
     def collaborator(self, name: str) -> Any: ...
 
 
-class BoundHandler(Protocol[InputT_contra, OutputT_co]):
-    """Shape of a resolved P1–P6 handler method: ``(value, *, deadline)``."""
-
-    def __call__(
-        self,
-        value: InputT_contra,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> Awaitable[OutputT_co]: ...
-
-
 class CustomHandler(Protocol[InputT_contra, OutputT_co]):
     """Shape of a custom row body: ``(value, deadline, invoke)``."""
 
@@ -284,19 +271,6 @@ class CustomHandler(Protocol[InputT_contra, OutputT_co]):
         deadline: RuntimeDeadline | None,
         invoke: RowInvoker,
     ) -> Awaitable[OutputT_co]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedHandlerBinding(Generic[InputT, OutputT]):
-    """A handler method resolved once at construction.
-
-    Explicitly tagged so the construction audit can count it: P9.3 and P9.4
-    replace these rows one operation at a time with :class:`CodecBinding` or
-    :class:`CustomBinding` until the count reaches zero.
-    """
-
-    definition: OperationDef[InputT, OutputT]
-    handler: BoundHandler[InputT, OutputT]
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,17 +340,7 @@ class CustomBinding(Generic[InputT, OutputT, MethodT]):
         )
 
 
-Binding = (
-    ResolvedHandlerBinding[Any, Any] | CodecBinding[Any, Any, Any] | CustomBinding[Any, Any, Any]
-)
-
-
-def bind(
-    definition: OperationDef[InputT, OutputT],
-    handler: BoundHandler[InputT, OutputT],
-) -> ResolvedHandlerBinding[InputT, OutputT]:
-    """Typed constructor: pairing a handler with a foreign input type is a mypy error."""
-    return ResolvedHandlerBinding(definition=definition, handler=handler)
+Binding = CodecBinding[Any, Any, Any] | CustomBinding[Any, Any, Any]
 
 
 class BindingTable(Mapping[Operation, Binding]):
@@ -398,13 +362,8 @@ class BindingTable(Mapping[Operation, Binding]):
 
     def __repr__(self) -> str:
         return (
-            f"BindingTable(rows={len(self)}, resolved_handlers={self.resolved_handler_count}, "
-            f"codec={self.codec_count}, custom={self.custom_count})"
+            f"BindingTable(rows={len(self)}, codec={self.codec_count}, custom={self.custom_count})"
         )
-
-    @property
-    def resolved_handler_count(self) -> int:
-        return sum(1 for row in self._rows.values() if isinstance(row, ResolvedHandlerBinding))
 
     @property
     def codec_count(self) -> int:
@@ -637,8 +596,6 @@ async def invoke_binding(
             f"non-canonical definition supplied for {operation.key.value}",
             operation=operation.key,
         )
-    if isinstance(row, ResolvedHandlerBinding):
-        return await row.handler(value, deadline=deadline)
     if transport is None:
         raise BackendContractError(
             f"{operation.key.value} requires a transport for its binding row",
@@ -673,7 +630,6 @@ __all__ = [
     "Binding",
     "BindingAuditError",
     "BindingTable",
-    "BoundHandler",
     "CUSTOM_CATEGORIES",
     "CodecBinding",
     "CodecPayload",
@@ -687,13 +643,11 @@ __all__ = [
     "NativeCallSpec",
     "NativeChoice",
     "OperationDisposition",
-    "ResolvedHandlerBinding",
     "RowInvoker",
     "StreamPayload",
     "StreamSpec",
     "Transport",
     "audit_bindings",
-    "bind",
     "invoke_binding",
     "row_invoker",
 ]

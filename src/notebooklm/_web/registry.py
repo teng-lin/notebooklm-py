@@ -1,11 +1,10 @@
 """Closed web dispositions for the semantic operation vocabulary.
 
 Direct P2 notebook/source operations, P5 Studio family operations, and P6.1–P6.7 domain
-workflows have executable bindings: a legacy handler name resolved at construction, or — since
-P9.3 — a binding row from ``_web.bindings``. P9.2 service-owned workflows keep their canonical
-definition but no direct web binding. Every other operation has an unsupported disposition, and
-the count assertions force a deliberate registry update when the closed :class:`Operation` enum
-changes.
+workflows have executable rows from ``_web.bindings``. P9.2 service-owned workflows keep their
+canonical definition but no direct web binding. Every other operation has an unsupported
+disposition, and the count assertions force a deliberate registry update when the closed
+:class:`Operation` enum changes.
 """
 
 from __future__ import annotations
@@ -116,10 +115,9 @@ from .policy import audit_web_call_policy_bindings
 
 @dataclass(frozen=True, slots=True)
 class WebOperationBinding:
-    """One direct handler/row, service-owned workflow, or reviewed unsupported disposition."""
+    """One direct row, service-owned workflow, or reviewed unsupported disposition."""
 
     definition: OperationDef[Any, Any] | None
-    handler_name: str | None
     unsupported_reason: str | None
     row: Binding | None = None
     #: P9.2: the workflow is sequenced by a semantic service from leaf
@@ -128,38 +126,26 @@ class WebOperationBinding:
 
     def __post_init__(self) -> None:
         has_definition = self.definition is not None
-        has_handler = self.handler_name is not None
         has_row = self.row is not None
-        if has_handler and has_row:
-            raise ValueError("a web operation is backed by a handler name or a row, never both")
-        if has_definition != (has_handler or has_row) and not self.service_owned:
-            raise ValueError("web definitions and handler names or rows must be present together")
+        if has_definition != has_row and not self.service_owned:
+            raise ValueError("direct web definitions and rows must be present together")
         if self.row is not None and self.row.definition is not self.definition:
             raise ValueError("a web binding row must carry the registry's canonical definition")
-        if not (has_handler or has_row) and self.unsupported_reason is None:
+        if has_row and self.unsupported_reason is not None:
+            raise ValueError("direct web binding rows cannot carry an unsupported reason")
+        if not has_row and self.unsupported_reason is None:
             raise ValueError("unsupported web bindings require a reason")
-        if self.service_owned and (has_handler or has_row or not has_definition):
-            raise ValueError(
-                "a service-owned workflow keeps its definition and has no handler or row"
-            )
+        if self.service_owned and (has_row or not has_definition):
+            raise ValueError("a service-owned workflow keeps its definition and has no direct row")
 
     @property
     def is_supported(self) -> bool:
-        """Whether this binding names an executable P1 handler."""
+        """Whether this binding names an executable row."""
         return self.definition is not None and self.unsupported_reason is None
 
     @property
-    def is_staged(self) -> bool:
-        """Whether a reviewed handler exists but production dispatch rejects it."""
-        return (
-            self.definition is not None
-            and self.unsupported_reason is not None
-            and not self.service_owned
-        )
-
-    @property
     def disposition(self) -> OperationDisposition:
-        """Three-way disposition: direct row/handler, service-owned workflow, or unsupported."""
+        """Three-way disposition: direct row, service-owned workflow, or unsupported."""
         if self.service_owned:
             return OperationDisposition.SERVICE_OWNED
         if self.is_supported:
@@ -252,10 +238,8 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
     }
 )
 
-_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
-
-# Operations executed through a binding row rather than a resolved handler name.
-# ``_web.bindings`` assembles the rows; the registry only checks the partition.
+# ``_web.bindings`` assembles every directly supported row; the registry checks
+# that this key set is exactly the directly executable definition set.
 _ROW_BACKED_OPERATIONS: Final[frozenset[Operation]] = frozenset(WEB_BINDING_ROWS)
 
 # P9.2 service-owned workflows: the semantic service sequences the leaves named
@@ -326,10 +310,6 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     }
 )
 
-_STAGED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = MappingProxyType({})
-
-_STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
-
 # The frozen catalog currently contains 96 operations (87 product members plus nine
 # P9.2 primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
@@ -337,14 +317,11 @@ _STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 _EXPECTED_OPERATION_COUNT: Final = 96
 _EXPECTED_SUPPORTED_COUNT: Final = 80
 _EXPECTED_SERVICE_OWNED_COUNT: Final = 11
-_EXPECTED_STAGED_COUNT: Final = 0
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
-    if set(_HANDLER_NAMES) & _ROW_BACKED_OPERATIONS:
-        raise RuntimeError("a web operation cannot have both a handler name and a binding row")
-    if set(_SUPPORTED_DEFINITIONS) != set(_HANDLER_NAMES) | _ROW_BACKED_OPERATIONS:
-        raise RuntimeError("web definitions and handler names or binding rows disagree")
+    if set(_SUPPORTED_DEFINITIONS) != _ROW_BACKED_OPERATIONS:
+        raise RuntimeError("web definitions and binding rows disagree")
     for operation, row in WEB_BINDING_ROWS.items():
         if row.definition is not _SUPPORTED_DEFINITIONS[operation]:
             raise RuntimeError(
@@ -358,10 +335,6 @@ def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
         raise RuntimeError(
             "the service-owned workflow set changed; update the reviewed service-owned count"
         )
-    if set(_STAGED_DEFINITIONS) != set(_STAGED_HANDLER_NAMES):
-        raise RuntimeError("staged web definitions and handler names disagree")
-    if set(_SUPPORTED_DEFINITIONS) & set(_STAGED_DEFINITIONS):
-        raise RuntimeError("a web operation cannot be active and staged")
     if len(Operation) != _EXPECTED_OPERATION_COUNT:
         raise RuntimeError(
             "the semantic operation vocabulary changed; review every web disposition "
@@ -371,10 +344,6 @@ def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
         raise RuntimeError(
             "the web handler set changed; update the reviewed supported-operation count"
         )
-    if len(_STAGED_DEFINITIONS) != _EXPECTED_STAGED_COUNT:
-        raise RuntimeError(
-            "the staged web handler set changed; update the reviewed staged-operation count"
-        )
     if policy_errors := audit_web_call_policy_bindings(
         _SUPPORTED_DEFINITIONS, workflows=_SERVICE_OWNED_DEFINITIONS
     ):
@@ -383,32 +352,22 @@ def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
     registry: dict[Operation, WebOperationBinding] = {}
     for operation in Operation:
         definition = _SUPPORTED_DEFINITIONS.get(operation)
-        staged_definition = _STAGED_DEFINITIONS.get(operation)
         service_owned_definition = _SERVICE_OWNED_DEFINITIONS.get(operation)
         if service_owned_definition is not None:
             registry[operation] = WebOperationBinding(
                 definition=service_owned_definition,
-                handler_name=None,
                 unsupported_reason=_SERVICE_OWNED_REASONS[operation],
                 service_owned=True,
             )
         elif definition is not None:
             registry[operation] = WebOperationBinding(
                 definition=definition,
-                handler_name=_HANDLER_NAMES.get(operation),
                 unsupported_reason=None,
-                row=WEB_BINDING_ROWS.get(operation),
-            )
-        elif staged_definition is not None:
-            registry[operation] = WebOperationBinding(
-                definition=staged_definition,
-                handler_name=_STAGED_HANDLER_NAMES[operation],
-                unsupported_reason="handler staged until the source facade delegates",
+                row=WEB_BINDING_ROWS[operation],
             )
         else:
             registry[operation] = WebOperationBinding(
                 definition=None,
-                handler_name=None,
                 unsupported_reason="not migrated to the semantic backend",
             )
     if set(registry) != set(Operation):
@@ -430,15 +389,9 @@ WEB_SERVICE_OWNED_OPERATIONS: Final = frozenset(
     if binding.disposition is OperationDisposition.SERVICE_OWNED
 )
 
-WEB_STAGED_OPERATIONS: Final = frozenset(
-    operation for operation, binding in WEB_OPERATION_REGISTRY.items() if binding.is_staged
-)
-
-
 __all__ = [
     "WEB_OPERATION_REGISTRY",
     "WEB_SERVICE_OWNED_OPERATIONS",
     "WEB_SUPPORTED_OPERATIONS",
-    "WEB_STAGED_OPERATIONS",
     "WebOperationBinding",
 ]

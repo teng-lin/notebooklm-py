@@ -116,7 +116,6 @@ def test_label_rows_replace_their_handlers_in_the_registry_and_table() -> None:
     for operation, row in converted.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition
@@ -142,7 +141,6 @@ def test_label_rows_replace_their_handlers_in_the_registry_and_table() -> None:
         Operation.COLLECTION_CREATE,
         Operation.COLLECTION_UPDATE,
     ):
-        assert WEB_OPERATION_REGISTRY[operation].handler_name is None
         assert WEB_OPERATION_REGISTRY[operation].row is None
         assert WEB_OPERATION_REGISTRY[operation].service_owned is True
     for name in ("_label_create", "_label_update", "_collection_create", "_collection_update"):

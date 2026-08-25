@@ -98,7 +98,6 @@ def test_sharing_leaves_are_codec_rows_and_composites_are_service_owned() -> Non
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert isinstance(row, CodecBinding)
         assert row.definition is binding.definition
@@ -126,7 +125,7 @@ def test_sharing_leaves_are_codec_rows_and_composites_are_service_owned() -> Non
     ):
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.service_owned is True
-        assert binding.handler_name is None and binding.row is None
+        assert binding.row is None
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.SHARING_GET] is sharing_rows.SHARING_GET
     assert backend._bindings[Operation.LEGACY_SHARE_ARTIFACT] is sharing_rows.LEGACY_SHARE_ARTIFACT

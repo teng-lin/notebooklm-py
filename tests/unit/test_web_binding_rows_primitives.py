@@ -115,7 +115,6 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.is_supported
-        assert binding.handler_name is None
         assert binding.row is row
         assert operation in WEB_SUPPORTED_OPERATIONS
         assert isinstance(row, CodecBinding)

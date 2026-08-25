@@ -46,7 +46,7 @@ def translate_web_error(
     """Translate one reviewed native exception into the closed neutral error.
 
     ``scrub_request_urls`` is the row's ``ErrorMode.TRANSLATE_SCRUBBED`` projection;
-    ``None`` keeps the head's operation-set rule for still-handler-backed rows.
+    ``None`` keeps the shared translator's operation-specific default.
     """
     reason = WEB_ERROR_REASONS.get(type(exc))
     if reason is None:

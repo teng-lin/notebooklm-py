@@ -89,7 +89,7 @@ class _RecordingExecutor:
 def test_collection_create_is_service_owned_with_list_and_allocate_edges() -> None:
     binding = WEB_OPERATION_REGISTRY[Operation.COLLECTION_CREATE]
     assert binding.service_owned is True and binding.is_supported is False
-    assert binding.handler_name is None and binding.row is None
+    assert binding.row is None
     assert Operation.COLLECTION_CREATE in WEB_SERVICE_OWNED_OPERATIONS
     assert Operation.COLLECTION_CREATE not in WEB_CALL_POLICY_BINDINGS
     workflow = SERVICE_OWNED_WORKFLOW_BINDINGS[Operation.COLLECTION_CREATE]
