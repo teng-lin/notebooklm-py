@@ -57,7 +57,12 @@ _EXPECTED_WORKFLOW_OWNED_OPERATIONS = frozenset(
     }
 )
 _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS = frozenset(
-    {Operation.ARTIFACT_DOWNLOAD, Operation.CHAT_CONFIGURE, Operation.LABEL_MUTATE}
+    {
+        Operation.ARTIFACT_DOWNLOAD,
+        Operation.CHAT_CONFIGURE,
+        Operation.LABEL_MUTATE,
+        Operation.SOURCE_REGISTER,
+    }
 )
 
 

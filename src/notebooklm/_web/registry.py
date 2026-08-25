@@ -106,6 +106,7 @@ from .._records import (
     SOURCE_LIST_DEF,
     SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
+    SOURCE_REGISTER_DEF,
     SOURCE_UPDATE_DEF,
     SOURCE_WAIT_DEF,
 )
@@ -170,6 +171,7 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.SOURCE_ADD_FILE: SOURCE_ADD_FILE_DEF,
         Operation.SOURCE_DELETE: SOURCE_DELETE_DEF,
         Operation.SOURCE_PATCH_TITLE: SOURCE_PATCH_TITLE_DEF,
+        Operation.SOURCE_REGISTER: SOURCE_REGISTER_DEF,
         Operation.SOURCE_REFRESH: SOURCE_REFRESH_DEF,
         Operation.SOURCE_CHECK_FRESHNESS: SOURCE_CHECK_FRESHNESS_DEF,
         Operation.SOURCE_GET_GUIDE: SOURCE_GET_GUIDE_DEF,
@@ -347,12 +349,12 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     }
 )
 
-# The frozen catalog currently contains 96 operations (87 product members plus nine
-# P9.2 primitives). This assertion is repeated at
+# The frozen catalog currently contains 97 operations (87 product members plus ten
+# decomposition primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 96
-_EXPECTED_SUPPORTED_COUNT: Final = 80
+_EXPECTED_OPERATION_COUNT: Final = 97
+_EXPECTED_SUPPORTED_COUNT: Final = 81
 _EXPECTED_SERVICE_OWNED_COUNT: Final = 11
 
 

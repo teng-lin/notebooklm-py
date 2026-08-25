@@ -312,6 +312,20 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         (_b(RPCMethod.UPDATE_SOURCE),),
     ),
     OperationSpec(
+        Operation.SOURCE_REGISTER,
+        CallPolicy.MUTATION,
+        "SourceService",
+        "notebook",
+        "P10 primitive: one ADD_SOURCE allocation whose wire variant — and therefore whose "
+        "reviewed retry classification — is chosen from the request's registration kind.",
+        (),
+        (
+            _b(RPCMethod.ADD_SOURCE, "url"),
+            _b(RPCMethod.ADD_SOURCE, "text"),
+            _b(RPCMethod.ADD_SOURCE, "drive"),
+        ),
+    ),
+    OperationSpec(
         Operation.SOURCE_REFRESH,
         CallPolicy.MUTATION,
         "SourceService",

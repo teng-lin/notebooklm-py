@@ -209,6 +209,35 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.MUTATION,
             (_native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "source title set-op"),),
         ),
+        # P10 primitive: one ADD_SOURCE allocation, the variant chosen from the
+        # request's registration kind. The three choices deliberately carry two
+        # different reviewed retry classifications — the registry keys on
+        # (method, variant), so collapsing the source-add family onto one leaf
+        # cannot flatten text's NON_IDEMPOTENT_NO_RETRY into the url/drive
+        # PROBE_THEN_CREATE the way a method-keyed ledger would.
+        Operation.SOURCE_REGISTER: WebCallPolicyBinding(
+            CallPolicy.MUTATION,
+            (
+                _native(
+                    RPCMethod.ADD_SOURCE,
+                    _PROBE_CREATE,
+                    "guarded generic/YouTube create (single or true batch)",
+                    variant="url",
+                ),
+                _native(
+                    RPCMethod.ADD_SOURCE,
+                    _NO_RETRY,
+                    "non-idempotent pasted-text allocation",
+                    variant="text",
+                ),
+                _native(
+                    RPCMethod.ADD_SOURCE,
+                    _PROBE_CREATE,
+                    "guarded Drive-document allocation",
+                    variant="drive",
+                ),
+            ),
+        ),
         Operation.SOURCE_REFRESH: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (

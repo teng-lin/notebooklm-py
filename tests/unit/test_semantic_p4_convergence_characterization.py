@@ -119,6 +119,7 @@ from notebooklm._records import (
     SOURCE_LIST_DEF,
     SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
+    SOURCE_REGISTER_DEF,
     SOURCE_WAIT_DEF,
     NotebookGetInput,
     NotebookGetResult,
@@ -333,6 +334,7 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         LABEL_MUTATE_DEF: (Operation.LABEL_MUTATE, CallPolicy.MUTATION),
         LABEL_ALLOCATE_DEF: (Operation.LABEL_ALLOCATE, CallPolicy.MUTATION),
         SHARING_MUTATE_DEF: (Operation.SHARING_MUTATE, CallPolicy.MUTATION),
+        SOURCE_REGISTER_DEF: (Operation.SOURCE_REGISTER, CallPolicy.MUTATION),
     }
 
     for op_def, (expected_key, expected_policy) in expected_migrated.items():

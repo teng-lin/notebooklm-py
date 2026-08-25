@@ -62,6 +62,36 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
             "one non-replayed batch payload",
         ),
     ),
+    (Operation.SOURCE_REGISTER, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
+        (
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "registration kind url selects the URL/YouTube payload",
+        ),
+    ),
+    (Operation.SOURCE_REGISTER, _b(RPCMethod.ADD_SOURCE, "text")): _rules(
+        (
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "registration kind text selects the pasted-text payload",
+        ),
+    ),
+    (Operation.SOURCE_REGISTER, _b(RPCMethod.ADD_SOURCE, "drive")): _rules(
+        (
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "registration kind drive selects the Drive-document payload",
+        ),
+    ),
+    (Operation.SOURCE_ADD_TEXT, _b(RPCMethod.ADD_SOURCE, "text")): _rules(
+        (
+            "_web/bindings/sources.py:SOURCE_ADD_TEXT",
+            "pasted-text payload",
+        ),
+    ),
+    (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.ADD_SOURCE, "drive")): _rules(
+        (
+            "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
+            "native Drive-document payload",
+        ),
+    ),
     (Operation.NOTEBOOK_LIST, _b(RPCMethod.LIST_NOTEBOOKS)): _rules(
         ("_web/bindings/notebooks.py:NOTEBOOK_LIST", "public=notebooks.list")
     ),
