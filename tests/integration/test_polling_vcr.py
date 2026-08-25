@@ -78,7 +78,7 @@ import pytest
 import yaml
 
 from notebooklm import NotebookLMClient
-from notebooklm._records import ArtifactRecord
+from notebooklm._records import ARTIFACT_CATALOG_DEF, ArtifactCatalogResult, ArtifactRecord
 from notebooklm.rpc import RPCMethod
 from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
@@ -180,15 +180,24 @@ class TestPollingReplay:
             #    mutation. The historical cassette has no post-mutation catalog
             #    read, so replace only that leaf with the artifact already
             #    proven by the polling phase above.
-            client._backend._artifact_catalog_records = AsyncMock(  # type: ignore[method-assign]
-                return_value=(
-                    ArtifactRecord(
-                        task_id,
-                        "Renamed VCR Test",
-                        "flashcards",
-                        "completed",
-                    ),
-                )
+            original_invoke = client._backend.invoke
+
+            async def invoke(definition, value, *, deadline):
+                if definition is ARTIFACT_CATALOG_DEF:
+                    return ArtifactCatalogResult(
+                        (
+                            ArtifactRecord(
+                                task_id,
+                                "Renamed VCR Test",
+                                "flashcards",
+                                "completed",
+                            ),
+                        )
+                    )
+                return await original_invoke(definition, value, deadline=deadline)
+
+            client._backend.invoke = AsyncMock(  # type: ignore[method-assign]
+                side_effect=invoke
             )
             await client.artifacts.rename(
                 MUTABLE_NOTEBOOK_ID,
@@ -196,7 +205,12 @@ class TestPollingReplay:
                 "Renamed VCR Test",
                 return_object=False,
             )
-            client._backend._artifact_catalog_records.assert_awaited_once()  # type: ignore[attr-defined]
+            catalog_calls = [
+                call
+                for call in client._backend.invoke.await_args_list  # type: ignore[attr-defined]
+                if call.args[0] is ARTIFACT_CATALOG_DEF
+            ]
+            assert len(catalog_calls) == 1
 
     def test_cassette_has_multiple_polling_interactions(self) -> None:
         """The cassette must capture a real polling progression.

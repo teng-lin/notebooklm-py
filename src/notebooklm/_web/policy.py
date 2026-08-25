@@ -1058,7 +1058,7 @@ def audit_web_call_policy_bindings(
 def web_call_policy_report() -> dict[str, object]:
     """Return the stable catalog projection of active semantic/native parity."""
 
-    def operation_key(item: tuple[Operation, WebCallPolicyBinding]) -> str:
+    def operation_key(item: tuple[Operation, object]) -> str:
         operation, _binding = item
         return operation.value
 
@@ -1078,9 +1078,7 @@ def web_call_policy_report() -> dict[str, object]:
         }
         for operation, binding in sorted(WEB_CALL_POLICY_BINDINGS.items(), key=operation_key)
     }
-    for operation, workflow in sorted(
-        SERVICE_OWNED_WORKFLOW_BINDINGS.items(), key=lambda item: item[0].value
-    ):
+    for operation, workflow in sorted(SERVICE_OWNED_WORKFLOW_BINDINGS.items(), key=operation_key):
         report[operation.value] = {
             "call_policy": workflow.policy.value,
             "known_divergence": workflow.known_divergence,

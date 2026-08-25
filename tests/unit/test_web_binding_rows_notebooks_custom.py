@@ -60,6 +60,8 @@ _BASE_KWARGS = {
     "raise_on_null_status": False,
     "_retry_deadline": None,
 }
+
+
 @dataclass
 class _Call:
     method: RPCMethod

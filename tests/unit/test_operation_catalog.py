@@ -36,7 +36,7 @@ def test_operation_definition_is_inert_frozen_slotted_vocabulary() -> None:
 def test_operation_and_call_policy_vocabularies_are_total_non_vacuous_and_alias_free() -> None:
     rows = catalog.build_operation_catalog()["operations"]
 
-    assert len(Operation.__members__) == len(Operation) == len(catalog.OPERATION_SPECS) == 92
+    assert len(Operation.__members__) == len(Operation) == len(catalog.OPERATION_SPECS) == 96
     assert {row["policy"] for row in rows} == {policy.value for policy in CallPolicy}
     assert next(row for row in rows if row["key"] == "chat.ask")["policy"] == "stream"
 
@@ -250,7 +250,6 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
-        "_web/bindings/notebooks.py:NOTEBOOK_UPDATE",
         "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
         "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
@@ -753,7 +752,7 @@ def test_update_and_chat_recency_conditions_are_explicit() -> None:
             "maximum_calls": 1,
             "unit": "public_call",
             "condition": "always after a successful mutation",
-            "authority_sites": ["_web/bindings/notebooks.py:NOTEBOOK_UPDATE"],
+            "authority_sites": ["_web/bindings/notebooks.py:NOTEBOOK_GET"],
         }
     ]
     chat_contracts = rows["chat.configure"]["recency_contract"]

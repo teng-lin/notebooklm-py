@@ -1,9 +1,9 @@
-"""Structural pins for ``scripts/measure_web_backend_chain.py``.
+"""P9 exit-boundary pins for ``scripts/measure_web_backend_chain.py``.
 
-The script re-measures the P9 entry record in
+The script re-measures the P9 records in
 ``docs/plan/2026-08-13-semantic-backend-refactor.md``. These tests pin only the
-rows that must hold today for the P9 decomposition to start from the documented
-shape; they are not a second copy of the table.
+structural relationships that must continue to hold after the decomposition;
+they are not a second copy of the table.
 """
 
 from __future__ import annotations
@@ -34,13 +34,13 @@ def measurements() -> dict[str, Any]:
 
 
 def test_chain_shape_matches_entry_record(measurements: dict[str, Any]) -> None:
-    # Derived from the live class: P9.3/P9.4 delete chain classes one domain at a time.
+    # Derived from the final live class after P9.3/P9.4 deleted the inheritance chain.
     assert measurements["mro_depth"] == len(WebRpcBackend.__mro__) - 1
     assert measurements["chain"][0] == "WebRpcBackend"
     assert measurements["chain"][-1] == WebRpcBackend.__mro__[-2].__name__
     assert measurements["super_calls"] == 0
     assert measurements["ancestor_state_attributes"] == {}
-    assert "_rpc_call" in measurements["abstract_seams"]
+    assert measurements["abstract_seams"] == []
 
 
 def test_registry_and_ledger_counts(measurements: dict[str, Any]) -> None:

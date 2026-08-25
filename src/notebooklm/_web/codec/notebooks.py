@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import reprlib
+import types
 from datetime import datetime, timezone
-from types import MappingProxyType
 from typing import Any, cast
 
 from ..._backend import BackendError, BackendErrorReason
@@ -381,7 +381,7 @@ def decode_notebook_get(value: NotebookGetInput, result: Any) -> NotebookGetResu
             raise BackendError(
                 message=f"Notebook not found: {value.notebook_id}",
                 operation=Operation.NOTEBOOK_GET,
-                diagnostics=MappingProxyType(
+                diagnostics=types.MappingProxyType(
                     {
                         "notebook_id": value.notebook_id,
                         "method_id": RPCMethod.GET_NOTEBOOK.value,
@@ -396,7 +396,7 @@ def decode_notebook_get(value: NotebookGetInput, result: Any) -> NotebookGetResu
             raise BackendError(
                 message=f"Notebook not found: {value.notebook_id}",
                 operation=Operation.NOTEBOOK_GET,
-                diagnostics=MappingProxyType(
+                diagnostics=types.MappingProxyType(
                     {
                         "notebook_id": value.notebook_id,
                         "method_id": RPCMethod.GET_NOTEBOOK.value,

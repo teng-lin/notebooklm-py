@@ -604,10 +604,8 @@ class ArtifactPollResult:
 
 @dataclass(frozen=True, slots=True)
 class ArtifactRepresentationRecord:
-    """Download-relevant fields decoded from one Studio catalog row.
-
-    Large bodies and URLs are deliberately excluded from ``repr``.  The record
-    is not the public ``Artifact`` model and contains no positional wire data.
+    """Artifact fields needed for downloads, decoded from one Studio row.
+    Bodies and URLs are hidden from ``repr``; no public models or wire positions remain.
     """
 
     artifact: ArtifactRecord

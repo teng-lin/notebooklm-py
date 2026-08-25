@@ -252,9 +252,7 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
     }
 )
 
-_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
-    {}
-)
+_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 
 # Operations executed through a binding row rather than a resolved handler name.
 # ``_web.bindings`` assembles the rows; the registry only checks the partition.
