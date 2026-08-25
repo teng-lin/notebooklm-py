@@ -35,14 +35,16 @@ _REVIEWED_CODEC_VALUE_IMPORTS = {
     "chat_saved_note.py": {
         ("_types.documents", "utf16_len"),
     },
+    # P10 R2.1 retired this module's three ``types`` allowances: the streamed
+    # parser emits ``ChatReferenceRecord`` / ``ChatTurnKeyRecord`` /
+    # ``ChatNextStepRecord`` and the facade projects them onto the public
+    # ``ChatReference`` / ``ConversationTurnKey`` / ``NextStepSuggestion``.
+    # Only the document value types remain (ADR-0035's closed-stdlib exemption).
     "chat_stream.py": {
         ("_types.documents", "DocumentAnnotation"),
         ("_types.documents", "StructuredDocument"),
         ("_types.documents", "_utf16_slice"),
         ("_types.documents", "utf16_len"),
-        ("types", "ChatReference"),
-        ("types", "ConversationTurnKey"),
-        ("types", "NextStepSuggestion"),
     },
 }
 

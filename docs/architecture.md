@@ -1071,7 +1071,6 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_research_service.py` | Private P6.2 transport-neutral Research start/poll/wait/cancel/import service; wait and verified import remain service compositions over typed backend operations. |
 | `_settings_service.py` | Private P6.6 transport-neutral account settings/limits/language service over three typed backend operations. |
 | `_chat/service.py` | Private P6.1 transport-neutral Chat ask/history/configuration/save-note service over six typed backend operations. |
-| `_chat/stream_decode.py` | Projects the retained streamed parser result into neutral Chat records outside the web provider boundary. |
 | `_sharing_service.py` | Private P6.5 transport-neutral sharing service; since P9.2-5/6/7 it owns all three sharing composites over `SHARING_MUTATE` or `SHARING_PATCH_VIEW_LEVEL` plus `SHARING_GET`, including one workflow deadline, view-level replacement, and leaf-error rebinding. |
 | `_suggestion_service.py` | Private P6.6 transport-neutral notebook-prompt and report-format suggestion service over two typed backend operations. |
 | `_studio/` | Private transport-neutral Studio boundary: the P5.1 heterogeneous catalog/classifier; P5.2–P5.6 family/generation/export services; P5.7 trusted representation retrieval plus local serialization clients; P5.8 management, lifecycle, suggestions, and representation orchestration; and the P6.3 interactive mind-map family. |
@@ -1107,7 +1106,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_studio/representations.py` | P5.8 neutral artifact/mind-map representation selection and dispatch to P5.7 retrieval/serialization clients. |
 | `_web/codec/` | P3/P6 web response ownership: notebook, source, artifact, Chat, label, collection, sharing, Research, settings, suggestions, and report/guide codecs return frozen neutral records; `documents.py` alone returns the approved exported `StructuredDocument` value exemption. Codec bindings are tied to cassette-backed golden families and never call public parsing factories. |
 | `_web/codec/chat.py` | P6.1 unary Chat request/response codec over neutral records, retaining the streamed parser as a monkeypatchable compatibility seam. |
-| `_web/codec/chat_stream.py` | Streamed-chat codec: owns both the 9-slot positional ask grammar (`encode_ask_stream`, consuming an injected auth snapshot without acquiring or persisting credentials) and the streamed-response parser. |
+| `_web/codec/chat_stream.py` | Streamed-chat codec: owns both the 9-slot positional ask grammar (`encode_ask_stream`, consuming an injected auth snapshot without acquiring or persisting credentials) and the streamed-response parser, which emits neutral `ChatReferenceRecord` / `ChatTurnKeyRecord` / `ChatNextStepRecord` values the facade projects onto the public chat types. |
 | `_web/codec/studio_documents.py` | P5.4 exact report/video request encoders and generation-status decoder over backend-neutral records. |
 | `_web/codec/generation.py` | P9.4b row-facing Studio generate payloads: the option vocabularies and `validate_*`/`encode_*` builders returning the guarded `CREATE_ARTIFACT` `CodecPayload` per family, plus `decode_generation_kickoff` (null response or task id → the closed unavailable error). |
 | `_web/codec/artifact_formatters.py` | Positional `LIST_ARTIFACTS` rich-text data-table decoders (`_extract_data_table_rows` / `_parse_data_table`) behind `_web/codec/artifacts.py`; split out of `_artifact/formatters.py` so the pure presentation helpers above the port stay RPC-free. |
@@ -1308,9 +1307,8 @@ src/notebooklm/
 ├── _settings_records.py         # Neutral settings records/operation definitions (P6.6)
 ├── _suggestion_service.py       # Transport-neutral suggestion service (P6.6)
 ├── _chat_records.py             # Neutral Chat records/operation definitions (P6.1)
-├── _chat/                       # Chat facade/service plus retained compatibility wire seams
-│   ├── service.py               # Transport-neutral six-operation Chat service (P6.1)
-│   └── stream_decode.py         # Stream parser result -> neutral Chat records
+├── _chat/                       # Chat facade and transport-neutral service
+│   └── service.py               # Transport-neutral six-operation Chat service (P6.1)
 ├── _sharing_service.py          # Transport-neutral Sharing service (P6.5)
 ├── _sharing_records.py          # Neutral Sharing records/operation definitions (P6.5)
 ├── _records.py                  # Compatibility re-export hub for neutral P2/P5/P6 DTOs/definitions

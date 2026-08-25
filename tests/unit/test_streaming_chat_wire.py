@@ -14,7 +14,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import pytest
 
-from notebooklm import ConversationTurnKey, MagicArtifactType
+from notebooklm import MagicArtifactType, NextStepSuggestion
+from notebooklm._projectors import project_chat_reference
+from notebooklm._records import ChatTurnKeyRecord
 from notebooklm._web.codec.chat_stream import (
     StreamingChatParseResult,
     encode_ask_stream,
@@ -367,8 +369,11 @@ def test_next_step_suggestions_decode_and_preserve_unknown_codes() -> None:
         ("What happens next?", 9),
         ("A future suggestion", 99),
     ]
-    assert result.next_steps[0].kind is MagicArtifactType.CONVERSATIONAL_TEXT_CHIP
-    assert result.next_steps[1].kind is None
+    # ``kind`` is the public type's mapping over the preserved ``type_code``;
+    # the codec emits records, so project the way the facade does (P10 R2.1).
+    public = [NextStepSuggestion(step.question, step.type_code) for step in result.next_steps]
+    assert public[0].kind is MagicArtifactType.CONVERSATIONAL_TEXT_CHIP
+    assert public[1].kind is None
 
 
 def test_next_steps_are_collected_from_a_textless_chunk() -> None:
@@ -508,8 +513,11 @@ def test_parse_citations_extracts_multiple_references_and_assigns_numbers() -> N
         (100, 200),
         (200, 350),
     ]
-    # The deprecated aliases keep reporting the same values (#2120).
-    assert [(ref.answer_start_char, ref.answer_end_char) for ref in result.references] == [
+    # The deprecated aliases keep reporting the same values (#2120). They live
+    # on the public ``ChatReference``, which the facade projects the codec's
+    # records onto (P10 R2.1), so project here the same way.
+    public_refs = [project_chat_reference(ref) for ref in result.references]
+    assert [(ref.answer_start_char, ref.answer_end_char) for ref in public_refs] == [
         (100, 200),
         (200, 350),
     ]
@@ -1034,7 +1042,7 @@ def test_captured_stream_selects_the_final_chunk_and_carries_its_turn_key(caplog
         result = parse_streaming_chat_response(_captured_stream_body())
 
     assert result.answer == "A task wraps a **coroutine** [1]."
-    assert result.turn_key == ConversationTurnKey(
+    assert result.turn_key == ChatTurnKeyRecord(
         session_id="3afea005-7d13-41d0-9257-6a9e28597818",
         turn_id="b38d4003-5be1-487d-a121-5c5958709021",
         turn_code=2187103311,
@@ -1169,7 +1177,7 @@ def test_turn_key_survives_a_losing_chunk() -> None:
         _chunk("Partial", turn_key=["conv-uuid", "turn-uuid", 42], is_final=False),
         _chunk("Partial answer, complete.", turn_key=None),
     )
-    assert parse_streaming_chat_response(body).turn_key == ConversationTurnKey(
+    assert parse_streaming_chat_response(body).turn_key == ChatTurnKeyRecord(
         "conv-uuid", "turn-uuid", 42
     )
 
@@ -1185,7 +1193,7 @@ def test_last_chunk_to_carry_a_turn_key_wins() -> None:
         _chunk("Partial", turn_key=["conv-uuid", "turn-EARLY", 1], is_final=False),
         _chunk("Partial answer, complete.", turn_key=["conv-uuid", "turn-LATE", 2]),
     )
-    assert parse_streaming_chat_response(body).turn_key == ConversationTurnKey(
+    assert parse_streaming_chat_response(body).turn_key == ChatTurnKeyRecord(
         "conv-uuid", "turn-LATE", 2
     )
 
@@ -1268,7 +1276,7 @@ def test_turn_key_is_kept_from_a_chunk_that_carried_no_answer_text() -> None:
     """
     result = parse_streaming_chat_response(_length_prefixed(_multi_item_chunk(("", True))))
     assert result.answer == ""
-    assert result.turn_key == ConversationTurnKey("conv-uuid", "turn-uuid", 7)
+    assert result.turn_key == ChatTurnKeyRecord("conv-uuid", "turn-uuid", 7)
 
 
 def test_empty_answer_stream_from_the_capture_still_reports_its_turn_key() -> None:

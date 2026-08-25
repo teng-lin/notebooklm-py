@@ -94,7 +94,6 @@ import reprlib
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from .._types.chat import ConversationTurnKey
 from .._types.documents import StructuredDocument
 from ..exceptions import UnknownRPCMethodError
 from ..rpc import RPCMethod, safe_index
@@ -868,14 +867,22 @@ class AnswerRow:
         return value if isinstance(value, str) else None
 
     @property
-    def turn_key(self) -> ConversationTurnKey | None:
-        """The whole ``ConversationTurnKey`` at ``first[2]`` — ``None`` when absent.
+    def turn_key_parts(self) -> tuple[str, str | None, int | None] | None:
+        """The decoded ``ConversationTurnKey`` slots at ``first[2]``, or ``None``.
+
+        Returns the raw ``(session_id, turn_id, turn_code)`` triple rather than a
+        turn-key object: this module is the raw-row layer and must not name a
+        model type, so the caller (``_web/codec/chat_stream.py``) builds the
+        record. The validation lives here, not in the record — the record has
+        none — so the rules below are the whole contract.
 
         Live-populated on every chunk of every ask (9/9 asks in the 2026-08-07
         audit, plus both probes for #2122). ``None`` when the block is absent,
         empty, not a list, or carries no usable id at slot 0 — the key is
         addressed *by* that id, so a key without one identifies nothing and is
-        reported as absent rather than as a half-populated object.
+        reported as absent rather than as a half-populated object. **An empty
+        string is "no usable id"**, matching the rejection
+        ``ConversationTurnKey.__post_init__`` performs for the public type.
 
         The two trailing slots are optional in the type (a short block yields
         ``None`` for them) but were populated in every observation; each is
@@ -898,10 +905,10 @@ class AnswerRow:
             if len(block) > self._TURN_KEY_TURN_CODE_POS
             else None
         )
-        return ConversationTurnKey(
-            session_id=session_id,
-            turn_id=turn_id if isinstance(turn_id, str) and turn_id else None,
-            turn_code=turn_code if type(turn_code) is int else None,
+        return (
+            session_id,
+            turn_id if isinstance(turn_id, str) and turn_id else None,
+            turn_code if type(turn_code) is int else None,
         )
 
     @property

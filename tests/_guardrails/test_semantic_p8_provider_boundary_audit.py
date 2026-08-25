@@ -85,7 +85,6 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_backend",
         "_binding",
         "_chat",
-        "_chat.stream_decode",
         "_client_metrics",
         "_deadline",
         "_env",
@@ -290,6 +289,7 @@ KNOWN_CHAT_STREAM_REQUEST_IMPORTS: frozenset[str] = frozenset(
     {
         "_auth.account",
         "_env",
+        "_records",
         "_row_adapters.chat",
         "_row_adapters.documents",
         "_types.documents",
@@ -298,7 +298,6 @@ KNOWN_CHAT_STREAM_REQUEST_IMPORTS: frozenset[str] = frozenset(
         "rpc.decoder",
         "rpc.encoder",
         "rpc.types",
-        "types",
     }
 )
 KNOWN_CHAT_STREAM_CREDENTIAL_IDENTIFIERS: frozenset[str] = frozenset(

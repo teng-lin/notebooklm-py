@@ -7,7 +7,6 @@ import reprlib
 from typing import Any
 
 from ..._binding import CodecPayload
-from ..._chat.stream_decode import project_streaming_chat_result
 from ..._notebook_payloads import build_get_notebook_params
 from ..._records import (
     ChatAskInput,
@@ -277,8 +276,21 @@ def build_ask_request(
 
 
 def decode_ask_response(response_text: str) -> ChatStreamAnswerRecord:
-    """Decode phase-one bytes through the retained monkeypatchable parser seam."""
-    return project_streaming_chat_result(parse_streaming_chat_response(response_text))
+    """Decode phase-one bytes into the neutral streamed-answer record.
+
+    The parser already emits records (P10 R2.1), so this only drops the
+    per-stream id ``StreamingChatParseResult.conversation_id`` carries — an
+    unreliable value the real conversation-id readback replaces — and freezes
+    the parser's lists into tuples.
+    """
+    parsed = parse_streaming_chat_response(response_text)
+    return ChatStreamAnswerRecord(
+        answer=parsed.answer,
+        references=tuple(parsed.references),
+        answer_document=parsed.answer_document,
+        turn_key=parsed.turn_key,
+        next_steps=tuple(parsed.next_steps),
+    )
 
 
 # Row-facing codecs (P9.3). Each encoder returns the full request payload one
