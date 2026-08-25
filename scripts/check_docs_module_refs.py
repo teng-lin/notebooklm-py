@@ -93,6 +93,10 @@ _ALLOWLIST: dict[str, str] = {
     # `_newfeature.py` is a placeholder in the "adding a new API class" how-to
     # ("Create `_newfeature.py` ..."), not a real module reference.
     "docs/development.md:_newfeature.py": "placeholder: example module name in the add-an-API-class how-to",
+    # `_web/deadline_rpc.py` was the P6 deadline-bound legacy caller replaced by
+    # `_web/bindings/_invoker_caller.py` in P9.4b; the refactor plan names it as
+    # history (the P9 entry record and the P9.1/P9.4 slice text).
+    "docs/plan/2026-08-13-semantic-backend-refactor.md:_web/deadline_rpc.py": "historical: P6 caller deleted in P9.4b, named by the plan's slice record",
 }
 
 

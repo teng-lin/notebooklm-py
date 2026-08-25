@@ -1997,7 +1997,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
         "_web/studio_data.py:StudioDataWebHandlers._data_table_generate",
         "_web/studio_documents.py:StudioDocumentWebHandlers._document_generate",
         "_web/studio_media.py:StudioMediaWebHandlers._audio_generate",
@@ -2153,6 +2153,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_note_service.py:LegacyNoteBackedService.create_note",
+        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/notes.py:NOTE_CREATE"
       ],
       "golden_disposition": "golden_covered",
@@ -2251,7 +2252,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._notebook_create.create"
+        "_web/bindings/notebooks.py:NOTEBOOK_CREATE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2425,6 +2426,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_note_service.py:LegacyNoteBackedService.delete_note",
+        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/notes.py:NOTE_DELETE"
       ],
       "golden_disposition": "golden_exempt",
@@ -2598,8 +2600,8 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._mind_map_generate_note",
-        "_web/studio_data.py:StudioDataWebHandlers._mind_map_generate"
+        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2630,6 +2632,7 @@
         "MindMapService"
       ],
       "response_decoders": [
+        "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
         "_web/codec/mind_maps.py:decode_generated_tree"
       ],
       "response_projectors": [],
@@ -2804,11 +2807,12 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_notebooks.py:NotebooksAPI.get_raw",
-        "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
-        "_web/backend.py:WebRpcBackend._mind_map_generate_note",
-        "_web/backend.py:WebRpcBackend._notebook_update",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
+        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
+        "_web/bindings/notebooks.py:NOTEBOOK_UPDATE",
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT",
@@ -2871,6 +2875,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -2922,6 +2929,8 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_note_service.py:LegacyNoteBackedService.fetch_note_rows",
+        "_web/bindings/mind_maps.py:ARTIFACT_GET",
+        "_web/bindings/mind_maps.py:ARTIFACT_LIST",
         "_web/bindings/mind_maps.py:MIND_MAP_LIST",
         "_web/bindings/notes.py:NOTE_GET",
         "_web/bindings/notes.py:NOTE_LIST",
@@ -3186,7 +3195,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._notebook_limit_error",
+        "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
         "_web/bindings/settings.py:SETTINGS_GET",
         "_web/bindings/settings.py:SETTINGS_GET_LIMITS",
         "_web/source_variants.py:SourceVariantWebHandlers._source_file_limit"
@@ -3289,6 +3298,8 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+        "_web/bindings/mind_maps.py:ARTIFACT_GET",
+        "_web/bindings/mind_maps.py:ARTIFACT_LIST",
         "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
         "_web/bindings/studio.py:ARTIFACT_WAIT"
       ],
@@ -3421,7 +3432,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._list_notebooks",
+        "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
         "_web/bindings/notebooks.py:NOTEBOOK_LIST"
       ],
       "golden_disposition": "golden_covered",
@@ -3648,8 +3659,8 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/backend.py:WebRpcBackend._notebook_update",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
+        "_web/bindings/notebooks.py:NOTEBOOK_UPDATE",
         "_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL"
       ],
       "golden_disposition": "golden_exempt",
@@ -4315,6 +4326,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_note_service.py:LegacyNoteBackedService.update_note",
+        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/notes.py:NOTE_UPDATE"
       ],
       "golden_disposition": "golden_exempt",
@@ -4608,6 +4620,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -4670,6 +4685,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -4732,6 +4750,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -4794,6 +4815,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -4810,8 +4834,8 @@
       "execution_authorities": [
         {
           "binding": "CREATE_NOTE:plain",
-          "discriminator": "persist generated JSON",
-          "site": "_note_service.py:LegacyNoteBackedService.create_note",
+          "discriminator": "persist generated JSON through the legacy note family",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
           "transport_kind": "rpc"
         },
         {
@@ -4823,13 +4847,13 @@
         {
           "binding": "GENERATE_MIND_MAP:<default>",
           "discriminator": "semantic facade",
-          "site": "_web/studio_data.py:StudioDataWebHandlers._mind_map_generate",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "source_ids is None",
-          "site": "_web/studio_data.py:StudioDataWebHandlers._data_source_ids",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
           "transport_kind": "rpc"
         },
         {
@@ -4857,7 +4881,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/studio_data.py:StudioDataWebHandlers._data_source_ids"
+            "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -4875,8 +4899,12 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
+        "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
         "_web/codec/mind_maps.py:decode_generated_tree",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/notes.py:decode_created_note",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -4939,6 +4967,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -5003,6 +5034,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -5065,6 +5099,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -5129,6 +5166,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -5147,13 +5187,13 @@
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
           "discriminator": "select note-backed mind map",
-          "site": "_note_service.py:LegacyNoteBackedService.fetch_note_rows",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_GET",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "select artifact for get/get_or_none/get_prompt",
-          "site": "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_GET",
           "transport_kind": "rpc"
         }
       ],
@@ -5194,13 +5234,13 @@
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
           "discriminator": "merge note-backed mind maps",
-          "site": "_note_service.py:LegacyNoteBackedService.fetch_note_rows",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "heterogeneous list",
-          "site": "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -5469,6 +5509,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -5544,6 +5587,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -6131,6 +6177,9 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/labels.py:decode_label_set_list_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -6245,7 +6294,7 @@
         {
           "binding": "CREATE_ARTIFACT:<default>",
           "discriminator": "kind=INTERACTIVE",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
           "transport_kind": "rpc"
         },
         {
@@ -6257,13 +6306,13 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "kind=INTERACTIVE and source_ids is None",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "post-create settle/id match",
-          "site": "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -6284,7 +6333,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/backend.py:WebRpcBackend._mind_map_generate_interactive"
+            "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE"
           ],
           "condition": "one only when kind=INTERACTIVE and source_ids is omitted",
           "maximum_calls": 1,
@@ -6308,6 +6357,9 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -6331,13 +6383,13 @@
         {
           "binding": "GENERATE_MIND_MAP:<default>",
           "discriminator": "kind=NOTE_BACKED",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_generate_note",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "kind=NOTE_BACKED and source_ids is None",
-          "site": "_web/backend.py:WebRpcBackend._mind_map_generate_note",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
           "transport_kind": "rpc"
         },
         {
@@ -6364,7 +6416,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/backend.py:WebRpcBackend._mind_map_generate_note"
+            "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
           ],
           "condition": "one only when kind=NOTE_BACKED and source_ids is omitted",
           "maximum_calls": 1,
@@ -6382,8 +6434,12 @@
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
+        "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
         "_web/codec/mind_maps.py:decode_generated_tree",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/notes.py:decode_created_note",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -6411,7 +6467,7 @@
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "auto-detect/select interactive id",
-          "site": "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -6462,7 +6518,7 @@
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "filter interactive maps",
-          "site": "_web/backend.py:WebRpcBackend._artifact_catalog_records",
+          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -6725,19 +6781,19 @@
         {
           "binding": "CREATE_NOTEBOOK:<default>",
           "discriminator": "direct semantic binding",
-          "site": "_web/backend.py:WebRpcBackend._notebook_create.create",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_USER_SETTINGS:<default>",
           "discriminator": "quota-error diagnosis only",
-          "site": "_web/backend.py:WebRpcBackend._notebook_limit_error",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_NOTEBOOKS:<default>",
           "discriminator": "pre-create baseline/probe or quota verification",
-          "site": "_web/backend.py:WebRpcBackend._list_notebooks",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
           "transport_kind": "rpc"
         }
       ],
@@ -6902,6 +6958,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -6995,6 +7054,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -7082,6 +7144,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids",
         "_web/codec/suggestions.py:decode_prompt_suggestions"
@@ -7132,13 +7197,13 @@
         {
           "binding": "GET_NOTEBOOK:<default>",
           "discriminator": "unconditional post-mutation read",
-          "site": "_web/backend.py:WebRpcBackend._notebook_update",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_UPDATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "RENAME_NOTEBOOK:<default>",
           "discriminator": "title|emoji mutation",
-          "site": "_web/backend.py:WebRpcBackend._notebook_update",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_UPDATE",
           "transport_kind": "rpc"
         }
       ],
@@ -7159,7 +7224,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/backend.py:WebRpcBackend._notebook_update"
+            "_web/bindings/notebooks.py:NOTEBOOK_UPDATE"
           ],
           "condition": "always after a successful mutation",
           "maximum_calls": 1,
@@ -7180,6 +7245,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -7287,6 +7355,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -7743,6 +7814,9 @@
         "_row_adapters/sources.py:unwrap_add_source_rows",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -7845,6 +7919,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/settings.py:decode_get_user_settings",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -7962,6 +8039,9 @@
         "_row_adapters/sources.py:unwrap_add_source_rows",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -8018,6 +8098,9 @@
         "_row_adapters/sources.py:unwrap_add_source_rows",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
@@ -8139,6 +8222,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -8258,6 +8344,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -8349,6 +8438,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],
@@ -8455,6 +8547,9 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
+        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+        "_web/codec/notebooks.py:decode_notebook_update_readback",
+        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_source_ids"
       ],

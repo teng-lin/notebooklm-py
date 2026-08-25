@@ -8753,11 +8753,11 @@
           {
             "contribution_semantics": "The created Note.id is copied into MindMapResult.note_id and emitted as note_id; interactive or absent-leaf paths have no Note contribution",
             "evidence": [
-              "notebooklm/_web/backend.py:note = await LegacyNoteBackedService",
+              "notebooklm/_web/bindings/mind_maps.py:note = await _note_service",
               "notebooklm/cli/generate_cmd.py:_output_mind_map_result"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_web/backend.py:note = await LegacyNoteBackedService": "sha256:25cbbfbe14b5ee8d5db6cf6d9f1426647015e3568f581b0614c2e6ee01ceffb6",
+              "notebooklm/_web/bindings/mind_maps.py:note = await _note_service": "sha256:aa94f61d17a6d419a13cc0717b5ead6b283ae8e3226eeff74a47ac129d70cea7",
               "notebooklm/cli/generate_cmd.py:_output_mind_map_result": "sha256:d2680ea672181b764845d049e04f982a15dae5b043a669c16a34c99b279cf6de"
             },
             "id": "cli.Note.transitive-note-backed-mind-map-generation-final-contribution",
@@ -12414,12 +12414,12 @@
           {
             "contribution_semantics": "The created Note.id is copied into MindMapResult.note_id and emitted as mind_map_id; interactive or absent-leaf paths have no Note contribution",
             "evidence": [
-              "notebooklm/_web/backend.py:note = await LegacyNoteBackedService",
+              "notebooklm/_web/bindings/mind_maps.py:note = await _note_service",
               "notebooklm/mcp/tools/_studio_payloads.py:return result_obj.note_id",
               "notebooklm/mcp/tools/studio.py:payload = _generation_payload"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_web/backend.py:note = await LegacyNoteBackedService": "sha256:25cbbfbe14b5ee8d5db6cf6d9f1426647015e3568f581b0614c2e6ee01ceffb6",
+              "notebooklm/_web/bindings/mind_maps.py:note = await _note_service": "sha256:aa94f61d17a6d419a13cc0717b5ead6b283ae8e3226eeff74a47ac129d70cea7",
               "notebooklm/mcp/tools/_studio_payloads.py:return result_obj.note_id": "sha256:552c998cf06815432427f8b06c8f4d6959211cc27fb15878e9d2626d8e33dbdb",
               "notebooklm/mcp/tools/studio.py:payload = _generation_payload": "sha256:cdee6e7e603b8ac8088b1bde652b3b6958d984555437e395911775965df3f98c"
             },
@@ -15347,11 +15347,11 @@
           {
             "contribution_semantics": "The created Note.id and Note.created_at are copied into MindMapResult and recursively emitted as mind_map.note_id/created_at; interactive or absent-leaf paths have no Note contribution",
             "evidence": [
-              "notebooklm/_web/backend.py:note = await LegacyNoteBackedService",
+              "notebooklm/_web/bindings/mind_maps.py:note = await _note_service",
               "notebooklm/server/routes/artifacts.py:payload[\"mind_map\"] = to_jsonable"
             ],
             "evidence_shape_fingerprints": {
-              "notebooklm/_web/backend.py:note = await LegacyNoteBackedService": "sha256:25cbbfbe14b5ee8d5db6cf6d9f1426647015e3568f581b0614c2e6ee01ceffb6",
+              "notebooklm/_web/bindings/mind_maps.py:note = await _note_service": "sha256:aa94f61d17a6d419a13cc0717b5ead6b283ae8e3226eeff74a47ac129d70cea7",
               "notebooklm/server/routes/artifacts.py:payload[\"mind_map\"] = to_jsonable": "sha256:cb093a06a8e0c9c0d5735d14adbb4d815a3c23613382f7b1926cd49e714127ca"
             },
             "id": "rest.Note.transitive-note-backed-mind-map-generation-final-contribution",
