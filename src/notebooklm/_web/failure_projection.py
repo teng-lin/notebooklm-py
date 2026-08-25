@@ -43,6 +43,7 @@ from ..exceptions import (
 _CHAT_OPERATIONS = frozenset(
     {
         Operation.CHAT_ASK,
+        Operation.CHAT_STREAM_ANSWER,
         Operation.CHAT_GET_CONVERSATION,
         Operation.CHAT_GET_HISTORY,
         Operation.CHAT_DELETE_HISTORY,

@@ -15,7 +15,7 @@ def build_web_backend(
     *,
     source_uploader: object | None = None,
     chat_transport: object | None = None,
-    chat_reqid: object | None = None,
+    reqid: object | None = None,
     chat_timeout: float | None = None,
     chat_response_max_bytes: int | None = None,
 ) -> WebRpcBackend:
@@ -24,9 +24,9 @@ def build_web_backend(
         cast(RpcExecutor, rpc),
         source_uploader=source_uploader,
         chat_transport=cast(RuntimeTransport | None, chat_transport),
-        chat_reqid=cast(ReqidCounter | None, chat_reqid),
         chat_timeout=chat_timeout,
         chat_response_max_bytes=chat_response_max_bytes,
+        reqid=cast(ReqidCounter | None, reqid),
     )
 
 

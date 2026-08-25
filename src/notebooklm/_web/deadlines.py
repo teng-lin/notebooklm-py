@@ -50,7 +50,7 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.SOURCE_ADD_FILE: SemanticDeadlineAuthority.WORKFLOW_OWNED,
             Operation.SOURCE_WAIT: SemanticDeadlineAuthority.WORKFLOW_OWNED,
             Operation.ARTIFACT_WAIT: SemanticDeadlineAuthority.WORKFLOW_OWNED,
-            Operation.CHAT_ASK: SemanticDeadlineAuthority.WORKFLOW_OWNED,
+            Operation.CHAT_STREAM_ANSWER: SemanticDeadlineAuthority.WORKFLOW_OWNED,
             Operation.RESEARCH_IMPORT: SemanticDeadlineAuthority.WORKFLOW_OWNED,
             # These handlers have mutually exclusive action branches. No input can
             # execute both native sites, so aggregating them would invent a budget.

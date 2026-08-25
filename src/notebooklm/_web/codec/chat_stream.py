@@ -124,6 +124,43 @@ def encode_ask_stream(
     return f"{get_query_url()}?{urlencode(url_params)}", body, {}
 
 
+@dataclass(frozen=True, slots=True)
+class ChatStreamRequestData:
+    """One streamed ask request, encoded except for its per-attempt request id.
+
+    The request id is a wire counter allocated immediately before the POST, and
+    an auth snapshot is only valid for the attempt it is materialised against;
+    neither is codec data.  This value is therefore a pure function of the
+    operation input, and :meth:`encode` closes over the two attempt-scoped
+    inputs the transport owns.
+    """
+
+    notebook_id: str
+    question: str
+    source_ids: tuple[str, ...]
+    conversation_history: tuple[Any, ...] | None
+    conversation_id: str | None
+
+    def encode(
+        self,
+        snapshot: AuthSnapshotLike,
+        *,
+        reqid: int,
+    ) -> tuple[str, str, dict[str, str]]:
+        """Assemble ``(url, body, extra_headers)`` for one attempt."""
+        return encode_ask_stream(
+            snapshot=snapshot,
+            notebook_id=self.notebook_id,
+            question=self.question,
+            source_ids=list(self.source_ids),
+            conversation_history=(
+                None if self.conversation_history is None else list(self.conversation_history)
+            ),
+            conversation_id=self.conversation_id,
+            reqid=reqid,
+        )
+
+
 @dataclass(frozen=True)
 class StreamingChatParseResult:
     """Parsed streamed-chat answer payload.

@@ -96,8 +96,8 @@ def _attribute_parts(node: ast.AST) -> tuple[str, ...]:
 # is the sole authority for the natives it dispatches, so the walker reads the spec literally
 # and reports anything it cannot resolve statically as an unresolved dispatch.
 _ROW_CONSTRUCTORS = frozenset({"CodecBinding", "CustomBinding"})
-_SPEC_CONSTRUCTORS = frozenset({"NativeCallSpec", "NativeChoice"})
-_SPEC_FACTORIES = frozenset({"constant", "keyed"})
+_SPEC_CONSTRUCTORS = frozenset({"NativeCallSpec", "RpcNative", "StreamNative"})
+_SPEC_FACTORIES = frozenset({"constant", "keyed", "streamed"})
 
 NativeName = tuple[str, str | None]
 
@@ -190,7 +190,13 @@ def _definition_name(call: ast.Call) -> str | None:
 
 
 class _SpecResolver:
-    """Resolve ``NativeCallSpec``/``NativeChoice`` literals to ``(method, variant)`` names."""
+    """Resolve ``NativeCallSpec``/``RpcNative`` literals to ``(method, variant)`` names.
+
+    A ``StreamNative`` resolves to no native at all: a streamed verb is not a
+    method on the wire enum and never enters the policy ledger's native set.
+    Resolving it to the empty set — rather than failing — is what keeps a
+    stream-only row a *resolved* dispatch with zero declared natives.
+    """
 
     def __init__(self, spec_bindings: Mapping[str, tuple[NativeName, ...] | None]) -> None:
         self._spec_bindings = spec_bindings
@@ -235,12 +241,16 @@ class _SpecResolver:
         parts = _attribute_parts(call.func)
         last = parts[-1] if parts else ""
         if (
-            last == "NativeChoice"
+            last == "RpcNative"
             or last == "constant"
             and len(parts) >= 2
             and parts[-2] == "NativeCallSpec"
         ):
             self._choice(_call_argument(call, 0, "method"), _call_argument(call, 1, "variant"))
+        elif last == "StreamNative" or (
+            last == "streamed" and len(parts) >= 2 and parts[-2] == "NativeCallSpec"
+        ):
+            return
         elif last == "keyed" and len(parts) >= 2 and parts[-2] == "NativeCallSpec":
             has_selector_keyword = any(item.arg == "selector" for item in call.keywords)
             choices = list(call.args if has_selector_keyword else call.args[1:])
@@ -981,7 +991,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/transport.py", "_backend", "BackendContractError"),
         ("_web/transport.py", "_backend", "BackendDeadlineExceededError"),
         ("_web/transport.py", "_binding", "CodecPayload"),
-        ("_web/transport.py", "_binding", "NativeChoice"),
+        ("_web/transport.py", "_binding", "RpcNative"),
         ("_web/transport.py", "_binding", "StreamPayload"),
         ("_web/transport.py", "_binding", "StreamSpec"),
         ("_artifact/listing.py", "_projectors", "project_artifact"),
@@ -1356,7 +1366,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/bindings/research.py", "_binding", "Binding"),
         ("_web/bindings/research.py", "_binding", "CodecBinding"),
         ("_web/bindings/research.py", "_binding", "NativeCallSpec"),
-        ("_web/bindings/research.py", "_binding", "NativeChoice"),
+        ("_web/bindings/research.py", "_binding", "RpcNative"),
         ("_web/bindings/research.py", "_records", "RESEARCH_CANCEL_DEF"),
         ("_web/bindings/research.py", "_records", "RESEARCH_IMPORT_DEF"),
         ("_web/bindings/research.py", "_records", "RESEARCH_POLL_DEF"),
@@ -1603,7 +1613,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/bindings/studio.py", "_binding", "Binding"),
         ("_web/bindings/studio.py", "_binding", "CodecBinding"),
         ("_web/bindings/studio.py", "_binding", "NativeCallSpec"),
-        ("_web/bindings/studio.py", "_binding", "NativeChoice"),
+        ("_web/bindings/studio.py", "_binding", "RpcNative"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_CATALOG_DEF"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_DELETE_DEF"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_DOWNLOAD_DEF"),
@@ -1752,7 +1762,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/chat.py", "_binding", "CustomBinding"),
         ("_web/bindings/chat.py", "_binding", "ErrorMode"),
         ("_web/bindings/chat.py", "_binding", "NativeCallSpec"),
-        ("_web/bindings/chat.py", "_binding", "NativeChoice"),
+        ("_web/bindings/chat.py", "_binding", "RpcNative"),
         ("_web/bindings/chat.py", "_binding", "RowInvoker"),
         ("_web/bindings/chat.py", "_binding", "StreamPayload"),
         ("_web/bindings/chat.py", "_binding", "StreamSpec"),
@@ -1878,6 +1888,7 @@ _REVIEWED_BACKEND_IMPORT_MODULES = frozenset(
         "_web.backend",
         "_web.codec.settings",
         "backend",
+        "codec.chat_stream",
         "codec.sharing",
         "codec.research",
         "codec",
@@ -2179,7 +2190,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/primitives.py", "_binding", "Binding"),
         ("_web/bindings/primitives.py", "_binding", "CodecBinding"),
         ("_web/bindings/primitives.py", "_binding", "NativeCallSpec"),
-        ("_web/bindings/primitives.py", "_binding", "NativeChoice"),
+        ("_web/bindings/primitives.py", "_binding", "RpcNative"),
         ("_web/bindings/primitives.py", "_records", "LABEL_ALLOCATE_DEF"),
         ("_web/bindings/primitives.py", "_records", "LABEL_MUTATE_DEF"),
         ("_web/bindings/primitives.py", "_records", "LabelAllocateInput"),
@@ -2274,7 +2285,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_notebook_mutation_service.py", "_records", "NotebookPatchInput"),
         ("_web/bindings/notebooks.py", "_backend", "BackendError"),
         ("_web/bindings/notebooks.py", "_backend", "BackendErrorReason"),
-        ("_web/bindings/notebooks.py", "_binding", "NativeChoice"),
+        ("_web/bindings/notebooks.py", "_binding", "RpcNative"),
         ("_web/bindings/notebooks.py", "_records", "NOTEBOOK_PATCH_DEF"),
         ("_web/bindings/notebooks.py", "_records", "NotebookGetInput"),
         ("_web/codec/notebooks.py", "_backend", "BackendError"),
@@ -2319,6 +2330,59 @@ ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
         "_notebook_mutation_service.py:NotebookMutationService._notebook_limit_error",
         "_notebook_mutation_service.py:NotebookMutationService.create.allocate",
         "_notebook_mutation_service.py:NotebookMutationService.create.probe",
+    }
+)
+
+
+# P10 R2.2: ``chat.ask`` becomes a service-owned workflow over two leaves — the
+# streamed ``CHAT_STREAM_ANSWER`` primitive row and the conversation-id readback
+# — so the custom row, its handler imports and the ``StreamSpec`` family go, and
+# ``WebTransport`` gains the encoded stream data it materialises per attempt.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_web/bindings/chat.py", "_backend", "BackendContractError"),
+        ("_web/bindings/chat.py", "_backend", "BackendDeadlineExceededError"),
+        ("_web/bindings/chat.py", "_binding", "CustomBinding"),
+        ("_web/bindings/chat.py", "_binding", "ErrorMode"),
+        ("_web/bindings/chat.py", "_binding", "RowInvoker"),
+        ("_web/bindings/chat.py", "_binding", "StreamPayload"),
+        ("_web/bindings/chat.py", "_binding", "StreamSpec"),
+        ("_web/bindings/chat.py", "_records", "CHAT_ASK_DEF"),
+        ("_web/bindings/chat.py", "_records", "ChatAskInput"),
+        ("_web/bindings/chat.py", "_records", "ChatAskResultRecord"),
+        ("_web/bindings/notebooks.py", "_binding", "RpcNative"),
+        ("_web/codec/chat.py", "_records", "ChatAskInput"),
+        ("_web/transport.py", "_binding", "StreamPayload"),
+        ("_web/transport.py", "_binding", "StreamSpec"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_chat/service.py", "_backend", "BackendDeadlineExceededError"),
+        ("_chat/service.py", "_backend", "BackendError"),
+        ("_chat/service.py", "_backend", "BackendErrorReason"),
+        ("_chat/service.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_chat/service.py", "_backend", "rebind_operation"),
+        ("_chat/service.py", "_backend", "require_leaves"),
+        ("_chat/service.py", "_records", "CHAT_STREAM_ANSWER_DEF"),
+        ("_chat/service.py", "_records", "ChatStreamAnswerInput"),
+        ("_chat/service.py", "_records", "ChatStreamAnswerRecord"),
+        ("_web/bindings/notebooks.py", "_binding", "NativeChoice"),
+        ("_web/bindings/primitives.py", "_records", "CHAT_STREAM_ANSWER_DEF"),
+        ("_web/bindings/primitives.py", "codec", "chat"),
+        ("_web/bindings/research.py", "_binding", "NativeChoice"),
+        ("_web/codec/chat.py", "_binding", "StreamRequestPayload"),
+        ("_web/codec/chat.py", "_records", "ChatStreamAnswerInput"),
+        ("_web/codec/chat.py", "_records", "ChatStreamResult"),
+        ("_web/registry.py", "_records", "CHAT_STREAM_ANSWER_DEF"),
+        ("_web/transport.py", "_binding", "StreamNative"),
+        ("_web/transport.py", "_binding", "StreamRequestPayload"),
+        ("_web/transport.py", "codec.chat_stream", "ChatStreamRequestData"),
+    }
+)
+ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
+    {
+        "_chat/service.py:ChatService._read_back_conversation_id",
     }
 )
 
@@ -3136,11 +3200,11 @@ def _invoker_call_count(tree: ast.Module, node: ast.AST, spec_key: str) -> int:
 
 
 def _native_choice_count(node: ast.AST, method: RPCMethod) -> int:
-    """Count ``NativeChoice(RPCMethod.X …)``/``NativeCallSpec.constant(RPCMethod.X …)`` literals."""
+    """Count ``RpcNative(RPCMethod.X …)``/``NativeCallSpec.constant(RPCMethod.X …)`` literals."""
     count = 0
     for call in (item for item in ast.walk(node) if isinstance(item, ast.Call)):
         parts = _attribute_parts(call.func)
-        if not parts or parts[-1] not in {"NativeChoice", "constant"}:
+        if not parts or parts[-1] not in {"RpcNative", "constant"}:
             continue
         if parts[-1] == "constant" and parts[-2:-1] != ("NativeCallSpec",):
             continue

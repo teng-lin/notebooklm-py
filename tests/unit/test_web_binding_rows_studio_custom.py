@@ -26,7 +26,7 @@ from notebooklm._backend import (
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CustomBinding, NativeChoice
+from notebooklm._binding import CustomBinding, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_payloads import build_get_notebook_params
 from notebooklm._operations import Operation
@@ -157,11 +157,11 @@ def test_generate_families_and_prompts_are_deferred_product_custom_rows() -> Non
     for operation in list(rows)[:8]:
         row = rows[operation]
         assert [spec.key for spec in row.native] == ["sources", "create"]
-        assert row.spec("sources").select(None) == NativeChoice(RPCMethod.GET_NOTEBOOK)
-        assert row.spec("create").select(None) == NativeChoice(RPCMethod.CREATE_ARTIFACT)
+        assert row.spec("sources").select(None) == RpcNative(RPCMethod.GET_NOTEBOOK)
+        assert row.spec("create").select(None) == RpcNative(RPCMethod.CREATE_ARTIFACT)
     prompts = settings_rows.NOTEBOOK_SUGGEST_PROMPTS
     assert [spec.key for spec in prompts.native] == ["sources", "suggest"]
-    assert prompts.spec("suggest").select(None) == NativeChoice(RPCMethod.SUGGEST_PROMPTS)
+    assert prompts.spec("suggest").select(None) == RpcNative(RPCMethod.SUGGEST_PROMPTS)
 
 
 def test_emptied_chain_classes_are_gone_and_the_chain_re_links() -> None:
@@ -384,7 +384,7 @@ async def test_kickoff_server_error_is_translated_dispatched_and_tagged() -> Non
     assert error.dispatched is True
     assert may_have_committed(error) is True
     assert isinstance(error.__cause__, ServerError)
-    assert error.__cause__.binding_native == NativeChoice(RPCMethod.CREATE_ARTIFACT)  # type: ignore[attr-defined]
+    assert error.__cause__.binding_native == RpcNative(RPCMethod.CREATE_ARTIFACT)  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

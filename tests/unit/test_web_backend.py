@@ -45,12 +45,12 @@ from notebooklm._records import (
     ARTIFACT_REVISE_SLIDE_DEF,
     ARTIFACT_SUGGEST_REPORTS_DEF,
     ARTIFACT_WAIT_DEF,
-    CHAT_ASK_DEF,
     CHAT_CONFIGURE_DEF,
     CHAT_DELETE_HISTORY_DEF,
     CHAT_GET_CONVERSATION_DEF,
     CHAT_GET_HISTORY_DEF,
     CHAT_SAVE_NOTE_DEF,
+    CHAT_STREAM_ANSWER_DEF,
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,
@@ -240,15 +240,12 @@ def test_row_collaborator_names_are_exactly_what_the_rows_declare() -> None:
     slice R0.1; this pin is the ratchet that keeps the two sides equal.
 
     The plan's target is ``{"source_uploader"}``: ``capture_public_failure``
-    leaves with the last source-add hoist (R3.5) and the three ``chat_*``
-    names leave when ``chat.ask`` becomes service-owned (R2.2). Removing an
-    entry here is expected; adding one is not.
+    leaves with the last source-add hoist (R3.5). P10 R2.2 drained the three
+    ``chat_*`` names when ``chat.ask`` became service-owned. Removing an entry
+    here is expected; adding one is not.
     """
     expected = {
         "capture_public_failure",
-        "chat_reqid",
-        "chat_timeout",
-        "chat_transport_composed",
         "source_uploader",
     }
     provided = set(ROW_COLLABORATOR_NAMES)
@@ -346,7 +343,7 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.SOURCE_CHECK_FRESHNESS,
         Operation.SOURCE_GET_GUIDE,
         Operation.SOURCE_GET_FULLTEXT,
-        Operation.CHAT_ASK,
+        Operation.CHAT_STREAM_ANSWER,
         Operation.CHAT_GET_CONVERSATION,
         Operation.CHAT_GET_HISTORY,
         Operation.CHAT_DELETE_HISTORY,
@@ -432,7 +429,7 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.SOURCE_CHECK_FRESHNESS: SOURCE_CHECK_FRESHNESS_DEF,
         Operation.SOURCE_GET_GUIDE: SOURCE_GET_GUIDE_DEF,
         Operation.SOURCE_GET_FULLTEXT: SOURCE_GET_FULLTEXT_DEF,
-        Operation.CHAT_ASK: CHAT_ASK_DEF,
+        Operation.CHAT_STREAM_ANSWER: CHAT_STREAM_ANSWER_DEF,
         Operation.CHAT_GET_CONVERSATION: CHAT_GET_CONVERSATION_DEF,
         Operation.CHAT_GET_HISTORY: CHAT_GET_HISTORY_DEF,
         Operation.CHAT_DELETE_HISTORY: CHAT_DELETE_HISTORY_DEF,

@@ -378,6 +378,9 @@ def measure() -> dict[str, Any]:
     # Policy ledger.
     single = [op for op, b in WEB_CALL_POLICY_BINDINGS.items() if len(b.native_bindings) == 1]
     multi = [op for op, b in WEB_CALL_POLICY_BINDINGS.items() if len(b.native_bindings) >= 2]
+    # A streamed verb is not a wire method, so a stream-only row declares no
+    # native at all and belongs to neither bucket (P10 R2.2).
+    streamed = [op for op, b in WEB_CALL_POLICY_BINDINGS.items() if not b.native_bindings]
     single_natives = {
         n.method for op in single for n in WEB_CALL_POLICY_BINDINGS[op].native_bindings
     }
@@ -460,6 +463,7 @@ def measure() -> dict[str, Any]:
         "deadline_ledger_entries": ledger_multi_deadline,
         "ledger_single_native": len(single),
         "ledger_multi_native": len(multi),
+        "ledger_streamed_only": len(streamed),
         "natives_only_multi_by_ledger": only_multi_by_ledger,
         "natives_only_multi_by_code": only_multi_by_code,
         "supports_consumers_outside_port": supports_consumers,
@@ -529,8 +533,9 @@ def format_markdown(m: dict[str, Any]) -> str:
             f"{len(m['registry_binding_rows'])} binding rows)",
         ),
         (
-            "Operations by policy ledger: single-native / multi-native",
-            f"{m['ledger_single_native']} / {m['ledger_multi_native']}",
+            "Operations by policy ledger: single-native / multi-native / streamed-only",
+            f"{m['ledger_single_native']} / {m['ledger_multi_native']} / "
+            f"{m['ledger_streamed_only']}",
         ),
         (
             "Natives appearing only in multi-native bindings: by ledger / by handler code",

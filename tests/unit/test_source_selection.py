@@ -200,7 +200,7 @@ def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
     backend = build_web_backend(
         mock_core.rpc_executor,
         chat_transport=mock_core.session_transport,
-        chat_reqid=mock_core,
+        reqid=mock_core,
     )
     return ChatAPI(
         backend=backend,

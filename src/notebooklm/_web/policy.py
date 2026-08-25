@@ -33,6 +33,20 @@ class NativePolicyBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class StreamedPolicyBinding:
+    """One streamed verb an active web operation dispatches.
+
+    A streamed request carries no ``RPCMethod`` and therefore no idempotency
+    registry entry: it is not a batchexecute call and the retry middleware
+    never classifies it.  Recording it here is what lets the audit tell a
+    reviewed stream-only row apart from a row that simply forgot its natives.
+    """
+
+    label: str
+    role: str
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowLeaf:
     """One leaf operation a service-owned workflow invokes, with its allowed variants."""
 
@@ -64,6 +78,9 @@ class WebCallPolicyBinding:
     policy: CallPolicy
     native_bindings: tuple[NativePolicyBinding, ...]
     known_divergence: str | None = None
+    #: Streamed verbs the row dispatches. An active operation must reach the
+    #: wire somehow: the audit requires at least one native *or* one stream.
+    streamed_bindings: tuple[StreamedPolicyBinding, ...] = ()
 
 
 def _native(
@@ -247,24 +264,14 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.READ,
             (_native(RPCMethod.GET_SOURCE, _IDEMPOTENT, "source content read"),),
         ),
-        Operation.CHAT_ASK: WebCallPolicyBinding(
+        Operation.CHAT_STREAM_ANSWER: WebCallPolicyBinding(
             CallPolicy.STREAM,
-            (
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "default source-set read"),
-                _native(
-                    RPCMethod.GET_LAST_CONVERSATION_ID,
-                    _IDEMPOTENT,
-                    "conversation resolution before or after the streamed request",
+            (),
+            streamed_bindings=(
+                StreamedPolicyBinding(
+                    "chat.ask",
+                    "streamed free-form answer generation",
                 ),
-            ),
-            # P9.4 (gate table §9): the ``CHAT_ASK`` row declares only
-            # ``GET_LAST_CONVERSATION_ID`` plus the streamed query; the default
-            # source-set ``GET_NOTEBOOK`` is issued above the port by the facade
-            # through ``NOTEBOOK_GET`` and stays here only because the catalog's
-            # recency contract for ``chat.ask`` is keyed on this ledger row.
-            known_divergence=(
-                "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the "
-                "CHAT_ASK row dispatches"
             ),
         ),
         Operation.CHAT_GET_CONVERSATION: WebCallPolicyBinding(
@@ -743,6 +750,11 @@ def _leaf(operation: Operation, *variants: str | None) -> WorkflowLeaf:
     return WorkflowLeaf(operation, frozenset(variants))
 
 
+def _stream_leaf(operation: Operation) -> WorkflowLeaf:
+    """A leaf whose row streams: it declares no native variant to allow."""
+    return WorkflowLeaf(operation, frozenset())
+
+
 # P9.2 service-owned workflows. Each row keeps the natives the P6 handler
 # executed (reviewed by hand) plus the leaf edges the semantic service now
 # sequences; the audit checks the two agree.
@@ -887,6 +899,30 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.ARTIFACT_PATCH_TITLE, None),
                     _leaf(Operation.ARTIFACT_CATALOG, None),
+                ),
+            ),
+            Operation.CHAT_ASK: WorkflowPolicyBinding(
+                CallPolicy.STREAM,
+                (
+                    _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "default source-set read"),
+                    _native(
+                        RPCMethod.GET_LAST_CONVERSATION_ID,
+                        _IDEMPOTENT,
+                        "conversation resolution before or after the streamed request",
+                    ),
+                ),
+                (
+                    _stream_leaf(Operation.CHAT_STREAM_ANSWER),
+                    _leaf(Operation.CHAT_GET_CONVERSATION, None),
+                ),
+                # P9.4 (gate table §9): the workflow reaches only
+                # ``GET_LAST_CONVERSATION_ID`` plus the streamed query; the default
+                # source-set ``GET_NOTEBOOK`` is issued above the port by the facade
+                # through ``NOTEBOOK_GET`` and stays here only because the catalog's
+                # recency contract for ``chat.ask`` is keyed on this ledger row.
+                known_divergence=(
+                    "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the "
+                    "CHAT_ASK row dispatches"
                 ),
             ),
             Operation.NOTEBOOK_UPDATE: WorkflowPolicyBinding(
@@ -1035,8 +1071,10 @@ def audit_web_call_policy_bindings(
         native_keys = [(item.method, item.variant) for item in binding.native_bindings]
         if len(native_keys) != len(set(native_keys)):
             errors.append(f"{operation.value}: duplicate native policy bindings")
-        if not binding.native_bindings:
-            errors.append(f"{operation.value}: active web operation has no native policy binding")
+        if not binding.native_bindings and not binding.streamed_bindings:
+            errors.append(
+                f"{operation.value}: active web operation has no native or streamed policy binding"
+            )
         for native in binding.native_bindings:
             try:
                 actual = registry.get_entry(native.method, operation_variant=native.variant).policy
@@ -1075,6 +1113,16 @@ def web_call_policy_report() -> dict[str, object]:
                 }
                 for native in binding.native_bindings
             ],
+            **(
+                {
+                    "streamed_bindings": [
+                        {"label": streamed.label, "role": streamed.role}
+                        for streamed in binding.streamed_bindings
+                    ]
+                }
+                if binding.streamed_bindings
+                else {}
+            ),
         }
         for operation, binding in sorted(WEB_CALL_POLICY_BINDINGS.items(), key=operation_key)
     }
@@ -1108,6 +1156,7 @@ def web_call_policy_report() -> dict[str, object]:
 
 __all__ = [
     "NativePolicyBinding",
+    "StreamedPolicyBinding",
     "SERVICE_OWNED_WORKFLOW_BINDINGS",
     "WEB_CALL_POLICY_BINDINGS",
     "WebCallPolicyBinding",

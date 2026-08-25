@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum, unique
 from typing import TypeAlias
 
-from ._operations import CallPolicy, Operation, OperationDef
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 from ._types.documents import StructuredDocument
 
 ChatLegacyScalar: TypeAlias = str | int | float | bool | None
@@ -235,6 +235,36 @@ class ChatStreamAnswerRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ChatStreamAnswerInput:
+    """One streamed answer request: chat.ask's first phase without its readback.
+
+    The conversation id here is the one *posted* to the server.  The id the
+    workflow finally reports is resolved above this leaf — the stream never
+    returns one — so ``ChatAskInput.resolved_conversation_id`` has no place in
+    the leaf's input.
+    """
+
+    notebook_id: str
+    question: str
+    source_ids: tuple[str, ...]
+    conversation_history: tuple[ChatHistoryPairRecord, ...] = ()
+    post_conversation_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChatStreamResult:
+    """One decoded streamed answer plus the bounded raw response it came from.
+
+    ``raw_response`` is the truncated diagnostic slice ``ChatAskResultRecord``
+    requires; the streamed answer record itself carries no wire text, so the
+    leaf's result pairs the two rather than widening the answer record.
+    """
+
+    answer: ChatStreamAnswerRecord
+    raw_response: str
+
+
+@dataclass(frozen=True, slots=True)
 class ChatAskResultRecord:
     """One fully completed two-phase chat result; partial results are unrepresentable."""
 
@@ -282,6 +312,13 @@ CHAT_ASK_DEF = OperationDef(
     CallPolicy.STREAM,
     ChatAskInput,
     ChatAskResultRecord,
+)
+CHAT_STREAM_ANSWER_DEF = OperationDef(
+    Operation.CHAT_STREAM_ANSWER,
+    CallPolicy.STREAM,
+    ChatStreamAnswerInput,
+    ChatStreamResult,
+    tier=OperationTier.PRIMITIVE,
 )
 
 

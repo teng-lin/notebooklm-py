@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 
 from ..._backend import BackendError, BackendErrorReason
-from ..._binding import Binding, CodecBinding, NativeCallSpec, NativeChoice
+from ..._binding import Binding, CodecBinding, NativeCallSpec, NativeChoice, RpcNative
 from ..._operations import Operation
 from ..._records import (
     RESEARCH_CANCEL_DEF,
@@ -33,11 +33,11 @@ from ...rpc import RPCMethod
 from ..codec import research as research_codec
 from ..errors import translate_web_error
 
-_FAST_START = NativeChoice(RPCMethod.START_FAST_RESEARCH)
-_DEEP_START = NativeChoice(RPCMethod.START_DEEP_RESEARCH)
+_FAST_START = RpcNative(RPCMethod.START_FAST_RESEARCH)
+_DEEP_START = RpcNative(RPCMethod.START_DEEP_RESEARCH)
 
 
-def _select_start(value: ResearchStartInput) -> NativeChoice[RPCMethod]:
+def _select_start(value: ResearchStartInput) -> RpcNative[RPCMethod]:
     return _FAST_START if value.mode is ResearchMode.FAST else _DEEP_START
 
 

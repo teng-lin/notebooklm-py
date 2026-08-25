@@ -6,10 +6,9 @@ import logging
 import reprlib
 from typing import Any
 
-from ..._binding import CodecPayload
+from ..._binding import CodecPayload, StreamRequestPayload
 from ..._notebook_payloads import build_get_notebook_params
 from ..._records import (
-    ChatAskInput,
     ChatConfigureAction,
     ChatConfigureInput,
     ChatConfigureResult,
@@ -28,10 +27,11 @@ from ..._records import (
     ChatSaveNoteInput,
     ChatSaveNoteResult,
     ChatSettingsRecord,
+    ChatStreamAnswerInput,
     ChatStreamAnswerRecord,
+    ChatStreamResult,
     ChatTurnDecodeErrorRecord,
 )
-from ..._request_types import AuthSnapshot
 from ..._row_adapters.chat import (
     ConversationTurnRow,
     SavedChatNoteRow,
@@ -44,8 +44,8 @@ from ...exceptions import UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
 from .chat_saved_note import build_save_note_params as _encode_save_note_params
 from .chat_stream import (
+    ChatStreamRequestData,
     _extract_next_turn_content,
-    encode_ask_stream,
     parse_streaming_chat_response,
 )
 
@@ -251,45 +251,53 @@ def decode_save_note_result(
     )
 
 
-def build_ask_request(
-    snapshot: AuthSnapshot,
-    value: ChatAskInput,
-    *,
-    reqid: int,
-) -> tuple[str, str, dict[str, str]]:
-    """Encode phase one of the streamed ask workflow."""
+#: The streamed answer's diagnostic slice of the raw response body. The public
+#: ``AskResult.raw_response`` has carried exactly this prefix since the handler
+#: era; widening it would put unbounded wire text in a returned record.
+_RAW_RESPONSE_PREFIX = 1000
+
+
+def encode_chat_stream_answer(value: ChatStreamAnswerInput) -> StreamRequestPayload:
+    """Encode the streamed answer request; the transport binds id and snapshot."""
     conversation_history: list[Any] | None = None
     if value.conversation_history:
         conversation_history = []
         for turn in value.conversation_history:
             conversation_history.append([turn.answer, None, 2])
             conversation_history.append([turn.question, None, 1])
-    return encode_ask_stream(
-        snapshot=snapshot,
-        notebook_id=value.notebook_id,
-        question=value.question,
-        source_ids=list(value.source_ids),
-        conversation_history=conversation_history,
-        conversation_id=value.post_conversation_id,
-        reqid=reqid,
+    return StreamRequestPayload(
+        ChatStreamRequestData(
+            notebook_id=value.notebook_id,
+            question=value.question,
+            source_ids=value.source_ids,
+            conversation_history=(
+                None if conversation_history is None else tuple(conversation_history)
+            ),
+            conversation_id=value.post_conversation_id,
+        )
     )
 
 
-def decode_ask_response(response_text: str) -> ChatStreamAnswerRecord:
-    """Decode phase-one bytes into the neutral streamed-answer record.
+def decode_chat_stream_answer(value: ChatStreamAnswerInput, raw: Any) -> ChatStreamResult:
+    """Decode streamed bytes into the neutral answer record plus its raw slice.
 
     The parser already emits records (P10 R2.1), so this only drops the
     per-stream id ``StreamingChatParseResult.conversation_id`` carries — an
     unreliable value the real conversation-id readback replaces — and freezes
     the parser's lists into tuples.
     """
+    del value
+    response_text = raw.text
     parsed = parse_streaming_chat_response(response_text)
-    return ChatStreamAnswerRecord(
-        answer=parsed.answer,
-        references=tuple(parsed.references),
-        answer_document=parsed.answer_document,
-        turn_key=parsed.turn_key,
-        next_steps=tuple(parsed.next_steps),
+    return ChatStreamResult(
+        answer=ChatStreamAnswerRecord(
+            answer=parsed.answer,
+            references=tuple(parsed.references),
+            answer_document=parsed.answer_document,
+            turn_key=parsed.turn_key,
+            next_steps=tuple(parsed.next_steps),
+        ),
+        raw_response=response_text[:_RAW_RESPONSE_PREFIX],
     )
 
 
@@ -302,14 +310,6 @@ def encode_chat_get_conversation(value: ChatGetConversationInput) -> CodecPayloa
     return CodecPayload(
         params=build_get_conversation_params(value.notebook_id),
         source_path=f"/notebook/{value.notebook_id}",
-    )
-
-
-def encode_ask_conversation_readback(notebook_id: str) -> CodecPayload:
-    """Payload for ``chat.ask``'s post-stream conversation-id read (phase two)."""
-    return CodecPayload(
-        params=build_get_conversation_params(notebook_id),
-        source_path=f"/notebook/{notebook_id}",
     )
 
 
@@ -401,28 +401,27 @@ def decode_chat_save_note(value: ChatSaveNoteInput, raw: Any) -> ChatSaveNoteRes
 
 
 __all__ = [
-    "build_ask_request",
     "build_configure_params",
     "build_delete_history_params",
     "build_get_conversation_params",
     "build_get_history_params",
     "build_get_settings_params",
     "build_save_note_params",
-    "decode_ask_response",
     "decode_chat_configure",
     "decode_chat_delete_history",
     "decode_chat_get_conversation",
     "decode_chat_get_history",
     "decode_chat_save_note",
+    "decode_chat_stream_answer",
     "decode_conversation_id_or_warn",
     "decode_get_conversation_result",
     "decode_get_history_result",
     "decode_get_settings_result",
     "decode_save_note_result",
     "encode_chat_configure",
-    "encode_ask_conversation_readback",
     "encode_chat_delete_history",
     "encode_chat_get_conversation",
     "encode_chat_get_history",
     "encode_chat_save_note",
+    "encode_chat_stream_answer",
 ]
