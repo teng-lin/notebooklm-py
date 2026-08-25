@@ -86,7 +86,7 @@ from ..._source.add import (
     honor_requested_title_if_fresh,
 )
 from ..._source.batch import SourceBatchAddService
-from ..._source.upload import SourceUploadBackend
+from ..._source_upload_port import SourceUploadBackend
 from ..._types.sources import _SOURCE_TYPE_CODE_MAP, SourceType
 from ..._url_utils import is_youtube_url
 from ...exceptions import NotebookLMError, ValidationError

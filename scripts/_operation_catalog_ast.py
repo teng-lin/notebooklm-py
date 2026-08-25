@@ -1247,7 +1247,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_research_service.py", "_records", "ResearchStartInput"),
         ("_source/listing.py", "_projectors", "project_source"),
         ("_source/listing.py", "_records", "SourceRecord"),
-        ("_source/upload.py", "_records", "SourceFileRegistrationRecord"),
+        ("_source_upload_port.py", "_records", "SourceFileRegistrationRecord"),
         ("_sources.py", "_backend", "BackendAdapter"),
         ("_sources.py", "_backend", "BackendError"),
         ("_sources.py", "_backend_compat", "project_backend_call"),

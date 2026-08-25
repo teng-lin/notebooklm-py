@@ -40,6 +40,7 @@ from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._operations import CallPolicy, Operation, OperationDef
 from .._records import SourceAddFailureRecord
 from .._runtime.config import assert_resolved_read_timeout
+from .._source_upload_port import UploadLifecycleHooks
 from .._web_cookie_provider import WebCookieProvider, WebCookieSession
 from ..exceptions import (
     ChatError,
@@ -70,7 +71,6 @@ if TYPE_CHECKING:
     from .._reqid_counter import ReqidCounter
     from .._runtime.pipeline import RuntimePipeline
     from .._runtime.transport import RuntimeTransport
-    from .._source.upload import SourceUploadPipeline
     from .._transport_drain import TransportDrainTracker
 
 source_logger = logging.getLogger("notebooklm").getChild("_sources")
@@ -207,7 +207,7 @@ class WebRpcBackend:
     async def open_client(
         self,
         *,
-        uploader: SourceUploadPipeline,
+        uploader: UploadLifecycleHooks,
         chat: ChatAPI,
     ) -> None:
         """Open provider acquisition, then seed the private backend session."""
@@ -538,7 +538,7 @@ def _configure_default_upload_backend(backend: WebRpcBackend) -> None:
     registration helper never bypasses the binding table; the row binds a fresh,
     invocation-scoped set on every ``source.add_file`` call.
     """
-    uploader = backend._source_uploader
+    uploader: UploadLifecycleHooks | None = backend._source_uploader
     if uploader is None:
         return
     default = upload_backend(

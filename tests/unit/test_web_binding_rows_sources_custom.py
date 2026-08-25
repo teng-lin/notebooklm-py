@@ -47,7 +47,7 @@ from notebooklm._records import (
     SourceAddUrlInput,
     SourceFileInputKind,
 )
-from notebooklm._source.upload import SourceUploadBackend
+from notebooklm._source_upload_port import SourceUploadBackend
 from notebooklm._web.backend import ROW_COLLABORATOR_NAMES, WebRpcBackend, _row_error_projection
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import sources as source_rows
