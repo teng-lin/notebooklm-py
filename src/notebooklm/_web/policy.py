@@ -164,17 +164,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "conditional reconciliation read"),
             ),
         ),
-        Operation.SOURCE_ADD_TEXT: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(
-                    RPCMethod.ADD_SOURCE,
-                    _NO_RETRY,
-                    "non-idempotent pasted-text allocation",
-                    variant="text",
-                ),
-            ),
-        ),
         Operation.SOURCE_ADD_DRIVE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (
@@ -858,6 +847,18 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                     _leaf(Operation.COLLECTION_GET, None),
                     _leaf(Operation.LABEL_MUTATE, None, "add_notebooks", "remove_notebooks"),
                 ),
+            ),
+            Operation.SOURCE_ADD_TEXT: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(
+                        RPCMethod.ADD_SOURCE,
+                        _NO_RETRY,
+                        "non-idempotent pasted-text allocation",
+                        variant="text",
+                    ),
+                ),
+                (_leaf(Operation.SOURCE_REGISTER, "text"),),
             ),
             Operation.SOURCE_UPDATE: WorkflowPolicyBinding(
                 CallPolicy.MUTATION,

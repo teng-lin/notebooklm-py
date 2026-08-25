@@ -59,7 +59,7 @@ RESIDUAL_COMPOSITE_CEILING = 20
 #: P9.4b PRs raise these as handlers convert;
 #: P9.2 hoists lower ``deferred-product``, which must reach zero before any
 #: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 5, "compatibility": 4, "deferred-product": 11}
+CUSTOM_ROW_COUNTS = {"protocol": 5, "compatibility": 3, "deferred-product": 11}
 
 # --- 2. class size ---------------------------------------------------------------
 

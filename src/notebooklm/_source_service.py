@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import MappingProxyType
 
 from ._backend import (
     BackendAdapter,
+    BackendContractError,
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
@@ -15,6 +17,7 @@ from ._backend import (
     require_leaves,
 )
 from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ._operations import Operation
 from ._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
@@ -27,13 +30,15 @@ from ._records import (
     SOURCE_GET_GUIDE_DEF,
     SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
+    SOURCE_REGISTER_DEF,
     SOURCE_UPDATE_DEF,
     SOURCE_WAIT_DEF,
     SourceAddDriveInput,
     SourceAddDriveResult,
+    SourceAddFailureKind,
+    SourceAddFailureRecord,
     SourceAddFileInput,
     SourceAddFileResult,
-    SourceAddTextInput,
     SourceAddTextResult,
     SourceAddUrlBatchInput,
     SourceAddUrlBatchResult,
@@ -49,10 +54,85 @@ from ._records import (
     SourceProgressCallback,
     SourceRecord,
     SourceRefreshInput,
+    SourceRegisterInput,
+    SourceRegisterKind,
     SourceUpdateResult,
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
 )
+
+# The pre-P10 ``source.add_text`` row reached this message through
+# ``SourceAddService``; the workflow that replaces the row owns it verbatim so
+# the public ``NonIdempotentRetryError`` text is unchanged.
+_TEXT_NON_IDEMPOTENT_MESSAGE = (
+    "add_text cannot be marked idempotent: text sources have no "
+    "reliable server-side dedupe key (titles non-unique, content "
+    "not exposed). For idempotent text imports, embed a UUID in "
+    "the title and dedupe client-side. See "
+    "docs/python-api.md#idempotency."
+)
+
+#: Failure kinds the pre-P10 handler's ``except RPCError`` wrapped into a
+#: ``SourceAddError``. It is deliberately *not* "every RPC-shaped reason":
+#: ``AuthError``/``RateLimitError``/``ServerError``/``NetworkError`` (and
+#: ``RPCTimeoutError``, a ``NetworkError`` subclass) were caught first and
+#: re-raised unwrapped under ADR-0019, so callers can still act on the specific
+#: type. Anything outside this set keeps the leaf's own public identity.
+_TEXT_WRAPPED_FAILURE_KINDS = frozenset(
+    {
+        SourceAddFailureKind.RPC,
+        SourceAddFailureKind.CLIENT,
+        SourceAddFailureKind.DECODING,
+        SourceAddFailureKind.RESPONSE_TOO_LARGE,
+        SourceAddFailureKind.UNKNOWN_RPC_METHOD,
+    }
+)
+
+# The same logger name and level the retired row logged under.
+_source_logger = logging.getLogger("notebooklm").getChild("_sources")
+
+
+def _source_add_failure(
+    operation: Operation,
+    record: SourceAddFailureRecord,
+    *,
+    outcome_unknown: bool = False,
+    dispatched: bool = False,
+) -> BackendError:
+    """Report one source-add failure as bounded neutral evidence.
+
+    ``_backend_compat`` replays an *equal* public exception at the facade from
+    ``record`` alone, so a transport-neutral workflow never has to name — or
+    construct — a public exception type.
+    """
+    return BackendError(
+        message=record.message,
+        operation=operation,
+        outcome_unknown=outcome_unknown,
+        diagnostics=MappingProxyType({"source_add_failure": record}),
+        reason=BackendErrorReason.SOURCE_ADD,
+        dispatched=dispatched,
+    )
+
+
+def _leaf_failure_record(error: BackendError) -> SourceAddFailureRecord | None:
+    """Return the leaf's captured public graph, if the backend captured one.
+
+    Capturing it is a *web* convention, not a port requirement: another adapter
+    may report a closed reason and nothing else, and the compatibility projector
+    reconstructs a public exception from the reason alone in that case. ``None``
+    therefore means "project by reason", not "malformed". A value of the wrong
+    type is malformed, and fails closed.
+    """
+    record = (error.diagnostics or {}).get("public_error_failure")
+    if record is None:
+        return None
+    if not isinstance(record, SourceAddFailureRecord):
+        raise BackendContractError(
+            "source registration failure has invalid public-error evidence",
+            operation=error.operation,
+        ) from error
+    return record
 
 
 class SourceService:
@@ -95,17 +175,119 @@ class SourceService:
         idempotent: bool,
         deadline: RuntimeDeadline | None = None,
     ) -> SourceAddTextResult:
-        return await self._backend.invoke(
-            SOURCE_ADD_TEXT_DEF,
-            SourceAddTextInput(
-                notebook_id,
-                title,
-                content,
-                wait=wait,
-                wait_timeout=wait_timeout,
-                idempotent=idempotent,
+        """Register one pasted-text source over the ``source.register`` leaf.
+
+        Text is the source-add family's one registration with no probe: titles
+        are not unique and the body is never echoed, so there is nothing to
+        reconcile against and no baseline worth taking. The workflow is
+        therefore the refusal, one write, and the two ways that write can fail
+        to name a source — which is exactly what the retired row did.
+
+        ``wait``/``wait_timeout`` stay on the signature because the input record
+        carries them, but readiness polling is the public facade's (the row
+        failed closed on any attempt to take it below the port).
+
+        No deadline is minted from ``_deadline_factory``. ``source.add_text`` is
+        deliberately absent from the closed deadline ledger
+        (``_web/deadlines.py``): it is one write with no aggregate budget, and
+        the retired row ran it with whatever the caller supplied — which the
+        facade leaves ``None``. Starting one here would invent a budget, and
+        with it an expiry path that turns a timeout on a
+        ``NON_IDEMPOTENT_NO_RETRY`` create into a different public failure.
+        """
+        workflow = SOURCE_ADD_TEXT_DEF.key
+        if idempotent:
+            # Checked before the leaf gate: refusing a replay writes nothing,
+            # and the pre-P10 handler refused before it looked at anything else.
+            raise _source_add_failure(
+                workflow,
+                SourceAddFailureRecord(
+                    kind=SourceAddFailureKind.NON_IDEMPOTENT_RETRY,
+                    message=_TEXT_NON_IDEMPOTENT_MESSAGE,
+                    args=(_TEXT_NON_IDEMPOTENT_MESSAGE,),
+                ),
+            )
+        require_leaves(self._backend, SOURCE_REGISTER_DEF.key)
+
+        _source_logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
+        try:
+            registered = await self._backend.invoke(
+                SOURCE_REGISTER_DEF,
+                SourceRegisterInput(
+                    notebook_id,
+                    SourceRegisterKind.TEXT,
+                    title=title,
+                    content=content,
+                ),
+                deadline=deadline,
+            )
+        except BackendError as error:
+            raise self._text_registration_failure(workflow, title, error) from error.__cause__
+
+        source = next(iter(registered.sources), None)
+        if source is None:
+            raise _source_add_failure(
+                workflow,
+                SourceAddFailureRecord(
+                    kind=SourceAddFailureKind.SOURCE_ADD,
+                    message=f"API returned no data for text source: {title}",
+                    args=(f"API returned no data for text source: {title}",),
+                    url=title,
+                ),
+            )
+        return SourceAddTextResult(source)
+
+    @staticmethod
+    def _text_registration_failure(
+        workflow: Operation,
+        title: str,
+        error: BackendError,
+    ) -> BackendError:
+        """Rebind one registration failure to the workflow, wrapping only the RPC leaf.
+
+        The leaf already captured its own public graph as neutral evidence, so
+        the wrap is a record nesting a record: no public exception is built,
+        yet ``_backend_compat`` reconstructs the identical
+        ``SourceAddError(title, cause=<the RPC error>) from <the RPC error>``
+        the retired row produced.
+        """
+        if isinstance(error, BackendContractError) or error.reason is None:
+            return error
+        if isinstance(error, BackendDeadlineExceededError):
+            # An explicitly supplied budget running out is the caller's answer,
+            # not a source-add failure: keep the subclass and only re-attribute
+            # it, exactly as ``update`` does.
+            return rebind_operation(error, workflow)
+        leaf = _leaf_failure_record(error)
+        if leaf is None:
+            # Nothing to wrap and nothing to replay: re-attribute the reason and
+            # let the compatibility projector build the public exception from it.
+            return rebind_operation(error, workflow)
+        if leaf.kind not in _TEXT_WRAPPED_FAILURE_KINDS:
+            # ADR-0019 catch ordering: the transport four-tuple and every other
+            # public leaf keep their own type, message and fields.
+            return _source_add_failure(
+                workflow,
+                leaf,
+                outcome_unknown=error.outcome_unknown,
+                dispatched=error.dispatched,
+            )
+        message = f"Failed to add text source '{title}'"
+        return _source_add_failure(
+            workflow,
+            SourceAddFailureRecord(
+                kind=SourceAddFailureKind.SOURCE_ADD,
+                message=message,
+                args=(message,),
+                url=title,
+                cause=leaf,
+                # ``raise SourceAddError(...) from e`` inside ``except RPCError
+                # as e``: the RPC error is the explicit cause, the implicit
+                # context, and the reason the context is suppressed.
+                context_is_cause=True,
+                explicit_cause=True,
+                suppress_context=True,
             ),
-            deadline=deadline,
         )
 
     async def add_drive(

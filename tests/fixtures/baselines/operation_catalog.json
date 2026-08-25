@@ -1375,6 +1375,14 @@
     "source.add_text": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "text"
+          ],
+          "operation": "source.register"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "non_idempotent_no_retry",
@@ -1382,7 +1390,8 @@
           "rpc_method": "ADD_SOURCE",
           "variant": "text"
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.add_url": {
       "call_policy": "mutation",
@@ -2102,8 +2111,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/primitives.py:SOURCE_REGISTER",
-        "_web/bindings/sources.py:SOURCE_ADD_TEXT"
+        "_web/bindings/primitives.py:SOURCE_REGISTER"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -8708,13 +8716,13 @@
       "app_callers": [
         "_app/source_add.py:add_source"
       ],
-      "composite_behavior": "Creates text without a safe probe key; idempotent=True is rejected up front.",
+      "composite_behavior": "Service-owned since P10 R3.2: SourceService.add_text rejects idempotent=True up front and runs one source.register text allocation, which has no safe probe key.",
       "disposition": "semantic",
       "execution_authorities": [
         {
           "binding": "ADD_SOURCE:text",
-          "discriminator": "pasted-text payload",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_TEXT",
+          "discriminator": "pasted-text allocation via the source.register leaf",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
           "transport_kind": "rpc"
         }
       ],

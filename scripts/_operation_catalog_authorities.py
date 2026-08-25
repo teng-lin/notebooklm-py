@@ -82,8 +82,8 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_ADD_TEXT, _b(RPCMethod.ADD_SOURCE, "text")): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_TEXT",
-            "pasted-text payload",
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "pasted-text allocation via the source.register leaf",
         ),
     ),
     (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.ADD_SOURCE, "drive")): _rules(

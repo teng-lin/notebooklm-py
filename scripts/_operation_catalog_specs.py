@@ -236,7 +236,8 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "SourceService",
         "notebook",
-        "Creates text without a safe probe key; idempotent=True is rejected up front.",
+        "Service-owned since P10 R3.2: SourceService.add_text rejects idempotent=True up front "
+        "and runs one source.register text allocation, which has no safe probe key.",
         _p("sources", "add_text"),
         (_b(RPCMethod.ADD_SOURCE, "text"),),
         recency_effect=(
