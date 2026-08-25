@@ -126,11 +126,19 @@ def test_the_source_add_rows_all_translate() -> None:
 
     The head no longer has a raw-passthrough branch, so ``_row_error_projection``
     answers only "scrub request URLs?" — ``False`` for every one of these rows.
+    ``source.add_text`` is absent because R3.2 hoisted it: it has no custom row
+    left, and its ``SOURCE_REGISTER`` leaf is a codec row, which carries no
+    ``error_mode`` at all (``None`` — the shared translator's own default).
     """
+    assert (
+        _row_error_projection(
+            WEB_BINDING_ROWS[Operation.SOURCE_REGISTER], Operation.SOURCE_REGISTER
+        )
+        is None
+    )
     for operation in (
         Operation.SOURCE_ADD_URL,
         Operation.SOURCE_ADD_URL_BATCH,
-        Operation.SOURCE_ADD_TEXT,
         Operation.SOURCE_ADD_DRIVE,
         Operation.SOURCE_ADD_FILE,
     ):

@@ -9,15 +9,17 @@ because the operation-catalog walker derives execution authorities from them.
 and ``SOURCE_WAIT`` is the one ``DeadlineMode.IGNORE`` row (source polling
 historically never clamps an in-flight read).
 
-The source-add family (``SOURCE_ADD_URL``, ``SOURCE_ADD_URL_BATCH``,
-``SOURCE_ADD_TEXT``, ``SOURCE_ADD_DRIVE``, ``SOURCE_ADD_FILE``) are
+The remaining source-add rows (``SOURCE_ADD_URL``, ``SOURCE_ADD_URL_BATCH``,
+``SOURCE_ADD_DRIVE``, ``SOURCE_ADD_FILE``) are
 :class:`CustomBinding` rows (P9.4b): each declares exactly the natives the
 policy ledger lists under spec keys (``snapshot``, ``create``, ``rename``,
 ``register``, ``limits``) and sequences them through the row-scoped invoker
-with the same options the P6.7 handlers set.  Four are *protocol* rows — source
-registration has a tentative-source mobile variant (ADR-0035 principle 2) — and
-``SOURCE_ADD_TEXT`` is a *compatibility* row (its ``SourceAddError`` wrap is not
-yet expressible as ``map_error``).  All five translate (P10 invariant I8): the
+with the same options the P6.7 handlers set.  All four are *protocol* rows —
+source registration has a tentative-source mobile variant (ADR-0035
+principle 2).  ``source.add_text`` no longer has a row at all: P10 R3.2 hoisted
+its workflow into ``SourceService`` over the ``SOURCE_REGISTER`` primitive, so
+the family's one *compatibility* row is gone.  All four translate (P10
+invariant I8): the
 established public leaves the family owns — ``SourceAddError``, the unconfirmed
 transport four-tuple, ``ValidationError``, ``NonIdempotentRetryError`` — are
 captured by ``_source_add_failure`` as bounded neutral evidence under
@@ -55,7 +57,6 @@ from ..._projectors import project_source
 from ..._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_TEXT_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
@@ -71,8 +72,6 @@ from ..._records import (
     SourceAddDriveResult,
     SourceAddFileInput,
     SourceAddFileResult,
-    SourceAddTextInput,
-    SourceAddTextResult,
     SourceAddTitleState,
     SourceAddUrlBatchInput,
     SourceAddUrlBatchResult,
@@ -524,39 +523,6 @@ async def _add_url_batch(
     )
 
 
-async def _add_text(
-    value: SourceAddTextInput,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-) -> SourceAddTextResult:
-    async def create_source(notebook_id: str, title: str, content: str) -> Source | None:
-        payload = await invoke.call(
-            _CREATE,
-            sources_codec.encode_add_text_payload(notebook_id, title, content),
-            deadline=deadline,
-        )
-        records = sources_codec.decode_add_source_records(payload) if payload is not None else ()
-        return _first_projected_source(records)
-
-    try:
-        source = await SourceAddService().add_text(
-            value.notebook_id,
-            value.title,
-            value.content,
-            wait=False,
-            wait_timeout=value.wait_timeout,
-            idempotent=value.idempotent,
-            create_source=create_source,
-            wait_until_ready=_facade_owned_wait,
-            logger=source_logger,
-        )
-    except NotebookLMError as exc:
-        # ``NonIdempotentRetryError`` on a refused replay and the ``SourceAddError``
-        # wrap both leave through this one neutral reason.
-        raise _source_add_failure(exc, Operation.SOURCE_ADD_TEXT) from exc
-    return SourceAddTextResult(_source_record(source))
-
-
 async def _add_drive(
     value: SourceAddDriveInput,
     deadline: RuntimeDeadline | None,
@@ -826,17 +792,6 @@ SOURCE_ADD_URL_BATCH = CustomBinding(
     collaborators=(_CAPTURE_PUBLIC_FAILURE,),
 )
 
-SOURCE_ADD_TEXT = CustomBinding(
-    definition=SOURCE_ADD_TEXT_DEF,
-    handler=_add_text,
-    native=(NativeCallSpec.constant(RPCMethod.ADD_SOURCE, "text", key=_CREATE),),
-    justification=(
-        "SourceAddService wraps the raw RPCError into SourceAddError and callers inspect "
-        "that public leaf; not yet expressible as map_error (gate table §3.13)."
-    ),
-    category="compatibility",
-)
-
 SOURCE_ADD_DRIVE = CustomBinding(
     definition=SOURCE_ADD_DRIVE_DEF,
     handler=_add_drive,
@@ -879,7 +834,6 @@ SOURCE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
         SOURCE_GET_FULLTEXT.definition.key: SOURCE_GET_FULLTEXT,
         SOURCE_ADD_URL.definition.key: SOURCE_ADD_URL,
         SOURCE_ADD_URL_BATCH.definition.key: SOURCE_ADD_URL_BATCH,
-        SOURCE_ADD_TEXT.definition.key: SOURCE_ADD_TEXT,
         SOURCE_ADD_DRIVE.definition.key: SOURCE_ADD_DRIVE,
         SOURCE_ADD_FILE.definition.key: SOURCE_ADD_FILE,
     }
@@ -888,7 +842,6 @@ SOURCE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
 __all__ = [
     "SOURCE_ADD_DRIVE",
     "SOURCE_ADD_FILE",
-    "SOURCE_ADD_TEXT",
     "SOURCE_ADD_URL",
     "SOURCE_ADD_URL_BATCH",
     "SOURCE_CHECK_FRESHNESS",

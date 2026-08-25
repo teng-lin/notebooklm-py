@@ -106,6 +106,7 @@ from .._records import (
     SOURCE_LIST_DEF,
     SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
+    SOURCE_REGISTER_DEF,
     SOURCE_UPDATE_DEF,
     SOURCE_WAIT_DEF,
 )
@@ -165,11 +166,11 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.NOTEBOOK_DESCRIBE: NOTEBOOK_DESCRIBE_DEF,
         Operation.SOURCE_ADD_URL: SOURCE_ADD_URL_DEF,
         Operation.SOURCE_ADD_URL_BATCH: SOURCE_ADD_URL_BATCH_DEF,
-        Operation.SOURCE_ADD_TEXT: SOURCE_ADD_TEXT_DEF,
         Operation.SOURCE_ADD_DRIVE: SOURCE_ADD_DRIVE_DEF,
         Operation.SOURCE_ADD_FILE: SOURCE_ADD_FILE_DEF,
         Operation.SOURCE_DELETE: SOURCE_DELETE_DEF,
         Operation.SOURCE_PATCH_TITLE: SOURCE_PATCH_TITLE_DEF,
+        Operation.SOURCE_REGISTER: SOURCE_REGISTER_DEF,
         Operation.SOURCE_REFRESH: SOURCE_REFRESH_DEF,
         Operation.SOURCE_CHECK_FRESHNESS: SOURCE_CHECK_FRESHNESS_DEF,
         Operation.SOURCE_GET_GUIDE: SOURCE_GET_GUIDE_DEF,
@@ -252,6 +253,7 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
         Operation.COLLECTION_CREATE: COLLECTION_CREATE_DEF,
         Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
+        Operation.SOURCE_ADD_TEXT: SOURCE_ADD_TEXT_DEF,
         Operation.SOURCE_UPDATE: SOURCE_UPDATE_DEF,
         Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
         Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
@@ -278,6 +280,10 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.COLLECTION_UPDATE: (
             "service-owned since P9.2-3: LabelSetService.update sequences collection.get and "
             "label.mutate"
+        ),
+        Operation.SOURCE_ADD_TEXT: (
+            "service-owned since P10 R3.2: SourceService.add_text refuses a non-idempotent "
+            "replay and runs one source.register text allocation"
         ),
         Operation.SOURCE_UPDATE: (
             "service-owned since P9.2-4: SourceService.update sequences source.patch_title and "
@@ -347,13 +353,13 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     }
 )
 
-# The frozen catalog currently contains 96 operations (87 product members plus nine
-# P9.2 primitives). This assertion is repeated at
+# The frozen catalog currently contains 97 operations (87 product members plus ten
+# decomposition primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 96
+_EXPECTED_OPERATION_COUNT: Final = 97
 _EXPECTED_SUPPORTED_COUNT: Final = 80
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 11
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 12
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:

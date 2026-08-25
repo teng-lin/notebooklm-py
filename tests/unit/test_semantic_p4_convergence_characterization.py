@@ -108,7 +108,6 @@ from notebooklm._records import (
     SHARING_PATCH_VIEW_LEVEL_DEF,
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_TEXT_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
@@ -119,6 +118,7 @@ from notebooklm._records import (
     SOURCE_LIST_DEF,
     SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
+    SOURCE_REGISTER_DEF,
     SOURCE_WAIT_DEF,
     NotebookGetInput,
     NotebookGetResult,
@@ -244,7 +244,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             CallPolicy.STATEFUL_START,
         ),
         SOURCE_ADD_URL_BATCH_DEF: (Operation.SOURCE_ADD_URL_BATCH, CallPolicy.MUTATION),
-        SOURCE_ADD_TEXT_DEF: (Operation.SOURCE_ADD_TEXT, CallPolicy.MUTATION),
         SOURCE_ADD_DRIVE_DEF: (Operation.SOURCE_ADD_DRIVE, CallPolicy.MUTATION),
         SOURCE_ADD_FILE_DEF: (Operation.SOURCE_ADD_FILE, CallPolicy.MUTATION),
         SOURCE_DELETE_DEF: (Operation.SOURCE_DELETE, CallPolicy.MUTATION),
@@ -333,6 +332,7 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         LABEL_MUTATE_DEF: (Operation.LABEL_MUTATE, CallPolicy.MUTATION),
         LABEL_ALLOCATE_DEF: (Operation.LABEL_ALLOCATE, CallPolicy.MUTATION),
         SHARING_MUTATE_DEF: (Operation.SHARING_MUTATE, CallPolicy.MUTATION),
+        SOURCE_REGISTER_DEF: (Operation.SOURCE_REGISTER, CallPolicy.MUTATION),
     }
 
     for op_def, (expected_key, expected_policy) in expected_migrated.items():

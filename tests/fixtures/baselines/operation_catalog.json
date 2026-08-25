@@ -1375,6 +1375,14 @@
     "source.add_text": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "text"
+          ],
+          "operation": "source.register"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "non_idempotent_no_retry",
@@ -1382,7 +1390,8 @@
           "rpc_method": "ADD_SOURCE",
           "variant": "text"
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.add_url": {
       "call_policy": "mutation",
@@ -1519,6 +1528,30 @@
           "role": "accepted duplicate refresh kickoff",
           "rpc_method": "REFRESH_SOURCE",
           "variant": null
+        }
+      ]
+    },
+    "source.register": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "probe_then_create",
+          "role": "guarded generic/YouTube create (single or true batch)",
+          "rpc_method": "ADD_SOURCE",
+          "variant": "url"
+        },
+        {
+          "idempotency_policy": "non_idempotent_no_retry",
+          "role": "non-idempotent pasted-text allocation",
+          "rpc_method": "ADD_SOURCE",
+          "variant": "text"
+        },
+        {
+          "idempotency_policy": "probe_then_create",
+          "role": "guarded Drive-document allocation",
+          "rpc_method": "ADD_SOURCE",
+          "variant": "drive"
         }
       ]
     },
@@ -2033,6 +2066,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/primitives.py:SOURCE_REGISTER",
         "_web/bindings/sources.py:SOURCE_ADD_DRIVE"
       ],
       "golden_disposition": "not_recorded",
@@ -2068,7 +2102,8 @@
       "rpc_id": "izAoDd",
       "rpc_method": "ADD_SOURCE",
       "semantic_operations": [
-        "source.add_drive"
+        "source.add_drive",
+        "source.register"
       ],
       "variant": "drive"
     },
@@ -2076,7 +2111,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/sources.py:SOURCE_ADD_TEXT"
+        "_web/bindings/primitives.py:SOURCE_REGISTER"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2116,7 +2151,8 @@
       "rpc_id": "izAoDd",
       "rpc_method": "ADD_SOURCE",
       "semantic_operations": [
-        "source.add_text"
+        "source.add_text",
+        "source.register"
       ],
       "variant": "text"
     },
@@ -2124,6 +2160,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/primitives.py:SOURCE_REGISTER",
         "_web/bindings/sources.py:SOURCE_ADD_URL",
         "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH"
       ],
@@ -2166,7 +2203,8 @@
       "rpc_method": "ADD_SOURCE",
       "semantic_operations": [
         "source.add_url",
-        "source.add_url_batch"
+        "source.add_url_batch",
+        "source.register"
       ],
       "variant": "url"
     },
@@ -8499,7 +8537,7 @@
       "execution_authorities": [
         {
           "binding": "ADD_SOURCE:drive",
-          "discriminator": "direct semantic binding",
+          "discriminator": "native Drive-document payload",
           "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
           "transport_kind": "rpc"
         },
@@ -8678,13 +8716,13 @@
       "app_callers": [
         "_app/source_add.py:add_source"
       ],
-      "composite_behavior": "Creates text without a safe probe key; idempotent=True is rejected up front.",
+      "composite_behavior": "Service-owned since P10 R3.2: SourceService.add_text rejects idempotent=True up front and runs one source.register text allocation, which has no safe probe key.",
       "disposition": "semantic",
       "execution_authorities": [
         {
           "binding": "ADD_SOURCE:text",
-          "discriminator": "direct semantic binding",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_TEXT",
+          "discriminator": "pasted-text allocation via the source.register leaf",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
           "transport_kind": "rpc"
         }
       ],
@@ -9169,6 +9207,52 @@
       "response_decoders_projectors": [],
       "route_context": "notebook+source",
       "tier": "product",
+      "unsupported_reason": null,
+      "web_paths": []
+    },
+    {
+      "app_callers": [],
+      "composite_behavior": "P10 primitive: one ADD_SOURCE allocation whose wire variant \u2014 and therefore whose reviewed retry classification \u2014 is chosen from the request's registration kind.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "ADD_SOURCE:drive",
+          "discriminator": "registration kind drive selects the Drive-document payload",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
+          "transport_kind": "rpc"
+        },
+        {
+          "binding": "ADD_SOURCE:text",
+          "discriminator": "registration kind text selects the pasted-text payload",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
+          "transport_kind": "rpc"
+        },
+        {
+          "binding": "ADD_SOURCE:url",
+          "discriminator": "registration kind url selects the URL/YouTube payload",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "source.register",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "ADD_SOURCE:drive",
+        "ADD_SOURCE:text",
+        "ADD_SOURCE:url"
+      ],
+      "owner": "SourceService",
+      "policy": "mutation",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [
+        "_row_adapters/sources.py:unwrap_add_source_rows",
+        "_web/codec/sources.py:decode_add_source_records"
+      ],
+      "route_context": "notebook",
+      "tier": "primitive",
       "unsupported_reason": null,
       "web_paths": []
     },

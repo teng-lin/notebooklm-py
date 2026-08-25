@@ -236,7 +236,8 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "SourceService",
         "notebook",
-        "Creates text without a safe probe key; idempotent=True is rejected up front.",
+        "Service-owned since P10 R3.2: SourceService.add_text rejects idempotent=True up front "
+        "and runs one source.register text allocation, which has no safe probe key.",
         _p("sources", "add_text"),
         (_b(RPCMethod.ADD_SOURCE, "text"),),
         recency_effect=(
@@ -310,6 +311,20 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "service-owned source.update workflow.",
         (),
         (_b(RPCMethod.UPDATE_SOURCE),),
+    ),
+    OperationSpec(
+        Operation.SOURCE_REGISTER,
+        CallPolicy.MUTATION,
+        "SourceService",
+        "notebook",
+        "P10 primitive: one ADD_SOURCE allocation whose wire variant — and therefore whose "
+        "reviewed retry classification — is chosen from the request's registration kind.",
+        (),
+        (
+            _b(RPCMethod.ADD_SOURCE, "url"),
+            _b(RPCMethod.ADD_SOURCE, "text"),
+            _b(RPCMethod.ADD_SOURCE, "drive"),
+        ),
     ),
     OperationSpec(
         Operation.SOURCE_REFRESH,

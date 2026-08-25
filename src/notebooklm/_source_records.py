@@ -290,6 +290,58 @@ class SourceAddDriveResult:
 
 
 @unique
+class SourceRegisterKind(str, Enum):
+    """Which registration payload one ``SOURCE_REGISTER`` write carries.
+
+    The member value is also the wire ``operation_variant`` the leaf dispatches
+    under, and therefore the key the idempotency registry classifies the write
+    by: ``url``/``drive`` are ``PROBE_THEN_CREATE`` (a probe key exists), while
+    ``text`` is ``NON_IDEMPOTENT_NO_RETRY`` (titles are not unique and the body
+    is never echoed, so no dedupe key exists).  One kind field therefore fixes
+    the payload shape *and* the retry disposition; nothing above the port has
+    to restate the second.
+    """
+
+    URL = "url"
+    TEXT = "text"
+    DRIVE = "drive"
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRegisterInput:
+    """One source-registration write, discriminated by ``kind``.
+
+    Exactly one payload group is populated: ``urls``/``youtube_flags`` for
+    :attr:`SourceRegisterKind.URL` (one entry for a single create, many for a
+    true batch), ``title``/``content`` for
+    :attr:`SourceRegisterKind.TEXT`, and ``file_id``/``title``/``mime_type``
+    for :attr:`SourceRegisterKind.DRIVE`.  A mismatched group is a backend
+    contract error at encode time, never a silently truncated request.
+    """
+
+    notebook_id: str
+    kind: SourceRegisterKind
+    urls: tuple[str, ...] = ()
+    youtube_flags: tuple[bool, ...] = ()
+    title: str | None = field(default=None, repr=False)
+    content: str | None = field(default=None, repr=False)
+    file_id: str | None = field(default=None, repr=False)
+    mime_type: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRegisterResult:
+    """Every source row the registration write echoed back, in wire order.
+
+    A Drive registration may legally echo nothing at all, and a URL batch may
+    echo fewer rows than it was asked for; positional attribution and probe
+    reconciliation are the sequencing workflow's job, not the leaf's.
+    """
+
+    sources: tuple[SourceRecord, ...]
+
+
+@unique
 class SourceFileInputKind(str, Enum):
     """How bytes reach the existing file-upload pipeline."""
 
@@ -456,6 +508,15 @@ SOURCE_PATCH_TITLE_DEF: OperationDef[SourcePatchTitleInput, SourcePatchTitleResu
     CallPolicy.MUTATION,
     SourcePatchTitleInput,
     SourcePatchTitleResult,
+    tier=OperationTier.PRIMITIVE,
+)
+
+
+SOURCE_REGISTER_DEF: OperationDef[SourceRegisterInput, SourceRegisterResult] = OperationDef(
+    Operation.SOURCE_REGISTER,
+    CallPolicy.MUTATION,
+    SourceRegisterInput,
+    SourceRegisterResult,
     tier=OperationTier.PRIMITIVE,
 )
 

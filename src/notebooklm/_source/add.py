@@ -21,7 +21,6 @@ from .._idempotency import (
 from ..exceptions import (
     AuthError,
     NetworkError,
-    NonIdempotentRetryError,
     RateLimitError,
     ServerError,
     SourceAddError,
@@ -33,7 +32,6 @@ from ..types import Source
 ListSources = Callable[[str], Awaitable[list[Source]]]
 WaitUntilReady = Callable[..., Awaitable[Source]]
 UrlSourceCreator = Callable[[str, str], Awaitable[Source | None]]
-TextSourceCreator = Callable[[str, str, str], Awaitable[Source | None]]
 DriveSourceCreator = Callable[[str, str, str, str], Awaitable[Source | None]]
 RenameSource = Callable[[str, str, str], Awaitable[Source | None]]
 ParseUrl = Callable[[str], Any]
@@ -435,53 +433,6 @@ class SourceAddService:
             result = replace(result, value=source)
 
         return result if return_result else source
-
-    async def add_text(
-        self,
-        notebook_id: str,
-        title: str,
-        content: str,
-        *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
-        idempotent: bool = False,
-        create_source: TextSourceCreator,
-        wait_until_ready: WaitUntilReady,
-        logger: logging.Logger,
-    ) -> Source:
-        """Add a text source to a notebook."""
-        if idempotent:
-            raise NonIdempotentRetryError(
-                "add_text cannot be marked idempotent: text sources have no "
-                "reliable server-side dedupe key (titles non-unique, content "
-                "not exposed). For idempotent text imports, embed a UUID in "
-                "the title and dedupe client-side. See "
-                "docs/python-api.md#idempotency."
-            )
-        logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
-        try:
-            source = await create_source(notebook_id, title, content)
-        except (AuthError, RateLimitError, ServerError, NetworkError):
-            # Preserve transport-level signals so callers can act on the
-            # specific type (AuthError -> re-login, RateLimitError -> back-off
-            # with retry_after, ServerError -> transient retry) instead of
-            # receiving everything collapsed into SourceAddError — the same
-            # ADR-0019 catch ordering add_url and add_drive use.
-            raise
-        except RPCError as e:
-            raise SourceAddError(
-                title,
-                cause=e,
-                message=f"Failed to add text source '{title}'",
-            ) from e
-
-        if source is None:
-            raise SourceAddError(title, message=f"API returned no data for text source: {title}")
-
-        if wait:
-            return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
-
-        return source
 
     async def add_drive(
         self,

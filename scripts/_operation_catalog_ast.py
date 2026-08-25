@@ -2324,6 +2324,43 @@ ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
     }
 )
 
+# P10 R3.2: the SOURCE_REGISTER primitive leaf. One ADD_SOURCE allocation whose
+# wire variant, and therefore whose reviewed retry classification, is chosen
+# from the request's registration kind.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_web/bindings/primitives.py", "_records", "SOURCE_REGISTER_DEF"),
+        ("_web/bindings/primitives.py", "_records", "SourceRegisterInput"),
+        ("_web/codec/sources.py", "_backend", "BackendContractError"),
+        ("_web/codec/sources.py", "_records", "SourceRegisterInput"),
+        ("_web/codec/sources.py", "_records", "SourceRegisterKind"),
+        ("_web/codec/sources.py", "_records", "SourceRegisterResult"),
+        ("_web/registry.py", "_records", "SOURCE_REGISTER_DEF"),
+    }
+)
+
+# P10 R3.2: source.add_text becomes service-owned. The custom row and its typed
+# input/result leave _web; SourceService gains the workflow and the neutral
+# failure evidence it reports instead of a public exception.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_source_service.py", "_records", "SourceAddTextInput"),
+        ("_web/bindings/sources.py", "_records", "SOURCE_ADD_TEXT_DEF"),
+        ("_web/bindings/sources.py", "_records", "SourceAddTextInput"),
+        ("_web/bindings/sources.py", "_records", "SourceAddTextResult"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_service.py", "_backend", "BackendContractError"),
+        ("_source_service.py", "_records", "SOURCE_REGISTER_DEF"),
+        ("_source_service.py", "_records", "SourceAddFailureKind"),
+        ("_source_service.py", "_records", "SourceAddFailureRecord"),
+        ("_source_service.py", "_records", "SourceRegisterInput"),
+        ("_source_service.py", "_records", "SourceRegisterKind"),
+    }
+)
+
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose
 # whole wire surface has migrated takes it as its sole positional collaborator.

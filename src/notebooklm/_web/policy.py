@@ -164,17 +164,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "conditional reconciliation read"),
             ),
         ),
-        Operation.SOURCE_ADD_TEXT: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(
-                    RPCMethod.ADD_SOURCE,
-                    _NO_RETRY,
-                    "non-idempotent pasted-text allocation",
-                    variant="text",
-                ),
-            ),
-        ),
         Operation.SOURCE_ADD_DRIVE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (
@@ -208,6 +197,35 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
         Operation.SOURCE_PATCH_TITLE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (_native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "source title set-op"),),
+        ),
+        # P10 primitive: one ADD_SOURCE allocation, the variant chosen from the
+        # request's registration kind. The three choices deliberately carry two
+        # different reviewed retry classifications — the registry keys on
+        # (method, variant), so collapsing the source-add family onto one leaf
+        # cannot flatten text's NON_IDEMPOTENT_NO_RETRY into the url/drive
+        # PROBE_THEN_CREATE the way a method-keyed ledger would.
+        Operation.SOURCE_REGISTER: WebCallPolicyBinding(
+            CallPolicy.MUTATION,
+            (
+                _native(
+                    RPCMethod.ADD_SOURCE,
+                    _PROBE_CREATE,
+                    "guarded generic/YouTube create (single or true batch)",
+                    variant="url",
+                ),
+                _native(
+                    RPCMethod.ADD_SOURCE,
+                    _NO_RETRY,
+                    "non-idempotent pasted-text allocation",
+                    variant="text",
+                ),
+                _native(
+                    RPCMethod.ADD_SOURCE,
+                    _PROBE_CREATE,
+                    "guarded Drive-document allocation",
+                    variant="drive",
+                ),
+            ),
         ),
         Operation.SOURCE_REFRESH: WebCallPolicyBinding(
             CallPolicy.MUTATION,
@@ -829,6 +847,18 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                     _leaf(Operation.COLLECTION_GET, None),
                     _leaf(Operation.LABEL_MUTATE, None, "add_notebooks", "remove_notebooks"),
                 ),
+            ),
+            Operation.SOURCE_ADD_TEXT: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(
+                        RPCMethod.ADD_SOURCE,
+                        _NO_RETRY,
+                        "non-idempotent pasted-text allocation",
+                        variant="text",
+                    ),
+                ),
+                (_leaf(Operation.SOURCE_REGISTER, "text"),),
             ),
             Operation.SOURCE_UPDATE: WorkflowPolicyBinding(
                 CallPolicy.MUTATION,

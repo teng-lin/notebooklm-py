@@ -15,13 +15,13 @@ from notebooklm._operations import Operation
 from notebooklm._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_TEXT_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_GUIDE_DEF,
     SOURCE_REFRESH_DEF,
+    SOURCE_REGISTER_DEF,
     SOURCE_WAIT_DEF,
     SourceAddDriveInput,
     SourceAddDriveResult,
@@ -29,8 +29,6 @@ from notebooklm._records import (
     SourceAddFailureRecord,
     SourceAddFileInput,
     SourceAddFileResult,
-    SourceAddTextInput,
-    SourceAddTextResult,
     SourceAddUrlBatchInput,
     SourceAddUrlBatchResult,
     SourceAddUrlInput,
@@ -40,6 +38,9 @@ from notebooklm._records import (
     SourceGuideInput,
     SourceRecord,
     SourceRefreshInput,
+    SourceRegisterInput,
+    SourceRegisterKind,
+    SourceRegisterResult,
     SourceUrlBatchItemRecord,
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
@@ -174,7 +175,9 @@ def test_source_wait_snapshot_records_are_transport_neutral() -> None:
 async def test_neutral_service_materializes_batch_and_hides_sensitive_inputs() -> None:
     backend = RecordingBackend()
     source = SourceRecord("src", "Title", status="ready")
-    backend.set_result(SOURCE_ADD_TEXT_DEF, SourceAddTextResult(source))
+    # P10 R3.2: source.add_text is a service-owned workflow over one leaf.
+    backend.set_result(SOURCE_REGISTER_DEF, SourceRegisterResult((source,)))
+    backend.set_workflows(Operation.SOURCE_ADD_TEXT)
     backend.set_result(
         SOURCE_ADD_URL_BATCH_DEF,
         SourceAddUrlBatchResult(
@@ -209,12 +212,13 @@ async def test_neutral_service_materializes_batch_and_hides_sensitive_inputs() -
     assert text_result.source == source
     assert len(batch_result.items) == 2
     assert [call.operation for call in backend.invocations] == [
-        Operation.SOURCE_ADD_TEXT,
+        Operation.SOURCE_REGISTER,
         Operation.SOURCE_ADD_URL_BATCH,
     ]
     text_input = backend.invocations[0].value
     batch_input = backend.invocations[1].value
-    assert isinstance(text_input, SourceAddTextInput)
+    assert isinstance(text_input, SourceRegisterInput)
+    assert text_input.kind is SourceRegisterKind.TEXT
     assert "Secret title" not in repr(text_input) and "secret body" not in repr(text_input)
     assert isinstance(batch_input, SourceAddUrlBatchInput)
     assert "ok.example" not in repr(batch_input)
@@ -224,8 +228,9 @@ async def test_neutral_service_materializes_batch_and_hides_sensitive_inputs() -
 async def test_text_and_drive_wait_timeouts_remain_polling_only_facade_budgets() -> None:
     backend = RecordingBackend()
     source = SourceRecord("src", "Title", status="ready")
-    backend.set_result(SOURCE_ADD_TEXT_DEF, SourceAddTextResult(source))
+    backend.set_result(SOURCE_REGISTER_DEF, SourceRegisterResult((source,)))
     backend.set_result(SOURCE_ADD_DRIVE_DEF, SourceAddDriveResult(source))
+    backend.set_workflows(Operation.SOURCE_ADD_TEXT)
     api = SourcesAPI(MagicMock(), uploader=MagicMock(), _backend=backend)
     api.wait_until_ready = AsyncMock(  # type: ignore[method-assign]
         return_value=Source(id="src", title="Title", status=SourceStatus.READY)
@@ -241,10 +246,11 @@ async def test_text_and_drive_wait_timeouts_remain_polling_only_facade_budgets()
     )
 
     assert [invocation.deadline for invocation in backend.invocations] == [None, None]
-    # The neutral request carries the caller's ordering choice so the web
-    # handler can defer any title work, but no absolute deadline is started and
-    # the handler itself never polls.
-    assert backend.invocations[0].value.wait is True
+    # No absolute deadline is started for either add, and nothing below the
+    # facade polls. The Drive request still carries the caller's ordering choice
+    # so its handler can defer title work; the hoisted text workflow needs no
+    # such flag on the wire — the registration leaf has no title phase.
+    assert backend.invocations[0].value.kind is SourceRegisterKind.TEXT
     assert backend.invocations[1].value.wait is True
     assert api.wait_until_ready.await_args_list == [
         call("nb", "src", timeout=0.01),

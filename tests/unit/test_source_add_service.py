@@ -26,10 +26,7 @@ from notebooklm._records import (
 from notebooklm._source.add import SourceAddService, honor_requested_title_if_fresh
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import (
-    AuthError,
     NetworkError,
-    NonIdempotentRetryError,
-    RateLimitError,
     ServerError,
     SourceAddError,
 )
@@ -404,108 +401,6 @@ async def test_add_url_wraps_generic_rpc_error(
 
     assert exc_info.value.url == "https://example.com"
     assert exc_info.value.cause is rpc_error
-
-
-@pytest.mark.asyncio
-async def test_add_text_uses_exact_rpc_shape_and_wait_hook(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    rpc = RecordingRpc(source_response("text", "Title"))
-    ready = Source(id="src_text", title="Title")
-    wait_until_ready = AsyncMock(return_value=ready)
-
-    result = await service.add_text(
-        "nb_1",
-        "Title",
-        "content",
-        wait=True,
-        wait_timeout=9.0,
-        create_source=rpc.create_source,
-        wait_until_ready=wait_until_ready,
-        logger=logger,
-    )
-
-    assert result is ready
-    assert rpc.calls == [{"args": ("nb_1", "Title", "content")}]
-    wait_until_ready.assert_awaited_once_with("nb_1", "src_text", timeout=9.0)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "transport_error",
-    [
-        RateLimitError("quota exceeded", retry_after=30),
-        AuthError("csrf token expired"),
-        ServerError("upstream 503"),
-        NetworkError("connection reset"),
-    ],
-    ids=["rate_limit", "auth", "server", "network"],
-)
-async def test_add_text_propagates_narrow_transport_errors_unwrapped(
-    service: SourceAddService,
-    logger: logging.Logger,
-    transport_error: Exception,
-) -> None:
-    # ADR-0019 cross-cutting rule: typed transport errors propagate UNWRAPPED
-    # so callers can catch RateLimitError (back-off via retry_after), AuthError
-    # (re-login), ServerError (transient retry) — the same catch ordering
-    # add_url and add_drive already follow. Before the fix, add_text's bare
-    # ``except RPCError`` collapsed all of these into SourceAddError.
-    with pytest.raises(type(transport_error)) as exc_info:
-        await service.add_text(
-            "nb_1",
-            "Title",
-            "content",
-            create_source=AsyncMock(side_effect=transport_error),
-            wait_until_ready=AsyncMock(),
-            logger=logger,
-        )
-
-    assert exc_info.value is transport_error
-    assert not isinstance(exc_info.value, SourceAddError)
-
-
-@pytest.mark.asyncio
-async def test_add_text_wraps_generic_rpc_error(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    # The residual broad RPCError (e.g. validation / decode-shaped failures)
-    # still wraps into SourceAddError, with the original preserved on both the
-    # ``cause`` attribute and the ``raise ... from`` chain.
-    rpc_error = RPCError("text add failed")
-
-    with pytest.raises(SourceAddError) as exc_info:
-        await service.add_text(
-            "nb_1",
-            "Title",
-            "content",
-            create_source=AsyncMock(side_effect=rpc_error),
-            wait_until_ready=AsyncMock(),
-            logger=logger,
-        )
-
-    assert exc_info.value.cause is rpc_error
-    assert exc_info.value.__cause__ is rpc_error
-    assert "Failed to add text source 'Title'" in str(exc_info.value)
-
-
-@pytest.mark.asyncio
-async def test_add_text_refuses_idempotent_flag(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    with pytest.raises(NonIdempotentRetryError):
-        await service.add_text(
-            "nb_1",
-            "Title",
-            "content",
-            idempotent=True,
-            create_source=AsyncMock(),
-            wait_until_ready=AsyncMock(),
-            logger=logger,
-        )
 
 
 @pytest.mark.asyncio
