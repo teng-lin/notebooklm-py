@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import logging
 import reprlib
+import types  # ``from types import …`` reads as a public-model import to the P3 guardrail
 from datetime import datetime, timezone
 from typing import Any, cast
 
+from ..._backend import BackendError, BackendErrorReason
 from ..._binding import CodecPayload
+from ..._operations import Operation
 from ..._records import (
     NotebookChatSessionRecord,
     NotebookChatSettingsRecord,
+    NotebookCreateInput,
     NotebookDeleteInput,
     NotebookDeleteResult,
     NotebookDescriptionRecord,
@@ -24,10 +28,13 @@ from ..._records import (
     NotebookRecord,
     NotebookRemoveRecentInput,
     NotebookRemoveRecentResult,
+    NotebookUpdateInput,
+    NotebookUpdateResult,
     SuggestedTopicRecord,
 )
 from ..._row_adapters.chat import unwrap_chat_settings
 from ..._row_adapters.notebooks import ProjectRow
+from ..._row_adapters.sources import SourceRow
 from ...exceptions import DecodingError, UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
 from ...rpc.types import ChatGoal, ChatResponseLength
@@ -375,6 +382,120 @@ def decode_notebook_guide(value: NotebookGuideInput, result: Any) -> NotebookGui
     return NotebookGuideResult(decode_notebook_description(result))
 
 
+# Composite-facing payloads (P9.4b). The ``NOTEBOOK_CREATE`` and
+# ``NOTEBOOK_UPDATE`` custom rows dispatch these per phase through their
+# row-scoped invoker; each names the route and options the P2 handlers passed
+# and never a method.
+def encode_notebook_snapshot() -> CodecPayload:
+    """Account-scoped ``LIST_NOTEBOOKS`` read a composite issues (baseline/probe/quota)."""
+    return CodecPayload(params=encode_list_notebooks(), source_path="/")
+
+
+def encode_notebook_create(value: NotebookCreateInput) -> CodecPayload:
+    """Payload for the guarded ``CREATE_NOTEBOOK`` phase of ``notebook.create``."""
+    from ..._notebook_payloads import build_create_notebook_params
+
+    return CodecPayload(params=build_create_notebook_params(value.title), source_path="/")
+
+
+def encode_notebook_update_mutation(value: NotebookUpdateInput) -> CodecPayload:
+    """Payload for the ``RENAME_NOTEBOOK`` phase of ``notebook.update`` (null success accepted)."""
+    from ..._notebook_payloads import build_update_notebook_params
+
+    return CodecPayload(
+        params=build_update_notebook_params(
+            value.notebook_id,
+            title=value.title,
+            emoji=value.emoji,
+        ),
+        source_path="/",
+        allow_null=True,
+    )
+
+
+def encode_notebook_update_readback(value: NotebookUpdateInput) -> CodecPayload:
+    """Payload for the unconditional ``GET_NOTEBOOK`` readback of ``notebook.update``."""
+    from ..._notebook_payloads import build_get_notebook_params
+
+    return CodecPayload(
+        params=build_get_notebook_params(value.notebook_id),
+        source_path=f"/notebook/{value.notebook_id}",
+    )
+
+
+def notebook_update_not_found(
+    value: NotebookUpdateInput,
+    diagnostics: dict[str, object] | None = None,
+) -> BackendError:
+    """The closed ``NOTEBOOK_NOT_FOUND`` failure ``notebook.update`` raises after its readback."""
+    payload: dict[str, object] = {
+        "notebook_id": value.notebook_id,
+        "method_id": RPCMethod.GET_NOTEBOOK.value,
+    }
+    if diagnostics:
+        payload = {**diagnostics, **payload}
+    return BackendError(
+        message=f"Notebook not found: {value.notebook_id}",
+        operation=Operation.NOTEBOOK_UPDATE,
+        diagnostics=types.MappingProxyType(payload),
+        reason=BackendErrorReason.NOTEBOOK_NOT_FOUND,
+    )
+
+
+def decode_notebook_update_readback(
+    value: NotebookUpdateInput, result: Any
+) -> NotebookUpdateResult:
+    """Decode ``notebook.update``'s readback; an empty or blank row is ``NOTEBOOK_NOT_FOUND``."""
+    notebook_row = (
+        safe_index(
+            result,
+            0,
+            method_id=RPCMethod.GET_NOTEBOOK.value,
+            source="WebRpcBackend._notebook_update",
+        )
+        if result and isinstance(result, list)
+        else None
+    )
+    if not notebook_row:
+        raise notebook_update_not_found(value)
+    notebook = decode_notebook(notebook_row, include_chat_settings=True)
+    if not notebook.id and not notebook.title:
+        raise notebook_update_not_found(value)
+    return NotebookUpdateResult(notebook=notebook)
+
+
+def decode_notebook_source_ids_silent(notebook: object) -> tuple[str, ...]:
+    """The facade's tolerant, silent source-id extraction the mind-map generate rows default to."""
+    if not notebook or not isinstance(notebook, list):
+        return ()
+    notebook_info = safe_index(
+        notebook,
+        0,
+        method_id=RPCMethod.GET_NOTEBOOK.value,
+        source="NotebooksAPI.get_source_ids",
+    )
+    if not isinstance(notebook_info, list) or len(notebook_info) <= 1:
+        return ()
+    sources = safe_index(
+        notebook_info,
+        1,
+        method_id=RPCMethod.GET_NOTEBOOK.value,
+        source="NotebooksAPI.get_source_ids",
+    )
+    if not isinstance(sources, list):
+        return ()
+    result: list[str] = []
+    for source in sources:
+        if isinstance(source, list) and source:
+            source_id = SourceRow.from_entry(
+                source,
+                method_id=RPCMethod.GET_NOTEBOOK.value,
+            ).id
+            if source_id:
+                result.append(source_id)
+    return tuple(result)
+
+
 __all__ = [
     "decode_notebook",
     "decode_notebook_delete",
@@ -384,13 +505,20 @@ __all__ = [
     "decode_notebook_list",
     "decode_notebook_list_result",
     "decode_notebook_remove_recent",
+    "decode_notebook_source_ids_silent",
+    "decode_notebook_update_readback",
     "encode_delete_notebook",
     "encode_list_notebooks",
+    "encode_notebook_create",
     "encode_notebook_delete",
     "encode_notebook_get",
     "encode_notebook_guide",
     "encode_notebook_guide_request",
     "encode_notebook_list",
     "encode_notebook_remove_recent",
+    "encode_notebook_snapshot",
+    "encode_notebook_update_mutation",
+    "encode_notebook_update_readback",
     "encode_remove_from_recent",
+    "notebook_update_not_found",
 ]

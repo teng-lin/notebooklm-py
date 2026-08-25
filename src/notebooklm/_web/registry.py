@@ -232,8 +232,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
 
 _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
     {
-        Operation.NOTEBOOK_CREATE: "_notebook_create",
-        Operation.NOTEBOOK_UPDATE: "_notebook_update",
         Operation.SOURCE_ADD_URL: "_source_add_url",
         Operation.SOURCE_ADD_URL_BATCH: "_source_add_url_batch",
         Operation.SOURCE_ADD_TEXT: "_source_add_text",
@@ -241,10 +239,6 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.SOURCE_ADD_FILE: "_source_add_file",
         Operation.SOURCE_UPDATE: "_source_update",
         Operation.CHAT_ASK: "_chat_ask",
-        Operation.MIND_MAP_GENERATE_NOTE: "_mind_map_generate_note",
-        Operation.MIND_MAP_GENERATE_INTERACTIVE: "_mind_map_generate_interactive",
-        Operation.ARTIFACT_LIST: "_artifact_list",
-        Operation.ARTIFACT_GET: "_artifact_get",
         Operation.ARTIFACT_GENERATE_AUDIO: "_audio_generate",
         Operation.ARTIFACT_GENERATE_QUIZ: "_quiz_generate",
         Operation.ARTIFACT_GENERATE_FLASHCARDS: "_flashcards_generate",
@@ -253,7 +247,6 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC: "_infographic_generate",
         Operation.ARTIFACT_GENERATE_SLIDE_DECK: "_slide_deck_generate",
         Operation.ARTIFACT_GENERATE_DATA_TABLE: "_data_table_generate",
-        Operation.ARTIFACT_GENERATE_MIND_MAP: "_mind_map_generate",
         Operation.LABEL_CREATE: "_label_create",
         Operation.LABEL_UPDATE: "_label_update",
         Operation.COLLECTION_CREATE: "_collection_create",

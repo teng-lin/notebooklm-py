@@ -314,7 +314,7 @@ Some feature workflows intentionally combine RPC with non-RPC HTTP work:
 | Source URL/text/Drive add | `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` because those flows have stable probes. Text-source adds are intentionally non-idempotent unless the caller handles dedupe externally. |
 | Artifact generation | P5.2–P5.6 route every family kickoff through transport-neutral family services and the typed web backend while preserving established payload builders and public `GenerationStatus`. P5.8 routes revision, retry, rename, delete, suggestions, lifecycle status reads, and representation discovery through typed Studio services; `_artifact/generation.py` and `_artifact/downloads.py` retain import-compatible helper exports only and own no native RPC authority. `ArtifactLifecycleService` composes the existing `ArtifactPollingService`, `operation_scope(...)`, and feature-local `PollRegistry`, so public `wait_for_completion()` remains lifecycle-terminal; family-usable readiness does not alter that wait condition. |
 | Artifact download | P5.8 routes every family through `ArtifactRepresentationService` and typed `artifact.download` catalog/content actions. It delegates remote bytes to `StudioDownloadClient` and local report/interactive/table/map formats to `StudioSerializationClient`, preserving storage cookies, trusted-host checks, per-hop redirect validation, exact latest-created selection, and the explicit prefetched no-refetch path. |
-| Notes and mind maps | Backend-neutral `NoteService` invokes typed NOTE_* operations for `NotesAPI` and note-backed MIND_MAP_* workflows for `MindMapsAPI`; `MindMapFamilyService` owns its interactive Studio branch. `WebRpcBackend` owns the two input-defaulting mind-map generate composites; since P9.3 the plain-note leaves and the four mind-map leaves are `_web/bindings/notes.py` / `_web/bindings/mind_maps.py` codec rows over the mixed note-row codec. `LegacyNoteBackedService` remains bounded to deferred saved-chat/artifact compatibility callers and is absent from `MindMapsAPI`. |
+| Notes and mind maps | Backend-neutral `NoteService` invokes typed NOTE_* operations for `NotesAPI` and note-backed MIND_MAP_* workflows for `MindMapsAPI`; `MindMapFamilyService` owns its interactive Studio branch. Since P9.3 the plain-note leaves and the four mind-map leaves are `_web/bindings/notes.py` / `_web/bindings/mind_maps.py` codec rows over the mixed note-row codec; since P9.4b the two input-defaulting generate composites, `ARTIFACT_GENERATE_MIND_MAP` and the `ARTIFACT_LIST`/`ARTIFACT_GET` catalog merges are `_web/bindings/mind_maps.py` custom rows that reach the legacy note family through the row-scoped `InvokerRpcCaller`. `LegacyNoteBackedService` remains bounded to deferred saved-chat/artifact compatibility callers and is absent from `MindMapsAPI`. |
 
 ## Cross-cutting policies
 
@@ -1071,10 +1071,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_studio/` | Private transport-neutral Studio boundary: the P5.1 heterogeneous catalog/classifier; P5.2–P5.6 family/generation/export services; P5.7 trusted representation retrieval plus local serialization clients; P5.8 management, lifecycle, suggestions, and representation orchestration; and the P6.3 interactive mind-map family. |
 | `_studio/interactive.py` | Private P5.3 Quiz/Flashcards family service: typed generation dispatch, catalog-backed discovery, and family-usable readiness/user-state metadata without wire vocabulary. |
 | `_studio/mind_maps.py` | Private P6.3 interactive mind-map family service: catalog-backed discovery plus typed generation/tree/update/delete dispatch. |
-| `_web/backend.py` | Single web semantic backend, owner of the runtime/lifecycle/auth/metrics leaves, the binding table, and the remaining handler-backed semantic operations (the P9.3 leaves are `_web/bindings/*` rows). |
+| `_web/backend.py` | Single web semantic backend, owner of the runtime/lifecycle/auth/metrics leaves, the binding table, and the remaining handler-backed semantic operations (the P9.3 leaves and the P9.4 composites are `_web/bindings/*` rows). |
 | `_web/runtime.py` | Sole batchexecute encode/dispatch/decode implementation (`WebExecutionRuntime`). |
 | `_web/transport.py` | `WebTransport` (P9.1): the web backend's two transport verbs — `call` (one deadline-bound `batchexecute` call over `WebExecutionRuntime`, tagging escaped native errors `dispatched`) and `stream` (the chat-aware authed POST) — plus the frozen `WebRequest`/`WebStreamRequest` values and `assemble` for codec rows. Lifecycle stays on `WebRpcBackend`. |
-| `_web/deadline_rpc.py` | Deadline/operation-bound compatibility caller used only inside legacy note-backed web composites. |
 | `_web/chat.py` | P6.1 Chat web workflow mixin; since P9.3 only the two-phase `CHAT_ASK` composite and its shared conversation-id helper remain here (the five unary chat leaves are `_web/bindings/chat.py` rows). |
 | `_web/error_policy.py` | Closed native-to-semantic error classification and safe-diagnostic allowlist shared by the composed web backend. |
 | `_web/failure_projection.py` | Bounded, serializable projection of public exception graphs into transport-neutral source failure records. |
@@ -1082,8 +1081,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/bindings/__init__.py` | `WEB_BINDING_ROWS` (P9.3): the union of every domain's binding rows, checked for one row per operation and canonical definitions; `_web/registry.py` partitions the supported set between these rows and the remaining handler names. |
 | `_web/bindings/research.py` | P9.3 research codec rows: `RESEARCH_START` (input-keyed fast/deep `NativeCallSpec` with the deep-start `map_error` that mints `RESEARCH_START_UNAVAILABLE`), `RESEARCH_POLL`, `RESEARCH_CANCEL`, `RESEARCH_IMPORT` (inherits the caller's deadline, forwards the service's `attempt_timeout`); the P6.2 research mixin these rows replace is deleted. |
 | `_web/errors.py` | Shared native-to-neutral failure translation (`translate_web_error`, `error_diagnostics`) that `WebRpcBackend._translate_error` delegates to and row-level `map_error` hooks call without importing the backend head. |
-| `_web/bindings/mind_maps.py` | P9.3 mind-map leaf codec rows: `MIND_MAP_LIST`, `MIND_MAP_GET`, `MIND_MAP_UPDATE`, `MIND_MAP_DELETE` — `encode → one native call → decode`; the two generate members stay input-defaulting handlers until their P9.4 custom rows. |
-| `_web/bindings/notebooks.py` | P9.3 notebook codec rows: `NOTEBOOK_LIST` (non-uniform decoder over the empty/`[None]`/`[[rows]]` shapes), `NOTEBOOK_GET` (input-selected source-id-only branch), `NOTEBOOK_DELETE`, `NOTEBOOK_REMOVE_RECENT`, `NOTEBOOK_SUMMARIZE`, `NOTEBOOK_DESCRIBE` — `encode → one native call → decode`; the create/update composites stay handlers and list through `_list_notebooks`. |
+| `_web/bindings/mind_maps.py` | P9.3 mind-map leaf codec rows (`MIND_MAP_LIST`, `MIND_MAP_GET`, `MIND_MAP_UPDATE`, `MIND_MAP_DELETE`) plus the P9.4b custom rows: the input-defaulting `MIND_MAP_GENERATE_NOTE`/`MIND_MAP_GENERATE_INTERACTIVE` (deferred-product) and the compatibility rows `ARTIFACT_GENERATE_MIND_MAP`, `ARTIFACT_LIST`, `ARTIFACT_GET`, which reach `LegacyNoteBackedService` through the row-scoped caller and keep the raw partial-availability net. |
+| `_web/bindings/_invoker_caller.py` | `InvokerRpcCaller` (P9.4b): the `RpcCaller` view a custom row hands the legacy note-backed helpers — maps each `RPCMethod` they select onto the row's declared spec key, dispatches through the row-scoped invoker, and surfaces a semantic deadline expiry as the `RPCTimeoutError` they expect with the selected native's tag preserved. Replaces the P6 deadline-bound legacy caller. |
+| `_web/bindings/notebooks.py` | P9.3 notebook codec rows: `NOTEBOOK_LIST` (non-uniform decoder over the empty/`[None]`/`[[rows]]` shapes), `NOTEBOOK_GET` (input-selected source-id-only branch), `NOTEBOOK_DELETE`, `NOTEBOOK_REMOVE_RECENT`, `NOTEBOOK_SUMMARIZE`, `NOTEBOOK_DESCRIBE` — `encode → one native call → decode`; plus the P9.4b deferred-product custom rows `NOTEBOOK_CREATE` (snapshot → guarded create → probe/reconcile with the quota diagnosis) and `NOTEBOOK_UPDATE` (mutate → readback). |
 | `_web/bindings/notes.py` | P9.3 plain-note codec rows: `NOTE_LIST`, `NOTE_GET`, `NOTE_CREATE`, `NOTE_UPDATE`, `NOTE_DELETE` over `_web/codec/notes.py`; `NoteService` sequences them above the port and the walker derives their catalog authorities from the module-level assignments. |
 | `_web/bindings/labels.py` | P9.3 labels/collections codec rows: `LABEL_LIST`, `LABEL_GET`, `LABEL_GENERATE`, `LABEL_DELETE`, `COLLECTION_LIST`, `COLLECTION_GET`, `COLLECTION_DELETE` — one `LIST_LABELS`/`CREATE_LABEL`/`DELETE_LABEL` call per row; the get rows select by exact id inside `decode`. |
 | `_web/bindings/chat.py` | P9.3 chat codec rows: `CHAT_GET_CONVERSATION`, `CHAT_GET_HISTORY`, `CHAT_DELETE_HISTORY`, `CHAT_SAVE_NOTE`, and the input-keyed `CHAT_CONFIGURE` (`GET_NOTEBOOK` read or `RENAME_NOTEBOOK` mutation selected from the action) — `encode → one native call → decode`; `CHAT_ASK` stays a handler in `_web/chat.py`. |
@@ -1108,7 +1108,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/studio_documents.py` | P5.4 web workflow binding for report/video source resolution and generation kickoff; mixed into `WebRpcBackend` to keep the composed backend below the module-size ratchet. |
 | `_web/studio_facade.py` | P5.8 web binding for the artifact rename composite and the catalog seam it reads back through; since P9.3 the delete/revise/retry/wait/download leaves are `_web/bindings/studio.py` rows. |
 | `_web/studio_media.py` | Shared P5.2/P5.3/P5.5 web generation handlers for Audio, Quiz/Flashcards, and Infographic/Slide Deck; inherits the document-family RPC/source helpers and keeps the composed backend below the module-size ratchet. |
-| `_web/studio_data.py` | P5.6 web handlers for data-table/mind-map generation; composes with the media/document handlers while keeping the backend module below the size ratchet (since P9.3 the Drive export leaf is an `_web/bindings/studio.py` row). |
+| `_web/studio_data.py` | P5.6 web handler for data-table generation; composes with the media/document handlers while keeping the backend module below the size ratchet (since P9.3 the Drive export leaf is an `_web/bindings/studio.py` row; since P9.4b `ARTIFACT_GENERATE_MIND_MAP` is an `_web/bindings/mind_maps.py` custom row). |
 | `_web/codec/studio_documents.py` | P5.4 exact report/video request encoders and generation-status decoder over backend-neutral records. |
 | `_web/codec/notes.py` | P6.3 mixed note-row codec: normalizes flat/wrapped envelopes, classifies deleted and note-backed mind-map rows, preserves exact-id selection, and emits only neutral `NoteRecord` values; since P9.3 also the row-facing `encode_note_*`/`decode_note_*` helpers behind `_web/bindings/notes.py`. |
 | `_web/codec/labels.py` | P6.4 shared source-label/collection codec: owns both wire dialects behind `LabelKind` and emits only neutral `LabelRecord` values; since P9.3 also the row-facing `encode_*`/`decode_*_result` payload builders and the dialect/scope contract guards. |
@@ -1342,7 +1342,6 @@ src/notebooklm/
 │   ├── backend.py               # Single semantic backend + client-runtime owner
 │   ├── runtime.py               # Sole web RPC encode/dispatch/decode engine
 │   ├── deadlines.py             # Closed semantic deadline-authority ledger
-│   ├── deadline_rpc.py          # Deadline-bound legacy composite caller
 │   ├── chat.py                  # P6.1 Chat workflow handlers
 │   ├── chat_transport.py        # Streamed Chat transport adapter and bounded error translation
 │   ├── error_policy.py          # Closed web error classification/diagnostics ledger
@@ -1354,8 +1353,9 @@ src/notebooklm/
 │   │   ├── __init__.py          # WEB_BINDING_ROWS union
 │   │   ├── chat.py              # chat codec rows (configure is input-keyed)
 │   │   ├── labels.py            # label/collection codec rows
-│   │   ├── mind_maps.py         # mind-map leaf codec rows
-│   │   ├── notebooks.py         # notebook read/leaf codec rows
+│   │   ├── _invoker_caller.py   # row-scoped RpcCaller for the legacy note-backed helpers (P9.4b)
+│   │   ├── mind_maps.py         # mind-map leaf codec rows + generate/catalog custom rows
+│   │   ├── notebooks.py         # notebook read/leaf codec rows + create/update custom rows
 │   │   ├── notes.py             # plain-note codec rows
 │   │   ├── research.py          # research codec rows (input-keyed start)
 │   │   ├── settings.py          # settings/suggestion codec rows
@@ -1366,7 +1366,7 @@ src/notebooklm/
 │   ├── registry.py              # Closed active/unsupported web dispositions
 │   ├── studio_documents.py      # P5.4 web report/video workflow handlers
 │   ├── studio_media.py          # P5.2/P5.3/P5.5 web family handlers
-│   ├── studio_data.py           # P5.6 data-view generation handlers (export leaf is a bindings/studio.py row)
+│   ├── studio_data.py           # P5.6 data-table generation handler (export leaf and mind-map generate are bindings rows)
 │   ├── studio_facade.py         # P5.8 artifact rename composite (leaves are bindings/studio.py rows)
 │   ├── source_variants.py       # Source add/update/upload composites (leaves are bindings/sources.py rows)
 │   ├── transport.py             # P9.1 WebTransport call/stream verbs, WebRequest/WebStreamRequest
