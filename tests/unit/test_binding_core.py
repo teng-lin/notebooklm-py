@@ -20,7 +20,6 @@ from notebooklm._binding import (
     NativeCallSpec,
     NativeChoice,
     OperationDisposition,
-    ResolvedHandlerBinding,
     StreamPayload,
     StreamSpec,
     audit_bindings,
@@ -37,7 +36,7 @@ from notebooklm._records import (
     NotebookListResult,
 )
 from notebooklm._web import registry
-from notebooklm._web.backend import WebRpcBackend, _resolve_handler_bindings
+from notebooklm._web.backend import _resolve_handler_bindings
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from tests._fixtures.web_backend import build_web_backend
@@ -367,69 +366,33 @@ async def test_custom_rows_only_reach_their_declared_specs_and_tag_failures() ->
 # --- construction-time resolution --------------------------------------------
 
 
-def _handler_backed() -> tuple[Operation, str]:
-    """One operation the registry still resolves by handler name (P9.4b shrinks the set)."""
-    return next(
-        (operation, binding.handler_name)
-        for operation, binding in WEB_OPERATION_REGISTRY.items()
-        if binding.handler_name is not None
-    )
-
-
 def test_backend_resolves_every_handler_at_construction() -> None:
     backend = build_web_backend(_Executor())
     table = backend._bindings
     assert set(table) == WEB_SUPPORTED_OPERATIONS
     row_backed = {op for op, binding in WEB_OPERATION_REGISTRY.items() if binding.row is not None}
-    assert table.resolved_handler_count == len(WEB_SUPPORTED_OPERATIONS) - len(row_backed)
+    assert table.resolved_handler_count == 0
     # Derived, not a literal: every P9.3/P9.4 domain PR grows the row set.
     assert table.codec_count + table.custom_count == len(row_backed) == len(WEB_BINDING_ROWS)
     assert row_backed == set(WEB_BINDING_ROWS)
     assert table.custom_count == sum(
         1 for row in WEB_BINDING_ROWS.values() if isinstance(row, CustomBinding)
     )
+    assert row_backed == WEB_SUPPORTED_OPERATIONS
     assert all(isinstance(table[op], (CodecBinding, CustomBinding)) for op in row_backed)
     assert table[Operation.SETTINGS_GET] is WEB_OPERATION_REGISTRY[Operation.SETTINGS_GET].row
-    handler_operation, handler_name = _handler_backed()
-    row = table[handler_operation]
-    assert isinstance(row, ResolvedHandlerBinding)
-    assert row.handler == getattr(backend, handler_name)
+    assert Operation.NOTEBOOK_CREATE not in table
+    assert isinstance(table[Operation.NOTEBOOK_ALLOCATE], CodecBinding)
     assert "_bindings" in vars(backend)
-
-
-def test_misnamed_handler_fails_at_resolution_not_first_invocation() -> None:
-    backend = build_web_backend(_Executor())
-    handler_operation, handler_name = _handler_backed()
-    broken = dict(WEB_OPERATION_REGISTRY)
-    broken[handler_operation] = registry.WebOperationBinding(
-        definition=WEB_OPERATION_REGISTRY[handler_operation].definition,
-        handler_name=f"{handler_name}_renamed",
-        unsupported_reason=None,
-    )
-    with pytest.raises(
-        BackendContractError, match=f"names missing web handler '{handler_name}_renamed'"
-    ):
-        _resolve_handler_bindings(backend, registry=broken)
-
-
-def test_missing_handler_fails_at_construction() -> None:
-    handler_operation, handler_name = _handler_backed()
-    Incomplete = type("Incomplete", (WebRpcBackend,), {handler_name: None})
-
-    with pytest.raises(
-        BackendContractError, match=f"{handler_operation.value} names missing web handler"
-    ):
-        Incomplete(_Executor(), transport_factory=lambda **kwargs: object())  # type: ignore[arg-type]
 
 
 def test_table_missing_a_supported_row_is_rejected_by_the_construction_audit() -> None:
     backend = build_web_backend(_Executor())
     narrowed = dict(WEB_OPERATION_REGISTRY)
-    handler_operation, _handler_name = _handler_backed()
-    narrowed[handler_operation] = registry.WebOperationBinding(
+    narrowed[Operation.NOTEBOOK_LIST] = registry.WebOperationBinding(
         definition=None, handler_name=None, unsupported_reason="dropped"
     )
-    with pytest.raises(BackendContractError, match=f"without a row: {handler_operation.value}"):
+    with pytest.raises(BackendContractError, match="without a row: notebook.list"):
         _resolve_handler_bindings(backend, registry=narrowed)
     with pytest.raises(BackendContractError, match="not supported: notebook.list"):
         _resolve_handler_bindings(

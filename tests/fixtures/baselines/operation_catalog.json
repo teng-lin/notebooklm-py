@@ -889,9 +889,41 @@
         }
       ]
     },
+    "notebook.allocate": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "probe_then_create",
+          "role": "guarded create",
+          "rpc_method": "CREATE_NOTEBOOK",
+          "variant": null
+        }
+      ]
+    },
     "notebook.create": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "notebook.list"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "notebook.allocate"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "settings.get_limits"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -911,7 +943,8 @@
           "rpc_method": "GET_USER_SETTINGS",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "notebook.delete": {
       "call_policy": "mutation",
@@ -2537,7 +2570,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/notebooks.py:NOTEBOOK_CREATE"
+        "_web/bindings/notebooks.py:NOTEBOOK_ALLOCATE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2564,7 +2597,7 @@
       },
       "override_honored": true,
       "owners": [
-        "NotebookService"
+        "NotebookMutationService"
       ],
       "response_decoders": [],
       "response_projectors": [],
@@ -2574,6 +2607,7 @@
       "rpc_id": "CCqFvf",
       "rpc_method": "CREATE_NOTEBOOK",
       "semantic_operations": [
+        "notebook.allocate",
         "notebook.create"
       ],
       "variant": null
@@ -3167,8 +3201,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -3483,7 +3515,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
         "_web/bindings/settings.py:SETTINGS_GET",
         "_web/bindings/settings.py:SETTINGS_GET_LIMITS",
         "_web/bindings/sources.py:SOURCE_ADD_FILE"
@@ -3513,7 +3544,7 @@
       },
       "override_honored": true,
       "owners": [
-        "NotebookService",
+        "NotebookMutationService",
         "SettingsService",
         "SourceService"
       ],
@@ -3720,7 +3751,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
         "_web/bindings/notebooks.py:NOTEBOOK_LIST"
       ],
       "golden_disposition": "golden_covered",
@@ -3749,6 +3779,7 @@
       "override_honored": true,
       "owners": [
         "CollectionService",
+        "NotebookMutationService",
         "NotebookService"
       ],
       "response_decoders": [
@@ -4957,8 +4988,6 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5023,8 +5052,6 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5089,8 +5116,6 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5155,8 +5180,6 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5242,8 +5265,6 @@
         "_web/codec/mind_maps.py:decode_generated_tree",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/notes.py:decode_created_note",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
@@ -5308,8 +5329,6 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5376,8 +5395,6 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5442,8 +5459,6 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5510,8 +5525,6 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5880,8 +5893,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -5958,8 +5969,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -6632,8 +6641,6 @@
         "_web/codec/labels.py:decode_label_set_list_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -6813,8 +6820,6 @@
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -6893,8 +6898,6 @@
         "_web/codec/mind_maps.py:decode_generated_tree",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/notes.py:decode_created_note",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
@@ -7227,6 +7230,33 @@
       "web_paths": []
     },
     {
+      "app_callers": [],
+      "composite_behavior": "P9.2 primitive: performs one guarded CREATE_NOTEBOOK attempt without reconciliation.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "CREATE_NOTEBOOK:<default>",
+          "discriminator": "one guarded allocation attempt",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_ALLOCATE",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "notebook.allocate",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "CREATE_NOTEBOOK:<default>"
+      ],
+      "owner": "NotebookMutationService",
+      "policy": "mutation",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [],
+      "route_context": "account",
+      "web_paths": []
+    },
+    {
       "app_callers": [
         "_app/notebooks.py:execute_notebook_create"
       ],
@@ -7235,20 +7265,20 @@
       "execution_authorities": [
         {
           "binding": "CREATE_NOTEBOOK:<default>",
-          "discriminator": "direct semantic binding",
-          "site": "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
+          "discriminator": "guarded allocation attempts",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_ALLOCATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_USER_SETTINGS:<default>",
           "discriminator": "quota-error diagnosis only",
-          "site": "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
+          "site": "_web/bindings/settings.py:SETTINGS_GET_LIMITS",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_NOTEBOOKS:<default>",
           "discriminator": "pre-create baseline/probe or quota verification",
-          "site": "_web/bindings/notebooks.py:NOTEBOOK_CREATE",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -7260,7 +7290,7 @@
         "GET_USER_SETTINGS:<default>",
         "LIST_NOTEBOOKS:<default>"
       ],
-      "owner": "NotebookService",
+      "owner": "NotebookMutationService",
       "policy": "mutation",
       "public_methods": [
         "notebooks.create"
@@ -7414,8 +7444,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -7510,8 +7538,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -7627,8 +7653,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_suggestions"
@@ -7728,8 +7752,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -7838,8 +7860,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -8351,8 +8371,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_renamed_source",
@@ -8458,8 +8476,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/settings.py:decode_get_user_settings",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_renamed_source",
@@ -8580,8 +8596,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_renamed_source",
@@ -8641,8 +8655,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_source_snapshot"
@@ -8765,8 +8777,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -8887,8 +8897,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -9011,8 +9019,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_renamed_source",
         "_web/codec/sources.py:decode_source_snapshot",
@@ -9122,8 +9128,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
-        "_web/codec/notebooks.py:decode_notebook_update_readback",
-        "_web/codec/notebooks.py:notebook_update_not_found",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],

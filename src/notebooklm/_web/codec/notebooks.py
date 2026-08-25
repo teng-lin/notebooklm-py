@@ -35,6 +35,7 @@ from ..._records import (
 )
 from ..._row_adapters.chat import unwrap_chat_settings
 from ..._row_adapters.notebooks import ProjectRow
+from ..._row_adapters.sources import SourceRow
 from ...exceptions import DecodingError, UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
 from ...rpc.types import ChatGoal, ChatResponseLength
@@ -443,6 +444,38 @@ def decode_notebook_guide(value: NotebookGuideInput, result: Any) -> NotebookGui
     return NotebookGuideResult(decode_notebook_description(result))
 
 
+def decode_notebook_source_ids_silent(notebook: object) -> tuple[str, ...]:
+    """Tolerantly extract source ids for input-defaulting mind-map rows."""
+    if not notebook or not isinstance(notebook, list):
+        return ()
+    notebook_info = safe_index(
+        notebook,
+        0,
+        method_id=RPCMethod.GET_NOTEBOOK.value,
+        source="NotebooksAPI.get_source_ids",
+    )
+    if not isinstance(notebook_info, list) or len(notebook_info) <= 1:
+        return ()
+    sources = safe_index(
+        notebook_info,
+        1,
+        method_id=RPCMethod.GET_NOTEBOOK.value,
+        source="NotebooksAPI.get_source_ids",
+    )
+    if not isinstance(sources, list):
+        return ()
+    result: list[str] = []
+    for source in sources:
+        if isinstance(source, list) and source:
+            source_id = SourceRow.from_entry(
+                source,
+                method_id=RPCMethod.GET_NOTEBOOK.value,
+            ).id
+            if source_id:
+                result.append(source_id)
+    return tuple(result)
+
+
 __all__ = [
     "decode_notebook_allocate",
     "decode_notebook",
@@ -454,6 +487,7 @@ __all__ = [
     "decode_notebook_list_result",
     "decode_notebook_patch",
     "decode_notebook_remove_recent",
+    "decode_notebook_source_ids_silent",
     "encode_delete_notebook",
     "encode_list_notebooks",
     "encode_notebook_allocate",

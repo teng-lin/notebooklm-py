@@ -1,7 +1,6 @@
-"""P9.4b: the notebook and mind-map/catalog composites dispatch as ``CustomBinding`` rows.
+"""P9.4b: the mind-map/catalog composites dispatch as ``CustomBinding`` rows.
 
-``NOTEBOOK_CREATE``, ``MIND_MAP_GENERATE_NOTE``,
-``MIND_MAP_GENERATE_INTERACTIVE``, ``ARTIFACT_GENERATE_MIND_MAP``,
+``MIND_MAP_GENERATE_NOTE``, ``MIND_MAP_GENERATE_INTERACTIVE``, ``ARTIFACT_GENERATE_MIND_MAP``,
 ``ARTIFACT_LIST`` and ``ARTIFACT_GET`` declare their natives as keyed specs and
 sequence them through the row-scoped invoker.  These tests pin the conversion
 oracles: the identical keyword set reaches the runtime for every phase
@@ -37,21 +36,18 @@ from notebooklm._records import (
     ARTIFACT_LIST_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
-    NOTEBOOK_CREATE_DEF,
     ArtifactGetInput,
     ArtifactListInput,
     MindMapGenerateInput,
     MindMapGenerateInteractiveInput,
     MindMapGenerateNoteInput,
-    NotebookCreateInput,
 )
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import mind_maps as mind_map_rows
-from notebooklm._web.bindings import notebooks as notebook_rows
 from notebooklm._web.bindings._invoker_caller import InvokerRpcCaller
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
-from notebooklm.exceptions import RPCError, RPCTimeoutError, ServerError
+from notebooklm.exceptions import RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.web_backend import build_web_backend
 
@@ -64,16 +60,6 @@ _BASE_KWARGS = {
     "raise_on_null_status": False,
     "_retry_deadline": None,
 }
-_CREATED_ROW = [
-    "Daily News",
-    None,
-    "nb-new",
-    None,
-    None,
-    [None, False, None, None, None, [1704067200, 0]],
-]
-
-
 @dataclass
 class _Call:
     method: RPCMethod
@@ -103,7 +89,6 @@ def _kwargs(source_path: str, **overrides: Any) -> dict[str, Any]:
 
 def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
     expected = {
-        Operation.NOTEBOOK_CREATE: (notebook_rows.NOTEBOOK_CREATE, "deferred-product"),
         Operation.MIND_MAP_GENERATE_NOTE: (
             mind_map_rows.MIND_MAP_GENERATE_NOTE,
             "deferred-product",
@@ -127,9 +112,6 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
         assert row.category == category
         assert row.justification.strip()
         assert row.collaborators == ()
-    assert notebook_rows.NOTEBOOK_CREATE.spec("create").select(None) == NativeChoice(
-        RPCMethod.CREATE_NOTEBOOK
-    )
     assert mind_map_rows.ARTIFACT_GENERATE_MIND_MAP.spec("note_create").select(None) == (
         NativeChoice(RPCMethod.CREATE_NOTE, "plain")
     )
@@ -148,103 +130,6 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
         assert not hasattr(WebRpcBackend, name)
     with pytest.raises(ModuleNotFoundError):
         __import__("notebooklm._web.deadline_rpc")
-
-
-# --- notebook.create --------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_create_snapshots_then_creates_with_retries_disabled() -> None:
-    executor = _RecordingExecutor([], _CREATED_ROW)
-    backend = build_web_backend(executor)
-
-    result = await backend.invoke(
-        NOTEBOOK_CREATE_DEF, NotebookCreateInput("Daily News"), deadline=None
-    )
-
-    assert (result.notebook.id, result.notebook.title) == ("nb-new", "Daily News")
-    snapshot, create = executor.calls
-    assert snapshot.method is RPCMethod.LIST_NOTEBOOKS
-    assert snapshot.params == [None, 1, None, [2]]
-    assert snapshot.kwargs == _kwargs("/")
-    assert create.method is RPCMethod.CREATE_NOTEBOOK
-    assert create.kwargs == _kwargs("/", disable_internal_retries=True)
-
-
-@pytest.mark.asyncio
-async def test_create_probes_after_a_dispatched_transport_loss() -> None:
-    old_row = ["Daily News", [], "nb-old"]
-    new_row = ["Daily News", [], "nb-landed"]
-    executor = _RecordingExecutor(
-        [[old_row]], ServerError("bad gateway", status_code=502), [[old_row, new_row]]
-    )
-    backend = build_web_backend(executor)
-
-    result = await backend.invoke(
-        NOTEBOOK_CREATE_DEF, NotebookCreateInput("Daily News"), deadline=None
-    )
-
-    assert result.notebook.id == "nb-landed"
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.LIST_NOTEBOOKS,
-        RPCMethod.CREATE_NOTEBOOK,
-        RPCMethod.LIST_NOTEBOOKS,
-    ]
-
-
-@pytest.mark.asyncio
-async def test_create_quota_rejection_reads_limits_then_the_catalog() -> None:
-    quota = RPCError("quota", method_id=RPCMethod.CREATE_NOTEBOOK.value, rpc_code=3)
-    executor = _RecordingExecutor([], quota, [[None, [None, 1]]], [])
-    backend = build_web_backend(executor)
-
-    with pytest.raises(BackendError) as caught:
-        await backend.invoke(NOTEBOOK_CREATE_DEF, NotebookCreateInput("Daily News"), deadline=None)
-
-    error = caught.value
-    assert error.reason is BackendErrorReason.NOTEBOOK_LIMIT
-    assert error.message == "notebook limit reached"
-    assert error.operation is Operation.NOTEBOOK_CREATE
-    assert error.diagnostics is not None
-    assert error.diagnostics["limit"] == 1
-    assert error.diagnostics["current_count"] == 0
-    assert error.diagnostics["original_reason"] == BackendErrorReason.RPC.value
-    assert [call.method for call in executor.calls] == [
-        RPCMethod.LIST_NOTEBOOKS,
-        RPCMethod.CREATE_NOTEBOOK,
-        RPCMethod.GET_USER_SETTINGS,
-        RPCMethod.LIST_NOTEBOOKS,
-    ]
-    assert executor.calls[2].kwargs == _kwargs("/")
-
-
-@pytest.mark.asyncio
-async def test_create_reconciliation_timeout_keeps_parent_attribution() -> None:
-    clock = [0.0]
-    executor = _RecordingExecutor(
-        [],
-        ServerError("create response lost", status_code=502),
-        RPCTimeoutError("slow", method_id=RPCMethod.LIST_NOTEBOOKS.value, timeout_seconds=5.0),
-    )
-    backend = build_web_backend(executor)
-    deadline = RuntimeDeadline(timeout=5.0, started_at=0.0, monotonic=lambda: clock[0])
-
-    async def rpc_call(method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
-        if len(executor.calls) == 2:
-            clock[0] = 6.0
-        return await _RecordingExecutor.rpc_call(executor, method, params, **kwargs)
-
-    backend._runtime = type("Runtime", (), {"rpc_call": staticmethod(rpc_call)})()  # type: ignore[assignment]
-
-    with pytest.raises(BackendDeadlineExceededError) as caught:
-        await backend.invoke(
-            NOTEBOOK_CREATE_DEF, NotebookCreateInput("Daily News"), deadline=deadline
-        )
-
-    assert caught.value.operation is Operation.NOTEBOOK_CREATE
-    assert caught.value.outcome_unknown is True
-    assert caught.value.dispatched is True
-    assert all(call.kwargs["_retry_deadline"] is deadline for call in executor.calls)
 
 
 # --- mind-map generate rows ---------------------------------------------------------
