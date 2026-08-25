@@ -30,7 +30,6 @@ def _make_api(rpc_return):
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=rpc_return))
     return NotebooksAPI(
-        core.rpc_executor,
         _backend=build_web_backend(core.rpc_executor),
     )
 

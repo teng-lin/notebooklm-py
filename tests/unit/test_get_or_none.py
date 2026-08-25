@@ -66,7 +66,6 @@ def _make_notebooks_api(rpc_call: AsyncMock) -> NotebooksAPI:
 
     core = make_fake_core(rpc_call=rpc_call)
     return NotebooksAPI(
-        core.rpc_executor,
         sources_api=MagicMock(),
         _backend=build_web_backend(core.rpc_executor),
     )

@@ -75,8 +75,10 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         ("_web/bindings/notebooks.py:NOTEBOOK_LIST", "collection membership expansion")
     ),
     (Operation.NOTEBOOK_GET, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/bindings/notebooks.py:NOTEBOOK_GET", "typed notebook/source-id lookup"),
-        ("_notebooks.py:NotebooksAPI.get_raw", "narrow raw compatibility lookup"),
+        (
+            "_web/bindings/notebooks.py:NOTEBOOK_GET",
+            "typed notebook/source-id lookup plus the row's undecoded raw branch",
+        ),
     ),
     (Operation.NOTEBOOK_UPDATE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/bindings/notebooks.py:NOTEBOOK_GET", "unconditional post-mutation read")
@@ -327,7 +329,6 @@ class RecencyRule:
 
 _GET_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 _UPDATE_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
-_GET_RAW = "_notebooks.py:NotebooksAPI.get_raw"
 _GET_SOURCES = "_web/bindings/sources.py:SOURCE_LIST"
 # P9.3: source list/get/wait reads dispatch through their own codec rows.
 _GET_SOURCE_LIST = "_web/bindings/sources.py:SOURCE_LIST"
@@ -339,20 +340,12 @@ _GET_PROMPT_SOURCES = "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS"
 RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
     Operation.NOTEBOOK_GET: (
         RecencyRule(
-            _p("notebooks", "get", "get_or_none", "get_source_ids"),
+            _p("notebooks", "get", "get_or_none", "get_raw", "get_source_ids"),
             1,
             1,
             "public_call",
-            "always",
+            "always: one row call per public read, decoded or raw",
             (_GET_TYPED,),
-        ),
-        RecencyRule(
-            _p("notebooks", "get_raw"),
-            1,
-            1,
-            "public_call",
-            "narrow raw compatibility call",
-            (_GET_RAW,),
         ),
     ),
     Operation.NOTEBOOK_UPDATE: (

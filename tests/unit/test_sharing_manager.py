@@ -149,7 +149,7 @@ def test_get_share_url_is_sync_and_does_not_call_rpc() -> None:
 async def test_notebooks_api_direct_construction_keeps_sync_share_url_without_rpc() -> None:
     """The public URL formatter stays available without semantic composition."""
     core = make_fake_core(rpc_call=AsyncMock(return_value=None))
-    api = NotebooksAPI(core.rpc_executor, sources_api=MagicMock())
+    api = NotebooksAPI(sources_api=MagicMock())
 
     assert (
         api.get_share_url("nb_123", artifact_id="art_456")
@@ -240,18 +240,16 @@ def test_notebooks_api_share_method_removed_in_v080() -> None:
     ``get_share_url`` (deep-link URL). The manager-delegation contract is still
     exercised by ``ShareManager.share`` tests above and ``get_share_url`` below.
     """
-    core = MagicMock()
     share_manager = MagicMock()
-    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+    api = NotebooksAPI(sources_api=MagicMock(), share_manager=share_manager)
 
     assert not hasattr(api, "share")
 
 
 def test_notebooks_api_get_share_url_delegates_to_injected_share_manager() -> None:
-    core = MagicMock()
     share_manager = MagicMock()
     share_manager.get_share_url.return_value = "https://example.test/notebook/nb_123"
-    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+    api = NotebooksAPI(sources_api=MagicMock(), share_manager=share_manager)
 
     url = api.get_share_url("nb_123")
 

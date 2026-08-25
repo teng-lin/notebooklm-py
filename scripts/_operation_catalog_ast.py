@@ -1203,6 +1203,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_read_services.py", "_records", "NOTEBOOK_GET_DEF"),
         ("_read_services.py", "_records", "NOTEBOOK_LIST_DEF"),
         ("_read_services.py", "_records", "NotebookGetInput"),
+        ("_read_services.py", "_records", "NotebookGetResult"),
         ("_read_services.py", "_records", "NotebookListInput"),
         ("_read_services.py", "_records", "NotebookRecord"),
         ("_read_services.py", "_records", "SOURCE_GET_DEF"),
@@ -2077,6 +2078,7 @@ ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
         "_notebook_guide_service.py:NotebookGuideService.get_description",
         "_notebook_guide_service.py:NotebookGuideService.get_summary",
         "_notebook_mutation_service.py:NotebookMutationService.remove_from_recent",
+        "_read_services.py:NotebookReadService.get_raw",
         "_read_services.py:NotebookReadService.get_source_ids",
         "_sharing_manager.py:ShareManager.share",
     }

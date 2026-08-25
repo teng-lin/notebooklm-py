@@ -251,7 +251,6 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
     sites = catalog.collect_native_execution_sites()
 
     assert sites[(RPCMethod.GET_NOTEBOOK, None)] == [
-        "_notebooks.py:NotebooksAPI.get_raw",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
         "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
@@ -685,30 +684,33 @@ def test_get_metadata_recency_contract_pins_two_distinct_reads() -> None:
     ]
 
 
-def test_notebook_get_recency_contract_separates_typed_and_raw_authorities() -> None:
-    typed, raw = catalog.RECENCY_CONTRACTS[Operation.NOTEBOOK_GET]
+def test_notebook_get_recency_contract_covers_the_raw_read_through_one_authority() -> None:
+    """R6.2: ``get_raw`` reads through the row, so one authority covers all four.
 
-    assert typed.public_methods == (
+    Before R6.2 this pinned *two* rules — the typed reads against the codec row
+    and ``notebooks.get_raw`` against its own ``rpc_call`` site. ``get_raw`` now
+    goes through ``NOTEBOOK_GET``'s undecoded branch, so the second authority
+    no longer exists; both halves of the old assertion are kept below as the
+    merged rule plus the pin that the facade executes no native of its own.
+    """
+    (contract,) = catalog.RECENCY_CONTRACTS[Operation.NOTEBOOK_GET]
+
+    assert contract.public_methods == (
         "notebooks.get",
         "notebooks.get_or_none",
+        "notebooks.get_raw",
         "notebooks.get_source_ids",
     )
-    assert (typed.minimum_calls, typed.maximum_calls, typed.authority_sites) == (
+    assert (contract.minimum_calls, contract.maximum_calls, contract.authority_sites) == (
         1,
         1,
         ("_web/bindings/notebooks.py:NOTEBOOK_GET",),
-    )
-    assert raw.public_methods == ("notebooks.get_raw",)
-    assert (raw.minimum_calls, raw.maximum_calls, raw.authority_sites) == (
-        1,
-        1,
-        ("_notebooks.py:NotebooksAPI.get_raw",),
     )
 
     notebook_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_notebooks.py")
     raw_get = catalog_ast._find_class_method(notebook_tree, "NotebooksAPI", "get_raw")
     assert raw_get is not None
-    assert catalog_ast._rpc_binding_call_count(raw_get, RPCMethod.GET_NOTEBOOK) == 1
+    assert catalog_ast._rpc_binding_call_count(raw_get, RPCMethod.GET_NOTEBOOK) == 0
     # P9.3: the typed authority is a codec row whose spec declares exactly one native.
     typed_row = next(
         row

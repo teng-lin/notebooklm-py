@@ -1,7 +1,7 @@
 """Notebook operations API."""
 
 import logging
-from typing import Any, Protocol
+from typing import Any
 
 from ._backend import BackendAdapter, BackendError
 from ._backend_compat import project_backend_call, project_backend_error
@@ -13,9 +13,6 @@ from ._notebook_metadata import (
 )
 from ._notebook_mutation_service import NotebookMutationService
 from ._notebook_payloads import build_create_notebook_params as build_create_notebook_params
-from ._notebook_payloads import (
-    build_get_notebook_params,
-)
 from ._projectors import (
     project_notebook,
     project_notebook_description,
@@ -39,30 +36,6 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class NotebookLegacyRpc(Protocol):
-    """Narrow compatibility collaborator for notebook-only raw RPC helpers.
-
-    The semantic notebook services depend on :class:`BackendAdapter`.  A few
-    retained compatibility methods still expose raw notebook behavior, so the
-    facade receives only their call-shaped leaf instead of owning the shared
-    runtime-wide ``RpcCaller`` capability.
-    """
-
-    async def rpc_call(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-        read_timeout: float | None = None,
-        raise_on_null_status: bool = True,
-    ) -> Any: ...
 
 
 class _SemanticSourceLister:
@@ -101,7 +74,6 @@ class NotebooksAPI:
 
     def __init__(
         self,
-        legacy_rpc: NotebookLegacyRpc,
         sources_api: NotebookSourceLister | None = None,
         *,
         metadata_service: NotebookMetadataService | None = None,
@@ -112,10 +84,6 @@ class NotebooksAPI:
         """Initialize the notebooks API.
 
         Args:
-            legacy_rpc: Narrow raw-call collaborator retained only for notebook
-                compatibility helpers that have not become semantic operations.
-                Semantic notebook reads, mutations, and suggestions use
-                ``_backend`` instead.
             sources_api: Optional source lister for cross-API metadata composition.
                 When omitted alongside a semantic backend, direct construction
                 uses a backend-owned ``SourceReadService``.
@@ -123,7 +91,6 @@ class NotebooksAPI:
             share_manager: Optional explicit legacy share manager for tests or advanced wiring.
             _backend: Private semantic backend supplied by the client composition root.
         """
-        self._legacy_rpc = legacy_rpc
         self._read_service = NotebookReadService(_backend) if _backend is not None else None
         self._mutation_service = (
             NotebookMutationService(_backend, deadline_factory=_deadline_factory)
@@ -534,12 +501,15 @@ class NotebooksAPI:
         Returns:
             Raw API response data.
         """
-        params = build_get_notebook_params(notebook_id)
-        return await self._legacy_rpc.rpc_call(
-            RPCMethod.GET_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
+        public_error: Exception | None = None
+        try:
+            result = await self._require_read_service().get_raw(notebook_id)
+        except BackendError as error:
+            public_error = project_backend_error(error)
+        else:
+            return result.raw
+        assert public_error is not None
+        raise public_error
 
     def get_share_url(self, notebook_id: str, artifact_id: str | None = None) -> str:
         """Get share URL for a notebook or artifact.

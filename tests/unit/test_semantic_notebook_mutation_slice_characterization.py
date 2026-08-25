@@ -33,7 +33,7 @@ from notebooklm.rpc import RPCMethod
 def _api(rpc_call: AsyncMock) -> NotebooksAPI:
     executor = MagicMock(rpc_call=rpc_call)
     backend = WebRpcBackend(executor)
-    return NotebooksAPI(executor, sources_api=MagicMock(), _backend=backend)
+    return NotebooksAPI(sources_api=MagicMock(), _backend=backend)
 
 
 def test_notebook_mutation_public_signatures_are_frozen() -> None:

@@ -14,7 +14,7 @@ Tests can either:
 
        async def test_list_uses_rpc(fake_core):
            fake_core.rpc_executor.rpc_call.return_value = [payload]
-           api = NotebooksAPI(fake_core.rpc_executor)
+           api = SourcesAPI(fake_core.rpc_executor, uploader=uploader)
            ...
 
 2. Use the ``make_fake_core`` fixture (the factory itself) when each
@@ -22,7 +22,7 @@ Tests can either:
 
        async def test_list_uses_rpc(make_fake_core):
            fake = make_fake_core(rpc_call=AsyncMock(return_value=[payload]))
-           api = NotebooksAPI(fake.rpc_executor)
+           api = SourcesAPI(fake.rpc_executor, uploader=uploader)
            ...
 
 3. Or, equivalently, ``from tests._fixtures import make_fake_core`` and

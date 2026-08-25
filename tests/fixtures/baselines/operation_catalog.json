@@ -3125,7 +3125,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_notebooks.py:NotebooksAPI.get_raw",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
         "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
@@ -7516,13 +7515,7 @@
       "execution_authorities": [
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "narrow raw compatibility lookup",
-          "site": "_notebooks.py:NotebooksAPI.get_raw",
-          "transport_kind": "rpc"
-        },
-        {
-          "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "typed notebook/source-id lookup",
+          "discriminator": "typed notebook/source-id lookup plus the row's undecoded raw branch",
           "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
@@ -7546,25 +7539,14 @@
           "authority_sites": [
             "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
-          "condition": "always",
+          "condition": "always: one row call per public read, decoded or raw",
           "maximum_calls": 1,
           "minimum_calls": 1,
           "public_methods": [
             "notebooks.get",
             "notebooks.get_or_none",
+            "notebooks.get_raw",
             "notebooks.get_source_ids"
-          ],
-          "unit": "public_call"
-        },
-        {
-          "authority_sites": [
-            "_notebooks.py:NotebooksAPI.get_raw"
-          ],
-          "condition": "narrow raw compatibility call",
-          "maximum_calls": 1,
-          "minimum_calls": 1,
-          "public_methods": [
-            "notebooks.get_raw"
           ],
           "unit": "public_call"
         }
