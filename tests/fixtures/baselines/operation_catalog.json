@@ -372,6 +372,18 @@
     "chat.ask": {
       "call_policy": "stream",
       "known_divergence": "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the CHAT_ASK row dispatches",
+      "leaf_operations": [
+        {
+          "allowed_variants": [],
+          "operation": "chat.stream_answer"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "chat.get_conversation"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -385,7 +397,8 @@
           "rpc_method": "GET_LAST_CONVERSATION_ID",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "chat.configure": {
       "call_policy": "mutation",
@@ -450,6 +463,17 @@
           "role": "non-idempotent citation-rich note allocation",
           "rpc_method": "CREATE_NOTE",
           "variant": "saved_from_chat"
+        }
+      ]
+    },
+    "chat.stream_answer": {
+      "call_policy": "stream",
+      "known_divergence": null,
+      "native_bindings": [],
+      "streamed_bindings": [
+        {
+          "label": "chat.ask",
+          "role": "streamed free-form answer generation"
         }
       ]
     },
@@ -3073,7 +3097,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/chat.py:CHAT_ASK",
         "_web/bindings/chat.py:CHAT_GET_CONVERSATION"
       ],
       "golden_disposition": "golden_covered",
@@ -5897,8 +5920,8 @@
       "execution_authorities": [
         {
           "binding": "GET_LAST_CONVERSATION_ID:<default>",
-          "discriminator": "post-stream resolution when no server-issued id is already known",
-          "site": "_web/bindings/chat.py:CHAT_ASK",
+          "discriminator": "post-stream resolution via chat.get_conversation when no id is already known",
+          "site": "_web/bindings/chat.py:CHAT_GET_CONVERSATION",
           "transport_kind": "rpc"
         },
         {
@@ -5909,8 +5932,8 @@
         },
         {
           "binding": "streamed_query",
-          "discriminator": "adapter-owned GenerateFreeFormStreamed phase; bytes are incrementally buffered",
-          "site": "_web/bindings/chat.py:_ask",
+          "discriminator": "reached through the chat.stream_answer leaf; bytes are incrementally buffered",
+          "site": "_web/transport.py:WebTransport.stream",
           "transport_kind": "stream"
         }
       ],
@@ -6171,6 +6194,35 @@
       "tier": "product",
       "unsupported_reason": null,
       "web_paths": []
+    },
+    {
+      "app_callers": [],
+      "composite_behavior": "P10 primitive: one streamed GenerateFreeFormStreamed POST, decoded into the answer record plus the truncated raw slice chat.ask reports. It resolves no conversation id and dispatches no batchexecute method, so it holds no native binding at all.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "streamed_query",
+          "discriminator": "the streamed GenerateFreeFormStreamed POST; it is the row's only native",
+          "site": "_web/transport.py:WebTransport.stream",
+          "transport_kind": "stream"
+        }
+      ],
+      "key": "chat.stream_answer",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [],
+      "owner": "ChatService",
+      "policy": "stream",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [],
+      "route_context": "notebook+conversation+source-set",
+      "tier": "primitive",
+      "unsupported_reason": null,
+      "web_paths": [
+        "streamed_query"
+      ]
     },
     {
       "app_callers": [

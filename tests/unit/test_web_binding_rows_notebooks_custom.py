@@ -27,7 +27,7 @@ from notebooklm._backend import (
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._binding import CodecPayload, CustomBinding, NativeChoice
+from notebooklm._binding import CodecPayload, CustomBinding, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
@@ -115,7 +115,7 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
         assert row.justification.strip()
         assert row.collaborators == ()
     assert mind_map_rows.ARTIFACT_GENERATE_MIND_MAP.spec("note_create").select(None) == (
-        NativeChoice(RPCMethod.CREATE_NOTE, "plain")
+        RpcNative(RPCMethod.CREATE_NOTE, "plain")
     )
     for name in (
         "_notebook_create",
@@ -303,7 +303,7 @@ async def test_a_failed_catalog_read_is_translated_dispatched_and_tagged() -> No
     assert error.operation is Operation.ARTIFACT_LIST
     assert error.reason is BackendErrorReason.SERVER
     assert error.dispatched is True
-    assert error.__cause__.binding_native == NativeChoice(RPCMethod.LIST_ARTIFACTS)  # type: ignore[union-attr]
+    assert error.__cause__.binding_native == RpcNative(RPCMethod.LIST_ARTIFACTS)  # type: ignore[union-attr]
     assert len(executor.calls) == 1
 
 
@@ -388,14 +388,12 @@ async def test_invoker_caller_copies_a_native_tag_onto_the_timeout() -> None:
 
         def __init__(self) -> None:
             BackendDeadlineExceededError.__init__(self, Operation.ARTIFACT_LIST)
-            object.__setattr__(
-                self, "binding_native", NativeChoice(RPCMethod.GET_NOTES_AND_MIND_MAPS)
-            )
+            object.__setattr__(self, "binding_native", RpcNative(RPCMethod.GET_NOTES_AND_MIND_MAPS))
 
     caller = InvokerRpcCaller(
         _FakeInvoker(_Expiry()), None, operation=Operation.ARTIFACT_LIST, spec_keys=_SPECS
     )
     with pytest.raises(RPCTimeoutError) as caught:
         await caller.rpc_call(RPCMethod.GET_NOTES_AND_MIND_MAPS, ["nb-1"])
-    assert caught.value.binding_native == NativeChoice(RPCMethod.GET_NOTES_AND_MIND_MAPS)  # type: ignore[attr-defined]
+    assert caught.value.binding_native == RpcNative(RPCMethod.GET_NOTES_AND_MIND_MAPS)  # type: ignore[attr-defined]
     assert caught.value.timeout_seconds is None

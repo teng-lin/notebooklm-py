@@ -27,8 +27,8 @@ from ..._binding import (
     CodecBinding,
     CustomBinding,
     NativeCallSpec,
-    NativeChoice,
     RowInvoker,
+    RpcNative,
 )
 from ..._deadline import RuntimeDeadline
 from ..._env import get_default_language
@@ -75,12 +75,12 @@ from ..codec.source_ids import (
     encode_notebook_source_read,
 )
 
-_DOWNLOAD_CATALOG = NativeChoice(RPCMethod.LIST_ARTIFACTS)
-_DOWNLOAD_MIND_MAPS = NativeChoice(RPCMethod.GET_NOTES_AND_MIND_MAPS)
-_DOWNLOAD_CONTENT = NativeChoice(RPCMethod.GET_INTERACTIVE_HTML)
+_DOWNLOAD_CATALOG = RpcNative(RPCMethod.LIST_ARTIFACTS)
+_DOWNLOAD_MIND_MAPS = RpcNative(RPCMethod.GET_NOTES_AND_MIND_MAPS)
+_DOWNLOAD_CONTENT = RpcNative(RPCMethod.GET_INTERACTIVE_HTML)
 
 
-def _select_download(value: ArtifactDownloadInput) -> NativeChoice[RPCMethod]:
+def _select_download(value: ArtifactDownloadInput) -> RpcNative[RPCMethod]:
     """Pick the one native ``artifact.download`` issues for ``value.action``."""
     if value.action == "catalog":
         return _DOWNLOAD_CATALOG

@@ -52,7 +52,7 @@ _EXPECTED_WORKFLOW_OWNED_OPERATIONS = frozenset(
         Operation.SOURCE_ADD_FILE,
         Operation.SOURCE_WAIT,
         Operation.ARTIFACT_WAIT,
-        Operation.CHAT_ASK,
+        Operation.CHAT_STREAM_ANSWER,
         Operation.RESEARCH_IMPORT,
     }
 )

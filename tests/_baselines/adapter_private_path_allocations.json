@@ -260,6 +260,13 @@
       "terminal_locators": ["cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1", "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1", "rest response|notebooklm/server/routes/chat.py|ask|return|1"]
     },
     {
+      "private_model": "notebooklm._chat_records.ChatStreamResult",
+      "field_path": "answer.answer_document",
+      "public_model": "notebooklm._types.documents.StructuredDocument",
+      "projection_ids": ["cli.StructuredDocument.transitive-chat-reference-full-contribution", "mcp.StructuredDocument.transitive-chat-reference-full-contribution", "rest.StructuredDocument.transitive-chat-reference-full-contribution"],
+      "terminal_locators": ["cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1", "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1", "rest response|notebooklm/server/routes/chat.py|ask|return|1"]
+    },
+    {
       "private_model": "notebooklm._web.codec.chat_stream.StreamingChatParseResult",
       "field_path": "answer_document",
       "public_model": "notebooklm._types.documents.StructuredDocument",

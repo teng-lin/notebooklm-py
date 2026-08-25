@@ -17,7 +17,7 @@ from scripts import _operation_catalog_ast as catalog_ast
 from scripts import audit_operation_catalog as catalog
 
 _ROW_MODULE = """
-from notebooklm._binding import BindingTable, CodecBinding, CustomBinding, NativeCallSpec, NativeChoice
+from notebooklm._binding import BindingTable, CodecBinding, CustomBinding, NativeCallSpec, RpcNative
 from notebooklm._operations import Operation
 from notebooklm._records import (
     LABEL_UPDATE_DEF,
@@ -37,8 +37,8 @@ SETTINGS_GET = CodecBinding(
 )
 _RESEARCH_SPEC = NativeCallSpec.keyed(
     _pick_research,
-    NativeChoice(RPCMethod.START_FAST_RESEARCH),
-    NativeChoice(RPCMethod.START_DEEP_RESEARCH, "deep"),
+    RpcNative(RPCMethod.START_FAST_RESEARCH),
+    RpcNative(RPCMethod.START_DEEP_RESEARCH, "deep"),
 )
 RESEARCH_START = bind_codec(RESEARCH_START_DEF, encode_r, decode_r, native=_RESEARCH_SPEC)
 LABEL_UPDATE = CustomBinding(
@@ -48,9 +48,9 @@ LABEL_UPDATE = CustomBinding(
         NativeCallSpec.constant(RPCMethod.LIST_LABELS, key="list"),
         NativeCallSpec.keyed(
             _variant,
-            NativeChoice(RPCMethod.UPDATE_LABEL, variant="add_sources"),
-            NativeChoice(RPCMethod.UPDATE_LABEL, "remove_sources"),
-            NativeChoice(method=RPCMethod.UPDATE_LABEL, variant=None),
+            RpcNative(RPCMethod.UPDATE_LABEL, variant="add_sources"),
+            RpcNative(RPCMethod.UPDATE_LABEL, "remove_sources"),
+            RpcNative(method=RPCMethod.UPDATE_LABEL, variant=None),
             key="mutate",
         ),
     ),
@@ -110,7 +110,7 @@ def test_walker_derives_natives_from_constant_keyed_custom_and_table_rows() -> N
     assert rows["SETTINGS_GET"].operation is Operation.SETTINGS_GET
     assert rows["SETTINGS_GET"].natives == (("GET_USER_SETTINGS", None),)
     # A keyed spec bound to a module-level name resolves through that name; each declared
-    # choice is one native, and ``NativeChoice(method)`` means variant ``None``.
+    # choice is one native, and ``RpcNative(method)`` means variant ``None``.
     assert rows["RESEARCH_START"].operation is Operation.RESEARCH_START
     assert rows["RESEARCH_START"].natives == (
         ("START_FAST_RESEARCH", None),
@@ -275,7 +275,12 @@ def test_production_rows_are_derived_and_the_audit_is_wired() -> None:
     assert all(not row.unresolved for row in rows)
     assert all(row.site.startswith("_web/bindings/") for row in rows)
     derived = catalog_ast.derive_row_authorities()
-    assert {operation for operation, _native in derived} == set(WEB_BINDING_ROWS)
+    # Every row but the streamed leaf allocates at least one native; a
+    # ``StreamNative`` is not a wire method, so ``chat.stream_answer`` allocates
+    # none and is resolved rather than unresolved.
+    assert {operation for operation, _native in derived} == set(WEB_BINDING_ROWS) - {
+        Operation.CHAT_STREAM_ANSWER
+    }
     assert catalog_ast.audit_row_bindings() == []
     assert catalog.audit_row_bindings is catalog_ast.audit_row_bindings
     assert catalog.collect_binding_rows is catalog_ast.collect_binding_rows

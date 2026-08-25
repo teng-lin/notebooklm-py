@@ -427,6 +427,23 @@
       {
         "allocation": {
           "projection_ids": [
+            "cli.StructuredDocument.transitive-chat-reference-full-contribution",
+            "mcp.StructuredDocument.transitive-chat-reference-full-contribution",
+            "rest.StructuredDocument.transitive-chat-reference-full-contribution"
+          ],
+          "terminal_locators": [
+            "cli --json|notebooklm/cli/chat_cmd.py|register_chat_commands.ask_cmd._run|json_output_response|1",
+            "mcp tool result|notebooklm/mcp/tools/chat.py|register.chat_ask|return|1",
+            "rest response|notebooklm/server/routes/chat.py|ask|return|1"
+          ]
+        },
+        "field_path": "answer.answer_document",
+        "private_model": "notebooklm._chat_records.ChatStreamResult",
+        "public_model": "notebooklm._types.documents.StructuredDocument"
+      },
+      {
+        "allocation": {
+          "projection_ids": [
             "cli.ResearchSource.transitive-import-selection-final-contribution",
             "mcp.ResearchSource.transitive-import-source-count-contribution",
             "rest.ResearchSource.transitive-import-source-count-contribution"

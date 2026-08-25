@@ -20,7 +20,7 @@ from notebooklm._binding import (
     CustomBinding,
     ErrorMode,
     NativeCallSpec,
-    NativeChoice,
+    RpcNative,
     invoke_binding,
 )
 from notebooklm._operations import Operation
@@ -257,7 +257,7 @@ async def test_invoker_options_reach_the_assembled_request() -> None:
     assert transport.requests == [
         (
             Operation.SHARING_SET_PUBLIC,
-            NativeChoice(RPCMethod.SHARE_NOTEBOOK),
+            RpcNative(RPCMethod.SHARE_NOTEBOOK),
             CodecPayload(params=["p"]),
             True,
             True,

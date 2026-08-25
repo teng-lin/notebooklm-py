@@ -53,13 +53,13 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: custom rows; the label- and collection-create hoists removed the final two
 #: handlers from the P9.2 stop/go baseline.
 RESIDUAL_COMPOSITE_CEILING = 20
-#: Exact custom-row counts per justification category: five source-add rows,
-#: ``CHAT_ASK``, the Studio
-#: generation/prompt rows and the notebook/mind-map/catalog composites.
+#: Exact custom-row counts per justification category: the source-add rows, the
+#: Studio generation/prompt rows and the notebook/mind-map/catalog composites.
+#: P10 R2.2 removed ``CHAT_ASK`` from ``protocol`` when it became service-owned.
 #: P9.4b PRs raise these as handlers convert;
 #: P9.2 hoists lower ``deferred-product``, which must reach zero before any
 #: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 5, "compatibility": 4, "deferred-product": 11}
+CUSTOM_ROW_COUNTS = {"protocol": 4, "compatibility": 4, "deferred-product": 11}
 
 # --- 2. class size ---------------------------------------------------------------
 

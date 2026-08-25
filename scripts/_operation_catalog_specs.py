@@ -630,6 +630,18 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         ),
     ),
     OperationSpec(
+        Operation.CHAT_STREAM_ANSWER,
+        CallPolicy.STREAM,
+        "ChatService",
+        "notebook+conversation+source-set",
+        "P10 primitive: one streamed GenerateFreeFormStreamed POST, decoded into the answer "
+        "record plus the truncated raw slice chat.ask reports. It resolves no conversation id "
+        "and dispatches no batchexecute method, so it holds no native binding at all.",
+        (),
+        (),
+        ("streamed_query",),
+    ),
+    OperationSpec(
         Operation.CHAT_GET_CONVERSATION,
         CallPolicy.READ,
         "ChatService",

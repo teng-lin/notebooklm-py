@@ -92,7 +92,7 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.NOTE_CREATE,
         Operation.NOTE_UPDATE,
         Operation.NOTE_DELETE,
-        Operation.CHAT_ASK,
+        Operation.CHAT_STREAM_ANSWER,
         Operation.CHAT_GET_CONVERSATION,
         Operation.CHAT_GET_HISTORY,
         Operation.CHAT_DELETE_HISTORY,

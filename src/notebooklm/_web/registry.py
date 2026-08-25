@@ -44,6 +44,7 @@ from .._records import (
     CHAT_GET_CONVERSATION_DEF,
     CHAT_GET_HISTORY_DEF,
     CHAT_SAVE_NOTE_DEF,
+    CHAT_STREAM_ANSWER_DEF,
     COLLECTION_CREATE_DEF,
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,
@@ -176,12 +177,12 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.SOURCE_GET_FULLTEXT: SOURCE_GET_FULLTEXT_DEF,
         Operation.SOURCE_LIST: SOURCE_LIST_DEF,
         Operation.SOURCE_GET: SOURCE_GET_DEF,
-        Operation.CHAT_ASK: CHAT_ASK_DEF,
         Operation.CHAT_GET_CONVERSATION: CHAT_GET_CONVERSATION_DEF,
         Operation.CHAT_GET_HISTORY: CHAT_GET_HISTORY_DEF,
         Operation.CHAT_DELETE_HISTORY: CHAT_DELETE_HISTORY_DEF,
         Operation.CHAT_CONFIGURE: CHAT_CONFIGURE_DEF,
         Operation.CHAT_SAVE_NOTE: CHAT_SAVE_NOTE_DEF,
+        Operation.CHAT_STREAM_ANSWER: CHAT_STREAM_ANSWER_DEF,
         Operation.SOURCE_WAIT: SOURCE_WAIT_DEF,
         Operation.NOTE_LIST: NOTE_LIST_DEF,
         Operation.NOTE_GET: NOTE_GET_DEF,
@@ -259,6 +260,7 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.ARTIFACT_RENAME: ARTIFACT_RENAME_DEF,
         Operation.NOTEBOOK_CREATE: NOTEBOOK_CREATE_DEF,
         Operation.NOTEBOOK_UPDATE: NOTEBOOK_UPDATE_DEF,
+        Operation.CHAT_ASK: CHAT_ASK_DEF,
     }
 )
 _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
@@ -307,6 +309,10 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "service-owned since P9.2-11: NotebookMutationService.update sequences "
             "notebook.patch and notebook.get"
         ),
+        Operation.CHAT_ASK: (
+            "service-owned since P10 R2.2: ChatService.ask sequences chat.stream_answer and, "
+            "only when the caller resolved no id, chat.get_conversation"
+        ),
     }
 )
 
@@ -347,13 +353,13 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     }
 )
 
-# The frozen catalog currently contains 96 operations (87 product members plus nine
-# P9.2 primitives). This assertion is repeated at
+# The frozen catalog currently contains 97 operations (87 product members plus the
+# nine P9.2 primitives and the P10 R2.2 streamed-answer leaf). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 96
+_EXPECTED_OPERATION_COUNT: Final = 97
 _EXPECTED_SUPPORTED_COUNT: Final = 80
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 11
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 12
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:

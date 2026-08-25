@@ -237,8 +237,16 @@ NON_RPC_AUTHORITY_RULES: Mapping[Operation, tuple[tuple[str, str, str, str], ...
         (
             "stream",
             "streamed_query",
-            "_web/bindings/chat.py:_ask",
-            "adapter-owned GenerateFreeFormStreamed phase; bytes are incrementally buffered",
+            "_web/transport.py:WebTransport.stream",
+            "reached through the chat.stream_answer leaf; bytes are incrementally buffered",
+        ),
+    ),
+    Operation.CHAT_STREAM_ANSWER: (
+        (
+            "stream",
+            "streamed_query",
+            "_web/transport.py:WebTransport.stream",
+            "the streamed GenerateFreeFormStreamed POST; it is the row's only native",
         ),
     ),
     Operation.SOURCE_ADD_FILE: (
@@ -280,9 +288,9 @@ NON_RPC_AUTHORITY_RULES: Mapping[Operation, tuple[tuple[str, str, str, str], ...
 # Every manually allocated non-RPC authority must contain these transport calls,
 # and every contract row must be allocated to exactly one semantic operation.
 NON_RPC_SOURCE_CONTRACTS: Mapping[str, tuple[tuple[str, ...], ...]] = {
-    # P9.1: the streamed POST is the transport's ``stream`` verb; the chat
-    # handler reaches it through the shell-owned ``WebTransport``.
-    "_web/bindings/chat.py:_ask": (("invoke", "stream"),),
+    # P10 R2.2: the streamed POST is the transport's ``stream`` verb outright —
+    # the row declares a ``StreamNative`` and the transport owns the attempt.
+    "_web/transport.py:WebTransport.stream": (("chat_aware_authed_post",),),
     "_source/drive_import.py:DriveFetcher._request": (("stream",),),
     "_source/upload.py:SourceUploadPipeline.start_resumable_upload": (("post",),),
     "_source/upload.py:SourceUploadPipeline.upload_file_streaming._do_finalize": (
@@ -893,8 +901,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.CHAT_ASK, _b(RPCMethod.GET_LAST_CONVERSATION_ID)): _rules(
             (
-                "_web/bindings/chat.py:CHAT_ASK",
-                "post-stream resolution when no server-issued id is already known",
+                "_web/bindings/chat.py:CHAT_GET_CONVERSATION",
+                "post-stream resolution via chat.get_conversation when no id is already known",
             )
         ),
         (Operation.CHAT_GET_CONVERSATION, _b(RPCMethod.GET_LAST_CONVERSATION_ID)): _rules(

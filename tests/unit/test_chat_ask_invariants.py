@@ -129,7 +129,7 @@ class TestChatTimeoutRouting:
             backend=build_web_backend(
                 rpc,
                 chat_transport=transport,
-                chat_reqid=reqid,
+                reqid=reqid,
                 chat_timeout=45.0,
                 chat_response_max_bytes=987654,
             ),
@@ -584,7 +584,7 @@ class TestChatNewConversationLocks:
             backend=build_web_backend(
                 SimpleNamespace(rpc_call=rpc_call),
                 chat_transport=transport,
-                chat_reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
+                reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
             ),
             loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
             notebooks=SimpleNamespace(),
