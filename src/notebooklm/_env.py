@@ -215,7 +215,7 @@ def get_default_language() -> str:
 
     * The ``hl`` URL query parameter on every batchexecute RPC call
       (``WebExecutionRuntime.build_url`` and
-      ``_web.codec.chat_stream.build_streaming_chat_request``).
+      ``_web.codec.chat_stream.encode_ask_stream``).
     * Language-aware ``ArtifactsAPI.generate_*`` calls when callers pass
       ``language=None`` to opt in to environment/default resolution. Omitting
       ``language`` in the public Python API keeps the historical ``"en"``

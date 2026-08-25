@@ -1,4 +1,4 @@
-"""Unit tests for module-level helpers in ``notebooklm._chat``.
+"""Unit tests for the streamed-turn decode helper in the chat codec.
 
 Focuses on ``_extract_next_turn_content`` — the named extractor that
 replaces the raw ``next_turn[4][0][0]`` deep-index chain in
@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._chat import ChatAPI, _extract_next_turn_content
+from notebooklm._chat import ChatAPI
+from notebooklm._web.codec.chat_stream import _extract_next_turn_content
 from notebooklm.exceptions import UnknownRPCMethodError
 
 # ---------------------------------------------------------------------------

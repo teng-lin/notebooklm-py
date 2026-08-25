@@ -502,17 +502,27 @@ def test_single_level_allowlist_has_no_above_facade_entries() -> None:
     )
 
 
-def test_migrated_chat_wire_is_not_single_level_allowlisted() -> None:
-    """``_chat/wire.py`` was migrated behind ``_row_adapters/chat.py`` (issue #1491).
+def test_chat_package_is_not_single_level_allowlisted() -> None:
+    """The chat domain package open-codes no single-level RPC-payload subscript.
 
-    Pins the headline #1491 outcome: the chat wire parser no longer open-codes
-    any single-level RPC-payload subscript, so it is absent from
-    :data:`SINGLE_LEVEL_ALLOWLIST` AND from the live offender set -- the gate now
-    re-protects it. If a future edit re-introduces a raw ``x[i]`` read there,
-    ``test_no_unbaselined_single_level_positional_rpc_indexing`` fails.
+    Successor to the ``_chat/wire.py`` pin. #1491 migrated that parser behind
+    ``_row_adapters/chat.py``; P10 R2.1 then moved the parser itself into
+    ``_web/codec/chat_stream.py`` and deleted the shim, so naming the old file
+    would assert nothing (and naming the codec would assert nothing either --
+    ``_web/codec`` is a sanctioned path prefix, excluded from the scan).
+
+    What remains checkable, and is the real #1491 outcome for this feature, is
+    that NO in-scope file under ``_chat/`` open-codes a raw ``x[i]`` read: the
+    package is fully covered by the scan, so a future edit that reintroduces one
+    fails ``test_no_unbaselined_single_level_positional_rpc_indexing`` too. The
+    assertions below are non-vacuous because ``_chat/`` really is scanned --
+    pinned by the third assertion.
     """
-    assert "_chat/wire.py" not in SINGLE_LEVEL_ALLOWLIST
-    assert "_chat/wire.py" not in _single_level_offending_files()
+    scanned = {path.relative_to(SRC_ROOT).as_posix() for path in _feature_files()}
+    chat_modules = {name for name in scanned if name.startswith("_chat/")}
+    assert chat_modules, "_chat/ fell out of the single-level scan scope"
+    assert not (chat_modules & SINGLE_LEVEL_ALLOWLIST)
+    assert not (chat_modules & set(_single_level_offending_files()))
 
 
 def test_single_level_detector_flags_and_ignores() -> None:

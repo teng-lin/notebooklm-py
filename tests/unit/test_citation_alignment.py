@@ -35,6 +35,7 @@ from typing import Any
 
 import pytest
 
+from notebooklm._projectors import project_chat_reference
 from notebooklm._row_adapters.chat import AnswerRow, CitationDetail, CitationRow
 from notebooklm._row_adapters.documents import build_blocks, build_document
 from notebooklm._types import documents as documents_types
@@ -1833,8 +1834,14 @@ class TestFragmentRangeIsSourceSide:
         assert refs[-1].fragment_end_char > len(answer)
 
     def test_deprecated_alias_still_reports_the_same_value(self, answer_row: list[Any]) -> None:
-        """The rename must not change what the old name returns."""
-        for ref in parse_citations(answer_row):
+        """The rename must not change what the old name returns.
+
+        ``parse_citations`` emits ``ChatReferenceRecord`` since P10 R2.1 and the
+        deprecated alias is a public-type field, so the record is projected here
+        exactly as the chat facade projects it.
+        """
+        for record in parse_citations(answer_row):
+            ref = project_chat_reference(record)
             assert ref.answer_start_char == ref.fragment_start_char
             assert ref.answer_end_char == ref.fragment_end_char
 

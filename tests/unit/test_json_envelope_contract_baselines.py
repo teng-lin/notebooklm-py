@@ -1888,7 +1888,7 @@ def test_json_envelope_allocates_every_live_projection_to_an_exact_terminal() ->
     assert allocated_projection_ids == live_projection_ids
     assert reachability["site_count"] == 350
     private_paths = reachability["private_dataclass_projection_paths"]
-    assert len(private_paths) == 38
+    assert len(private_paths) == 32
     provider_auth_paths = {
         (path["private_model"], path["field_path"], path["public_model"])
         for path in private_paths

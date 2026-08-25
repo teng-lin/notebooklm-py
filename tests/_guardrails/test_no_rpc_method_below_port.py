@@ -99,7 +99,17 @@ SPEC_CALLEES: frozenset[str] = frozenset(
 SPEC_SUBSCRIPTS: frozenset[str] = frozenset({"NativeChoice"})
 
 # P9.4 codec method-id threading burndown. Measured, not estimated; exact and
-# sorted; may only shrink. Regenerate with::
+# sorted; may only shrink.
+#
+# The two ``_web/codec/artifact_formatters.py`` entries are NOT new debt: the
+# data-table helpers already named ``RPCMethod.LIST_ARTIFACTS`` for their
+# ``safe_index`` drift diagnostics while they lived in ``_artifact/formatters.py``,
+# ABOVE the port and therefore outside this gate's scan. P10 R1.3 relocated them
+# under ``_web/codec/`` unchanged, which moved them into scope. Recorded here so
+# the gate measures the real population; draining them is R1.3's follow-up, not a
+# licence to add further codec method-id reads.
+#
+# Regenerate with::
 #
 #     uv run python -c "from tests._guardrails.test_no_rpc_method_below_port \
 #         import measured_sites; print(*measured_sites(), sep='\n')"

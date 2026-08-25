@@ -1,10 +1,8 @@
 """Tests for chat error-payload parsing fallbacks."""
 
 import logging
-from unittest.mock import MagicMock
 
-from notebooklm._chat import ChatAPI
-from tests._fixtures.web_backend import build_web_backend
+from notebooklm._web.codec.chat_stream import raise_if_rate_limited
 
 
 class MalformedErrorPayload(list):
@@ -13,18 +11,11 @@ class MalformedErrorPayload(list):
 
 
 def test_rate_limit_payload_parse_failure_logs_debug(caplog):
-    # Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary): ``ChatAPI``
-    # takes direct collaborators by keyword arg. ``_raise_if_rate_limited``
-    # is a pure-payload-parsing helper that does not touch any collaborator,
-    # so all four are plain ``MagicMock()`` placeholders.
-    api = ChatAPI(
-        backend=build_web_backend(MagicMock()),
-        loop_guard=MagicMock(),
-        notebooks=MagicMock(),
-    )
-
+    # P10 R2.1: the delegating ``ChatAPI._raise_if_rate_limited`` wrapper is
+    # deleted; the codec function it forwarded to is called directly. The
+    # parser logs under the ``notebooklm._chat`` logger name either way.
     with caplog.at_level(logging.DEBUG, logger="notebooklm._chat"):
-        api._raise_if_rate_limited(MalformedErrorPayload())
+        raise_if_rate_limited(MalformedErrorPayload())
 
     records = [
         record

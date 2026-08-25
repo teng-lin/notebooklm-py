@@ -1,4 +1,4 @@
-"""Unit tests for :func:`notebooklm._chat.transport.chat_aware_authed_post`.
+"""Unit tests for :func:`notebooklm._web.chat_transport.chat_aware_authed_post`.
 
 Exercises the chat-domain error-mapping seam over the generic transport
 primitives. Each test injects a stub ``transport`` whose
@@ -38,13 +38,13 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from notebooklm._chat.transport import chat_aware_authed_post
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._transport_errors import (
     TransportAuthExpired,
     TransportRateLimited,
     TransportServerError,
 )
+from notebooklm._web.chat_transport import chat_aware_authed_post
 from notebooklm.exceptions import ChatError, NetworkError
 
 # ---------------------------------------------------------------------------

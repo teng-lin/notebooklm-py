@@ -7,7 +7,6 @@ import reprlib
 from typing import Any
 
 from ..._binding import CodecPayload
-from ..._chat.stream_decode import project_streaming_chat_result
 from ..._notebook_payloads import build_get_notebook_params
 from ..._records import (
     ChatAskInput,
@@ -46,7 +45,7 @@ from ...rpc import RPCMethod, safe_index
 from .chat_saved_note import build_save_note_params as _encode_save_note_params
 from .chat_stream import (
     _extract_next_turn_content,
-    build_streaming_chat_request,
+    encode_ask_stream,
     parse_streaming_chat_response,
 )
 
@@ -265,7 +264,7 @@ def build_ask_request(
         for turn in value.conversation_history:
             conversation_history.append([turn.answer, None, 2])
             conversation_history.append([turn.question, None, 1])
-    return build_streaming_chat_request(
+    return encode_ask_stream(
         snapshot=snapshot,
         notebook_id=value.notebook_id,
         question=value.question,
@@ -277,8 +276,21 @@ def build_ask_request(
 
 
 def decode_ask_response(response_text: str) -> ChatStreamAnswerRecord:
-    """Decode phase-one bytes through the retained monkeypatchable parser seam."""
-    return project_streaming_chat_result(parse_streaming_chat_response(response_text))
+    """Decode phase-one bytes into the neutral streamed-answer record.
+
+    The parser already emits records (P10 R2.1), so this only drops the
+    per-stream id ``StreamingChatParseResult.conversation_id`` carries — an
+    unreliable value the real conversation-id readback replaces — and freezes
+    the parser's lists into tuples.
+    """
+    parsed = parse_streaming_chat_response(response_text)
+    return ChatStreamAnswerRecord(
+        answer=parsed.answer,
+        references=tuple(parsed.references),
+        answer_document=parsed.answer_document,
+        turn_key=parsed.turn_key,
+        next_steps=tuple(parsed.next_steps),
+    )
 
 
 # Row-facing codecs (P9.3). Each encoder returns the full request payload one

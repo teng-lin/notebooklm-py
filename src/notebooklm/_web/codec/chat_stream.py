@@ -1,8 +1,12 @@
 """Web codec for NotebookLM's streamed ``GenerateFreeFormStreamed`` calls.
 
-This module owns only streamed-chat wire request construction and response
-parsing. Conversation flow, caching, source resolution, and ``AskResult``
-construction stay in :mod:`notebooklm._chat`.
+This module owns streamed-chat wire request construction and response parsing
+outright — the positional 9-slot ask grammar included (P10 R2.1, moved here
+from ``_chat/stream_request.py``). Conversation flow, caching, source
+resolution, and ``AskResult`` construction stay in :mod:`notebooklm._chat`.
+
+The encoder consumes an already-acquired runtime auth snapshot; it neither
+acquires nor persists credentials.
 """
 
 from __future__ import annotations
@@ -12,16 +16,13 @@ import logging
 import math
 import re
 import reprlib
-from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Protocol
+from urllib.parse import quote, urlencode
 
-from ..._chat.stream_request import (
-    AuthSnapshotLike as AuthSnapshotLike,
-)
-from ..._chat.stream_request import (
-    build_streaming_chat_request as build_streaming_chat_request,
-)
+from ..._auth.account import format_authuser_value
+from ..._env import get_default_bl, get_default_language
+from ..._records import ChatNextStepRecord, ChatReferenceRecord, ChatTurnKeyRecord
 from ..._row_adapters.chat import (
     AnswerRow,
     CitationDetail,
@@ -40,8 +41,8 @@ from ..._types.documents import (
 from ...exceptions import ChatError, ChatResponseParseError, UnknownRPCMethodError
 from ...rpc._safe_index import safe_index
 from ...rpc.decoder import strip_anti_xssi
-from ...rpc.types import RPCMethod
-from ...types import ChatReference, ConversationTurnKey, NextStepSuggestion
+from ...rpc.encoder import nest_source_ids
+from ...rpc.types import RPCMethod, get_query_url
 
 # Deliberate: use the ``notebooklm._chat`` logger namespace (not this module's)
 # so existing log filters keep matching the chat parser diagnostics.
@@ -61,6 +62,68 @@ _UUID_PATTERN = re.compile(
 )
 
 
+class AuthSnapshotLike(Protocol):
+    """Structural auth snapshot accepted by the streamed-ask encoder."""
+
+    @property
+    def csrf_token(self) -> str: ...
+
+    @property
+    def session_id(self) -> str: ...
+
+    @property
+    def authuser(self) -> int: ...
+
+    @property
+    def account_email(self) -> str | None: ...
+
+
+def encode_ask_stream(
+    *,
+    snapshot: AuthSnapshotLike,
+    notebook_id: str,
+    question: str,
+    source_ids: list[str],
+    conversation_history: list | None,
+    conversation_id: str | None,
+    reqid: int,
+) -> tuple[str, str, dict[str, str]]:
+    """Assemble ``(url, body, extra_headers)`` for one streamed-Chat attempt."""
+    sources_array = nest_source_ids(source_ids, 2)
+    params: list[Any] = [
+        sources_array,
+        question,
+        conversation_history,
+        [2, None, [1], [1]],
+        conversation_id,
+        None,
+        None,
+        notebook_id,
+        1,
+    ]
+    params_json = json.dumps(params, separators=(",", ":"))
+    f_req_json = json.dumps([None, params_json], separators=(",", ":"))
+    body_parts = [f"f.req={quote(f_req_json, safe='')}"]
+    if snapshot.csrf_token:
+        body_parts.append(f"at={quote(snapshot.csrf_token, safe='')}")
+    body = "&".join(body_parts) + "&"
+
+    url_params: dict[str, str] = {
+        "bl": get_default_bl(),
+        "hl": get_default_language(),
+        "_reqid": str(reqid),
+        "rt": "c",
+    }
+    if snapshot.session_id:
+        url_params["f.sid"] = snapshot.session_id
+    if snapshot.account_email or snapshot.authuser:
+        url_params["authuser"] = format_authuser_value(
+            snapshot.authuser,
+            snapshot.account_email,
+        )
+    return f"{get_query_url()}?{urlencode(url_params)}", body, {}
+
+
 @dataclass(frozen=True)
 class StreamingChatParseResult:
     """Parsed streamed-chat answer payload.
@@ -76,7 +139,7 @@ class StreamingChatParseResult:
     """
 
     answer: str
-    references: list[ChatReference]
+    references: list[ChatReferenceRecord]
     conversation_id: str | None
     #: The winning answer row's own document — its paragraphs plus the
     #: annotation map that anchored each reference's ``answer_anchor_*`` range
@@ -91,10 +154,10 @@ class StreamingChatParseResult:
     #: ``None`` when no chunk carried a usable key. Unlike
     #: :attr:`conversation_id` above this is NOT a legacy field — it is the key
     #: ``SubmitFeedback`` is addressed by.
-    turn_key: ConversationTurnKey | None = None
+    turn_key: ChatTurnKeyRecord | None = None
     #: Suggested follow-up questions/actions, collected last-wins across chunks
     #: that carried a populated ``NextStepSuggestions`` block.
-    next_steps: list[NextStepSuggestion] = field(default_factory=list)
+    next_steps: list[ChatNextStepRecord] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -111,7 +174,7 @@ class _ChunkExtraction:
 
     text: str | None = None
     is_answer: bool = False
-    references: list[ChatReference] = field(default_factory=list)
+    references: list[ChatReferenceRecord] = field(default_factory=list)
     conversation_id: str | None = None
     parseable: bool = False
     suggests_drift: bool = False
@@ -122,17 +185,13 @@ class _ChunkExtraction:
     #: frame's envelopes, so the parser can still tell "the final chunk carried
     #: no answer" from "no final chunk arrived".
     is_final_response: bool = False
-    #: The ``ConversationTurnKey`` seen on this chunk (#2122), or ``None``.
+    #: The turn key seen on this chunk (#2122), or ``None``.
     #: Read before the answer-text gate, so a text-less chunk still reports it.
-    turn_key: ConversationTurnKey | None = None
-    next_steps: list[NextStepSuggestion] = field(default_factory=list)
+    turn_key: ChatTurnKeyRecord | None = None
+    next_steps: list[ChatNextStepRecord] = field(default_factory=list)
 
 
-def parse_streaming_chat_response(
-    response_text: str,
-    *,
-    _strip_anti_xssi: Callable[[str], str] | None = None,
-) -> StreamingChatParseResult:
+def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResult:
     """Parse a streamed-chat response into answer, references, and conversation ID.
 
     Failure contract (see :class:`notebooklm.exceptions.ChatResponseParseError`):
@@ -167,23 +226,26 @@ def parse_streaming_chat_response(
     # owner of the )]}' prefix removal. For the real chat wire format the
     # prefix is always followed by a newline, so the subsequent ``.strip()``
     # yields a byte-for-byte-identical result to the prior blind ``[4:]`` slice.
-    strip = strip_anti_xssi if _strip_anti_xssi is None else _strip_anti_xssi
-    response_text = strip(response_text)
+    # Resolved as a module global on every call, which is the seam
+    # ``test_chat_parser_uses_shared_strip_anti_xssi`` monkeypatches. The
+    # ``_strip_anti_xssi`` injection parameter this replaced existed solely for
+    # the deleted ``_chat/wire.py`` compatibility wrapper (P10 R2.1).
+    response_text = strip_anti_xssi(response_text)
 
     lines = response_text.strip().split("\n")
     final_marked_answer = ""
-    final_marked_refs: list[ChatReference] = []
+    final_marked_refs: list[ChatReferenceRecord] = []
     best_marked_answer = ""
-    best_marked_refs: list[ChatReference] = []
+    best_marked_refs: list[ChatReferenceRecord] = []
     best_unmarked_answer = ""
-    best_unmarked_refs: list[ChatReference] = []
+    best_unmarked_refs: list[ChatReferenceRecord] = []
     final_marked_document = StructuredDocument()
     best_marked_document = StructuredDocument()
     best_unmarked_document = StructuredDocument()
     saw_drift_signal = False
     server_conv_id: str | None = None
-    turn_key: ConversationTurnKey | None = None
-    next_steps: list[NextStepSuggestion] = []
+    turn_key: ChatTurnKeyRecord | None = None
+    next_steps: list[ChatNextStepRecord] = []
     saw_final_chunk = False
     parseable_chunk_count = 0
 
@@ -339,7 +401,7 @@ def parse_streaming_chat_response(
 
 def extract_answer_and_refs_from_chunk(
     json_str: str,
-) -> tuple[str | None, bool, list[ChatReference], str | None]:
+) -> tuple[str | None, bool, list[ChatReferenceRecord], str | None]:
     """Extract answer text, references, and conversation ID from one response chunk.
 
     Public 4-tuple wrapper around :func:`_extract_chunk_with_parseable`.
@@ -371,7 +433,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
     gate, so a chunk that carries no text still reports them — see their field
     comments for the exact per-item vs across-frame semantics.
     """
-    refs: list[ChatReference] = []
+    refs: list[ChatReferenceRecord] = []
 
     try:
         data = json.loads(json_str)
@@ -383,8 +445,8 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
 
     parseable = False
     saw_final_envelope = False
-    turn_key: ConversationTurnKey | None = None
-    next_steps: list[NextStepSuggestion] = []
+    turn_key: ChatTurnKeyRecord | None = None
+    next_steps: list[ChatNextStepRecord] = []
     for item in data:
         if not isinstance(item, list) or len(item) < 2:
             continue
@@ -458,7 +520,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
         envelope_is_final = envelope.is_final_response
         saw_final_envelope |= envelope_is_final
         decoded_next_steps = [
-            NextStepSuggestion(question=row.question, type_code=row.type_code)
+            ChatNextStepRecord(question=row.question, type_code=row.type_code)
             for row in envelope.next_step_rows
             if row.is_well_formed and row.question is not None and row.type_code is not None
         ]
@@ -506,8 +568,9 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
                 # chunks that carry no text (chunk 1 of every observed stream).
                 # Gating it on text would drop the key for an empty answer —
                 # the turn a caller is most likely to want to give feedback on.
-                if answer.turn_key is not None:
-                    turn_key = answer.turn_key
+                turn_key_parts = answer.turn_key_parts
+                if turn_key_parts is not None:
+                    turn_key = ChatTurnKeyRecord(*turn_key_parts)
                 text = answer.text
                 if text is None:
                     continue
@@ -634,7 +697,9 @@ def raise_if_rate_limited(error_payload: list) -> None:
         )
 
 
-def parse_citations(first: list, document: StructuredDocument | None = None) -> list[ChatReference]:
+def parse_citations(
+    first: list, document: StructuredDocument | None = None
+) -> list[ChatReferenceRecord]:
     """Parse citation details from a streamed-chat response structure.
 
     Absence-vs-malformed policy (#1505 continuity). Citations are *secondary*
@@ -691,7 +756,7 @@ def parse_citations(first: list, document: StructuredDocument | None = None) -> 
             source=_CITATION_SOURCE,
             data_at_failure=reprlib.repr(first),
         )
-    refs: list[ChatReference] = []
+    refs: list[ChatReferenceRecord] = []
     for raw_idx, cite in enumerate(AnswerRow(first).citations, start=1):
         try:
             ref = parse_single_citation(cite)
@@ -730,8 +795,8 @@ def parse_citations(first: list, document: StructuredDocument | None = None) -> 
     return attach_answer_anchors(refs, document)
 
 
-def parse_single_citation(cite: Any) -> ChatReference | None:
-    """Parse a single citation entry into a ``ChatReference``."""
+def parse_single_citation(cite: Any) -> ChatReferenceRecord | None:
+    """Parse a single citation entry into a neutral ``ChatReferenceRecord``."""
     # ``CitationRow`` centralises the ``cite[0][0]`` chunk-id and ``cite[1]``
     # detail-block position knowledge (issue #1491); a malformed entry yields
     # ``detail is None`` here, matching the old "skip unusable citation" guard.
@@ -751,7 +816,7 @@ def parse_single_citation(cite: Any) -> ChatReference | None:
     fragment_start_char, fragment_end_char = extract_fragment_range(cite_inner)
     score = extract_score(cite_inner)
 
-    return ChatReference(
+    return ChatReferenceRecord(
         source_id=source_id,
         cited_text=cited_text,
         start_char=start_char,
@@ -870,8 +935,10 @@ def extract_text_passages(cite_inner: list) -> tuple[str | None, int | None, int
     block's range, independently derived from the same blocks the server's own
     ``cite_inner[3]`` union covers — and are treated as a semantically paired
     range, so a fragment with no usable blocks reports ``(None, None)`` rather
-    than a half-populated range the :class:`ChatReference` invariant would
-    reject.
+    than a half-populated range. ``ChatReferenceRecord`` does not validate that
+    itself — the public ``ChatReference`` the facade projects it onto does, and
+    it would reject the half-populated pair, so producing one here would turn a
+    decode quirk into a ``ValueError`` at the API surface.
     """
     # ``CitationDetail.fragment_elements`` centralises the two-level
     # ``cite_inner[4][0]`` descent; ``build_blocks`` owns the per-element
@@ -904,15 +971,15 @@ def extract_text_passages(cite_inner: list) -> tuple[str | None, int | None, int
 
 
 def attach_answer_anchors(
-    refs: list[ChatReference], document: StructuredDocument
-) -> list[ChatReference]:
+    refs: list[ChatReferenceRecord], document: StructuredDocument
+) -> list[ChatReferenceRecord]:
     """Stamp each reference with the answer range its citation supports (#2120).
 
     The answer's own document carries an annotation map — ``Body``'s
     ``inlineObjectLocations`` — whose entries pair a document-object id with a
     range of the answer. That object id is the citation's own
     ``DocumentObject.objectId``, which this client already surfaces as
-    ``ChatReference.chunk_id``, so the join is by id rather than by position:
+    ``ChatReferenceRecord.chunk_id``, so the join is by id rather than by position:
     a skipped malformed citation cannot silently shift a range onto its
     neighbour.
 
@@ -952,7 +1019,7 @@ def attach_answer_anchors(
             continue
         by_object_id.setdefault(entry.object_id, entry)
 
-    stamped: list[ChatReference] = []
+    stamped: list[ChatReferenceRecord] = []
     for ref in refs:
         anchor = by_object_id.get(ref.chunk_id) if ref.chunk_id else None
         if anchor is None:
