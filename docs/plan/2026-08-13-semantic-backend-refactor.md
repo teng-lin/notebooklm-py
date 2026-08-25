@@ -4,8 +4,8 @@
 **Implementation status:** P0's catalog and compatibility-contract evidence are complete and
 frozen. P1–P9 are implemented on `refactor/semantic-backend-dev` with per-phase completion
 evidence recorded below; they are not yet merged to `main`. P9's implementation is complete at
-`9ce52421`; its focused integration gate is green and the phase-ending canonical repository gate
-is still to be recorded in the exit report.
+`9ce52421`; its focused integration and phase-ending canonical repository gates are green, with
+the final exit evidence recorded below on 2026-08-25.
 **Planning date:** 2026-08-13
 **Planning base:** `main` at `3bb0c185` (re-pinned; the original `dd710a09` base had drifted).
 P0's inventory is independently measured at its PR merge base, which for this frozen baseline is
@@ -1764,7 +1764,7 @@ handler sequences more than one transport call.
 
 **Status:** proposed and approved 2026-08-24; implementation complete at `9ce52421` on
 `refactor/semantic-backend-dev`. The entry and exit records are measured below. The focused
-integration gate is green; the phase-ending canonical repository gate remains to be recorded.
+integration and phase-ending canonical repository gates are green.
 Owner-directed deviation: P9 opened on the P0–P8 development branch before that branch merged to
 `main`, so the "P8 merged to `main`" entry criterion was replaced by "P8 complete at the branch
 head" for this execution.
@@ -2471,10 +2471,20 @@ gaps, and 56/56 override proof.
 
 The P9.2 integrated focused gate passed 329 tests in 15.53 seconds, and the terminal P9.4c focused
 gate passed 784 tests in 12.97 seconds; the catalog audit, Ruff, and mypy on the touched set are
-green. This record does **not** claim the phase-ending canonical repository
-gate: the full pytest run, full Ruff check and format check, mypy, pre-commit, optional-adapter
-coverage and per-file floors, public API compatibility, metrics/event, exception-lattice,
-secret-regression, and cassette-rewrite rows remain to be recorded before that gate is closed.
+green. The phase-ending canonical repository gate was recorded on 2026-08-25:
+
+- canonical unfiltered pytest (`-n 4 --dist=worksteal`): 18,220 passed, 62 skipped, one xfailed;
+- fresh optional-adapter coverage lane: 16,115 passed, 61 skipped, 95.09% total coverage, with all
+  five per-file floors met and the configured 90% threshold unchanged;
+- full Ruff check and format check: green; mypy: green across 443 source files; pre-commit: all
+  hooks green;
+- metrics-contract, exception-lattice, catch-ordering, secret-regression, and redaction checks:
+  209 passed;
+- public API audit against `origin/main`: zero unreviewed breaks and no allowlist change; and
+- cassette diff against `origin/main`: empty.
+
+These results close the P9 implementation and verification gate. They do not merge the branch to
+`main`; integration remains a separate owner action.
 
 ### Deliberately out of scope
 
@@ -3030,5 +3040,5 @@ The per-phase **Acceptance criteria** above are the definition of done; this pla
 a second copy of them. The internal refactor may be declared successful after P8 -- neither a
 breaking public API nor a second backend is required to realize its primary architectural benefit.
 P9's implementation is additionally complete at `9ce52421`; its phase-ending canonical repository
-verification remains explicitly open in the P9 exit record rather than being implied by the focused
-integration gate.
+verification is explicitly closed by the 2026-08-25 evidence in the P9 exit record. The branch is
+still intentionally unmerged to `main`.

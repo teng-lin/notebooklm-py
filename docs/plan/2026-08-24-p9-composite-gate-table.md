@@ -630,7 +630,8 @@ The GO path is complete at `b2b6fa94`: all eight remaining hoists landed in §4 
 the final 96/80/11/5 operation partition, 80 binding rows, zero handlers, 17 client-timeout seeds,
 and 20 custom rows partitioned 5 protocol + 4 compatibility + 11 deferred-product. The integrated
 focused gate passed 329 tests; the catalog audit and Ruff on the touched set are green. The main
-plan's P9 exit record keeps the phase-ending canonical repository verification explicitly open.
+plan's P9 exit record closes the phase-ending canonical repository verification with the full
+2026-08-25 test, coverage, static-analysis, compatibility, and regression evidence.
 
 ## 9. Where the code contradicts the plan's assumptions
 
