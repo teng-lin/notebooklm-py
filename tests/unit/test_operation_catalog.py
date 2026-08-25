@@ -250,6 +250,7 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_web/backend.py:WebRpcBackend._notebook_update",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
+        "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
         "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
         "_web/bindings/sources.py:SOURCE_ADD_URL",
@@ -257,13 +258,16 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT",
-        "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
+        "_web/bindings/studio.py:ARTIFACT_GENERATE_AUDIO",
+        "_web/bindings/studio.py:ARTIFACT_GENERATE_DATA_TABLE",
+        "_web/bindings/studio.py:ARTIFACT_GENERATE_FLASHCARDS",
+        "_web/bindings/studio.py:ARTIFACT_GENERATE_INFOGRAPHIC",
+        "_web/bindings/studio.py:ARTIFACT_GENERATE_QUIZ",
+        "_web/bindings/studio.py:ARTIFACT_GENERATE_REPORT",
+        "_web/bindings/studio.py:ARTIFACT_GENERATE_SLIDE_DECK",
+        "_web/bindings/studio.py:ARTIFACT_GENERATE_VIDEO",
         "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
         "_web/studio_data.py:StudioDataWebHandlers._data_source_ids",
-        "_web/studio_documents.py:StudioDocumentWebHandlers._document_source_ids",
-        "_web/studio_media.py:StudioMediaWebHandlers._audio_generate",
-        "_web/studio_media.py:StudioMediaWebHandlers._interactive_generate",
-        "_web/studio_media.py:StudioMediaWebHandlers._visual_source_selection",
     ]
     assert any("_row_adapters/" in site for site in references[RPCMethod.GET_NOTEBOOK]["decoders"])
     assert references[RPCMethod.SUGGEST_PROMPTS]["decoders"] == [
@@ -567,15 +571,18 @@ def test_operation_authorities_are_exact_discriminated_and_include_non_rpc_paths
 
     audio = rows["artifact.generate_audio"]["execution_authorities"]
     assert {row["site"] for row in audio} == {
-        "_web/studio_media.py:StudioMediaWebHandlers._audio_generate",
+        "_web/bindings/studio.py:ARTIFACT_GENERATE_AUDIO",
     }
     assert all(row["discriminator"] for row in audio)
     assert not any("MindMapsAPI.generate" in row["site"] for row in audio)
 
-    for operation in ("artifact.generate_quiz", "artifact.generate_flashcards"):
+    for operation, row_name in (
+        ("artifact.generate_quiz", "ARTIFACT_GENERATE_QUIZ"),
+        ("artifact.generate_flashcards", "ARTIFACT_GENERATE_FLASHCARDS"),
+    ):
         authorities = rows[operation]["execution_authorities"]
         assert {row["site"] for row in authorities} == {
-            "_web/studio_media.py:StudioMediaWebHandlers._interactive_generate",
+            f"_web/bindings/studio.py:{row_name}",
         }
         assert all(row["discriminator"] for row in authorities)
 

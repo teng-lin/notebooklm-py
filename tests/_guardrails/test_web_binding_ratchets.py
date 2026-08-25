@@ -53,10 +53,11 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 RESIDUAL_COMPOSITE_CEILING = 31
 #: Exact custom-row counts per justification category (P9.4a: the three sharing
 #: mutate-then-readback composites; P9.4b: the five source-add rows — four
-#: *protocol*, ``SOURCE_ADD_TEXT`` *compatibility*). P9.4b PRs raise these as handlers convert;
-#: P9.2 hoists lower ``deferred-product``, which must reach zero before any
-#: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 4, "compatibility": 1, "deferred-product": 3}
+#: *protocol*, ``SOURCE_ADD_TEXT`` *compatibility* — and the Studio generate
+#: families, prompt suggestions and rename as *deferred-product*). P9.4b PRs
+#: raise these as handlers convert; P9.2 hoists lower ``deferred-product``,
+#: which must reach zero before any second backend.
+CUSTOM_ROW_COUNTS = {"protocol": 4, "compatibility": 1, "deferred-product": 13}
 
 # --- 2. class size ---------------------------------------------------------------
 
@@ -91,17 +92,7 @@ MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
         "labels.py:LabelSetWebHandlers._collection_update",
         "labels.py:LabelSetWebHandlers._label_create",
         "labels.py:LabelSetWebHandlers._label_update",
-        "settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
-        "studio_data.py:StudioDataWebHandlers._data_table_generate",
         "studio_data.py:StudioDataWebHandlers._mind_map_generate",
-        "studio_documents.py:StudioDocumentWebHandlers._report_generate",
-        "studio_documents.py:StudioDocumentWebHandlers._video_generate",
-        "studio_media.py:StudioMediaWebHandlers._audio_generate",
-        "studio_media.py:StudioMediaWebHandlers._flashcards_generate",
-        "studio_media.py:StudioMediaWebHandlers._infographic_generate",
-        "studio_media.py:StudioMediaWebHandlers._interactive_generate",
-        "studio_media.py:StudioMediaWebHandlers._quiz_generate",
-        "studio_media.py:StudioMediaWebHandlers._slide_deck_generate",
     }
 )
 

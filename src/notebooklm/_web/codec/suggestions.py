@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from typing import Any
 
@@ -10,6 +9,7 @@ from ..._binding import CodecPayload
 from ..._records import (
     ArtifactSuggestReportsInput,
     ArtifactSuggestReportsResult,
+    NotebookSuggestPromptsInput,
     NotebookSuggestPromptsResult,
     PromptSuggestionRecord,
     ReportSuggestionRecord,
@@ -19,10 +19,8 @@ from ..._row_adapters.artifacts import (
     unwrap_artifact_rows,
 )
 from ..._row_adapters.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
-from ..._row_adapters.sources import SourceRow
-from ...rpc import RPCMethod, nest_source_ids, safe_index
-
-logger = logging.getLogger("notebooklm._notebooks")
+from ...rpc import RPCMethod, nest_source_ids
+from .source_ids import SourceIdDiagnostics, decode_notebook_source_ids
 
 
 def _prompt_suggestions_client_context() -> list[Any]:
@@ -69,63 +67,30 @@ def encode_artifact_suggest_reports(value: ArtifactSuggestReportsInput) -> Codec
 
 
 def decode_prompt_source_ids(data: Any, *, notebook_id: str) -> tuple[str, ...]:
-    """Decode the embedded source ids with the legacy tolerant diagnostics."""
-    source_ids: list[str] = []
-    if not data or not isinstance(data, list):
-        return ()
+    """Decode the embedded source ids with the legacy tolerant (guarded) diagnostics."""
+    return decode_notebook_source_ids(
+        data, notebook_id=notebook_id, diagnostics=SourceIdDiagnostics.GUARDED
+    )
 
-    method_id = RPCMethod.GET_NOTEBOOK.value
-    try:
-        notebook_info = safe_index(
-            data,
-            0,
-            method_id=method_id,
-            source="NotebooksAPI.get_source_ids",
-        )
-        if not isinstance(notebook_info, list):
-            logger.warning(
-                "get_source_ids: notebook_data[0] shape unexpected for %s "
-                "(schema drift?). top-type=%s",
-                notebook_id,
-                type(notebook_info).__name__,
-            )
-            return ()
-        if len(notebook_info) <= 1:
-            logger.warning(
-                "get_source_ids: notebook_info has no sources slot for %s (schema drift?). len=%d",
-                notebook_id,
-                len(notebook_info),
-            )
-            return ()
-        sources = safe_index(
-            notebook_info,
-            1,
-            method_id=method_id,
-            source="NotebooksAPI.get_source_ids",
-        )
-        if sources is None:
-            return ()
-        if not isinstance(sources, list):
-            logger.warning(
-                "get_source_ids: notebook_info[1] not list for %s (schema drift?). len=%d",
-                notebook_id,
-                len(notebook_info),
-            )
-            return ()
-        for source in sources:
-            if not (isinstance(source, list) and source):
-                continue
-            source_id = SourceRow.from_entry(source, method_id=method_id).id
-            if source_id:
-                source_ids.append(source_id)
-    except (IndexError, TypeError) as exc:
-        logger.warning(
-            "get_source_ids: unexpected exception despite guards for %s: %s",
-            notebook_id,
-            exc,
-            exc_info=True,
-        )
-    return tuple(source_ids)
+
+def encode_notebook_suggest_prompts(
+    value: NotebookSuggestPromptsInput, *, source_ids: Sequence[str]
+) -> CodecPayload:
+    """Payload for the ``notebook.suggest_prompts`` kickoff (P9.4b custom row).
+
+    ``allow_null`` travels with the params — an empty suggestion response decodes
+    to no suggestions — so the row never names a method.
+    """
+    return CodecPayload(
+        params=encode_prompt_suggestions(
+            value.notebook_id,
+            source_ids,
+            mode=value.mode,
+            query=value.query,
+        ),
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
 
 
 def decode_prompt_suggestions(data: Any) -> NotebookSuggestPromptsResult:
@@ -182,6 +147,7 @@ __all__ = [
     "decode_prompt_suggestions",
     "decode_report_suggestions",
     "encode_artifact_suggest_reports",
+    "encode_notebook_suggest_prompts",
     "encode_prompt_suggestions",
     "encode_report_suggestions",
 ]

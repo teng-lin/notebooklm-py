@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 import reprlib
+import types  # ``from types import …`` reads as a public-model import to the P3 guardrail
 from typing import Any
 
 from ..._artifact.formatters import _parse_data_table
-from ..._backend import BackendContractError
+from ..._backend import BackendContractError, BackendError, BackendErrorReason
 from ..._binding import CodecPayload
 from ..._operations import Operation
 from ..._records import (
@@ -22,6 +23,7 @@ from ..._records import (
     ArtifactPollInput,
     ArtifactPollResult,
     ArtifactRecord,
+    ArtifactRenameInput,
     ArtifactRepresentationRecord,
     ArtifactSlideRecord,
     ArtifactUserStateRecord,
@@ -452,6 +454,51 @@ def decode_studio_rows(result: object, *, source: str) -> list[list[object]]:
         "Unrecognized LIST_ARTIFACTS payload shape",
         raw_response=reprlib.repr(result),
         method_id=RPCMethod.LIST_ARTIFACTS.value,
+    )
+
+
+def encode_artifact_rename(value: ArtifactRenameInput) -> CodecPayload:
+    """Payload for the ``artifact.rename`` title set (P9.4b custom row, spec ``"rename"``)."""
+
+    return CodecPayload(
+        params=[[value.artifact_id, value.new_title], [["title"]]],
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def encode_artifact_catalog_readback(notebook_id: str) -> CodecPayload:
+    """Payload for a composite's post-mutation ``LIST_ARTIFACTS`` readback."""
+
+    return CodecPayload(
+        params=encode_studio_catalog_params(notebook_id),
+        source_path=f"/notebook/{notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_artifact_catalog(result: object, *, source: str) -> tuple[ArtifactRecord, ...]:
+    """Decode one ``LIST_ARTIFACTS`` catalog read into Studio artifact records."""
+
+    rows = decode_studio_rows(result, source=source)
+    return tuple(decode_artifact(row) for row in rows if isinstance(row, list) and row)
+
+
+def artifact_not_found(operation: Operation, artifact_id: str, *, method_id: str) -> BackendError:
+    """The closed ``ARTIFACT_NOT_FOUND`` error a composite raises after its readback."""
+
+    return BackendError(
+        message=f"Artifact not found: {artifact_id}",
+        operation=operation,
+        diagnostics=types.MappingProxyType(
+            {
+                "artifact_id": artifact_id,
+                "artifact_type": None,
+                "method_id": method_id,
+                "raw_response": None,
+            }
+        ),
+        reason=BackendErrorReason.ARTIFACT_NOT_FOUND,
     )
 
 

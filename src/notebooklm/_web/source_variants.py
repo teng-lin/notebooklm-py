@@ -26,12 +26,12 @@ from .codec.sources import (
     encode_source_snapshot,
     encode_update_source,
 )
-from .studio_facade import StudioFacadeWebHandlers
+from .labels import LabelSetWebHandlers
 
 source_logger = logging.getLogger("notebooklm").getChild("_sources")
 
 
-class SourceVariantWebHandlers(StudioFacadeWebHandlers):
+class SourceVariantWebHandlers(LabelSetWebHandlers):
     """Remaining Source workflows mixed into the composed web backend."""
 
     _executor: Any

@@ -1087,11 +1087,10 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/bindings/notes.py` | P9.3 plain-note codec rows: `NOTE_LIST`, `NOTE_GET`, `NOTE_CREATE`, `NOTE_UPDATE`, `NOTE_DELETE` over `_web/codec/notes.py`; `NoteService` sequences them above the port and the walker derives their catalog authorities from the module-level assignments. |
 | `_web/bindings/labels.py` | P9.3 labels/collections codec rows: `LABEL_LIST`, `LABEL_GET`, `LABEL_GENERATE`, `LABEL_DELETE`, `COLLECTION_LIST`, `COLLECTION_GET`, `COLLECTION_DELETE` — one `LIST_LABELS`/`CREATE_LABEL`/`DELETE_LABEL` call per row; the get rows select by exact id inside `decode`. |
 | `_web/bindings/chat.py` | P9.3 chat codec rows: `CHAT_GET_CONVERSATION`, `CHAT_GET_HISTORY`, `CHAT_DELETE_HISTORY`, `CHAT_SAVE_NOTE`, and the input-keyed `CHAT_CONFIGURE` (`GET_NOTEBOOK` read or `RENAME_NOTEBOOK` mutation selected from the action) — `encode → one native call → decode`; `CHAT_ASK` stays a handler in `_web/chat.py`. |
-| `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
+| `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; since P9.4b also the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` *deferred-product* custom row (conditional `GET_NOTEBOOK` read, then `SUGGEST_PROMPTS`). The walker derives their catalog authorities from these module-level assignments. |
 | `_web/bindings/sharing.py` | Sharing rows: the P9.3 codec rows `SHARING_GET`, `LEGACY_SHARE_ARTIFACT` (`encode → one native call → decode`, the `NativeCallSpec` as sole method authority) and the P9.4 *deferred-product* `CustomBinding` rows `SHARING_SET_PUBLIC`, `SHARING_SET_VIEW_LEVEL`, `SHARING_UPDATE_USERS`, whose handlers sequence the declared `mutate` and `readback` specs through the row-scoped invoker; the P6.5 sharing mixin is deleted. |
 | `_web/bindings/sources.py` | P9.3 source codec rows: `SOURCE_LIST`, `SOURCE_GET` (exact-id select inside `decode`), `SOURCE_WAIT` (the one `DeadlineMode.IGNORE` row), `SOURCE_DELETE`, `SOURCE_REFRESH`, `SOURCE_CHECK_FRESHNESS`, `SOURCE_GET_GUIDE`, `SOURCE_GET_FULLTEXT`; and, since P9.4b, the source-add family as `CustomBinding` rows (`SOURCE_ADD_URL`, `SOURCE_ADD_URL_BATCH`, `SOURCE_ADD_DRIVE`, `SOURCE_ADD_FILE` *protocol*; `SOURCE_ADD_TEXT` *compatibility*) whose handlers sequence their declared `snapshot`/`create`/`rename`/`register`/`limits` specs through the row-scoped invoker; `upload_backend()` builds the upload pipeline's callbacks over a `SOURCE_ADD_FILE` invoker. |
-| `_web/bindings/studio.py` | P9.3 Studio leaf codec rows: `ARTIFACT_EXPORT`, `ARTIFACT_REVISE_SLIDE`, `ARTIFACT_RETRY`, `ARTIFACT_DELETE`, `ARTIFACT_WAIT` (inherits the caller's deadline; the polling loop stays in `_studio/lifecycle.py`), and the input-keyed `ARTIFACT_DOWNLOAD` (`LIST_ARTIFACTS` / `GET_NOTES_AND_MIND_MAPS` / `GET_INTERACTIVE_HTML` chosen from `value.action`); the generate members, rename composite, and catalog merge stay handlers. |
-| `_web/settings_suggestions.py` | P6.6 prompt-suggestion web workflow mixin; since P9.3 only the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` composite remains here (the settings and report-suggestion leaves are `_web/bindings/settings.py` rows). |
+| `_web/bindings/studio.py` | P9.3 Studio leaf codec rows: `ARTIFACT_EXPORT`, `ARTIFACT_REVISE_SLIDE`, `ARTIFACT_RETRY`, `ARTIFACT_DELETE`, `ARTIFACT_WAIT` (inherits the caller's deadline; the polling loop stays in `_studio/lifecycle.py`), and the input-keyed `ARTIFACT_DOWNLOAD` (`LIST_ARTIFACTS` / `GET_NOTES_AND_MIND_MAPS` / `GET_INTERACTIVE_HTML` chosen from `value.action`); since P9.4b also the *deferred-product* custom rows for the eight `CREATE_ARTIFACT` generate families (conditional `GET_NOTEBOOK` default-source read, then the guarded kickoff) and `ARTIFACT_RENAME` (title set, then `LIST_ARTIFACTS` readback). Only the mind-map compatibility composite and the catalog merge stay handlers. |
 | `_web/source_variants.py` | Web workflow mixin holding only `SOURCE_UPDATE` and the composite snapshot helper it hydrates through (the source leaves and the source-add family are `_web/bindings/sources.py` rows since P9.3/P9.4b); deleted with its P9.2 hoist. |
 | `_web/policy.py` | Exact P4 ledger for all 82 active web workflows: semantic policy, every reachable native method/variant, reviewed native idempotency, and optional reported divergence. |
 | `_web/registry.py` | Closed web disposition registry over every `Operation`: 82 executable typed handlers plus explicit composite dispositions. |
@@ -1105,11 +1104,10 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/codec/` | P3/P6 web response ownership: notebook, source, artifact, Chat, label, collection, sharing, Research, settings, suggestions, and report/guide codecs return frozen neutral records; `documents.py` alone returns the approved exported `StructuredDocument` value exemption. Codec bindings are tied to cassette-backed golden families and never call public parsing factories. |
 | `_web/codec/chat.py` | P6.1 unary Chat request/response codec over neutral records, retaining the streamed parser as a monkeypatchable compatibility seam. |
 | `_web/codec/chat_stream.py` | Retained streamed-response parser; credential-aware request construction delegates outside `_web` to `_chat/stream_request.py`. |
-| `_web/studio_documents.py` | P5.4 web workflow binding for report/video source resolution and generation kickoff; mixed into `WebRpcBackend` to keep the composed backend below the module-size ratchet. |
-| `_web/studio_facade.py` | P5.8 web binding for the artifact rename composite and the catalog seam it reads back through; since P9.3 the delete/revise/retry/wait/download leaves are `_web/bindings/studio.py` rows. |
-| `_web/studio_media.py` | Shared P5.2/P5.3/P5.5 web generation handlers for Audio, Quiz/Flashcards, and Infographic/Slide Deck; inherits the document-family RPC/source helpers and keeps the composed backend below the module-size ratchet. |
-| `_web/studio_data.py` | P5.6 web handlers for data-table/mind-map generation; composes with the media/document handlers while keeping the backend module below the size ratchet (since P9.3 the Drive export leaf is an `_web/bindings/studio.py` row). |
+| `_web/studio_data.py` | Root of the remaining handler chain: the `ARTIFACT_GENERATE_MIND_MAP` compatibility composite (note-backed persistence through the legacy seam), the `_rpc_call`/`_persist_generated_mind_map` seams the head implements, and the silent/warning source-id helpers the head's mind-map kickoffs still reach (since P9.4b every other generate family is an `_web/bindings/studio.py` custom row). |
 | `_web/codec/studio_documents.py` | P5.4 exact report/video request encoders and generation-status decoder over backend-neutral records. |
+| `_web/codec/generation.py` | P9.4b row-facing Studio generate payloads: the option vocabularies and `validate_*`/`encode_*` builders returning the guarded `CREATE_ARTIFACT` `CodecPayload` per family, plus `decode_generation_kickoff` (null response or task id → the closed unavailable error). |
+| `_web/codec/source_ids.py` | P9.4b: the one `GET_NOTEBOOK` source-id decoder every input-defaulting row shares, with an explicit per-family `SourceIdDiagnostics` mode (silent / warn / guarded) that preserves each family's schema-drift warning surface. |
 | `_web/codec/notes.py` | P6.3 mixed note-row codec: normalizes flat/wrapped envelopes, classifies deleted and note-backed mind-map rows, preserves exact-id selection, and emits only neutral `NoteRecord` values; since P9.3 also the row-facing `encode_note_*`/`decode_note_*` helpers behind `_web/bindings/notes.py`. |
 | `_web/codec/labels.py` | P6.4 shared source-label/collection codec: owns both wire dialects behind `LabelKind` and emits only neutral `LabelRecord` values; since P9.3 also the row-facing `encode_*`/`decode_*_result` payload builders and the dialect/scope contract guards. |
 | `_web/codec/research.py` | P6.2 DiscoverSources codec: owns fast/deep start, poll, cancel, and report-before-web import request grammar and decodes responses into neutral Research records without selecting or dispatching an RPC. |
@@ -1349,7 +1347,6 @@ src/notebooklm/
 │   ├── errors.py                # Shared native-to-neutral failure translation (P9.3)
 │   ├── failure_projection.py    # Bounded public-exception graph to neutral failure records
 │   ├── labels.py                # P6.4 source-label/collection workflow handlers
-│   ├── settings_suggestions.py  # P6.6 prompt-suggestion composite handler
 │   ├── bindings/                # P9.3 per-domain binding rows
 │   │   ├── __init__.py          # WEB_BINDING_ROWS union
 │   │   ├── chat.py              # chat codec rows (configure is input-keyed)
@@ -1364,10 +1361,7 @@ src/notebooklm/
 │   │   └── studio.py            # Studio leaf codec rows (export, revise, retry, delete, wait, keyed download)
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)
 │   ├── registry.py              # Closed active/unsupported web dispositions
-│   ├── studio_documents.py      # P5.4 web report/video workflow handlers
-│   ├── studio_media.py          # P5.2/P5.3/P5.5 web family handlers
-│   ├── studio_data.py           # P5.6 data-view generation handlers (export leaf is a bindings/studio.py row)
-│   ├── studio_facade.py         # P5.8 artifact rename composite (leaves are bindings/studio.py rows)
+│   ├── studio_data.py           # Chain root: mind-map compatibility composite + seams (generate rows live in bindings/studio.py)
 │   ├── source_variants.py       # SOURCE_UPDATE composite (leaves and source-add family are bindings/sources.py rows)
 │   ├── transport.py             # P9.1 WebTransport call/stream verbs, WebRequest/WebStreamRequest
 │   └── codec/                   # P3 web response codecs producing neutral records/value exemptions
@@ -1387,6 +1381,8 @@ src/notebooklm/
 │       ├── sharing.py           # Share status/user rows -> neutral records
 │       ├── sources.py           # Source row variants -> neutral records
 │       ├── studio_documents.py  # Exact report/video request and status codecs
+│       ├── generation.py        # Row-facing Studio generate payloads and kickoff decoding (P9.4b)
+│       ├── source_ids.py        # Shared GET_NOTEBOOK source-id decoder with per-family diagnostics (P9.4b)
 │       └── suggestions.py       # Prompt/report suggestion neutral codec (P6.6)
 ├── _app/                        # Transport-neutral business-logic layer (CLI/MCP/HTTP adapters share it)
 │   ├── __init__.py              # Re-exports the neutral primitives

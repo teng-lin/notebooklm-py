@@ -166,8 +166,8 @@ from notebooklm._records import (
 )
 from notebooklm._source.upload_payloads import build_template_block
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
-from notebooklm._web import studio_media as studio_media_module
 from notebooklm._web.backend import WebRpcBackend
+from notebooklm._web.bindings import studio as studio_rows_module
 from notebooklm._web.registry import (
     WEB_OPERATION_REGISTRY,
     WEB_STAGED_OPERATIONS,
@@ -1041,7 +1041,7 @@ async def test_audio_generate_reuses_payload_builder_and_one_absolute_deadline()
 
 @pytest.mark.asyncio
 async def test_audio_generate_none_language_uses_current_profile_default(monkeypatch) -> None:
-    monkeypatch.setattr(studio_media_module, "get_default_language", lambda: "ja")
+    monkeypatch.setattr(studio_rows_module, "get_default_language", lambda: "ja")
     executor = _RecordingExecutor([["audio-id", "Audio", 1, None, 1]])
 
     await _backend(executor).invoke(

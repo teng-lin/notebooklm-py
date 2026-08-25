@@ -240,21 +240,11 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.MIND_MAP_GENERATE_INTERACTIVE: "_mind_map_generate_interactive",
         Operation.ARTIFACT_LIST: "_artifact_list",
         Operation.ARTIFACT_GET: "_artifact_get",
-        Operation.ARTIFACT_GENERATE_AUDIO: "_audio_generate",
-        Operation.ARTIFACT_GENERATE_QUIZ: "_quiz_generate",
-        Operation.ARTIFACT_GENERATE_FLASHCARDS: "_flashcards_generate",
-        Operation.ARTIFACT_GENERATE_REPORT: "_report_generate",
-        Operation.ARTIFACT_GENERATE_VIDEO: "_video_generate",
-        Operation.ARTIFACT_GENERATE_INFOGRAPHIC: "_infographic_generate",
-        Operation.ARTIFACT_GENERATE_SLIDE_DECK: "_slide_deck_generate",
-        Operation.ARTIFACT_GENERATE_DATA_TABLE: "_data_table_generate",
         Operation.ARTIFACT_GENERATE_MIND_MAP: "_mind_map_generate",
         Operation.LABEL_CREATE: "_label_create",
         Operation.LABEL_UPDATE: "_label_update",
         Operation.COLLECTION_CREATE: "_collection_create",
         Operation.COLLECTION_UPDATE: "_collection_update",
-        Operation.NOTEBOOK_SUGGEST_PROMPTS: "_notebook_suggest_prompts",
-        Operation.ARTIFACT_RENAME: "_artifact_rename",
     }
 )
 
