@@ -21,10 +21,9 @@ not share.
 This gate makes the population **shrink-only**:
 
 * **Sanctioned modules** (:data:`SANCTIONED_MODULES`) are never scanned: the
-  transport pair (``transport.py``, ``chat_transport.py``), the runtime and
-  its deadline seams (``runtime.py``, ``deadlines.py``, ``deadline_rpc.py``),
-  the registry and the policy ledger (``registry.py``, ``policy.py``). They
-  are *where* ``RPCMethod`` belongs below the port.
+  transport pair (``transport.py``, ``chat_transport.py``), runtime/deadline
+  ledgers, registry, and policy ledger. They are *where* ``RPCMethod`` belongs
+  below the port.
 
 * **Binding rows** (``_web/bindings/*.py``) may name ``RPCMethod`` only as the
   *value of a native spec*: an argument of ``NativeCallSpec.constant(...)``,
@@ -83,7 +82,6 @@ TARGET = "RPCMethod"
 SANCTIONED_MODULES: frozenset[str] = frozenset(
     {
         "_web/chat_transport.py",
-        "_web/deadline_rpc.py",
         "_web/deadlines.py",
         "_web/policy.py",
         "_web/registry.py",
@@ -107,22 +105,22 @@ SPEC_SUBSCRIPTS: frozenset[str] = frozenset({"NativeChoice"})
 #         import measured_sites; print(*measured_sites(), sep='\n')"
 ALLOWLIST: tuple[str, ...] = (
     "_web/backend.py:WebRpcBackend._artifact_catalog_records",
-    "_web/backend.py:WebRpcBackend._list_notebooks",
-    "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
-    "_web/backend.py:WebRpcBackend._mind_map_generate_note",
-    "_web/backend.py:WebRpcBackend._notebook_create.create",
-    "_web/backend.py:WebRpcBackend._notebook_create.probe",
-    "_web/backend.py:WebRpcBackend._notebook_limit_error",
-    "_web/backend.py:WebRpcBackend._notebook_update",
     "_web/backend.py:WebRpcBackend._rpc_call",
     "_web/backend.py:WebRpcBackend.public_rpc_call",
-    "_web/chat.py:ChatWebHandlers._chat_conversation_id",
+    "_web/bindings/_invoker_caller.py:InvokerRpcCaller.__init__",
+    "_web/bindings/_invoker_caller.py:InvokerRpcCaller.rpc_call",
+    "_web/bindings/mind_maps.py:<module>",
+    "_web/bindings/mind_maps.py:_mind_map_generate_interactive",
+    "_web/bindings/notebooks.py:_notebook_create.limit_error",
+    "_web/bindings/notebooks.py:_notebook_create.probe",
     "_web/codec/artifacts.py:decode_interactive_content",
     "_web/codec/artifacts.py:decode_studio_rows",
     "_web/codec/chat.py:decode_get_settings_result",
     "_web/codec/chat_stream.py:_extract_next_turn_content",
+    "_web/codec/generation.py:decode_generation_kickoff",
     "_web/codec/labels.py:decode_label_generate_result",
     "_web/codec/labels.py:decode_label_set_list_result",
+    "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
     "_web/codec/mind_maps.py:decode_created_interactive_id",
     "_web/codec/mind_maps.py:decode_generated_tree",
     "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
@@ -132,6 +130,9 @@ ALLOWLIST: tuple[str, ...] = (
     "_web/codec/notebooks.py:decode_notebook_description",
     "_web/codec/notebooks.py:decode_notebook_get",
     "_web/codec/notebooks.py:decode_notebook_list_result",
+    "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
+    "_web/codec/notebooks.py:decode_notebook_update_readback",
+    "_web/codec/notebooks.py:notebook_update_not_found",
     "_web/codec/notes.py:_decode_note_rows",
     "_web/codec/notes.py:_is_note_row_like",
     "_web/codec/notes.py:_normalize_note_row",
@@ -139,13 +140,15 @@ ALLOWLIST: tuple[str, ...] = (
     "_web/codec/settings.py:decode_get_user_settings",
     "_web/codec/settings.py:decode_set_output_language",
     "_web/codec/sharing.py:<module>",
+    "_web/codec/source_ids.py:_decode",
     "_web/codec/sources.py:decode_add_source_records",
+    "_web/codec/sources.py:decode_renamed_source",
     "_web/codec/sources.py:decode_source_record",
     "_web/codec/sources.py:decode_source_snapshot",
+    "_web/codec/sources.py:rename_target_missing",
     "_web/codec/studio_documents.py:decode_artifact_retry",
     "_web/codec/studio_documents.py:decode_artifact_revise_slide",
     "_web/codec/studio_documents.py:decode_generation_status",
-    "_web/codec/suggestions.py:decode_prompt_source_ids",
     "_web/codec/suggestions.py:decode_prompt_suggestions",
     "_web/codec/suggestions.py:decode_report_suggestions",
     "_web/labels.py:LabelSetWebHandlers._collection_create",
@@ -156,35 +159,8 @@ ALLOWLIST: tuple[str, ...] = (
     "_web/labels.py:LabelSetWebHandlers._label_set_list",
     "_web/labels.py:LabelSetWebHandlers._label_update",
     "_web/labels.py:LabelSetWebHandlers._label_update_preflight",
-    "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
-    "_web/sharing.py:SharingWebHandlers._sharing_set_public",
-    "_web/sharing.py:SharingWebHandlers._sharing_set_view_level",
-    "_web/sharing.py:SharingWebHandlers._sharing_status",
-    "_web/sharing.py:SharingWebHandlers._sharing_update_users",
-    "_web/source_variants.py:SourceVariantWebHandlers._create_url_source",
-    "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public",
-    "_web/source_variants.py:SourceVariantWebHandlers._source_add_drive.create_source",
-    "_web/source_variants.py:SourceVariantWebHandlers._source_add_text.create_source",
-    "_web/source_variants.py:SourceVariantWebHandlers._source_add_url_batch.create_sources",
-    "_web/source_variants.py:SourceVariantWebHandlers._source_file_limit",
-    "_web/source_variants.py:SourceVariantWebHandlers._source_register_file",
     "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
     "_web/source_variants.py:SourceVariantWebHandlers._source_update",
-    "_web/studio_data.py:StudioDataWebHandlers._data_source_ids",
-    "_web/studio_data.py:StudioDataWebHandlers._data_table_generate",
-    "_web/studio_data.py:StudioDataWebHandlers._mind_map_generate",
-    "_web/studio_documents.py:StudioDocumentWebHandlers._artifact_feature_unavailable",
-    "_web/studio_documents.py:StudioDocumentWebHandlers._document_generate",
-    "_web/studio_documents.py:StudioDocumentWebHandlers._document_source_ids",
-    "_web/studio_documents.py:StudioDocumentWebHandlers._generation_source_ids",
-    "_web/studio_documents.py:StudioDocumentWebHandlers._rpc_call",
-    "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_rename",
-    "_web/studio_media.py:StudioMediaWebHandlers._audio_generate",
-    "_web/studio_media.py:StudioMediaWebHandlers._audio_source_ids",
-    "_web/studio_media.py:StudioMediaWebHandlers._generation_status",
-    "_web/studio_media.py:StudioMediaWebHandlers._interactive_generate",
-    "_web/studio_media.py:StudioMediaWebHandlers._visual_generate",
-    "_web/studio_media.py:StudioMediaWebHandlers._visual_source_selection",
 )
 
 
