@@ -89,14 +89,11 @@ def _make_api(
         rpc_call=AsyncMock(side_effect=routed_rpc_call),
         get_source_ids=AsyncMock(return_value=[]),
     )
-    mock_note_service = MagicMock()
     api = ArtifactsAPI(
-        rpc=mock_core,
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=mock_notebooks,
         mind_maps=mock_mind_maps,
-        note_service=mock_note_service,
         _backend=build_web_backend(mock_core),
     )
     return api, mock_core, mock_mind_maps

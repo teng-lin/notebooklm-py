@@ -16,6 +16,7 @@ import pytest
 import notebooklm._artifact.downloads as _downloads
 from notebooklm._artifacts import DownloadResult
 from notebooklm.exceptions import ArtifactDownloadError
+from tests._fixtures.web_backend import build_web_backend
 
 # A trusted-domain prefix accepted by `_download_urls_batch`'s domain check.
 TRUSTED_URL_PREFIX = "https://storage.googleapis.com/"
@@ -88,16 +89,14 @@ def mock_artifacts_api(tmp_path):
     """Minimal ArtifactsAPI with a mocked core for download tests."""
     from notebooklm._artifacts import ArtifactsAPI
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
 
     mock_core = MagicMock()
     api = ArtifactsAPI(
-        rpc=mock_core,
+        _backend=build_web_backend(mock_core),
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        note_service=MagicMock(spec=NoteService),
         storage_path=tmp_path / "storage.json",
     )
     return api, mock_core

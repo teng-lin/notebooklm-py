@@ -1028,7 +1028,7 @@ async def test_web_rpc_backend_passes_single_deadline_without_nested_resets() ->
         ]
     )
     executor = MagicMock(rpc_call=rpc_call)
-    backend = WebRpcBackend(executor, transport_factory=lambda **_kw: object())
+    backend = WebRpcBackend(executor)
 
     # Advance simulated time during execution
     clock_time = 105.0
@@ -1060,7 +1060,7 @@ async def test_web_rpc_backend_rejects_expired_deadline_immediately() -> None:
     clock_time = 115.0  # Expired
 
     executor = MagicMock(rpc_call=AsyncMock())
-    backend = WebRpcBackend(executor, transport_factory=lambda **_kw: object())
+    backend = WebRpcBackend(executor)
 
     with pytest.raises(BackendDeadlineExceededError) as exc_info:
         await backend.invoke(

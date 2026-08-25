@@ -145,7 +145,6 @@ async def test_seeded_composite_shares_identity_and_consumes_remaining_budget() 
     factory = RuntimeDeadlineFactory.fixed(10.0, monotonic=lambda: clock[0])
     backend = WebRpcBackend(
         executor,
-        transport_factory=lambda **_kwargs: object(),
         deadline_factory=factory,
     )
 
@@ -167,7 +166,6 @@ async def test_explicit_deadline_is_never_replaced_by_composition_factory() -> N
     executor = MagicMock(rpc_call=AsyncMock(side_effect=[None, [["Renamed", [], "nb-1"]]]))
     backend = WebRpcBackend(
         executor,
-        transport_factory=lambda **_kwargs: object(),
         deadline_factory=RuntimeDeadlineFactory(lambda: pytest.fail("factory was called")),
     )
 
@@ -191,7 +189,6 @@ async def test_source_poll_snapshot_keeps_legacy_in_flight_timeout_semantics() -
     executor = MagicMock(rpc_call=AsyncMock(return_value=[["Notebook", [], "nb-1"]]))
     backend = WebRpcBackend(
         executor,
-        transport_factory=lambda **_kwargs: object(),
         deadline_factory=RuntimeDeadlineFactory(lambda: pytest.fail("factory was called")),
     )
 

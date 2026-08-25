@@ -22,6 +22,7 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._polling_registry import PollRegistry
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from tests._fixtures.web_backend import build_web_backend
 
 
 def _auth() -> AuthTokens:
@@ -92,19 +93,17 @@ async def test_session_close_drains_artifact_poll_hook() -> None:
     from unittest.mock import MagicMock
 
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
 
     core = NotebookLMClient(_auth())
     # ``ArtifactsAPI`` consumes its three runtime collaborators
     # (``rpc`` + ``drain`` + ``lifecycle``) directly — mirrors production
     # wiring in ``NotebookLMClient.__init__``.
     artifacts = ArtifactsAPI(
-        rpc=core._backend._runtime,
+        _backend=build_web_backend(core._backend._runtime),
         drain=core._backend._drain_tracker,
         lifecycle=core._provider._lifecycle,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        note_service=MagicMock(spec=NoteService),
     )
     assert (
         core._backend._drain_tracker._drain_hooks["artifacts.polls"]

@@ -21,7 +21,6 @@ from pytest_httpx import HTTPXMock
 from notebooklm import NotebookLMClient
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
-from notebooklm._note_service import NoteService
 from notebooklm._records import (
     ARTIFACT_DOWNLOAD_DEF,
     ARTIFACT_GET_DEF,
@@ -473,12 +472,11 @@ class TestArtifactsAPI:
         ]
         core = make_fake_core(rpc_call=AsyncMock(side_effect=[[[studio_artifact]], [[mind_map]]]))
         api = ArtifactsAPI(
-            rpc=core,
+            _backend=build_web_backend(core),
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
-            note_service=MagicMock(spec=NoteService),
         )
 
         with patch.object(
@@ -501,12 +499,11 @@ class TestArtifactsAPI:
             rpc_call=AsyncMock(return_value=[[["art_001", "My Report", 2, None, 3]]])
         )
         api = ArtifactsAPI(
-            rpc=core,
+            _backend=build_web_backend(core),
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
-            note_service=MagicMock(spec=NoteService),
         )
 
         with patch.object(
@@ -532,7 +529,6 @@ class TestArtifactsAPI:
             lifecycle=MagicMock(),
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
-            note_service=MagicMock(spec=NoteService),
             _backend=backend,
         )
 

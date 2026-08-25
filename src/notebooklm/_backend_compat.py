@@ -895,16 +895,6 @@ def _project_source_add_record(record: SourceAddFailureRecord) -> Exception:
     return projected
 
 
-def project_source_add_error(error: BackendError) -> Exception:
-    """Compatibility alias for the closed generic backend-error projector."""
-    if error.reason is not BackendErrorReason.SOURCE_ADD:
-        raise BackendContractError(
-            "source-add projector requires BackendErrorReason.SOURCE_ADD",
-            operation=error.operation,
-        )
-    return project_backend_error(error)
-
-
 def project_source_add_failure(record: SourceAddFailureRecord) -> Exception:
     """Reconstruct one positional batch-source failure record."""
     return _project_source_add_record(record)
@@ -914,6 +904,5 @@ __all__ = [
     "project_backend_call",
     "project_backend_error",
     "project_local_not_found",
-    "project_source_add_error",
     "project_source_add_failure",
 ]

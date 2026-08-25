@@ -22,7 +22,6 @@ import pytest
 from notebooklm._artifact.listing import ArtifactListingService
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
-from notebooklm._note_service import NoteService
 from notebooklm._row_adapters.artifacts import ArtifactRow
 from notebooklm.exceptions import ArtifactNotFoundError, UnknownRPCMethodError
 from notebooklm.rpc import (
@@ -30,7 +29,9 @@ from notebooklm.rpc import (
     INTERACTIVE_MIND_MAP_VARIANT,
     QUIZ_VARIANT,
     ArtifactTypeCode,
+    RPCMethod,
 )
+from tests._fixtures.web_backend import build_web_backend
 
 # (artifact type code, top-level block index, sub-path inside the block).
 # An independent restatement of the verified position map.
@@ -159,12 +160,11 @@ def artifacts_api() -> ArtifactsAPI:
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
-        rpc=core,
+        _backend=build_web_backend(core),
         drain=core,
         lifecycle=core,
         notebooks=notebooks,
         mind_maps=mind_maps,
-        note_service=MagicMock(spec=NoteService),
     )
 
 
@@ -181,26 +181,41 @@ class TestArtifactsAPIGetPrompt:
 
     @pytest.mark.asyncio
     async def test_returns_none_for_note_backed_mind_map_id(self) -> None:
-        # A note-backed mind map ID is not in the studio listing, so
-        # ``_listing.get_prompt`` raises ArtifactNotFoundError. The public
-        # API should catch that and return None when the ID belongs to a
-        # note-backed mind map.
+        # A note-backed mind map is absent from the studio artifact catalog
+        # but present in the merged Studio catalog, and stores no generation
+        # prompt — so ``get_prompt`` returns ``None`` rather than raising.
+        # Before P10 R1.1 this ran through the deprecated ``rpc=`` constructor's
+        # ``_legacy_constructor`` fallback; it now exercises the semantic
+        # catalog, which the note-backed rows reach through the backend.
         from tests._fixtures.fake_core import make_fake_core
 
-        studio_rows: list = []  # no studio artifacts
-        core = make_fake_core(rpc_call=AsyncMock(return_value=studio_rows))
-        mind_map_row = ["mm_1", "some content"]  # minimal raw note row; NoteRow(row).id == "mm_1"
+        note_backed_row = [
+            "mm_1",
+            [
+                "mm_1",
+                '{"nodes": []}',
+                [1, "user-1", [1_700_000_000, 0]],
+                None,
+                "Note Backed Map",
+            ],
+        ]
+
+        async def routed_rpc_call(method: RPCMethod, params: list, **kwargs: object) -> object:
+            if method is RPCMethod.GET_NOTES_AND_MIND_MAPS:
+                return [[note_backed_row]]
+            return []  # no studio artifacts
+
+        core = make_fake_core(rpc_call=AsyncMock(side_effect=routed_rpc_call))
         mind_maps = MagicMock(spec=NoteBackedMindMapService)
-        mind_maps.list_mind_maps = AsyncMock(return_value=[mind_map_row])
+        mind_maps.list_mind_maps = AsyncMock(return_value=[note_backed_row])
         notebooks = MagicMock()
         notebooks.get_source_ids = AsyncMock(return_value=[])
         api = ArtifactsAPI(
-            rpc=core,
+            _backend=build_web_backend(core),
             drain=core,
             lifecycle=core,
             notebooks=notebooks,
             mind_maps=mind_maps,
-            note_service=MagicMock(spec=NoteService),
         )
         result = await api.get_prompt("nb_1", "mm_1")
         assert result is None
@@ -217,12 +232,11 @@ class TestArtifactsAPIGetPrompt:
         notebooks = MagicMock()
         notebooks.get_source_ids = AsyncMock(return_value=[])
         api = ArtifactsAPI(
-            rpc=core,
+            _backend=build_web_backend(core),
             drain=core,
             lifecycle=core,
             notebooks=notebooks,
             mind_maps=mind_maps,
-            note_service=MagicMock(spec=NoteService),
         )
         with pytest.raises(ArtifactNotFoundError):
             await api.get_prompt("nb_1", "ghost")

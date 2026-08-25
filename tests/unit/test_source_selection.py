@@ -214,18 +214,16 @@ def mock_mind_map_service(mock_core):
     """Bundle of stand-in services required by ``ArtifactsAPI.__init__``.
 
     These tests exercise generation/encoding paths that never call the
-    mind-map services. The ``mind_maps`` + ``note_service`` parameters
-    are both required (Phase 5 / refactor-history.md Migration Plan steps 6-7)
-    so we return a dict of stand-in mocks that construction sites can
-    splat into ``ArtifactsAPI(...)`` calls via
-    ``**mock_mind_map_service``.
+    mind-map services. ``mind_maps`` is required (Phase 5 /
+    refactor-history.md Migration Plan steps 6-7) and ``_backend`` is the
+    only construction path P10 R1.1 left, so we return a dict of stand-in
+    collaborators that construction sites splat into ``ArtifactsAPI(...)``
+    calls via ``**mock_mind_map_service``.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
 
     return {
         "mind_maps": MagicMock(spec=NoteBackedMindMapService),
-        "note_service": MagicMock(spec=NoteService),
         "_backend": build_web_backend(mock_core.rpc_executor),
     }
 
@@ -320,7 +318,6 @@ class TestArtifactsSourceSelection:
     async def test_generate_audio_with_explicit_source_ids(self, mock_core, mock_mind_map_service):
         """Test generate_audio with explicitly provided source_ids."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -372,7 +369,6 @@ class TestArtifactsSourceSelection:
     ):
         """Explicit audio format and length are encoded instead of API defaults."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -398,7 +394,6 @@ class TestArtifactsSourceSelection:
     ):
         """Test generate_audio with source_ids=None fetches all sources."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=mock_notebooks_api,
@@ -434,7 +429,6 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_video has correct source encoding format."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -473,7 +467,6 @@ class TestArtifactsSourceSelection:
     ):
         """Explicit video format and style are encoded instead of API defaults."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -499,7 +492,6 @@ class TestArtifactsSourceSelection:
     ):
         """Test custom video style prompt is encoded like the live Web UI."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -524,7 +516,6 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -543,7 +534,6 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -563,7 +553,6 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -583,7 +572,6 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -603,7 +591,6 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_mind_map_service
     ):
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -622,7 +609,6 @@ class TestArtifactsSourceSelection:
     async def test_generate_report_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_report has correct source encoding format."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -659,7 +645,6 @@ class TestArtifactsSourceSelection:
     ):
         """extra_instructions is appended to the built-in prompt with \\n\\n separator."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -688,7 +673,6 @@ class TestArtifactsSourceSelection:
         from notebooklm.rpc.types import ReportFormat
 
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -715,7 +699,6 @@ class TestArtifactsSourceSelection:
     async def test_generate_quiz_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_quiz has correct source encoding format."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -750,7 +733,6 @@ class TestArtifactsSourceSelection:
     ):
         """Explicit quiz quantity and difficulty are encoded instead of defaults."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -773,7 +755,6 @@ class TestArtifactsSourceSelection:
     async def test_generate_flashcards_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_flashcards has correct source encoding format."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -810,7 +791,6 @@ class TestArtifactsSourceSelection:
         reversed, mirroring the quiz sibling above.
         """
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -855,7 +835,6 @@ class TestArtifactsSourceSelection:
         mock_mind_map_service,
     ):
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -871,7 +850,6 @@ class TestArtifactsSourceSelection:
     async def test_generate_infographic_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_infographic has correct source encoding format."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -905,7 +883,6 @@ class TestArtifactsSourceSelection:
     ):
         """Test generate_infographic encodes explicit visual options in config slots."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -938,7 +915,6 @@ class TestArtifactsSourceSelection:
     async def test_generate_slide_deck_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_slide_deck has correct source encoding format."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -969,7 +945,6 @@ class TestArtifactsSourceSelection:
     ):
         """Explicit slide deck format and length are encoded instead of defaults."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -993,7 +968,6 @@ class TestArtifactsSourceSelection:
     async def test_generate_data_table_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_data_table has correct source encoding format."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -1021,7 +995,6 @@ class TestArtifactsSourceSelection:
     ):
         """Test generate_mind_map has correct source encoding format."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=mock_notebooks_api,
@@ -1075,7 +1048,6 @@ class TestArtifactsSourceSelection:
     ):
         """Test generate_mind_map passes language and instructions to RPC payload."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -1113,7 +1085,6 @@ class TestArtifactsSourceSelection:
         from notebooklm.rpc.types import RPCMethod
 
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -1145,7 +1116,6 @@ class TestArtifactValidationFootguns:
 
     def _api(self, mock_core, mock_mind_map_service):
         return ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),
@@ -1254,7 +1224,6 @@ class TestEmptySourceIds:
     async def test_generate_with_empty_source_list(self, mock_core, mock_mind_map_service):
         """Test generation with empty source_ids list produces empty arrays."""
         api = ArtifactsAPI(
-            rpc=mock_core,
             drain=mock_core,
             lifecycle=mock_core,
             notebooks=MagicMock(),

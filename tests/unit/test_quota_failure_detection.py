@@ -78,7 +78,6 @@ def _make_api(
     decoded response instead of a bare mock return value.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(
@@ -88,16 +87,13 @@ def _make_api(
     # ``ArtifactsAPI`` constructs its own ``PollRegistry`` internally; the fake
     # core does not need to provide one.
     mind_maps = MagicMock(spec=NoteBackedMindMapService)
-    note_service = MagicMock(spec=NoteService)
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
-        rpc=core,
         drain=core,
         lifecycle=core,
         notebooks=notebooks,
         mind_maps=mind_maps,
-        note_service=note_service,
         _backend=build_web_backend(core) if backend is None else backend,
     )
 

@@ -16,7 +16,6 @@ from notebooklm import (
 )
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
-from notebooklm._note_service import NoteService
 from notebooklm._runtime.transport import RuntimeTransport
 from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
@@ -24,6 +23,7 @@ from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import GenerationStatus
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
+from tests._fixtures.web_backend import build_web_backend
 
 
 @pytest.mark.asyncio
@@ -240,12 +240,11 @@ async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> No
     # (``rpc`` + ``drain`` + ``lifecycle``) directly — mirrors production
     # wiring in ``NotebookLMClient.__init__``.
     api = ArtifactsAPI(
-        rpc=core._backend._runtime,
+        _backend=build_web_backend(core._backend._runtime),
         drain=core._backend._drain_tracker,
         lifecycle=core._provider._lifecycle,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        note_service=MagicMock(spec=NoteService),
     )
     first_poll_started = asyncio.Event()
     release_first_poll = asyncio.Event()
@@ -388,12 +387,11 @@ async def test_wait_for_completion_status_change_callback(auth_tokens: AuthToken
     core = NotebookLMClient(auth_tokens)
     # ``ArtifactsAPI`` consumes its three runtime collaborators directly.
     api = ArtifactsAPI(
-        rpc=core._backend._runtime,
+        _backend=build_web_backend(core._backend._runtime),
         drain=core._backend._drain_tracker,
         lifecycle=core._provider._lifecycle,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        note_service=MagicMock(spec=NoteService),
     )
     statuses = [
         GenerationStatus(task_id="task_1", status="in_progress"),

@@ -9,6 +9,7 @@ from notebooklm._artifacts import ArtifactsAPI, GenerationStatus
 from notebooklm._polling_registry import PollRegistry
 from notebooklm.exceptions import ArtifactPendingTimeoutError
 from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
+from tests._fixtures.web_backend import build_web_backend
 
 
 class _FakeTransportProvider:
@@ -92,18 +93,16 @@ class _FakeTransportProvider:
 @pytest.fixture
 def api():
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
 
     core = _make_session_core()
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
-        rpc=core,
+        _backend=build_web_backend(core),
         drain=core,
         lifecycle=core,
         notebooks=mock_notebooks,
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        note_service=MagicMock(spec=NoteService),
     )
 
 
@@ -564,16 +563,14 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
 @pytest.mark.asyncio
 async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_or_later_waiter():
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
 
     core = _make_session_core()
     api = ArtifactsAPI(
-        rpc=core,
+        _backend=build_web_backend(core),
         drain=core,
         lifecycle=core,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        note_service=MagicMock(spec=NoteService),
     )
 
     poll_started = asyncio.Event()

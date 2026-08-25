@@ -220,14 +220,12 @@ def compose_client(
     # package about credential material.
     client._provider = internals.provider
     # Assemble the private semantic port once every backend-owned collaborator
-    # is available. The resolved transport factory remains a construction
-    # parameter rather than a backend kind/capability.
+    # is available.
     # One factory serves the backend's CLIENT_TIMEOUT composites and the
     # service-owned workflows (P9.2 contract 3), so both mint identical budgets.
     deadline_factory = RuntimeDeadlineFactory(lambda: internals.lifecycle._timeout)
     client._backend = WebRpcBackend(
         internals.executor,
-        transport_factory=internals.web_transport_factory,
         source_uploader=source_uploader,
         chat_transport=internals.transport,
         chat_reqid=internals.reqid,
@@ -287,7 +285,6 @@ def compose_client(
         lifecycle=internals.lifecycle,
         notebooks=client.notebooks,
         mind_maps=mind_maps,
-        note_service=legacy_note_backed,
         storage_path=storage_path,
         _backend=client._backend,
         deadline_factory=deadline_factory,

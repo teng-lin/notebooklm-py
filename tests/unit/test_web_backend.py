@@ -220,12 +220,8 @@ class _RecordingExecutor:
         return response
 
 
-def _transport_factory(**_kwargs: object) -> object:
-    return object()
-
-
 def _backend(executor: _RecordingExecutor) -> WebRpcBackend:
-    return WebRpcBackend(executor, transport_factory=_transport_factory)  # type: ignore[arg-type]
+    return WebRpcBackend(executor)  # type: ignore[arg-type]
 
 
 def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
