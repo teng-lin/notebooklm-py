@@ -7773,10 +7773,8 @@
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_renamed_source",
-        "_web/codec/sources.py:decode_source_snapshot"
         "_web/codec/sources.py:decode_source_snapshot",
-        "_web/codec/sources.py:rename_target_missing",
-        "_web/codec/suggestions.py:decode_prompt_source_ids"
+        "_web/codec/sources.py:rename_target_missing"
       ],
       "route_context": "notebook",
       "web_paths": []
@@ -7879,10 +7877,8 @@
         "_web/codec/settings.py:decode_get_user_settings",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_renamed_source",
-        "_web/codec/sources.py:decode_source_snapshot"
         "_web/codec/sources.py:decode_source_snapshot",
-        "_web/codec/sources.py:rename_target_missing",
-        "_web/codec/suggestions.py:decode_prompt_source_ids"
+        "_web/codec/sources.py:rename_target_missing"
       ],
       "route_context": "notebook+upload-session",
       "web_paths": [
@@ -8000,10 +7996,8 @@
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_renamed_source",
-        "_web/codec/sources.py:decode_source_snapshot"
         "_web/codec/sources.py:decode_source_snapshot",
-        "_web/codec/sources.py:rename_target_missing",
-        "_web/codec/suggestions.py:decode_prompt_source_ids"
+        "_web/codec/sources.py:rename_target_missing"
       ],
       "route_context": "notebook",
       "web_paths": []
@@ -8390,10 +8384,8 @@
         "_web/codec/notebooks.py:decode_notebook_get",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_renamed_source",
-        "_web/codec/sources.py:decode_source_snapshot"
         "_web/codec/sources.py:decode_source_snapshot",
-        "_web/codec/sources.py:rename_target_missing",
-        "_web/codec/suggestions.py:decode_prompt_source_ids"
+        "_web/codec/sources.py:rename_target_missing"
       ],
       "route_context": "notebook+source",
       "web_paths": []
