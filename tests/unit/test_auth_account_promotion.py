@@ -126,6 +126,20 @@ def _drain_promotions_for_tests() -> None:
     _scheduler().drain(30.0)
 
 
+def _wait_for_active_paths_to_clear(timeout: float = 30.0) -> None:
+    """Poll until no promotion worker is active, sharing ``drain``'s budget.
+
+    A fixed short deadline here previously flaked on CI runners under load
+    (observed on Windows): the detached worker had not yet run by the time the
+    poll gave up, so the assertion that follows saw pre-promotion state instead
+    of a genuine failure.
+    """
+    deadline = time.monotonic() + timeout
+    while _scheduler()._active_paths_for_tests() and time.monotonic() < deadline:
+        time.sleep(0.001)
+    assert not _scheduler()._active_paths_for_tests()
+
+
 def _in_band_on_disk(storage: Path) -> dict[str, Any] | None:
     data = json.loads(storage.read_text(encoding="utf-8"))
     namespace = data.get("notebooklm")
@@ -447,10 +461,7 @@ class TestRetryableSingleFlight:
         monkeypatch.setattr(ProfileStore, "update_account", _fail_once)
 
         assert read_account_metadata(storage) == {"authuser": 2, "email": "l@example.com"}
-        deadline = time.monotonic() + 5.0
-        while _scheduler()._active_paths_for_tests() and time.monotonic() < deadline:
-            time.sleep(0.001)
-        assert not _scheduler()._active_paths_for_tests()
+        _wait_for_active_paths_to_clear()
 
         assert read_account_metadata(storage) == {"authuser": 2, "email": "l@example.com"}
         _drain_promotions_for_tests()
@@ -476,9 +487,7 @@ class TestRetryableSingleFlight:
         monkeypatch.setattr(LegacyAccountContext, "scrub", _fail_once)
 
         assert read_account_metadata(storage)["email"] == "privacy@example.com"
-        deadline = time.monotonic() + 5.0
-        while _scheduler()._active_paths_for_tests() and time.monotonic() < deadline:
-            time.sleep(0.001)
+        _wait_for_active_paths_to_clear()
         assert _in_band_on_disk(storage) == {
             "authuser": 2,
             "email": "privacy@example.com",
