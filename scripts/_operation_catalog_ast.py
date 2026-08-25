@@ -390,7 +390,7 @@ class _ReferenceCollector(ast.NodeVisitor):
                         }
                     )
                 )
-                if decoder_call[-1:] == ("partial",)
+                if decoder_node is not None and decoder_call[-1:] == ("partial",)
                 else ()
             )
             self.binding_rows.append(
