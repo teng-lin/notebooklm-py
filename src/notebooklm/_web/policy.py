@@ -342,6 +342,42 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 ),
             ),
         ),
+        # P9.2 primitives: one native set-op each, sequenced by the hoisted
+        # label/collection workflows above the port.
+        Operation.LABEL_MUTATE: WebCallPolicyBinding(
+            CallPolicy.MUTATION,
+            (
+                _native(RPCMethod.UPDATE_LABEL, _IDEMPOTENT, "name/emoji set-op"),
+                _native(
+                    RPCMethod.UPDATE_LABEL,
+                    _NO_RETRY,
+                    "source membership append",
+                    variant="add_sources",
+                ),
+                _native(
+                    RPCMethod.UPDATE_LABEL,
+                    _IDEMPOTENT,
+                    "source membership removal",
+                    variant="remove_sources",
+                ),
+                _native(
+                    RPCMethod.UPDATE_LABEL,
+                    _NO_RETRY,
+                    "notebook membership append",
+                    variant="add_notebooks",
+                ),
+                _native(
+                    RPCMethod.UPDATE_LABEL,
+                    _IDEMPOTENT,
+                    "notebook membership removal",
+                    variant="remove_notebooks",
+                ),
+            ),
+        ),
+        Operation.LABEL_ALLOCATE: WebCallPolicyBinding(
+            CallPolicy.MUTATION,
+            (_native(RPCMethod.CREATE_LABEL, _NO_RETRY, "manual group allocation"),),
+        ),
         Operation.LABEL_DELETE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (_native(RPCMethod.DELETE_LABEL, _NO_RETRY, "batch source-label delete"),),
@@ -701,6 +737,10 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded ACL mutation"),
                 _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
             ),
+        ),
+        Operation.SHARING_MUTATE: WebCallPolicyBinding(
+            CallPolicy.MUTATION,
+            (_native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded link/ACL mutation"),),
         ),
         Operation.LEGACY_SHARE_ARTIFACT: WebCallPolicyBinding(
             CallPolicy.MUTATION,

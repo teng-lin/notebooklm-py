@@ -745,6 +745,9 @@ SHARED_RPC_AUTHORITY_RULES.update(
                 "user grant/upsert and removal entries",
             ),
         ),
+        (Operation.SHARING_MUTATE, _b(RPCMethod.SHARE_NOTEBOOK)): _rules(
+            ("_web/bindings/primitives.py:SHARING_MUTATE", "visibility or grant envelope")
+        ),
         (Operation.NOTEBOOK_SUMMARIZE, _b(RPCMethod.SUMMARIZE)): _rules(
             ("_web/bindings/notebooks.py:NOTEBOOK_SUMMARIZE", "summary projection")
         ),
@@ -756,6 +759,40 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._collection_update", "collection name mutation")
+        ),
+        (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL, "add_sources")): _rules(
+            ("_web/labels.py:LabelSetWebHandlers._label_update", "one source append per call")
+        ),
+        (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL, "remove_sources")): _rules(
+            ("_web/labels.py:LabelSetWebHandlers._label_update", "one source removal per call")
+        ),
+        (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL, "add_notebooks")): _rules(
+            (
+                "_web/labels.py:LabelSetWebHandlers._collection_update",
+                "one notebook append per call",
+            )
+        ),
+        (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL, "remove_notebooks")): _rules(
+            (
+                "_web/labels.py:LabelSetWebHandlers._collection_update",
+                "one notebook removal per call",
+            )
+        ),
+        # P9.2 primitive: the row selects the variant from the request kind and form.
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL)): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "form=field")
+        ),
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL, "add_sources")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "kind=source_label form=add")
+        ),
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL, "remove_sources")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "kind=source_label form=remove")
+        ),
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL, "add_notebooks")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "kind=collection form=add")
+        ),
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL, "remove_notebooks")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "kind=collection form=remove")
         ),
         (Operation.NOTE_UPDATE, _b(RPCMethod.UPDATE_NOTE)): _rules(
             ("_web/bindings/notes.py:NOTE_UPDATE", "public=notes.update")
@@ -809,6 +846,9 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.COLLECTION_CREATE, _b(RPCMethod.CREATE_LABEL)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._collection_create", "label_type=collection")
+        ),
+        (Operation.LABEL_ALLOCATE, _b(RPCMethod.CREATE_LABEL)): _rules(
+            ("_web/bindings/primitives.py:LABEL_ALLOCATE", "manual allocation, either dialect")
         ),
         (Operation.ARTIFACT_DELETE, _b(RPCMethod.DELETE_ARTIFACT)): _rules(
             ("_web/bindings/studio.py:ARTIFACT_DELETE", "public=artifacts.delete")

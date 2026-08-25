@@ -99,6 +99,9 @@ class Operation(str, Enum):
     LABEL_CREATE = "label.create"
     LABEL_UPDATE = "label.update"
     LABEL_DELETE = "label.delete"
+    # P9.2 primitives: one native set-op each, consumed by the hoisted workflows.
+    LABEL_MUTATE = "label.mutate"
+    LABEL_ALLOCATE = "label.allocate"
 
     COLLECTION_LIST = "collection.list"
     COLLECTION_GET = "collection.get"
@@ -112,6 +115,7 @@ class Operation(str, Enum):
     SHARING_SET_VIEW_LEVEL = "sharing.set_view_level"
     SHARING_UPDATE_USERS = "sharing.update_users"
     LEGACY_SHARE_ARTIFACT = "sharing.legacy_share_artifact"
+    SHARING_MUTATE = "sharing.mutate"
 
     SETTINGS_GET = "settings.get"
     SETTINGS_SET_LANGUAGE = "settings.set_language"

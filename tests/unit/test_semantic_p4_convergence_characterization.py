@@ -69,11 +69,13 @@ from notebooklm._records import (
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,
     COLLECTION_UPDATE_DEF,
+    LABEL_ALLOCATE_DEF,
     LABEL_CREATE_DEF,
     LABEL_DELETE_DEF,
     LABEL_GENERATE_DEF,
     LABEL_GET_DEF,
     LABEL_LIST_DEF,
+    LABEL_MUTATE_DEF,
     LABEL_UPDATE_DEF,
     LEGACY_SHARE_ARTIFACT_DEF,
     MIND_MAP_DELETE_DEF,
@@ -104,6 +106,7 @@ from notebooklm._records import (
     SETTINGS_GET_LIMITS_DEF,
     SETTINGS_SET_LANGUAGE_DEF,
     SHARING_GET_DEF,
+    SHARING_MUTATE_DEF,
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
@@ -338,6 +341,9 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         COLLECTION_CREATE_DEF: (Operation.COLLECTION_CREATE, CallPolicy.MUTATION),
         COLLECTION_UPDATE_DEF: (Operation.COLLECTION_UPDATE, CallPolicy.MUTATION),
         COLLECTION_DELETE_DEF: (Operation.COLLECTION_DELETE, CallPolicy.MUTATION),
+        LABEL_MUTATE_DEF: (Operation.LABEL_MUTATE, CallPolicy.MUTATION),
+        LABEL_ALLOCATE_DEF: (Operation.LABEL_ALLOCATE, CallPolicy.MUTATION),
+        SHARING_MUTATE_DEF: (Operation.SHARING_MUTATE, CallPolicy.MUTATION),
     }
 
     for op_def, (expected_key, expected_policy) in expected_migrated.items():
@@ -717,6 +723,33 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             LABEL_DELETE_DEF,
             [(RPCMethod.DELETE_LABEL, None)],
             [IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY],
+        ),
+        (
+            LABEL_MUTATE_DEF,
+            [
+                (RPCMethod.UPDATE_LABEL, None),
+                (RPCMethod.UPDATE_LABEL, "add_sources"),
+                (RPCMethod.UPDATE_LABEL, "remove_sources"),
+                (RPCMethod.UPDATE_LABEL, "add_notebooks"),
+                (RPCMethod.UPDATE_LABEL, "remove_notebooks"),
+            ],
+            [
+                IdempotencyPolicy.IDEMPOTENT_SET_OP,
+                IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+                IdempotencyPolicy.IDEMPOTENT_SET_OP,
+                IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+                IdempotencyPolicy.IDEMPOTENT_SET_OP,
+            ],
+        ),
+        (
+            LABEL_ALLOCATE_DEF,
+            [(RPCMethod.CREATE_LABEL, None)],
+            [IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY],
+        ),
+        (
+            SHARING_MUTATE_DEF,
+            [(RPCMethod.SHARE_NOTEBOOK, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             COLLECTION_LIST_DEF,

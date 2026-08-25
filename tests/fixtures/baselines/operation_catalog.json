@@ -498,6 +498,18 @@
         }
       ]
     },
+    "label.allocate": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "non_idempotent_no_retry",
+          "role": "manual group allocation",
+          "rpc_method": "CREATE_LABEL",
+          "variant": null
+        }
+      ]
+    },
     "label.create": {
       "call_policy": "mutation",
       "known_divergence": null,
@@ -561,6 +573,42 @@
           "role": "source-label collection read",
           "rpc_method": "LIST_LABELS",
           "variant": null
+        }
+      ]
+    },
+    "label.mutate": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "name/emoji set-op",
+          "rpc_method": "UPDATE_LABEL",
+          "variant": null
+        },
+        {
+          "idempotency_policy": "non_idempotent_no_retry",
+          "role": "source membership append",
+          "rpc_method": "UPDATE_LABEL",
+          "variant": "add_sources"
+        },
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "source membership removal",
+          "rpc_method": "UPDATE_LABEL",
+          "variant": "remove_sources"
+        },
+        {
+          "idempotency_policy": "non_idempotent_no_retry",
+          "role": "notebook membership append",
+          "rpc_method": "UPDATE_LABEL",
+          "variant": "add_notebooks"
+        },
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "notebook membership removal",
+          "rpc_method": "UPDATE_LABEL",
+          "variant": "remove_notebooks"
         }
       ]
     },
@@ -980,6 +1028,18 @@
           "idempotency_policy": "idempotent_set_op",
           "role": "legacy public share-link set-op",
           "rpc_method": "SHARE_ARTIFACT",
+          "variant": null
+        }
+      ]
+    },
+    "sharing.mutate": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "probe_then_create",
+          "role": "guarded link/ACL mutation",
+          "rpc_method": "SHARE_NOTEBOOK",
           "variant": null
         }
       ]
@@ -2066,6 +2126,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/labels.py:LABEL_GENERATE",
+        "_web/bindings/primitives.py:LABEL_ALLOCATE",
         "_web/labels.py:LabelSetWebHandlers._collection_create",
         "_web/labels.py:LabelSetWebHandlers._label_create"
       ],
@@ -2098,17 +2159,20 @@
         "LabelService"
       ],
       "response_decoders": [
+        "_web/codec/labels.py:decode_label_allocate",
         "_web/codec/labels.py:decode_label_generate_result"
       ],
       "response_projectors": [],
       "route_contexts": [
         "account",
-        "notebook"
+        "notebook",
+        "notebook+label-set"
       ],
       "rpc_id": "agX4Bc",
       "rpc_method": "CREATE_LABEL",
       "semantic_operations": [
         "collection.create",
+        "label.allocate",
         "label.create",
         "label.generate"
       ],
@@ -3873,6 +3937,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/primitives.py:SHARING_MUTATE",
         "_web/sharing.py:SharingWebHandlers._sharing_set_public",
         "_web/sharing.py:SharingWebHandlers._sharing_update_users"
       ],
@@ -3907,6 +3972,7 @@
       "rpc_id": "QDyure",
       "rpc_method": "SHARE_NOTEBOOK",
       "semantic_operations": [
+        "sharing.mutate",
         "sharing.set_public",
         "sharing.update_users"
       ],
@@ -4108,6 +4174,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/primitives.py:LABEL_MUTATE",
         "_web/labels.py:LabelSetWebHandlers._collection_update",
         "_web/labels.py:LabelSetWebHandlers._label_update"
       ],
@@ -4144,6 +4211,7 @@
       "rpc_method": "UPDATE_LABEL",
       "semantic_operations": [
         "collection.update",
+        "label.mutate",
         "label.update"
       ],
       "variant": null
@@ -4152,6 +4220,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/primitives.py:LABEL_MUTATE",
         "_web/labels.py:LabelSetWebHandlers._collection_update"
       ],
       "golden_disposition": "golden_exempt",
@@ -4174,17 +4243,20 @@
       },
       "override_honored": true,
       "owners": [
-        "CollectionService"
+        "CollectionService",
+        "LabelService"
       ],
       "response_decoders": [],
       "response_projectors": [],
       "route_contexts": [
-        "collection"
+        "collection",
+        "notebook+label"
       ],
       "rpc_id": "le8sX",
       "rpc_method": "UPDATE_LABEL",
       "semantic_operations": [
-        "collection.update"
+        "collection.update",
+        "label.mutate"
       ],
       "variant": "add_notebooks"
     },
@@ -4192,6 +4264,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/primitives.py:LABEL_MUTATE",
         "_web/labels.py:LabelSetWebHandlers._label_update"
       ],
       "golden_disposition": "golden_exempt",
@@ -4224,6 +4297,7 @@
       "rpc_id": "le8sX",
       "rpc_method": "UPDATE_LABEL",
       "semantic_operations": [
+        "label.mutate",
         "label.update"
       ],
       "variant": "add_sources"
@@ -4232,6 +4306,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/primitives.py:LABEL_MUTATE",
         "_web/labels.py:LabelSetWebHandlers._collection_update"
       ],
       "golden_disposition": "golden_exempt",
@@ -4254,17 +4329,20 @@
       },
       "override_honored": true,
       "owners": [
-        "CollectionService"
+        "CollectionService",
+        "LabelService"
       ],
       "response_decoders": [],
       "response_projectors": [],
       "route_contexts": [
-        "collection"
+        "collection",
+        "notebook+label"
       ],
       "rpc_id": "le8sX",
       "rpc_method": "UPDATE_LABEL",
       "semantic_operations": [
-        "collection.update"
+        "collection.update",
+        "label.mutate"
       ],
       "variant": "remove_notebooks"
     },
@@ -4272,6 +4350,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
+        "_web/bindings/primitives.py:LABEL_MUTATE",
         "_web/labels.py:LabelSetWebHandlers._label_update"
       ],
       "golden_disposition": "golden_exempt",
@@ -4304,6 +4383,7 @@
       "rpc_id": "le8sX",
       "rpc_method": "UPDATE_LABEL",
       "semantic_operations": [
+        "label.mutate",
         "label.update"
       ],
       "variant": "remove_sources"
@@ -5712,6 +5792,7 @@
       "recency_contract": [],
       "recency_effect": "none",
       "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_allocate",
         "_web/codec/labels.py:decode_label_generate_result",
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
@@ -5881,13 +5962,13 @@
         },
         {
           "binding": "UPDATE_LABEL:add_notebooks",
-          "discriminator": "direct semantic binding",
+          "discriminator": "one notebook append per call",
           "site": "_web/labels.py:LabelSetWebHandlers._collection_update",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_LABEL:remove_notebooks",
-          "discriminator": "direct semantic binding",
+          "discriminator": "one notebook removal per call",
           "site": "_web/labels.py:LabelSetWebHandlers._collection_update",
           "transport_kind": "rpc"
         }
@@ -5914,6 +5995,36 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "collection",
+      "web_paths": []
+    },
+    {
+      "app_callers": [],
+      "composite_behavior": "P9.2 primitive: one manual CREATE_LABEL allocation for either dialect; the source-label echo is decoded, the collection dialect returns no echo.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "CREATE_LABEL:<default>",
+          "discriminator": "manual allocation, either dialect",
+          "site": "_web/bindings/primitives.py:LABEL_ALLOCATE",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "label.allocate",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "CREATE_LABEL:<default>"
+      ],
+      "owner": "LabelService",
+      "policy": "mutation",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_allocate",
+        "_web/codec/labels.py:decode_label_generate_result"
+      ],
+      "route_context": "notebook+label-set",
       "web_paths": []
     },
     {
@@ -5951,6 +6062,7 @@
       "recency_contract": [],
       "recency_effect": "none",
       "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_allocate",
         "_web/codec/labels.py:decode_label_generate_result",
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
@@ -6016,6 +6128,7 @@
       "recency_contract": [],
       "recency_effect": "none",
       "response_decoders_projectors": [
+        "_web/codec/labels.py:decode_label_allocate",
         "_web/codec/labels.py:decode_label_generate_result"
       ],
       "route_context": "notebook",
@@ -6084,6 +6197,61 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "notebook",
+      "web_paths": []
+    },
+    {
+      "app_callers": [],
+      "composite_behavior": "P9.2 primitive: one UPDATE_LABEL set-op (field mask, one member append, or one member removal) whose variant is chosen from the request kind and form; the hoisted update workflows issue one call per member.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "UPDATE_LABEL:<default>",
+          "discriminator": "form=field",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
+          "transport_kind": "rpc"
+        },
+        {
+          "binding": "UPDATE_LABEL:add_notebooks",
+          "discriminator": "kind=collection form=add",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
+          "transport_kind": "rpc"
+        },
+        {
+          "binding": "UPDATE_LABEL:add_sources",
+          "discriminator": "kind=source_label form=add",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
+          "transport_kind": "rpc"
+        },
+        {
+          "binding": "UPDATE_LABEL:remove_notebooks",
+          "discriminator": "kind=collection form=remove",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
+          "transport_kind": "rpc"
+        },
+        {
+          "binding": "UPDATE_LABEL:remove_sources",
+          "discriminator": "kind=source_label form=remove",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "label.mutate",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "UPDATE_LABEL:<default>",
+        "UPDATE_LABEL:add_notebooks",
+        "UPDATE_LABEL:add_sources",
+        "UPDATE_LABEL:remove_notebooks",
+        "UPDATE_LABEL:remove_sources"
+      ],
+      "owner": "LabelService",
+      "policy": "mutation",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [],
+      "route_context": "notebook+label",
       "web_paths": []
     },
     {
@@ -6159,13 +6327,13 @@
         },
         {
           "binding": "UPDATE_LABEL:add_sources",
-          "discriminator": "direct semantic binding",
+          "discriminator": "one source append per call",
           "site": "_web/labels.py:LabelSetWebHandlers._label_update",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_LABEL:remove_sources",
-          "discriminator": "direct semantic binding",
+          "discriminator": "one source removal per call",
           "site": "_web/labels.py:LabelSetWebHandlers._label_update",
           "transport_kind": "rpc"
         }
@@ -7549,6 +7717,33 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+artifact?",
+      "web_paths": []
+    },
+    {
+      "app_callers": [],
+      "composite_behavior": "P9.2 primitive: one SHARE_NOTEBOOK envelope setting link visibility or one individual-user grant set; the hoisted sharing workflows read status back.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "SHARE_NOTEBOOK:<default>",
+          "discriminator": "visibility or grant envelope",
+          "site": "_web/bindings/primitives.py:SHARING_MUTATE",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "sharing.mutate",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "SHARE_NOTEBOOK:<default>"
+      ],
+      "owner": "SharingService",
+      "policy": "mutation",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [],
+      "route_context": "notebook",
       "web_paths": []
     },
     {

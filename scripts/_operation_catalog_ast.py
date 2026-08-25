@@ -2035,6 +2035,31 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_idempotency_create.py", "_backend", "may_have_committed"),
     }
 )
+# P9.2 primitives: the foundational leaf rows and their codec/record imports.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_web/bindings/primitives.py", "_binding", "Binding"),
+        ("_web/bindings/primitives.py", "_binding", "CodecBinding"),
+        ("_web/bindings/primitives.py", "_binding", "NativeCallSpec"),
+        ("_web/bindings/primitives.py", "_binding", "NativeChoice"),
+        ("_web/bindings/primitives.py", "_records", "LABEL_ALLOCATE_DEF"),
+        ("_web/bindings/primitives.py", "_records", "LABEL_MUTATE_DEF"),
+        ("_web/bindings/primitives.py", "_records", "LabelMutateInput"),
+        ("_web/bindings/primitives.py", "_records", "SHARING_MUTATE_DEF"),
+        ("_web/bindings/primitives.py", "codec", "labels"),
+        ("_web/bindings/primitives.py", "codec", "sharing"),
+        ("_web/codec/labels.py", "_records", "LabelAllocateInput"),
+        ("_web/codec/labels.py", "_records", "LabelAllocateResult"),
+        ("_web/codec/labels.py", "_records", "LabelMutateInput"),
+        ("_web/codec/labels.py", "_records", "LabelMutateResult"),
+        ("_web/codec/sharing.py", "_backend", "BackendContractError"),
+        ("_web/codec/sharing.py", "_records", "SharingMutateInput"),
+        ("_web/codec/sharing.py", "_records", "SharingMutateResult"),
+        ("_web/registry.py", "_records", "LABEL_ALLOCATE_DEF"),
+        ("_web/registry.py", "_records", "LABEL_MUTATE_DEF"),
+        ("_web/registry.py", "_records", "SHARING_MUTATE_DEF"),
+    }
+)
 
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose

@@ -130,6 +130,7 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_web.bindings.mind_maps",
         "_web.bindings.notebooks",
         "_web.bindings.notes",
+        "_web.bindings.primitives",
         "_web.bindings.research",
         "_web.bindings.settings",
         "_web.bindings.sharing",

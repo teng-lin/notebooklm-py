@@ -1086,6 +1086,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/bindings/mind_maps.py` | P9.3 mind-map leaf codec rows: `MIND_MAP_LIST`, `MIND_MAP_GET`, `MIND_MAP_UPDATE`, `MIND_MAP_DELETE` — `encode → one native call → decode`; the two generate members stay input-defaulting handlers until their P9.4 custom rows. |
 | `_web/bindings/notebooks.py` | P9.3 notebook codec rows: `NOTEBOOK_LIST` (non-uniform decoder over the empty/`[None]`/`[[rows]]` shapes), `NOTEBOOK_GET` (input-selected source-id-only branch), `NOTEBOOK_DELETE`, `NOTEBOOK_REMOVE_RECENT`, `NOTEBOOK_SUMMARIZE`, `NOTEBOOK_DESCRIBE` — `encode → one native call → decode`; the create/update composites stay handlers and list through `_list_notebooks`. |
 | `_web/bindings/notes.py` | P9.3 plain-note codec rows: `NOTE_LIST`, `NOTE_GET`, `NOTE_CREATE`, `NOTE_UPDATE`, `NOTE_DELETE` over `_web/codec/notes.py`; `NoteService` sequences them above the port and the walker derives their catalog authorities from the module-level assignments. |
+| `_web/bindings/primitives.py` | P9.2 primitive codec rows: `LABEL_MUTATE` (input-keyed over the five `UPDATE_LABEL` variants, one call per member), `LABEL_ALLOCATE` (manual `CREATE_LABEL` for either dialect) and `SHARING_MUTATE` (one `SHARE_NOTEBOOK` visibility or grant envelope) — the single-native leaves the hoisted update/create/sharing workflows sequence above the port. |
 | `_web/bindings/labels.py` | P9.3 labels/collections codec rows: `LABEL_LIST`, `LABEL_GET`, `LABEL_GENERATE`, `LABEL_DELETE`, `COLLECTION_LIST`, `COLLECTION_GET`, `COLLECTION_DELETE` — one `LIST_LABELS`/`CREATE_LABEL`/`DELETE_LABEL` call per row; the get rows select by exact id inside `decode`. |
 | `_web/bindings/chat.py` | P9.3 chat codec rows: `CHAT_GET_CONVERSATION`, `CHAT_GET_HISTORY`, `CHAT_DELETE_HISTORY`, `CHAT_SAVE_NOTE`, and the input-keyed `CHAT_CONFIGURE` (`GET_NOTEBOOK` read or `RENAME_NOTEBOOK` mutation selected from the action) — `encode → one native call → decode`; `CHAT_ASK` stays a handler in `_web/chat.py`. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
@@ -1359,6 +1360,7 @@ src/notebooklm/
 │   │   ├── mind_maps.py         # mind-map leaf codec rows
 │   │   ├── notebooks.py         # notebook read/leaf codec rows
 │   │   ├── notes.py             # plain-note codec rows
+│   │   ├── primitives.py        # P9.2 primitive rows (label mutate/allocate, sharing mutate)
 │   │   ├── research.py          # research codec rows (input-keyed start)
 │   │   ├── settings.py          # settings/suggestion codec rows
 │   │   ├── sharing.py           # sharing codec rows (status read, legacy share)

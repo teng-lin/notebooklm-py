@@ -67,6 +67,8 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             # execute both native sites, so aggregating them would invent a budget.
             Operation.ARTIFACT_DOWNLOAD: SemanticDeadlineAuthority.BRANCH_EXCLUSIVE,
             Operation.CHAT_CONFIGURE: SemanticDeadlineAuthority.BRANCH_EXCLUSIVE,
+            # P9.2 primitive: one UPDATE_LABEL call per input, variant chosen from it.
+            Operation.LABEL_MUTATE: SemanticDeadlineAuthority.BRANCH_EXCLUSIVE,
         }
     )
 )

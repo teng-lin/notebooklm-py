@@ -93,7 +93,7 @@ def test_catalog_projection_covers_the_live_authorities() -> None:
         for method, variant, _entry in IDEMPOTENCY_REGISTRY.iter_entries()
     }
     assert set(catalog["public_methods"]) == set(collect_public_namespace_methods())
-    assert len(Operation.__members__) == len(Operation) == len(catalog["operations"]) == 87
+    assert len(Operation.__members__) == len(Operation) == len(catalog["operations"]) == 90
     assert {row["policy"] for row in catalog["operations"]} == {
         policy.value for policy in CallPolicy
     }
@@ -187,8 +187,15 @@ def test_every_active_binding_honors_runtime_rpc_overrides() -> None:
 def test_polymorphic_native_surfaces_keep_all_reviewed_dispositions() -> None:
     rows = {row["key"]: row for row in build_operation_catalog()["native_bindings"]}
 
-    assert rows["UPDATE_LABEL:add_sources"]["semantic_operations"] == ["label.update"]
-    assert rows["UPDATE_LABEL:add_notebooks"]["semantic_operations"] == ["collection.update"]
+    # P9.2: the LABEL_MUTATE primitive shares every UPDATE_LABEL variant.
+    assert rows["UPDATE_LABEL:add_sources"]["semantic_operations"] == [
+        "label.mutate",
+        "label.update",
+    ]
+    assert rows["UPDATE_LABEL:add_notebooks"]["semantic_operations"] == [
+        "collection.update",
+        "label.mutate",
+    ]
     assert rows["LIST_LABELS:<default>"]["semantic_operations"] == [
         "collection.create",
         "collection.get",

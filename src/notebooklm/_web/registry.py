@@ -46,11 +46,13 @@ from .._records import (
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,
     COLLECTION_UPDATE_DEF,
+    LABEL_ALLOCATE_DEF,
     LABEL_CREATE_DEF,
     LABEL_DELETE_DEF,
     LABEL_GENERATE_DEF,
     LABEL_GET_DEF,
     LABEL_LIST_DEF,
+    LABEL_MUTATE_DEF,
     LABEL_UPDATE_DEF,
     LEGACY_SHARE_ARTIFACT_DEF,
     MIND_MAP_DELETE_DEF,
@@ -81,6 +83,7 @@ from .._records import (
     SETTINGS_GET_LIMITS_DEF,
     SETTINGS_SET_LANGUAGE_DEF,
     SHARING_GET_DEF,
+    SHARING_MUTATE_DEF,
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
@@ -202,6 +205,8 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.LABEL_CREATE: LABEL_CREATE_DEF,
         Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
         Operation.LABEL_DELETE: LABEL_DELETE_DEF,
+        Operation.LABEL_MUTATE: LABEL_MUTATE_DEF,
+        Operation.LABEL_ALLOCATE: LABEL_ALLOCATE_DEF,
         Operation.COLLECTION_LIST: COLLECTION_LIST_DEF,
         Operation.COLLECTION_GET: COLLECTION_GET_DEF,
         Operation.COLLECTION_CREATE: COLLECTION_CREATE_DEF,
@@ -212,6 +217,7 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.SHARING_SET_VIEW_LEVEL: SHARING_SET_VIEW_LEVEL_DEF,
         Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
         Operation.LEGACY_SHARE_ARTIFACT: LEGACY_SHARE_ARTIFACT_DEF,
+        Operation.SHARING_MUTATE: SHARING_MUTATE_DEF,
         Operation.RESEARCH_START: RESEARCH_START_DEF,
         Operation.RESEARCH_POLL: RESEARCH_POLL_DEF,
         Operation.RESEARCH_CANCEL: RESEARCH_CANCEL_DEF,
@@ -274,11 +280,12 @@ _STAGED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapping
 
 _STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 
-# The frozen catalog currently contains 87 operations. This assertion is repeated at
+# The frozen catalog currently contains 90 operations (87 product members plus the
+# three P9.2 foundational primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 87
-_EXPECTED_SUPPORTED_COUNT: Final = 82
+_EXPECTED_OPERATION_COUNT: Final = 90
+_EXPECTED_SUPPORTED_COUNT: Final = 85
 _EXPECTED_STAGED_COUNT: Final = 0
 
 

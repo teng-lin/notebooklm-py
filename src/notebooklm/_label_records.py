@@ -137,6 +137,52 @@ class LabelUpdateResult:
 
 
 @dataclass(frozen=True, slots=True)
+class LabelMutateInput:
+    """One ``UPDATE_LABEL`` set-op (P9.2 primitive).
+
+    Exactly one form is requested per call: a field mask (``name`` and/or
+    ``emoji``), one member append (``add_member_id``), or one member removal
+    (``remove_member_id``). The wire honours only the first id of a set-op
+    group per call, so the hoisted workflows issue one call per member.
+    """
+
+    kind: LabelKind
+    label_id: str
+    notebook_id: str | None = None
+    name: str | None = None
+    emoji: str | None = None
+    add_member_id: str | None = None
+    remove_member_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LabelMutateResult:
+    """Successful set-op; ``le8sX`` echoes no group, so nothing is carried."""
+
+
+@dataclass(frozen=True, slots=True)
+class LabelAllocateInput:
+    """Manual ``CREATE_LABEL`` allocation of one named group (P9.2 primitive)."""
+
+    kind: LabelKind
+    name: str
+    notebook_id: str | None = None
+    emoji: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class LabelAllocateResult:
+    """The post-allocation set echo (source labels) or empty (collections).
+
+    ``agX4Bc`` echoes the whole post-operation source-label set; the collection
+    dialect has no captured echo, so its allocation result is empty and the
+    workflow re-lists instead.
+    """
+
+    labels: tuple[LabelRecord, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class LabelDeleteInput:
     """Batch deletion request; an absent id is an idempotent no-op."""
 
@@ -183,6 +229,18 @@ LABEL_UPDATE_DEF: OperationDef[LabelUpdateInput, LabelUpdateResult] = OperationD
     LabelUpdateInput,
     LabelUpdateResult,
 )
+LABEL_MUTATE_DEF: OperationDef[LabelMutateInput, LabelMutateResult] = OperationDef(
+    Operation.LABEL_MUTATE,
+    CallPolicy.MUTATION,
+    LabelMutateInput,
+    LabelMutateResult,
+)
+LABEL_ALLOCATE_DEF: OperationDef[LabelAllocateInput, LabelAllocateResult] = OperationDef(
+    Operation.LABEL_ALLOCATE,
+    CallPolicy.MUTATION,
+    LabelAllocateInput,
+    LabelAllocateResult,
+)
 LABEL_DELETE_DEF: OperationDef[LabelDeleteInput, LabelDeleteResult] = OperationDef(
     Operation.LABEL_DELETE,
     CallPolicy.MUTATION,
@@ -228,12 +286,16 @@ __all__ = [
     "COLLECTION_LIST_DEF",
     "COLLECTION_UPDATE_DEF",
     "LABEL_CREATE_DEF",
+    "LABEL_ALLOCATE_DEF",
     "LABEL_DELETE_DEF",
     "LABEL_GENERATE_DEF",
     "LABEL_GET_DEF",
     "LABEL_LIST_DEF",
+    "LABEL_MUTATE_DEF",
     "LABEL_UPDATE_DEF",
     "LabelCreateInput",
+    "LabelAllocateInput",
+    "LabelAllocateResult",
     "LabelCreateResult",
     "LabelDeleteInput",
     "LabelDeleteResult",
@@ -244,6 +306,8 @@ __all__ = [
     "LabelKind",
     "LabelListInput",
     "LabelListResult",
+    "LabelMutateInput",
+    "LabelMutateResult",
     "LabelRecord",
     "LabelUpdateInput",
     "LabelUpdateResult",
