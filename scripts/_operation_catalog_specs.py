@@ -515,7 +515,7 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "StudioManagementService",
         "notebook+artifact",
-        "Updates title and optionally re-lists to return the artifact.",
+        "Updates title and always re-lists to read back the artifact.",
         _p("artifacts", "rename"),
         (_b(RPCMethod.RENAME_ARTIFACT), _b(RPCMethod.LIST_ARTIFACTS)),
     ),

@@ -30,6 +30,7 @@ from types import SimpleNamespace
 import pytest
 
 from notebooklm import NotebookLMClient
+from notebooklm._deadline import RuntimeDeadlineFactory
 from notebooklm._idempotency import (
     IDEMPOTENCY_REGISTRY,
     resolve_effective_disable_internal_retries,
@@ -47,6 +48,7 @@ from notebooklm._runtime.config import (
     compose_builtin_read_timeout,
     resolve_chat_read_timeout,
 )
+from notebooklm._studio.management import StudioManagementService
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.web_backend import build_web_backend
 
@@ -198,8 +200,19 @@ class TestConstructorWiring:
 
         assert client._backend._chat_timeout == 600.0
         assert client.research._base_timeout == 600.0
-        assert client.artifacts._management is not None
-        assert client.artifacts._management._deadline_factory is client._backend._deadline_factory
+
+    def test_client_deadline_factory_reaches_artifact_management(self, auth_tokens):
+        client = NotebookLMClient(auth_tokens, timeout=600.0)
+
+        management = client.artifacts._management
+        factory = client._backend._deadline_factory
+        assert isinstance(management, StudioManagementService)
+        assert isinstance(factory, RuntimeDeadlineFactory)
+        assert management._deadline_factory is factory
+
+        deadline = factory.start()
+        assert deadline is not None
+        assert deadline.timeout == 600.0
 
     def test_import_research_timeout_kwarg_is_forwarded(self, auth_tokens):
         client = NotebookLMClient(auth_tokens, timeout=600.0, import_research_timeout=900.0)
