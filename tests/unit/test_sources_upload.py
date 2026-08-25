@@ -156,11 +156,17 @@ async def test_add_drive_file_asserts_bound_loop_before_fetch(sources_api, mock_
 
 
 def test_web_backend_configures_uploader_semantic_source_callbacks(sources_api):
-    """The uploader receives neutral lifecycle callbacks from the web adapter."""
-    backend = sources_api._source_service._backend
-    assert sources_api._uploader._list_sources_callback.__self__ is backend
-    assert sources_api._uploader._register_file_source_callback.__self__ is backend
-    assert sources_api._uploader._rename_source_callback.__self__ is backend
+    """The uploader's default callbacks run under the SOURCE_ADD_FILE row's invoker (P9.4b)."""
+    uploader = sources_api._uploader
+    for callback in (
+        uploader._list_sources_callback,
+        uploader._register_file_source_callback,
+        uploader._rename_source_callback,
+        uploader._get_source_limit,
+    ):
+        assert callback is not None
+        assert callback.__qualname__.startswith("upload_backend.<locals>.")
+        assert not hasattr(callback, "__self__")
 
 
 def _self_runtime_auth_attr_read(node: ast.AST, attr: str) -> bool:

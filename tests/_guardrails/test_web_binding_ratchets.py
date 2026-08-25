@@ -52,10 +52,11 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: custom rows + handler-backed operations at P9.4a; shrinks with every hoist.
 RESIDUAL_COMPOSITE_CEILING = 31
 #: Exact custom-row counts per justification category (P9.4a: the three sharing
-#: mutate-then-readback composites). P9.4b PRs raise these as handlers convert;
+#: mutate-then-readback composites; P9.4b: the five source-add rows — four
+#: *protocol*, ``SOURCE_ADD_TEXT`` *compatibility*). P9.4b PRs raise these as handlers convert;
 #: P9.2 hoists lower ``deferred-product``, which must reach zero before any
 #: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 0, "compatibility": 0, "deferred-product": 3}
+CUSTOM_ROW_COUNTS = {"protocol": 4, "compatibility": 1, "deferred-product": 3}
 
 # --- 2. class size ---------------------------------------------------------------
 
@@ -63,10 +64,9 @@ CLASS_BODY_LINE_CEILING = 500
 #: Measured at P9.4a; shrink-only. ``WebExecutionRuntime`` is the transport engine
 #: and shrinks on its own schedule; the three chain classes are P9.4b targets.
 OVERSIZED_CLASS_CEILINGS = {
-    "backend.py:WebRpcBackend": 897,
+    "backend.py:WebRpcBackend": 891,
     "labels.py:LabelSetWebHandlers": 522,
     "runtime.py:WebExecutionRuntime": 597,
-    "source_variants.py:SourceVariantWebHandlers": 683,
 }
 
 # --- 3. workflow shape ---------------------------------------------------------
@@ -92,8 +92,6 @@ MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
         "labels.py:LabelSetWebHandlers._label_create",
         "labels.py:LabelSetWebHandlers._label_update",
         "settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
-        "source_variants.py:SourceVariantWebHandlers._source_add_drive",
-        "source_variants.py:SourceVariantWebHandlers._source_add_url",
         "studio_data.py:StudioDataWebHandlers._data_table_generate",
         "studio_data.py:StudioDataWebHandlers._mind_map_generate",
         "studio_documents.py:StudioDocumentWebHandlers._report_generate",

@@ -2958,7 +2958,7 @@ callers decide whether to re-invoke.
 
 ### RPC: SHARE_ARTIFACT (RGP97b)
 
-**Source:** `_web/sharing.py::SharingWebHandlers._legacy_share_artifact()`
+**Source:** `_web/bindings/sharing.py::LEGACY_SHARE_ARTIFACT`
 
 Toggle the legacy share-link state for a notebook URL, optionally with an
 artifact deep-link target. Distinct from `SHARE_NOTEBOOK` (`QDyure`), which

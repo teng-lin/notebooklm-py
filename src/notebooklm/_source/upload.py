@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import Awaitable, Callable
-from dataclasses import replace
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
 from typing import IO, TYPE_CHECKING, Any, Protocol, cast
@@ -134,6 +136,30 @@ class AsyncClientFactory(Protocol):
 ListSources = Callable[[str], Awaitable[list[Source]]]
 RegisterFileSource = Callable[[str, str], Awaitable[SourceFileRegistrationRecord]]
 RenameSource = Callable[[str, str, str], Awaitable[Source | None]]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceUploadBackend:
+    """The transport-neutral callbacks one ``source.add_file`` invocation supplies.
+
+    P9.4 (plan open item 1): the ``SOURCE_ADD_FILE`` binding row binds closures
+    over its own row-scoped invoker for exactly the duration of its invocation
+    through :meth:`SourceUploadPipeline.bind_backend`, so every registration,
+    listing, rename and limit lookup the pipeline performs for that upload runs
+    under the row's declared natives and failure tagging.  ``configure_source_backend``
+    remains for callers that own the pipeline directly; a bound backend always
+    wins over the configured callbacks.
+    """
+
+    list_sources: ListSources
+    register_file_source: RegisterFileSource
+    rename_source: RenameSource
+    get_source_limit: GetSourceLimit | None = None
+
+
+_ACTIVE_UPLOAD_BACKEND: ContextVar[SourceUploadBackend | None] = ContextVar(
+    "notebooklm_active_upload_backend", default=None
+)
 QueueWaitRecorder = Callable[[float], None]
 GenerationProvider = Callable[[], Awaitable[WebCookieGeneration]]
 GenerationInstaller = Callable[[WebCookieGeneration], bool]
@@ -229,6 +255,20 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         self._list_sources_callback = list_sources
         self._register_file_source_callback = register_file_source
         self._rename_source_callback = rename_source
+
+    @contextmanager
+    def bind_backend(self, backend: SourceUploadBackend) -> Iterator[None]:
+        """Route this task's pipeline callbacks through ``backend`` until exit.
+
+        The binding is task-scoped (a :class:`contextvars.ContextVar`), so two
+        concurrent ``add_file`` invocations each see only their own backend and
+        a bound backend never leaks past the invocation that installed it.
+        """
+        token = _ACTIVE_UPLOAD_BACKEND.set(backend)
+        try:
+            yield
+        finally:
+            _ACTIVE_UPLOAD_BACKEND.reset(token)
 
     def _resolve_upload_timeout(self, default: httpx.Timeout) -> httpx.Timeout:
         """Return the configured upload timeout, or ``default`` if unset."""
@@ -591,7 +631,10 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         if logger is None:
             logger = module_logger
         if get_source_limit is None:
-            get_source_limit = self._get_source_limit
+            bound = _ACTIVE_UPLOAD_BACKEND.get()
+            get_source_limit = (
+                bound.get_source_limit if bound is not None else self._get_source_limit
+            )
 
         # Capture baseline source IDs before the first create attempt so the
         # probe can distinguish "this upload landed" from "a same-named source
@@ -734,7 +777,12 @@ class SourceUploadPipeline(LoopBoundPrimitive):
 
         async def _create() -> str:
             try:
-                register = register_file_source or self._register_file_source_callback
+                bound = _ACTIVE_UPLOAD_BACKEND.get()
+                register = register_file_source or (
+                    bound.register_file_source
+                    if bound is not None
+                    else self._register_file_source_callback
+                )
                 if register is None:
                     raise RuntimeError("source upload backend callbacks were not configured")
                 registration = await register(notebook_id, filename)
@@ -821,7 +869,8 @@ class SourceUploadPipeline(LoopBoundPrimitive):
 
     async def list_sources(self, notebook_id: str) -> list[Source]:
         """List notebook sources for upload idempotency and polling."""
-        callback = self._list_sources_callback
+        bound = _ACTIVE_UPLOAD_BACKEND.get()
+        callback = bound.list_sources if bound is not None else self._list_sources_callback
         if callback is None:
             raise RuntimeError("source upload backend callbacks were not configured")
         return await callback(notebook_id)
@@ -891,7 +940,8 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         public ``sources.rename`` policy, issue #1255).
         """
         module_logger.debug("Renaming source %s to: %s", source_id, new_title)
-        callback = self._rename_source_callback
+        bound = _ACTIVE_UPLOAD_BACKEND.get()
+        callback = bound.rename_source if bound is not None else self._rename_source_callback
         if callback is None:
             raise RuntimeError("source upload backend callbacks were not configured")
         return await callback(notebook_id, source_id, new_title)
@@ -1129,6 +1179,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
 
 
 __all__ = [
+    "SourceUploadBackend",
     "SourceUploadPipeline",
     "_SOURCE_ID_UUID_PATTERN",
     "_extract_register_file_source_id",

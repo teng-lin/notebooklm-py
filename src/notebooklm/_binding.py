@@ -533,6 +533,30 @@ class _RowScopedInvoker:
             raise
 
 
+def row_invoker(
+    table: Mapping[Operation, Binding],
+    transport: Transport[Any, Any],
+    errors: ErrorTranslator | None,
+    operation: Operation,
+    *,
+    collaborators: Mapping[str, Any] | None = None,
+) -> RowInvoker:
+    """Return the row-scoped invoker of one custom row for use outside ``invoke``.
+
+    A backend uses this when a collaborator it owns (the upload pipeline's
+    default callbacks) must execute under a row's declared natives and failure
+    tagging even when the row itself is not being invoked; the row's own
+    invocations still receive their own, invocation-scoped invoker.
+    """
+    row = table.get(operation)
+    if not isinstance(row, CustomBinding):
+        raise BackendContractError(
+            f"{operation.value} has no custom binding row to scope an invoker to",
+            operation=operation,
+        )
+    return _RowScopedInvoker(row, transport, errors, collaborators)
+
+
 async def invoke_binding(
     table: Mapping[Operation, Binding],
     transport: Transport[Any, Any] | None,
@@ -616,4 +640,5 @@ __all__ = [
     "audit_bindings",
     "bind",
     "invoke_binding",
+    "row_invoker",
 ]

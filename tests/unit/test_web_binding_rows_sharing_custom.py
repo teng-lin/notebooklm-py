@@ -293,14 +293,22 @@ def test_the_head_projects_each_error_mode(row: Any, expected: tuple[bool, bool 
     assert _row_error_projection(row, Operation.SHARING_SET_PUBLIC) == expected
 
 
-def test_handler_backed_source_add_operations_keep_the_raw_passthrough_set() -> None:
+def test_source_add_rows_carry_the_raw_passthrough_projection() -> None:
+    """P9.4b: the raw re-raise is row metadata; no handler-backed operation keeps it."""
     for operation in (
         Operation.SOURCE_ADD_URL_BATCH,
         Operation.SOURCE_ADD_TEXT,
         Operation.SOURCE_ADD_DRIVE,
         Operation.SOURCE_ADD_FILE,
     ):
-        assert _row_error_projection(None, operation) == (True, None)
+        assert _row_error_projection(WEB_BINDING_ROWS[operation], operation) == (True, False)
+        assert _row_error_projection(None, operation) == (False, None)
+    assert _row_error_projection(
+        WEB_BINDING_ROWS[Operation.SOURCE_ADD_URL], Operation.SOURCE_ADD_URL
+    ) == (
+        False,
+        False,
+    )
 
 
 # --- collaborators ------------------------------------------------------------------

@@ -1089,10 +1089,10 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/bindings/chat.py` | P9.3 chat codec rows: `CHAT_GET_CONVERSATION`, `CHAT_GET_HISTORY`, `CHAT_DELETE_HISTORY`, `CHAT_SAVE_NOTE`, and the input-keyed `CHAT_CONFIGURE` (`GET_NOTEBOOK` read or `RENAME_NOTEBOOK` mutation selected from the action) — `encode → one native call → decode`; `CHAT_ASK` stays a handler in `_web/chat.py`. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
 | `_web/bindings/sharing.py` | Sharing rows: the P9.3 codec rows `SHARING_GET`, `LEGACY_SHARE_ARTIFACT` (`encode → one native call → decode`, the `NativeCallSpec` as sole method authority) and the P9.4 *deferred-product* `CustomBinding` rows `SHARING_SET_PUBLIC`, `SHARING_SET_VIEW_LEVEL`, `SHARING_UPDATE_USERS`, whose handlers sequence the declared `mutate` and `readback` specs through the row-scoped invoker; the P6.5 sharing mixin is deleted. |
-| `_web/bindings/sources.py` | P9.3 source codec rows: `SOURCE_LIST`, `SOURCE_GET` (exact-id select inside `decode`), `SOURCE_WAIT` (the one `DeadlineMode.IGNORE` row), `SOURCE_DELETE`, `SOURCE_REFRESH`, `SOURCE_CHECK_FRESHNESS`, `SOURCE_GET_GUIDE`, `SOURCE_GET_FULLTEXT` — `encode → one native call → decode`; the source-add composites, `SOURCE_UPDATE` and the upload callbacks keep reading through `_web/source_variants.py`'s snapshot helper. |
+| `_web/bindings/sources.py` | P9.3 source codec rows: `SOURCE_LIST`, `SOURCE_GET` (exact-id select inside `decode`), `SOURCE_WAIT` (the one `DeadlineMode.IGNORE` row), `SOURCE_DELETE`, `SOURCE_REFRESH`, `SOURCE_CHECK_FRESHNESS`, `SOURCE_GET_GUIDE`, `SOURCE_GET_FULLTEXT`; and, since P9.4b, the source-add family as `CustomBinding` rows (`SOURCE_ADD_URL`, `SOURCE_ADD_URL_BATCH`, `SOURCE_ADD_DRIVE`, `SOURCE_ADD_FILE` *protocol*; `SOURCE_ADD_TEXT` *compatibility*) whose handlers sequence their declared `snapshot`/`create`/`rename`/`register`/`limits` specs through the row-scoped invoker; `upload_backend()` builds the upload pipeline's callbacks over a `SOURCE_ADD_FILE` invoker. |
 | `_web/bindings/studio.py` | P9.3 Studio leaf codec rows: `ARTIFACT_EXPORT`, `ARTIFACT_REVISE_SLIDE`, `ARTIFACT_RETRY`, `ARTIFACT_DELETE`, `ARTIFACT_WAIT` (inherits the caller's deadline; the polling loop stays in `_studio/lifecycle.py`), and the input-keyed `ARTIFACT_DOWNLOAD` (`LIST_ARTIFACTS` / `GET_NOTES_AND_MIND_MAPS` / `GET_INTERACTIVE_HTML` chosen from `value.action`); the generate members, rename composite, and catalog merge stay handlers. |
 | `_web/settings_suggestions.py` | P6.6 prompt-suggestion web workflow mixin; since P9.3 only the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` composite remains here (the settings and report-suggestion leaves are `_web/bindings/settings.py` rows). |
-| `_web/source_variants.py` | Web workflow mixin for the URL/text/Drive/file source-add composites, `SOURCE_UPDATE`, the upload-pipeline callbacks and the shared recency-writing snapshot helper they read through; since P9.3 the list/get/wait reads and the single-native delete/refresh/freshness/guide/fulltext leaves are `_web/bindings/sources.py` rows. |
+| `_web/source_variants.py` | Web workflow mixin holding only `SOURCE_UPDATE` and the composite snapshot helper it hydrates through (the source leaves and the source-add family are `_web/bindings/sources.py` rows since P9.3/P9.4b); deleted with its P9.2 hoist. |
 | `_web/policy.py` | Exact P4 ledger for all 82 active web workflows: semantic policy, every reachable native method/variant, reviewed native idempotency, and optional reported divergence. |
 | `_web/registry.py` | Closed web disposition registry over every `Operation`: 82 executable typed handlers plus explicit composite dispositions. |
 | `_studio/catalog.py` | Typed P5.1 Studio list/get service over neutral artifact operation records. |
@@ -1360,7 +1360,7 @@ src/notebooklm/
 │   │   ├── research.py          # research codec rows (input-keyed start)
 │   │   ├── settings.py          # settings/suggestion codec rows
 │   │   ├── sharing.py           # sharing codec rows + custom mutate-then-readback rows (P9.4)
-│   │   ├── sources.py           # source read/wait and single-native source mutation rows
+│   │   ├── sources.py           # source read/wait/mutation codec rows + source-add custom rows
 │   │   └── studio.py            # Studio leaf codec rows (export, revise, retry, delete, wait, keyed download)
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)
 │   ├── registry.py              # Closed active/unsupported web dispositions
@@ -1368,7 +1368,7 @@ src/notebooklm/
 │   ├── studio_media.py          # P5.2/P5.3/P5.5 web family handlers
 │   ├── studio_data.py           # P5.6 data-view generation handlers (export leaf is a bindings/studio.py row)
 │   ├── studio_facade.py         # P5.8 artifact rename composite (leaves are bindings/studio.py rows)
-│   ├── source_variants.py       # Source add/update/upload composites (leaves are bindings/sources.py rows)
+│   ├── source_variants.py       # SOURCE_UPDATE composite (leaves and source-add family are bindings/sources.py rows)
 │   ├── transport.py             # P9.1 WebTransport call/stream verbs, WebRequest/WebStreamRequest
 │   └── codec/                   # P3 web response codecs producing neutral records/value exemptions
 │       ├── __init__.py          # Private codec re-exports

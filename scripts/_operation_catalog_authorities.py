@@ -52,13 +52,13 @@ class AppAuthoritySourceContract:
 SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRule, ...]] = {
     (Operation.SOURCE_ADD_URL, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._create_url_source",
+            "_web/bindings/sources.py:SOURCE_ADD_URL",
             "web or YouTube URL payload selected by semantic flag",
         ),
     ),
     (Operation.SOURCE_ADD_URL_BATCH, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_add_url_batch.create_sources",
+            "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
             "one non-replayed batch payload",
         ),
     ),
@@ -102,25 +102,25 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_ADD_URL, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+            "_web/bindings/sources.py:SOURCE_ADD_URL",
             "unconditional baseline plus ambiguity probes",
         )
     ),
     (Operation.SOURCE_ADD_URL_BATCH, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+            "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
             "one snapshot only for omitted-row reconciliation",
         )
     ),
     (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+            "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
             "unconditional baseline plus ambiguity probes",
         )
     ),
     (Operation.SOURCE_ADD_FILE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+            "_web/bindings/sources.py:SOURCE_ADD_FILE",
             "unconditional baseline plus registration probes",
         )
     ),
@@ -441,7 +441,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "private_app_call",
             "one snapshot only when ADD_SOURCE omits positional outcomes",
-            (_GET_SOURCES,),
+            ("_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",),
         ),
     ),
     Operation.SOURCE_ADD_URL: (
@@ -452,7 +452,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             "public_call",
             "one baseline plus ambiguity probes and, when wait=True, one snapshot per "
             "facade-owned readiness poll tick",
-            (_GET_SOURCES,),
+            ("_web/bindings/sources.py:SOURCE_ADD_URL",),
         ),
     ),
     Operation.SOURCE_ADD_DRIVE: (
@@ -463,7 +463,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             "public_call",
             "one baseline plus ambiguity probes and, when wait=True, one snapshot per "
             "facade-owned readiness poll tick",
-            (_GET_SOURCES,),
+            ("_web/bindings/sources.py:SOURCE_ADD_DRIVE",),
         ),
     ),
     Operation.SOURCE_ADD_FILE: (
@@ -475,7 +475,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             "one baseline plus registration/reconciliation probes; a custom title may add "
             "registration ticks even when wait=False, and wait=True adds facade-owned "
             "readiness ticks",
-            (_GET_SOURCES,),
+            ("_web/bindings/sources.py:SOURCE_ADD_FILE",),
         ),
     ),
     Operation.SOURCE_UPDATE: (
@@ -774,19 +774,19 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SOURCE_ADD_URL, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
-                "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public",
+                "_web/bindings/sources.py:SOURCE_ADD_URL",
                 "optional post-create title",
             )
         ),
         (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
-                "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public",
+                "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
                 "optional post-create title",
             )
         ),
         (Operation.SOURCE_ADD_FILE, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
-                "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public",
+                "_web/bindings/sources.py:SOURCE_ADD_FILE",
                 "optional post-upload title",
             )
         ),
@@ -896,7 +896,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SOURCE_ADD_FILE, _b(RPCMethod.GET_USER_SETTINGS)): _rules(
             (
-                "_web/source_variants.py:SourceVariantWebHandlers._source_file_limit",
+                "_web/bindings/sources.py:SOURCE_ADD_FILE",
                 "invalid-argument diagnosis only",
             )
         ),

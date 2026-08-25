@@ -7,6 +7,7 @@ import logging
 import re
 import reprlib
 import types
+from collections.abc import Sequence
 from typing import Any
 
 from ..._backend import BackendError, BackendErrorReason
@@ -42,6 +43,7 @@ from ..._row_adapters.sources import (
     unwrap_add_source_rows,
 )
 from ..._url_utils import pdf_url_display_title
+from ...exceptions import SourceNotFoundError
 from ...rpc import RPCError, RPCMethod, safe_index
 from ...rpc.types import drive_source_status_to_str, source_status_to_str
 from .documents import decode_structured_document
@@ -784,8 +786,91 @@ def decode_source_get_fulltext(value: SourceFulltextInput, payload: Any) -> Sour
     return SourceFulltextResult(fulltext)
 
 
+# Phase payloads for the source-add custom rows (P9.4b). Each returns the full
+# request one phase dispatches — params, the notebook route and exactly the
+# typed options the P6.7 handler passed — and never names a method: the row's
+# keyed ``NativeCallSpec`` supplies ``(method, variant)``.
+def encode_source_snapshot_payload(notebook_id: str) -> CodecPayload:
+    """Payload for a composite's own recency-writing source snapshot."""
+    return CodecPayload(
+        params=encode_source_snapshot(notebook_id),
+        source_path=_notebook_route(notebook_id),
+    )
+
+
+def encode_add_url_payload(
+    notebook_id: str,
+    urls: Sequence[str],
+    *,
+    youtube_flags: Sequence[bool],
+) -> CodecPayload:
+    """Payload for one generic/YouTube URL create (single or true batch)."""
+    return CodecPayload(
+        params=encode_add_url_batch(notebook_id, list(urls), youtube_flags=list(youtube_flags)),
+        source_path=_notebook_route(notebook_id),
+    )
+
+
+def encode_add_text_payload(notebook_id: str, title: str, content: str) -> CodecPayload:
+    """Payload for the pasted-text allocation."""
+    return CodecPayload(
+        params=encode_add_text(notebook_id, title, content),
+        source_path=_notebook_route(notebook_id),
+    )
+
+
+def encode_add_drive_payload(
+    notebook_id: str,
+    file_id: str,
+    title: str,
+    mime_type: str,
+) -> CodecPayload:
+    """Payload for the Drive-document allocation (null echoes are legal)."""
+    return CodecPayload(
+        params=encode_add_drive(notebook_id, file_id, title, mime_type),
+        source_path=_notebook_route(notebook_id),
+        allow_null=True,
+    )
+
+
+def encode_register_file_source_payload(filename: str, notebook_id: str) -> CodecPayload:
+    """Payload for the file-source registration intent."""
+    return CodecPayload(
+        params=encode_register_file_source(filename, notebook_id),
+        source_path=_notebook_route(notebook_id),
+        allow_null=False,
+    )
+
+
+def encode_rename_source_payload(notebook_id: str, source_id: str, new_title: str) -> CodecPayload:
+    """Payload for the optional post-create title set-op (null echoes are legal)."""
+    return CodecPayload(
+        params=encode_update_source(source_id, new_title),
+        source_path=_notebook_route(notebook_id),
+        allow_null=True,
+    )
+
+
+def decode_renamed_source(payload: list[Any]) -> SourceRecord:
+    """Decode a non-null ``UPDATE_SOURCE`` echo for the source-add rename phase."""
+    return decode_source_record(payload, method=RPCMethod.UPDATE_SOURCE)
+
+
+def rename_target_missing(source_id: str) -> SourceNotFoundError:
+    """The null-echo hydration found no source with ``source_id``."""
+    return SourceNotFoundError(source_id, method_id=RPCMethod.UPDATE_SOURCE.value)
+
+
 __all__ = [
     "decode_add_source_records",
+    "decode_renamed_source",
+    "encode_add_drive_payload",
+    "encode_add_text_payload",
+    "encode_add_url_payload",
+    "encode_register_file_source_payload",
+    "encode_rename_source_payload",
+    "encode_source_snapshot_payload",
+    "rename_target_missing",
     "decode_file_registration",
     "decode_source",
     "decode_source_check_freshness",
