@@ -395,13 +395,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.READ,
             (_native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "collection identity scan"),),
         ),
-        Operation.COLLECTION_CREATE: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "baseline and create readback"),
-                _native(RPCMethod.CREATE_LABEL, _NO_RETRY, "account collection allocation"),
-            ),
-        ),
         Operation.COLLECTION_DELETE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (_native(RPCMethod.DELETE_LABEL, _NO_RETRY, "batch collection delete"),),
@@ -794,6 +787,17 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.LABEL_GET, None),
                     _leaf(Operation.LABEL_MUTATE, None, "add_sources", "remove_sources"),
+                ),
+            ),
+            Operation.COLLECTION_CREATE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "baseline and create readback"),
+                    _native(RPCMethod.CREATE_LABEL, _NO_RETRY, "account collection allocation"),
+                ),
+                (
+                    _leaf(Operation.COLLECTION_LIST, None),
+                    _leaf(Operation.LABEL_ALLOCATE, None),
                 ),
             ),
             Operation.COLLECTION_UPDATE: WorkflowPolicyBinding(

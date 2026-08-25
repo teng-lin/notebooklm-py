@@ -417,6 +417,20 @@
     "collection.create": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "collection.list"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "label.allocate"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -430,7 +444,8 @@
           "rpc_method": "CREATE_LABEL",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "collection.delete": {
       "call_policy": "mutation",
@@ -2269,8 +2284,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/labels.py:LABEL_GENERATE",
-        "_web/bindings/primitives.py:LABEL_ALLOCATE",
-        "_web/labels.py:LabelSetWebHandlers._collection_create"
+        "_web/bindings/primitives.py:LABEL_ALLOCATE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -3580,8 +3594,7 @@
         "_web/bindings/labels.py:COLLECTION_GET",
         "_web/bindings/labels.py:COLLECTION_LIST",
         "_web/bindings/labels.py:LABEL_GET",
-        "_web/bindings/labels.py:LABEL_LIST",
-        "_web/labels.py:LabelSetWebHandlers._label_set_list"
+        "_web/bindings/labels.py:LABEL_LIST"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -5966,14 +5979,14 @@
       "execution_authorities": [
         {
           "binding": "CREATE_LABEL:<default>",
-          "discriminator": "label_type=collection",
-          "site": "_web/labels.py:LabelSetWebHandlers._collection_create",
+          "discriminator": "manual collection allocation via label.allocate",
+          "site": "_web/bindings/primitives.py:LABEL_ALLOCATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_LABELS:<default>",
-          "discriminator": "baseline/create readback",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "discriminator": "baseline/create readback via collection.list",
+          "site": "_web/bindings/labels.py:COLLECTION_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -6104,8 +6117,8 @@
       "execution_authorities": [
         {
           "binding": "LIST_LABELS:<default>",
-          "discriminator": "resolve collection membership",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "discriminator": "resolve collection membership via collection.list",
+          "site": "_web/bindings/labels.py:COLLECTION_LIST",
           "transport_kind": "rpc"
         },
         {
@@ -6466,8 +6479,8 @@
         },
         {
           "binding": "LIST_LABELS:<default>",
-          "discriminator": "resolve source-label membership",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "discriminator": "resolve source-label membership via label.list",
+          "site": "_web/bindings/labels.py:LABEL_LIST",
           "transport_kind": "rpc"
         }
       ],

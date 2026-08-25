@@ -1,8 +1,7 @@
 """Deadline uncertainty after a semantic mutation has reached the server.
 
-The ``label.update``, ``collection.update``, and ``source.update`` cases moved to
-``tests/unit/test_label_update_workflow.py`` and
-the matching P9.2 workflow tests: the semantic services sequence those
+The label/collection update/create, source-update, and Sharing cases moved to
+their matching P9.2 workflow tests: the semantic services sequence those
 workflows now.
 """
 
@@ -18,10 +17,7 @@ from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import OperationDef
 from notebooklm._records import (
     ARTIFACT_RENAME_DEF,
-    COLLECTION_CREATE_DEF,
     ArtifactRenameInput,
-    LabelCreateInput,
-    LabelKind,
 )
 from notebooklm.exceptions import RPCTimeoutError
 from notebooklm.rpc import RPCMethod
@@ -51,10 +47,6 @@ class _ExpireAfterCallExecutor:
         return response
 
 
-_LABEL_ROW = ["Existing", None, "label-1", ""]
-_COLLECTION_ROW = ["Existing", None, "collection-1", ""]
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     (
@@ -74,15 +66,6 @@ _COLLECTION_ROW = ["Existing", None, "collection-1", ""]
             (RPCMethod.RENAME_ARTIFACT,),
             RPCMethod.LIST_ARTIFACTS,
             id="artifact-rename-readback",
-        ),
-        pytest.param(
-            COLLECTION_CREATE_DEF,
-            LabelCreateInput(LabelKind.COLLECTION, "New"),
-            ([None, []], None),
-            2,
-            (RPCMethod.LIST_LABELS, RPCMethod.CREATE_LABEL),
-            RPCMethod.LIST_LABELS,
-            id="collection-create-readback",
         ),
     ],
 )
@@ -115,40 +98,3 @@ async def test_expiry_after_a_write_is_truthfully_unconfirmed(
     projected = project_backend_error(error)
     assert isinstance(projected, RPCTimeoutError)
     assert projected.unconfirmed is True
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("definition", "value", "baseline", "blocked_method"),
-    [
-        pytest.param(
-            COLLECTION_CREATE_DEF,
-            LabelCreateInput(LabelKind.COLLECTION, "New"),
-            [None, []],
-            RPCMethod.CREATE_LABEL,
-            id="collection-baseline",
-        ),
-    ],
-)
-async def test_expiry_after_a_read_only_preflight_remains_confirmed_not_dispatched(
-    definition: OperationDef[Any, Any],
-    value: object,
-    baseline: object,
-    blocked_method: RPCMethod,
-) -> None:
-    clock = [0.0]
-    executor = _ExpireAfterCallExecutor((baseline,), clock=clock, expire_after=1)
-    deadline = RuntimeDeadline(timeout=1.0, started_at=0.0, monotonic=lambda: clock[0])
-
-    with pytest.raises(BackendDeadlineExceededError) as caught:
-        await build_web_backend(executor).invoke(definition, value, deadline=deadline)
-
-    error = caught.value
-    assert executor.calls == [RPCMethod.LIST_LABELS]
-    assert error.operation is definition.key
-    assert error.outcome_unknown is False
-    assert error.diagnostics is not None
-    assert error.diagnostics["method_id"] == blocked_method.value
-    projected = project_backend_error(error)
-    assert isinstance(projected, RPCTimeoutError)
-    assert getattr(projected, "unconfirmed", False) is False

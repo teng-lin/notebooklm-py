@@ -111,7 +111,6 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.LABEL_ALLOCATE,
         Operation.COLLECTION_LIST,
         Operation.COLLECTION_GET,
-        Operation.COLLECTION_CREATE,
         Operation.COLLECTION_DELETE,
         Operation.SHARING_GET,
         Operation.SHARING_PATCH_VIEW_LEVEL,
@@ -832,7 +831,7 @@ def test_remaining_non_web_rpc_method_imports_are_exact_and_classified() -> None
 
 def test_active_semantic_operation_inventory_is_exact_for_p7() -> None:
     """P7's runtime-collapse input is the exact P4-supported operation set."""
-    assert len(KNOWN_ACTIVE_SEMANTIC_OPERATIONS) == 80
+    assert len(KNOWN_ACTIVE_SEMANTIC_OPERATIONS) == 79
     assert WEB_SUPPORTED_OPERATIONS == KNOWN_ACTIVE_SEMANTIC_OPERATIONS
 
 

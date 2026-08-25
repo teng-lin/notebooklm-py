@@ -64,7 +64,6 @@ from notebooklm._records import (
     CHAT_GET_CONVERSATION_DEF,
     CHAT_GET_HISTORY_DEF,
     CHAT_SAVE_NOTE_DEF,
-    COLLECTION_CREATE_DEF,
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,
@@ -329,7 +328,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         LABEL_DELETE_DEF: (Operation.LABEL_DELETE, CallPolicy.MUTATION),
         COLLECTION_LIST_DEF: (Operation.COLLECTION_LIST, CallPolicy.READ),
         COLLECTION_GET_DEF: (Operation.COLLECTION_GET, CallPolicy.READ),
-        COLLECTION_CREATE_DEF: (Operation.COLLECTION_CREATE, CallPolicy.MUTATION),
         COLLECTION_DELETE_DEF: (Operation.COLLECTION_DELETE, CallPolicy.MUTATION),
         LABEL_MUTATE_DEF: (Operation.LABEL_MUTATE, CallPolicy.MUTATION),
         LABEL_ALLOCATE_DEF: (Operation.LABEL_ALLOCATE, CallPolicy.MUTATION),
@@ -727,14 +725,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             COLLECTION_GET_DEF,
             [(RPCMethod.LIST_LABELS, None)],
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
-        ),
-        (
-            COLLECTION_CREATE_DEF,
-            [(RPCMethod.LIST_LABELS, None), (RPCMethod.CREATE_LABEL, None)],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-            ],
         ),
         (
             COLLECTION_DELETE_DEF,

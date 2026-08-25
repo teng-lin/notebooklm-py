@@ -1,9 +1,11 @@
 """Closed web dispositions for the semantic operation vocabulary.
 
-P2 notebook/source operations, P5 Studio family operations, and P6.1–P6.7 domain workflows have
-executable bindings: a legacy handler name resolved at construction, or — since P9.3 — a binding
-row from ``_web.bindings``. Every other operation has an unsupported disposition, and the count
-assertions force a deliberate registry update when the closed :class:`Operation` enum changes.
+Direct P2 notebook/source operations, P5 Studio family operations, and P6.1–P6.7 domain
+workflows have executable bindings: a legacy handler name resolved at construction, or — since
+P9.3 — a binding row from ``_web.bindings``. P9.2 service-owned workflows keep their canonical
+definition but no direct web binding. Every other operation has an unsupported disposition, and
+the count assertions force a deliberate registry update when the closed :class:`Operation` enum
+changes.
 """
 
 from __future__ import annotations
@@ -110,7 +112,7 @@ from .policy import audit_web_call_policy_bindings
 
 @dataclass(frozen=True, slots=True)
 class WebOperationBinding:
-    """One executable handler or row, or one reviewed unsupported disposition."""
+    """One direct handler/row, service-owned workflow, or reviewed unsupported disposition."""
 
     definition: OperationDef[Any, Any] | None
     handler_name: str | None
@@ -222,7 +224,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.LABEL_ALLOCATE: LABEL_ALLOCATE_DEF,
         Operation.COLLECTION_LIST: COLLECTION_LIST_DEF,
         Operation.COLLECTION_GET: COLLECTION_GET_DEF,
-        Operation.COLLECTION_CREATE: COLLECTION_CREATE_DEF,
         Operation.COLLECTION_DELETE: COLLECTION_DELETE_DEF,
         Operation.SHARING_GET: SHARING_GET_DEF,
         Operation.LEGACY_SHARE_ARTIFACT: LEGACY_SHARE_ARTIFACT_DEF,
@@ -247,9 +248,7 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
 )
 
 _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
-    {
-        Operation.COLLECTION_CREATE: "_collection_create",
-    }
+    {}
 )
 
 # Operations executed through a binding row rather than a resolved handler name.
@@ -264,6 +263,7 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
     {
         Operation.LABEL_CREATE: LABEL_CREATE_DEF,
         Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
+        Operation.COLLECTION_CREATE: COLLECTION_CREATE_DEF,
         Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
         Operation.SOURCE_UPDATE: SOURCE_UPDATE_DEF,
         Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
@@ -280,6 +280,10 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.LABEL_UPDATE: (
             "service-owned since P9.2-2: LabelSetService.update sequences label.get and "
             "label.mutate"
+        ),
+        Operation.COLLECTION_CREATE: (
+            "service-owned since P9.2-9: LabelSetService.create sequences collection.list, "
+            "label.allocate and collection.list"
         ),
         Operation.COLLECTION_UPDATE: (
             "service-owned since P9.2-3: LabelSetService.update sequences collection.get and "
@@ -313,8 +317,8 @@ _STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
 _EXPECTED_OPERATION_COUNT: Final = 92
-_EXPECTED_SUPPORTED_COUNT: Final = 80
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 7
+_EXPECTED_SUPPORTED_COUNT: Final = 79
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 8
 _EXPECTED_STAGED_COUNT: Final = 0
 
 

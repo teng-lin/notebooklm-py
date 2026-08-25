@@ -5,9 +5,9 @@ is the sole authority for the native it dispatches, so the method the policy
 ledger audits is the method that runs.  The rows are module-level assignments
 because the operation-catalog walker derives execution authorities from them.
 ``LABEL_GET``/``COLLECTION_GET`` are list-then-select: one ``LIST_LABELS`` read
-whose exact-id selection lives in ``decode``.  The four composites
-(``LABEL_CREATE``, ``LABEL_UPDATE``, ``COLLECTION_CREATE``, ``COLLECTION_UPDATE``)
-stay handlers in ``_web/labels.py`` until their P9.2 hoists.
+whose exact-id selection lives in ``decode``. Since P9.2 the four create/update
+composites are service-owned workflows over these rows and the shared
+``label.allocate``/``label.mutate`` primitives.
 """
 
 from __future__ import annotations

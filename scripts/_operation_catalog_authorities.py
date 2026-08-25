@@ -642,8 +642,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.LABEL_SOURCES, _b(RPCMethod.LIST_LABELS)): _rules(
             (
-                "_web/labels.py:LabelSetWebHandlers._label_set_list",
-                "resolve source-label membership",
+                "_web/bindings/labels.py:LABEL_LIST",
+                "resolve source-label membership via label.list",
             )
         ),
         (Operation.COLLECTION_LIST, _b(RPCMethod.LIST_LABELS)): _rules(
@@ -661,7 +661,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/labels.py:LABEL_GET", "update preflight/readback via label.get")
         ),
         (Operation.COLLECTION_CREATE, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "baseline/create readback")
+            (
+                "_web/bindings/labels.py:COLLECTION_LIST",
+                "baseline/create readback via collection.list",
+            )
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.LIST_LABELS)): _rules(
             (
@@ -670,7 +673,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.COLLECTION_NOTEBOOKS, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "resolve collection membership")
+            (
+                "_web/bindings/labels.py:COLLECTION_LIST",
+                "resolve collection membership via collection.list",
+            )
         ),
         (Operation.RESEARCH_POLL, _b(RPCMethod.POLL_RESEARCH)): _rules(
             ("_web/bindings/research.py:RESEARCH_POLL", "single public poll")
@@ -820,7 +826,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.COLLECTION_CREATE, _b(RPCMethod.CREATE_LABEL)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._collection_create", "label_type=collection")
+            (
+                "_web/bindings/primitives.py:LABEL_ALLOCATE",
+                "manual collection allocation via label.allocate",
+            )
         ),
         (Operation.LABEL_ALLOCATE, _b(RPCMethod.CREATE_LABEL)): _rules(
             ("_web/bindings/primitives.py:LABEL_ALLOCATE", "manual allocation, either dialect")

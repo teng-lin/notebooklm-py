@@ -42,11 +42,12 @@ from notebooklm._records import (
     LabelKind,
     LabelListInput,
 )
-from notebooklm._web import labels as labels_handlers
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import labels as label_rows
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
+from notebooklm._web.sharing import SharingWebHandlers
+from notebooklm._web.studio_data import StudioDataWebHandlers
 from notebooklm.exceptions import RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.web_backend import build_web_backend
@@ -135,23 +136,20 @@ def test_label_rows_replace_their_handlers_in_the_registry_and_table() -> None:
         "_label_set_delete",
     ):
         assert not hasattr(WebRpcBackend, name)
-        assert not hasattr(labels_handlers.LabelSetWebHandlers, name)
-    # Collection create stays a handler until P9.2-9. Label create and both
-    # updates are service-owned (no handler, no row, not invokable).
-    assert WEB_OPERATION_REGISTRY[Operation.COLLECTION_CREATE].handler_name == (
-        "_collection_create"
-    )
+    # All four create/update workflows are service-owned (no handler, no row,
+    # not invokable); the emptied label mixin is gone from the backend chain.
     for operation in (
         Operation.LABEL_CREATE,
         Operation.LABEL_UPDATE,
+        Operation.COLLECTION_CREATE,
         Operation.COLLECTION_UPDATE,
     ):
         assert WEB_OPERATION_REGISTRY[operation].handler_name is None
         assert WEB_OPERATION_REGISTRY[operation].row is None
         assert WEB_OPERATION_REGISTRY[operation].service_owned is True
-    assert not hasattr(labels_handlers.LabelSetWebHandlers, "_label_create")
-    assert not hasattr(labels_handlers.LabelSetWebHandlers, "_label_update")
-    assert not hasattr(labels_handlers.LabelSetWebHandlers, "_collection_update")
+    for name in ("_label_create", "_label_update", "_collection_create", "_collection_update"):
+        assert not hasattr(WebRpcBackend, name)
+    assert SharingWebHandlers.__base__ is StudioDataWebHandlers
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.LABEL_LIST] is label_rows.LABEL_LIST
 

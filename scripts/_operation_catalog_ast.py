@@ -1088,14 +1088,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_label_service.py", "_records", "LabelListInput"),
         ("_label_service.py", "_records", "LabelRecord"),
         ("_label_service.py", "_records", "LabelUpdateInput"),
-        ("_web/labels.py", "_backend", "BackendError"),
-        ("_web/labels.py", "_backend", "BackendErrorReason"),
-        ("_web/labels.py", "_records", "LabelCreateInput"),
-        ("_web/labels.py", "_records", "LabelCreateResult"),
-        ("_web/labels.py", "_records", "LabelKind"),
-        ("_web/labels.py", "_records", "LabelListInput"),
-        ("_web/labels.py", "_records", "LabelListResult"),
-        ("_web/labels.py", "_records", "LabelRecord"),
         ("_web/registry.py", "_records", "COLLECTION_CREATE_DEF"),
         ("_web/registry.py", "_records", "COLLECTION_DELETE_DEF"),
         ("_web/registry.py", "_records", "COLLECTION_GET_DEF"),
@@ -1932,7 +1924,6 @@ def _is_reviewed_backend_import_module(module: str) -> bool:
 
 ACTIVE_BACKEND_INVOKE_SITES = frozenset(
     {
-        "_label_service.py:LabelSetService.create",
         "_label_service.py:LabelSetService.delete",
         "_label_service.py:LabelSetService.generate",
         "_label_service.py:LabelSetService.get",

@@ -11,13 +11,13 @@ The two public facades (``client.labels`` and ``client.collections``) keep their
 own argument validation, exception vocabulary, and membership joins; everything
 between a validated request and a neutral :class:`LabelRecord` lives here.
 
-Since P9.2 the ``label.create``, ``label.update`` and ``collection.update``
-workflows are **service-owned**: create snapshots ``label.list`` before one
-``label.allocate`` and reconciles the allocation echo by exact id-diff; update
-sequences the ``label.get``/``collection.get`` preflight/readback and one
-``label.mutate`` leaf per member. Every workflow starts one deadline above the
-port and re-raises leaf failures as the workflow operation with the leaf
-retained in the diagnostics.
+Since P9.2 the create and update workflows for both label dialects are
+**service-owned**: create snapshots ``label.list``/``collection.list`` before
+one ``label.allocate`` and reconciles the allocation echo or collection
+readback by exact id-diff; update sequences the ``label.get``/``collection.get``
+preflight/readback and one ``label.mutate`` leaf per member. Every workflow
+starts one deadline above the port and re-raises leaf failures as the workflow
+operation with the leaf retained in the diagnostics.
 """
 
 from __future__ import annotations
@@ -75,9 +75,6 @@ class _KindBinding:
     update_def: OperationDef[Any, Any]
     delete_def: OperationDef[Any, Any]
     generate_def: OperationDef[Any, Any] | None
-    #: Whether ``create`` is sequenced here from the leaves (P9.2 hoist) or is
-    #: still one composite backend invocation.
-    create_hoisted: bool
 
 
 _KIND_BINDINGS: dict[LabelKind, _KindBinding] = {
@@ -88,7 +85,6 @@ _KIND_BINDINGS: dict[LabelKind, _KindBinding] = {
         update_def=LABEL_UPDATE_DEF,
         delete_def=LABEL_DELETE_DEF,
         generate_def=LABEL_GENERATE_DEF,
-        create_hoisted=True,
     ),
     # Collections have no auto-grouping mode: ``agX4Bc``'s scope slot is a
     # source-label concept, so the account-level dialect binds no generate.
@@ -99,7 +95,6 @@ _KIND_BINDINGS: dict[LabelKind, _KindBinding] = {
         update_def=COLLECTION_UPDATE_DEF,
         delete_def=COLLECTION_DELETE_DEF,
         generate_def=None,
-        create_hoisted=False,
     ),
 }
 
@@ -202,14 +197,7 @@ class LabelSetService:
         guessing when zero or several ids are new.
         """
         value = LabelCreateInput(self._kind, name, notebook_id, emoji)
-        if self._binding.create_hoisted:
-            return await self._create_workflow(value, deadline=deadline)
-        result = await self._backend.invoke(
-            self._binding.create_def,
-            value,
-            deadline=deadline,
-        )
-        return result.label
+        return await self._create_workflow(value, deadline=deadline)
 
     async def update(
         self,
