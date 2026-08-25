@@ -1981,8 +1981,6 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_mutation_services.py:SourceUrlMutationService.add_url",
         "_sharing_service.py:SharingService.get_status",
         "_sharing_service.py:SharingService._mutate_then_read_status",
-        "_sharing_service.py:SharingService.remove_user",
-        "_sharing_service.py:SharingService.set_users",
         "_sharing_service.py:SharingService.set_view_level",
         "_settings_service.py:SettingsService.get_account_limits",
         "_settings_service.py:SettingsService.get_output_language",
@@ -2259,8 +2257,9 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
     }
 )
 
-# P9.2-5: SharingService sequences sharing.set_public from the closed
-# sharing.mutate primitive and the sharing.get readback leaf.
+# P9.2-5/6: SharingService sequences sharing.set_public and
+# sharing.update_users from the closed sharing.mutate primitive and the
+# sharing.get readback leaf.
 REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
         ("_sharing_service.py", "_backend", "BackendDeadlineExceededError"),
@@ -2269,6 +2268,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_sharing_service.py", "_backend", "rebind_operation"),
         ("_sharing_service.py", "_backend", "require_leaves"),
         ("_sharing_service.py", "_records", "SHARING_MUTATE_DEF"),
+        ("_sharing_service.py", "_records", "SharingGrants"),
         ("_sharing_service.py", "_records", "SharingMutateInput"),
         ("_sharing_service.py", "_records", "SharingVisibility"),
     }

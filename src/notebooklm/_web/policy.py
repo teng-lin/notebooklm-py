@@ -717,13 +717,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
             ),
         ),
-        Operation.SHARING_UPDATE_USERS: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded ACL mutation"),
-                _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
-            ),
-        ),
         Operation.SHARING_MUTATE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (_native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded link/ACL mutation"),),
@@ -844,6 +837,17 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 CallPolicy.MUTATION,
                 (
                     _native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded link mutation"),
+                    _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
+                ),
+                (
+                    _leaf(Operation.SHARING_MUTATE, None),
+                    _leaf(Operation.SHARING_GET, None),
+                ),
+            ),
+            Operation.SHARING_UPDATE_USERS: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded ACL mutation"),
                     _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
                 ),
                 (

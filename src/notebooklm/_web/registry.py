@@ -226,7 +226,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.COLLECTION_DELETE: COLLECTION_DELETE_DEF,
         Operation.SHARING_GET: SHARING_GET_DEF,
         Operation.SHARING_SET_VIEW_LEVEL: SHARING_SET_VIEW_LEVEL_DEF,
-        Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
         Operation.LEGACY_SHARE_ARTIFACT: LEGACY_SHARE_ARTIFACT_DEF,
         Operation.SHARING_MUTATE: SHARING_MUTATE_DEF,
         Operation.RESEARCH_START: RESEARCH_START_DEF,
@@ -268,6 +267,7 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
         Operation.SOURCE_UPDATE: SOURCE_UPDATE_DEF,
         Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
+        Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
     }
 )
 _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
@@ -288,6 +288,10 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "service-owned since P9.2-5: SharingService.set_public sequences sharing.mutate and "
             "sharing.get"
         ),
+        Operation.SHARING_UPDATE_USERS: (
+            "service-owned since P9.2-6: SharingService.set_users/remove_user sequence "
+            "sharing.mutate and sharing.get"
+        ),
     }
 )
 
@@ -300,8 +304,8 @@ _STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
 _EXPECTED_OPERATION_COUNT: Final = 91
-_EXPECTED_SUPPORTED_COUNT: Final = 82
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 4
+_EXPECTED_SUPPORTED_COUNT: Final = 81
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 5
 _EXPECTED_STAGED_COUNT: Final = 0
 
 

@@ -20,15 +20,11 @@ from notebooklm._records import (
     ARTIFACT_RENAME_DEF,
     COLLECTION_CREATE_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
-    SHARING_UPDATE_USERS_DEF,
     ArtifactRenameInput,
     LabelCreateInput,
     LabelKind,
-    SharePermissionLevel,
     ShareViewScope,
     SharingSetViewLevelInput,
-    SharingUpdateUsersInput,
-    SharingUserGrant,
 )
 from notebooklm.exceptions import RPCTimeoutError
 from notebooklm.rpc import RPCMethod
@@ -81,18 +77,6 @@ _COLLECTION_ROW = ["Existing", None, "collection-1", ""]
             (RPCMethod.RENAME_NOTEBOOK,),
             RPCMethod.GET_SHARE_STATUS,
             id="sharing-view-readback",
-        ),
-        pytest.param(
-            SHARING_UPDATE_USERS_DEF,
-            SharingUpdateUsersInput(
-                "nb-1",
-                (SharingUserGrant("reader@example.com", SharePermissionLevel.VIEWER),),
-            ),
-            (None,),
-            1,
-            (RPCMethod.SHARE_NOTEBOOK,),
-            RPCMethod.GET_SHARE_STATUS,
-            id="sharing-users-readback",
         ),
         pytest.param(
             ARTIFACT_RENAME_DEF,

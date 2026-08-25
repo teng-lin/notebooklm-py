@@ -704,8 +704,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SHARING_UPDATE_USERS, _b(RPCMethod.SHARE_NOTEBOOK)): _rules(
             (
-                "_web/bindings/sharing.py:SHARING_UPDATE_USERS",
-                "user grant/upsert and removal entries",
+                "_web/bindings/primitives.py:SHARING_MUTATE",
+                "user grant/upsert and removal entries via sharing.mutate",
             ),
         ),
         (Operation.SHARING_MUTATE, _b(RPCMethod.SHARE_NOTEBOOK)): _rules(
@@ -898,7 +898,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL", "post-view-level-mutation read")
         ),
         (Operation.SHARING_UPDATE_USERS, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
-            ("_web/bindings/sharing.py:SHARING_UPDATE_USERS", "post-user-grant mutation read")
+            (
+                "_web/bindings/sharing.py:SHARING_GET",
+                "post-user-grant mutation read via sharing.get",
+            )
         ),
         (Operation.NOTEBOOK_CREATE, _b(RPCMethod.GET_USER_SETTINGS)): _rules(
             ("_web/bindings/notebooks.py:NOTEBOOK_CREATE", "quota-error diagnosis only")

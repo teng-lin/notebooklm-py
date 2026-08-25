@@ -121,16 +121,11 @@ def test_sharing_facade_takes_only_the_semantic_backend() -> None:
 
 def test_every_sharing_operation_has_one_registered_web_binding() -> None:
     """Each sharing operation is backed by exactly one row: codec leaf or custom composite."""
-    # P9.4: the two remaining composites are deferred-product custom rows.
+    # P9.4: the remaining composite is a deferred-product custom row.
     composites = {
         Operation.SHARING_SET_VIEW_LEVEL: (
             sharing_rows.SHARING_SET_VIEW_LEVEL,
             SHARING_SET_VIEW_LEVEL_DEF,
-            CallPolicy.MUTATION,
-        ),
-        Operation.SHARING_UPDATE_USERS: (
-            sharing_rows.SHARING_UPDATE_USERS,
-            SHARING_UPDATE_USERS_DEF,
             CallPolicy.MUTATION,
         ),
     }
@@ -144,12 +139,17 @@ def test_every_sharing_operation_has_one_registered_web_binding() -> None:
         assert binding.definition is definition
         assert definition.policy is policy
         assert operation in WEB_SUPPORTED_OPERATIONS
-    public = WEB_OPERATION_REGISTRY[Operation.SHARING_SET_PUBLIC]
-    assert public.service_owned is True
-    assert public.definition is SHARING_SET_PUBLIC_DEF
-    assert public.handler_name is None and public.row is None
-    assert Operation.SHARING_SET_PUBLIC in WEB_SERVICE_OWNED_OPERATIONS
-    assert Operation.SHARING_SET_PUBLIC not in WEB_SUPPORTED_OPERATIONS
+    workflows = {
+        Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
+        Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
+    }
+    for operation, definition in workflows.items():
+        binding = WEB_OPERATION_REGISTRY[operation]
+        assert binding.service_owned is True
+        assert binding.definition is definition
+        assert binding.handler_name is None and binding.row is None
+        assert operation in WEB_SERVICE_OWNED_OPERATIONS
+        assert operation not in WEB_SUPPORTED_OPERATIONS
     # P9.3: the two leaves are codec rows, not handler names.
     leaves = {
         Operation.SHARING_GET: (sharing_rows.SHARING_GET, SHARING_GET_DEF, CallPolicy.READ),

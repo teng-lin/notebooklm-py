@@ -1,4 +1,4 @@
-"""P9.3 sharing leaves and the remaining P9.4 custom rows.
+"""P9.3 sharing leaves and the remaining P9.4 custom row.
 
 ``SHARING_GET`` and ``LEGACY_SHARE_ARTIFACT`` are ``encode → one native call →
 decode`` rows in ``_web/bindings/sharing.py``. These tests pin the conversion
@@ -6,8 +6,8 @@ oracles: the identical keyword set reaches the runtime (including explicit
 ``False``/``None`` values and the notebook route), the payload builders are
 unchanged, failure projection is what ``invoke()`` produced for handler rows,
 and the ``dispatched`` marker reaches the neutral ``BackendError``. The
-view-level and user-grant composites stay custom rows; public visibility is
-service-owned since P9.2-5.
+The view-level composite stays a custom row; public visibility and user grants
+are service-owned since P9.2-5/6.
 """
 
 from __future__ import annotations
@@ -96,7 +96,6 @@ def test_sharing_leaves_are_codec_rows_and_composites_are_custom_rows() -> None:
     }
     custom = {
         Operation.SHARING_SET_VIEW_LEVEL: sharing_rows.SHARING_SET_VIEW_LEVEL,
-        Operation.SHARING_UPDATE_USERS: sharing_rows.SHARING_UPDATE_USERS,
     }
     assert dict(sharing_rows.SHARING_ROWS) == {**converted, **custom}
     for operation, row in converted.items():
@@ -124,7 +123,7 @@ def test_sharing_leaves_are_codec_rows_and_composites_are_custom_rows() -> None:
         "_sharing_update_users",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # P9.4: the two remaining composites are custom rows, not handler names.
+    # P9.4: the remaining composite is a custom row, not a handler name.
     for operation, row in custom.items():
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.handler_name is None

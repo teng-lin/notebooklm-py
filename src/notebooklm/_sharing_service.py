@@ -6,10 +6,11 @@ operation definitions through :class:`~notebooklm._backend.BackendAdapter`. It
 holds no wire vocabulary: the ``SHARE_NOTEBOOK`` / ``GET_SHARE_STATUS`` /
 ``MutateProject`` grammar lives in ``_web/codec/sharing.py``.
 
-Since P9.2 the public-link visibility workflow is service-owned: this service
-sequences one ``sharing.mutate`` leaf and one ``sharing.get`` readback above
-the port, starts one deadline for both leaves, and rebinds leaf failures to the
-workflow operation while retaining the blocked leaf in diagnostics.
+Since P9.2 the public-link visibility and individual-user grant workflows are
+service-owned: this service sequences one ``sharing.mutate`` leaf and one
+``sharing.get`` readback above the port, starts one deadline for both leaves,
+and rebinds leaf failures to the workflow operation while retaining the
+blocked leaf in diagnostics.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from ._records import (
     ShareStatusRecord,
     ShareViewScope,
     SharingGetInput,
+    SharingGrants,
     SharingMutateInput,
     SharingSetPublicInput,
     SharingSetViewLevelInput,
@@ -113,7 +115,7 @@ class SharingService:
     async def _mutate_then_read_status(
         self,
         notebook_id: str,
-        mutation: SharingVisibility,
+        mutation: SharingVisibility | SharingGrants,
         *,
         workflow: Operation,
         deadline: RuntimeDeadline | None,
@@ -203,17 +205,19 @@ class SharingService:
             notebook_id,
             [(email, permission.name) for email, permission in grants],
         )
-        result = await self._backend.invoke(
-            SHARING_UPDATE_USERS_DEF,
-            SharingUpdateUsersInput(
-                notebook_id,
-                tuple(SharingUserGrant(email, permission) for email, permission in grants),
-                notify=notify,
-                welcome_message=welcome_message,
-            ),
+        value = SharingUpdateUsersInput(
+            notebook_id,
+            tuple(SharingUserGrant(email, permission) for email, permission in grants),
+            notify=notify,
+            welcome_message=welcome_message,
+        )
+        status = await self._mutate_then_read_status(
+            value.notebook_id,
+            SharingGrants(value.grants, value.notify, value.welcome_message),
+            workflow=SHARING_UPDATE_USERS_DEF.key,
             deadline=deadline,
         )
-        return project_share_status(result.status)
+        return project_share_status(status)
 
     async def update_user(
         self,
@@ -254,16 +258,18 @@ class SharingService:
         list; see ``docs/rpc-reference.md``.
         """
         logger.debug("Removing user %s from notebook %s", email, notebook_id)
-        result = await self._backend.invoke(
-            SHARING_UPDATE_USERS_DEF,
-            SharingUpdateUsersInput(
-                notebook_id,
-                (SharingUserGrant(email, SharePermissionLevel.REMOVE),),
-                notify=False,
-            ),
+        value = SharingUpdateUsersInput(
+            notebook_id,
+            (SharingUserGrant(email, SharePermissionLevel.REMOVE),),
+            notify=False,
+        )
+        status = await self._mutate_then_read_status(
+            value.notebook_id,
+            SharingGrants(value.grants, value.notify, value.welcome_message),
+            workflow=SHARING_UPDATE_USERS_DEF.key,
             deadline=deadline,
         )
-        return project_share_status(result.status)
+        return project_share_status(status)
 
 
 __all__ = ["SharingService"]

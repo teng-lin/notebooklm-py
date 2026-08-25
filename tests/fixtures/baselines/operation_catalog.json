@@ -1132,6 +1132,20 @@
     "sharing.update_users": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "sharing.mutate"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "sharing.get"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "probe_then_create",
@@ -1145,7 +1159,8 @@
           "rpc_method": "GET_SHARE_STATUS",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.add_drive": {
       "call_policy": "mutation",
@@ -4042,8 +4057,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/primitives.py:SHARING_MUTATE",
-        "_web/bindings/sharing.py:SHARING_UPDATE_USERS"
+        "_web/bindings/primitives.py:SHARING_MUTATE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -8008,14 +8022,14 @@
       "execution_authorities": [
         {
           "binding": "GET_SHARE_STATUS:<default>",
-          "discriminator": "post-user-grant mutation read",
-          "site": "_web/bindings/sharing.py:SHARING_UPDATE_USERS",
+          "discriminator": "post-user-grant mutation read via sharing.get",
+          "site": "_web/bindings/sharing.py:SHARING_GET",
           "transport_kind": "rpc"
         },
         {
           "binding": "SHARE_NOTEBOOK:<default>",
-          "discriminator": "user grant/upsert and removal entries",
-          "site": "_web/bindings/sharing.py:SHARING_UPDATE_USERS",
+          "discriminator": "user grant/upsert and removal entries via sharing.mutate",
+          "site": "_web/bindings/primitives.py:SHARING_MUTATE",
           "transport_kind": "rpc"
         }
       ],

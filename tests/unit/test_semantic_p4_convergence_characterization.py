@@ -106,7 +106,6 @@ from notebooklm._records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
-    SHARING_UPDATE_USERS_DEF,
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_TEXT_DEF,
@@ -227,7 +226,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             Operation.SHARING_SET_VIEW_LEVEL,
             CallPolicy.MUTATION,
         ),
-        SHARING_UPDATE_USERS_DEF: (Operation.SHARING_UPDATE_USERS, CallPolicy.MUTATION),
         LEGACY_SHARE_ARTIFACT_DEF: (
             Operation.LEGACY_SHARE_ARTIFACT,
             CallPolicy.MUTATION,
@@ -763,14 +761,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             [(RPCMethod.RENAME_NOTEBOOK, None), (RPCMethod.GET_SHARE_STATUS, None)],
             [
                 IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
-        ),
-        (
-            SHARING_UPDATE_USERS_DEF,
-            [(RPCMethod.SHARE_NOTEBOOK, None), (RPCMethod.GET_SHARE_STATUS, None)],
-            [
-                IdempotencyPolicy.PROBE_THEN_CREATE,
                 IdempotencyPolicy.IDEMPOTENT_SET_OP,
             ],
         ),
