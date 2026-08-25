@@ -8,6 +8,7 @@ import pytest
 
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
+from notebooklm._projectors import project_account_limits, project_user_settings
 from notebooklm._records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
@@ -55,7 +56,7 @@ def test_p66_operation_definitions_are_concrete_frozen_values() -> None:
 
 
 @pytest.mark.asyncio
-async def test_settings_service_projects_each_public_shape_without_combining_calls() -> None:
+async def test_settings_service_returns_each_neutral_record_without_combining_calls() -> None:
     backend = RecordingBackend()
     limits = AccountLimitsRecord(200, 100, (6, 200, 100, 500000, 99), 99)
     backend.set_result(
@@ -66,12 +67,12 @@ async def test_settings_service_projects_each_public_shape_without_combining_cal
     backend.set_result(SETTINGS_SET_LANGUAGE_DEF, SettingsSetLanguageResult("ja"))
     service = SettingsService(backend)
 
-    assert await service.get_user_settings() == UserSettings(
-        limits=AccountLimits(200, 100, (6, 200, 100, 500000, 99), 99),
+    assert await service.get_user_settings() == UserSettingsRecord(
+        limits=AccountLimitsRecord(200, 100, (6, 200, 100, 500000, 99), 99),
         output_language="fr",
     )
     assert await service.get_output_language() == "fr"
-    assert await service.get_account_limits() == AccountLimits(
+    assert await service.get_account_limits() == AccountLimitsRecord(
         200,
         100,
         (6, 200, 100, 500000, 99),
@@ -84,6 +85,29 @@ async def test_settings_service_projects_each_public_shape_without_combining_cal
         Operation.SETTINGS_GET_LIMITS,
         Operation.SETTINGS_SET_LANGUAGE,
     ]
+
+
+def test_settings_records_project_to_the_public_models_the_facade_returns() -> None:
+    """The public shapes this service used to build, now pinned where they are built.
+
+    ``SettingsAPI`` owns the projection since P10 R6.3 (invariant I1). The
+    end-to-end facade assertions live in
+    ``test_user_settings_api.py::test_get_user_settings_fetches_once_returns_both``
+    and ``::test_get_account_limits_calls_user_settings_rpc``; this pins the
+    record-to-model equivalence for the same values the service test uses.
+    """
+    limits = AccountLimitsRecord(200, 100, (6, 200, 100, 500000, 99), 99)
+
+    assert project_account_limits(limits) == AccountLimits(
+        200,
+        100,
+        (6, 200, 100, 500000, 99),
+        99,
+    )
+    assert project_user_settings(UserSettingsRecord(limits, "fr")) == UserSettings(
+        limits=AccountLimits(200, 100, (6, 200, 100, 500000, 99), 99),
+        output_language="fr",
+    )
 
 
 @pytest.mark.asyncio

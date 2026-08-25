@@ -2325,6 +2325,23 @@ ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
     }
 )
 
+# P10 R6.3 (invariant I1): SettingsService returns neutral records; the
+# public-model projection moved up to SettingsAPI.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_settings_service.py", "_projectors", "project_account_limits"),
+        ("_settings_service.py", "_projectors", "project_user_settings"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_settings.py", "_projectors", "project_account_limits"),
+        ("_settings.py", "_projectors", "project_user_settings"),
+        ("_settings_service.py", "_records", "AccountLimitsRecord"),
+        ("_settings_service.py", "_records", "UserSettingsRecord"),
+    }
+)
+
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose
 # whole wire surface has migrated takes it as its sole positional collaborator.
