@@ -58,6 +58,14 @@ _LABEL_NOT_FOUND_PHASE_METHOD_IDS: Mapping[str | None, str] = {
     "field_readback": RPCMethod.LIST_LABELS.value,
 }
 
+# The service-owned source.update workflow reports only semantic absence. Its
+# legacy method diagnostic belongs at this compatibility boundary, beside the
+# equivalent label phase mapping, rather than importing web/RPC vocabulary into
+# the transport-neutral Source service.
+_SOURCE_NOT_FOUND_OPERATION_METHOD_IDS: Mapping[Operation, str] = {
+    Operation.SOURCE_UPDATE: RPCMethod.UPDATE_SOURCE.value,
+}
+
 
 def _preserve_outcome(error: BackendError, projected: Exception) -> Exception:
     diagnostics = error.diagnostics or {}
@@ -399,11 +407,14 @@ def project_backend_error(error: BackendError) -> Exception:
                 "source-not-found compatibility error lacks source_id",
                 operation=error.operation,
             )
+        method_id = cast(str | None, _optional(error, diagnostics, "method_id", str))
+        if method_id is None and error.operation is not None:
+            method_id = _SOURCE_NOT_FOUND_OPERATION_METHOD_IDS.get(error.operation)
         return _preserve_outcome(
             error,
             SourceNotFoundError(
                 cast(str, source_id),
-                method_id=cast(str | None, _optional(error, diagnostics, "method_id", str)),
+                method_id=method_id,
                 raw_response=cast(
                     str | None,
                     _optional(error, diagnostics, "raw_response", str),

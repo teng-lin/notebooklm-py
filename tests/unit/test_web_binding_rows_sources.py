@@ -8,8 +8,9 @@ identical keyword set reaches the runtime (route, ``allow_null``, explicit
 ``False``/``None`` values), ``SOURCE_GET`` selects by exact id inside ``decode``,
 ``SOURCE_WAIT`` ignores the caller's deadline as the handler did, the fulltext
 not-found identity is unchanged, failure projection is what ``invoke()``
-produced for handler rows, and the source-add/update composites plus the upload
-callbacks still read through the retained snapshot helper.
+produced for handler rows, and the source-add composites plus the upload
+callbacks still read through the retained snapshot helper. ``SOURCE_UPDATE``
+is service-owned and hydrates through the ``SOURCE_GET`` row.
 """
 
 from __future__ import annotations
@@ -36,7 +37,6 @@ from notebooklm._records import (
     SOURCE_GET_GUIDE_DEF,
     SOURCE_LIST_DEF,
     SOURCE_REFRESH_DEF,
-    SOURCE_UPDATE_DEF,
     SOURCE_WAIT_DEF,
     SourceDeleteInput,
     SourceDeleteResult,
@@ -47,9 +47,9 @@ from notebooklm._records import (
     SourceListInput,
     SourceRefreshInput,
     SourceRefreshResult,
-    SourceUpdateInput,
     SourceWaitSnapshotInput,
 )
+from notebooklm._source_service import SourceService
 from notebooklm._web import source_variants as source_handlers
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
@@ -181,7 +181,6 @@ def test_source_leaves_are_rows_and_composites_stay_handlers() -> None:
         assert not hasattr(WebRpcBackend, name)
         assert not hasattr(source_handlers.SourceVariantWebHandlers, name)
     for operation, handler in (
-        (Operation.SOURCE_UPDATE, "_source_update"),
         (Operation.SOURCE_ADD_URL, "_source_add_url"),
         (Operation.SOURCE_ADD_URL_BATCH, "_source_add_url_batch"),
         (Operation.SOURCE_ADD_TEXT, "_source_add_text"),
@@ -191,6 +190,7 @@ def test_source_leaves_are_rows_and_composites_stay_handlers() -> None:
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.handler_name == handler
         assert binding.row is None
+    assert WEB_OPERATION_REGISTRY[Operation.SOURCE_UPDATE].service_owned is True
     for helper in (
         "_source_snapshot_records",
         "_source_select_record",
@@ -377,13 +377,11 @@ async def test_inheriting_rows_clamp_read_timeout_to_the_shared_deadline() -> No
 
 
 @pytest.mark.asyncio
-async def test_source_update_hydration_still_reads_through_the_composite_helper() -> None:
+async def test_source_update_hydration_reads_through_the_source_get_row() -> None:
     executor = _RecordingExecutor(None, _snapshot(*_ROWS))
     backend = build_web_backend(executor)
 
-    result = await backend.invoke(
-        SOURCE_UPDATE_DEF, SourceUpdateInput(_NB, "src-pdf", "Renamed"), deadline=None
-    )
+    result = await SourceService(backend).update(_NB, "src-pdf", "Renamed", return_object=True)
 
     assert result.source is not None
     assert result.source.id == "src-pdf"

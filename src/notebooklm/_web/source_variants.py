@@ -30,8 +30,6 @@ from .._records import (
     SourceFileInputKind,
     SourceFileRegistrationRecord,
     SourceRecord,
-    SourceUpdateInput,
-    SourceUpdateResult,
     SourceUrlBatchItemRecord,
 )
 from .._source.add import (
@@ -759,46 +757,3 @@ class SourceVariantWebHandlers(StudioFacadeWebHandlers):
             source_path="/",
         )
         return settings_codec.decode_account_limits(result).source_limit
-
-    async def _source_update(
-        self,
-        value: SourceUpdateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> SourceUpdateResult:
-        payload = await self._rpc_call(
-            RPCMethod.UPDATE_SOURCE,
-            encode_update_source(value.source_id, value.new_title),
-            operation=Operation.SOURCE_UPDATE,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-        )
-        if payload:
-            return SourceUpdateResult(
-                decode_source_record(payload, method=RPCMethod.UPDATE_SOURCE)
-                if value.return_object
-                else None
-            )
-
-        hydrated = await self._source_select_record(
-            value.notebook_id,
-            value.source_id,
-            deadline=deadline,
-            operation=Operation.SOURCE_UPDATE,
-            outcome_unknown_on_expiry=True,
-        )
-        if hydrated is None:
-            raise BackendError(
-                message=f"Source not found: {value.source_id}",
-                operation=Operation.SOURCE_UPDATE,
-                diagnostics=MappingProxyType(
-                    {
-                        "source_id": value.source_id,
-                        "method_id": RPCMethod.UPDATE_SOURCE.value,
-                        "raw_response": None,
-                    }
-                ),
-                reason=BackendErrorReason.SOURCE_NOT_FOUND,
-            )
-        return SourceUpdateResult(hydrated if value.return_object else None)

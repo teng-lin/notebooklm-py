@@ -57,7 +57,7 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.SOURCE_ADD_DRIVE,
         Operation.SOURCE_ADD_FILE,
         Operation.SOURCE_DELETE,
-        Operation.SOURCE_UPDATE,
+        Operation.SOURCE_PATCH_TITLE,
         Operation.SOURCE_REFRESH,
         Operation.SOURCE_CHECK_FRESHNESS,
         Operation.SOURCE_GET_GUIDE,

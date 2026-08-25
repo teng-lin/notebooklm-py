@@ -1,11 +1,12 @@
-"""P9.2-1 primitives: the three foundational leaf rows dispatch exactly the composites' natives.
+"""P9.2 primitive leaf rows dispatch exactly the composites' natives.
 
 ``LABEL_MUTATE`` (input-keyed over the five ``UPDATE_LABEL`` variants),
 ``LABEL_ALLOCATE`` (one manual ``CREATE_LABEL``) and ``SHARING_MUTATE`` (one
-``SHARE_NOTEBOOK`` envelope) are ``encode → one native call → decode`` rows in
-``_web/bindings/primitives.py``. These tests pin the oracles the hoists rely
-on: each variant's payload and keyword set equals what the P6.4/P6.5 composite
-handlers send for the same native today (route, ``allow_null``, explicit
+``SHARE_NOTEBOOK`` envelope) are the three foundational rows; P9.2-4 adds
+``SOURCE_PATCH_TITLE`` (one ``UPDATE_SOURCE`` title set-op). All are
+``encode → one native call → decode`` rows in ``_web/bindings/primitives.py``.
+These tests pin the oracles the hoists rely on: each variant's payload and
+keyword set equals what the old composite handlers sent (route, ``allow_null``, explicit
 ``False``/``None`` values, ``operation_variant``), contract errors fire before
 any wire call, the declared natives match the policy ledger, and failure
 projection is what ``invoke()`` produces for every row.
@@ -102,6 +103,7 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
         Operation.LABEL_MUTATE: primitive_rows.LABEL_MUTATE,
         Operation.LABEL_ALLOCATE: primitive_rows.LABEL_ALLOCATE,
         Operation.SHARING_MUTATE: primitive_rows.SHARING_MUTATE,
+        Operation.SOURCE_PATCH_TITLE: primitive_rows.SOURCE_PATCH_TITLE,
     }
     assert dict(primitive_rows.PRIMITIVE_ROWS) == converted
     for operation, row in converted.items():
@@ -125,6 +127,7 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
     assert not primitive_rows.LABEL_MUTATE.native.is_constant
     assert primitive_rows.LABEL_ALLOCATE.native.is_constant
     assert primitive_rows.SHARING_MUTATE.native.is_constant
+    assert primitive_rows.SOURCE_PATCH_TITLE.native.is_constant
     # One UPDATE_LABEL call per input, the variant chosen from it.
     assert (
         SEMANTIC_DEADLINE_AUTHORITIES[Operation.LABEL_MUTATE]
@@ -132,6 +135,7 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
     )
     assert Operation.LABEL_ALLOCATE not in SEMANTIC_DEADLINE_AUTHORITIES
     assert Operation.SHARING_MUTATE not in SEMANTIC_DEADLINE_AUTHORITIES
+    assert Operation.SOURCE_PATCH_TITLE not in SEMANTIC_DEADLINE_AUTHORITIES
 
 
 # --- LABEL_MUTATE ---------------------------------------------------------------

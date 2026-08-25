@@ -8,8 +8,9 @@ because the operation-catalog walker derives execution authorities from them.
 ``GET_NOTEBOOK`` snapshot; ``SOURCE_GET`` selects its exact id inside ``decode``
 and ``SOURCE_WAIT`` is the one ``DeadlineMode.IGNORE`` row (source polling
 historically never clamps an in-flight read).  The source-add family,
-``SOURCE_UPDATE`` and the upload-pipeline callbacks stay handlers in
-``_web/source_variants.py`` and keep reading through its snapshot helper.
+The source-add family and upload-pipeline callbacks stay handlers in
+``_web/source_variants.py`` and keep reading through its snapshot helper;
+``SOURCE_UPDATE`` is service-owned since P9.2-4.
 """
 
 from __future__ import annotations

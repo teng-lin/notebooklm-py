@@ -38,7 +38,6 @@ _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
         Operation.SOURCE_ADD_URL,
         Operation.SOURCE_ADD_URL_BATCH,
         Operation.SOURCE_ADD_DRIVE,
-        Operation.SOURCE_UPDATE,
         Operation.ARTIFACT_LIST,
         Operation.ARTIFACT_GET,
         Operation.ARTIFACT_GENERATE_AUDIO,

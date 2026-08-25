@@ -21,7 +21,6 @@ from notebooklm._records import (
     SOURCE_DELETE_DEF,
     SOURCE_GET_GUIDE_DEF,
     SOURCE_REFRESH_DEF,
-    SOURCE_UPDATE_DEF,
     SOURCE_WAIT_DEF,
     SourceAddDriveInput,
     SourceAddDriveResult,
@@ -40,7 +39,6 @@ from notebooklm._records import (
     SourceGuideInput,
     SourceRecord,
     SourceRefreshInput,
-    SourceUpdateInput,
     SourceUrlBatchItemRecord,
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
@@ -338,11 +336,7 @@ async def test_simple_web_bindings_preserve_shapes_and_null_echo_recency() -> No
         SourceGuideInput("nb", "src"),
         deadline=None,
     )
-    renamed = await backend.invoke(
-        SOURCE_UPDATE_DEF,
-        SourceUpdateInput("nb", "src", "Renamed", return_object=True),
-        deadline=None,
-    )
+    renamed = await SourceService(backend).update("nb", "src", "Renamed", return_object=True)
 
     assert freshness.fresh is True
     assert (guide.guide.summary, guide.guide.keywords) == ("Summary", ("alpha",))

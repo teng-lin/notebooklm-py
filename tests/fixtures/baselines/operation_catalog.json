@@ -1312,6 +1312,18 @@
         }
       ]
     },
+    "source.patch_title": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "source title set-op",
+          "rpc_method": "UPDATE_SOURCE",
+          "variant": null
+        }
+      ]
+    },
     "source.refresh": {
       "call_policy": "mutation",
       "known_divergence": "Semantic mutation is backed by AT_LEAST_ONCE_ACCEPTED native retry; P4 records parity but must not change behavior.",
@@ -1327,6 +1339,20 @@
     "source.update": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.patch_title"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.get"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -1340,7 +1366,8 @@
           "rpc_method": "GET_NOTEBOOK",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.wait": {
       "call_policy": "mutation",
@@ -4470,8 +4497,8 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public",
-        "_web/source_variants.py:SourceVariantWebHandlers._source_update"
+        "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
+        "_web/source_variants.py:SourceVariantWebHandlers._rename_source_public"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -4513,6 +4540,7 @@
         "source.add_drive",
         "source.add_file",
         "source.add_url",
+        "source.patch_title",
         "source.update"
       ],
       "variant": null
@@ -8486,6 +8514,33 @@
       "web_paths": []
     },
     {
+      "app_callers": [],
+      "composite_behavior": "P9.2 primitive: one UPDATE_SOURCE title set-op whose optional echo is returned to the service-owned source.update workflow.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "UPDATE_SOURCE:<default>",
+          "discriminator": "one title set-op",
+          "site": "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "source.patch_title",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "UPDATE_SOURCE:<default>"
+      ],
+      "owner": "SourceService",
+      "policy": "mutation",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [],
+      "route_context": "notebook+source",
+      "web_paths": []
+    },
+    {
       "app_callers": [
         "_app/source_mutations.py:execute_source_refresh"
       ],
@@ -8525,14 +8580,14 @@
       "execution_authorities": [
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "null UPDATE_SOURCE echo only",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+          "discriminator": "null UPDATE_SOURCE echo only via source.get",
+          "site": "_web/bindings/sources.py:SOURCE_GET",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_SOURCE:<default>",
-          "discriminator": "public=sources.rename",
-          "site": "_web/source_variants.py:SourceVariantWebHandlers._source_update",
+          "discriminator": "public=sources.rename via source.patch_title",
+          "site": "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
           "transport_kind": "rpc"
         }
       ],
@@ -8551,7 +8606,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
+            "_web/bindings/sources.py:SOURCE_GET"
           ],
           "condition": "one exact-id source read only when UPDATE_SOURCE returns a null echo",
           "maximum_calls": 1,

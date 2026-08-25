@@ -98,6 +98,7 @@ from .._records import (
     SOURCE_GET_FULLTEXT_DEF,
     SOURCE_GET_GUIDE_DEF,
     SOURCE_LIST_DEF,
+    SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
     SOURCE_UPDATE_DEF,
     SOURCE_WAIT_DEF,
@@ -175,7 +176,7 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.SOURCE_ADD_DRIVE: SOURCE_ADD_DRIVE_DEF,
         Operation.SOURCE_ADD_FILE: SOURCE_ADD_FILE_DEF,
         Operation.SOURCE_DELETE: SOURCE_DELETE_DEF,
-        Operation.SOURCE_UPDATE: SOURCE_UPDATE_DEF,
+        Operation.SOURCE_PATCH_TITLE: SOURCE_PATCH_TITLE_DEF,
         Operation.SOURCE_REFRESH: SOURCE_REFRESH_DEF,
         Operation.SOURCE_CHECK_FRESHNESS: SOURCE_CHECK_FRESHNESS_DEF,
         Operation.SOURCE_GET_GUIDE: SOURCE_GET_GUIDE_DEF,
@@ -256,7 +257,6 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.SOURCE_ADD_TEXT: "_source_add_text",
         Operation.SOURCE_ADD_DRIVE: "_source_add_drive",
         Operation.SOURCE_ADD_FILE: "_source_add_file",
-        Operation.SOURCE_UPDATE: "_source_update",
         Operation.CHAT_ASK: "_chat_ask",
         Operation.MIND_MAP_GENERATE_NOTE: "_mind_map_generate_note",
         Operation.MIND_MAP_GENERATE_INTERACTIVE: "_mind_map_generate_interactive",
@@ -293,6 +293,7 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
     {
         Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
         Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
+        Operation.SOURCE_UPDATE: SOURCE_UPDATE_DEF,
     }
 )
 _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
@@ -305,6 +306,10 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "service-owned since P9.2-3: LabelSetService.update sequences collection.get and "
             "label.mutate"
         ),
+        Operation.SOURCE_UPDATE: (
+            "service-owned since P9.2-4: SourceService.update sequences source.patch_title and "
+            "source.get"
+        ),
     }
 )
 
@@ -312,13 +317,13 @@ _STAGED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapping
 
 _STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 
-# The frozen catalog currently contains 90 operations (87 product members plus the
-# three P9.2 foundational primitives). This assertion is repeated at
+# The frozen catalog currently contains 91 operations (87 product members plus four
+# P9.2 primitives). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 90
+_EXPECTED_OPERATION_COUNT: Final = 91
 _EXPECTED_SUPPORTED_COUNT: Final = 83
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 2
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 3
 _EXPECTED_STAGED_COUNT: Final = 0
 
 

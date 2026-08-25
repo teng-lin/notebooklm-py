@@ -222,6 +222,8 @@ from ._source_records import (
     SourceGuideResult,
     SourceListInput,
     SourceListResult,
+    SourcePatchTitleInput,
+    SourcePatchTitleResult,
     SourceProgressCallback,
     SourceRecord,
     SourceRefreshInput,
@@ -1033,6 +1035,12 @@ SOURCE_UPDATE_DEF: OperationDef[SourceUpdateInput, SourceUpdateResult] = Operati
     SourceUpdateInput,
     SourceUpdateResult,
 )
+SOURCE_PATCH_TITLE_DEF: OperationDef[SourcePatchTitleInput, SourcePatchTitleResult] = OperationDef(
+    Operation.SOURCE_PATCH_TITLE,
+    CallPolicy.MUTATION,
+    SourcePatchTitleInput,
+    SourcePatchTitleResult,
+)
 SOURCE_REFRESH_DEF: OperationDef[SourceRefreshInput, SourceRefreshResult] = OperationDef(
     Operation.SOURCE_REFRESH,
     CallPolicy.MUTATION,
@@ -1177,6 +1185,7 @@ __all__ = [
     "SOURCE_ADD_FILE_DEF",
     "SOURCE_DELETE_DEF",
     "SOURCE_UPDATE_DEF",
+    "SOURCE_PATCH_TITLE_DEF",
     "SOURCE_REFRESH_DEF",
     "SOURCE_CHECK_FRESHNESS_DEF",
     "SOURCE_GET_GUIDE_DEF",
@@ -1370,6 +1379,8 @@ __all__ = [
     "SourceDeleteResult",
     "SourceUpdateInput",
     "SourceUpdateResult",
+    "SourcePatchTitleInput",
+    "SourcePatchTitleResult",
     "SourceRefreshInput",
     "SourceRefreshResult",
     "SourceFreshnessInput",

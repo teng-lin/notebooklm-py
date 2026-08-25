@@ -126,8 +126,8 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_UPDATE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
-            "null UPDATE_SOURCE echo only",
+            "_web/bindings/sources.py:SOURCE_GET",
+            "null UPDATE_SOURCE echo only via source.get",
         )
     ),
     (Operation.SOURCE_WAIT, _b(RPCMethod.GET_NOTEBOOK)): _rules(
@@ -485,7 +485,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "public_call",
             "one exact-id source read only when UPDATE_SOURCE returns a null echo",
-            (_GET_SOURCES,),
+            (_GET_SOURCE,),
         ),
     ),
     Operation.SOURCE_WAIT: (
@@ -834,9 +834,12 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SOURCE_UPDATE, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
-                "_web/source_variants.py:SourceVariantWebHandlers._source_update",
-                "public=sources.rename",
+                "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
+                "public=sources.rename via source.patch_title",
             )
+        ),
+        (Operation.SOURCE_PATCH_TITLE, _b(RPCMethod.UPDATE_SOURCE)): _rules(
+            ("_web/bindings/primitives.py:SOURCE_PATCH_TITLE", "one title set-op")
         ),
     }
 )

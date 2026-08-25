@@ -1,9 +1,9 @@
 """Deadline uncertainty after a semantic mutation has reached the server.
 
-The ``label.update`` and ``collection.update`` cases moved to
+The ``label.update``, ``collection.update``, and ``source.update`` cases moved to
 ``tests/unit/test_label_update_workflow.py`` and
-``tests/unit/test_collection_update_workflow.py`` with the P9.2-2/3 hoists:
-both workflows are sequenced by ``LabelSetService`` now.
+the matching P9.2 workflow tests: the semantic services sequence those
+workflows now.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from notebooklm._records import (
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
-    SOURCE_UPDATE_DEF,
     ArtifactRenameInput,
     LabelCreateInput,
     LabelKind,
@@ -32,7 +31,6 @@ from notebooklm._records import (
     SharingSetViewLevelInput,
     SharingUpdateUsersInput,
     SharingUserGrant,
-    SourceUpdateInput,
 )
 from notebooklm.exceptions import RPCTimeoutError
 from notebooklm.rpc import RPCMethod
@@ -115,15 +113,6 @@ _COLLECTION_ROW = ["Existing", None, "collection-1", ""]
             (RPCMethod.RENAME_ARTIFACT,),
             RPCMethod.LIST_ARTIFACTS,
             id="artifact-rename-readback",
-        ),
-        pytest.param(
-            SOURCE_UPDATE_DEF,
-            SourceUpdateInput("nb-1", "source-1", "Renamed"),
-            (None,),
-            1,
-            (RPCMethod.UPDATE_SOURCE,),
-            RPCMethod.GET_NOTEBOOK,
-            id="source-update-null-readback",
         ),
         pytest.param(
             COLLECTION_CREATE_DEF,

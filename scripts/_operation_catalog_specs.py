@@ -284,6 +284,16 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         recency_effect="zero GET_NOTEBOOK calls on an echo; exactly one on a null echo",
     ),
     OperationSpec(
+        Operation.SOURCE_PATCH_TITLE,
+        CallPolicy.MUTATION,
+        "SourceService",
+        "notebook+source",
+        "P9.2 primitive: one UPDATE_SOURCE title set-op whose optional echo is returned to the "
+        "service-owned source.update workflow.",
+        (),
+        (_b(RPCMethod.UPDATE_SOURCE),),
+    ),
+    OperationSpec(
         Operation.SOURCE_REFRESH,
         CallPolicy.MUTATION,
         "SourceService",

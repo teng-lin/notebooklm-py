@@ -212,12 +212,9 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.MUTATION,
             (_native(RPCMethod.DELETE_SOURCE, _IDEMPOTENT, "idempotent source delete"),),
         ),
-        Operation.SOURCE_UPDATE: WebCallPolicyBinding(
+        Operation.SOURCE_PATCH_TITLE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "source title set-op"),
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "conditional null-echo readback"),
-            ),
+            (_native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "source title set-op"),),
         ),
         Operation.SOURCE_REFRESH: WebCallPolicyBinding(
             CallPolicy.MUTATION,
@@ -824,6 +821,21 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.COLLECTION_GET, None),
                     _leaf(Operation.LABEL_MUTATE, None, "add_notebooks", "remove_notebooks"),
+                ),
+            ),
+            Operation.SOURCE_UPDATE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "source title set-op"),
+                    _native(
+                        RPCMethod.GET_NOTEBOOK,
+                        _IDEMPOTENT,
+                        "conditional null-echo readback",
+                    ),
+                ),
+                (
+                    _leaf(Operation.SOURCE_PATCH_TITLE, None),
+                    _leaf(Operation.SOURCE_GET, None),
                 ),
             ),
         }

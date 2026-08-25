@@ -262,6 +262,7 @@ def compose_client(
         uploader=source_uploader,
         upload_timeout=upload_timeout,
         max_concurrent_uploads=max_concurrent_uploads,
+        deadline_factory=deadline_factory,
         _backend=client._backend,
     )
     client.notebooks = NotebooksAPI(

@@ -2,8 +2,9 @@
 
 A primitive is one native set-op the hoisted product workflows sequence above
 the port: ``LABEL_MUTATE`` (one ``UPDATE_LABEL`` call, the variant chosen from
-the request's kind and form), ``LABEL_ALLOCATE`` (one manual ``CREATE_LABEL``)
-and ``SHARING_MUTATE`` (one ``SHARE_NOTEBOOK`` visibility or grant envelope).
+the request's kind and form), ``LABEL_ALLOCATE`` (one manual ``CREATE_LABEL``),
+``SHARING_MUTATE`` (one ``SHARE_NOTEBOOK`` visibility or grant envelope), and
+``SOURCE_PATCH_TITLE`` (one ``UPDATE_SOURCE`` title set-op).
 Each row is ``encode → one native call → decode``; the :class:`NativeCallSpec`
 is the sole authority for the native it dispatches, so the method the policy
 ledger audits is the method that runs.  The rows are module-level assignments
@@ -21,11 +22,15 @@ from ..._records import (
     LABEL_ALLOCATE_DEF,
     LABEL_MUTATE_DEF,
     SHARING_MUTATE_DEF,
+    SOURCE_PATCH_TITLE_DEF,
     LabelMutateInput,
+    SourcePatchTitleInput,
+    SourcePatchTitleResult,
 )
 from ...rpc import RPCMethod
 from ..codec import labels as labels_codec
 from ..codec import sharing as sharing_codec
+from ..codec import sources as sources_codec
 
 _MUTATE_FIELD = NativeChoice(RPCMethod.UPDATE_LABEL)
 _MUTATE_ADD_SOURCES = NativeChoice(RPCMethod.UPDATE_LABEL, "add_sources")
@@ -76,12 +81,38 @@ SHARING_MUTATE = CodecBinding(
     native=NativeCallSpec.constant(RPCMethod.SHARE_NOTEBOOK),
 )
 
+_SOURCE_PATCH_TITLE_NATIVE = NativeCallSpec.constant(RPCMethod.UPDATE_SOURCE)
+
+
+def _decode_source_patch_title(
+    value: SourcePatchTitleInput,
+    payload: object,
+) -> SourcePatchTitleResult:
+    """Thread the method diagnostic from the row's sole native authority."""
+    method_id = _SOURCE_PATCH_TITLE_NATIVE.select(value).method.value
+    return sources_codec.decode_source_patch_title(value, payload, method_id=method_id)
+
+
+SOURCE_PATCH_TITLE = CodecBinding(
+    definition=SOURCE_PATCH_TITLE_DEF,
+    encode=sources_codec.encode_source_patch_title,
+    decode=_decode_source_patch_title,
+    native=_SOURCE_PATCH_TITLE_NATIVE,
+)
+
 PRIMITIVE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
     {
         LABEL_MUTATE.definition.key: LABEL_MUTATE,
         LABEL_ALLOCATE.definition.key: LABEL_ALLOCATE,
         SHARING_MUTATE.definition.key: SHARING_MUTATE,
+        SOURCE_PATCH_TITLE.definition.key: SOURCE_PATCH_TITLE,
     }
 )
 
-__all__ = ["LABEL_ALLOCATE", "LABEL_MUTATE", "PRIMITIVE_ROWS", "SHARING_MUTATE"]
+__all__ = [
+    "LABEL_ALLOCATE",
+    "LABEL_MUTATE",
+    "PRIMITIVE_ROWS",
+    "SHARING_MUTATE",
+    "SOURCE_PATCH_TITLE",
+]

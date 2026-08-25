@@ -2072,6 +2072,36 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/registry.py", "_records", "SHARING_MUTATE_DEF"),
     }
 )
+# P9.2-4: SourceService sequences source.update from the patch-title and get
+# leaves; the old composite handler and its input/result imports are gone.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_source_service.py", "_records", "SourceUpdateInput"),
+        ("_web/source_variants.py", "_records", "SourceUpdateInput"),
+        ("_web/source_variants.py", "_records", "SourceUpdateResult"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_service.py", "_backend", "BackendDeadlineExceededError"),
+        ("_source_service.py", "_backend", "BackendError"),
+        ("_source_service.py", "_backend", "BackendErrorReason"),
+        ("_source_service.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_source_service.py", "_backend", "rebind_operation"),
+        ("_source_service.py", "_backend", "require_leaves"),
+        ("_source_service.py", "_records", "SOURCE_GET_DEF"),
+        ("_source_service.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
+        ("_source_service.py", "_records", "SourceGetInput"),
+        ("_source_service.py", "_records", "SourcePatchTitleInput"),
+        ("_web/bindings/primitives.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
+        ("_web/bindings/primitives.py", "_records", "SourcePatchTitleInput"),
+        ("_web/bindings/primitives.py", "_records", "SourcePatchTitleResult"),
+        ("_web/bindings/primitives.py", "codec", "sources"),
+        ("_web/codec/sources.py", "_records", "SourcePatchTitleInput"),
+        ("_web/codec/sources.py", "_records", "SourcePatchTitleResult"),
+        ("_web/registry.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
+    }
+)
 
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose
