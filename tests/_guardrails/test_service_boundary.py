@@ -39,13 +39,14 @@ measures exactly ``MODULE_SIZE_BUDGET`` lines and is not in
 on the first line of growth. Duplicating it here would create a second
 authority for one ceiling.
 
-This module also carries, verbatim, the five assertions of the retired
+This module also carries the five assertions of the retired
 ``test_semantic_read_boundary.py``. I1 subsumes that guard's *intent* but not
 all of its checks: it pinned the exact import sets of ``_read_services.py`` and
-``_mutation_services.py`` (tighter than I1's forbidden-list rule, and
-``_read_services.py`` is an I1 seed so I1 does not inspect it at all), and it
-also constrained ``_projectors.py``, which is not a service module. Those
-checks are ported below under "Read-core pins" so no assertion is lost.
+``_mutation_services.py`` (an allowlist, tighter than I1's forbidden-list
+rule), and it also constrained ``_projectors.py``, which is not a service
+module at all. Those checks are ported below under "Read-core pins" so no
+assertion is lost; the ``_read_services.py`` set was *narrowed* in R6.1 when
+that module left the I1 seed.
 """
 
 from __future__ import annotations
@@ -91,7 +92,6 @@ I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
         "_note_service.py",
         "_notebook_guide_service.py",
         "_notebook_mutation_service.py",
-        "_read_services.py",
         "_research_service.py",
         "_settings_service.py",
         "_sharing_service.py",
@@ -612,16 +612,22 @@ def _identifiers(path: Path) -> set[str]:
     return {node.id for node in ast.walk(_tree(path)) if isinstance(node, ast.Name)}
 
 
-def test_read_services_depend_only_on_semantic_port_records_deadline_and_projectors() -> None:
+def test_read_services_depend_only_on_semantic_port_records_and_deadline() -> None:
+    """The read services import strictly less than the retired pin allowed.
+
+    R6.1 moved projection up to ``NotebooksAPI`` / ``SourcesAPI``, so
+    ``_projectors`` and the public ``types`` module leave this set, and with
+    them the ``typing.TYPE_CHECKING`` block that guarded the public model
+    names — a tightening of the ported pin, not a loosening. ``builtins``
+    stays: ``get_source_ids`` still spells its return ``builtins.list[str]``
+    to name the built-in rather than the sibling ``list`` method.
+    """
     assert _imported_modules(_SERVICES) <= {
         "__future__",
         "builtins",
-        "typing",
         "_backend",
         "_deadline",
-        "_projectors",
         "_records",
-        "types",
     }
     assert not (_identifiers(_SERVICES) & _FORBIDDEN_IDENTIFIERS)
 

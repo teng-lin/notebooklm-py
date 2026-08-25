@@ -16,7 +16,8 @@ from ._notebook_payloads import build_create_notebook_params as build_create_not
 from ._notebook_payloads import (
     build_get_notebook_params,
 )
-from ._read_services import NotebookReadService
+from ._projectors import project_notebook, project_source
+from ._read_services import NotebookReadService, SourceReadService
 from ._sharing_manager import ShareManager
 from ._suggestion_service import PROMPT_SUGGESTIONS_DEFAULT_MODE, SuggestionService
 from .exceptions import (
@@ -29,6 +30,7 @@ from .types import (
     NotebookDescription,
     NotebookMetadata,
     PromptSuggestion,
+    Source,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,27 @@ class NotebookLegacyRpc(Protocol):
         read_timeout: float | None = None,
         raise_on_null_status: bool = True,
     ) -> Any: ...
+
+
+class _SemanticSourceLister:
+    """Adapt the neutral source read service to the public lister protocol.
+
+    ``SourceReadService`` returns :class:`~notebooklm._records.SourceRecord`
+    values; :class:`NotebookSourceLister` — shared with the injected
+    :class:`SourcesAPI` — is a public-model contract. Projection is a facade
+    responsibility, so the notebook facade owns it here for the
+    direct-construction path that has no injected ``sources_api``.
+    """
+
+    __slots__ = ("_service",)
+
+    def __init__(self, backend: BackendAdapter) -> None:
+        self._service = SourceReadService(backend)
+
+    async def list(self, notebook_id: str, *, strict: bool = False) -> list[Source]:
+        """List one notebook's sources as public models."""
+        records = await self._service.list(notebook_id, strict=strict)
+        return [project_source(record) for record in records]
 
 
 class NotebooksAPI:
@@ -116,13 +139,12 @@ class NotebooksAPI:
                 source_lister=sources_api,
             )
         elif _backend is not None:
-            assert self._read_service is not None
             self._metadata_service = NotebookMetadataService(
                 # Preserve the same late-bound public seam as production
                 # composition while keeping standalone metadata source reads on
                 # the semantic backend rather than the legacy raw collaborator.
                 get_notebook=lambda notebook_id: self.get(notebook_id),
-                source_lister=self._read_service.source_lister(),
+                source_lister=_SemanticSourceLister(_backend),
             )
         else:
             self._metadata_service = None
@@ -250,13 +272,15 @@ class NotebooksAPI:
         logger.debug("Listing notebooks")
         public_error: Exception | None = None
         try:
-            return await self._require_read_service().list()
+            records = await self._require_read_service().list()
         except BackendError as error:
             # WebRpcBackend deliberately exposes only the neutral BackendError
             # vocabulary. At this public compatibility facade, reconstruct the
             # exact pre-migration RPC/Network exception class and its reviewed
             # structured diagnostics without reaching through ``__cause__``.
             public_error = project_backend_error(error)
+        else:
+            return [project_notebook(record) for record in records]
         raise public_error
 
     async def create(self, title: str) -> Notebook:
@@ -322,10 +346,13 @@ class NotebooksAPI:
                 post-validation further down still catches.
         """
         public_error: Exception | None = None
+        notebook: Notebook | None = None
         try:
-            notebook = await self._require_read_service().get(notebook_id)
+            record = await self._require_read_service().get(notebook_id)
         except BackendError as error:
             public_error = project_backend_error(error)
+        else:
+            notebook = None if record is None else project_notebook(record)
 
         if isinstance(public_error, ClientError):
             # Translate the status-5 rejection into this method's documented
