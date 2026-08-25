@@ -65,8 +65,10 @@ class _FakeTransport:
         self.requests: list[tuple[Any, ...]] = []
         self.deadlines: list[RuntimeDeadline | None] = []
 
-    def assemble(self, definition, native, payload, *, retry_flag, deadline):
-        return (definition.key, native, payload, retry_flag, deadline)
+    def assemble(
+        self, definition, native, payload, *, retry_flag, deadline, outcome_unknown_on_expiry=False
+    ):
+        return (definition.key, native, payload, retry_flag, deadline, outcome_unknown_on_expiry)
 
     async def call(self, request, *, deadline):
         self.requests.append(request)
@@ -246,6 +248,7 @@ async def test_invoke_binding_runs_codec_rows_through_the_transport() -> None:
             CodecPayload(params=["nb"], allow_null=True),
             True,
             deadline,
+            False,
         )
     ]
     assert transport.deadlines == [deadline]
@@ -358,11 +361,13 @@ def test_backend_resolves_every_handler_at_construction() -> None:
     assert set(table) == WEB_SUPPORTED_OPERATIONS
     row_backed = {op for op, binding in WEB_OPERATION_REGISTRY.items() if binding.row is not None}
     assert table.resolved_handler_count == 82 - len(row_backed)
-    # Derived, not a literal: every P9.3 domain PR grows the row set.
-    assert table.codec_count == len(row_backed) == len(WEB_BINDING_ROWS)
+    # Derived, not a literal: every P9.3/P9.4 domain PR grows the row set.
+    assert table.codec_count + table.custom_count == len(row_backed) == len(WEB_BINDING_ROWS)
     assert row_backed == set(WEB_BINDING_ROWS)
-    assert table.custom_count == 0
-    assert all(isinstance(table[op], CodecBinding) for op in row_backed)
+    assert table.custom_count == sum(
+        1 for row in WEB_BINDING_ROWS.values() if isinstance(row, CustomBinding)
+    )
+    assert all(isinstance(table[op], (CodecBinding, CustomBinding)) for op in row_backed)
     assert table[Operation.SETTINGS_GET] is WEB_OPERATION_REGISTRY[Operation.SETTINGS_GET].row
     row = table[Operation.NOTEBOOK_CREATE]
     assert isinstance(row, ResolvedHandlerBinding)

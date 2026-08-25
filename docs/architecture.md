@@ -1079,7 +1079,6 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/error_policy.py` | Closed native-to-semantic error classification and safe-diagnostic allowlist shared by the composed web backend. |
 | `_web/failure_projection.py` | Bounded, serializable projection of public exception graphs into transport-neutral source failure records. |
 | `_web/labels.py` | P6.4 source-label/collection web workflow mixin; since P9.3 only the four create/update composites and the shared set read they preflight through remain here (the list/get/delete/generate leaves are `_web/bindings/labels.py` rows). |
-| `_web/sharing.py` | P6.5 Sharing web workflow mixin; since P9.3 only the three mutate-then-readback composites and their shared `_sharing_status` readback remain here (`SHARING_GET` and `LEGACY_SHARE_ARTIFACT` are `_web/bindings/sharing.py` rows). |
 | `_web/bindings/__init__.py` | `WEB_BINDING_ROWS` (P9.3): the union of every domain's binding rows, checked for one row per operation and canonical definitions; `_web/registry.py` partitions the supported set between these rows and the remaining handler names. |
 | `_web/bindings/research.py` | P9.3 research codec rows: `RESEARCH_START` (input-keyed fast/deep `NativeCallSpec` with the deep-start `map_error` that mints `RESEARCH_START_UNAVAILABLE`), `RESEARCH_POLL`, `RESEARCH_CANCEL`, `RESEARCH_IMPORT` (inherits the caller's deadline, forwards the service's `attempt_timeout`); the P6.2 research mixin these rows replace is deleted. |
 | `_web/errors.py` | Shared native-to-neutral failure translation (`translate_web_error`, `error_diagnostics`) that `WebRpcBackend._translate_error` delegates to and row-level `map_error` hooks call without importing the backend head. |
@@ -1089,7 +1088,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/bindings/labels.py` | P9.3 labels/collections codec rows: `LABEL_LIST`, `LABEL_GET`, `LABEL_GENERATE`, `LABEL_DELETE`, `COLLECTION_LIST`, `COLLECTION_GET`, `COLLECTION_DELETE` — one `LIST_LABELS`/`CREATE_LABEL`/`DELETE_LABEL` call per row; the get rows select by exact id inside `decode`. |
 | `_web/bindings/chat.py` | P9.3 chat codec rows: `CHAT_GET_CONVERSATION`, `CHAT_GET_HISTORY`, `CHAT_DELETE_HISTORY`, `CHAT_SAVE_NOTE`, and the input-keyed `CHAT_CONFIGURE` (`GET_NOTEBOOK` read or `RENAME_NOTEBOOK` mutation selected from the action) — `encode → one native call → decode`; `CHAT_ASK` stays a handler in `_web/chat.py`. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the walker derives their catalog authorities from these module-level assignments. |
-| `_web/bindings/sharing.py` | P9.3 sharing codec rows: `SHARING_GET`, `LEGACY_SHARE_ARTIFACT` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; the composites in `_web/sharing.py` keep their own readback helper. |
+| `_web/bindings/sharing.py` | Sharing rows: the P9.3 codec rows `SHARING_GET`, `LEGACY_SHARE_ARTIFACT` (`encode → one native call → decode`, the `NativeCallSpec` as sole method authority) and the P9.4 *deferred-product* `CustomBinding` rows `SHARING_SET_PUBLIC`, `SHARING_SET_VIEW_LEVEL`, `SHARING_UPDATE_USERS`, whose handlers sequence the declared `mutate` and `readback` specs through the row-scoped invoker; the P6.5 sharing mixin is deleted. |
 | `_web/bindings/sources.py` | P9.3 source codec rows: `SOURCE_LIST`, `SOURCE_GET` (exact-id select inside `decode`), `SOURCE_WAIT` (the one `DeadlineMode.IGNORE` row), `SOURCE_DELETE`, `SOURCE_REFRESH`, `SOURCE_CHECK_FRESHNESS`, `SOURCE_GET_GUIDE`, `SOURCE_GET_FULLTEXT` — `encode → one native call → decode`; the source-add composites, `SOURCE_UPDATE` and the upload callbacks keep reading through `_web/source_variants.py`'s snapshot helper. |
 | `_web/bindings/studio.py` | P9.3 Studio leaf codec rows: `ARTIFACT_EXPORT`, `ARTIFACT_REVISE_SLIDE`, `ARTIFACT_RETRY`, `ARTIFACT_DELETE`, `ARTIFACT_WAIT` (inherits the caller's deadline; the polling loop stays in `_studio/lifecycle.py`), and the input-keyed `ARTIFACT_DOWNLOAD` (`LIST_ARTIFACTS` / `GET_NOTES_AND_MIND_MAPS` / `GET_INTERACTIVE_HTML` chosen from `value.action`); the generate members, rename composite, and catalog merge stay handlers. |
 | `_web/settings_suggestions.py` | P6.6 prompt-suggestion web workflow mixin; since P9.3 only the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` composite remains here (the settings and report-suggestion leaves are `_web/bindings/settings.py` rows). |
@@ -1350,7 +1349,6 @@ src/notebooklm/
 │   ├── errors.py                # Shared native-to-neutral failure translation (P9.3)
 │   ├── failure_projection.py    # Bounded public-exception graph to neutral failure records
 │   ├── labels.py                # P6.4 source-label/collection workflow handlers
-│   ├── sharing.py               # P6.5 Sharing composite handlers (leaves are bindings/sharing.py rows)
 │   ├── settings_suggestions.py  # P6.6 prompt-suggestion composite handler
 │   ├── bindings/                # P9.3 per-domain binding rows
 │   │   ├── __init__.py          # WEB_BINDING_ROWS union
@@ -1361,7 +1359,7 @@ src/notebooklm/
 │   │   ├── notes.py             # plain-note codec rows
 │   │   ├── research.py          # research codec rows (input-keyed start)
 │   │   ├── settings.py          # settings/suggestion codec rows
-│   │   ├── sharing.py           # sharing codec rows (status read, legacy share)
+│   │   ├── sharing.py           # sharing codec rows + custom mutate-then-readback rows (P9.4)
 │   │   ├── sources.py           # source read/wait and single-native source mutation rows
 │   │   └── studio.py            # Studio leaf codec rows (export, revise, retry, delete, wait, keyed download)
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)
