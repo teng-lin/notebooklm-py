@@ -25,7 +25,7 @@ from notebooklm._backend import (
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, CodecPayload, DeadlineMode
+from notebooklm._binding import CodecBinding, CodecPayload, CustomBinding, DeadlineMode
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
@@ -139,7 +139,12 @@ def test_source_leaves_are_rows_and_composites_stay_handlers() -> None:
         Operation.SOURCE_GET_GUIDE: source_rows.SOURCE_GET_GUIDE,
         Operation.SOURCE_GET_FULLTEXT: source_rows.SOURCE_GET_FULLTEXT,
     }
-    assert dict(source_rows.SOURCE_ROWS) == converted
+    # The codec leaves; the source-add family are custom rows in the same table (P9.4b).
+    assert {
+        operation: row
+        for operation, row in source_rows.SOURCE_ROWS.items()
+        if isinstance(row, CodecBinding)
+    } == converted
     for operation, row in converted.items():
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
@@ -180,25 +185,21 @@ def test_source_leaves_are_rows_and_composites_stay_handlers() -> None:
     ):
         assert not hasattr(WebRpcBackend, name)
         assert not hasattr(source_handlers.SourceVariantWebHandlers, name)
-    for operation, handler in (
-        (Operation.SOURCE_UPDATE, "_source_update"),
-        (Operation.SOURCE_ADD_URL, "_source_add_url"),
-        (Operation.SOURCE_ADD_URL_BATCH, "_source_add_url_batch"),
-        (Operation.SOURCE_ADD_TEXT, "_source_add_text"),
-        (Operation.SOURCE_ADD_DRIVE, "_source_add_drive"),
-        (Operation.SOURCE_ADD_FILE, "_source_add_file"),
+    binding = WEB_OPERATION_REGISTRY[Operation.SOURCE_UPDATE]
+    assert binding.handler_name == "_source_update"
+    assert binding.row is None
+    # P9.4b: the source-add family are custom rows in the same module.
+    for operation in (
+        Operation.SOURCE_ADD_URL,
+        Operation.SOURCE_ADD_URL_BATCH,
+        Operation.SOURCE_ADD_TEXT,
+        Operation.SOURCE_ADD_DRIVE,
+        Operation.SOURCE_ADD_FILE,
     ):
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.handler_name == handler
-        assert binding.row is None
-    for helper in (
-        "_source_snapshot_records",
-        "_source_select_record",
-        "_source_public_snapshot",
-        "_source_upload_list",
-        "_source_register_file",
-        "_source_upload_rename",
-    ):
+        assert binding.handler_name is None
+        assert isinstance(binding.row, CustomBinding)
+    for helper in ("_source_snapshot_records", "_source_select_record"):
         assert hasattr(source_handlers.SourceVariantWebHandlers, helper)
     backend = build_web_backend(_RecordingExecutor())
     for operation, row in converted.items():

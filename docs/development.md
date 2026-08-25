@@ -149,7 +149,7 @@ production consumers) that still gates adding any new shared Protocol.
 Private service modules sit inside the client layer but below the public
 facades. They own cross-facade composition without importing sibling facades:
 `_notebook_metadata.py` composes notebook metadata through a narrow source
-lister, `_web/sharing.py` owns the `SHARE_ARTIFACT` wire mutation while
+lister, `_web/bindings/sharing.py` owns the `SHARE_ARTIFACT` wire mutation while
 `_sharing_manager.py` owns its compatibility URL/result projection, and
 `_mind_map.py` owns note-backed mind-map rows shared by notes and artifacts.
 Facade modules keep the public method surface stable and delegate to these

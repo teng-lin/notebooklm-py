@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from collections.abc import Iterator
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call
@@ -474,6 +475,13 @@ class _Uploader:
     def configure_source_backend(self, **callbacks: object) -> None:
         self.source_backend = callbacks
 
+    @contextmanager
+    def bind_backend(self, backend: object) -> Iterator[None]:
+        # P9.4b (plan open item 1): the row binds its invoker-backed callbacks
+        # for exactly one invocation instead of the shell wiring them at init.
+        self.bound_backend = backend
+        yield
+
     async def add_file(self, notebook_id: str, file_path: str | Path, **kwargs: Any) -> Source:
         self.calls.append((notebook_id, file_path, kwargs))
         return Source(id="uploaded", title="file.txt", status=SourceStatus.PROCESSING)
@@ -512,6 +520,7 @@ async def test_file_binding_preserves_path_callback_and_existing_upload_authorit
 
     assert result.source.id == "uploaded"
     assert uploader.limit_lookup is not None
+    assert uploader.bound_backend.get_source_limit is not None
     assert uploader.calls == [
         (
             "nb",

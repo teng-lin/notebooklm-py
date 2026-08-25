@@ -25,6 +25,8 @@ These tests pin three things:
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -83,6 +85,13 @@ class _RecordingPipeline:
 
     def configure_source_backend(self, **kwargs: object) -> None:
         self.calls["configure_source_backend"] = ((), kwargs)
+
+    @contextmanager
+    def bind_backend(self, backend: object) -> Iterator[None]:
+        # P9.4b: the SOURCE_ADD_FILE row binds its invoker-backed callbacks per
+        # invocation; record the binding like the configure calls.
+        self.calls["bind_backend"] = ((backend,), {})
+        yield
 
     def _record(self, name: str):
         async def _call(*args: object, **kwargs: object) -> object:

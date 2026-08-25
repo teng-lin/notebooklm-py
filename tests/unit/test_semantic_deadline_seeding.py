@@ -151,8 +151,13 @@ def test_multi_native_deadline_authority_ledger_is_closed_and_active() -> None:
         and isinstance(binding.row, CustomBinding)
         and sum(len(spec.choices) for spec in binding.row.native) > 1
     }
+    # A workflow-owned custom row (``SOURCE_ADD_FILE``, P9.4b) declares its
+    # natives too but keeps its own budget, so it is a composite without a
+    # client-timeout seed.
     assert custom_row_composites <= (
-        _EXPECTED_CLIENT_TIMEOUT_OPERATIONS | _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS
+        _EXPECTED_CLIENT_TIMEOUT_OPERATIONS
+        | _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS
+        | _EXPECTED_WORKFLOW_OWNED_OPERATIONS
     )
     # ARTIFACT_LIST/GET also call the note-backed mind-map collaborator;
     # their second native call is intentionally invisible to a ``self`` AST walk.
@@ -160,7 +165,7 @@ def test_multi_native_deadline_authority_ledger_is_closed_and_active() -> None:
     assert (
         syntactic_composites
         | hidden_collaborator_composites
-        | custom_row_composites
+        | (custom_row_composites - _EXPECTED_WORKFLOW_OWNED_OPERATIONS)
         | (keyed_row_composites & _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS)
     ) == (_EXPECTED_CLIENT_TIMEOUT_OPERATIONS | _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS)
 
