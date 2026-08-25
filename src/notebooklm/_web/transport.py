@@ -110,8 +110,9 @@ class WebTransport:
         *,
         retry_flag: bool,
         deadline: RuntimeDeadline | None,
+        outcome_unknown_on_expiry: bool = False,
     ) -> WebRequest:
-        """Build the wire request for one codec row; only the spec names the native."""
+        """Build the wire request for one row; only the spec names the native."""
         del deadline
         return WebRequest(
             operation=definition.key,
@@ -122,6 +123,7 @@ class WebTransport:
             allow_null=payload.allow_null,
             raise_on_null_status=payload.raise_on_null_status,
             disable_internal_retries=retry_flag,
+            outcome_unknown_on_expiry=outcome_unknown_on_expiry,
             attempt_timeout=payload.attempt_timeout,
         )
 

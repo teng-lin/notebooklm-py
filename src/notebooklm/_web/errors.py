@@ -37,8 +37,17 @@ def error_diagnostics(
     return MappingProxyType(diagnostics)
 
 
-def translate_web_error(operation: Operation, exc: WebNativeError) -> BackendError:
-    """Translate one reviewed native exception into the closed neutral error."""
+def translate_web_error(
+    operation: Operation,
+    exc: WebNativeError,
+    *,
+    scrub_request_urls: bool | None = None,
+) -> BackendError:
+    """Translate one reviewed native exception into the closed neutral error.
+
+    ``scrub_request_urls`` is the row's ``ErrorMode.TRANSLATE_SCRUBBED`` projection;
+    ``None`` keeps the head's operation-set rule for still-handler-backed rows.
+    """
     reason = WEB_ERROR_REASONS.get(type(exc))
     if reason is None:
         raise BackendContractError(
@@ -50,7 +59,9 @@ def translate_web_error(operation: Operation, exc: WebNativeError) -> BackendErr
         diagnostics["public_error_failure"] = _capture_public_failure(
             exc,
             operation=operation,
-            scrub_request_urls=operation in _CHAT_OPERATIONS,
+            scrub_request_urls=(
+                operation in _CHAT_OPERATIONS if scrub_request_urls is None else scrub_request_urls
+            ),
         )
     return BackendError(
         # Structured subclasses such as UnknownRPCMethodError append their
