@@ -653,7 +653,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/labels.py:COLLECTION_GET", "select collection id")
         ),
         (Operation.LABEL_CREATE, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "pre-create identity baseline")
+            ("_web/bindings/labels.py:LABEL_LIST", "pre-create identity baseline via label.list")
         ),
         # P9.2-2: label.update is service-owned; its reads run through the
         # label.get leaf row and its writes through the label.mutate primitive.
@@ -814,7 +814,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/labels.py:LABEL_GENERATE", "label_mode=auto-group")
         ),
         (Operation.LABEL_CREATE, _b(RPCMethod.CREATE_LABEL)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_create", "label_type=source")
+            (
+                "_web/bindings/primitives.py:LABEL_ALLOCATE",
+                "manual source-label allocation via label.allocate",
+            )
         ),
         (Operation.COLLECTION_CREATE, _b(RPCMethod.CREATE_LABEL)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._collection_create", "label_type=collection")

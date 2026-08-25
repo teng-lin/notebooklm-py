@@ -69,7 +69,6 @@ from notebooklm._records import (
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,
     LABEL_ALLOCATE_DEF,
-    LABEL_CREATE_DEF,
     LABEL_DELETE_DEF,
     LABEL_GENERATE_DEF,
     LABEL_GET_DEF,
@@ -327,7 +326,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         LABEL_LIST_DEF: (Operation.LABEL_LIST, CallPolicy.READ),
         LABEL_GET_DEF: (Operation.LABEL_GET, CallPolicy.READ),
         LABEL_GENERATE_DEF: (Operation.LABEL_GENERATE, CallPolicy.STATEFUL_START),
-        LABEL_CREATE_DEF: (Operation.LABEL_CREATE, CallPolicy.MUTATION),
         LABEL_DELETE_DEF: (Operation.LABEL_DELETE, CallPolicy.MUTATION),
         COLLECTION_LIST_DEF: (Operation.COLLECTION_LIST, CallPolicy.READ),
         COLLECTION_GET_DEF: (Operation.COLLECTION_GET, CallPolicy.READ),
@@ -687,14 +685,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             LABEL_GENERATE_DEF,
             [(RPCMethod.CREATE_LABEL, None)],
             [IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY],
-        ),
-        (
-            LABEL_CREATE_DEF,
-            [(RPCMethod.LIST_LABELS, None), (RPCMethod.CREATE_LABEL, None)],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-            ],
         ),
         (
             LABEL_DELETE_DEF,

@@ -217,7 +217,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.LABEL_LIST: LABEL_LIST_DEF,
         Operation.LABEL_GET: LABEL_GET_DEF,
         Operation.LABEL_GENERATE: LABEL_GENERATE_DEF,
-        Operation.LABEL_CREATE: LABEL_CREATE_DEF,
         Operation.LABEL_DELETE: LABEL_DELETE_DEF,
         Operation.LABEL_MUTATE: LABEL_MUTATE_DEF,
         Operation.LABEL_ALLOCATE: LABEL_ALLOCATE_DEF,
@@ -249,7 +248,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
 
 _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
     {
-        Operation.LABEL_CREATE: "_label_create",
         Operation.COLLECTION_CREATE: "_collection_create",
     }
 )
@@ -264,6 +262,7 @@ _ROW_BACKED_OPERATIONS: Final[frozenset[Operation]] = frozenset(WEB_BINDING_ROWS
 # invokable). Each entry names the owning service call site.
 _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = MappingProxyType(
     {
+        Operation.LABEL_CREATE: LABEL_CREATE_DEF,
         Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
         Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
         Operation.SOURCE_UPDATE: SOURCE_UPDATE_DEF,
@@ -274,6 +273,10 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
 )
 _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     {
+        Operation.LABEL_CREATE: (
+            "service-owned since P9.2-8: LabelSetService.create sequences label.list and "
+            "label.allocate"
+        ),
         Operation.LABEL_UPDATE: (
             "service-owned since P9.2-2: LabelSetService.update sequences label.get and "
             "label.mutate"
@@ -310,8 +313,8 @@ _STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
 _EXPECTED_OPERATION_COUNT: Final = 92
-_EXPECTED_SUPPORTED_COUNT: Final = 81
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 6
+_EXPECTED_SUPPORTED_COUNT: Final = 80
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 7
 _EXPECTED_STAGED_COUNT: Final = 0
 
 

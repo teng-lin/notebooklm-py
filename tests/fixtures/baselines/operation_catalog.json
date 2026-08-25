@@ -530,6 +530,20 @@
     "label.create": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "label.list"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "label.allocate"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -543,7 +557,8 @@
           "rpc_method": "CREATE_LABEL",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "label.delete": {
       "call_policy": "mutation",
@@ -2255,8 +2270,7 @@
       "execution_authorities": [
         "_web/bindings/labels.py:LABEL_GENERATE",
         "_web/bindings/primitives.py:LABEL_ALLOCATE",
-        "_web/labels.py:LabelSetWebHandlers._collection_create",
-        "_web/labels.py:LabelSetWebHandlers._label_create"
+        "_web/labels.py:LabelSetWebHandlers._collection_create"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -6220,14 +6234,14 @@
       "execution_authorities": [
         {
           "binding": "CREATE_LABEL:<default>",
-          "discriminator": "label_type=source",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_create",
+          "discriminator": "manual source-label allocation via label.allocate",
+          "site": "_web/bindings/primitives.py:LABEL_ALLOCATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_LABELS:<default>",
-          "discriminator": "pre-create identity baseline",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "discriminator": "pre-create identity baseline via label.list",
+          "site": "_web/bindings/labels.py:LABEL_LIST",
           "transport_kind": "rpc"
         }
       ],

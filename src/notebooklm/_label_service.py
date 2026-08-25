@@ -11,11 +11,13 @@ The two public facades (``client.labels`` and ``client.collections``) keep their
 own argument validation, exception vocabulary, and membership joins; everything
 between a validated request and a neutral :class:`LabelRecord` lives here.
 
-Since P9.2 the ``label.update`` and ``collection.update`` workflows are
-**service-owned**: this service sequences the ``label.get``/``collection.get``
-preflight/readback and one ``label.mutate`` leaf per member above the port,
-starts one deadline for the whole workflow, and re-raises every leaf failure
-as the workflow operation with the leaf retained in the diagnostics.
+Since P9.2 the ``label.create``, ``label.update`` and ``collection.update``
+workflows are **service-owned**: create snapshots ``label.list`` before one
+``label.allocate`` and reconciles the allocation echo by exact id-diff; update
+sequences the ``label.get``/``collection.get`` preflight/readback and one
+``label.mutate`` leaf per member. Every workflow starts one deadline above the
+port and re-raises leaf failures as the workflow operation with the leaf
+retained in the diagnostics.
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ from ._records import (
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,
     COLLECTION_UPDATE_DEF,
+    LABEL_ALLOCATE_DEF,
     LABEL_CREATE_DEF,
     LABEL_DELETE_DEF,
     LABEL_GENERATE_DEF,
@@ -49,6 +52,7 @@ from ._records import (
     LABEL_LIST_DEF,
     LABEL_MUTATE_DEF,
     LABEL_UPDATE_DEF,
+    LabelAllocateInput,
     LabelCreateInput,
     LabelDeleteInput,
     LabelGenerateInput,
@@ -71,6 +75,9 @@ class _KindBinding:
     update_def: OperationDef[Any, Any]
     delete_def: OperationDef[Any, Any]
     generate_def: OperationDef[Any, Any] | None
+    #: Whether ``create`` is sequenced here from the leaves (P9.2 hoist) or is
+    #: still one composite backend invocation.
+    create_hoisted: bool
 
 
 _KIND_BINDINGS: dict[LabelKind, _KindBinding] = {
@@ -81,6 +88,7 @@ _KIND_BINDINGS: dict[LabelKind, _KindBinding] = {
         update_def=LABEL_UPDATE_DEF,
         delete_def=LABEL_DELETE_DEF,
         generate_def=LABEL_GENERATE_DEF,
+        create_hoisted=True,
     ),
     # Collections have no auto-grouping mode: ``agX4Bc``'s scope slot is a
     # source-label concept, so the account-level dialect binds no generate.
@@ -91,6 +99,7 @@ _KIND_BINDINGS: dict[LabelKind, _KindBinding] = {
         update_def=COLLECTION_UPDATE_DEF,
         delete_def=COLLECTION_DELETE_DEF,
         generate_def=None,
+        create_hoisted=False,
     ),
 }
 
@@ -188,13 +197,16 @@ class LabelSetService:
     ) -> LabelRecord:
         """Create one empty named group, reconciled by exact id-diff.
 
-        Names may collide, so the backend attributes the new group by the id
+        Names may collide, so the workflow attributes the new group by the id
         that was absent from its pre-create snapshot and raises rather than
         guessing when zero or several ids are new.
         """
+        value = LabelCreateInput(self._kind, name, notebook_id, emoji)
+        if self._binding.create_hoisted:
+            return await self._create_workflow(value, deadline=deadline)
         result = await self._backend.invoke(
             self._binding.create_def,
-            LabelCreateInput(self._kind, name, notebook_id, emoji),
+            value,
             deadline=deadline,
         )
         return result.label
@@ -242,13 +254,108 @@ class LabelSetService:
             deadline=deadline,
         )
 
-    # -- service-owned update workflow (P9.2) --------------------------------------
+    # -- service-owned create/update workflows (P9.2) -------------------------------
 
     def _start_deadline(self, deadline: RuntimeDeadline | None) -> RuntimeDeadline | None:
         """Mint the one workflow deadline unless the caller supplied its own."""
         if deadline is not None or self._deadline_factory is None:
             return deadline
         return self._deadline_factory.start()
+
+    async def _create_workflow(
+        self,
+        value: LabelCreateInput,
+        *,
+        deadline: RuntimeDeadline | None,
+    ) -> LabelRecord:
+        """Baseline, allocate and reconcile one manual group creation.
+
+        Attribution is always by exact id-diff, never by name. Source-label
+        allocation echoes the full post-operation set; collections have no
+        captured create echo and therefore use a mandatory list readback.
+        """
+        workflow = self._binding.create_def.key
+        if self._kind is LabelKind.SOURCE_LABEL and value.notebook_id is None:
+            raise BackendContractError(
+                f"{workflow.value} requires a notebook scope",
+                operation=workflow,
+            )
+        # Principle 5: reject the complete leaf conjunction before the first
+        # baseline read, and therefore before the allocation side effect.
+        require_leaves(self._backend, self._binding.list_def.key, LABEL_ALLOCATE_DEF.key)
+        deadline = self._start_deadline(deadline)
+        write_dispatched = False
+        try:
+            baseline = await self._backend.invoke(
+                self._binding.list_def,
+                LabelListInput(self._kind, value.notebook_id),
+                deadline=deadline,
+            )
+            allocated = await self._backend.invoke(
+                LABEL_ALLOCATE_DEF,
+                LabelAllocateInput(self._kind, value.name, value.notebook_id, value.emoji),
+                deadline=deadline,
+            )
+            write_dispatched = True
+            after = allocated.labels
+            if self._kind is LabelKind.COLLECTION:
+                readback = await self._backend.invoke(
+                    self._binding.list_def,
+                    LabelListInput(self._kind, value.notebook_id),
+                    deadline=deadline,
+                )
+                after = readback.labels
+            return self._reconcile_created_label(
+                after,
+                {label.id for label in baseline.labels},
+                value=value,
+            )
+        except BackendError as error:
+            if error.operation is workflow:
+                raise
+            # Frozen error copies must keep the reviewed native cause, exactly
+            # as the update workflow does.
+            leaf_cause = error.__cause__
+            if write_dispatched and isinstance(error, BackendDeadlineExceededError):
+                # Only a collection readback can enter this branch: a completed
+                # allocation followed by expiry leaves the final outcome unknown.
+                error = mark_backend_outcome_unknown(error)
+            raise rebind_operation(error, workflow) from leaf_cause
+
+    def _reconcile_created_label(
+        self,
+        after: tuple[LabelRecord, ...],
+        before_ids: set[str],
+        *,
+        value: LabelCreateInput,
+    ) -> LabelRecord:
+        """Return the unique new id, preserving the handler-era ambiguity contract."""
+        new = [label for label in after if label.id not in before_ids]
+        if len(new) != 1:
+            noun = "collection" if self._kind is LabelKind.COLLECTION else "label"
+            ambiguity_detail = (
+                "a concurrent create, or read-after-write lag on the re-list, can cause "
+                "this — retry from a fresh list"
+                if self._kind is LabelKind.COLLECTION
+                else "concurrent label creation can cause this — retry from a fresh list"
+            )
+            raise BackendError(
+                message=(
+                    f"create(name={value.name!r}) expected exactly 1 new {noun}, "
+                    f"found {len(new)} ({ambiguity_detail})"
+                ),
+                operation=self._binding.create_def.key,
+                diagnostics=MappingProxyType(
+                    {
+                        "label_kind": self._kind.value,
+                        "candidate_count": len(new),
+                        "name": value.name,
+                    }
+                ),
+                reason=BackendErrorReason.LABEL_AMBIGUOUS_CREATE,
+            )
+        (label,) = new
+        return label
 
     async def _update_workflow(
         self,

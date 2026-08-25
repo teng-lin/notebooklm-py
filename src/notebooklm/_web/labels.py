@@ -20,12 +20,9 @@ from .._records import (
 from ..rpc import RPCMethod
 from .codec.labels import (
     build_create_collection_params,
-    build_create_label_params,
-    decode_label_create_echo,
     decode_label_set_list_result,
     encode_label_set_list,
     require_label_kind,
-    require_notebook_scope,
 )
 
 # Collections are account-level: every collection RPC uses the home-page source
@@ -39,8 +36,9 @@ class LabelSetWebHandlers:
     Since P9.3 the leaf reads, the batch deletes and auto-grouping are codec
     rows in ``_web/bindings/labels.py``; since P9.2-2/3 both update workflows
     are sequenced by ``LabelSetService`` from the get and ``label.mutate``
-    leaves. Only the two create composites remain here, with the shared set
-    read they baseline through.
+    leaves, and since P9.2-8 ``label.create`` is sequenced from ``label.list``
+    and ``label.allocate``. Only ``collection.create`` remains here with its
+    baseline/readback helper.
     """
 
     _rpc_call: Callable[..., Awaitable[Any]]
@@ -59,11 +57,6 @@ class LabelSetWebHandlers:
     ) -> None:
         """Fail closed when a request addresses the other dialect's operation."""
         require_label_kind(actual, expected, operation)
-
-    @staticmethod
-    def _require_notebook_scope(notebook_id: str | None, operation: Operation) -> str:
-        """Source labels are notebook-scoped; a null scope is a contract error."""
-        return require_notebook_scope(notebook_id, operation)
 
     @staticmethod
     def _reconcile_created_label(
@@ -129,52 +122,6 @@ class LabelSetWebHandlers:
             outcome_unknown_on_expiry=outcome_unknown_on_expiry,
         )
         return decode_label_set_list_result(result, kind=kind, notebook_id=notebook_id)
-
-    async def _label_create(
-        self,
-        value: LabelCreateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelCreateResult:
-        """Create one source label and attribute it against a fresh baseline.
-
-        ``agX4Bc`` echoes the whole post-operation label set, so the id-diff is
-        settled from that echo without a second read.
-        """
-        self._require_label_kind(value.kind, LabelKind.SOURCE_LABEL, Operation.LABEL_CREATE)
-        notebook_id = self._require_notebook_scope(value.notebook_id, Operation.LABEL_CREATE)
-        baseline = await self._label_set_list(
-            LabelListInput(LabelKind.SOURCE_LABEL, notebook_id),
-            kind=LabelKind.SOURCE_LABEL,
-            operation=Operation.LABEL_CREATE,
-            deadline=deadline,
-        )
-        result = await self._rpc_call(
-            RPCMethod.CREATE_LABEL,
-            build_create_label_params(notebook_id, value.name, value.emoji),
-            operation=Operation.LABEL_CREATE,
-            deadline=deadline,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
-        after = decode_label_create_echo(
-            result,
-            notebook_id=notebook_id,
-            method_id=RPCMethod.CREATE_LABEL.value,
-        )
-        return LabelCreateResult(
-            label=self._reconcile_created_label(
-                after,
-                {label.id for label in baseline.labels},
-                kind=LabelKind.SOURCE_LABEL,
-                operation=Operation.LABEL_CREATE,
-                name=value.name,
-                noun="label",
-                ambiguity_detail=(
-                    "concurrent label creation can cause this — retry from a fresh list"
-                ),
-            )
-        )
 
     async def _collection_create(
         self,

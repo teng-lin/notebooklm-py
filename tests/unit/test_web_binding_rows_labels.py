@@ -7,8 +7,8 @@ These tests pin the conversion oracles: the identical keyword set reaches the
 runtime for both dialects (route, ``allow_null``, explicit ``False``/``None``
 values), the dialect and scope contract errors still fire before any wire
 call, the get rows select by exact id inside ``decode``, failure projection is
-what ``invoke()`` produced for handler rows, and the four composites still run
-through the retained ``_label_set_list`` helper.
+what ``invoke()`` produced for handler rows, and ``collection.create`` still
+runs through the retained ``_label_set_list`` helper.
 """
 
 from __future__ import annotations
@@ -32,12 +32,10 @@ from notebooklm._records import (
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,
-    LABEL_CREATE_DEF,
     LABEL_DELETE_DEF,
     LABEL_GENERATE_DEF,
     LABEL_GET_DEF,
     LABEL_LIST_DEF,
-    LabelCreateInput,
     LabelDeleteInput,
     LabelGenerateInput,
     LabelGetInput,
@@ -138,17 +136,20 @@ def test_label_rows_replace_their_handlers_in_the_registry_and_table() -> None:
     ):
         assert not hasattr(WebRpcBackend, name)
         assert not hasattr(labels_handlers.LabelSetWebHandlers, name)
-    # The remaining composites stay handlers until their P9.2 hoists; label.update
-    # is service-owned since P9.2-2 (no handler, no row, not invokable).
-    for operation, handler in (
-        (Operation.LABEL_CREATE, "_label_create"),
-        (Operation.COLLECTION_CREATE, "_collection_create"),
+    # Collection create stays a handler until P9.2-9. Label create and both
+    # updates are service-owned (no handler, no row, not invokable).
+    assert WEB_OPERATION_REGISTRY[Operation.COLLECTION_CREATE].handler_name == (
+        "_collection_create"
+    )
+    for operation in (
+        Operation.LABEL_CREATE,
+        Operation.LABEL_UPDATE,
+        Operation.COLLECTION_UPDATE,
     ):
-        assert WEB_OPERATION_REGISTRY[operation].handler_name == handler
-    for operation in (Operation.LABEL_UPDATE, Operation.COLLECTION_UPDATE):
         assert WEB_OPERATION_REGISTRY[operation].handler_name is None
         assert WEB_OPERATION_REGISTRY[operation].row is None
         assert WEB_OPERATION_REGISTRY[operation].service_owned is True
+    assert not hasattr(labels_handlers.LabelSetWebHandlers, "_label_create")
     assert not hasattr(labels_handlers.LabelSetWebHandlers, "_label_update")
     assert not hasattr(labels_handlers.LabelSetWebHandlers, "_collection_update")
     backend = build_web_backend(_RecordingExecutor())
@@ -333,28 +334,3 @@ async def test_codec_row_pre_dispatch_expiry_is_not_dispatched() -> None:
     assert executor.calls == []
     assert caught.value.dispatched is False
     assert may_have_committed(caught.value) is False
-
-
-@pytest.mark.asyncio
-async def test_composites_still_read_the_set_through_the_retained_helper() -> None:
-    """``label.create`` keeps its baseline read and echo reconciliation unchanged."""
-    echo = [None, [_label("A", "l1"), _label("B", "l2"), _label("New", "l3")]]
-    executor = _RecordingExecutor(_LABEL_SET, echo)
-    backend = build_web_backend(executor)
-
-    created = await backend.invoke(
-        LABEL_CREATE_DEF,
-        LabelCreateInput(LabelKind.SOURCE_LABEL, "New", notebook_id=_NB),
-        deadline=None,
-    )
-
-    assert created.label.id == "l3"
-    baseline, create = executor.calls
-    assert baseline.method is RPCMethod.LIST_LABELS
-    assert baseline.params == [_OPTS, _NB]
-    assert baseline.kwargs == {
-        "source_path": f"/notebook/{_NB}",
-        "allow_null": False,
-        **_BASE_KWARGS,
-    }
-    assert create.method is RPCMethod.CREATE_LABEL

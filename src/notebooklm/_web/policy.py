@@ -347,13 +347,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.STATEFUL_START,
             (_native(RPCMethod.CREATE_LABEL, _NO_RETRY, "automatic source-label grouping"),),
         ),
-        Operation.LABEL_CREATE: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "pre-create identity baseline"),
-                _native(RPCMethod.CREATE_LABEL, _NO_RETRY, "manual source-label allocation"),
-            ),
-        ),
         # P9.2 primitives: one native set-op each, sequenced by the hoisted
         # label/collection workflows above the port.
         Operation.LABEL_MUTATE: WebCallPolicyBinding(
@@ -769,6 +762,17 @@ def _leaf(operation: Operation, *variants: str | None) -> WorkflowLeaf:
 SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]] = (
     MappingProxyType(
         {
+            Operation.LABEL_CREATE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "pre-create identity baseline"),
+                    _native(RPCMethod.CREATE_LABEL, _NO_RETRY, "manual source-label allocation"),
+                ),
+                (
+                    _leaf(Operation.LABEL_LIST, None),
+                    _leaf(Operation.LABEL_ALLOCATE, None),
+                ),
+            ),
             Operation.LABEL_UPDATE: WorkflowPolicyBinding(
                 CallPolicy.MUTATION,
                 (
