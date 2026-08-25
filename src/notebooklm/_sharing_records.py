@@ -162,6 +162,19 @@ class SharingMutateResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SharingPatchViewLevelInput:
+    """One viewer-scope patch for ``SHARING_PATCH_VIEW_LEVEL``."""
+
+    notebook_id: str
+    view_level: ShareViewScope
+
+
+@dataclass(frozen=True, slots=True)
+class SharingPatchViewLevelResult:
+    """Successful viewer-scope patch; the workflow reads status back itself."""
+
+
+@dataclass(frozen=True, slots=True)
 class LegacyShareArtifactInput:
     """Legacy notebook/artifact share-link state requested by compatibility internals."""
 
@@ -183,6 +196,14 @@ SHARING_MUTATE_DEF: OperationDef[SharingMutateInput, SharingMutateResult] = Oper
     CallPolicy.MUTATION,
     SharingMutateInput,
     SharingMutateResult,
+)
+SHARING_PATCH_VIEW_LEVEL_DEF: OperationDef[
+    SharingPatchViewLevelInput, SharingPatchViewLevelResult
+] = OperationDef(
+    Operation.SHARING_PATCH_VIEW_LEVEL,
+    CallPolicy.MUTATION,
+    SharingPatchViewLevelInput,
+    SharingPatchViewLevelResult,
 )
 SHARING_GET_DEF: OperationDef[SharingGetInput, SharingGetResult] = OperationDef(
     Operation.SHARING_GET,
@@ -225,6 +246,7 @@ __all__ = [
     "LEGACY_SHARE_ARTIFACT_DEF",
     "SHARING_GET_DEF",
     "SHARING_MUTATE_DEF",
+    "SHARING_PATCH_VIEW_LEVEL_DEF",
     "SHARING_SET_PUBLIC_DEF",
     "SHARING_SET_VIEW_LEVEL_DEF",
     "SHARING_UPDATE_USERS_DEF",
@@ -246,6 +268,8 @@ __all__ = [
     "SharingUpdateUsersResult",
     "SharingMutateInput",
     "SharingMutateResult",
+    "SharingPatchViewLevelInput",
+    "SharingPatchViewLevelResult",
     "SharingUserGrant",
     "SharingVisibility",
 ]

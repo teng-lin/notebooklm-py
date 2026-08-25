@@ -6,17 +6,18 @@ operation definitions through :class:`~notebooklm._backend.BackendAdapter`. It
 holds no wire vocabulary: the ``SHARE_NOTEBOOK`` / ``GET_SHARE_STATUS`` /
 ``MutateProject`` grammar lives in ``_web/codec/sharing.py``.
 
-Since P9.2 the public-link visibility and individual-user grant workflows are
-service-owned: this service sequences one ``sharing.mutate`` leaf and one
-``sharing.get`` readback above the port, starts one deadline for both leaves,
-and rebinds leaf failures to the workflow operation while retaining the
-blocked leaf in diagnostics.
+Since P9.2 all three sharing composites are service-owned. Public-link and user
+grant writes use ``sharing.mutate``; viewer scope uses
+``sharing.patch_view_level``. Each workflow then invokes ``sharing.get`` under
+one deadline and rebinds leaf failures while retaining the blocked leaf in
+diagnostics.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from ._backend import (
@@ -33,6 +34,7 @@ from ._projectors import project_share_status
 from ._records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
+    SHARING_PATCH_VIEW_LEVEL_DEF,
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
@@ -42,6 +44,7 @@ from ._records import (
     SharingGetInput,
     SharingGrants,
     SharingMutateInput,
+    SharingPatchViewLevelInput,
     SharingSetPublicInput,
     SharingSetViewLevelInput,
     SharingUpdateUsersInput,
@@ -157,12 +160,46 @@ class SharingService:
         deadline: RuntimeDeadline | None = None,
     ) -> ShareStatus:
         logger.debug("Setting notebook %s view level to %s", notebook_id, view_level.name)
-        result = await self._backend.invoke(
-            SHARING_SET_VIEW_LEVEL_DEF,
-            SharingSetViewLevelInput(notebook_id, view_level),
+        value = SharingSetViewLevelInput(notebook_id, view_level)
+        status = await self._patch_view_level_then_read_status(
+            value,
             deadline=deadline,
         )
-        return project_share_status(result.status)
+        return project_share_status(replace(status, view_level=value.view_level))
+
+    async def _patch_view_level_then_read_status(
+        self,
+        value: SharingSetViewLevelInput,
+        *,
+        deadline: RuntimeDeadline | None,
+    ) -> ShareStatusRecord:
+        """Patch viewer scope, then read status under the same workflow deadline."""
+        require_leaves(
+            self._backend,
+            SHARING_PATCH_VIEW_LEVEL_DEF.key,
+            SHARING_GET_DEF.key,
+        )
+        deadline = self._start_deadline(deadline)
+        write_completed = False
+        try:
+            await self._backend.invoke(
+                SHARING_PATCH_VIEW_LEVEL_DEF,
+                SharingPatchViewLevelInput(value.notebook_id, value.view_level),
+                deadline=deadline,
+            )
+            write_completed = True
+            result = await self._backend.invoke(
+                SHARING_GET_DEF,
+                SharingGetInput(value.notebook_id),
+                deadline=deadline,
+            )
+            return result.status
+        except BackendError as error:
+            if error.operation is SHARING_SET_VIEW_LEVEL_DEF.key:
+                raise
+            if write_completed and isinstance(error, BackendDeadlineExceededError):
+                error = mark_backend_outcome_unknown(error)
+            raise rebind_operation(error, SHARING_SET_VIEW_LEVEL_DEF.key) from error.__cause__
 
     async def set_users(
         self,

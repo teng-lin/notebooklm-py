@@ -105,7 +105,7 @@ from notebooklm._records import (
     SETTINGS_SET_LANGUAGE_DEF,
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
-    SHARING_SET_VIEW_LEVEL_DEF,
+    SHARING_PATCH_VIEW_LEVEL_DEF,
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_TEXT_DEF,
@@ -222,8 +222,8 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         CHAT_CONFIGURE_DEF: (Operation.CHAT_CONFIGURE, CallPolicy.MUTATION),
         CHAT_SAVE_NOTE_DEF: (Operation.CHAT_SAVE_NOTE, CallPolicy.MUTATION),
         SHARING_GET_DEF: (Operation.SHARING_GET, CallPolicy.READ),
-        SHARING_SET_VIEW_LEVEL_DEF: (
-            Operation.SHARING_SET_VIEW_LEVEL,
+        SHARING_PATCH_VIEW_LEVEL_DEF: (
+            Operation.SHARING_PATCH_VIEW_LEVEL,
             CallPolicy.MUTATION,
         ),
         LEGACY_SHARE_ARTIFACT_DEF: (
@@ -757,12 +757,9 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
-            SHARING_SET_VIEW_LEVEL_DEF,
-            [(RPCMethod.RENAME_NOTEBOOK, None), (RPCMethod.GET_SHARE_STATUS, None)],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
+            SHARING_PATCH_VIEW_LEVEL_DEF,
+            [(RPCMethod.RENAME_NOTEBOOK, None)],
+            [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
             RESEARCH_START_DEF,

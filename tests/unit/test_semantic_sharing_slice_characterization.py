@@ -20,6 +20,7 @@ from notebooklm._operations import CallPolicy, Operation
 from notebooklm._records import (
     LEGACY_SHARE_ARTIFACT_DEF,
     SHARING_GET_DEF,
+    SHARING_PATCH_VIEW_LEVEL_DEF,
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
@@ -32,6 +33,7 @@ from notebooklm._records import (
 from notebooklm._sharing import SharingAPI
 from notebooklm._sharing_service import SharingService
 from notebooklm._web.backend import WebRpcBackend
+from notebooklm._web.bindings import primitives as primitive_rows
 from notebooklm._web.bindings import sharing as sharing_rows
 from notebooklm._web.codec.sharing import decode_share_status
 from notebooklm._web.registry import (
@@ -120,27 +122,10 @@ def test_sharing_facade_takes_only_the_semantic_backend() -> None:
 
 
 def test_every_sharing_operation_has_one_registered_web_binding() -> None:
-    """Each sharing operation is backed by exactly one row: codec leaf or custom composite."""
-    # P9.4: the remaining composite is a deferred-product custom row.
-    composites = {
-        Operation.SHARING_SET_VIEW_LEVEL: (
-            sharing_rows.SHARING_SET_VIEW_LEVEL,
-            SHARING_SET_VIEW_LEVEL_DEF,
-            CallPolicy.MUTATION,
-        ),
-    }
-    for operation, (row, definition, policy) in composites.items():
-        binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.is_supported
-        assert binding.handler_name is None
-        assert binding.row is row
-        assert row.category == "deferred-product"
-        assert {spec.key for spec in row.native} == {"mutate", "readback"}
-        assert binding.definition is definition
-        assert definition.policy is policy
-        assert operation in WEB_SUPPORTED_OPERATIONS
+    """Each sharing operation is either a codec leaf or a service-owned workflow."""
     workflows = {
         Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
+        Operation.SHARING_SET_VIEW_LEVEL: SHARING_SET_VIEW_LEVEL_DEF,
         Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
     }
     for operation, definition in workflows.items():
@@ -153,6 +138,11 @@ def test_every_sharing_operation_has_one_registered_web_binding() -> None:
     # P9.3: the two leaves are codec rows, not handler names.
     leaves = {
         Operation.SHARING_GET: (sharing_rows.SHARING_GET, SHARING_GET_DEF, CallPolicy.READ),
+        Operation.SHARING_PATCH_VIEW_LEVEL: (
+            primitive_rows.SHARING_PATCH_VIEW_LEVEL,
+            SHARING_PATCH_VIEW_LEVEL_DEF,
+            CallPolicy.MUTATION,
+        ),
         Operation.LEGACY_SHARE_ARTIFACT: (
             sharing_rows.LEGACY_SHARE_ARTIFACT,
             LEGACY_SHARE_ARTIFACT_DEF,

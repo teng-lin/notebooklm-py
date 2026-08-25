@@ -22,9 +22,8 @@ from ..._records import (
     SharingGrants,
     SharingMutateInput,
     SharingMutateResult,
-    SharingSetPublicInput,
-    SharingSetViewLevelInput,
-    SharingUpdateUsersInput,
+    SharingPatchViewLevelInput,
+    SharingPatchViewLevelResult,
     SharingUserGrant,
     SharingVisibility,
 )
@@ -326,52 +325,11 @@ def decode_legacy_share_artifact(
     return LegacyShareArtifactResult(public=value.public, artifact_id=value.artifact_id)
 
 
-# Custom-row phase payloads (P9.4). The three mutate-then-readback composites
-# issue one guarded mutation (``allow_null`` preserves the null-success
-# contract) followed by the same status readback ``sharing.get`` performs.
-def encode_share_status_readback(notebook_id: str) -> CodecPayload:
-    """Payload for a composite's post-mutation ``GET_SHARE_STATUS`` readback."""
-    return CodecPayload(
-        params=build_get_share_status_params(notebook_id),
-        source_path=f"/notebook/{notebook_id}",
-    )
-
-
-def encode_sharing_set_public(value: SharingSetPublicInput) -> CodecPayload:
-    """Mutation payload for the ``sharing.set_public`` custom row."""
-    return CodecPayload(
-        params=build_share_visibility_params(value.notebook_id, value.public),
-        source_path=f"/notebook/{value.notebook_id}",
-        allow_null=True,
-    )
-
-
-def encode_sharing_set_view_level(value: SharingSetViewLevelInput) -> CodecPayload:
-    """Mutation payload for the ``sharing.set_view_level`` custom row."""
-    return CodecPayload(
-        params=build_share_view_level_params(value.notebook_id, value.view_level),
-        source_path=f"/notebook/{value.notebook_id}",
-        allow_null=True,
-    )
-
-
-def encode_sharing_update_users(value: SharingUpdateUsersInput) -> CodecPayload:
-    """Mutation payload for the ``sharing.update_users`` custom row."""
-    return CodecPayload(
-        params=build_share_grants_params(
-            value.notebook_id,
-            value.grants,
-            notify=value.notify,
-            welcome_message=value.welcome_message,
-        ),
-        source_path=f"/notebook/{value.notebook_id}",
-        allow_null=True,
-    )
-
-
 __all__ = [
     "decode_sharing_mutate",
+    "decode_sharing_patch_view_level",
     "encode_sharing_mutate",
+    "encode_sharing_patch_view_level",
     "build_get_share_status_params",
     "build_legacy_share_artifact_params",
     "build_share_grants_params",
@@ -382,11 +340,7 @@ __all__ = [
     "decode_shared_user",
     "decode_sharing_get",
     "encode_legacy_share_artifact",
-    "encode_share_status_readback",
     "encode_sharing_get",
-    "encode_sharing_set_public",
-    "encode_sharing_set_view_level",
-    "encode_sharing_update_users",
 ]
 
 
@@ -423,3 +377,21 @@ def decode_sharing_mutate(value: SharingMutateInput, data: Any) -> SharingMutate
     """Row decoder for ``sharing.mutate``: the workflow reads status back itself."""
     del value, data
     return SharingMutateResult()
+
+
+def encode_sharing_patch_view_level(value: SharingPatchViewLevelInput) -> CodecPayload:
+    """Payload for one viewer-scope field-mask patch."""
+    return CodecPayload(
+        params=build_share_view_level_params(value.notebook_id, value.view_level),
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_sharing_patch_view_level(
+    value: SharingPatchViewLevelInput,
+    data: Any,
+) -> SharingPatchViewLevelResult:
+    """The workflow reads status back after the empty patch echo."""
+    del value, data
+    return SharingPatchViewLevelResult()

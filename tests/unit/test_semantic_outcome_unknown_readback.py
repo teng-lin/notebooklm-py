@@ -19,12 +19,9 @@ from notebooklm._operations import OperationDef
 from notebooklm._records import (
     ARTIFACT_RENAME_DEF,
     COLLECTION_CREATE_DEF,
-    SHARING_SET_VIEW_LEVEL_DEF,
     ArtifactRenameInput,
     LabelCreateInput,
     LabelKind,
-    ShareViewScope,
-    SharingSetViewLevelInput,
 )
 from notebooklm.exceptions import RPCTimeoutError
 from notebooklm.rpc import RPCMethod
@@ -69,15 +66,6 @@ _COLLECTION_ROW = ["Existing", None, "collection-1", ""]
         "blocked_method",
     ),
     [
-        pytest.param(
-            SHARING_SET_VIEW_LEVEL_DEF,
-            SharingSetViewLevelInput("nb-1", ShareViewScope.CHAT_ONLY),
-            (None,),
-            1,
-            (RPCMethod.RENAME_NOTEBOOK,),
-            RPCMethod.GET_SHARE_STATUS,
-            id="sharing-view-readback",
-        ),
         pytest.param(
             ARTIFACT_RENAME_DEF,
             ArtifactRenameInput("nb-1", "artifact-1", "Renamed"),

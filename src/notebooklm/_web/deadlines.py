@@ -49,7 +49,6 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.MIND_MAP_GENERATE_INTERACTIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.LABEL_CREATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.COLLECTION_CREATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.SHARING_SET_VIEW_LEVEL: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             # Source file registration/upload, source polling, artifact shared-leader
             # polling, chat streaming, and research reconciliation all have explicit
             # existing budgets whose observable semantics P4.2 preserves.

@@ -1,13 +1,12 @@
-"""P9.3 sharing leaves and the remaining P9.4 custom row.
+"""P9.3 sharing leaves after all three composite hoists.
 
 ``SHARING_GET`` and ``LEGACY_SHARE_ARTIFACT`` are ``encode → one native call →
 decode`` rows in ``_web/bindings/sharing.py``. These tests pin the conversion
 oracles: the identical keyword set reaches the runtime (including explicit
 ``False``/``None`` values and the notebook route), the payload builders are
 unchanged, failure projection is what ``invoke()`` produced for handler rows,
-and the ``dispatched`` marker reaches the neutral ``BackendError``. The
-The view-level composite stays a custom row; public visibility and user grants
-are service-owned since P9.2-5/6.
+and the ``dispatched`` marker reaches the neutral ``BackendError``. All three
+sharing composites are service-owned since P9.2-5/6/7.
 """
 
 from __future__ import annotations
@@ -89,15 +88,12 @@ class _RecordingExecutor:
 # --- registry partition ------------------------------------------------------
 
 
-def test_sharing_leaves_are_codec_rows_and_composites_are_custom_rows() -> None:
+def test_sharing_leaves_are_codec_rows_and_composites_are_service_owned() -> None:
     converted = {
         Operation.SHARING_GET: sharing_rows.SHARING_GET,
         Operation.LEGACY_SHARE_ARTIFACT: sharing_rows.LEGACY_SHARE_ARTIFACT,
     }
-    custom = {
-        Operation.SHARING_SET_VIEW_LEVEL: sharing_rows.SHARING_SET_VIEW_LEVEL,
-    }
-    assert dict(sharing_rows.SHARING_ROWS) == {**converted, **custom}
+    assert dict(sharing_rows.SHARING_ROWS) == converted
     for operation, row in converted.items():
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
@@ -123,12 +119,14 @@ def test_sharing_leaves_are_codec_rows_and_composites_are_custom_rows() -> None:
         "_sharing_update_users",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # P9.4: the remaining composite is a custom row, not a handler name.
-    for operation, row in custom.items():
+    for operation in (
+        Operation.SHARING_SET_PUBLIC,
+        Operation.SHARING_SET_VIEW_LEVEL,
+        Operation.SHARING_UPDATE_USERS,
+    ):
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.handler_name is None
-        assert binding.row is row
-        assert WEB_BINDING_ROWS[operation] is row
+        assert binding.service_owned is True
+        assert binding.handler_name is None and binding.row is None
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.SHARING_GET] is sharing_rows.SHARING_GET
     assert backend._bindings[Operation.LEGACY_SHARE_ARTIFACT] is sharing_rows.LEGACY_SHARE_ARTIFACT

@@ -3,10 +3,12 @@
 ``LABEL_MUTATE`` (input-keyed over the five ``UPDATE_LABEL`` variants),
 ``LABEL_ALLOCATE`` (one manual ``CREATE_LABEL``) and ``SHARING_MUTATE`` (one
 ``SHARE_NOTEBOOK`` envelope) are the three foundational rows; P9.2-4 adds
-``SOURCE_PATCH_TITLE`` (one ``UPDATE_SOURCE`` title set-op). All are
+``SOURCE_PATCH_TITLE`` (one ``UPDATE_SOURCE`` title set-op) and P9.2-7 adds
+``SHARING_PATCH_VIEW_LEVEL`` (one viewer-scope ``RENAME_NOTEBOOK`` mask). All are
 ``encode → one native call → decode`` rows in ``_web/bindings/primitives.py``.
 These tests pin the oracles the hoists rely on: each variant's payload and
-keyword set equals what the old composite handlers sent (route, ``allow_null``, explicit
+keyword set equals what the old composite handlers sent (route, ``allow_null``,
+explicit
 ``False``/``None`` values, ``operation_variant``), contract errors fire before
 any wire call, the declared natives match the policy ledger, and failure
 projection is what ``invoke()`` produces for every row.
@@ -106,6 +108,7 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
         Operation.LABEL_ALLOCATE: primitive_rows.LABEL_ALLOCATE,
         Operation.SHARING_MUTATE: primitive_rows.SHARING_MUTATE,
         Operation.SOURCE_PATCH_TITLE: primitive_rows.SOURCE_PATCH_TITLE,
+        Operation.SHARING_PATCH_VIEW_LEVEL: primitive_rows.SHARING_PATCH_VIEW_LEVEL,
     }
     assert dict(primitive_rows.PRIMITIVE_ROWS) == converted
     for operation, row in converted.items():
@@ -130,6 +133,7 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
     assert primitive_rows.LABEL_ALLOCATE.native.is_constant
     assert primitive_rows.SHARING_MUTATE.native.is_constant
     assert primitive_rows.SOURCE_PATCH_TITLE.native.is_constant
+    assert primitive_rows.SHARING_PATCH_VIEW_LEVEL.native.is_constant
     # One UPDATE_LABEL call per input, the variant chosen from it.
     assert (
         SEMANTIC_DEADLINE_AUTHORITIES[Operation.LABEL_MUTATE]
@@ -138,6 +142,7 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
     assert Operation.LABEL_ALLOCATE not in SEMANTIC_DEADLINE_AUTHORITIES
     assert Operation.SHARING_MUTATE not in SEMANTIC_DEADLINE_AUTHORITIES
     assert Operation.SOURCE_PATCH_TITLE not in SEMANTIC_DEADLINE_AUTHORITIES
+    assert Operation.SHARING_PATCH_VIEW_LEVEL not in SEMANTIC_DEADLINE_AUTHORITIES
 
 
 # --- LABEL_MUTATE ---------------------------------------------------------------

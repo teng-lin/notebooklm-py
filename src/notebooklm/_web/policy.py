@@ -710,16 +710,13 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.READ,
             (_native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "sharing status read"),),
         ),
-        Operation.SHARING_SET_VIEW_LEVEL: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.RENAME_NOTEBOOK, _IDEMPOTENT, "viewer-scope set-op"),
-                _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
-            ),
-        ),
         Operation.SHARING_MUTATE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (_native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded link/ACL mutation"),),
+        ),
+        Operation.SHARING_PATCH_VIEW_LEVEL: WebCallPolicyBinding(
+            CallPolicy.MUTATION,
+            (_native(RPCMethod.RENAME_NOTEBOOK, _IDEMPOTENT, "viewer-scope set-op"),),
         ),
         Operation.LEGACY_SHARE_ARTIFACT: WebCallPolicyBinding(
             CallPolicy.MUTATION,
@@ -852,6 +849,17 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 ),
                 (
                     _leaf(Operation.SHARING_MUTATE, None),
+                    _leaf(Operation.SHARING_GET, None),
+                ),
+            ),
+            Operation.SHARING_SET_VIEW_LEVEL: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.RENAME_NOTEBOOK, _IDEMPOTENT, "viewer-scope set-op"),
+                    _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
+                ),
+                (
+                    _leaf(Operation.SHARING_PATCH_VIEW_LEVEL, None),
                     _leaf(Operation.SHARING_GET, None),
                 ),
             ),

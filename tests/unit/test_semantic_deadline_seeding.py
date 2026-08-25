@@ -54,7 +54,6 @@ _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
         Operation.MIND_MAP_GENERATE_INTERACTIVE,
         Operation.LABEL_CREATE,
         Operation.COLLECTION_CREATE,
-        Operation.SHARING_SET_VIEW_LEVEL,
     }
 )
 _EXPECTED_WORKFLOW_OWNED_OPERATIONS = frozenset(

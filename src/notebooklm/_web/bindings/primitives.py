@@ -4,7 +4,9 @@ A primitive is one native set-op the hoisted product workflows sequence above
 the port: ``LABEL_MUTATE`` (one ``UPDATE_LABEL`` call, the variant chosen from
 the request's kind and form), ``LABEL_ALLOCATE`` (one manual ``CREATE_LABEL``),
 ``SHARING_MUTATE`` (one ``SHARE_NOTEBOOK`` visibility or grant envelope), and
-``SOURCE_PATCH_TITLE`` (one ``UPDATE_SOURCE`` title set-op).
+the two patch leaves: ``SOURCE_PATCH_TITLE`` (one ``UPDATE_SOURCE`` title
+set-op) and ``SHARING_PATCH_VIEW_LEVEL`` (one ``RENAME_NOTEBOOK`` viewer-scope
+field mask).
 Each row is ``encode → one native call → decode``; the :class:`NativeCallSpec`
 is the sole authority for the native it dispatches, so the method the policy
 ledger audits is the method that runs.  The rows are module-level assignments
@@ -22,6 +24,7 @@ from ..._records import (
     LABEL_ALLOCATE_DEF,
     LABEL_MUTATE_DEF,
     SHARING_MUTATE_DEF,
+    SHARING_PATCH_VIEW_LEVEL_DEF,
     SOURCE_PATCH_TITLE_DEF,
     LabelAllocateInput,
     LabelAllocateResult,
@@ -114,12 +117,20 @@ SOURCE_PATCH_TITLE = CodecBinding(
     native=_SOURCE_PATCH_TITLE_NATIVE,
 )
 
+SHARING_PATCH_VIEW_LEVEL = CodecBinding(
+    definition=SHARING_PATCH_VIEW_LEVEL_DEF,
+    encode=sharing_codec.encode_sharing_patch_view_level,
+    decode=sharing_codec.decode_sharing_patch_view_level,
+    native=NativeCallSpec.constant(RPCMethod.RENAME_NOTEBOOK),
+)
+
 PRIMITIVE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
     {
         LABEL_MUTATE.definition.key: LABEL_MUTATE,
         LABEL_ALLOCATE.definition.key: LABEL_ALLOCATE,
         SHARING_MUTATE.definition.key: SHARING_MUTATE,
         SOURCE_PATCH_TITLE.definition.key: SOURCE_PATCH_TITLE,
+        SHARING_PATCH_VIEW_LEVEL.definition.key: SHARING_PATCH_VIEW_LEVEL,
     }
 )
 
@@ -129,4 +140,5 @@ __all__ = [
     "PRIMITIVE_ROWS",
     "SHARING_MUTATE",
     "SOURCE_PATCH_TITLE",
+    "SHARING_PATCH_VIEW_LEVEL",
 ]

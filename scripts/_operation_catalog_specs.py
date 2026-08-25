@@ -1023,6 +1023,15 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         (_b(RPCMethod.SHARE_NOTEBOOK),),
     ),
     OperationSpec(
+        Operation.SHARING_PATCH_VIEW_LEVEL,
+        CallPolicy.MUTATION,
+        "SharingService",
+        "notebook",
+        "P9.2 primitive: patches the viewer-scope field; the hoisted workflow reads status back.",
+        (),
+        (_b(RPCMethod.RENAME_NOTEBOOK),),
+    ),
+    OperationSpec(
         Operation.LEGACY_SHARE_ARTIFACT,
         CallPolicy.MUTATION,
         "ShareManager",

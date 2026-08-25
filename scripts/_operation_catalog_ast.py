@@ -1981,7 +1981,7 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_mutation_services.py:SourceUrlMutationService.add_url",
         "_sharing_service.py:SharingService.get_status",
         "_sharing_service.py:SharingService._mutate_then_read_status",
-        "_sharing_service.py:SharingService.set_view_level",
+        "_sharing_service.py:SharingService._patch_view_level_then_read_status",
         "_settings_service.py:SettingsService.get_account_limits",
         "_settings_service.py:SettingsService.get_output_language",
         "_settings_service.py:SettingsService.get_user_settings",
@@ -2160,26 +2160,11 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_idempotency_create.py", "_backend", "may_have_committed"),
     }
 )
-# P9.4a: the head projects a custom row's ``error_mode``; the sharing composites
-# are ``CustomBinding`` rows whose handlers and phase payloads name the records.
+# P9.4a: the head projects custom-row ``error_mode`` for the remaining domains.
 REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
         ("_web/backend.py", "_binding", "CustomBinding"),
         ("_web/backend.py", "_binding", "ErrorMode"),
-        ("_web/bindings/sharing.py", "_binding", "CustomBinding"),
-        ("_web/bindings/sharing.py", "_binding", "RowInvoker"),
-        ("_web/bindings/sharing.py", "_records", "SHARING_SET_PUBLIC_DEF"),
-        ("_web/bindings/sharing.py", "_records", "SHARING_SET_VIEW_LEVEL_DEF"),
-        ("_web/bindings/sharing.py", "_records", "SHARING_UPDATE_USERS_DEF"),
-        ("_web/bindings/sharing.py", "_records", "SharingSetPublicInput"),
-        ("_web/bindings/sharing.py", "_records", "SharingSetPublicResult"),
-        ("_web/bindings/sharing.py", "_records", "SharingSetViewLevelInput"),
-        ("_web/bindings/sharing.py", "_records", "SharingSetViewLevelResult"),
-        ("_web/bindings/sharing.py", "_records", "SharingUpdateUsersInput"),
-        ("_web/bindings/sharing.py", "_records", "SharingUpdateUsersResult"),
-        ("_web/codec/sharing.py", "_records", "SharingSetPublicInput"),
-        ("_web/codec/sharing.py", "_records", "SharingSetViewLevelInput"),
-        ("_web/codec/sharing.py", "_records", "SharingUpdateUsersInput"),
     }
 )
 
@@ -2212,6 +2197,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/primitives.py", "_records", "LabelAllocateResult"),
         ("_web/bindings/primitives.py", "_records", "LabelMutateInput"),
         ("_web/bindings/primitives.py", "_records", "SHARING_MUTATE_DEF"),
+        ("_web/bindings/primitives.py", "_records", "SHARING_PATCH_VIEW_LEVEL_DEF"),
         ("_web/bindings/primitives.py", "codec", "labels"),
         ("_web/bindings/primitives.py", "codec", "sharing"),
         ("_web/codec/labels.py", "_records", "LabelAllocateInput"),
@@ -2222,10 +2208,13 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/codec/sharing.py", "_records", "SharingGrants"),
         ("_web/codec/sharing.py", "_records", "SharingMutateInput"),
         ("_web/codec/sharing.py", "_records", "SharingMutateResult"),
+        ("_web/codec/sharing.py", "_records", "SharingPatchViewLevelInput"),
+        ("_web/codec/sharing.py", "_records", "SharingPatchViewLevelResult"),
         ("_web/codec/sharing.py", "_records", "SharingVisibility"),
         ("_web/registry.py", "_records", "LABEL_ALLOCATE_DEF"),
         ("_web/registry.py", "_records", "LABEL_MUTATE_DEF"),
         ("_web/registry.py", "_records", "SHARING_MUTATE_DEF"),
+        ("_web/registry.py", "_records", "SHARING_PATCH_VIEW_LEVEL_DEF"),
     }
 )
 # P9.2-4: SourceService sequences source.update from the patch-title and get
@@ -2257,9 +2246,8 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
     }
 )
 
-# P9.2-5/6: SharingService sequences sharing.set_public and
-# sharing.update_users from the closed sharing.mutate primitive and the
-# sharing.get readback leaf.
+# P9.2-5/6/7: SharingService sequences all three sharing composites from
+# sharing mutation primitives plus the sharing.get readback leaf.
 REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
         ("_sharing_service.py", "_backend", "BackendDeadlineExceededError"),
@@ -2268,8 +2256,10 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_sharing_service.py", "_backend", "rebind_operation"),
         ("_sharing_service.py", "_backend", "require_leaves"),
         ("_sharing_service.py", "_records", "SHARING_MUTATE_DEF"),
+        ("_sharing_service.py", "_records", "SHARING_PATCH_VIEW_LEVEL_DEF"),
         ("_sharing_service.py", "_records", "SharingGrants"),
         ("_sharing_service.py", "_records", "SharingMutateInput"),
+        ("_sharing_service.py", "_records", "SharingPatchViewLevelInput"),
         ("_sharing_service.py", "_records", "SharingVisibility"),
     }
 )

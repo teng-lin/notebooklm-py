@@ -692,7 +692,13 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SHARING_SET_VIEW_LEVEL, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
             (
-                "_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL",
+                "_web/bindings/primitives.py:SHARING_PATCH_VIEW_LEVEL",
+                "share-view-level payload via sharing.patch_view_level",
+            )
+        ),
+        (Operation.SHARING_PATCH_VIEW_LEVEL, _b(RPCMethod.RENAME_NOTEBOOK)): _rules(
+            (
+                "_web/bindings/primitives.py:SHARING_PATCH_VIEW_LEVEL",
                 "share-view-level payload",
             )
         ),
@@ -895,7 +901,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.SHARING_SET_VIEW_LEVEL, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
-            ("_web/bindings/sharing.py:SHARING_SET_VIEW_LEVEL", "post-view-level-mutation read")
+            (
+                "_web/bindings/sharing.py:SHARING_GET",
+                "post-view-level-mutation read via sharing.get",
+            )
         ),
         (Operation.SHARING_UPDATE_USERS, _b(RPCMethod.GET_SHARE_STATUS)): _rules(
             (

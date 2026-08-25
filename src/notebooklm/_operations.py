@@ -118,6 +118,7 @@ class Operation(str, Enum):
     SHARING_UPDATE_USERS = "sharing.update_users"
     LEGACY_SHARE_ARTIFACT = "sharing.legacy_share_artifact"
     SHARING_MUTATE = "sharing.mutate"
+    SHARING_PATCH_VIEW_LEVEL = "sharing.patch_view_level"
 
     SETTINGS_GET = "settings.get"
     SETTINGS_SET_LANGUAGE = "settings.set_language"

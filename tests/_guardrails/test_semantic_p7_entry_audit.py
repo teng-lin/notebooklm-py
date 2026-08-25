@@ -115,7 +115,7 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.COLLECTION_CREATE,
         Operation.COLLECTION_DELETE,
         Operation.SHARING_GET,
-        Operation.SHARING_SET_VIEW_LEVEL,
+        Operation.SHARING_PATCH_VIEW_LEVEL,
         Operation.LEGACY_SHARE_ARTIFACT,
         Operation.SHARING_MUTATE,
         Operation.RESEARCH_START,
