@@ -242,6 +242,15 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                     "conversation resolution before or after the streamed request",
                 ),
             ),
+            # P9.4 (gate table §9): the ``CHAT_ASK`` row declares only
+            # ``GET_LAST_CONVERSATION_ID`` plus the streamed query; the default
+            # source-set ``GET_NOTEBOOK`` is issued above the port by the facade
+            # through ``NOTEBOOK_GET`` and stays here only because the catalog's
+            # recency contract for ``chat.ask`` is keyed on this ledger row.
+            known_divergence=(
+                "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the "
+                "CHAT_ASK row dispatches"
+            ),
         ),
         Operation.CHAT_GET_CONVERSATION: WebCallPolicyBinding(
             CallPolicy.READ,

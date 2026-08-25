@@ -240,7 +240,6 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.SOURCE_ADD_DRIVE: "_source_add_drive",
         Operation.SOURCE_ADD_FILE: "_source_add_file",
         Operation.SOURCE_UPDATE: "_source_update",
-        Operation.CHAT_ASK: "_chat_ask",
         Operation.MIND_MAP_GENERATE_NOTE: "_mind_map_generate_note",
         Operation.MIND_MAP_GENERATE_INTERACTIVE: "_mind_map_generate_interactive",
         Operation.ARTIFACT_LIST: "_artifact_list",

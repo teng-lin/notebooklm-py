@@ -154,6 +154,37 @@ class CodecPayload:
     attempt_timeout: float | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class StreamSpec:
+    """One declared streamed verb of a custom row.
+
+    A streamed request is not a native method: it never appears in the policy
+    ledger's native set, so it lives beside ``native`` rather than inside it.
+    ``key`` names the spec for the row-scoped invoker; ``label`` is the
+    backend-side parse label the transport attaches to the streamed request.
+    """
+
+    key: str
+    label: str
+
+    def __post_init__(self) -> None:
+        if not self.key or not self.label:
+            raise ValueError("a stream spec carries a non-empty key and label")
+
+
+@dataclass(frozen=True, slots=True)
+class StreamPayload:
+    """Encoder output for one streamed request: the request builder and its read budget.
+
+    ``build_request`` is the backend-specific request builder the transport
+    materialises against its live auth snapshot; ``attempt_timeout`` is the
+    per-attempt read window the row computed under the caller's deadline.
+    """
+
+    build_request: Callable[..., Any]
+    attempt_timeout: float | None = None
+
+
 class Transport(Protocol[MethodT, RequestT]):
     """Backend-specific request assembly and the two transport verbs."""
 
@@ -166,6 +197,15 @@ class Transport(Protocol[MethodT, RequestT]):
         retry_flag: bool,
         deadline: RuntimeDeadline | None,
         outcome_unknown_on_expiry: bool = False,
+    ) -> RequestT: ...
+
+    def assemble_stream(
+        self,
+        definition: OperationDef[Any, Any],
+        spec: StreamSpec,
+        payload: StreamPayload,
+        *,
+        deadline: RuntimeDeadline | None,
     ) -> RequestT: ...
 
     async def call(self, request: RequestT, *, deadline: RuntimeDeadline | None) -> Any: ...
@@ -215,12 +255,10 @@ class RowInvoker(Protocol):
     async def stream(
         self,
         spec_key: str,
-        payload: CodecPayload,
+        payload: StreamPayload,
         *,
         value: Any = None,
         deadline: RuntimeDeadline | None,
-        disable_internal_retries: bool = False,
-        outcome_unknown_on_expiry: bool = False,
     ) -> Any: ...
 
     def collaborator(self, name: str) -> Any: ...
@@ -290,6 +328,9 @@ class CustomBinding(Generic[InputT, OutputT, MethodT]):
     #: ``invoke.collaborator(name)``; audited at construction against what the
     #: backend provides, so a row can never reach an object it did not declare.
     collaborators: tuple[str, ...] = ()
+    #: Declared streamed verbs, keyed like natives but never part of the policy
+    #: ledger's native set; ``invoke.stream`` resolves only these.
+    streams: tuple[StreamSpec, ...] = ()
 
     def __post_init__(self) -> None:
         if self.category not in CUSTOM_CATEGORIES:
@@ -299,6 +340,9 @@ class CustomBinding(Generic[InputT, OutputT, MethodT]):
         keys = [spec.key for spec in self.native]
         if any(key is None for key in keys) or len(set(keys)) != len(keys):
             raise ValueError("custom binding natives carry unique, non-empty keys")
+        stream_keys = [spec.key for spec in self.streams]
+        if len(set(stream_keys)) != len(stream_keys) or set(stream_keys) & set(keys):
+            raise ValueError("custom binding stream keys are unique and distinct from natives")
         names = self.collaborators
         if any(not name for name in names) or len(set(names)) != len(names):
             raise ValueError("custom binding collaborators are unique, non-empty names")
@@ -309,6 +353,15 @@ class CustomBinding(Generic[InputT, OutputT, MethodT]):
                 return candidate
         raise BackendContractError(
             f"{self.definition.key.value} declares no native spec {key!r}",
+            operation=self.definition.key,
+        )
+
+    def stream_spec(self, key: str) -> StreamSpec:
+        for candidate in self.streams:
+            if candidate.key == key:
+                return candidate
+        raise BackendContractError(
+            f"{self.definition.key.value} declares no stream spec {key!r}",
             operation=self.definition.key,
         )
 
@@ -409,8 +462,8 @@ def _names(operations: frozenset[Operation]) -> str:
     return ", ".join(sorted(operation.value for operation in operations))
 
 
-def _tag_native(error: BaseException, native: NativeChoice[Any]) -> None:
-    """Attach the selected native to a failure so multi-native rows can attribute it."""
+def _tag_native(error: BaseException, native: NativeChoice[Any] | StreamSpec) -> None:
+    """Attach the selected native (or stream spec) to a failure for row attribution."""
     try:
         error.binding_native = native  # type: ignore[attr-defined]
     except (AttributeError, TypeError):
@@ -476,11 +529,13 @@ class _RowScopedInvoker:
         )
         return choice, request
 
-    def _failed(self, exc: BaseException, value: Any, choice: NativeChoice[Any]) -> None:
+    def _failed(
+        self, exc: BaseException, value: Any, choice: NativeChoice[Any] | StreamSpec
+    ) -> None:
         """Tag the failure with its native and apply the row's semantic mapper."""
         _tag_native(exc, choice)
         if self._row.map_error is not None and isinstance(exc, Exception):
-            mapped = self._row.map_error(value, exc, choice)
+            mapped = self._row.map_error(value, exc, choice)  # type: ignore[arg-type]
             if mapped is not None:
                 raise mapped from exc
 
@@ -511,25 +566,23 @@ class _RowScopedInvoker:
     async def stream(
         self,
         spec_key: str,
-        payload: CodecPayload,
+        payload: StreamPayload,
         *,
         value: Any = None,
         deadline: RuntimeDeadline | None,
-        disable_internal_retries: bool = False,
-        outcome_unknown_on_expiry: bool = False,
     ) -> Any:
-        choice, request = self._prepare(
-            spec_key,
+        """Perform one declared streamed verb; failures are tagged with its spec."""
+        spec = self._row.stream_spec(spec_key)
+        request = self._transport.assemble_stream(
+            self._row.definition,
+            spec,
             payload,
-            value,
-            deadline,
-            disable_internal_retries=disable_internal_retries,
-            outcome_unknown_on_expiry=outcome_unknown_on_expiry,
+            deadline=deadline,
         )
         try:
             return await self._transport.stream(request, deadline=deadline)
         except BaseException as exc:
-            self._failed(exc, value, choice)
+            self._failed(exc, value, spec)
             raise
 
 
@@ -612,6 +665,8 @@ __all__ = [
     "OperationDisposition",
     "ResolvedHandlerBinding",
     "RowInvoker",
+    "StreamPayload",
+    "StreamSpec",
     "Transport",
     "audit_bindings",
     "bind",

@@ -55,7 +55,7 @@ RESIDUAL_COMPOSITE_CEILING = 31
 #: mutate-then-readback composites). P9.4b PRs raise these as handlers convert;
 #: P9.2 hoists lower ``deferred-product``, which must reach zero before any
 #: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 0, "compatibility": 0, "deferred-product": 3}
+CUSTOM_ROW_COUNTS = {"protocol": 1, "compatibility": 0, "deferred-product": 3}
 
 # --- 2. class size ---------------------------------------------------------------
 
@@ -63,7 +63,7 @@ CLASS_BODY_LINE_CEILING = 500
 #: Measured at P9.4a; shrink-only. ``WebExecutionRuntime`` is the transport engine
 #: and shrinks on its own schedule; the three chain classes are P9.4b targets.
 OVERSIZED_CLASS_CEILINGS = {
-    "backend.py:WebRpcBackend": 897,
+    "backend.py:WebRpcBackend": 886,
     "labels.py:LabelSetWebHandlers": 522,
     "runtime.py:WebExecutionRuntime": 597,
     "source_variants.py:SourceVariantWebHandlers": 683,
@@ -86,7 +86,6 @@ MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
         "backend.py:WebRpcBackend._notebook_create",
         "backend.py:WebRpcBackend._notebook_limit_error",
         "backend.py:WebRpcBackend._notebook_update",
-        "chat.py:ChatWebHandlers._chat_ask",
         "labels.py:LabelSetWebHandlers._collection_create",
         "labels.py:LabelSetWebHandlers._collection_update",
         "labels.py:LabelSetWebHandlers._label_create",

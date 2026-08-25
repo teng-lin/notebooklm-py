@@ -22,7 +22,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from .._backend import BackendContractError, BackendDeadlineExceededError
-from .._binding import CodecPayload, NativeChoice
+from .._binding import CodecPayload, NativeChoice, StreamPayload, StreamSpec
 from .._deadline import RuntimeDeadline
 from .._operations import Operation, OperationDef
 from ..rpc import RPCMethod
@@ -125,6 +125,23 @@ class WebTransport:
             disable_internal_retries=retry_flag,
             outcome_unknown_on_expiry=outcome_unknown_on_expiry,
             attempt_timeout=payload.attempt_timeout,
+        )
+
+    def assemble_stream(
+        self,
+        definition: OperationDef[Any, Any],
+        spec: StreamSpec,
+        payload: StreamPayload,
+        *,
+        deadline: RuntimeDeadline | None,
+    ) -> WebStreamRequest:
+        """Build the chat-aware streamed request for one custom row's stream spec."""
+        del deadline
+        return WebStreamRequest(
+            operation=definition.key,
+            build_request=payload.build_request,
+            parse_label=spec.label,
+            read_timeout=payload.attempt_timeout,
         )
 
     async def call(self, request: WebRequest, *, deadline: RuntimeDeadline | None) -> Any:
