@@ -43,7 +43,6 @@ from notebooklm._records import (
     ChatReferenceRecord,
     ChatSaveNoteInput,
 )
-from notebooklm._web import chat as chat_handlers
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import chat as chat_rows
@@ -140,10 +139,9 @@ def test_chat_rows_replace_their_handlers_in_the_registry_and_table() -> None:
         "_chat_save_note",
     ):
         assert not hasattr(WebRpcBackend, name)
-        assert not hasattr(chat_handlers.ChatWebHandlers, name)
-    # The two-phase streamed composite stays a handler (protocol custom row in P9.4).
-    assert WEB_OPERATION_REGISTRY[Operation.CHAT_ASK].handler_name == "_chat_ask"
-    assert hasattr(chat_handlers.ChatWebHandlers, "_chat_conversation_id")
+    # The two-phase streamed composite is the P9.4 protocol custom row.
+    assert WEB_OPERATION_REGISTRY[Operation.CHAT_ASK].handler_name is None
+    assert WEB_OPERATION_REGISTRY[Operation.CHAT_ASK].row is chat_rows.CHAT_ASK
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.CHAT_CONFIGURE] is chat_rows.CHAT_CONFIGURE
 
