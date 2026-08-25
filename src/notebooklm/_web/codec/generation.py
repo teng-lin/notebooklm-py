@@ -15,14 +15,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Literal, TypeVar, cast
 
-from ..._artifact.payloads import (
-    build_audio_artifact_params,
-    build_data_table_artifact_params,
-    build_flashcards_artifact_params,
-    build_infographic_artifact_params,
-    build_quiz_artifact_params,
-    build_slide_deck_artifact_params,
-)
 from ..._backend import BackendContractError
 from ..._binding import CodecPayload
 from ..._operations import Operation
@@ -47,6 +39,14 @@ from ...rpc import (
     RPCMethod,
     SlideDeckFormat,
     SlideDeckLength,
+)
+from .artifact_payloads import (
+    build_audio_artifact_params,
+    build_data_table_artifact_params,
+    build_flashcards_artifact_params,
+    build_infographic_artifact_params,
+    build_quiz_artifact_params,
+    build_slide_deck_artifact_params,
 )
 from .studio_documents import (
     artifact_feature_unavailable,

@@ -8,7 +8,7 @@
 > **Note:** Payload structures are extracted from the implementation builders in
 > `src/notebooklm/` and pinned by golden unit tests. Each payload includes a
 > reference to its owning source file. The CREATE_ARTIFACT payloads below were
-> re-verified against the live builders in `_artifact/payloads.py` on
+> re-verified against the live builders in `_web/codec/artifact_payloads.py` on
 > 2026-06-11 (AUDIO, VIDEO_EXPLAINER, VIDEO_BRIEF, VIDEO_CINEMATIC,
 > STUDY_GUIDE, BRIEFING_DOC, BLOG_POST, MIND_MAP, QUIZ, FLASHCARDS,
 > INFOGRAPHIC, SLIDE_DECK, DATA_TABLE). Read-only notebook/source/artifact/chat/
@@ -1246,7 +1246,7 @@ await page.locator(".create-artifact-button-container[aria-label='Audio Overview
 
 **All artifact types use `R7cb6c` with different content type codes and nested configs.**
 
-**Source:** `_artifacts.py` (param builders: `_artifact/payloads.py`)
+**Source:** `_artifacts.py` (param builders: `_web/codec/artifact_payloads.py`)
 
 Live UI captures on 2026-06-15 for Data Table and interactive Mind Map showed
 the web client sending the full client-options block below as param `0` (not
@@ -1284,7 +1284,7 @@ and `result[0][4]`, which matches both live responses.
 
 #### Audio Overview (Type 1)
 
-**Source:** `_artifacts.py::ArtifactsAPI` (param builders: `_artifact/payloads.py`)
+**Source:** `_artifacts.py::ArtifactsAPI` (param builders: `_web/codec/artifact_payloads.py`)
 
 ```python
 source_ids_triple = [[[sid]] for sid in source_ids]  # [[[s1]], [[s2]], ...]
@@ -1442,7 +1442,7 @@ params = [
 
 #### Quiz (Type 4, Variant 2)
 
-**Source:** `_artifact/payloads.py::build_quiz_artifact_params()`
+**Source:** `_web/codec/artifact_payloads.py::build_quiz_artifact_params()`
 
 ```python
 params = [
@@ -1477,7 +1477,7 @@ params = [
 
 #### Flashcards (Type 4, Variant 1)
 
-**Source:** `_artifact/payloads.py::build_flashcards_artifact_params()`
+**Source:** `_web/codec/artifact_payloads.py::build_flashcards_artifact_params()`
 
 ```python
 params = [
@@ -1640,7 +1640,7 @@ params = [
 
 #### Interactive Mind Map (Type 4 / variant 4) - Uses CREATE_ARTIFACT (R7cb6c)
 
-**Source:** `_artifact/payloads.py::build_interactive_mind_map_artifact_params()`,
+**Source:** `_web/codec/artifact_payloads.py::build_interactive_mind_map_artifact_params()`,
 `_mind_maps_api.py::MindMapsAPI.generate()`
 
 NotebookLM's web app now generates an **interactive** mind map — a studio
@@ -2880,7 +2880,7 @@ await rpc_call(
 
 **Source:** `_artifacts.py::revise_slide()`,
 `_artifact/generation.py::ArtifactGenerationService.revise_slide()`,
-`_artifact/payloads.py::build_revise_slide_params()`
+`_web/codec/artifact_payloads.py::build_revise_slide_params()`
 
 Revise one slide in an existing completed slide deck. `slide_index` is
 zero-based and must be non-negative.

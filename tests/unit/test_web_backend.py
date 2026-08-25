@@ -10,18 +10,6 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._artifact.payloads import (
-    build_audio_artifact_params,
-    build_cinematic_video_artifact_params,
-    build_flashcards_artifact_params,
-    build_infographic_artifact_params,
-    build_interactive_mind_map_artifact_params,
-    build_mind_map_params,
-    build_quiz_artifact_params,
-    build_report_artifact_params,
-    build_slide_deck_artifact_params,
-    build_video_artifact_params,
-)
 from notebooklm._backend import (
     BackendContractError,
     BackendDeadlineExceededError,
@@ -161,6 +149,18 @@ from notebooklm._source.upload_payloads import build_template_block
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import studio as studio_rows_module
+from notebooklm._web.codec.artifact_payloads import (
+    build_audio_artifact_params,
+    build_cinematic_video_artifact_params,
+    build_flashcards_artifact_params,
+    build_infographic_artifact_params,
+    build_interactive_mind_map_artifact_params,
+    build_mind_map_params,
+    build_quiz_artifact_params,
+    build_report_artifact_params,
+    build_slide_deck_artifact_params,
+    build_video_artifact_params,
+)
 from notebooklm._web.errors import translate_web_error
 from notebooklm._web.registry import (
     WEB_OPERATION_REGISTRY,

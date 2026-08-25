@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._artifact.payloads import build_retry_artifact_params, build_revise_slide_params
 from notebooklm._backend import BackendContractError, BackendError, BackendErrorReason
 from notebooklm._binding import CodecPayload
 from notebooklm._operations import Operation
@@ -26,6 +25,10 @@ from notebooklm._records import (
 )
 from notebooklm._web.codec import artifacts as artifacts_codec
 from notebooklm._web.codec import studio_documents as documents_codec
+from notebooklm._web.codec.artifact_payloads import (
+    build_retry_artifact_params,
+    build_revise_slide_params,
+)
 from notebooklm.exceptions import DecodingError
 from notebooklm.rpc import ARTIFACT_STATUS_SUGGESTED_WIRE_NAME, RPCMethod
 

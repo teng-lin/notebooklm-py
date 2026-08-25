@@ -610,7 +610,7 @@ Beyond the backend-owned runtime graph, feature APIs are implemented via dedicat
 | `DataTableFamilyService` / `NoteBackedMindMapFamilyService` | [`_studio/data_views.py`](../src/notebooklm/_studio/data_views.py) | Backend-neutral P5.6 data-table and artifact note-backed mind-map generation plus complete catalog selection. |
 | `MindMapFamilyService` | [`_studio/mind_maps.py`](../src/notebooklm/_studio/mind_maps.py) | Backend-neutral P6.3 interactive Studio mind-map generation, discovery, tree, update, and delete workflow. |
 | `DriveExportService` | [`_studio/exports.py`](../src/notebooklm/_studio/exports.py) | Explicit P5.6 Google Drive companion export for report/data-table representations. |
-| `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
+| `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Pure quiz/flashcard HTML/JSON presentation helpers for artifacts. |
 | `_artifact/listing` | [`_artifact/listing.py`](../src/notebooklm/_artifact/listing.py) | Listing and filtering operations for notebook artifacts. |
 | `_row_adapters*` | [`_row_adapters/artifacts.py`](../src/notebooklm/_row_adapters/artifacts.py), [`_row_adapters/chat.py`](../src/notebooklm/_row_adapters/chat.py), [`_row_adapters/documents.py`](../src/notebooklm/_row_adapters/documents.py), [`_row_adapters/labels.py`](../src/notebooklm/_row_adapters/labels.py), [`_row_adapters/notebooks.py`](../src/notebooklm/_row_adapters/notebooks.py), [`_row_adapters/notes.py`](../src/notebooklm/_row_adapters/notes.py), [`_row_adapters/research.py`](../src/notebooklm/_row_adapters/research.py), [`_row_adapters/sources.py`](../src/notebooklm/_row_adapters/sources.py) | Wire-shape adapters that wrap raw batchexecute rows (`ArtifactRow`, `LabelRow`, `NoteRow`, `SourceRow`, the `POLL_RESEARCH` rows, the `SUGGEST_PROMPTS` suggestion rows) and the streamed-chat rows (`AnswerRow`/`CitationRow`/…) behind named accessors so downloads, polling, listing, labels, research, and the chat parser don't open-code positional indices. Strict decode behavior is pinned in `tests/unit/test_row_adapters.py`, `tests/unit/test_chat_row_adapter.py`, `tests/unit/test_notebooks_row_adapter.py`, `tests/unit/test_research_row_adapter.py`, and `tests/unit/test_citation_alignment.py`. |
 | `_research_task_parser` | [`_research_task_parser.py`](../src/notebooklm/_research_task_parser.py) | Parses deep-research task results from raw rows. Returns dict-shaped output today; a typed-model migration is not yet complete. |
@@ -1111,6 +1111,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/codec/chat_stream.py` | Retained streamed-response parser; credential-aware request construction delegates outside `_web` to `_chat/stream_request.py`. |
 | `_web/codec/studio_documents.py` | P5.4 exact report/video request encoders and generation-status decoder over backend-neutral records. |
 | `_web/codec/generation.py` | P9.4b row-facing Studio generate payloads: the option vocabularies and `validate_*`/`encode_*` builders returning the guarded `CREATE_ARTIFACT` `CodecPayload` per family, plus `decode_generation_kickoff` (null response or task id → the closed unavailable error). |
+| `_web/codec/artifact_formatters.py` | Positional `LIST_ARTIFACTS` rich-text data-table decoders (`_extract_data_table_rows` / `_parse_data_table`) behind `_web/codec/artifacts.py`; split out of `_artifact/formatters.py` so the pure presentation helpers above the port stay RPC-free. |
+| `_web/codec/artifact_payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
 | `_web/codec/source_ids.py` | P9.4b: the one `GET_NOTEBOOK` source-id decoder every input-defaulting row shares, with an explicit per-family `SourceIdDiagnostics` mode (silent / warn / guarded) that preserves each family's schema-drift warning surface. |
 | `_web/codec/notes.py` | P6.3 mixed note-row codec: normalizes flat/wrapped envelopes, classifies deleted and note-backed mind-map rows, preserves exact-id selection, and emits only neutral `NoteRecord` values; since P9.3 also the row-facing `encode_note_*`/`decode_note_*` helpers behind `_web/bindings/notes.py`. |
 | `_web/codec/labels.py` | P6.4 shared source-label/collection codec: owns both wire dialects behind `LabelKind` and emits only neutral `LabelRecord` values; since P9.3 also the row-facing `encode_*`/`decode_*_result` payload builders and the dialect/scope contract guards. |
@@ -1154,6 +1156,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_research_task_parser.py` | Internal parser for research task result-type selection |
 | `_notebooks.py` | `client.notebooks` API + source-id resolver |
 | `_notebook_payloads.py` | Stable `batchexecute` notebook RPC request payload builders (currently `SUGGEST_PROMPTS`) |
+| `_markdown.py` | Neutral HTML-to-Markdown conversion policy for source fulltext, including Markdown-source and LaTeX/table handling |
 | `_sources.py` | `client.sources` API |
 | `_artifacts.py` | `client.artifacts` compatibility facade — validates public inputs, delegates to typed Studio services, and projects existing public return/error types without native RPC authority. |
 | `_chat/api.py` | `client.chat` API |
@@ -1172,8 +1175,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_artifact/_download_client.py` | Download trusted-host allowlist + transport-aware client factory — wires the #1521 redirect guard for httpx (event hook) or the opt-in curl_cffi (`get_guarded` manual loop) |
 | `_studio/downloads.py` | Representation byte retrieval client; reuses the canonical download-client factory, trusted-host predicate, and per-hop redirect guard |
 | `_studio/serialization.py` | RPC-free local serializers for Studio text, JSON, and CSV representations |
-| `_artifact/formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
-| `_artifact/payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
+| `_artifact/formatters.py` | Pure quiz/flashcard HTML/JSON presentation helpers for artifacts (RPC-free since the data-table decoders moved below the port) |
 | `_artifact/validation.py` | Input-validation guards for the `ArtifactsAPI` facade (`generate_report` format coercion, `export` exactly-one-of target), kept in a sibling module so the facade stays under the module-size ratchet (#1874) |
 | `_artifact/generation.py` | Retired P5.8 import-compatible helper module; family services and `_studio/management.py` own generation/management behavior. |
 | `_artifact/listing.py` | Listing and filtering operations for notebook artifacts |
@@ -1182,7 +1184,6 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_source/batch.py` | True-batch URL `ADD_SOURCE` service for the existing MCP/REST batch endpoints: typed positional outcomes, omitted-row reconciliation, and fail-closed transport/duplicate ambiguity policy |
 | `_source/drive_import.py` | Auto-route add-from-Drive (#1884): download + upload the upload-only Drive types (epub/docx/txt/…); native import (`add_drive`) instead takes Docs/Slides/Sheets + PDF by reference; header-first cookie-authed streaming fetch behind injected seams |
 | `_source/content.py` | Core service layer for fetching source HTML/markdown content |
-| `_source/markdown.py` | Source fulltext HTML-to-Markdown conversion policy, including Markdown-source and LaTeX/table handling |
 | `_source/listing.py` | Core service layer for listing notebook sources |
 | `_source/polling.py` | Poll coordination service for active source conversions |
 | `_source/upload.py` | Concurrency-gated upload pipeline for source files |
@@ -1368,6 +1369,8 @@ src/notebooklm/
 │   └── codec/                   # P3 web response codecs producing neutral records/value exemptions
 │       ├── __init__.py          # Private codec re-exports
 │       ├── artifacts.py         # Artifact/mind-map/report-suggestion rows -> neutral records
+│       ├── artifact_formatters.py # Positional LIST_ARTIFACTS data-table decoders
+│       ├── artifact_payloads.py # Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders
 │       ├── chat.py              # Unary Chat codecs over neutral records (P6.1)
 │       ├── chat_saved_note.py   # Saved-from-Chat CREATE_NOTE encoding
 │       ├── chat_stream.py       # Retained streamed response parser
@@ -1449,7 +1452,6 @@ src/notebooklm/
 │   ├── add.py                   # Source addition coordinator
 │   ├── batch.py                 # True-batch URL ADD_SOURCE coordinator + typed positional outcomes for MCP/REST batch adapters (#2115)
 │   ├── content.py               # Source content fetcher
-│   ├── markdown.py               # Source fulltext HTML-to-Markdown conversion policy
 │   ├── drive_import.py          # Auto-route add-from-Drive (#1884): DriveImportService + DriveFetcher — parse id/URL, cookie-authed header-first streaming download of the upload-only Drive types (epub/docx/txt/…), confirm-token handling + 0600 temp cleanup, then hand to add_file (native Docs/Slides/Sheets → pointer error)
 │   ├── listing.py               # Source listing helper
 │   ├── polling.py               # Source polling coordinator
@@ -1460,10 +1462,9 @@ src/notebooklm/
 │   ├── _download_client.py      # Download trusted-host allowlist + transport-aware client factory (httpx event hook / curl_cffi get_guarded)
 │   ├── _redirect_guard.py       # Per-redirect-hop host/scheme revalidation for downloads (#1521)
 │   ├── downloads.py             # Retired P5.8 compatibility exports for download helpers
-│   ├── formatters.py            # Artifact formatting helpers
+│   ├── formatters.py            # Pure quiz/flashcard presentation helpers (RPC-free)
 │   ├── generation.py            # Retired P5.8 import-compatible generation helper module
 │   ├── generation_workflow.py   # Shared backend-driven artifact generation workflow
-│   ├── payloads.py              # Stable artifact request payload builders
 │   ├── validation.py            # Facade input-validation guards (generate_report coercion, export exactly-one-of) (#1874)
 │   ├── listing.py               # Artifact listing helper
 │   └── polling.py               # Artifact polling coordinator
@@ -1547,6 +1548,7 @@ src/notebooklm/
 │   └── sources.py
 ├── _notebooks.py                # NotebooksAPI
 ├── _notebook_payloads.py        # batchexecute notebook RPC payload builders (SUGGEST_PROMPTS)
+├── _markdown.py                 # Neutral HTML-to-Markdown conversion policy for source fulltext
 ├── _sources.py                  # SourcesAPI
 ├── _artifacts.py                # ArtifactsAPI
 ├── _research.py                 # ResearchAPI
