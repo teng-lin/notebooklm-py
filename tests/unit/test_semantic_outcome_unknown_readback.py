@@ -1,7 +1,9 @@
 """Deadline uncertainty after a semantic mutation has reached the server.
 
-The ``label.update`` cases moved to ``tests/unit/test_label_update_workflow.py``
-with the P9.2-2 hoist: the workflow is sequenced by ``LabelSetService`` now.
+The ``label.update`` and ``collection.update`` cases moved to
+``tests/unit/test_label_update_workflow.py`` and
+``tests/unit/test_collection_update_workflow.py`` with the P9.2-2/3 hoists:
+both workflows are sequenced by ``LabelSetService`` now.
 """
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ from notebooklm._operations import OperationDef
 from notebooklm._records import (
     ARTIFACT_RENAME_DEF,
     COLLECTION_CREATE_DEF,
-    COLLECTION_UPDATE_DEF,
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
@@ -25,7 +26,6 @@ from notebooklm._records import (
     ArtifactRenameInput,
     LabelCreateInput,
     LabelKind,
-    LabelUpdateInput,
     SharePermissionLevel,
     ShareViewScope,
     SharingSetPublicInput,
@@ -133,41 +133,6 @@ _COLLECTION_ROW = ["Existing", None, "collection-1", ""]
             (RPCMethod.LIST_LABELS, RPCMethod.CREATE_LABEL),
             RPCMethod.LIST_LABELS,
             id="collection-create-readback",
-        ),
-        pytest.param(
-            COLLECTION_UPDATE_DEF,
-            LabelUpdateInput(LabelKind.COLLECTION, "collection-1", name="Renamed"),
-            ([None, [_COLLECTION_ROW]], None),
-            2,
-            (RPCMethod.LIST_LABELS, RPCMethod.UPDATE_LABEL),
-            RPCMethod.LIST_LABELS,
-            id="collection-field-readback",
-        ),
-        pytest.param(
-            COLLECTION_UPDATE_DEF,
-            LabelUpdateInput(
-                LabelKind.COLLECTION,
-                "collection-1",
-                add_member_ids=("nb-member-1",),
-            ),
-            (None,),
-            1,
-            (RPCMethod.UPDATE_LABEL,),
-            RPCMethod.LIST_LABELS,
-            id="collection-membership-readback",
-        ),
-        pytest.param(
-            COLLECTION_UPDATE_DEF,
-            LabelUpdateInput(
-                LabelKind.COLLECTION,
-                "collection-1",
-                add_member_ids=("nb-member-1", "nb-member-2"),
-            ),
-            (None,),
-            1,
-            (RPCMethod.UPDATE_LABEL,),
-            RPCMethod.UPDATE_LABEL,
-            id="collection-second-membership-write",
         ),
     ],
 )

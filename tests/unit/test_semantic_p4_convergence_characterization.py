@@ -68,7 +68,6 @@ from notebooklm._records import (
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,
-    COLLECTION_UPDATE_DEF,
     LABEL_ALLOCATE_DEF,
     LABEL_CREATE_DEF,
     LABEL_DELETE_DEF,
@@ -337,7 +336,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         COLLECTION_LIST_DEF: (Operation.COLLECTION_LIST, CallPolicy.READ),
         COLLECTION_GET_DEF: (Operation.COLLECTION_GET, CallPolicy.READ),
         COLLECTION_CREATE_DEF: (Operation.COLLECTION_CREATE, CallPolicy.MUTATION),
-        COLLECTION_UPDATE_DEF: (Operation.COLLECTION_UPDATE, CallPolicy.MUTATION),
         COLLECTION_DELETE_DEF: (Operation.COLLECTION_DELETE, CallPolicy.MUTATION),
         LABEL_MUTATE_DEF: (Operation.LABEL_MUTATE, CallPolicy.MUTATION),
         LABEL_ALLOCATE_DEF: (Operation.LABEL_ALLOCATE, CallPolicy.MUTATION),
@@ -750,21 +748,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             [
                 IdempotencyPolicy.IDEMPOTENT_SET_OP,
                 IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-            ],
-        ),
-        (
-            COLLECTION_UPDATE_DEF,
-            [
-                (RPCMethod.LIST_LABELS, None),
-                (RPCMethod.UPDATE_LABEL, None),
-                (RPCMethod.UPDATE_LABEL, "add_notebooks"),
-                (RPCMethod.UPDATE_LABEL, "remove_notebooks"),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
             ],
         ),
         (

@@ -471,6 +471,22 @@
     "collection.update": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "collection.get"
+        },
+        {
+          "allowed_variants": [
+            "<default>",
+            "add_notebooks",
+            "remove_notebooks"
+          ],
+          "operation": "label.mutate"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -496,7 +512,8 @@
           "rpc_method": "UPDATE_LABEL",
           "variant": "remove_notebooks"
         }
-      ]
+      ],
+      "service_owned": true
     },
     "label.allocate": {
       "call_policy": "mutation",
@@ -4191,8 +4208,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/primitives.py:LABEL_MUTATE",
-        "_web/labels.py:LabelSetWebHandlers._collection_update"
+        "_web/bindings/primitives.py:LABEL_MUTATE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -4236,8 +4252,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/primitives.py:LABEL_MUTATE",
-        "_web/labels.py:LabelSetWebHandlers._collection_update"
+        "_web/bindings/primitives.py:LABEL_MUTATE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -4321,8 +4336,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/primitives.py:LABEL_MUTATE",
-        "_web/labels.py:LabelSetWebHandlers._collection_update"
+        "_web/bindings/primitives.py:LABEL_MUTATE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -5964,26 +5978,26 @@
       "execution_authorities": [
         {
           "binding": "LIST_LABELS:<default>",
-          "discriminator": "update preflight/readback",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "discriminator": "update preflight/readback via collection.get",
+          "site": "_web/bindings/labels.py:COLLECTION_GET",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_LABEL:<default>",
-          "discriminator": "collection name mutation",
-          "site": "_web/labels.py:LabelSetWebHandlers._collection_update",
+          "discriminator": "collection name mutation via leaf",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_LABEL:add_notebooks",
-          "discriminator": "one notebook append per call",
-          "site": "_web/labels.py:LabelSetWebHandlers._collection_update",
+          "discriminator": "one notebook append per call via leaf",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_LABEL:remove_notebooks",
-          "discriminator": "one notebook removal per call",
-          "site": "_web/labels.py:LabelSetWebHandlers._collection_update",
+          "discriminator": "one notebook removal per call via leaf",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
           "transport_kind": "rpc"
         }
       ],

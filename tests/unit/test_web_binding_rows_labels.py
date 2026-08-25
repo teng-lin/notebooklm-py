@@ -143,13 +143,14 @@ def test_label_rows_replace_their_handlers_in_the_registry_and_table() -> None:
     for operation, handler in (
         (Operation.LABEL_CREATE, "_label_create"),
         (Operation.COLLECTION_CREATE, "_collection_create"),
-        (Operation.COLLECTION_UPDATE, "_collection_update"),
     ):
         assert WEB_OPERATION_REGISTRY[operation].handler_name == handler
-    assert WEB_OPERATION_REGISTRY[Operation.LABEL_UPDATE].handler_name is None
-    assert WEB_OPERATION_REGISTRY[Operation.LABEL_UPDATE].row is None
-    assert WEB_OPERATION_REGISTRY[Operation.LABEL_UPDATE].service_owned is True
+    for operation in (Operation.LABEL_UPDATE, Operation.COLLECTION_UPDATE):
+        assert WEB_OPERATION_REGISTRY[operation].handler_name is None
+        assert WEB_OPERATION_REGISTRY[operation].row is None
+        assert WEB_OPERATION_REGISTRY[operation].service_owned is True
     assert not hasattr(labels_handlers.LabelSetWebHandlers, "_label_update")
+    assert not hasattr(labels_handlers.LabelSetWebHandlers, "_collection_update")
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.LABEL_LIST] is label_rows.LABEL_LIST
 

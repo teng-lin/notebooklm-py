@@ -19,7 +19,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._backend import BackendContractError, BackendError, BackendErrorReason
+from notebooklm._backend import (
+    BackendContractError,
+    BackendError,
+    BackendErrorReason,
+    UnsupportedOperationError,
+)
 from notebooklm._backend_compat import project_backend_error
 from notebooklm._collections import CollectionsAPI
 from notebooklm._label_service import LabelSetService, require_member_ids
@@ -38,6 +43,7 @@ from notebooklm._records import (
     LABEL_GET_DEF,
     LABEL_LIST_DEF,
     LABEL_UPDATE_DEF,
+    LabelGetInput,
     LabelKind,
     LabelRecord,
     LabelUpdateInput,
@@ -164,23 +170,31 @@ def test_service_binds_one_kind_for_its_whole_lifetime() -> None:
 
 
 async def test_backend_rejects_a_request_addressed_to_the_other_dialect() -> None:
+    """P9.2: the update workflows are service-owned, so the backend refuses them
+    outright and the dialect is the service's identity; the leaf reads still
+    fail closed when a request addresses the other dialect's operation."""
     backend = build_web_backend(_FakeRpc())
-    with pytest.raises(BackendContractError, match="requires a collection request"):
+    with pytest.raises(UnsupportedOperationError):
         await backend.invoke(
             COLLECTION_UPDATE_DEF,
             LabelUpdateInput(LabelKind.SOURCE_LABEL, "l1", _NB, name="X"),
             deadline=None,
         )
+    with pytest.raises(BackendContractError, match="requires a collection request"):
+        await backend.invoke(
+            COLLECTION_GET_DEF,
+            LabelGetInput(LabelKind.SOURCE_LABEL, "l1", _NB),
+            deadline=None,
+        )
 
 
 async def test_collection_update_has_no_emoji_only_field_mask() -> None:
-    backend = build_web_backend(_FakeRpc())
-    with pytest.raises(BackendContractError, match="a name is required"):
-        await backend.invoke(
-            COLLECTION_UPDATE_DEF,
-            LabelUpdateInput(LabelKind.COLLECTION, "c1", emoji="\U0001f525"),
-            deadline=None,
-        )
+    rpc = _FakeRpc()
+    service = LabelSetService(build_web_backend(rpc), LabelKind.COLLECTION)
+    with pytest.raises(BackendContractError, match="a name is required") as caught:
+        await service.update("c1", emoji="\U0001f525")
+    assert caught.value.operation is Operation.COLLECTION_UPDATE
+    assert rpc.calls == []
 
 
 # -- codec: one authority, two envelopes -------------------------------------

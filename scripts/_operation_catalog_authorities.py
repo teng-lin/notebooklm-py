@@ -706,7 +706,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/labels.py:LabelSetWebHandlers._label_set_list", "baseline/create readback")
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "update preflight/readback")
+            (
+                "_web/bindings/labels.py:COLLECTION_GET",
+                "update preflight/readback via collection.get",
+            )
         ),
         (Operation.COLLECTION_NOTEBOOKS, _b(RPCMethod.LIST_LABELS)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_set_list", "resolve collection membership")
@@ -760,7 +763,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/primitives.py:LABEL_MUTATE", "label field-mask mutation via leaf")
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._collection_update", "collection name mutation")
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "collection name mutation via leaf")
         ),
         (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL, "add_sources")): _rules(
             ("_web/bindings/primitives.py:LABEL_MUTATE", "one source append per call via leaf")
@@ -770,14 +773,14 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL, "add_notebooks")): _rules(
             (
-                "_web/labels.py:LabelSetWebHandlers._collection_update",
-                "one notebook append per call",
+                "_web/bindings/primitives.py:LABEL_MUTATE",
+                "one notebook append per call via leaf",
             )
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL, "remove_notebooks")): _rules(
             (
-                "_web/labels.py:LabelSetWebHandlers._collection_update",
-                "one notebook removal per call",
+                "_web/bindings/primitives.py:LABEL_MUTATE",
+                "one notebook removal per call via leaf",
             )
         ),
         # P9.2 primitive: the row selects the variant from the request kind and form.

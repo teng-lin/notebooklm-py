@@ -11,11 +11,11 @@ The two public facades (``client.labels`` and ``client.collections``) keep their
 own argument validation, exception vocabulary, and membership joins; everything
 between a validated request and a neutral :class:`LabelRecord` lives here.
 
-Since P9.2 the ``label.update`` workflow is **service-owned**: this service
-sequences the ``label.get`` preflight/readback and one ``label.mutate`` leaf
-per member above the port, starts one deadline for the whole workflow, and
-re-raises every leaf failure as the workflow operation with the leaf retained
-in the diagnostics.
+Since P9.2 the ``label.update`` and ``collection.update`` workflows are
+**service-owned**: this service sequences the ``label.get``/``collection.get``
+preflight/readback and one ``label.mutate`` leaf per member above the port,
+starts one deadline for the whole workflow, and re-raises every leaf failure
+as the workflow operation with the leaf retained in the diagnostics.
 """
 
 from __future__ import annotations
@@ -71,9 +71,6 @@ class _KindBinding:
     update_def: OperationDef[Any, Any]
     delete_def: OperationDef[Any, Any]
     generate_def: OperationDef[Any, Any] | None
-    #: Whether ``update`` is sequenced here from the leaves (P9.2 hoist) or is
-    #: still one composite backend invocation.
-    update_hoisted: bool
 
 
 _KIND_BINDINGS: dict[LabelKind, _KindBinding] = {
@@ -84,7 +81,6 @@ _KIND_BINDINGS: dict[LabelKind, _KindBinding] = {
         update_def=LABEL_UPDATE_DEF,
         delete_def=LABEL_DELETE_DEF,
         generate_def=LABEL_GENERATE_DEF,
-        update_hoisted=True,
     ),
     # Collections have no auto-grouping mode: ``agX4Bc``'s scope slot is a
     # source-label concept, so the account-level dialect binds no generate.
@@ -95,7 +91,6 @@ _KIND_BINDINGS: dict[LabelKind, _KindBinding] = {
         update_def=COLLECTION_UPDATE_DEF,
         delete_def=COLLECTION_DELETE_DEF,
         generate_def=None,
-        update_hoisted=False,
     ),
 }
 
@@ -231,14 +226,7 @@ class LabelSetService:
             remove_member_ids=remove_member_ids,
             return_object=return_object,
         )
-        if self._binding.update_hoisted:
-            return await self._update_workflow(value, deadline=deadline)
-        result = await self._backend.invoke(
-            self._binding.update_def,
-            value,
-            deadline=deadline,
-        )
-        return result.label
+        return await self._update_workflow(value, deadline=deadline)
 
     async def delete(
         self,

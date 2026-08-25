@@ -403,25 +403,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.CREATE_LABEL, _NO_RETRY, "account collection allocation"),
             ),
         ),
-        Operation.COLLECTION_UPDATE: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "preflight and readback"),
-                _native(RPCMethod.UPDATE_LABEL, _IDEMPOTENT, "collection field set-op"),
-                _native(
-                    RPCMethod.UPDATE_LABEL,
-                    _NO_RETRY,
-                    "notebook membership append",
-                    variant="add_notebooks",
-                ),
-                _native(
-                    RPCMethod.UPDATE_LABEL,
-                    _IDEMPOTENT,
-                    "notebook membership removal",
-                    variant="remove_notebooks",
-                ),
-            ),
-        ),
         Operation.COLLECTION_DELETE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (_native(RPCMethod.DELETE_LABEL, _NO_RETRY, "batch collection delete"),),
@@ -820,6 +801,29 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.LABEL_GET, None),
                     _leaf(Operation.LABEL_MUTATE, None, "add_sources", "remove_sources"),
+                ),
+            ),
+            Operation.COLLECTION_UPDATE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "preflight and readback"),
+                    _native(RPCMethod.UPDATE_LABEL, _IDEMPOTENT, "collection field set-op"),
+                    _native(
+                        RPCMethod.UPDATE_LABEL,
+                        _NO_RETRY,
+                        "notebook membership append",
+                        variant="add_notebooks",
+                    ),
+                    _native(
+                        RPCMethod.UPDATE_LABEL,
+                        _IDEMPOTENT,
+                        "notebook membership removal",
+                        variant="remove_notebooks",
+                    ),
+                ),
+                (
+                    _leaf(Operation.COLLECTION_GET, None),
+                    _leaf(Operation.LABEL_MUTATE, None, "add_notebooks", "remove_notebooks"),
                 ),
             ),
         }

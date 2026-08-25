@@ -222,7 +222,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.COLLECTION_LIST: COLLECTION_LIST_DEF,
         Operation.COLLECTION_GET: COLLECTION_GET_DEF,
         Operation.COLLECTION_CREATE: COLLECTION_CREATE_DEF,
-        Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
         Operation.COLLECTION_DELETE: COLLECTION_DELETE_DEF,
         Operation.SHARING_GET: SHARING_GET_DEF,
         Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
@@ -274,7 +273,6 @@ _HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.ARTIFACT_GENERATE_MIND_MAP: "_mind_map_generate",
         Operation.LABEL_CREATE: "_label_create",
         Operation.COLLECTION_CREATE: "_collection_create",
-        Operation.COLLECTION_UPDATE: "_collection_update",
         Operation.SHARING_SET_PUBLIC: "_sharing_set_public",
         Operation.SHARING_SET_VIEW_LEVEL: "_sharing_set_view_level",
         Operation.SHARING_UPDATE_USERS: "_sharing_update_users",
@@ -292,12 +290,19 @@ _ROW_BACKED_OPERATIONS: Final[frozenset[Operation]] = frozenset(WEB_BINDING_ROWS
 # ``False`` because ``invoke()`` refuses them (the port's ``supports`` means
 # invokable). Each entry names the owning service call site.
 _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = MappingProxyType(
-    {Operation.LABEL_UPDATE: LABEL_UPDATE_DEF}
+    {
+        Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
+        Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
+    }
 )
 _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     {
         Operation.LABEL_UPDATE: (
             "service-owned since P9.2-2: LabelSetService.update sequences label.get and "
+            "label.mutate"
+        ),
+        Operation.COLLECTION_UPDATE: (
+            "service-owned since P9.2-3: LabelSetService.update sequences collection.get and "
             "label.mutate"
         ),
     }
@@ -312,8 +317,8 @@ _STAGED_HANDLER_NAMES: Final[Mapping[Operation, str]] = MappingProxyType({})
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
 _EXPECTED_OPERATION_COUNT: Final = 90
-_EXPECTED_SUPPORTED_COUNT: Final = 84
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 1
+_EXPECTED_SUPPORTED_COUNT: Final = 83
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 2
 _EXPECTED_STAGED_COUNT: Final = 0
 
 
