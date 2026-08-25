@@ -89,10 +89,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         ),
     ),
     (Operation.NOTEBOOK_SUGGEST_PROMPTS, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        (
-            "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
-            "source_ids is None",
-        )
+        ("_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS", "source_ids is None")
     ),
     (Operation.SOURCE_LIST, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/bindings/sources.py:SOURCE_LIST", "public=sources.list")
@@ -167,33 +164,10 @@ _GENERATION_OPERATIONS = {
     Operation.ARTIFACT_GENERATE_DATA_TABLE: "artifact_type=data-table",
 }
 for _operation, _discriminator in _GENERATION_OPERATIONS.items():
-    if _operation is Operation.ARTIFACT_GENERATE_AUDIO:
-        _create_site = "_web/studio_media.py:StudioMediaWebHandlers._audio_generate"
-        _source_site = _create_site
-    elif _operation in {
-        Operation.ARTIFACT_GENERATE_QUIZ,
-        Operation.ARTIFACT_GENERATE_FLASHCARDS,
-    }:
-        _create_site = "_web/studio_media.py:StudioMediaWebHandlers._interactive_generate"
-        _source_site = _create_site
-    elif _operation in {
-        Operation.ARTIFACT_GENERATE_REPORT,
-        Operation.ARTIFACT_GENERATE_VIDEO,
-    }:
-        _create_site = "_web/studio_documents.py:StudioDocumentWebHandlers._document_generate"
-        _source_site = "_web/studio_documents.py:StudioDocumentWebHandlers._document_source_ids"
-    elif _operation in {
-        Operation.ARTIFACT_GENERATE_INFOGRAPHIC,
-        Operation.ARTIFACT_GENERATE_SLIDE_DECK,
-    }:
-        _create_site = "_web/studio_media.py:StudioMediaWebHandlers._visual_generate"
-        _source_site = "_web/studio_media.py:StudioMediaWebHandlers._visual_source_selection"
-    elif _operation is Operation.ARTIFACT_GENERATE_DATA_TABLE:
-        _create_site = "_web/studio_data.py:StudioDataWebHandlers._data_table_generate"
-        _source_site = "_web/studio_data.py:StudioDataWebHandlers._data_source_ids"
-    else:
-        _create_site = "_artifact/generation.py:ArtifactGenerationService._call_generate"
-        _source_site = "_notebooks.py:NotebooksAPI.get_raw"
+    # P9.4b: every generate family is a ``CustomBinding`` row whose two specs
+    # (``sources`` GET_NOTEBOOK, ``create`` CREATE_ARTIFACT) are the authorities.
+    _create_site = f"_web/bindings/studio.py:{_operation.name}"
+    _source_site = _create_site
     SHARED_RPC_AUTHORITY_RULES[(_operation, _b(RPCMethod.CREATE_ARTIFACT))] = _rules(
         (_create_site, _discriminator)
     )
@@ -358,9 +332,7 @@ _GET_SOURCES = "_web/source_variants.py:SourceVariantWebHandlers._source_snapsho
 _GET_SOURCE_LIST = "_web/bindings/sources.py:SOURCE_LIST"
 _GET_SOURCE = "_web/bindings/sources.py:SOURCE_GET"
 _GET_SOURCE_WAIT = "_web/bindings/sources.py:SOURCE_WAIT"
-_GET_PROMPT_SOURCES = (
-    "_web/settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts"
-)
+_GET_PROMPT_SOURCES = "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS"
 
 
 RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
@@ -563,27 +535,13 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
 }
 
 for _operation in (*_GENERATION_OPERATIONS, Operation.ARTIFACT_GENERATE_MIND_MAP):
-    if _operation is Operation.ARTIFACT_GENERATE_AUDIO:
-        _recency_site = "_web/studio_media.py:StudioMediaWebHandlers._audio_generate"
-    elif _operation in {
-        Operation.ARTIFACT_GENERATE_QUIZ,
-        Operation.ARTIFACT_GENERATE_FLASHCARDS,
-    }:
-        _recency_site = "_web/studio_media.py:StudioMediaWebHandlers._interactive_generate"
-    elif _operation in {Operation.ARTIFACT_GENERATE_REPORT, Operation.ARTIFACT_GENERATE_VIDEO}:
-        _recency_site = "_web/studio_documents.py:StudioDocumentWebHandlers._document_source_ids"
-    elif _operation in {
-        Operation.ARTIFACT_GENERATE_INFOGRAPHIC,
-        Operation.ARTIFACT_GENERATE_SLIDE_DECK,
-    }:
-        _recency_site = "_web/studio_media.py:StudioMediaWebHandlers._visual_source_selection"
-    else:
-        _recency_site = _GET_RAW
-    if _operation in {
-        Operation.ARTIFACT_GENERATE_DATA_TABLE,
-        Operation.ARTIFACT_GENERATE_MIND_MAP,
-    }:
-        _recency_site = _GET_DATA_SOURCES
+    # P9.4b: the generate rows read default sources through their own spec; the
+    # note-backed mind-map compatibility composite still reads through its helper.
+    _recency_site = (
+        _GET_DATA_SOURCES
+        if _operation is Operation.ARTIFACT_GENERATE_MIND_MAP
+        else f"_web/bindings/studio.py:{_operation.name}"
+    )
     RECENCY_CONTRACTS[_operation] = (
         RecencyRule(
             next(spec.public_methods for spec in OPERATION_SPECS if spec.operation is _operation),
@@ -644,7 +602,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.ARTIFACT_RENAME, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
-            ("_web/backend.py:WebRpcBackend._artifact_catalog_records", "post-mutation readback")
+            ("_web/bindings/studio.py:ARTIFACT_RENAME", "post-mutation readback")
         ),
         (Operation.ARTIFACT_DOWNLOAD, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
@@ -716,10 +674,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/research.py:RESEARCH_POLL", "one read per wait poll tick")
         ),
         (Operation.ARTIFACT_RENAME, _b(RPCMethod.RENAME_ARTIFACT)): _rules(
-            (
-                "_web/studio_facade.py:StudioFacadeWebHandlers._artifact_rename",
-                "public=artifacts.rename",
-            )
+            ("_web/bindings/studio.py:ARTIFACT_RENAME", "public=artifacts.rename")
         ),
         (Operation.MIND_MAP_UPDATE, _b(RPCMethod.RENAME_ARTIFACT)): _rules(
             ("_web/bindings/mind_maps.py:MIND_MAP_UPDATE", "kind=INTERACTIVE")
