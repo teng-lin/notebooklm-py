@@ -340,8 +340,7 @@ def _build_artifacts_with_real_mind_map_service(core: FakeSession) -> ArtifactsA
     instances backed by ``core.rpc_executor`` so the mind-map flow
     exercises the live RPC callbacks against the canned executor.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import LegacyNoteBackedService
+    from notebooklm._mind_map import LegacyNoteBackedService, NoteBackedMindMapService
 
     note_service = LegacyNoteBackedService(core.rpc_executor)
     mind_maps = NoteBackedMindMapService(note_service)

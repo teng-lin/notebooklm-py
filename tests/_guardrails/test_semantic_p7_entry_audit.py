@@ -130,7 +130,7 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
 # semantic and no longer owns the runtime-wide RpcCaller capability.
 AUTHORIZED_LEGACY_RPC_CALLERS: frozenset[tuple[str, str, str]] = frozenset(
     {
-        ("_note_service.py", "LegacyNoteBackedService.__init__", "rpc"),
+        ("_mind_map.py", "LegacyNoteBackedService.__init__", "rpc"),
     }
 )
 
@@ -262,7 +262,7 @@ MIGRATED_FEATURE_RPC_NEUTRAL_MODULES = frozenset(
 # a feature facade is never admitted here as a convenient exception.
 CLASSIFIED_NON_WEB_RPC_METHOD_IMPORTS: dict[str, str] = {
     "_backend_compat.py": "legacy public exception diagnostic projector",
-    "_note_service.py": "plan-authorized LegacyNoteBackedService",
+    "_mind_map.py": "plan-authorized LegacyNoteBackedService",
     "_notebooks.py": "documented public raw-RPC compatibility owner",
     "_research_task_parser.py": "legacy research wire decoder",
     "_row_adapters/artifacts.py": "artifact positional row decoder",
@@ -803,7 +803,7 @@ def test_rpccaller_consumer_inventory_is_exact_and_fails_closed() -> None:
 def test_authorized_legacy_rpc_callers_are_exact_and_semantic_baseline_is_zero() -> None:
     """Only the plan-backed note compatibility implementation is exempt."""
     assert {
-        ("_note_service.py", "LegacyNoteBackedService.__init__", "rpc"),
+        ("_mind_map.py", "LegacyNoteBackedService.__init__", "rpc"),
     } == AUTHORIZED_LEGACY_RPC_CALLERS
     assert not KNOWN_SEMANTIC_RPC_CALLER_BLOCKERS
 

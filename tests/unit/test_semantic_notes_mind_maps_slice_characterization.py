@@ -28,14 +28,13 @@ import httpx
 import pytest
 
 from notebooklm import MindMap, Note
-from notebooklm._mind_map import NoteBackedMindMapService
-from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
-from notebooklm._note_service import (
+from notebooklm._mind_map import (
     LegacyNoteBackedService,
+    NoteBackedMindMapService,
     NoteRowKind,
-    NoteService,
-    _cleanup_tasks,
 )
+from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
+from notebooklm._note_service import NoteService, _cleanup_tasks
 from notebooklm._notes import NotesAPI
 from notebooklm._row_adapters.notes import NoteRow
 from notebooklm._types.mind_maps import MindMapKind

@@ -23,9 +23,9 @@ from ._chat import ChatAPI
 from ._collections import CollectionsAPI
 from ._deadline import RuntimeDeadlineFactory
 from ._labels import LabelsAPI
-from ._mind_map import NoteBackedMindMapService
+from ._mind_map import LegacyNoteBackedService, NoteBackedMindMapService
 from ._mind_maps_api import MindMapsAPI
-from ._note_service import LegacyNoteBackedService, NoteService
+from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI

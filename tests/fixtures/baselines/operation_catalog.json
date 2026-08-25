@@ -2470,7 +2470,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_note_service.py:LegacyNoteBackedService.create_note",
+        "_mind_map.py:LegacyNoteBackedService.create_note",
         "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/notes.py:NOTE_CREATE"
       ],
@@ -2744,7 +2744,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_note_service.py:LegacyNoteBackedService.delete_note",
+        "_mind_map.py:LegacyNoteBackedService.delete_note",
         "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/notes.py:NOTE_DELETE"
       ],
@@ -3251,7 +3251,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_note_service.py:LegacyNoteBackedService.fetch_note_rows",
+        "_mind_map.py:LegacyNoteBackedService.fetch_note_rows",
         "_web/bindings/mind_maps.py:ARTIFACT_GET",
         "_web/bindings/mind_maps.py:ARTIFACT_LIST",
         "_web/bindings/mind_maps.py:MIND_MAP_LIST",
@@ -4657,7 +4657,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_note_service.py:LegacyNoteBackedService.update_note",
+        "_mind_map.py:LegacyNoteBackedService.update_note",
         "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/notes.py:NOTE_UPDATE"
       ],
@@ -5225,7 +5225,7 @@
         {
           "binding": "DELETE_NOTE:<default>",
           "discriminator": "cancelled generated-note cleanup",
-          "site": "_note_service.py:LegacyNoteBackedService.delete_note",
+          "site": "_mind_map.py:LegacyNoteBackedService.delete_note",
           "transport_kind": "rpc"
         },
         {
@@ -5243,7 +5243,7 @@
         {
           "binding": "UPDATE_NOTE:<default>",
           "discriminator": "persist generated JSON and title",
-          "site": "_note_service.py:LegacyNoteBackedService.update_note",
+          "site": "_mind_map.py:LegacyNoteBackedService.update_note",
           "transport_kind": "rpc"
         }
       ],

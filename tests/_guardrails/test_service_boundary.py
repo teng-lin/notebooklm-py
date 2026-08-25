@@ -193,7 +193,7 @@ I9_EXEMPT_LEGACY_CLASSES: frozenset[str] = frozenset(
 #: workflows); ``NotebookLegacyRpc`` goes in R6.2 with ``NotebooksAPI.get_raw``.
 I9_DELETION_TARGETS: frozenset[str] = frozenset(
     {
-        "_note_service.py::LegacyNoteBackedService",
+        "_mind_map.py::LegacyNoteBackedService",
         "_notebooks.py::NotebookLegacyRpc",
     }
 )
