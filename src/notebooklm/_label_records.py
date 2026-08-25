@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, unique
 
-from ._operations import CallPolicy, Operation, OperationDef
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 @unique
@@ -234,12 +234,14 @@ LABEL_MUTATE_DEF: OperationDef[LabelMutateInput, LabelMutateResult] = OperationD
     CallPolicy.MUTATION,
     LabelMutateInput,
     LabelMutateResult,
+    tier=OperationTier.PRIMITIVE,
 )
 LABEL_ALLOCATE_DEF: OperationDef[LabelAllocateInput, LabelAllocateResult] = OperationDef(
     Operation.LABEL_ALLOCATE,
     CallPolicy.MUTATION,
     LabelAllocateInput,
     LabelAllocateResult,
+    tier=OperationTier.PRIMITIVE,
 )
 LABEL_DELETE_DEF: OperationDef[LabelDeleteInput, LabelDeleteResult] = OperationDef(
     Operation.LABEL_DELETE,

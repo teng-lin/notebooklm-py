@@ -13,7 +13,7 @@ import pytest
 
 from notebooklm._app.generate import execute_generation
 from notebooklm._idempotency import IdempotencyPolicy, IdempotencyRegistry
-from notebooklm._operations import CallPolicy, Operation, OperationDef
+from notebooklm._operations import CallPolicy, Operation, OperationDef, OperationTier
 from notebooklm.rpc import RPCMethod
 from scripts import _operation_catalog_ast as catalog_ast
 from scripts import _operation_catalog_authorities as catalog_authorities
@@ -23,10 +23,17 @@ from tests.unit._rpc_executor_support import _executor, _Owner
 
 def test_operation_definition_is_inert_frozen_slotted_vocabulary() -> None:
     definition = OperationDef(Operation.NOTEBOOK_LIST, CallPolicy.READ, str, int)
+    leaf = OperationDef(
+        Operation.LABEL_MUTATE, CallPolicy.MUTATION, str, int, tier=OperationTier.PRIMITIVE
+    )
 
     assert definition.key is Operation.NOTEBOOK_LIST
     assert definition.input_type is str
     assert definition.output_type is int
+    # Only a P9.2 decomposition leaf declares a tier; everything else is product.
+    assert {tier.value for tier in OperationTier} == {"product", "primitive"}
+    assert definition.tier is OperationTier.PRODUCT
+    assert leaf.tier is OperationTier.PRIMITIVE
     assert not hasattr(definition, "__dict__")
     with pytest.raises(dataclasses.FrozenInstanceError):
         definition.policy = CallPolicy.MUTATION  # type: ignore[misc]

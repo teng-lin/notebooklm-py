@@ -78,12 +78,21 @@ from tests._fixtures.recording_backend import RecordingBackend
 
 
 def test_backend_vocabulary_is_closed_hashable_and_runtime_checkable() -> None:
-    capabilities = BackendCapabilities(frozenset({Operation.NOTEBOOK_LIST, Operation.SOURCE_GET}))
+    capabilities = BackendCapabilities(
+        frozenset({Operation.NOTEBOOK_LIST, Operation.SOURCE_GET}),
+        workflows=frozenset({Operation.NOTEBOOK_CREATE}),
+    )
     backend = RecordingBackend(kind=BackendKind.WEB)
 
     assert {kind.value for kind in BackendKind} == {"web", "mobile"}
     assert capabilities.supports(Operation.NOTEBOOK_LIST)
     assert not capabilities.supports(Operation.NOTEBOOK_GET)
+    # A service-owned workflow is available through the client but never
+    # directly invokable; see tests/unit/test_semantic_capabilities.py.
+    assert not capabilities.supports(Operation.NOTEBOOK_CREATE)
+    assert capabilities.available(Operation.NOTEBOOK_CREATE)
+    assert capabilities.available(Operation.NOTEBOOK_LIST)
+    assert not capabilities.available(Operation.NOTEBOOK_GET)
     assert capabilities == replace(capabilities)
     assert hash(capabilities) == hash(replace(capabilities))
     assert isinstance(backend, BackendAdapter)

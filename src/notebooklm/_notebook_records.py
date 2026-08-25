@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from ._operations import CallPolicy, Operation, OperationDef
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,6 +240,7 @@ NOTEBOOK_ALLOCATE_DEF: OperationDef[NotebookAllocateInput, NotebookAllocateResul
     CallPolicy.MUTATION,
     NotebookAllocateInput,
     NotebookAllocateResult,
+    tier=OperationTier.PRIMITIVE,
 )
 NOTEBOOK_UPDATE_DEF: OperationDef[NotebookUpdateInput, NotebookUpdateResult] = OperationDef(
     Operation.NOTEBOOK_UPDATE,
@@ -252,6 +253,7 @@ NOTEBOOK_PATCH_DEF: OperationDef[NotebookPatchInput, NotebookPatchResult] = Oper
     CallPolicy.MUTATION,
     NotebookPatchInput,
     NotebookPatchResult,
+    tier=OperationTier.PRIMITIVE,
 )
 NOTEBOOK_DELETE_DEF: OperationDef[NotebookDeleteInput, NotebookDeleteResult] = OperationDef(
     Operation.NOTEBOOK_DELETE,

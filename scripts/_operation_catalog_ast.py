@@ -1395,6 +1395,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/failure_projection.py", "_records", "SourceAddFailureKind"),
         ("_web/failure_projection.py", "_records", "SourceAddFailureRecord"),
         ("_web/backend.py", "registry", "WEB_OPERATION_REGISTRY"),
+        ("_web/backend.py", "registry", "WEB_SERVICE_OWNED_OPERATIONS"),
         ("_web/backend.py", "registry", "WEB_SUPPORTED_OPERATIONS"),
         ("_web/codec/artifacts.py", "_records", "ArtifactInfographicRecord"),
         ("_web/codec/artifacts.py", "_records", "ArtifactMediaRecord"),

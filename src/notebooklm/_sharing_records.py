@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, unique
 
-from ._operations import CallPolicy, Operation, OperationDef
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 @unique
@@ -196,6 +196,7 @@ SHARING_MUTATE_DEF: OperationDef[SharingMutateInput, SharingMutateResult] = Oper
     CallPolicy.MUTATION,
     SharingMutateInput,
     SharingMutateResult,
+    tier=OperationTier.PRIMITIVE,
 )
 SHARING_PATCH_VIEW_LEVEL_DEF: OperationDef[
     SharingPatchViewLevelInput, SharingPatchViewLevelResult
@@ -204,6 +205,7 @@ SHARING_PATCH_VIEW_LEVEL_DEF: OperationDef[
     CallPolicy.MUTATION,
     SharingPatchViewLevelInput,
     SharingPatchViewLevelResult,
+    tier=OperationTier.PRIMITIVE,
 )
 SHARING_GET_DEF: OperationDef[SharingGetInput, SharingGetResult] = OperationDef(
     Operation.SHARING_GET,

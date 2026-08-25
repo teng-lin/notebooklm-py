@@ -77,6 +77,25 @@ class RecordingBackend:
         self._results: dict[Operation, object] = {}
         self._errors: dict[Operation, BackendError] = {}
         self._sequences: dict[Operation, list[object]] = {}
+        self._workflows: frozenset[Operation] = frozenset()
+
+    def _refresh_capabilities(self) -> None:
+        """Rebuild both capability views from the registered leaves."""
+
+        self.capabilities = BackendCapabilities(
+            frozenset(self._definitions), workflows=self._workflows
+        )
+
+    def set_workflows(self, *operations: Operation) -> None:
+        """Declare service-owned workflows this fake supplies the leaves for.
+
+        Mirrors what ``WebRpcBackend`` does with ``WEB_SERVICE_OWNED_OPERATIONS``:
+        ``available()`` reports them, ``supports()`` does not, and ``invoke``
+        still rejects them — a service must sequence its leaves.
+        """
+
+        self._workflows = frozenset(operations)
+        self._refresh_capabilities()
 
     def set_sequence(
         self,
@@ -112,7 +131,7 @@ class RecordingBackend:
         self._sequences[operation.key] = scripted
         self._results.pop(operation.key, None)
         self._errors.pop(operation.key, None)
-        self.capabilities = BackendCapabilities(frozenset(self._definitions))
+        self._refresh_capabilities()
 
     def set_result(
         self,
@@ -130,7 +149,7 @@ class RecordingBackend:
         self._results[operation.key] = result
         self._errors.pop(operation.key, None)
         self._sequences.pop(operation.key, None)
-        self.capabilities = BackendCapabilities(frozenset(self._definitions))
+        self._refresh_capabilities()
 
     def set_error(
         self,
@@ -153,7 +172,7 @@ class RecordingBackend:
         self._errors[operation.key] = error
         self._results.pop(operation.key, None)
         self._sequences.pop(operation.key, None)
-        self.capabilities = BackendCapabilities(frozenset(self._definitions))
+        self._refresh_capabilities()
 
     async def invoke(
         self,

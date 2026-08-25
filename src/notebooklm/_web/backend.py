@@ -56,7 +56,12 @@ from .bindings.sources import upload_backend
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
 from .errors import error_diagnostics, translate_web_error
 from .failure_projection import _capture_public_failure
-from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS, WebOperationBinding
+from .registry import (
+    WEB_OPERATION_REGISTRY,
+    WEB_SERVICE_OWNED_OPERATIONS,
+    WEB_SUPPORTED_OPERATIONS,
+    WebOperationBinding,
+)
 from .runtime import WebExecutionRuntime
 from .transport import WebRequest, WebTransport
 
@@ -154,6 +159,7 @@ class WebRpcBackend:
         self._deadline_factory = deadline_factory
         self._capabilities = BackendCapabilities(
             supported_operations=WEB_SUPPORTED_OPERATIONS,
+            workflows=WEB_SERVICE_OWNED_OPERATIONS,
         )
         self._closed = False
         # The transport reads the runtime through the shell on every call so
