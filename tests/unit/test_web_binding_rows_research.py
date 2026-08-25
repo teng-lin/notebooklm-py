@@ -316,3 +316,34 @@ async def test_codec_row_pre_dispatch_expiry_is_not_dispatched() -> None:
     assert caught.value.operation is Operation.RESEARCH_CANCEL
     assert caught.value.dispatched is False
     assert may_have_committed(caught.value) is False
+
+
+@pytest.mark.parametrize(
+    ("value", "method"),
+    [
+        (_FAST_INPUT, RPCMethod.START_FAST_RESEARCH),
+        (_DEEP_INPUT, RPCMethod.START_DEEP_RESEARCH),
+    ],
+)
+@pytest.mark.asyncio
+async def test_keyed_row_pre_dispatch_expiry_names_the_native_the_input_selected(
+    value: ResearchStartInput, method: RPCMethod
+) -> None:
+    """A keyed spec picks the native from the input, so the expiry can name it."""
+    executor = _RecordingExecutor()
+    backend = build_web_backend(executor)
+    deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 16.0)
+
+    with pytest.raises(BackendDeadlineExceededError) as caught:
+        await backend.invoke(RESEARCH_START_DEF, value, deadline=deadline)
+
+    assert executor.calls == []
+    assert caught.value.operation is Operation.RESEARCH_START
+    assert caught.value.dispatched is False
+    assert caught.value.outcome_unknown is False
+    assert caught.value.diagnostics == {
+        "timeout": 5.0,
+        "remaining": 0.0,
+        "timeout_seconds": 5.0,
+        "method_id": method.value,
+    }

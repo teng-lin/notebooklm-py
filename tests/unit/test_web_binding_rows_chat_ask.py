@@ -266,9 +266,13 @@ async def test_ask_pre_dispatch_expiry_is_not_dispatched_and_not_unknown() -> No
     assert error.outcome_unknown is False
     assert error.dispatched is False
     assert may_have_committed(error) is False
-    assert error.diagnostics is not None
-    assert error.diagnostics["timeout"] == 5.0
-    assert error.diagnostics["remaining"] == 0.0
+    # The row streams: it resolves no native before dispatch, so — unlike a codec
+    # or keyed row — its expiry names no ``method_id``.
+    assert error.diagnostics == {
+        "timeout": 5.0,
+        "remaining": 0.0,
+        "timeout_seconds": 5.0,
+    }
     transport.perform_authed_post.assert_not_awaited()
     assert executor.calls == []
 

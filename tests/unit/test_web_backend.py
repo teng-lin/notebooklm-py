@@ -1670,6 +1670,31 @@ async def test_expired_deadline_fails_before_executor() -> None:
 
 
 @pytest.mark.asyncio
+async def test_expired_custom_row_fails_before_the_handler_and_names_no_native() -> None:
+    """A multi-native row resolves no native pre-dispatch, so it reports no ``method_id``."""
+    executor = _RecordingExecutor()
+    deadline = RuntimeDeadline(timeout=2.0, started_at=10.0, monotonic=lambda: 12.0)
+
+    with pytest.raises(BackendDeadlineExceededError) as caught:
+        await _backend(executor).invoke(
+            SOURCE_ADD_URL_DEF,
+            SourceAddUrlInput("nb", "https://example.com"),
+            deadline=deadline,
+        )
+
+    assert caught.value.operation is Operation.SOURCE_ADD_URL
+    assert caught.value.reason is BackendErrorReason.TIMEOUT
+    assert caught.value.diagnostics == {
+        "timeout": 2.0,
+        "remaining": 0.0,
+        "timeout_seconds": 2.0,
+    }
+    assert caught.value.dispatched is False
+    assert caught.value.outcome_unknown is False
+    assert executor.calls == []
+
+
+@pytest.mark.asyncio
 async def test_mutation_expiring_before_dispatch_is_not_marked_unconfirmed() -> None:
     executor = _RecordingExecutor(None)
     times = iter((11.0, 12.0))
