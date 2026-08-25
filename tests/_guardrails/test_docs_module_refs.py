@@ -26,8 +26,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from scripts.check_docs_module_refs import (  # noqa: E402
     _ALLOWLIST,
-    _is_historical_prose,
     _is_module_shaped,
+    _is_out_of_tense,
     _unused_allowlist_entries,
     collect_violations,
     find_violations,
@@ -174,14 +174,28 @@ def test_test_and_script_refs_are_not_module_shaped() -> None:
     assert _is_module_shaped("notebooklm_cli.py")
 
 
-def test_historical_prose_docs_are_classified() -> None:
-    # ADRs, refactor-history, and the CHANGELOG are historical-prose (inline
-    # check skipped); ordinary live docs are not.
-    assert _is_historical_prose("docs/adr/0014-x.md")
-    assert _is_historical_prose("docs/refactor-history.md")
-    assert _is_historical_prose("CHANGELOG.md")
-    assert not _is_historical_prose("docs/architecture.md")
-    assert not _is_historical_prose("README.md")
+def test_out_of_tense_docs_are_classified() -> None:
+    # ADRs, refactor-history, the CHANGELOG and plans name modules by a path the
+    # tree does not carry today (inline check skipped); live docs do not.
+    assert _is_out_of_tense("docs/adr/0014-x.md")
+    assert _is_out_of_tense("docs/plan/2026-08-25-p10-semantic-remediation.md")
+    assert _is_out_of_tense("docs/refactor-history.md")
+    assert _is_out_of_tense("CHANGELOG.md")
+    assert not _is_out_of_tense("docs/architecture.md")
+    assert not _is_out_of_tense("README.md")
+
+
+def test_plan_doc_skips_inline_check_but_enforces_links(tmp_path) -> None:
+    # A plan names the module it is about to create; that ref is dead until the
+    # plan is executed, and the inline check must not block the plan landing.
+    _write(tmp_path / "src/notebooklm/__init__.py", "")
+    (tmp_path / "docs").mkdir()
+    _write(tmp_path / "docs/plan/2030-01-01-x.md", "Create `_future_service.py`.\n")
+    assert main(["--repo-root", str(tmp_path)]) == 0
+
+    # ...but a dead link into the package in a plan still fails.
+    _write(tmp_path / "docs/plan/2030-01-01-x.md", "See [x](src/notebooklm/_future.py).\n")
+    assert main(["--repo-root", str(tmp_path)]) == 1
 
 
 def test_changelog_skips_inline_check_but_enforces_links(tmp_path) -> None:

@@ -18,9 +18,10 @@ existing file. A broken link into the package is never intentional, even in an
 ADR or refactor-history doc.
 
 **(2) Inline module-ref check (LIVE docs only, allowlisted).** In the *live*
-docs (``docs/**/*.md`` + root ``*.md`` MINUS the historical-prose docs —
-``docs/adr/**``, ``docs/refactor-history.md``, and ``CHANGELOG.md`` — which
-intentionally name historical modules in prose), every inline code span
+docs (``docs/**/*.md`` + root ``*.md`` MINUS the out-of-tense docs —
+``docs/adr/**``, ``docs/plan/**``, ``docs/refactor-history.md``, and
+``CHANGELOG.md`` — which intentionally name modules by a path the tree does not
+carry today, either historical or not-yet-migrated), every inline code span
 ```` `<ref>` ```` whose ``<ref>`` matches a ``src/notebooklm`` module shape MUST
 resolve to ``src/notebooklm/<ref>``. The rare intentional historical mention in
 a live doc is carried in :data:`_ALLOWLIST` (shrink-only). CLAUDE.md is excluded
@@ -188,16 +189,30 @@ def find_violations(
 # --- Filesystem helpers (I/O at the edge) -------------------------------------
 
 
-def _is_historical_prose(rel: str) -> bool:
-    """True for docs that intentionally name historical/old module paths in prose.
+def _is_out_of_tense(rel: str) -> bool:
+    """True for docs that intentionally name modules by a path the tree lacks today.
 
-    These are frozen-or-by-design historical records — ADRs, the refactor history,
-    and the CHANGELOG (whose entries describe edits to modules *as they were named
-    at the time*, e.g. ``cli/note.py`` for a fix that predates the ``_cmd`` rename).
-    The inline module-ref check skips them; the broken-link check still applies (a
-    dead *link* into the package is never intentional, even in history).
+    Two shapes, both by design:
+
+    * **Historical records** — ADRs, the refactor history, and the CHANGELOG, whose
+      entries describe edits to modules *as they were named at the time* (e.g.
+      ``cli/note.py`` for a fix that predates the ``_cmd`` rename).
+    * **Plans** (``docs/plan/**``) — forward-looking documents that name a module
+      by the path it will have *after* the migration they specify, and name the
+      modules that migration deletes. Both halves are dead refs by construction
+      for as long as the plan is being executed, and a multi-slice programme
+      would otherwise redden this gate on every commit that lands one of its
+      slices. ``_ALLOWLIST`` is shrink-only, so there is no per-ref escape hatch.
+
+    The inline module-ref check skips these; the broken-link check still applies (a
+    dead *link* into the package is never intentional, in history or in a plan).
     """
-    return rel.startswith("docs/adr/") or rel == "docs/refactor-history.md" or rel == "CHANGELOG.md"
+    return (
+        rel.startswith("docs/adr/")
+        or rel.startswith("docs/plan/")
+        or rel == "docs/refactor-history.md"
+        or rel == "CHANGELOG.md"
+    )
 
 
 def _iter_docs(repo_root: Path):
@@ -206,7 +221,7 @@ def _iter_docs(repo_root: Path):
     Docs = every ``docs/**/*.md`` plus every root-level ``*.md``. CLAUDE.md is
     excluded because it is an agent-instruction file, not part of the live docs
     set. ``is_live`` is False for the historical-prose docs (see
-    :func:`_is_historical_prose`) so the inline check skips them while the link
+    :func:`_is_out_of_tense`) so the inline check skips them while the link
     check still applies.
     """
     docs_dir = repo_root / "docs"
@@ -219,7 +234,7 @@ def _iter_docs(repo_root: Path):
         rel = path.relative_to(repo_root).as_posix()
         if rel == "CLAUDE.md":
             continue
-        yield path, rel, not _is_historical_prose(rel)
+        yield path, rel, not _is_out_of_tense(rel)
 
 
 def _make_resolver(repo_root: Path, doc_path: Path) -> Callable[[str], bool]:

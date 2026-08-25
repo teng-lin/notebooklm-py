@@ -3660,6 +3660,8 @@
       ],
       "response_decoders": [
         "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "response_projectors": [],
@@ -4786,6 +4788,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "route_context": "notebook",
@@ -4890,6 +4894,8 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_interactive_content",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
@@ -5598,6 +5604,8 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
@@ -5653,6 +5661,8 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
@@ -5728,6 +5738,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "route_context": "notebook+artifact",
@@ -5869,6 +5881,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "route_context": "notebook+artifact",
@@ -6898,6 +6912,8 @@
         "_row_adapters/sources.py:SourceRow",
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_interactive_content",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/chat.py:decode_get_settings_result",
@@ -7039,6 +7055,8 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_interactive_content",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
@@ -7091,6 +7109,8 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
