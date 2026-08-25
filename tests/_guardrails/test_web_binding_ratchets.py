@@ -65,7 +65,7 @@ CLASS_BODY_LINE_CEILING = 500
 #: Measured at P9.4a; shrink-only. ``WebExecutionRuntime`` is the transport engine
 #: and shrinks on its own schedule; the three chain classes are P9.4b targets.
 OVERSIZED_CLASS_CEILINGS = {
-    "backend.py:WebRpcBackend": 886,
+    "backend.py:WebRpcBackend": 880,
     "labels.py:LabelSetWebHandlers": 522,
     "runtime.py:WebExecutionRuntime": 597,
 }
