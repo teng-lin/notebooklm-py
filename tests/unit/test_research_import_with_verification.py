@@ -23,9 +23,36 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import notebooklm._research_service as _research_mod
+from notebooklm._backend import BackendError
+from notebooklm._operations import Operation
 from notebooklm._research_service import ResearchService
+from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import NetworkError, RPCError, RPCTimeoutError
 from tests._fixtures.web_backend import build_web_backend
+
+
+# P10 R6.4: the loop branches on neutral reasons, not public exception types,
+# so anything injected at a seam ABOVE the port (the ``import_sources`` attempt
+# and the record-listing probe) is the neutral failure those seams now raise.
+# Built through the real translator rather than hand-rolled, so a drift between
+# what the transport publishes and what the loop matches on still fails here.
+# Failures queued into ``_RecordingRpc`` stay public: that double sits BELOW
+# the port and the backend translates them exactly as production does.
+def _timeout_failure(message: str = "Timed out", *, timeout_seconds: float | None = 30.0):
+    return translate_web_error(
+        Operation.RESEARCH_IMPORT,
+        RPCTimeoutError(message, timeout_seconds=timeout_seconds),
+    )
+
+
+def _rpc_failure(message: str, *, rpc_code: int | str | None = None, operation=None):
+    return translate_web_error(
+        operation or Operation.RESEARCH_IMPORT, RPCError(message, rpc_code=rpc_code)
+    )
+
+
+def _network_failure(message: str):
+    return translate_web_error(Operation.SOURCE_LIST, NetworkError(message))
 
 
 def _make_service(rpc: object, source_lister: object) -> ResearchService:
@@ -127,7 +154,7 @@ class TestImportSourcesWithVerification:
         mock_source_lister.list = AsyncMock(return_value=[])
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_1", "title": "Source 1"}],
             ]
         )
@@ -149,9 +176,7 @@ class TestImportSourcesWithVerification:
     async def test_raises_after_elapsed_budget(self):
         research, _, mock_source_lister = _make_research()
         mock_source_lister.list = AsyncMock(return_value=[])
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         # time.monotonic is read at start, then once per attempt (the #2205
         # read-timeout clamp) and again on each timeout. The first two reads sit
@@ -165,7 +190,7 @@ class TestImportSourcesWithVerification:
                 side_effect=chain([0.0, 0.0], repeat(1801.0)),
             ),
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
-            pytest.raises(RPCTimeoutError),
+            pytest.raises(BackendError),
         ):
             await research.import_sources_with_verification(
                 "nb_123",
@@ -244,7 +269,7 @@ class TestImportSourcesWithVerification:
             patch.object(_research_mod.time, "monotonic", side_effect=lambda: clock["now"]),
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock),
             caplog.at_level(logging.WARNING, logger="notebooklm._research"),
-            pytest.raises(RPCTimeoutError),
+            pytest.raises(BackendError),
         ):
             await research.import_sources_with_verification(
                 "nb_123",
@@ -321,7 +346,7 @@ class TestImportSourcesWithVerification:
             ]
         )
         research.import_sources = AsyncMock(
-            side_effect=RPCError(
+            side_effect=_rpc_failure(
                 "The server rejected this request (failed precondition).", rpc_code=9
             )
         )
@@ -352,14 +377,14 @@ class TestImportSourcesWithVerification:
         research, _, mock_source_lister = _make_research()
         mock_source_lister.list = AsyncMock(return_value=[])  # nothing verified as new
         research.import_sources = AsyncMock(
-            side_effect=RPCError(
+            side_effect=_rpc_failure(
                 "The server rejected this request (failed precondition).", rpc_code=9
             )
         )
 
         with (
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
-            pytest.raises(RPCError, match="failed precondition"),
+            pytest.raises(BackendError, match="failed precondition"),
         ):
             await research.import_sources_with_verification(
                 "nb_123",
@@ -393,14 +418,14 @@ class TestImportSourcesWithVerification:
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
-                RPCError("The server rejected this request (failed precondition).", rpc_code=9),
+                _timeout_failure(),
+                _rpc_failure("The server rejected this request (failed precondition).", rpc_code=9),
             ]
         )
 
         with (
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
-            pytest.raises(RPCError, match="failed precondition"),
+            pytest.raises(BackendError, match="failed precondition"),
         ):
             await research.import_sources_with_verification(
                 "nb_123",
@@ -422,11 +447,13 @@ class TestImportSourcesWithVerification:
         """
         research, _, mock_source_lister = _make_research()
         mock_source_lister.list = AsyncMock(return_value=[])
-        research.import_sources = AsyncMock(side_effect=RPCError("Unauthenticated", rpc_code=16))
+        research.import_sources = AsyncMock(
+            side_effect=_rpc_failure("Unauthenticated", rpc_code=16)
+        )
 
         with (
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
-            pytest.raises(RPCError, match="Unauthenticated"),
+            pytest.raises(BackendError, match="Unauthenticated"),
         ):
             await research.import_sources_with_verification(
                 "nb_123",
@@ -450,18 +477,20 @@ class TestImportSourcesWithVerification:
         mock_source_lister.list = AsyncMock(
             side_effect=[
                 [],  # baseline
-                RPCError("probe down", rpc_code=14),  # post-error probe fails
+                _rpc_failure(
+                    "probe down", rpc_code=14, operation=Operation.SOURCE_LIST
+                ),  # post-error probe fails
             ]
         )
         research.import_sources = AsyncMock(
-            side_effect=RPCError(
+            side_effect=_rpc_failure(
                 "The server rejected this request (failed precondition).", rpc_code=9
             )
         )
 
         with (
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
-            pytest.raises(RPCError, match="failed precondition"),
+            pytest.raises(BackendError, match="failed precondition"),
         ):
             await research.import_sources_with_verification(
                 "nb_123",
@@ -483,14 +512,14 @@ class TestImportSourcesWithVerification:
         research, _, mock_source_lister = _make_research()
         mock_source_lister.list = AsyncMock(return_value=[])
         research.import_sources = AsyncMock(
-            side_effect=RPCError(
+            side_effect=_rpc_failure(
                 "The server rejected this request (failed precondition).", rpc_code=9
             )
         )
 
         with (
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
-            pytest.raises(RPCError, match="failed precondition"),
+            pytest.raises(BackendError, match="failed precondition"),
         ):
             await research.import_sources_with_verification(
                 "nb_123",
@@ -524,9 +553,7 @@ class TestImportSourcesWithVerification:
                 [baseline_src, new_src],  # probe after timeout — URL is now there
             ]
         )
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         with patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
@@ -553,9 +580,7 @@ class TestImportSourcesWithVerification:
         new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com")
         research, _, mock_source_lister = _make_research()
         mock_source_lister.list = AsyncMock(side_effect=[[], [new_src]])
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         with patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
@@ -574,9 +599,7 @@ class TestImportSourcesWithVerification:
         new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com/a")
         research, _, mock_source_lister = _make_research()
         mock_source_lister.list = AsyncMock(side_effect=[[], [new_src]])
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         with patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
@@ -598,7 +621,7 @@ class TestImportSourcesWithVerification:
         mock_source_lister.list = AsyncMock(return_value=[])  # always empty
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_1", "title": "Source 1"}],
             ]
         )
@@ -635,7 +658,7 @@ class TestImportSourcesWithVerification:
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_2", "title": "Source 2"}, {"id": "src_3", "title": "Source 3"}],
             ]
         )
@@ -695,7 +718,7 @@ class TestImportSourcesWithVerification:
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_2", "title": "Source 2"}],
             ]
         )
@@ -751,7 +774,7 @@ class TestImportSourcesWithVerification:
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_1", "title": "Source 1"}, {"id": "src_report", "title": "Report"}],
             ]
         )
@@ -791,8 +814,8 @@ class TestImportSourcesWithVerification:
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
+                _timeout_failure(),
             ]
         )
 
@@ -831,15 +854,15 @@ class TestImportSourcesWithVerification:
         research, _, mock_source_lister = _make_research()
         mock_source_lister.list = AsyncMock(
             side_effect=[
-                RPCError("snapshot unavailable"),
+                _rpc_failure("snapshot unavailable", operation=Operation.SOURCE_LIST),
                 [source_1],
                 [source_1, source_2, source_3],
             ]
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
+                _timeout_failure(),
             ]
         )
 
@@ -877,9 +900,7 @@ class TestImportSourcesWithVerification:
         new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com")
         research, _, mock_source_lister = _make_research()
         mock_source_lister.list = AsyncMock(side_effect=[[], [new_src]])
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         imported = await research.import_sources_with_verification(
             "nb_123",
@@ -953,7 +974,7 @@ class TestImportSourcesWithVerification:
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_new", "title": "New"}],
             ]
         )
@@ -1006,7 +1027,7 @@ class TestImportSourcesWithVerification:
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_report", "title": "Research Report"}],
             ]
         )
@@ -1043,9 +1064,7 @@ class TestImportSourcesWithVerification:
                 [report_src, new_src],  # both new after the timeout
             ]
         )
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         with patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock):
             imported = await research.import_sources_with_verification(
@@ -1075,9 +1094,7 @@ class TestImportSourcesWithVerification:
         mock_source_lister.list = AsyncMock(
             side_effect=[[], [requested_report, concurrent_report, new_src]]
         )
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         with patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock):
             imported = await research.import_sources_with_verification(
@@ -1115,9 +1132,7 @@ class TestImportSourcesWithVerification:
                 [new_src, concurrent_report],
             ]
         )
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         with patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock):
             imported = await research.import_sources_with_verification(
@@ -1156,7 +1171,7 @@ class TestImportSourcesWithVerification:
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_new", "title": "Source 1"}],
             ]
         )
@@ -1220,15 +1235,13 @@ class TestImportSourcesWithVerification:
         """
         research, _, mock_source_lister = _make_research()
         mock_source_lister.list = AsyncMock(return_value=[])
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         with (
             # Time budget never expires — only the retry cap can stop the loop.
             patch.object(_research_mod.time, "monotonic", return_value=0.0),
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
-            pytest.raises(RPCTimeoutError),
+            pytest.raises(BackendError),
         ):
             await research.import_sources_with_verification(
                 "nb_123",
@@ -1261,13 +1274,13 @@ class TestImportSourcesWithVerification:
         mock_source_lister.list = AsyncMock(
             side_effect=[
                 [],  # baseline
-                NetworkError("probe down"),  # post-timeout probe fails
+                _network_failure("probe down"),  # post-timeout probe fails
                 [new_src],  # post-retry probe (would succeed if reached, unused)
             ]
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_new", "title": "Source 1"}],
             ]
         )
@@ -1317,9 +1330,7 @@ class TestImportSourcesWithVerification:
                 asyncio.CancelledError(),  # probe cancelled
             ]
         )
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         with (
             patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock),
@@ -1440,7 +1451,7 @@ class TestImportSourcesIdempotency:
     @pytest.mark.asyncio
     async def test_snapshot_failure_imports_all_without_filter(self):
         research, _, mock_source_lister = _make_research()
-        mock_source_lister.list = AsyncMock(side_effect=NetworkError("snapshot down"))
+        mock_source_lister.list = AsyncMock(side_effect=_network_failure("snapshot down"))
         research.import_sources = AsyncMock(return_value=[{"id": "src_a", "title": "A"}])
 
         imported = await research.import_sources_with_verification(
@@ -1467,9 +1478,7 @@ class TestImportSourcesIdempotency:
                 [existing_a, new_b],  # post-timeout probe — B committed
             ]
         )
-        research.import_sources = AsyncMock(
-            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
-        )
+        research.import_sources = AsyncMock(side_effect=_timeout_failure())
 
         with patch.object(_research_mod.asyncio, "sleep", new_callable=AsyncMock):
             imported = await research.import_sources_with_verification(
@@ -1563,7 +1572,7 @@ class TestImportSourcesIdempotency:
         )
         research.import_sources = AsyncMock(
             side_effect=[
-                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                _timeout_failure(),
                 [{"id": "src_x1", "title": "X"}],  # retry re-adds it
             ]
         )

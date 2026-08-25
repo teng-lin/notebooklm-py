@@ -15,17 +15,20 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from notebooklm._backend import BackendError, BackendErrorReason
+from notebooklm._operations import Operation
 from notebooklm._research_import import (
     _import_research_read_timeout,
-    _is_import_research_failed_precondition,
     _reconcile_import_probe,
 )
+from notebooklm._research_service import _is_import_research_failed_precondition
 from notebooklm._runtime.config import (
     DEFAULT_IMPORT_RESEARCH_BASE_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
     DEFAULT_IMPORT_RESEARCH_PER_SOURCE_TIMEOUT,
 )
 from notebooklm._types.research import ResearchSource
+from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import RPCError
 
 
@@ -56,19 +59,51 @@ class TestImportResearchReadTimeout:
 
 
 class TestIsImportResearchFailedPrecondition:
+    """P10 R6.4 moved the predicate above the wire; the codes it accepts did not.
+
+    The predicate now reads the adapter-normalized
+    :class:`~notebooklm._backend.BackendStatus` instead of a raw ``rpc_code``,
+    so each case starts from the ``RPCError`` the transport actually raises and
+    runs it through :func:`translate_web_error`. That covers both halves of the
+    new contract at once: the adapter normalizing the wire code, and the
+    service branching on the neutral status it published.
+    """
+
+    @staticmethod
+    def _translated(rpc_code: str | int | None) -> BackendError:
+        return translate_web_error(
+            Operation.RESEARCH_IMPORT,
+            RPCError("The server rejected this request.", rpc_code=rpc_code),
+        )
+
     def test_true_for_grpc_failed_precondition_code(self):
-        exc = RPCError("The server rejected this request (failed precondition).", rpc_code=9)
-        assert _is_import_research_failed_precondition(exc) is True
+        assert _is_import_research_failed_precondition(self._translated(9)) is True
 
     def test_true_for_string_encoded_code(self):
         # ``rpc_code`` is typed ``str | int | None`` on the wire path.
-        exc = RPCError("failed precondition", rpc_code="9")
-        assert _is_import_research_failed_precondition(exc) is True
+        assert _is_import_research_failed_precondition(self._translated("9")) is True
 
     @pytest.mark.parametrize("rpc_code", [16, 5, "USER_DISPLAYABLE_ERROR", None])
     def test_false_for_any_other_code(self, rpc_code):
-        exc = RPCError("some other failure", rpc_code=rpc_code)
-        assert _is_import_research_failed_precondition(exc) is False
+        assert _is_import_research_failed_precondition(self._translated(rpc_code)) is False
+
+    def test_false_for_a_failure_that_is_not_an_rpc_rejection(self):
+        """A timeout carrying the same status is still not a rejection."""
+        timed_out = BackendError(
+            message="timed out",
+            operation=Operation.RESEARCH_IMPORT,
+            diagnostics={"backend_status": "failed_precondition"},
+            reason=BackendErrorReason.TIMEOUT,
+        )
+        assert _is_import_research_failed_precondition(timed_out) is False
+
+    def test_false_when_the_adapter_published_no_status_at_all(self):
+        bare = BackendError(
+            message="rejected",
+            operation=Operation.RESEARCH_IMPORT,
+            reason=BackendErrorReason.RPC,
+        )
+        assert _is_import_research_failed_precondition(bare) is False
 
 
 def _src(id_: str, url: str | None, title: str = "T") -> MagicMock:

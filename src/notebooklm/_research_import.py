@@ -11,6 +11,11 @@ Every one of these is backend-neutral policy, so they are consumed by
 ``_research_service.py`` rather than by the ``_research.py`` facade, and this
 module is their only import home. (P6.2 retired the pass-through re-exports the
 facade used to carry; reference them here.)
+
+The retry-time ``FAILED_PRECONDITION`` predicate that used to live here reads a
+neutral :class:`~notebooklm._backend.BackendStatus` rather than a wire status
+code, so it moved to ``_research_service.py`` beside the reason sets it is
+branched on with (P10 R6.4).
 """
 
 from __future__ import annotations
@@ -29,8 +34,7 @@ from ._runtime.config import (
     compose_builtin_read_timeout,
 )
 from ._types.research import ResearchSource, ResearchSourceInput
-from .exceptions import ResearchTaskMismatchError, RPCError, ValidationError
-from .rpc import GrpcStatusCode, normalize_grpc_status
+from .exceptions import ResearchTaskMismatchError, ValidationError
 
 if TYPE_CHECKING:
     from .types import Source
@@ -412,32 +416,3 @@ def _import_research_read_timeout(
     if remaining_budget is None:
         return window
     return remaining_budget if window is None else min(window, remaining_budget)
-
-
-def _is_import_research_failed_precondition(exc: RPCError) -> bool:
-    """True when ``exc`` is IMPORT_RESEARCH's documented retry-time FAILED_PRECONDITION.
-
-    The server rejects an ``IMPORT_RESEARCH`` call against a ``task_id`` whose
-    state an earlier attempt against that same id already partially mutated —
-    commonly this method's own prior (client-timed-out) call within the same
-    retry loop, but not necessarily; documented backend behavior, not a novel
-    failure (issue #1926, item F2b). ``import_sources_with_verification``
-    shares its post-error ``sources.list`` probe with :class:`RPCTimeoutError`
-    for this one specific, well-understood code, but — unlike a timeout —
-    only a fully-verified success is accepted; a partial/no match re-raises
-    rather than retrying the rejected task_id. Every other ``RPCError``
-    propagates immediately without probing.
-
-    This is a pure ``rpc_code`` check with no awareness of which RPC produced
-    it — correct today because ``import_sources`` issues exactly one RPC
-    inside the guarded ``try``. A future ``import_sources`` change that adds a
-    second RPC call there would need this predicate revisited.
-
-    Note: the verification probe (like the pre-existing RPCTimeoutError one it
-    shares) confirms a matching source *exists*, not that *this* IMPORT_RESEARCH
-    call is what created it — an unrelated concurrent addition of the same URL
-    could coincidentally satisfy it. That race is inherent to ID/URL-based
-    verification and pre-dates this predicate; it is not made more likely by
-    extending verification to cover FAILED_PRECONDITION alongside timeouts.
-    """
-    return normalize_grpc_status(exc.rpc_code) is GrpcStatusCode.FAILED_PRECONDITION

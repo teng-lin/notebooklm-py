@@ -52,6 +52,7 @@ from notebooklm.exceptions import (
     DecodingError,
     ResearchStartUnavailableError,
     RPCError,
+    RPCTimeoutError,
     ValidationError,
 )
 from notebooklm.rpc import RPCMethod
@@ -83,6 +84,20 @@ def _service(rpc: _RecordingRpc, source_lister: object | None = None) -> Researc
     return ResearchService(
         build_web_backend(rpc),
         source_lister=source_lister or MagicMock(),  # type: ignore[arg-type]
+    )
+
+
+def _api(rpc: _RecordingRpc, source_lister: object | None = None) -> ResearchAPI:
+    """The facade over the same injected backend.
+
+    P10 R6.4 moved exception projection out of ``ResearchService`` and onto
+    this facade, so a test that asserts the *public* exception a caller sees
+    has to drive the facade; the service's own failures are neutral
+    :class:`BackendError` records.
+    """
+    return ResearchAPI(
+        source_lister=source_lister or MagicMock(),  # type: ignore[arg-type]
+        _backend=build_web_backend(rpc),
     )
 
 
@@ -376,18 +391,21 @@ async def test_start_validates_before_any_dispatch(
     assert rpc.calls == []
 
 
-@pytest.mark.asyncio
-async def test_deep_start_null_result_keeps_its_domain_error_and_rejecting_cause() -> None:
-    rejected = RPCError(
+def _rejected_deep_start() -> RPCError:
+    return RPCError(
         "NotebookLM rejected this request",
         method_id=RPCMethod.START_DEEP_RESEARCH.value,
         rpc_code=13,
         found_ids=[RPCMethod.START_DEEP_RESEARCH.value],
     )
-    rpc = _RecordingRpc(rejected)
+
+
+@pytest.mark.asyncio
+async def test_deep_start_null_result_keeps_its_domain_error_and_rejecting_cause() -> None:
+    rpc = _RecordingRpc(_rejected_deep_start())
 
     with pytest.raises(ResearchStartUnavailableError) as caught:
-        await _service(rpc).start("nb", "q", "web", "deep")
+        await _api(rpc).start("nb", "q", "web", "deep")
 
     error = caught.value
     assert error.notebook_id == "nb"
@@ -402,6 +420,26 @@ async def test_deep_start_null_result_keeps_its_domain_error_and_rejecting_cause
 
 
 @pytest.mark.asyncio
+async def test_deep_start_null_result_reaches_the_service_as_neutral_evidence() -> None:
+    """Below the facade the same failure is the closed record, not the class.
+
+    The pairing with the test above is the point of P10 defect S7: the service
+    no longer knows which public exception this becomes, and the facade no
+    longer knows which wire status produced it.
+    """
+    rpc = _RecordingRpc(_rejected_deep_start())
+
+    with pytest.raises(BackendError) as caught:
+        await _service(rpc).start("nb", "q", "web", "deep")
+
+    error = caught.value
+    assert type(error) is BackendError
+    assert not isinstance(error, ResearchStartUnavailableError)
+    assert error.reason is BackendErrorReason.RESEARCH_START_UNAVAILABLE
+    assert error.operation is Operation.RESEARCH_START
+
+
+@pytest.mark.asyncio
 async def test_fast_start_null_result_is_not_reclassified() -> None:
     rejected = RPCError(
         "NotebookLM rejected this request",
@@ -409,8 +447,97 @@ async def test_fast_start_null_result_is_not_reclassified() -> None:
         found_ids=[RPCMethod.START_FAST_RESEARCH.value],
     )
     with pytest.raises(RPCError) as caught:
-        await _service(_RecordingRpc(rejected)).start("nb", "q", "web", "fast")
+        await _api(_RecordingRpc(rejected)).start("nb", "q", "web", "fast")
     assert not isinstance(caught.value, ResearchStartUnavailableError)
+
+
+# --- Exception-chain parity across the moved projection ----------------------
+
+
+_TIMED_OUT_IMPORT = "Timed out"
+
+
+def _exception_chain(error: BaseException) -> list[tuple[str, str, bool]]:
+    """The full ``__cause__``/``__context__`` walk a caller can observe."""
+    walk: list[tuple[str, str, bool]] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        walk.append((type(current).__name__, str(current), current.__suppress_context__))
+        current = current.__cause__ or current.__context__
+    return walk
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "expected_type"),
+    [
+        (RPCTimeoutError(_TIMED_OUT_IMPORT, timeout_seconds=30.0), RPCTimeoutError),
+        (RPCError("rejected (failed precondition)", rpc_code=9), RPCError),
+        (RPCError("Unauthenticated", rpc_code=16), RPCError),
+    ],
+    ids=["timeout", "failed-precondition", "other-rpc"],
+)
+async def test_the_retried_import_raises_the_same_chain_as_a_one_shot_import(
+    failure: Exception,
+    expected_type: type[Exception],
+) -> None:
+    """R6.4's whole risk, pinned: the retry loop's exception chain is unchanged.
+
+    Before the migration the loop caught the *projected* public exception and
+    re-raised that object; now it catches the neutral ``BackendError`` and the
+    facade projects once, outside the handler frame. Both forms must hand the
+    caller the same class, the same reconstructed fields and — the part a
+    ``raise`` inside an ``except`` block would silently change — the same
+    ``__cause__`` / ``__context__`` walk.
+
+    ``max_elapsed=0`` runs exactly one attempt, so the one-shot and the retried
+    call fail on the identical injected failure and the comparison is between
+    the two projection *paths* rather than between two different failures.
+    """
+    lister = MagicMock()
+    lister.list = AsyncMock(return_value=[])
+    sources = [{"url": "https://example.com", "title": "One"}]
+
+    with pytest.raises(expected_type) as one_shot:
+        await _api(_RecordingRpc(failure), lister).import_sources("nb", "task", sources)
+    with pytest.raises(expected_type) as retried:
+        await _api(_RecordingRpc(failure), lister).import_sources_with_verification(
+            "nb", "task", sources, max_elapsed=0
+        )
+
+    assert type(retried.value) is type(one_shot.value)
+    assert _exception_chain(retried.value) == _exception_chain(one_shot.value)
+    assert _exception_chain(retried.value) == [(expected_type.__name__, str(failure), False)]
+    for field in ("rpc_code", "timeout_seconds", "method_id"):
+        sentinel = object()
+        assert getattr(retried.value, field, sentinel) == getattr(one_shot.value, field, sentinel)
+
+
+@pytest.mark.asyncio
+async def test_a_budget_exhausted_retry_raises_the_last_attempt_unchained() -> None:
+    """The give-up raise happens outside any handler, as it did before R6.4.
+
+    The loop re-raises the failure it stored from an earlier iteration. Raising
+    it from inside the ``except`` block instead would chain the *second*
+    timeout onto the first and change what a caller printing the traceback
+    sees, so this pins the walk at exactly one entry.
+    """
+    lister = MagicMock()
+    lister.list = AsyncMock(return_value=[])
+    rpc = _RecordingRpc(
+        RPCTimeoutError(_TIMED_OUT_IMPORT, timeout_seconds=30.0),
+        RPCTimeoutError(_TIMED_OUT_IMPORT, timeout_seconds=30.0),
+    )
+
+    with pytest.raises(RPCTimeoutError) as caught:
+        await _api(rpc, lister).import_sources_with_verification(
+            "nb", "task", [{"url": "https://example.com", "title": "One"}], max_elapsed=0
+        )
+
+    assert _exception_chain(caught.value) == [("RPCTimeoutError", _TIMED_OUT_IMPORT, False)]
+    assert caught.value.timeout_seconds == 30.0
 
 
 def test_start_unavailable_projection_requires_its_closed_evidence() -> None:

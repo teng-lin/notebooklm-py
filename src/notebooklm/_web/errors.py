@@ -13,10 +13,15 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-from .._backend import BackendContractError, BackendError, BackendErrorReason
+from .._backend import (
+    BACKEND_STATUS_DIAGNOSTIC,
+    BackendContractError,
+    BackendError,
+    BackendErrorReason,
+)
 from .._operations import Operation
 from ..exceptions import ChatError, IdempotencyVariantError, NetworkError, RPCError
-from .error_policy import SAFE_REASON_DIAGNOSTICS, WEB_ERROR_REASONS
+from .error_policy import SAFE_REASON_DIAGNOSTICS, WEB_ERROR_REASONS, web_backend_status
 from .failure_projection import _CHAT_OPERATIONS, _capture_public_failure
 
 WebNativeError = RPCError | NetworkError | IdempotencyVariantError | ChatError
@@ -27,12 +32,20 @@ def error_diagnostics(
     reason: BackendErrorReason,
 ) -> MappingProxyType[str, object]:
     """Return the scrubbed diagnostics one reviewed native failure contributes."""
-    diagnostics = {
+    rpc_code = getattr(exc, "rpc_code", None)
+    diagnostics: dict[str, object] = {
         "method_id": getattr(exc, "method_id", None),
-        "rpc_code": getattr(exc, "rpc_code", None),
+        "rpc_code": rpc_code,
         "found_ids": getattr(exc, "found_ids", None),
         "raw_response": getattr(exc, "raw_response", None),
     }
+    # Normalize the wire status on this side of the port. The key is published
+    # only when the code maps to a named neutral status, so a service reading
+    # it gets "that status" or nothing — never a raw code it would have to
+    # interpret, and never a null it would have to distinguish from absent.
+    status = web_backend_status(rpc_code)
+    if status is not None:
+        diagnostics[BACKEND_STATUS_DIAGNOSTIC] = status
     diagnostics.update((name, getattr(exc, name)) for name in SAFE_REASON_DIAGNOSTICS[reason])
     return MappingProxyType(diagnostics)
 

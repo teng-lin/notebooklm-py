@@ -20,8 +20,13 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from ._backend import BackendAdapter, BackendError
-from ._backend_compat import project_backend_error
+from ._backend import (
+    BACKEND_STATUS_DIAGNOSTIC,
+    BackendAdapter,
+    BackendError,
+    BackendErrorReason,
+    BackendStatus,
+)
 from ._deadline import RuntimeDeadline
 from ._notebook_metadata import NotebookSourceLister
 from ._operations import OperationDef
@@ -43,7 +48,6 @@ from ._records import (
 from ._research_import import (
     _import_research_read_timeout,
     _imported_result,
-    _is_import_research_failed_precondition,
     _is_importable_report_source,
     _merge_imported_sources,
     _no_import_verification_url_entry_count,
@@ -67,10 +71,7 @@ from ._types.research import (
 )
 from .exceptions import (
     AmbiguousResearchTaskError,
-    NetworkError,
     ResearchTimeoutError,
-    RPCError,
-    RPCTimeoutError,
     ValidationError,
 )
 
@@ -88,6 +89,64 @@ _INITIAL_INTERVAL_UNSET: Any = object()
 
 # Default poll cadence (seconds) when ``initial_interval`` is unset.
 _DEFAULT_RESEARCH_POLL_INTERVAL = 5.0
+
+#: Neutral image of ``except RPCError`` — every reason whose compatibility
+#: projection is an ``RPCError`` (its ``AuthError`` / ``ClientError`` /
+#: ``DecodingError`` / ``RateLimitError`` / ``RPCResponseTooLargeError`` /
+#: ``ServerError`` / ``UnknownRPCMethodError`` subclasses included). Reasons
+#: outside it — a chat failure, an idempotency-variant refusal — were never
+#: caught by the class tuples this replaces and still propagate untouched.
+_RPC_FAILURE_REASONS: frozenset[BackendErrorReason] = frozenset(
+    {
+        BackendErrorReason.AUTH,
+        BackendErrorReason.CLIENT,
+        BackendErrorReason.DECODING,
+        BackendErrorReason.RATE_LIMIT,
+        BackendErrorReason.RESPONSE_TOO_LARGE,
+        BackendErrorReason.RPC,
+        BackendErrorReason.SERVER,
+        BackendErrorReason.UNKNOWN_RPC_METHOD,
+    }
+)
+
+#: Neutral image of the import loop's ``except (RPCTimeoutError, RPCError)``.
+#: ``RPCTimeoutError`` is a ``NetworkError`` subclass, so a *plain* network
+#: failure of the import attempt is deliberately absent: it propagated out of
+#: the retry loop before this migration and must keep doing so.
+_IMPORT_ATTEMPT_FAILURE_REASONS: frozenset[BackendErrorReason] = _RPC_FAILURE_REASONS | frozenset(
+    {BackendErrorReason.TIMEOUT}
+)
+
+#: Neutral image of the snapshot/probe ``except (NetworkError, RPCError)``,
+#: which — unlike the loop above — did catch a plain network failure.
+_SOURCE_PROBE_FAILURE_REASONS: frozenset[BackendErrorReason] = (
+    _IMPORT_ATTEMPT_FAILURE_REASONS | frozenset({BackendErrorReason.NETWORK})
+)
+
+
+def _is_import_research_failed_precondition(error: BackendError) -> bool:
+    """True for IMPORT_RESEARCH's documented retry-time FAILED_PRECONDITION.
+
+    The server rejects an ``IMPORT_RESEARCH`` call against a ``task_id`` whose
+    state an earlier attempt against that same id already partially mutated —
+    commonly this loop's own prior (client-timed-out) call, but not necessarily;
+    documented backend behavior, not a novel failure (#1926, item F2b).
+    :meth:`ResearchService.import_sources_with_verification` shares its
+    post-error source probe with a timeout for this one status, but — unlike a
+    timeout — accepts only a fully-verified success; a partial or absent match
+    re-raises rather than retrying the rejected ``task_id``.
+
+    Reads the adapter's normalized :class:`BackendStatus`, never a wire code:
+    which gRPC number that is stays behind the port (``_web/error_policy.py``).
+    The status is carried on the failure of whichever operation raised it, and
+    the guarded ``try`` issues exactly one — a second operation there would
+    need this predicate revisited, as the ``rpc_code`` form it replaces did.
+    """
+    if error.reason is not BackendErrorReason.RPC:
+        return False
+    diagnostics = error.diagnostics or {}
+    return diagnostics.get(BACKEND_STATUS_DIAGNOSTIC) is BackendStatus.FAILED_PRECONDITION
+
 
 _SEARCH_SOURCES = {source.value: source for source in ResearchSearchSource}
 _MODES = {mode.value: mode for mode in ResearchMode}
@@ -131,18 +190,8 @@ class ResearchService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> Any:
-        """Invoke one operation, projecting neutral failures onto public errors."""
-        public_error: Exception | None = None
-        try:
-            result = await self._backend.invoke(definition, value, deadline=deadline)
-        except BackendError as error:
-            public_error = project_backend_error(error)
-        else:
-            return result
-        # Raise outside the BackendError catch frame so the reconstructed public
-        # error's own cause/context graph is not replaced by the private one.
-        assert public_error is not None
-        raise public_error
+        """Invoke one operation and let its neutral failure propagate."""
+        return await self._backend.invoke(definition, value, deadline=deadline)
 
     async def _poll_tasks(self, notebook_id: str) -> list[ResearchTask]:
         result = await self._invoke(RESEARCH_POLL_DEF, ResearchPollInput(notebook_id))
@@ -464,7 +513,9 @@ class ResearchService:
             # duplicate collision cannot disable the idempotency baseline.
             baseline = await self._source_lister.list(notebook_id, strict=False)
             baseline_ids = {src.id for src in baseline}
-        except (NetworkError, RPCError) as snapshot_exc:
+        except BackendError as snapshot_exc:
+            if snapshot_exc.reason not in _SOURCE_PROBE_FAILURE_REASONS:
+                raise
             logger.warning(
                 "Pre-import sources.list snapshot failed for %s: %s; "
                 "verified-success path and idempotency pre-filter disabled for this call",
@@ -525,7 +576,7 @@ class ResearchService:
                     [entry["id"] for entry in verified_imported],
                 )
 
-        last_error: RPCTimeoutError | RPCError | None = None
+        last_error: BackendError | None = None
         while True:
             # Clamp this attempt's read window to what is left of ``max_elapsed``
             # (#2205): without it a late retry is *granted* the full
@@ -568,16 +619,15 @@ class ResearchService:
                     _merge_imported_sources(imported, verified_imported, verified_imported_ids),
                     already_present,
                 )
-            except (RPCTimeoutError, RPCError) as exc:
+            except BackendError as exc:
+                if exc.reason not in _IMPORT_ATTEMPT_FAILURE_REASONS:
+                    raise
+                timed_out = exc.reason is BackendErrorReason.TIMEOUT
                 last_error = exc
-                if isinstance(exc, RPCError) and not _is_import_research_failed_precondition(exc):
+                if not timed_out and not _is_import_research_failed_precondition(exc):
                     _log_discarded_progress()
-                    raise  # non-FAILED_PRECONDITION RPCErrors surface immediately (#2187)
-                reason = (
-                    "timed out"
-                    if isinstance(exc, RPCTimeoutError)
-                    else "hit a retry-time FAILED_PRECONDITION"
-                )
+                    raise  # non-FAILED_PRECONDITION RPC failures surface at once (#2187)
+                reason = "timed out" if timed_out else "hit a retry-time FAILED_PRECONDITION"
                 elapsed = time.monotonic() - started_at
                 remaining = max_elapsed - elapsed
 
@@ -622,7 +672,7 @@ class ResearchService:
                             source_models = outcome.source_models
                             requested_urls_norm = outcome.requested_urls_norm
                             requested_no_url_count = outcome.requested_no_url_count
-                            if isinstance(exc, RPCError):
+                            if not timed_out:
                                 logger.warning(
                                     "IMPORT_RESEARCH %s for notebook %s: %d "
                                     "of %d requested source(s) verified "
@@ -645,16 +695,18 @@ class ResearchService:
                                     outcome.removed_count,
                                     len(source_models),
                                 )
-                    except (NetworkError, RPCError) as probe_exc:
-                        # CancelledError is a BaseException, not Exception, and
-                        # is not in this tuple — it propagates naturally for
-                        # callers that need to cancel the operation cleanly.
+                    except BackendError as probe_exc:
+                        # CancelledError is a BaseException, not a BackendError,
+                        # so it propagates naturally for callers that need to
+                        # cancel the operation cleanly.
+                        if probe_exc.reason not in _SOURCE_PROBE_FAILURE_REASONS:
+                            raise
                         logger.warning(
                             "Failed to probe server state after %s: %s; %s",
                             reason,
                             probe_exc,
                             "falling back to retry"
-                            if not isinstance(exc, RPCError)
+                            if timed_out
                             else "surfacing the original error",
                         )
 
@@ -662,7 +714,7 @@ class ResearchService:
                     _log_discarded_progress()
                     raise
 
-                if isinstance(exc, RPCError):  # no verified-success return above
+                if not timed_out:  # no verified-success return above
                     _log_discarded_progress()
                     raise
 

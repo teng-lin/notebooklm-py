@@ -17,6 +17,7 @@ from typing import Any
 
 from . import research as _research_pub
 from ._backend import BackendAdapter
+from ._backend_compat import project_backend_call
 from ._notebook_metadata import NotebookSourceLister
 from ._research_service import _INITIAL_INTERVAL_UNSET, ResearchService
 from ._runtime.config import AUTO_READ_TIMEOUT, DEFAULT_TIMEOUT
@@ -184,7 +185,9 @@ class ResearchAPI:
             type narrows from ``ResearchStart | None`` to ``ResearchStart``
             (#1342).
         """
-        return await self._require_service().start(notebook_id, query, source, mode)
+        return await project_backend_call(
+            self._require_service().start(notebook_id, query, source, mode)
+        )
 
     async def poll(
         self,
@@ -235,7 +238,7 @@ class ResearchAPI:
             task (a typed lifecycle sentinel, not a raise; ADR-0019 Rule 4),
             distinct from the unfiltered empty poll, which stays ``NO_RESEARCH``.
         """
-        return await self._require_service().poll(notebook_id, task_id)
+        return await project_backend_call(self._require_service().poll(notebook_id, task_id))
 
     async def wait_for_completion(
         self,
@@ -288,11 +291,13 @@ class ResearchAPI:
                 positive.
             TypeError: If the resolved poll interval is not a number.
         """
-        return await self._require_service().wait_for_completion(
-            notebook_id,
-            task_id,
-            timeout=timeout,
-            initial_interval=initial_interval,
+        return await project_backend_call(
+            self._require_service().wait_for_completion(
+                notebook_id,
+                task_id,
+                timeout=timeout,
+                initial_interval=initial_interval,
+            )
         )
 
     async def cancel(self, notebook_id: str, run_id: str) -> None:
@@ -321,7 +326,7 @@ class ResearchAPI:
             ``notebook_id`` is routing context, not a scoping boundary; the
             server identifies the research run by ``run_id``.
         """
-        await self._require_service().cancel(notebook_id, run_id)
+        await project_backend_call(self._require_service().cancel(notebook_id, run_id))
 
     async def import_sources(
         self,
@@ -356,11 +361,13 @@ class ResearchAPI:
             To reliably verify imports, check the notebook's source list using
             `client.sources.list(notebook_id)` after calling this method.
         """
-        return await self._require_service().import_sources(
-            notebook_id,
-            task_id,
-            sources,
-            _remaining_budget=_remaining_budget,
+        return await project_backend_call(
+            self._require_service().import_sources(
+                notebook_id,
+                task_id,
+                sources,
+                _remaining_budget=_remaining_budget,
+            )
         )
 
     async def import_sources_with_verification(
@@ -421,13 +428,15 @@ class ResearchAPI:
                 once a FAILED_PRECONDITION's post-error verification fails to
                 confirm every requested URL landed — no budget is spent on it.
         """
-        return await self._require_service().import_sources_with_verification(
-            notebook_id,
-            task_id,
-            sources,
-            max_elapsed=max_elapsed,
-            initial_delay=initial_delay,
-            backoff_factor=backoff_factor,
-            max_delay=max_delay,
-            allow_duplicate=allow_duplicate,
+        return await project_backend_call(
+            self._require_service().import_sources_with_verification(
+                notebook_id,
+                task_id,
+                sources,
+                max_elapsed=max_elapsed,
+                initial_delay=initial_delay,
+                backoff_factor=backoff_factor,
+                max_delay=max_delay,
+                allow_duplicate=allow_duplicate,
+            )
         )

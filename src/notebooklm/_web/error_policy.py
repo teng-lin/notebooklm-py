@@ -1,6 +1,6 @@
 """Closed native-to-semantic error policy for the web backend."""
 
-from .._backend import BackendErrorReason
+from .._backend import BackendErrorReason, BackendStatus
 from ..exceptions import (
     AuthError,
     ChatError,
@@ -16,6 +16,7 @@ from ..exceptions import (
     ServerError,
     UnknownRPCMethodError,
 )
+from ..rpc import GrpcStatusCode, normalize_grpc_status
 
 WEB_ERROR_REASONS: dict[type[object], BackendErrorReason] = {
     AuthError: BackendErrorReason.AUTH,
@@ -32,6 +33,25 @@ WEB_ERROR_REASONS: dict[type[object], BackendErrorReason] = {
     RPCTimeoutError: BackendErrorReason.TIMEOUT,
     UnknownRPCMethodError: BackendErrorReason.UNKNOWN_RPC_METHOD,
 }
+
+#: Closed gRPC-status to neutral-status table. Only statuses a semantic service
+#: branches on appear here; every other code normalizes to ``None`` and reaches
+#: services as an absent diagnostic rather than as an unnamed member. Keyed on
+#: :class:`~notebooklm.rpc.GrpcStatusCode` so the raw ``rpc_code`` (an int, a
+#: name, or ``None``) is normalized exactly once, on the adapter's side of the
+#: port — the service never sees a wire status code at all.
+WEB_BACKEND_STATUSES: dict[GrpcStatusCode, BackendStatus] = {
+    GrpcStatusCode.FAILED_PRECONDITION: BackendStatus.FAILED_PRECONDITION,
+}
+
+
+def web_backend_status(rpc_code: str | int | None) -> BackendStatus | None:
+    """Normalize one native ``rpc_code`` into the neutral status vocabulary."""
+    grpc_status = normalize_grpc_status(rpc_code)
+    if grpc_status is None:
+        return None
+    return WEB_BACKEND_STATUSES.get(grpc_status)
+
 
 SAFE_REASON_DIAGNOSTICS: dict[BackendErrorReason, tuple[str, ...]] = {
     BackendErrorReason.AUTH: ("recoverable",),
@@ -61,4 +81,9 @@ SAFE_REASON_DIAGNOSTICS: dict[BackendErrorReason, tuple[str, ...]] = {
     BackendErrorReason.UNKNOWN_RPC_METHOD: ("path", "source", "data_at_failure"),
 }
 
-__all__ = ["SAFE_REASON_DIAGNOSTICS", "WEB_ERROR_REASONS"]
+__all__ = [
+    "SAFE_REASON_DIAGNOSTICS",
+    "WEB_BACKEND_STATUSES",
+    "WEB_ERROR_REASONS",
+    "web_backend_status",
+]
