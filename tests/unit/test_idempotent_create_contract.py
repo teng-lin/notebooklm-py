@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -27,7 +28,7 @@ from notebooklm._records import (
 )
 from notebooklm._source.add import SourceAddService
 from notebooklm._sources import SourcesAPI
-from notebooklm.exceptions import NetworkError
+from notebooklm.exceptions import NetworkError, ServerError
 from notebooklm.types import Source
 from tests._fixtures.recording_backend import RecordingBackend
 
@@ -224,6 +225,41 @@ async def test_semantic_predicate_probes_on_a_dispatched_commit_uncertain_backen
     assert result.value == "existing"
     assert result.kind is _CreateResultKind.PROBED
     probe.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_semantic_retry_warning_reports_the_reviewed_public_cause(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    native = ServerError("server response lost")
+    backend_error = BackendError(
+        "server response lost",
+        reason=BackendErrorReason.SERVER,
+        dispatched=True,
+    )
+    try:
+        raise backend_error from native
+    except BackendError as chained:
+        backend_error = chained
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm._idempotency"):
+        result = await idempotent_create(
+            AsyncMock(side_effect=backend_error),
+            AsyncMock(return_value="existing"),
+            may_have_committed=semantic_may_have_committed,
+            label="notebook.create['Daily News']",
+        )
+
+    assert result.value == "existing"
+    warning = next(
+        record.getMessage()
+        for record in caplog.records
+        if "failed with transport error" in record.getMessage()
+    )
+    assert warning == (
+        "notebook.create['Daily News'] attempt 1/2 failed with transport error "
+        "(ServerError); probing for server-side commit before retry"
+    )
 
 
 @pytest.mark.asyncio

@@ -127,6 +127,13 @@ def semantic_may_have_committed(exc: BaseException) -> bool:
     return isinstance(exc, BackendError) and may_have_committed(exc)
 
 
+def _reported_failure_type(exc: BaseException) -> str:
+    """Keep retry warnings on the reviewed public/native exception class."""
+    if isinstance(exc, BackendError) and exc.__cause__ is not None:
+        return type(exc.__cause__).__name__
+    return type(exc).__name__
+
+
 async def idempotent_create(
     create: Callable[[], Awaitable[T]],
     probe: Callable[[], Awaitable[T | None]],
@@ -226,7 +233,7 @@ async def idempotent_create(
                 label,
                 attempt,
                 max_attempts,
-                type(exc).__name__,
+                _reported_failure_type(exc),
             )
             existing = await probe()
             if existing is not None:
