@@ -1,32 +1,57 @@
-"""Web workflow bindings for mind-map and data-table generation compatibility.
+"""Web workflow binding for the note-backed mind-map generation compatibility row.
 
 Since P9.3 the Drive export leaf (``ARTIFACT_EXPORT``) is a codec row in
-``_web/bindings/studio.py``; the two input-defaulting generate composites remain here.
+``_web/bindings/studio.py``; since P9.4b every other generate family is a
+``CustomBinding`` row there as well.  Only ``ARTIFACT_GENERATE_MIND_MAP`` — the
+compatibility composite that persists the generated tree through the legacy
+note seam (gate table §3.15) — remains a handler here, and this class is the
+root of what is left of the handler chain.
 """
 
 from __future__ import annotations
 
 import json
 from datetime import datetime
+from types import MappingProxyType
+from typing import Any
 
-from .._artifact.payloads import build_data_table_artifact_params, build_mind_map_params
+from .._artifact.payloads import build_mind_map_params
+from .._backend import BackendError, BackendErrorReason
 from .._deadline import RuntimeDeadline
 from .._env import get_default_language
-from .._notebook_payloads import build_get_notebook_params
 from .._operations import Operation
-from .._records import (
-    DataTableGenerateInput,
-    DataTableGenerateResult,
-    MindMapGenerateInput,
-    MindMapGenerateResult,
-)
+from .._records import MindMapGenerateInput, MindMapGenerateResult
 from .._row_adapters.artifacts import MIND_MAP_LEAF_ABSENT, unwrap_mind_map_generation_leaf
 from ..rpc import RPCMethod
-from .studio_media import StudioMediaWebHandlers
+from .codec.source_ids import (
+    SourceIdDiagnostics,
+    decode_notebook_source_ids,
+    encode_notebook_source_read,
+)
 
 
-class StudioDataWebHandlers(StudioMediaWebHandlers):
-    """Reusable data-view and Drive-export handlers mixed into the web backend."""
+class StudioDataWebHandlers:
+    """Mind-map generation compatibility handler mixed into the web backend."""
+
+    async def _rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        *,
+        operation: Operation,
+        deadline: RuntimeDeadline | None,
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
+        raise_on_null_status: bool = False,
+        outcome_unknown_on_expiry: bool = False,
+        attempt_timeout: float | None = None,
+    ) -> Any:
+        """Invoke one native RPC; implemented by the composed web backend."""
+
+        raise NotImplementedError
 
     async def _persist_generated_mind_map(
         self,
@@ -41,6 +66,32 @@ class StudioDataWebHandlers(StudioMediaWebHandlers):
 
         raise NotImplementedError
 
+    @staticmethod
+    def _artifact_feature_unavailable(
+        operation: Operation,
+        artifact_type: str,
+    ) -> BackendError:
+        """Closed unavailable error for the interactive mind-map kickoff on the head."""
+        return BackendError(
+            message=f"{artifact_type.replace('_', ' ').capitalize()} generation is unavailable",
+            operation=operation,
+            diagnostics=MappingProxyType(
+                {
+                    "artifact_type": artifact_type,
+                    "method_id": RPCMethod.CREATE_ARTIFACT.value,
+                    "raw_response": None,
+                }
+            ),
+            reason=BackendErrorReason.ARTIFACT_FEATURE_UNAVAILABLE,
+        )
+
+    @staticmethod
+    def _audio_source_ids(notebook: object) -> tuple[str, ...]:
+        """Silent source-id resolution the head's mind-map kickoffs still reach."""
+        return decode_notebook_source_ids(
+            notebook, notebook_id="", diagnostics=SourceIdDiagnostics.SILENT
+        )
+
     async def _data_source_ids(
         self,
         notebook_id: str,
@@ -51,46 +102,17 @@ class StudioDataWebHandlers(StudioMediaWebHandlers):
     ) -> tuple[str, ...]:
         if source_ids is not None:
             return source_ids
+        payload = encode_notebook_source_read(notebook_id)
         notebook = await self._rpc_call(
             RPCMethod.GET_NOTEBOOK,
-            build_get_notebook_params(notebook_id),
+            payload.params,
             operation=operation,
             deadline=deadline,
-            source_path=f"/notebook/{notebook_id}",
+            source_path=payload.source_path,
         )
-        return self._generation_source_ids(notebook_id, notebook)
-
-    async def _data_table_generate(
-        self,
-        value: DataTableGenerateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> DataTableGenerateResult:
-        operation = Operation.ARTIFACT_GENERATE_DATA_TABLE
-        source_ids = await self._data_source_ids(
-            value.notebook_id,
-            value.source_ids,
-            operation=operation,
-            deadline=deadline,
+        return decode_notebook_source_ids(
+            notebook, notebook_id=notebook_id, diagnostics=SourceIdDiagnostics.WARN
         )
-        result = await self._rpc_call(
-            RPCMethod.CREATE_ARTIFACT,
-            build_data_table_artifact_params(
-                value.notebook_id,
-                list(source_ids),
-                language=(get_default_language() if value.language is None else value.language),
-                instructions=value.instructions,
-            ),
-            operation=operation,
-            deadline=deadline,
-            source_path=f"/notebook/{value.notebook_id}",
-            allow_null=True,
-            operation_variant=None,
-            raise_on_null_status=True,
-        )
-        if result is None:
-            raise self._artifact_feature_unavailable(operation, "data table")
-        return DataTableGenerateResult(self._generation_status(result, operation))
 
     async def _mind_map_generate(
         self,

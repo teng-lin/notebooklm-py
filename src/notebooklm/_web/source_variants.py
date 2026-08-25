@@ -63,7 +63,7 @@ from .codec.sources import (
     encode_source_snapshot,
     encode_update_source,
 )
-from .studio_facade import StudioFacadeWebHandlers
+from .labels import LabelSetWebHandlers
 
 source_logger = logging.getLogger("notebooklm").getChild("_sources")
 
@@ -119,7 +119,7 @@ async def _facade_owned_wait(*_args: Any, **_kwargs: Any) -> Source:
     )
 
 
-class SourceVariantWebHandlers(StudioFacadeWebHandlers):
+class SourceVariantWebHandlers(LabelSetWebHandlers):
     """Remaining Source workflows mixed into the composed web backend."""
 
     _executor: Any
