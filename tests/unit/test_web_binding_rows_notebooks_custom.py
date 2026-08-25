@@ -1,6 +1,6 @@
 """P9.4b: the notebook and mind-map/catalog composites dispatch as ``CustomBinding`` rows.
 
-``NOTEBOOK_CREATE``, ``NOTEBOOK_UPDATE``, ``MIND_MAP_GENERATE_NOTE``,
+``NOTEBOOK_CREATE``, ``MIND_MAP_GENERATE_NOTE``,
 ``MIND_MAP_GENERATE_INTERACTIVE``, ``ARTIFACT_GENERATE_MIND_MAP``,
 ``ARTIFACT_LIST`` and ``ARTIFACT_GET`` declare their natives as keyed specs and
 sequence them through the row-scoped invoker.  These tests pin the conversion
@@ -27,7 +27,6 @@ from notebooklm._backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
-    may_have_committed,
 )
 from notebooklm._binding import CodecPayload, CustomBinding, NativeChoice
 from notebooklm._deadline import RuntimeDeadline
@@ -39,14 +38,12 @@ from notebooklm._records import (
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
     NOTEBOOK_CREATE_DEF,
-    NOTEBOOK_UPDATE_DEF,
     ArtifactGetInput,
     ArtifactListInput,
     MindMapGenerateInput,
     MindMapGenerateInteractiveInput,
     MindMapGenerateNoteInput,
     NotebookCreateInput,
-    NotebookUpdateInput,
 )
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
@@ -54,7 +51,7 @@ from notebooklm._web.bindings import mind_maps as mind_map_rows
 from notebooklm._web.bindings import notebooks as notebook_rows
 from notebooklm._web.bindings._invoker_caller import InvokerRpcCaller
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
-from notebooklm.exceptions import ClientError, RPCError, RPCTimeoutError, ServerError
+from notebooklm.exceptions import RPCError, RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.web_backend import build_web_backend
 
@@ -107,7 +104,6 @@ def _kwargs(source_path: str, **overrides: Any) -> dict[str, Any]:
 def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
     expected = {
         Operation.NOTEBOOK_CREATE: (notebook_rows.NOTEBOOK_CREATE, "deferred-product"),
-        Operation.NOTEBOOK_UPDATE: (notebook_rows.NOTEBOOK_UPDATE, "deferred-product"),
         Operation.MIND_MAP_GENERATE_NOTE: (
             mind_map_rows.MIND_MAP_GENERATE_NOTE,
             "deferred-product",
@@ -133,9 +129,6 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
         assert row.collaborators == ()
     assert notebook_rows.NOTEBOOK_CREATE.spec("create").select(None) == NativeChoice(
         RPCMethod.CREATE_NOTEBOOK
-    )
-    assert notebook_rows.NOTEBOOK_UPDATE.spec("readback").select(None) == NativeChoice(
-        RPCMethod.GET_NOTEBOOK
     )
     assert mind_map_rows.ARTIFACT_GENERATE_MIND_MAP.spec("note_create").select(None) == (
         NativeChoice(RPCMethod.CREATE_NOTE, "plain")
@@ -252,90 +245,6 @@ async def test_create_reconciliation_timeout_keeps_parent_attribution() -> None:
     assert caught.value.outcome_unknown is True
     assert caught.value.dispatched is True
     assert all(call.kwargs["_retry_deadline"] is deadline for call in executor.calls)
-
-
-# --- notebook.update --------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_update_mutates_then_reads_back_with_identical_kwargs() -> None:
-    executor = _RecordingExecutor(None, [["Renamed", [], "nb-1"]])
-    backend = build_web_backend(executor)
-
-    result = await backend.invoke(
-        NOTEBOOK_UPDATE_DEF, NotebookUpdateInput("nb-1", title="Renamed"), deadline=None
-    )
-
-    assert result.notebook.title == "Renamed"
-    mutate, readback = executor.calls
-    assert mutate.method is RPCMethod.RENAME_NOTEBOOK
-    assert mutate.kwargs == _kwargs("/", allow_null=True)
-    assert readback.method is RPCMethod.GET_NOTEBOOK
-    assert readback.kwargs == _kwargs("/notebook/nb-1")
-
-
-@pytest.mark.asyncio
-async def test_update_not_found_readback_keeps_its_closed_identity() -> None:
-    missing = ClientError("gone", method_id=RPCMethod.GET_NOTEBOOK.value, rpc_code=5)
-    executor = _RecordingExecutor(None, missing)
-    backend = build_web_backend(executor)
-
-    with pytest.raises(BackendError) as caught:
-        await backend.invoke(
-            NOTEBOOK_UPDATE_DEF, NotebookUpdateInput("nb-1", title="Renamed"), deadline=None
-        )
-
-    error = caught.value
-    assert error.reason is BackendErrorReason.NOTEBOOK_NOT_FOUND
-    assert error.message == "Notebook not found: nb-1"
-    assert error.diagnostics is not None
-    assert error.diagnostics["notebook_id"] == "nb-1"
-    assert error.diagnostics["method_id"] == RPCMethod.GET_NOTEBOOK.value
-    assert error.diagnostics["detail"] == str(missing)
-    assert isinstance(error.__cause__, ClientError)
-
-
-@pytest.mark.asyncio
-async def test_update_empty_readback_is_not_found() -> None:
-    executor = _RecordingExecutor(None, [])
-    backend = build_web_backend(executor)
-
-    with pytest.raises(BackendError) as caught:
-        await backend.invoke(
-            NOTEBOOK_UPDATE_DEF, NotebookUpdateInput("nb-1", title="Renamed"), deadline=None
-        )
-
-    assert caught.value.reason is BackendErrorReason.NOTEBOOK_NOT_FOUND
-    assert caught.value.diagnostics == {
-        "notebook_id": "nb-1",
-        "method_id": RPCMethod.GET_NOTEBOOK.value,
-    }
-
-
-@pytest.mark.asyncio
-async def test_update_readback_pre_dispatch_expiry_is_commit_uncertain() -> None:
-    clock = [11.0]
-    executor = _RecordingExecutor(None)
-    backend = build_web_backend(executor)
-    deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: clock[0])
-
-    async def rpc_call(method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
-        clock[0] = 16.0
-        return await _RecordingExecutor.rpc_call(executor, method, params, **kwargs)
-
-    backend._runtime = type("Runtime", (), {"rpc_call": staticmethod(rpc_call)})()  # type: ignore[assignment]
-
-    with pytest.raises(BackendDeadlineExceededError) as caught:
-        await backend.invoke(
-            NOTEBOOK_UPDATE_DEF, NotebookUpdateInput("nb-1", title="Renamed"), deadline=deadline
-        )
-
-    assert caught.value.outcome_unknown is True
-    assert caught.value.dispatched is False
-    assert may_have_committed(caught.value) is False
-    assert caught.value.diagnostics is not None
-    assert caught.value.diagnostics["method_id"] == RPCMethod.GET_NOTEBOOK.value
-    assert len(executor.calls) == 1
 
 
 # --- mind-map generate rows ---------------------------------------------------------

@@ -35,7 +35,6 @@ from notebooklm._records import (
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
-    NOTEBOOK_PATCH_DEF,
     NOTEBOOK_REMOVE_RECENT_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
     NotebookCreateInput,
@@ -183,7 +182,9 @@ def test_notebook_payload_goldens() -> None:
         NotebookPatchInput("nb_123", title="New", emoji=None)
     )
     assert patch == CodecPayload(
-        params=[["nb_123", "New", None], [["title"]]], source_path="/", allow_null=True
+        params=["nb_123", [[None, None, None, [None, "New"]]]],
+        source_path="/",
+        allow_null=True,
     )
     guide = notebooks_codec.encode_notebook_guide_request(NotebookGuideInput("nb_123"))
     assert guide == CodecPayload(params=["nb_123", [2]], source_path="/notebook/nb_123")

@@ -50,17 +50,17 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 # --- 1. residual composites ---------------------------------------------------
 
 #: custom rows + handler-backed operations at P9.4a; shrinks with every hoist.
-#: Sharing and artifact-rename hoists removed four custom rows; the label- and
-#: collection-create hoists removed the final two handlers from the P9.2
-#: stop/go baseline.
-RESIDUAL_COMPOSITE_CEILING = 22
+#: Sharing, artifact-rename, and notebook-update hoists removed five custom
+#: rows; the label- and collection-create hoists removed the final two handlers
+#: from the P9.2 stop/go baseline.
+RESIDUAL_COMPOSITE_CEILING = 21
 #: Exact custom-row counts per justification category: five source-add rows,
 #: ``CHAT_ASK``, the Studio
 #: generation/prompt rows and the notebook/mind-map/catalog composites.
 #: P9.4b PRs raise these as handlers convert;
 #: P9.2 hoists lower ``deferred-product``, which must reach zero before any
 #: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 5, "compatibility": 4, "deferred-product": 13}
+CUSTOM_ROW_COUNTS = {"protocol": 5, "compatibility": 4, "deferred-product": 12}
 
 # --- 2. class size ---------------------------------------------------------------
 
