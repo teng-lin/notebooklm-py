@@ -565,7 +565,7 @@ def decode_source_fulltext(
     if output_format == "markdown":
         html_content = fulltext_row.html_content
         if html_content is not None:
-            from ..._source.markdown import html_to_markdown
+            from ..._markdown import html_to_markdown
 
             content = html_to_markdown(html_content, source_type=source_type)
         else:

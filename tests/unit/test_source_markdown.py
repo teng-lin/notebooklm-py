@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("markdownify")
 
-from notebooklm._source.markdown import html_to_markdown  # noqa: E402
+from notebooklm._markdown import html_to_markdown  # noqa: E402
 
 
 def test_html_table_cell_break_is_preserved() -> None:

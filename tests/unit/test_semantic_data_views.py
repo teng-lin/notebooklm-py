@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-from notebooklm._artifact.payloads import build_data_table_artifact_params, build_mind_map_params
 from notebooklm._backend import BackendError
 from notebooklm._backend_compat import project_backend_error
 from notebooklm._deadline import RuntimeDeadline
@@ -20,6 +19,10 @@ from notebooklm._records import (
     MindMapGenerateInput,
 )
 from notebooklm._web.backend import WebRpcBackend
+from notebooklm._web.codec.artifact_payloads import (
+    build_data_table_artifact_params,
+    build_mind_map_params,
+)
 from notebooklm.exceptions import ArtifactFeatureUnavailableError
 from notebooklm.rpc import RPCMethod
 
@@ -45,7 +48,7 @@ class _Executor:
 
 
 def _backend(executor: _Executor) -> WebRpcBackend:
-    return WebRpcBackend(executor, transport_factory=lambda **_: object())  # type: ignore[arg-type]
+    return WebRpcBackend(executor)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio

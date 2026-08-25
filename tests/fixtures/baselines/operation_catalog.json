@@ -3660,6 +3660,8 @@
       ],
       "response_decoders": [
         "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "response_projectors": [],
@@ -4786,9 +4788,13 @@
       "recency_effect": "none",
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "route_context": "notebook",
+      "tier": "primitive",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -4820,6 +4826,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+artifact",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -4886,6 +4894,8 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_interactive_content",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
@@ -4894,6 +4904,8 @@
         "_web/codec/notes.py:_normalize_note_row"
       ],
       "route_context": "notebook+artifact",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": [
         "artifact_https_download"
       ]
@@ -4929,6 +4941,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+artifact",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -4993,6 +5007,8 @@
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5057,6 +5073,8 @@
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5121,6 +5139,8 @@
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5185,6 +5205,8 @@
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5270,6 +5292,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5334,6 +5358,8 @@
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5400,6 +5426,8 @@
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5464,6 +5492,8 @@
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5530,6 +5560,8 @@
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5572,12 +5604,16 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
         "_web/codec/notes.py:_normalize_note_row"
       ],
       "route_context": "notebook+artifact",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5625,12 +5661,16 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
         "_web/codec/notes.py:_normalize_note_row"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5658,6 +5698,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+artifact",
+      "tier": "primitive",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5696,9 +5738,13 @@
       "recency_effect": "none",
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "route_context": "notebook+artifact",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5732,6 +5778,8 @@
         "_web/codec/studio_documents.py:decode_artifact_retry"
       ],
       "route_context": "notebook+artifact",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5765,6 +5813,8 @@
         "_web/codec/studio_documents.py:decode_artifact_revise_slide"
       ],
       "route_context": "notebook+artifact",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5796,6 +5846,8 @@
         "_web/codec/suggestions.py:decode_report_suggestions"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5829,9 +5881,13 @@
       "recency_effect": "none",
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows"
       ],
       "route_context": "notebook+artifact",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -5897,6 +5953,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook+conversation+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": [
         "streamed_query"
       ]
@@ -5973,6 +6031,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6002,6 +6062,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+conversation",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6034,6 +6096,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6069,6 +6133,8 @@
         "_web/codec/chat_stream.py:_extract_next_turn_content"
       ],
       "route_context": "notebook+conversation",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6102,6 +6168,8 @@
         "_web/codec/notes.py:decode_created_note"
       ],
       "route_context": "notebook+conversation-turn",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6143,6 +6211,8 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "account",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6174,6 +6244,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "collection-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6206,6 +6278,8 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "collection",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6240,6 +6314,8 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "account",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6283,6 +6359,8 @@
         "_web/codec/notebooks.py:decode_notebook_list_result"
       ],
       "route_context": "collection",
+      "tier": "product",
+      "unsupported_reason": "facade composition without a typed def: CollectionsAPI.notebooks joins the collection's membership ids against the public notebook listing client-side and issues no native call of its own",
       "web_paths": []
     },
     {
@@ -6341,6 +6419,8 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "collection",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6370,6 +6450,8 @@
         "_web/codec/labels.py:decode_label_generate_result"
       ],
       "route_context": "notebook+label-set",
+      "tier": "primitive",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6411,6 +6493,8 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6442,6 +6526,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+label-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6475,6 +6561,8 @@
         "_web/codec/labels.py:decode_label_generate_result"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6507,6 +6595,8 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "notebook+label",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6540,6 +6630,8 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6595,6 +6687,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+label",
+      "tier": "primitive",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6645,6 +6739,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook+label",
+      "tier": "product",
+      "unsupported_reason": "facade composition without a typed def: LabelsAPI.sources joins the label's membership ids against the public source listing client-side and issues no native call of its own",
       "web_paths": []
     },
     {
@@ -6706,6 +6802,8 @@
         "_web/codec/labels.py:decode_label_set_list_result"
       ],
       "route_context": "notebook+label",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6743,6 +6841,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+mind-map",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6812,6 +6912,8 @@
         "_row_adapters/sources.py:SourceRow",
         "_row_adapters/sources.py:SourceRow.from_entry",
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_interactive_content",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/chat.py:decode_get_settings_result",
@@ -6825,6 +6927,8 @@
         "_web/codec/studio_documents.py:decode_generation_status"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6903,6 +7007,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6949,6 +7055,8 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_interactive_content",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
@@ -6957,6 +7065,8 @@
         "_web/codec/notes.py:_normalize_note_row"
       ],
       "route_context": "notebook+mind-map",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -6999,12 +7109,16 @@
       "response_decoders_projectors": [
         "_row_adapters/artifacts.py:ArtifactRow",
         "_row_adapters/notes.py:NoteRow",
+        "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+        "_web/codec/artifact_formatters.py:_parse_data_table",
         "_web/codec/artifacts.py:decode_studio_rows",
         "_web/codec/notes.py:_decode_note_rows",
         "_web/codec/notes.py:_is_note_row_like",
         "_web/codec/notes.py:_normalize_note_row"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7043,6 +7157,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+mind-map",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7091,6 +7207,8 @@
         "_web/codec/notes.py:decode_created_note"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7123,6 +7241,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+note",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7161,6 +7281,8 @@
         "_web/codec/notes.py:_normalize_note_row"
       ],
       "route_context": "notebook+note",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7195,6 +7317,8 @@
         "_web/codec/notes.py:_normalize_note_row"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7227,6 +7351,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+note",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7254,6 +7380,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "account",
+      "tier": "primitive",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7304,6 +7432,8 @@
         "_web/codec/settings.py:decode_get_user_settings"
       ],
       "route_context": "account",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7335,6 +7465,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7370,6 +7502,8 @@
         "_web/codec/notebooks.py:decode_notebook_description"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7448,6 +7582,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7481,6 +7617,8 @@
         "_web/codec/notebooks.py:decode_notebook_list_result"
       ],
       "route_context": "account",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7542,6 +7680,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": "facade composition without a typed def: NotebooksAPI.get_metadata delegates to NotebookMetadataService, which gathers the public notebooks.get and sources.list reads concurrently (_notebook_metadata.py); R6.2 decides whether it earns a typed NOTEBOOK_METADATA_DEF workflow",
       "web_paths": []
     },
     {
@@ -7569,6 +7709,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook",
+      "tier": "primitive",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7598,6 +7740,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7658,6 +7802,8 @@
         "_web/codec/suggestions.py:decode_prompt_suggestions"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7691,6 +7837,8 @@
         "_web/codec/notebooks.py:decode_notebook_description"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7756,6 +7904,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7787,6 +7937,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+research-run",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7816,6 +7968,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+research-task",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7864,6 +8018,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook+research-task",
+      "tier": "product",
+      "unsupported_reason": "facade/service workflow without a typed def: ResearchService sequences research.import and a source-listing probe within one budget; R6.4 adds typed inputs/results and flips it to service-owned",
       "web_paths": []
     },
     {
@@ -7897,6 +8053,8 @@
         "_row_adapters/research.py:<module>"
       ],
       "route_context": "notebook+research-task",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7935,6 +8093,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -7969,6 +8129,8 @@
         "_row_adapters/research.py:<module>"
       ],
       "route_context": "notebook+research-task",
+      "tier": "product",
+      "unsupported_reason": "facade/service workflow without a typed def: ResearchService polls research.poll under its own total budget; R6.4 adds typed inputs/results and flips it to service-owned",
       "web_paths": []
     },
     {
@@ -8001,6 +8163,8 @@
         "_web/codec/settings.py:decode_get_user_settings"
       ],
       "route_context": "account",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8032,6 +8196,8 @@
         "_web/codec/settings.py:decode_get_user_settings"
       ],
       "route_context": "account",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8063,6 +8229,8 @@
         "_web/codec/settings.py:decode_set_output_language"
       ],
       "route_context": "account",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8097,6 +8265,8 @@
         "_web/codec/sharing.py:<module>"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8124,6 +8294,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+artifact?",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8151,6 +8323,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook",
+      "tier": "primitive",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8178,6 +8352,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook",
+      "tier": "primitive",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8219,6 +8395,8 @@
         "_web/codec/sharing.py:<module>"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8260,6 +8438,8 @@
         "_web/codec/sharing.py:<module>"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8306,6 +8486,8 @@
         "_web/codec/sharing.py:<module>"
       ],
       "route_context": "notebook+user-grants",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8378,6 +8560,8 @@
         "_web/codec/sources.py:rename_target_missing"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8483,6 +8667,8 @@
         "_web/codec/sources.py:rename_target_missing"
       ],
       "route_context": "notebook+upload-session",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": [
         "drive_https_download",
         "resumable_upload"
@@ -8531,6 +8717,8 @@
         "_web/codec/sources.py:decode_add_source_records"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8603,6 +8791,8 @@
         "_web/codec/sources.py:rename_target_missing"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8660,6 +8850,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8693,6 +8885,8 @@
         "_row_adapters/sources.py:interpret_source_freshness"
       ],
       "route_context": "notebook+source",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8725,6 +8919,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+source",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8781,6 +8977,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook+source",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8814,6 +9012,8 @@
         "_row_adapters/sources.py:SourceFulltextRow.source_row"
       ],
       "route_context": "notebook+source",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8845,6 +9045,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+source",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8901,6 +9103,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8931,6 +9135,8 @@
         "_web/codec/sources.py:rename_target_missing"
       ],
       "route_context": "notebook+source",
+      "tier": "primitive",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8962,6 +9168,8 @@
       "recency_effect": "none",
       "response_decoders_projectors": [],
       "route_context": "notebook+source",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -9025,6 +9233,8 @@
         "_web/codec/sources.py:rename_target_missing"
       ],
       "route_context": "notebook+source",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -9132,6 +9342,8 @@
         "_web/codec/sources.py:decode_source_snapshot"
       ],
       "route_context": "notebook+source-set",
+      "tier": "product",
+      "unsupported_reason": null,
       "web_paths": []
     }
   ],
@@ -11261,5 +11473,5 @@
     "disposition": "explicitly excluded legacy web-only escape hatch",
     "member": "NotebookLMClient.rpc_call"
   },
-  "schema_version": 2
+  "schema_version": 3
 }

@@ -20,6 +20,7 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._row_adapters.artifacts import ArtifactRow
 from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode
 from notebooklm.types import ArtifactNotReadyError
+from tests._fixtures.web_backend import build_web_backend
 
 
 def _artifact(
@@ -48,17 +49,15 @@ def _artifact(
 def api() -> ArtifactsAPI:
     """Build an ArtifactsAPI with no-op runtime / mind-map — only the helper is exercised."""
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(rpc_call=AsyncMock())
     return ArtifactsAPI(
-        rpc=mock_core,
+        _backend=build_web_backend(mock_core),
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        note_service=MagicMock(spec=NoteService),
     )
 
 

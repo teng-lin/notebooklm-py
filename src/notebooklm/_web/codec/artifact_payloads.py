@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Final, TypeVar
 
-from ..exceptions import ValidationError
-from ..rpc import (
+from ...exceptions import ValidationError
+from ...rpc import (
     INTERACTIVE_MIND_MAP_VARIANT,
     ArtifactTypeCode,
     AudioFormat,

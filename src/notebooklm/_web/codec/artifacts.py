@@ -6,7 +6,6 @@ import logging
 import reprlib
 from typing import Any
 
-from ..._artifact.formatters import _parse_data_table
 from ..._backend import BackendContractError
 from ..._binding import CodecPayload
 from ..._operations import Operation
@@ -49,6 +48,7 @@ from ..._row_adapters.notes import NoteRow
 from ...exceptions import ArtifactParseError, DecodingError, UnknownRPCMethodError
 from ...rpc import ARTIFACT_STATUS_SUGGESTED_WIRE_NAME, ExportType, RPCMethod, safe_index
 from ...rpc.types import ArtifactStatus, ArtifactTypeCode, artifact_status_to_str
+from .artifact_formatters import _parse_data_table
 from .notes import _decode_note_rows
 
 logger = logging.getLogger("notebooklm._types.artifacts")

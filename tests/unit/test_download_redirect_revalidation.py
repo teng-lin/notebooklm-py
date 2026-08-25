@@ -33,13 +33,13 @@ import pytest
 import notebooklm._artifact.downloads as _downloads_mod
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.types import ArtifactDownloadError
+from tests._fixtures.web_backend import build_web_backend
 
 
 @pytest.fixture
 def mock_artifacts_api(tmp_path):
     """ArtifactsAPI wired to mocks -- no real network, real httpx clients."""
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import NoteService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(
@@ -47,12 +47,11 @@ def mock_artifacts_api(tmp_path):
         get_source_ids=AsyncMock(return_value=[]),
     )
     api = ArtifactsAPI(
-        rpc=mock_core,
+        _backend=build_web_backend(mock_core),
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=AsyncMock(),
         mind_maps=AsyncMock(spec=NoteBackedMindMapService),
-        note_service=AsyncMock(spec=NoteService),
         storage_path=tmp_path / "storage.json",
     )
     return api

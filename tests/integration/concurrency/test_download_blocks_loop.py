@@ -56,8 +56,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._web.codec.artifacts import (
+    decode_artifact_representation,
+    decode_mind_map_representation,
+)
 from notebooklm.types import ArtifactDownloadError
 from tests._fixtures.fake_core import FakeSession, make_fake_core
+from tests._fixtures.web_backend import build_web_backend
 
 # mock-based loop-blocking detection tests; no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.
@@ -95,6 +100,23 @@ def _assert_offloaded_to_worker_thread(
     )
 
 
+def _representations(rows: list) -> list:
+    """Decode raw ``LIST_ARTIFACTS`` rows into the neutral prefetch handoff.
+
+    P10 R1.1 deleted the facade's raw-row fallback, so ``artifacts_data=`` /
+    ``mind_maps=`` take the decoded records the production producer
+    (``ArtifactsAPI._list_for_download``) already holds. These tests keep
+    their recorded wire rows and run them through the same codec.
+    """
+    return [decode_artifact_representation(row) for row in rows]
+
+
+def _mind_map_representations(rows: list) -> list:
+    """Decode raw note rows into ``MindMapRepresentationRecord``s (see above)."""
+    decoded = (decode_mind_map_representation(row) for row in rows)
+    return [record for record in decoded if record is not None]
+
+
 @pytest.fixture
 def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, FakeSession]:
     """``ArtifactsAPI`` wired to a constructor-injected fake core.
@@ -122,12 +144,11 @@ def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, FakeSession]:
     note_service = LegacyNoteBackedService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     api = ArtifactsAPI(
-        rpc=mock_core,
+        _backend=build_web_backend(mock_core),
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=MagicMock(),
         mind_maps=mind_maps,
-        note_service=note_service,
         storage_path=tmp_path / "fake_storage_state.json",
     )
     return api, mock_core
@@ -179,7 +200,7 @@ async def test_download_report_runs_write_off_loop_thread(
         result = await api.download_report(
             "nb_t7d4",
             str(output_path),
-            artifacts_data=report_artifact_list,
+            artifacts_data=_representations(report_artifact_list),
         )
 
     assert result == str(output_path)
@@ -255,7 +276,7 @@ async def test_download_mind_map_runs_write_off_loop_thread(
         result = await api.download_mind_map(
             "nb_t7d4",
             str(output_path),
-            mind_maps=mind_map_rows,
+            mind_maps=_mind_map_representations(mind_map_rows),
         )
 
     assert result == str(output_path)
@@ -335,11 +356,15 @@ async def test_concurrent_downloads_both_offload_writes(
         patch.object(studio_serialization.json, "dump", recording_json_dump),
     ):
         report_result, mindmap_result = await asyncio.gather(
-            api.download_report("nb_t7d4", str(report_path), artifacts_data=report_artifact_list),
+            api.download_report(
+                "nb_t7d4",
+                str(report_path),
+                artifacts_data=_representations(report_artifact_list),
+            ),
             api.download_mind_map(
                 "nb_t7d4",
                 str(mindmap_path),
-                mind_maps=mind_map_rows,
+                mind_maps=_mind_map_representations(mind_map_rows),
                 artifacts_data=[],
             ),
         )

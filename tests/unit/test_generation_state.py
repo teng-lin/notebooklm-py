@@ -29,6 +29,7 @@ from notebooklm.cli.error_handler import _generation_status_extra
 from notebooklm.exceptions import ArtifactTimeoutError
 from notebooklm.rpc.types import _ARTIFACT_STATUS_MAP, ArtifactStatus, ArtifactTypeCode
 from notebooklm.types import GenerationState, GenerationStatus
+from tests._fixtures.web_backend import build_web_backend
 
 # ---------------------------------------------------------------------------
 # Export surface + module identity
@@ -536,12 +537,11 @@ def _make_parse_api():
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
-        rpc=core,
+        _backend=build_web_backend(core),
         drain=core,
         lifecycle=core,
         notebooks=notebooks,
         mind_maps=MagicMock(),
-        note_service=MagicMock(),
     )
 
 

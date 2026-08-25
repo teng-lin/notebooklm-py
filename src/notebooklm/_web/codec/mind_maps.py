@@ -7,10 +7,6 @@ import logging
 import reprlib
 from typing import Any
 
-from ..._artifact.payloads import (
-    build_interactive_mind_map_artifact_params,
-    build_mind_map_params,
-)
 from ..._binding import CodecPayload
 from ..._env import get_default_language
 from ..._records import (
@@ -30,6 +26,10 @@ from ..._records import (
 from ..._row_adapters.artifacts import MIND_MAP_LEAF_ABSENT, unwrap_mind_map_generation_leaf
 from ...exceptions import UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
+from .artifact_payloads import (
+    build_interactive_mind_map_artifact_params,
+    build_mind_map_params,
+)
 from .notes import decode_note_backed_mind_maps
 
 logger = logging.getLogger("notebooklm._mind_maps_api")

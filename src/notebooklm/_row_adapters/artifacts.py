@@ -72,7 +72,7 @@ class QuizOptionPair:
     QuizDifficulty.HARD`` is ``True``, since ``QuizQuantity.MORE`` and
     ``QuizDifficulty.HARD`` are both ``3``. Compare against the enum matching
     the field you are reading. The encode side rejects that mix-up outright
-    (:func:`~notebooklm._artifact.payloads._quiz_option_code`); the decode side
+    (:func:`~notebooklm._web.codec.artifact_payloads._quiz_option_code`); the decode side
     cannot, because it has only the wire integer to go on.
     """
 
@@ -512,7 +512,7 @@ class ArtifactRow:
 
         This is the backend's own echo of the options the artifact was created
         with, so it is the only client-side read that can check a
-        :func:`~notebooklm._artifact.payloads.build_quiz_artifact_params`
+        :func:`~notebooklm._web.codec.artifact_payloads.build_quiz_artifact_params`
         payload against reality rather than against a fixture (#2195). It is
         deliberately a *decode* of what the server stored, never a
         reconstruction of what we sent.

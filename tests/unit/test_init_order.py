@@ -87,6 +87,7 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
     import notebooklm._artifacts as artifacts
     import notebooklm._mind_map as mind_map
     import notebooklm._studio.representations as artifact_representations
+    import notebooklm._web.codec.artifact_formatters as codec_artifact_formatters
     import notebooklm._web.codec.artifacts as artifact_codec
     import notebooklm.auth as auth
 
@@ -117,7 +118,7 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
         artifact_representations._format_interactive_content
         is artifact_formatters._format_interactive_content
     )
-    assert artifact_codec._parse_data_table is artifact_formatters._parse_data_table
+    assert artifact_codec._parse_data_table is codec_artifact_formatters._parse_data_table
 
 
 def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:
@@ -204,19 +205,17 @@ def test_client_exposes_artifacts_and_notes(mock_auth: AuthTokens) -> None:
 def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> None:
     """``ArtifactsAPI`` no longer takes ``notes_api`` at all (per
     docs/refactor-history.md Step 4) — the parameter was removed in favor of
-    explicit ``mind_maps`` + ``note_service`` (Phase 5). The mind-map
-    decoupling is now structural."""
+    explicit ``mind_maps`` (Phase 5; P10 R1.1 then dropped the companion
+    ``note_service`` input). The mind-map decoupling is now structural."""
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import LegacyNoteBackedService
 
     core = MagicMock()
     api = ArtifactsAPI(
-        rpc=core,
+        _backend=build_web_backend(core),
         drain=core,
         lifecycle=core,
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        note_service=MagicMock(spec=LegacyNoteBackedService),
     )
     assert api is not None
     # The legacy private attribute must not leak back: code that depends on
@@ -228,7 +227,7 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
     """The legacy ``notes_api=`` kwarg was removed in Phase 3
     (docs/refactor-history.md Step 4). Passing it must raise ``TypeError``."""
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import LegacyNoteBackedService, NoteService
+    from notebooklm._note_service import NoteService
 
     core = MagicMock()
     notes = NotesAPI(
@@ -241,7 +240,6 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
             notes_api=notes,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
-            note_service=MagicMock(spec=LegacyNoteBackedService),
         )
 
 
@@ -253,18 +251,17 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
     first still yields working APIs.
     """
     from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import LegacyNoteBackedService, NoteService
+    from notebooklm._note_service import NoteService
 
     core = MagicMock()
 
     def _make_artifacts() -> ArtifactsAPI:
         return ArtifactsAPI(
-            rpc=core,
+            _backend=build_web_backend(core),
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
-            note_service=MagicMock(spec=LegacyNoteBackedService),
         )
 
     def _make_notes() -> NotesAPI:
@@ -349,12 +346,10 @@ def _build_artifacts_with_real_mind_map_service(core: FakeSession) -> ArtifactsA
     note_service = LegacyNoteBackedService(core.rpc_executor)
     mind_maps = NoteBackedMindMapService(note_service)
     return ArtifactsAPI(
-        rpc=core.rpc_executor,
         drain=core,
         lifecycle=core,
         notebooks=MagicMock(get_source_ids=AsyncMock(return_value=["src_1"])),
         mind_maps=mind_maps,
-        note_service=note_service,
         _backend=build_web_backend(core),
     )
 

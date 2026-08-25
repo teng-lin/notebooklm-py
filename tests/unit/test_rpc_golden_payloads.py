@@ -36,7 +36,17 @@ from typing import Any, cast
 import pytest
 
 from notebooklm._app.serialize import to_jsonable
-from notebooklm._artifact.payloads import (
+from notebooklm._row_adapters.artifacts import ArtifactRow
+from notebooklm._row_adapters.notes import NoteRow
+from notebooklm._row_adapters.sources import SourceRow, SourceRowShape
+from notebooklm._source.upload_payloads import (
+    build_register_file_source_params,
+    build_rename_source_params,
+    build_resumable_upload_start_request,
+)
+from notebooklm._types.artifacts import Artifact, ArtifactType
+from notebooklm._types.sources import Source, SourceType
+from notebooklm._web.codec.artifact_payloads import (
     DEFAULT_QUIZ_DIFFICULTY,
     DEFAULT_QUIZ_QUANTITY,
     build_audio_artifact_params,
@@ -52,16 +62,6 @@ from notebooklm._artifact.payloads import (
     build_slide_deck_artifact_params,
     build_video_artifact_params,
 )
-from notebooklm._row_adapters.artifacts import ArtifactRow
-from notebooklm._row_adapters.notes import NoteRow
-from notebooklm._row_adapters.sources import SourceRow, SourceRowShape
-from notebooklm._source.upload_payloads import (
-    build_register_file_source_params,
-    build_rename_source_params,
-    build_resumable_upload_start_request,
-)
-from notebooklm._types.artifacts import Artifact, ArtifactType
-from notebooklm._types.sources import Source, SourceType
 from notebooklm._web.codec.suggestions import encode_report_suggestions
 from notebooklm.exceptions import (
     ClientError,

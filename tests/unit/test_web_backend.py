@@ -10,18 +10,6 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._artifact.payloads import (
-    build_audio_artifact_params,
-    build_cinematic_video_artifact_params,
-    build_flashcards_artifact_params,
-    build_infographic_artifact_params,
-    build_interactive_mind_map_artifact_params,
-    build_mind_map_params,
-    build_quiz_artifact_params,
-    build_report_artifact_params,
-    build_slide_deck_artifact_params,
-    build_video_artifact_params,
-)
 from notebooklm._backend import (
     BackendContractError,
     BackendDeadlineExceededError,
@@ -159,8 +147,25 @@ from notebooklm._records import (
 )
 from notebooklm._source.upload_payloads import build_template_block
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
-from notebooklm._web.backend import WebRpcBackend
+from notebooklm._web.backend import (
+    ROW_COLLABORATOR_NAMES,
+    WebRpcBackend,
+    _build_binding_table,
+    _row_collaborators_of,
+)
 from notebooklm._web.bindings import studio as studio_rows_module
+from notebooklm._web.codec.artifact_payloads import (
+    build_audio_artifact_params,
+    build_cinematic_video_artifact_params,
+    build_flashcards_artifact_params,
+    build_infographic_artifact_params,
+    build_interactive_mind_map_artifact_params,
+    build_mind_map_params,
+    build_quiz_artifact_params,
+    build_report_artifact_params,
+    build_slide_deck_artifact_params,
+    build_video_artifact_params,
+)
 from notebooklm._web.errors import translate_web_error
 from notebooklm._web.registry import (
     WEB_OPERATION_REGISTRY,
@@ -220,12 +225,49 @@ class _RecordingExecutor:
         return response
 
 
-def _transport_factory(**_kwargs: object) -> object:
-    return object()
-
-
 def _backend(executor: _RecordingExecutor) -> WebRpcBackend:
-    return WebRpcBackend(executor, transport_factory=_transport_factory)  # type: ignore[arg-type]
+    return WebRpcBackend(executor)  # type: ignore[arg-type]
+
+
+def test_row_collaborator_names_are_exactly_what_the_rows_declare() -> None:
+    """P10 invariant I4: the head offers no collaborator no row asks for.
+
+    ``ROW_COLLABORATOR_NAMES`` is the closed set the backend head supplies to
+    custom rows, audited at construction against each row's declaration. The
+    audit is one-directional — it rejects a row declaring a name the head does
+    not provide, but never noticed a name the head provided that *no* row
+    declares. ``deadline_factory`` was exactly that, and was dropped in P10
+    slice R0.1; this pin is the ratchet that keeps the two sides equal.
+
+    The plan's target is ``{"source_uploader"}``: ``capture_public_failure``
+    leaves with the last source-add hoist (R3.5) and the three ``chat_*``
+    names leave when ``chat.ask`` becomes service-owned (R2.2). Removing an
+    entry here is expected; adding one is not.
+    """
+    expected = {
+        "capture_public_failure",
+        "chat_reqid",
+        "chat_timeout",
+        "chat_transport_composed",
+        "source_uploader",
+    }
+    provided = set(ROW_COLLABORATOR_NAMES)
+    assert provided == expected
+
+    table = _build_binding_table()
+    declared = {
+        name for operation in table for name in getattr(table.get(operation), "collaborators", ())
+    }
+    assert declared == ROW_COLLABORATOR_NAMES, (
+        "the head's collaborator set drifted from what the rows declare: "
+        f"unused={sorted(ROW_COLLABORATOR_NAMES - declared)}, "
+        f"undeclared={sorted(declared - ROW_COLLABORATOR_NAMES)}"
+    )
+
+
+def test_the_per_invocation_collaborator_map_covers_exactly_the_closed_set() -> None:
+    backend = _backend(_RecordingExecutor())
+    assert set(_row_collaborators_of(backend)) == ROW_COLLABORATOR_NAMES
 
 
 def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
@@ -1666,6 +1708,31 @@ async def test_expired_deadline_fails_before_executor() -> None:
         "method_id": RPCMethod.LIST_NOTEBOOKS.value,
     }
     assert caught.value.dispatched is False
+    assert executor.calls == []
+
+
+@pytest.mark.asyncio
+async def test_expired_custom_row_fails_before_the_handler_and_names_no_native() -> None:
+    """A multi-native row resolves no native pre-dispatch, so it reports no ``method_id``."""
+    executor = _RecordingExecutor()
+    deadline = RuntimeDeadline(timeout=2.0, started_at=10.0, monotonic=lambda: 12.0)
+
+    with pytest.raises(BackendDeadlineExceededError) as caught:
+        await _backend(executor).invoke(
+            SOURCE_ADD_URL_DEF,
+            SourceAddUrlInput("nb", "https://example.com"),
+            deadline=deadline,
+        )
+
+    assert caught.value.operation is Operation.SOURCE_ADD_URL
+    assert caught.value.reason is BackendErrorReason.TIMEOUT
+    assert caught.value.diagnostics == {
+        "timeout": 2.0,
+        "remaining": 0.0,
+        "timeout_seconds": 2.0,
+    }
+    assert caught.value.dispatched is False
+    assert caught.value.outcome_unknown is False
     assert executor.calls == []
 
 

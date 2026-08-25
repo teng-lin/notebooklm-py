@@ -39,7 +39,7 @@ NotebookLM uses Google's `batchexecute` RPC protocol.
 - **Payload builders:** the owning implementation modules, for example
   `_notebooks.py::build_create_notebook_params`,
   `_source/upload_payloads.py`, `_source/add.py`, `_web/codec/labels.py`, and
-  `_artifact/payloads.py`
+  `_web/codec/artifact_payloads.py`
 - **Golden payload tests:** `tests/unit/test_rpc_golden_payloads.py` and
   feature-specific unit tests such as `tests/unit/test_label_params.py`
 - **Human reference:** `docs/rpc-reference.md`, updated after the builder and

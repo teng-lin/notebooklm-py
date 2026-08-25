@@ -98,7 +98,6 @@ def _add_result(source_id: str, *, title: str, url: str | None = None) -> list[A
 def _web_backend(executor: _RecordingExecutor, *, uploader: object | None = None) -> WebRpcBackend:
     return WebRpcBackend(  # type: ignore[arg-type]
         executor,
-        transport_factory=lambda **_kwargs: object(),
         source_uploader=uploader,
     )
 

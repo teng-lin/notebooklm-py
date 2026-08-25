@@ -96,7 +96,9 @@ def test_backend_type_surface_is_protocol_narrow_and_shallow_repr_is_redacted() 
     signature = inspect.signature(WebRpcBackend.__init__)
     assert signature.parameters["provider"].annotation == "WebCookieProvider | None"
     assert signature.parameters["session"].annotation == "WebCookieSession | None"
-    assert signature.parameters["transport_factory"].kind is inspect.Parameter.KEYWORD_ONLY
+    # P10 R1.2 deleted the dead ``transport_factory`` input (15 -> 14 params);
+    # both the parameter and the instance state it once fed must stay gone.
+    assert "transport_factory" not in signature.parameters
     assert "_transport_factory" not in vars(backend)
 
     introspection = repr((backend, vars(backend), provider, vars(provider), session, vars(session)))
@@ -741,7 +743,6 @@ async def test_provider_close_failure_is_retryable() -> None:
     session = BackendSession()
     backend = WebRpcBackend(
         object(),  # type: ignore[arg-type]
-        transport_factory=lambda **_kwargs: object(),
         provider=provider,  # type: ignore[arg-type]
         session=session,  # type: ignore[arg-type]
         owns_provider=True,
@@ -782,7 +783,6 @@ async def test_direct_backend_reconciles_but_does_not_close_injected_provider() 
     session = BackendSession()
     backend = WebRpcBackend(
         object(),  # type: ignore[arg-type]
-        transport_factory=lambda **_kwargs: object(),
         provider=provider,  # type: ignore[arg-type]
         session=session,  # type: ignore[arg-type]
     )
@@ -819,7 +819,6 @@ async def test_provider_close_waiter_cancellation_does_not_cancel_teardown() -> 
     provider = Provider()
     backend = WebRpcBackend(
         object(),  # type: ignore[arg-type]
-        transport_factory=lambda **_kwargs: object(),
         provider=provider,  # type: ignore[arg-type]
         session=BackendSession(),  # type: ignore[arg-type]
         owns_provider=True,

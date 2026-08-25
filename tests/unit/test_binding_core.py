@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import BackendContractError
+from notebooklm._backend import BackendContractError, BackendDeadlineExceededError
 from notebooklm._binding import (
     BindingAuditError,
     BindingTable,
@@ -278,6 +278,88 @@ async def test_codec_rows_can_ignore_the_deadline_and_map_errors_only_on_failure
     assert isinstance(info.value.__cause__, RuntimeError)
     assert getattr(info.value.__cause__, "binding_native", None) == NativeChoice("GET")
     assert mapped_calls[0][0] == 2
+
+
+@pytest.mark.asyncio
+async def test_invoke_binding_owns_the_single_pre_dispatch_expiry_check() -> None:
+    """One check, applied per row kind after ``DeadlineMode`` and native selection."""
+    expired = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 16.0)
+    keyed: CodecBinding[Any, Any, str] = CodecBinding(
+        definition=NOTEBOOK_GET_DEF,
+        encode=lambda value: CodecPayload(params=[]),
+        decode=lambda value, raw: raw,
+        native=NativeCallSpec.keyed(
+            lambda value: NativeChoice(value),
+            NativeChoice("GET_ONE"),
+            NativeChoice("GET_TWO"),
+        ),
+    )
+    transport = _FakeTransport()
+
+    # A keyed codec row resolves its native from the input first, so the failure
+    # names the native it blocked.
+    with pytest.raises(BackendDeadlineExceededError) as codec_failure:
+        await invoke_binding(
+            BindingTable({Operation.NOTEBOOK_GET: keyed}),
+            transport,
+            None,
+            NOTEBOOK_GET_DEF,
+            "GET_TWO",
+            deadline=expired,
+        )
+    assert codec_failure.value.diagnostics == {
+        "timeout": 5.0,
+        "remaining": 0.0,
+        "timeout_seconds": 5.0,
+        "method_id": "GET_TWO",
+    }
+
+    # A row that ignores the deadline never reaches the check.
+    ignoring: CodecBinding[Any, Any, str] = CodecBinding(
+        definition=NOTEBOOK_GET_DEF,
+        encode=lambda value: CodecPayload(params=[]),
+        decode=lambda value, raw: raw,
+        native=NativeCallSpec.constant("GET"),
+        deadline=DeadlineMode.IGNORE,
+    )
+    assert (
+        await invoke_binding(
+            BindingTable({Operation.NOTEBOOK_GET: ignoring}),
+            _FakeTransport("ok"),
+            None,
+            NOTEBOOK_GET_DEF,
+            1,
+            deadline=expired,
+        )
+        == "ok"
+    )
+
+    # A custom row resolves no native here, so its failure names none.
+    async def handler(value, deadline, invoke):  # pragma: no cover - never reached
+        raise AssertionError("an expired custom row never enters its handler")
+
+    custom: CustomBinding[Any, Any, str] = CustomBinding(
+        definition=NOTEBOOK_GET_DEF,
+        handler=handler,
+        native=(NativeCallSpec.constant("GET", key="get"),),
+        justification="The wire forces a fetch after the streamed answer.",
+        category="protocol",
+    )
+    with pytest.raises(BackendDeadlineExceededError) as custom_failure:
+        await invoke_binding(
+            BindingTable({Operation.NOTEBOOK_GET: custom}),
+            transport,
+            None,
+            NOTEBOOK_GET_DEF,
+            1,
+            deadline=expired,
+        )
+    assert custom_failure.value.diagnostics == {
+        "timeout": 5.0,
+        "remaining": 0.0,
+        "timeout_seconds": 5.0,
+    }
+    assert transport.requests == []
 
 
 @pytest.mark.asyncio

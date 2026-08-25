@@ -1007,7 +1007,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_artifacts.py", "_records", "DataTableGenerateInput"),
         ("_artifacts.py", "_records", "DriveExportInput"),
         ("_artifacts.py", "_records", "MindMapGenerateInput"),
-        ("_artifacts.py", "_note_service", "LegacyNoteBackedService"),
         ("_artifacts.py", "_projectors", "project_artifact"),
         ("_artifacts.py", "_projectors", "project_generation_status"),
         ("_artifacts.py", "_records", "AudioGenerateInput"),
@@ -1083,7 +1082,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/registry.py", "_records", "LABEL_GET_DEF"),
         ("_web/registry.py", "_records", "LABEL_LIST_DEF"),
         ("_web/registry.py", "_records", "LABEL_UPDATE_DEF"),
-        ("_artifacts.py", "_web.backend", "WebRpcBackend"),
         ("_studio/lifecycle.py", "_backend", "BackendAdapter"),
         ("_studio/lifecycle.py", "_records", "ARTIFACT_WAIT_DEF"),
         ("_studio/lifecycle.py", "_records", "ArtifactPollInput"),
@@ -1395,6 +1393,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/failure_projection.py", "_records", "SourceAddFailureKind"),
         ("_web/failure_projection.py", "_records", "SourceAddFailureRecord"),
         ("_web/backend.py", "registry", "WEB_OPERATION_REGISTRY"),
+        ("_web/backend.py", "registry", "WEB_SERVICE_OWNED_OPERATIONS"),
         ("_web/backend.py", "registry", "WEB_SUPPORTED_OPERATIONS"),
         ("_web/codec/artifacts.py", "_records", "ArtifactInfographicRecord"),
         ("_web/codec/artifacts.py", "_records", "ArtifactMediaRecord"),
@@ -2156,8 +2155,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
     }
 )
 
-# P9.2-2: LabelSetService sequences label.update from the leaves; the backend
-# head lets codec rows raise the transport's pre-dispatch expiry.
+# P9.2-2: LabelSetService sequences label.update from the leaves.
 REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
         ("_label_service.py", "_backend", "BackendContractError"),
@@ -2169,7 +2167,13 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_label_service.py", "_backend", "require_leaves"),
         ("_label_service.py", "_records", "LABEL_MUTATE_DEF"),
         ("_label_service.py", "_records", "LabelMutateInput"),
-        ("_web/backend.py", "_binding", "CodecBinding"),
+    }
+)
+# P10 R0.3: the port owns the one pre-dispatch expiry check, so ``invoke_binding``
+# raises the deadline failure the backend head used to duplicate.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_binding.py", "_backend", "BackendDeadlineExceededError"),
     }
 )
 # P9.2 primitives: the foundational leaf rows and their codec/record imports.

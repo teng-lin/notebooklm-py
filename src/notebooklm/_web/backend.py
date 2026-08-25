@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -29,7 +29,6 @@ from .._binding import (
     Binding,
     BindingAuditError,
     BindingTable,
-    CodecBinding,
     CustomBinding,
     ErrorMode,
     OperationDisposition,
@@ -56,7 +55,12 @@ from .bindings.sources import upload_backend
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
 from .errors import error_diagnostics, translate_web_error
 from .failure_projection import _capture_public_failure
-from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS, WebOperationBinding
+from .registry import (
+    WEB_OPERATION_REGISTRY,
+    WEB_SERVICE_OWNED_OPERATIONS,
+    WEB_SUPPORTED_OPERATIONS,
+    WebOperationBinding,
+)
 from .runtime import WebExecutionRuntime
 from .transport import WebRequest, WebTransport
 
@@ -76,7 +80,6 @@ source_logger = logging.getLogger("notebooklm").getChild("_sources")
 ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset(
     {
         "source_uploader",
-        "deadline_factory",
         "capture_public_failure",
         # ``chat.ask`` (P9.4b): the request-id counter, the configured chat read
         # timeout, and whether the composed chat transport exists — never the
@@ -113,7 +116,6 @@ class WebRpcBackend:
         self,
         runtime: WebExecutionRuntime,
         *,
-        transport_factory: Callable[..., object],
         source_uploader: Any | None = None,
         chat_transport: RuntimeTransport | None = None,
         chat_reqid: ReqidCounter | None = None,
@@ -142,10 +144,9 @@ class WebRpcBackend:
         self._drain_tracker = drain_tracker
         self._reqid = reqid
         self._pipeline = pipeline
-        # P9.4c keeps the established constructor signature while deleting the
-        # dead instance state; direct-HTTP owners receive their factories from
-        # their own composition paths.
-        del transport_factory
+        # P9.4c deleted the dead ``_transport_factory`` instance state and P10
+        # R1.2 the constructor input that fed it; direct-HTTP owners receive
+        # their factories from their own composition paths.
         self._source_uploader = source_uploader
         self._chat_transport = chat_transport
         self._chat_reqid = chat_reqid
@@ -154,6 +155,7 @@ class WebRpcBackend:
         self._deadline_factory = deadline_factory
         self._capabilities = BackendCapabilities(
             supported_operations=WEB_SUPPORTED_OPERATIONS,
+            workflows=WEB_SERVICE_OWNED_OPERATIONS,
         )
         self._closed = False
         # The transport reads the runtime through the shell on every call so
@@ -362,24 +364,10 @@ class WebRpcBackend:
             deadline = self._deadline_factory.start()
         if self._closed:
             raise BackendContractError("WebRpcBackend is closed")
-        # A codec row lets ``WebTransport.call`` raise the pre-dispatch expiry so
-        # the error names the blocked native (``method_id``) exactly as the
-        # composite handlers' ``_rpc_call`` did; nothing is dispatched either way.
-        if (
-            deadline is not None
-            and deadline.expired()
-            and not isinstance(binding.row, CodecBinding)
-        ):
-            raise BackendDeadlineExceededError(
-                operation.key,
-                diagnostics=MappingProxyType(
-                    {
-                        "timeout": deadline.timeout,
-                        "remaining": deadline.remaining(),
-                        "timeout_seconds": deadline.timeout,
-                    }
-                ),
-            )
+        # The pre-dispatch expiry check is ``invoke_binding``'s alone: it runs
+        # after the row's ``DeadlineMode`` and native selection, so a codec row's
+        # failure still names the blocked native (``method_id``) exactly as the
+        # composite handlers' ``_rpc_call`` did. Nothing is dispatched either way.
 
         raw_passthrough, scrub_request_urls = _row_error_projection(
             self._bindings.get(operation.key), operation.key
@@ -580,7 +568,6 @@ def _row_collaborators_of(backend: WebRpcBackend) -> Mapping[str, object]:
     return MappingProxyType(
         {
             "source_uploader": backend._source_uploader,
-            "deadline_factory": backend._deadline_factory,
             "capture_public_failure": backend._capture_public_failure,
             "chat_reqid": backend._chat_reqid,
             "chat_timeout": backend._chat_timeout,

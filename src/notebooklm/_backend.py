@@ -75,14 +75,37 @@ COMMIT_UNCERTAIN_REASONS: Final[frozenset[BackendErrorReason]] = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class BackendCapabilities:
-    """Closed set of semantic operations implemented by one backend."""
+    """Closed sets of semantic operations one backend can execute.
+
+    Two views, deliberately distinct.  ``supported_operations`` is what
+    :meth:`BackendAdapter.invoke` accepts — "directly invokable" — and is what
+    :func:`require_leaves` gates on.  ``workflows`` names the operations the
+    backend refuses to invoke because a semantic service sequences them from
+    leaves instead; they are unavailable *through the port* yet fully available
+    *through the client*.  Only :meth:`available` unions the two, so a caller
+    asking "can this client do X at all?" gets a different answer from dispatch
+    asking "may I hand X to invoke?".
+    """
 
     supported_operations: frozenset[Operation] = frozenset()
+    #: Operations a semantic service performs over this backend's leaves.
+    workflows: frozenset[Operation] = frozenset()
 
     def supports(self, operation: Operation) -> bool:
-        """Return whether the backend implements ``operation``."""
+        """Return whether the backend directly invokes ``operation``."""
 
         return operation in self.supported_operations
+
+    def available(self, operation: Operation) -> bool:
+        """Return whether the client can perform ``operation`` at all.
+
+        True for a directly invokable operation *and* for a service-owned
+        workflow this backend supplies the leaves for.  Never widen
+        :meth:`supports` to mean this: ``invoke`` must keep rejecting a
+        workflow handed to it directly.
+        """
+
+        return self.supports(operation) or operation in self.workflows
 
 
 @runtime_checkable

@@ -120,7 +120,11 @@ it to the active semantic surface. P0–P9 are complete. P8 places an immutable
 `WebCookieGeneration`/`WebCookieProvider` port between the web session and the existing auth
 owners; public-surface work and a mobile backend require separate decisions. P9 leaves a row-only
 web backend: 80 typed binding rows execute directly, eleven workflows are service-owned above the
-port, and their leaf conjunctions are audited transitively.
+port, and their leaf conjunctions are audited transitively. Programme **P10**
+([plan](./plan/2026-08-25-p10-semantic-remediation.md)) remediates the boundary defects that
+sequence left behind, under the governance addenda appended to
+[ADR-0035](./adr/0035-semantic-backend-boundary.md#addenda-p10-2026-08-25); it has not started, so
+everything described below is the P9 end state.
 
 The operation-catalog audit classifies only the shared generic web RPC forwarder as inert. The four
 notebook/source read handlers, three notebook-mutation handlers, URL-source composite, two Studio
@@ -474,8 +478,10 @@ multi-capability feature takes its collaborators by keyword-only
 constructor argument:
 
 - `ArtifactsAPI` takes the client-owned `BackendAdapter` plus
-  `drain: TransportDrainTracker` and `lifecycle: ClientLifecycle`; its deprecated
-  `rpc=` constructor keyword remains only for source-compatible manual construction.
+  `drain: TransportDrainTracker` and `lifecycle: ClientLifecycle`. The client
+  composition root is its only construction path — P10 R1.1 deleted the
+  deprecated `rpc=`/`note_service=` keywords and the partial `WebRpcBackend`
+  they built, so tests construct the backend explicitly instead.
 - `SourceUploadPipeline` takes transport-neutral registration/list/rename callbacks plus its upload collaborators; its deprecated `rpc=` keyword is ignored for source compatibility.
 - `ChatAPI` takes `backend: BackendAdapter` plus focused streamed-transport,
   request-id, and loop-guard collaborators.
@@ -604,7 +610,7 @@ Beyond the backend-owned runtime graph, feature APIs are implemented via dedicat
 | `DataTableFamilyService` / `NoteBackedMindMapFamilyService` | [`_studio/data_views.py`](../src/notebooklm/_studio/data_views.py) | Backend-neutral P5.6 data-table and artifact note-backed mind-map generation plus complete catalog selection. |
 | `MindMapFamilyService` | [`_studio/mind_maps.py`](../src/notebooklm/_studio/mind_maps.py) | Backend-neutral P6.3 interactive Studio mind-map generation, discovery, tree, update, and delete workflow. |
 | `DriveExportService` | [`_studio/exports.py`](../src/notebooklm/_studio/exports.py) | Explicit P5.6 Google Drive companion export for report/data-table representations. |
-| `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
+| `_artifact_formatters` | [`_artifact/formatters.py`](../src/notebooklm/_artifact/formatters.py) | Pure quiz/flashcard HTML/JSON presentation helpers for artifacts. |
 | `_artifact/listing` | [`_artifact/listing.py`](../src/notebooklm/_artifact/listing.py) | Listing and filtering operations for notebook artifacts. |
 | `_row_adapters*` | [`_row_adapters/artifacts.py`](../src/notebooklm/_row_adapters/artifacts.py), [`_row_adapters/chat.py`](../src/notebooklm/_row_adapters/chat.py), [`_row_adapters/documents.py`](../src/notebooklm/_row_adapters/documents.py), [`_row_adapters/labels.py`](../src/notebooklm/_row_adapters/labels.py), [`_row_adapters/notebooks.py`](../src/notebooklm/_row_adapters/notebooks.py), [`_row_adapters/notes.py`](../src/notebooklm/_row_adapters/notes.py), [`_row_adapters/research.py`](../src/notebooklm/_row_adapters/research.py), [`_row_adapters/sources.py`](../src/notebooklm/_row_adapters/sources.py) | Wire-shape adapters that wrap raw batchexecute rows (`ArtifactRow`, `LabelRow`, `NoteRow`, `SourceRow`, the `POLL_RESEARCH` rows, the `SUGGEST_PROMPTS` suggestion rows) and the streamed-chat rows (`AnswerRow`/`CitationRow`/…) behind named accessors so downloads, polling, listing, labels, research, and the chat parser don't open-code positional indices. Strict decode behavior is pinned in `tests/unit/test_row_adapters.py`, `tests/unit/test_chat_row_adapter.py`, `tests/unit/test_notebooks_row_adapter.py`, `tests/unit/test_research_row_adapter.py`, and `tests/unit/test_citation_alignment.py`. |
 | `_research_task_parser` | [`_research_task_parser.py`](../src/notebooklm/_research_task_parser.py) | Parses deep-research task results from raw rows. Returns dict-shaped output today; a typed-model migration is not yet complete. |
@@ -1039,15 +1045,17 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_backend_compat.py` | Private compatibility projector from closed semantic `BackendErrorReason` + safe diagnostics back to the existing public exception subclasses at migrated facade boundaries. |
 | `_backend.py` | Private protocol-neutral semantic port: backend kind/capabilities, typed `BackendAdapter.invoke`, and the minimal scrubbed error/deadline handoff used by the P2 slice. |
 | `_binding.py` | Neutral binding vocabulary (P9.0/P9.4c): `OperationDisposition`, `NativeCallSpec`, `CodecPayload`, the `CodecBinding` / `CustomBinding` row kinds, `BindingTable`, the construction-time `audit_bindings`, and the `invoke_binding` dispatch function; imports no `_web/`, `rpc/`, `_auth/`, or `httpx` module. |
-| `_records.py` | Compatibility re-export hub for frozen, slotted, protocol-neutral input/output records and `OperationDef` values for P2 notebook/source operations, P5.1–P5.8 Studio families, and P6.1–P6.7 domain workflows, plus P3 decoded values and closed URL-source error evidence. Large domain families live in sibling record modules so this hub remains under the module-size ratchet. |
+| `_records.py` | Compatibility re-export hub for frozen, slotted, protocol-neutral input/output records and `OperationDef` values for P2 notebook/source operations, P5.1–P5.8 Studio families, and P6.1–P6.7 domain workflows, plus P3 decoded values and closed URL-source error evidence. R1.4 drained the last records and `OperationDef` values into sibling `_*_records.py` domain modules, so this file only re-exports them and stays well under the module-size ratchet. |
+| `_artifact_records.py` | Neutral Studio artifact records — parse-failure evidence, artifact/representation/metadata values, and the twenty-two typed artifact operation definitions (R1.4) — re-exported from `_records.py`. |
 | `_chat_records.py` | P6.1 neutral Chat records and six typed operation definitions, re-exported from `_records.py`. |
 | `_label_records.py` | P6.4 neutral source-label/collection records and eleven typed operation definitions, re-exported from `_records.py`. |
+| `_mind_map_records.py` | Neutral mind-map records and the six typed `mind_map.*` operation definitions (R1.4), re-exported from `_records.py`. |
 | `_note_records.py` | P6.3 neutral plain-note records and five typed operation definitions, re-exported from `_records.py`. |
 | `_notebook_records.py` | P2/P6.6 neutral notebook records and nine typed operation definitions, re-exported from `_records.py`. |
 | `_research_records.py` | P6.2 neutral Research records and four typed operation definitions, re-exported from `_records.py`. |
 | `_settings_records.py` | P6.6 neutral account-settings records and three typed operation definitions, re-exported from `_records.py`. |
 | `_sharing_records.py` | P6.5 neutral Sharing records and seven typed operation definitions, including the two P9.2 primitives, re-exported from `_records.py` while keeping the shared record module below the size ratchet. |
-| `_source_records.py` | Frozen, slotted, protocol-neutral source read/add/content/refresh/Drive/upload records, including the P9.2 `SOURCE_PATCH_TITLE` primitive DTOs, split from `_records.py` to keep the shared record surface below the module-size ratchet. |
+| `_source_records.py` | Frozen, slotted, protocol-neutral source read/add/content/refresh/Drive/upload records, including the P9.2 `SOURCE_PATCH_TITLE` primitive DTOs and the fourteen typed source operation definitions (R1.4), split from `_records.py` to keep the shared record surface below the module-size ratchet. |
 | `_backoff.py` | Shared capped exponential-backoff calculation with deterministic test injection |
 | `_reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
 | `_runtime/auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
@@ -1105,6 +1113,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/codec/chat_stream.py` | Retained streamed-response parser; credential-aware request construction delegates outside `_web` to `_chat/stream_request.py`. |
 | `_web/codec/studio_documents.py` | P5.4 exact report/video request encoders and generation-status decoder over backend-neutral records. |
 | `_web/codec/generation.py` | P9.4b row-facing Studio generate payloads: the option vocabularies and `validate_*`/`encode_*` builders returning the guarded `CREATE_ARTIFACT` `CodecPayload` per family, plus `decode_generation_kickoff` (null response or task id → the closed unavailable error). |
+| `_web/codec/artifact_formatters.py` | Positional `LIST_ARTIFACTS` rich-text data-table decoders (`_extract_data_table_rows` / `_parse_data_table`) behind `_web/codec/artifacts.py`; split out of `_artifact/formatters.py` so the pure presentation helpers above the port stay RPC-free. |
+| `_web/codec/artifact_payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
 | `_web/codec/source_ids.py` | P9.4b: the one `GET_NOTEBOOK` source-id decoder every input-defaulting row shares, with an explicit per-family `SourceIdDiagnostics` mode (silent / warn / guarded) that preserves each family's schema-drift warning surface. |
 | `_web/codec/notes.py` | P6.3 mixed note-row codec: normalizes flat/wrapped envelopes, classifies deleted and note-backed mind-map rows, preserves exact-id selection, and emits only neutral `NoteRecord` values; since P9.3 also the row-facing `encode_note_*`/`decode_note_*` helpers behind `_web/bindings/notes.py`. |
 | `_web/codec/labels.py` | P6.4 shared source-label/collection codec: owns both wire dialects behind `LabelKind` and emits only neutral `LabelRecord` values; since P9.3 also the row-facing `encode_*`/`decode_*_result` payload builders and the dialect/scope contract guards. |
@@ -1148,6 +1158,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_research_task_parser.py` | Internal parser for research task result-type selection |
 | `_notebooks.py` | `client.notebooks` API + source-id resolver |
 | `_notebook_payloads.py` | Stable `batchexecute` notebook RPC request payload builders (currently `SUGGEST_PROMPTS`) |
+| `_markdown.py` | Neutral HTML-to-Markdown conversion policy for source fulltext, including Markdown-source and LaTeX/table handling |
 | `_sources.py` | `client.sources` API |
 | `_artifacts.py` | `client.artifacts` compatibility facade — validates public inputs, delegates to typed Studio services, and projects existing public return/error types without native RPC authority. |
 | `_chat/api.py` | `client.chat` API |
@@ -1166,8 +1177,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_artifact/_download_client.py` | Download trusted-host allowlist + transport-aware client factory — wires the #1521 redirect guard for httpx (event hook) or the opt-in curl_cffi (`get_guarded` manual loop) |
 | `_studio/downloads.py` | Representation byte retrieval client; reuses the canonical download-client factory, trusted-host predicate, and per-hop redirect guard |
 | `_studio/serialization.py` | RPC-free local serializers for Studio text, JSON, and CSV representations |
-| `_artifact/formatters.py` | Markdown, HTML, and plain text formatters for artifacts |
-| `_artifact/payloads.py` | Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders |
+| `_artifact/formatters.py` | Pure quiz/flashcard HTML/JSON presentation helpers for artifacts (RPC-free since the data-table decoders moved below the port) |
 | `_artifact/validation.py` | Input-validation guards for the `ArtifactsAPI` facade (`generate_report` format coercion, `export` exactly-one-of target), kept in a sibling module so the facade stays under the module-size ratchet (#1874) |
 | `_artifact/generation.py` | Retired P5.8 import-compatible helper module; family services and `_studio/management.py` own generation/management behavior. |
 | `_artifact/listing.py` | Listing and filtering operations for notebook artifacts |
@@ -1176,7 +1186,6 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_source/batch.py` | True-batch URL `ADD_SOURCE` service for the existing MCP/REST batch endpoints: typed positional outcomes, omitted-row reconciliation, and fail-closed transport/duplicate ambiguity policy |
 | `_source/drive_import.py` | Auto-route add-from-Drive (#1884): download + upload the upload-only Drive types (epub/docx/txt/…); native import (`add_drive`) instead takes Docs/Slides/Sheets + PDF by reference; header-first cookie-authed streaming fetch behind injected seams |
 | `_source/content.py` | Core service layer for fetching source HTML/markdown content |
-| `_source/markdown.py` | Source fulltext HTML-to-Markdown conversion policy, including Markdown-source and LaTeX/table handling |
 | `_source/listing.py` | Core service layer for listing notebook sources |
 | `_source/polling.py` | Poll coordination service for active source conversions |
 | `_source/upload.py` | Concurrency-gated upload pipeline for source files |
@@ -1286,10 +1295,10 @@ src/notebooklm/
 ├── _notebook_metadata.py        # Metadata protocols
 ├── _operations.py               # Closed semantic operation/call-policy vocabulary (P0)
 ├── _projectors.py               # Neutral record-to-public compatibility projectors (P2/P3/P5/P6)
-├── _artifact_records.py         # Neutral artifact parse-failure records split from the shared record hub
+├── _artifact_records.py         # Neutral Studio artifact records/operation definitions split from the record hub
 ├── _notebook_records.py         # Neutral notebook inputs/results/records and typed operation definitions
 ├── _note_records.py             # Neutral plain-note inputs/results/records and typed operation definitions
-├── _source_records.py           # Neutral source records, including source.patch_title primitive DTOs
+├── _source_records.py           # Neutral source records/operation definitions, incl. source.patch_title DTOs
 ├── _notebook_mutation_service.py # Transport-neutral notebook mutation service (P2.2)
 ├── _notebook_guide_service.py   # Transport-neutral notebook summary/description service
 ├── _mutation_services.py        # Transport-neutral URL-source mutation service (P2.3, live)
@@ -1297,6 +1306,7 @@ src/notebooklm/
 ├── _source_service.py           # Source leaves plus service-owned source.update workflow
 ├── _label_service.py            # Transport-neutral source-label/collection service (P6.4)
 ├── _label_records.py            # Neutral source-label/collection records/operation definitions (P6.4)
+├── _mind_map_records.py         # Neutral mind-map records/operation definitions (R1.4)
 ├── _research_service.py         # Transport-neutral Research service (P6.2)
 ├── _research_records.py         # Neutral Research records/operation definitions (P6.2)
 ├── _research_neutral.py         # Research public-model to neutral-record conversion helpers
@@ -1362,6 +1372,8 @@ src/notebooklm/
 │   └── codec/                   # P3 web response codecs producing neutral records/value exemptions
 │       ├── __init__.py          # Private codec re-exports
 │       ├── artifacts.py         # Artifact/mind-map/report-suggestion rows -> neutral records
+│       ├── artifact_formatters.py # Positional LIST_ARTIFACTS data-table decoders
+│       ├── artifact_payloads.py # Stable CREATE_ARTIFACT / GENERATE_MIND_MAP request payload builders
 │       ├── chat.py              # Unary Chat codecs over neutral records (P6.1)
 │       ├── chat_saved_note.py   # Saved-from-Chat CREATE_NOTE encoding
 │       ├── chat_stream.py       # Retained streamed response parser
@@ -1443,7 +1455,6 @@ src/notebooklm/
 │   ├── add.py                   # Source addition coordinator
 │   ├── batch.py                 # True-batch URL ADD_SOURCE coordinator + typed positional outcomes for MCP/REST batch adapters (#2115)
 │   ├── content.py               # Source content fetcher
-│   ├── markdown.py               # Source fulltext HTML-to-Markdown conversion policy
 │   ├── drive_import.py          # Auto-route add-from-Drive (#1884): DriveImportService + DriveFetcher — parse id/URL, cookie-authed header-first streaming download of the upload-only Drive types (epub/docx/txt/…), confirm-token handling + 0600 temp cleanup, then hand to add_file (native Docs/Slides/Sheets → pointer error)
 │   ├── listing.py               # Source listing helper
 │   ├── polling.py               # Source polling coordinator
@@ -1454,10 +1465,9 @@ src/notebooklm/
 │   ├── _download_client.py      # Download trusted-host allowlist + transport-aware client factory (httpx event hook / curl_cffi get_guarded)
 │   ├── _redirect_guard.py       # Per-redirect-hop host/scheme revalidation for downloads (#1521)
 │   ├── downloads.py             # Retired P5.8 compatibility exports for download helpers
-│   ├── formatters.py            # Artifact formatting helpers
+│   ├── formatters.py            # Pure quiz/flashcard presentation helpers (RPC-free)
 │   ├── generation.py            # Retired P5.8 import-compatible generation helper module
 │   ├── generation_workflow.py   # Shared backend-driven artifact generation workflow
-│   ├── payloads.py              # Stable artifact request payload builders
 │   ├── validation.py            # Facade input-validation guards (generate_report coercion, export exactly-one-of) (#1874)
 │   ├── listing.py               # Artifact listing helper
 │   └── polling.py               # Artifact polling coordinator
@@ -1541,6 +1551,7 @@ src/notebooklm/
 │   └── sources.py
 ├── _notebooks.py                # NotebooksAPI
 ├── _notebook_payloads.py        # batchexecute notebook RPC payload builders (SUGGEST_PROMPTS)
+├── _markdown.py                 # Neutral HTML-to-Markdown conversion policy for source fulltext
 ├── _sources.py                  # SourcesAPI
 ├── _artifacts.py                # ArtifactsAPI
 ├── _research.py                 # ResearchAPI

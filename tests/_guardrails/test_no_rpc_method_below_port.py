@@ -111,6 +111,8 @@ ALLOWLIST: tuple[str, ...] = (
     "_web/bindings/mind_maps.py:<module>",
     "_web/bindings/mind_maps.py:_mind_map_generate_interactive",
     "_web/bindings/notebooks.py:_map_allocate_quota_rejection",
+    "_web/codec/artifact_formatters.py:_extract_data_table_rows",
+    "_web/codec/artifact_formatters.py:_parse_data_table",
     "_web/codec/artifacts.py:decode_interactive_content",
     "_web/codec/artifacts.py:decode_studio_rows",
     "_web/codec/chat.py:decode_get_settings_result",

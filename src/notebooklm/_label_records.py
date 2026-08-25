@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, unique
 
-from ._operations import CallPolicy, Operation, OperationDef
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 @unique
@@ -234,12 +234,14 @@ LABEL_MUTATE_DEF: OperationDef[LabelMutateInput, LabelMutateResult] = OperationD
     CallPolicy.MUTATION,
     LabelMutateInput,
     LabelMutateResult,
+    tier=OperationTier.PRIMITIVE,
 )
 LABEL_ALLOCATE_DEF: OperationDef[LabelAllocateInput, LabelAllocateResult] = OperationDef(
     Operation.LABEL_ALLOCATE,
     CallPolicy.MUTATION,
     LabelAllocateInput,
     LabelAllocateResult,
+    tier=OperationTier.PRIMITIVE,
 )
 LABEL_DELETE_DEF: OperationDef[LabelDeleteInput, LabelDeleteResult] = OperationDef(
     Operation.LABEL_DELETE,
@@ -279,23 +281,34 @@ COLLECTION_DELETE_DEF: OperationDef[LabelDeleteInput, LabelDeleteResult] = Opera
 )
 
 
+@dataclass(frozen=True, slots=True)
+class CollectionRecord:
+    """Neutral account-level notebook collection."""
+
+    id: str
+    name: str
+    emoji: str | None = None
+    notebook_ids: tuple[str, ...] = ()
+
+
 __all__ = [
     "COLLECTION_CREATE_DEF",
     "COLLECTION_DELETE_DEF",
     "COLLECTION_GET_DEF",
     "COLLECTION_LIST_DEF",
     "COLLECTION_UPDATE_DEF",
-    "LABEL_CREATE_DEF",
+    "CollectionRecord",
     "LABEL_ALLOCATE_DEF",
+    "LABEL_CREATE_DEF",
     "LABEL_DELETE_DEF",
     "LABEL_GENERATE_DEF",
     "LABEL_GET_DEF",
     "LABEL_LIST_DEF",
     "LABEL_MUTATE_DEF",
     "LABEL_UPDATE_DEF",
-    "LabelCreateInput",
     "LabelAllocateInput",
     "LabelAllocateResult",
+    "LabelCreateInput",
     "LabelCreateResult",
     "LabelDeleteInput",
     "LabelDeleteResult",
