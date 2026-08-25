@@ -128,6 +128,27 @@ class SharingUpdateUsersResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SharingMutateInput:
+    """One ``SHARE_NOTEBOOK`` set-op (P9.2 primitive): visibility or grants.
+
+    Exactly one form is requested per call: ``public`` sets link visibility,
+    ``grants`` upserts/removes individual users (with ``notify`` and
+    ``welcome_message`` as the grant options).
+    """
+
+    notebook_id: str
+    public: bool | None = None
+    grants: tuple[SharingUserGrant, ...] = ()
+    notify: bool = True
+    welcome_message: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SharingMutateResult:
+    """Successful share mutation; the workflow reads the status back itself."""
+
+
+@dataclass(frozen=True, slots=True)
 class LegacyShareArtifactInput:
     """Legacy notebook/artifact share-link state requested by compatibility internals."""
 
@@ -144,6 +165,12 @@ class LegacyShareArtifactResult:
     artifact_id: str | None = None
 
 
+SHARING_MUTATE_DEF: OperationDef[SharingMutateInput, SharingMutateResult] = OperationDef(
+    Operation.SHARING_MUTATE,
+    CallPolicy.MUTATION,
+    SharingMutateInput,
+    SharingMutateResult,
+)
 SHARING_GET_DEF: OperationDef[SharingGetInput, SharingGetResult] = OperationDef(
     Operation.SHARING_GET,
     CallPolicy.READ,
@@ -184,6 +211,7 @@ LEGACY_SHARE_ARTIFACT_DEF: OperationDef[LegacyShareArtifactInput, LegacyShareArt
 __all__ = [
     "LEGACY_SHARE_ARTIFACT_DEF",
     "SHARING_GET_DEF",
+    "SHARING_MUTATE_DEF",
     "SHARING_SET_PUBLIC_DEF",
     "SHARING_SET_VIEW_LEVEL_DEF",
     "SHARING_UPDATE_USERS_DEF",
@@ -202,5 +230,7 @@ __all__ = [
     "SharingSetViewLevelResult",
     "SharingUpdateUsersInput",
     "SharingUpdateUsersResult",
+    "SharingMutateInput",
+    "SharingMutateResult",
     "SharingUserGrant",
 ]

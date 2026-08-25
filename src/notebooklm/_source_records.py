@@ -352,6 +352,22 @@ class SourceUpdateResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SourcePatchTitleInput:
+    """One ``UPDATE_SOURCE`` title set-op (P9.2 primitive)."""
+
+    notebook_id: str
+    source_id: str
+    new_title: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class SourcePatchTitleResult:
+    """Decoded mutation echo; ``None`` asks the workflow to hydrate by id."""
+
+    source: SourceRecord | None
+
+
+@dataclass(frozen=True, slots=True)
 class SourceRefreshInput:
     notebook_id: str
     source_id: str

@@ -36,7 +36,7 @@ def test_operation_definition_is_inert_frozen_slotted_vocabulary() -> None:
 def test_operation_and_call_policy_vocabularies_are_total_non_vacuous_and_alias_free() -> None:
     rows = catalog.build_operation_catalog()["operations"]
 
-    assert len(Operation.__members__) == len(Operation) == len(catalog.OPERATION_SPECS) == 87
+    assert len(Operation.__members__) == len(Operation) == len(catalog.OPERATION_SPECS) == 91
     assert {row["policy"] for row in rows} == {policy.value for policy in CallPolicy}
     assert next(row for row in rows if row["key"] == "chat.ask")["policy"] == "stream"
 
@@ -267,7 +267,6 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_web/bindings/studio.py:ARTIFACT_GENERATE_REPORT",
         "_web/bindings/studio.py:ARTIFACT_GENERATE_SLIDE_DECK",
         "_web/bindings/studio.py:ARTIFACT_GENERATE_VIDEO",
-        "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
     ]
     assert any("_row_adapters/" in site for site in references[RPCMethod.GET_NOTEBOOK]["decoders"])
     assert references[RPCMethod.SUGGEST_PROMPTS]["decoders"] == [
@@ -674,7 +673,7 @@ def test_get_metadata_recency_contract_pins_two_distinct_reads() -> None:
             "condition": "always: concurrent notebook.get plus source listing",
             "authority_sites": [
                 "_web/bindings/notebooks.py:NOTEBOOK_GET",
-                "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+                "_web/bindings/sources.py:SOURCE_LIST",
             ],
         }
     ]

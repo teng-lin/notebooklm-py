@@ -84,7 +84,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     (Operation.NOTEBOOK_METADATA, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/bindings/notebooks.py:NOTEBOOK_GET", "metadata notebook branch"),
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+            "_web/bindings/sources.py:SOURCE_LIST",
             "metadata source branch",
         ),
     ),
@@ -123,8 +123,8 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_UPDATE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
-            "null UPDATE_SOURCE echo only",
+            "_web/bindings/sources.py:SOURCE_GET",
+            "null UPDATE_SOURCE echo only via source.get",
         )
     ),
     (Operation.SOURCE_WAIT, _b(RPCMethod.GET_NOTEBOOK)): _rules(
@@ -141,13 +141,13 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.RESEARCH_IMPORT_VERIFY, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+            "_web/bindings/sources.py:SOURCE_LIST",
             "pre-import baseline and verification probes",
         )
     ),
     (Operation.LABEL_SOURCES, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
+            "_web/bindings/sources.py:SOURCE_LIST",
             "resolve label source ids",
         )
     ),
@@ -328,9 +328,8 @@ class RecencyRule:
 _GET_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 _UPDATE_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_UPDATE"
 _GET_RAW = "_notebooks.py:NotebooksAPI.get_raw"
-_GET_SOURCES = "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records"
-# P9.3: the three source leaves read through their own codec rows; composites
-# and the upload pipeline keep reading through the retained snapshot helper.
+_GET_SOURCES = "_web/bindings/sources.py:SOURCE_LIST"
+# P9.3: source list/get/wait reads dispatch through their own codec rows.
 _GET_SOURCE_LIST = "_web/bindings/sources.py:SOURCE_LIST"
 _GET_SOURCE = "_web/bindings/sources.py:SOURCE_GET"
 _GET_SOURCE_WAIT = "_web/bindings/sources.py:SOURCE_WAIT"
@@ -459,7 +458,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "public_call",
             "one exact-id source read only when UPDATE_SOURCE returns a null echo",
-            (_GET_SOURCES,),
+            (_GET_SOURCE,),
         ),
     ),
     Operation.SOURCE_WAIT: (
@@ -656,14 +655,19 @@ SHARED_RPC_AUTHORITY_RULES.update(
         (Operation.LABEL_CREATE, _b(RPCMethod.LIST_LABELS)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_set_list", "pre-create identity baseline")
         ),
+        # P9.2-2: label.update is service-owned; its reads run through the
+        # label.get leaf row and its writes through the label.mutate primitive.
         (Operation.LABEL_UPDATE, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "update preflight/readback")
+            ("_web/bindings/labels.py:LABEL_GET", "update preflight/readback via label.get")
         ),
         (Operation.COLLECTION_CREATE, _b(RPCMethod.LIST_LABELS)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_set_list", "baseline/create readback")
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "update preflight/readback")
+            (
+                "_web/bindings/labels.py:COLLECTION_GET",
+                "update preflight/readback via collection.get",
+            )
         ),
         (Operation.COLLECTION_NOTEBOOKS, _b(RPCMethod.LIST_LABELS)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_set_list", "resolve collection membership")
@@ -701,6 +705,9 @@ SHARED_RPC_AUTHORITY_RULES.update(
                 "user grant/upsert and removal entries",
             ),
         ),
+        (Operation.SHARING_MUTATE, _b(RPCMethod.SHARE_NOTEBOOK)): _rules(
+            ("_web/bindings/primitives.py:SHARING_MUTATE", "visibility or grant envelope")
+        ),
         (Operation.NOTEBOOK_SUMMARIZE, _b(RPCMethod.SUMMARIZE)): _rules(
             ("_web/bindings/notebooks.py:NOTEBOOK_SUMMARIZE", "summary projection")
         ),
@@ -708,10 +715,44 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/notebooks.py:NOTEBOOK_DESCRIBE", "description/topics projection")
         ),
         (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_update", "label field-mask mutation")
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "label field-mask mutation via leaf")
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._collection_update", "collection name mutation")
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "collection name mutation via leaf")
+        ),
+        (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL, "add_sources")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "one source append per call via leaf")
+        ),
+        (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL, "remove_sources")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "one source removal per call via leaf")
+        ),
+        (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL, "add_notebooks")): _rules(
+            (
+                "_web/bindings/primitives.py:LABEL_MUTATE",
+                "one notebook append per call via leaf",
+            )
+        ),
+        (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL, "remove_notebooks")): _rules(
+            (
+                "_web/bindings/primitives.py:LABEL_MUTATE",
+                "one notebook removal per call via leaf",
+            )
+        ),
+        # P9.2 primitive: the row selects the variant from the request kind and form.
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL)): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "form=field")
+        ),
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL, "add_sources")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "kind=source_label form=add")
+        ),
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL, "remove_sources")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "kind=source_label form=remove")
+        ),
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL, "add_notebooks")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "kind=collection form=add")
+        ),
+        (Operation.LABEL_MUTATE, _b(RPCMethod.UPDATE_LABEL, "remove_notebooks")): _rules(
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "kind=collection form=remove")
         ),
         (Operation.NOTE_UPDATE, _b(RPCMethod.UPDATE_NOTE)): _rules(
             ("_web/bindings/notes.py:NOTE_UPDATE", "public=notes.update")
@@ -748,9 +789,12 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SOURCE_UPDATE, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
-                "_web/source_variants.py:SourceVariantWebHandlers._source_update",
-                "public=sources.rename",
+                "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
+                "public=sources.rename via source.patch_title",
             )
+        ),
+        (Operation.SOURCE_PATCH_TITLE, _b(RPCMethod.UPDATE_SOURCE)): _rules(
+            ("_web/bindings/primitives.py:SOURCE_PATCH_TITLE", "one title set-op")
         ),
     }
 )
@@ -765,6 +809,9 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.COLLECTION_CREATE, _b(RPCMethod.CREATE_LABEL)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._collection_create", "label_type=collection")
+        ),
+        (Operation.LABEL_ALLOCATE, _b(RPCMethod.CREATE_LABEL)): _rules(
+            ("_web/bindings/primitives.py:LABEL_ALLOCATE", "manual allocation, either dialect")
         ),
         (Operation.ARTIFACT_DELETE, _b(RPCMethod.DELETE_ARTIFACT)): _rules(
             ("_web/bindings/studio.py:ARTIFACT_DELETE", "public=artifacts.delete")

@@ -39,6 +39,8 @@ class Operation(str, Enum):
     SOURCE_ADD_FILE = "source.add_file"
     SOURCE_DELETE = "source.delete"
     SOURCE_UPDATE = "source.update"
+    # P9.2 primitive: one native title set-op consumed by source.update.
+    SOURCE_PATCH_TITLE = "source.patch_title"
     SOURCE_REFRESH = "source.refresh"
     SOURCE_CHECK_FRESHNESS = "source.check_freshness"
     SOURCE_GET_GUIDE = "source.get_guide"
@@ -99,6 +101,9 @@ class Operation(str, Enum):
     LABEL_CREATE = "label.create"
     LABEL_UPDATE = "label.update"
     LABEL_DELETE = "label.delete"
+    # P9.2 primitives: one native set-op each, consumed by the hoisted workflows.
+    LABEL_MUTATE = "label.mutate"
+    LABEL_ALLOCATE = "label.allocate"
 
     COLLECTION_LIST = "collection.list"
     COLLECTION_GET = "collection.get"
@@ -112,6 +117,7 @@ class Operation(str, Enum):
     SHARING_SET_VIEW_LEVEL = "sharing.set_view_level"
     SHARING_UPDATE_USERS = "sharing.update_users"
     LEGACY_SHARE_ARTIFACT = "sharing.legacy_share_artifact"
+    SHARING_MUTATE = "sharing.mutate"
 
     SETTINGS_GET = "settings.get"
     SETTINGS_SET_LANGUAGE = "settings.set_language"

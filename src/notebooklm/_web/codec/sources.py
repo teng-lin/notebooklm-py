@@ -29,6 +29,8 @@ from ..._records import (
     SourceGuideResult,
     SourceListInput,
     SourceListResult,
+    SourcePatchTitleInput,
+    SourcePatchTitleResult,
     SourceRecord,
     SourceRefreshInput,
     SourceRefreshResult,
@@ -630,6 +632,15 @@ def encode_source_get(value: SourceGetInput) -> CodecPayload:
     )
 
 
+def encode_source_patch_title(value: SourcePatchTitleInput) -> CodecPayload:
+    """Payload for the primitive ``source.patch_title`` title set-op."""
+    return CodecPayload(
+        params=encode_update_source(value.source_id, value.new_title),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
+    )
+
+
 def encode_source_wait(value: SourceWaitSnapshotInput) -> CodecPayload:
     """Payload for the ``source.wait`` codec row (one snapshot per poll tick)."""
     return CodecPayload(
@@ -717,6 +728,19 @@ def decode_source_get(value: SourceGetInput, payload: Any) -> SourceGetResult:
     records = decode_source_snapshot(value.notebook_id, payload, logger=_ROW_LOGGER)
     return SourceGetResult(
         source=next((source for source in records if source.id == value.source_id), None)
+    )
+
+
+def decode_source_patch_title(
+    value: SourcePatchTitleInput,
+    payload: Any,
+    *,
+    method_id: str,
+) -> SourcePatchTitleResult:
+    """Decode the optional mutation echo using the binding-selected method id."""
+    del value
+    return SourcePatchTitleResult(
+        source=(decode_source(payload, method_id=method_id) if payload else None)
     )
 
 

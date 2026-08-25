@@ -284,6 +284,16 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         recency_effect="zero GET_NOTEBOOK calls on an echo; exactly one on a null echo",
     ),
     OperationSpec(
+        Operation.SOURCE_PATCH_TITLE,
+        CallPolicy.MUTATION,
+        "SourceService",
+        "notebook+source",
+        "P9.2 primitive: one UPDATE_SOURCE title set-op whose optional echo is returned to the "
+        "service-owned source.update workflow.",
+        (),
+        (_b(RPCMethod.UPDATE_SOURCE),),
+    ),
+    OperationSpec(
         Operation.SOURCE_REFRESH,
         CallPolicy.MUTATION,
         "SourceService",
@@ -871,6 +881,33 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         ),
     ),
     OperationSpec(
+        Operation.LABEL_MUTATE,
+        CallPolicy.MUTATION,
+        "LabelService",
+        "notebook+label",
+        "P9.2 primitive: one UPDATE_LABEL set-op (field mask, one member append, or one "
+        "member removal) whose variant is chosen from the request kind and form; the hoisted "
+        "update workflows issue one call per member.",
+        (),
+        (
+            _b(RPCMethod.UPDATE_LABEL),
+            _b(RPCMethod.UPDATE_LABEL, "add_sources"),
+            _b(RPCMethod.UPDATE_LABEL, "remove_sources"),
+            _b(RPCMethod.UPDATE_LABEL, "add_notebooks"),
+            _b(RPCMethod.UPDATE_LABEL, "remove_notebooks"),
+        ),
+    ),
+    OperationSpec(
+        Operation.LABEL_ALLOCATE,
+        CallPolicy.MUTATION,
+        "LabelService",
+        "notebook+label-set",
+        "P9.2 primitive: one manual CREATE_LABEL allocation for either dialect; the "
+        "source-label echo is decoded, the collection dialect returns no echo.",
+        (),
+        (_b(RPCMethod.CREATE_LABEL),),
+    ),
+    OperationSpec(
         Operation.LABEL_DELETE,
         CallPolicy.MUTATION,
         "LabelService",
@@ -974,6 +1011,16 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         "Adds, replaces, updates, or removes individual grants and re-reads status.",
         _p("sharing", "add_user", "set_users", "update_user", "remove_user"),
         (_b(RPCMethod.SHARE_NOTEBOOK), _b(RPCMethod.GET_SHARE_STATUS)),
+    ),
+    OperationSpec(
+        Operation.SHARING_MUTATE,
+        CallPolicy.MUTATION,
+        "SharingService",
+        "notebook",
+        "P9.2 primitive: one SHARE_NOTEBOOK envelope setting link visibility or one "
+        "individual-user grant set; the hoisted sharing workflows read status back.",
+        (),
+        (_b(RPCMethod.SHARE_NOTEBOOK),),
     ),
     OperationSpec(
         Operation.LEGACY_SHARE_ARTIFACT,

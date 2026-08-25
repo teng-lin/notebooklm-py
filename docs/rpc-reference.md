@@ -317,7 +317,7 @@ params = [
 
 ### RPC: GET_NOTEBOOK (rLM1Ne)
 
-**Source:** `_notebooks.py::get()`, `_web/source_variants.py::_source_snapshot_records()`
+**Source:** `_notebooks.py::get()`, `_web/bindings/sources.py::SOURCE_LIST`
 
 ```python
 params = [

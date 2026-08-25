@@ -29,6 +29,8 @@ from ..._backend import BackendContractError
 from ..._binding import CodecPayload
 from ..._operations import Operation
 from ..._records import (
+    LabelAllocateInput,
+    LabelAllocateResult,
     LabelDeleteInput,
     LabelDeleteResult,
     LabelGenerateInput,
@@ -38,6 +40,8 @@ from ..._records import (
     LabelKind,
     LabelListInput,
     LabelListResult,
+    LabelMutateInput,
+    LabelMutateResult,
     LabelRecord,
 )
 from ..._row_adapters.labels import CollectionRow, LabelRow
@@ -540,6 +544,11 @@ def decode_label_generate_result(value: LabelGenerateInput, data: Any) -> LabelG
 
 
 __all__ = [
+    "decode_label_allocate",
+    "decode_label_mutate",
+    "encode_label_allocate",
+    "encode_label_mutate",
+    "label_mutate_variant",
     "build_create_collection_params",
     "build_create_label_params",
     "build_delete_collections_params",
@@ -571,3 +580,115 @@ __all__ = [
     "require_label_kind",
     "require_notebook_scope",
 ]
+
+
+# -- P9.2 primitive rows ------------------------------------------------------
+#
+# ``label.mutate`` and ``label.allocate`` are the single-native leaves the
+# hoisted update/create workflows sequence above the port. Each encoder returns
+# the same payload the P6.4 composite handler dispatched for that native and
+# never names a method; the row's ``NativeCallSpec`` selects the variant.
+
+
+def _mutate_form(value: LabelMutateInput) -> str:
+    """Return the one set-op form a mutate request addresses, failing closed."""
+    forms = [
+        form
+        for form, present in (
+            ("field", value.name is not None or value.emoji is not None),
+            ("add", value.add_member_id is not None),
+            ("remove", value.remove_member_id is not None),
+        )
+        if present
+    ]
+    if len(forms) != 1:
+        raise BackendContractError(
+            "label.mutate requires exactly one of a field mask, an add, or a remove",
+            operation=Operation.LABEL_MUTATE,
+        )
+    return forms[0]
+
+
+def encode_label_mutate(value: LabelMutateInput) -> CodecPayload:
+    """Payload for the ``label.mutate`` row: one ``UPDATE_LABEL`` set-op."""
+    form = _mutate_form(value)
+    if value.kind is LabelKind.COLLECTION:
+        if form == "field":
+            if value.name is None:
+                raise BackendContractError(
+                    "label.mutate has no emoji-only field mask for collections; a name is required",
+                    operation=Operation.LABEL_MUTATE,
+                )
+            params = build_rename_collection_params(value.label_id, value.name, value.emoji)
+        else:
+            params = build_update_collection_notebooks_params(
+                value.label_id,
+                add_notebook_id=value.add_member_id,
+                remove_notebook_id=value.remove_member_id,
+            )
+        return CodecPayload(params=params, source_path=_ACCOUNT_PATH, allow_null=True)
+    notebook_id = require_notebook_scope(value.notebook_id, Operation.LABEL_MUTATE)
+    return CodecPayload(
+        params=build_update_label_params(
+            notebook_id,
+            value.label_id,
+            name=value.name,
+            emoji=value.emoji,
+            add_source_id=value.add_member_id,
+            remove_source_id=value.remove_member_id,
+        ),
+        source_path=_notebook_path(notebook_id),
+        allow_null=True,
+    )
+
+
+def label_mutate_variant(value: LabelMutateInput) -> str | None:
+    """The ``UPDATE_LABEL`` variant one mutate request dispatches under."""
+    form = _mutate_form(value)
+    if form == "field":
+        return None
+    member = "notebooks" if value.kind is LabelKind.COLLECTION else "sources"
+    return f"{form}_{member}"
+
+
+def decode_label_mutate(value: LabelMutateInput, data: Any) -> LabelMutateResult:
+    """Row decoder for ``label.mutate``: ``le8sX`` echoes ``[]`` and no group."""
+    del value, data
+    return LabelMutateResult()
+
+
+def encode_label_allocate(value: LabelAllocateInput) -> CodecPayload:
+    """Payload for the ``label.allocate`` row: one manual ``CREATE_LABEL``."""
+    if value.kind is LabelKind.COLLECTION:
+        return CodecPayload(
+            params=build_create_collection_params(value.name),
+            source_path=_ACCOUNT_PATH,
+            allow_null=True,
+        )
+    notebook_id = require_notebook_scope(value.notebook_id, Operation.LABEL_ALLOCATE)
+    return CodecPayload(
+        params=build_create_label_params(notebook_id, value.name, value.emoji),
+        source_path=_notebook_path(notebook_id),
+        allow_null=True,
+    )
+
+
+def decode_label_allocate(
+    value: LabelAllocateInput,
+    data: Any,
+    *,
+    method_id: str,
+) -> LabelAllocateResult:
+    """Row decoder for ``label.allocate``: the source-label echo, or empty."""
+    if value.kind is LabelKind.COLLECTION:
+        # The collection create echo was never captured on the wire; the
+        # workflow re-lists to attribute the allocation.
+        return LabelAllocateResult()
+    notebook_id = require_notebook_scope(value.notebook_id, Operation.LABEL_ALLOCATE)
+    return LabelAllocateResult(
+        labels=decode_label_create_echo(
+            data,
+            notebook_id=notebook_id,
+            method_id=method_id,
+        )
+    )

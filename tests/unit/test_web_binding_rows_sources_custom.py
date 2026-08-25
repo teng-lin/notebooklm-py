@@ -52,7 +52,6 @@ from notebooklm._web.backend import ROW_COLLABORATOR_NAMES, WebRpcBackend, _row_
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import sources as source_rows
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
-from notebooklm._web.source_variants import SourceVariantWebHandlers
 from notebooklm.exceptions import RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Source, SourceStatus
@@ -236,7 +235,6 @@ def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
         "_create_url_source",
     ):
         assert not hasattr(WebRpcBackend, name)
-        assert not hasattr(SourceVariantWebHandlers, name)
     backend = build_web_backend(_RecordingExecutor())
     for operation, (row, *_rest) in expected.items():
         assert backend._bindings[operation] is row

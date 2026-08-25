@@ -29,6 +29,7 @@ from .._binding import (
     Binding,
     BindingAuditError,
     BindingTable,
+    CodecBinding,
     CustomBinding,
     ErrorMode,
     OperationDisposition,
@@ -60,9 +61,9 @@ from .codec.artifacts import decode_artifact_catalog, encode_studio_catalog_para
 from .deadlines import CLIENT_TIMEOUT_DEADLINE_OPERATIONS
 from .errors import error_diagnostics, translate_web_error
 from .failure_projection import _capture_public_failure
+from .labels import LabelSetWebHandlers
 from .registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS, WebOperationBinding
 from .runtime import WebExecutionRuntime
-from .source_variants import SourceVariantWebHandlers
 from .transport import WebRequest, WebTransport
 
 if TYPE_CHECKING:
@@ -116,7 +117,7 @@ def _row_error_projection(row: Binding | None, operation: Operation) -> tuple[bo
     return operation in _RAW_PASSTHROUGH_HANDLER_OPERATIONS, None
 
 
-class WebRpcBackend(SourceVariantWebHandlers):
+class WebRpcBackend(LabelSetWebHandlers):
     """Typed semantic binding owning web execution through its runtime."""
 
     def __init__(
@@ -372,7 +373,14 @@ class WebRpcBackend(SourceVariantWebHandlers):
             deadline = self._deadline_factory.start()
         if self._closed:
             raise BackendContractError("WebRpcBackend is closed")
-        if deadline is not None and deadline.expired():
+        # A codec row lets ``WebTransport.call`` raise the pre-dispatch expiry so
+        # the error names the blocked native (``method_id``) exactly as the
+        # composite handlers' ``_rpc_call`` did; nothing is dispatched either way.
+        if (
+            deadline is not None
+            and deadline.expired()
+            and not isinstance(binding.row, CodecBinding)
+        ):
             raise BackendDeadlineExceededError(
                 operation.key,
                 diagnostics=MappingProxyType(

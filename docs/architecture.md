@@ -1046,7 +1046,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_research_records.py` | P6.2 neutral Research records and four typed operation definitions, re-exported from `_records.py`. |
 | `_settings_records.py` | P6.6 neutral account-settings records and three typed operation definitions, re-exported from `_records.py`. |
 | `_sharing_records.py` | P6.5 neutral Sharing records and four typed operation definitions, re-exported from `_records.py` while keeping the shared record module below the size ratchet. |
-| `_source_records.py` | Frozen, slotted, protocol-neutral source read/add/content/refresh/Drive/upload records split from `_records.py` to keep the shared record surface below the module-size ratchet. |
+| `_source_records.py` | Frozen, slotted, protocol-neutral source read/add/content/refresh/Drive/upload records, including the P9.2 `SOURCE_PATCH_TITLE` primitive DTOs, split from `_records.py` to keep the shared record surface below the module-size ratchet. |
 | `_backoff.py` | Shared capped exponential-backoff calculation with deterministic test injection |
 | `_reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
 | `_runtime/auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
@@ -1059,8 +1059,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_notebook_mutation_service.py` | Private P2.2 transport-neutral notebook create/title-update/delete service; validates semantic input and invokes only typed backend definitions. |
 | `_mutation_services.py` | Private live P2.3 transport-neutral URL-source mutation service; carries the ordinary/YouTube request and uncertainty receipt through `BackendAdapter` without wire dependencies. |
 | `_read_services.py` | Private P2.1 transport-neutral notebook/source list/get services; invokes only typed operation definitions through `BackendAdapter`, forwards `RuntimeDeadline`, and delegates public-model construction to `_projectors.py`. |
-| `_source_service.py` | Private transport-neutral service for source content, refresh, Drive, upload, and remaining source variants over typed operation definitions and records. |
-| `_label_service.py` | Private P6.4 transport-neutral source-label/collection service over one discriminated neutral record family and eleven typed operations. |
+| `_source_service.py` | Private transport-neutral service for source content, refresh, Drive, upload, and remaining source variants over typed operation definitions and records; since P9.2-4 it owns `source.update` as patch-title then conditional source-get hydration under one workflow deadline. |
+| `_label_service.py` | Private P6.4 transport-neutral source-label/collection service over one discriminated neutral record family; since P9.2-2/3 it owns the `label.update` and `collection.update` workflows (one get preflight/readback plus one `label.mutate` per member under one workflow deadline, leaf failures rebound to the workflow operation). |
 | `_research_service.py` | Private P6.2 transport-neutral Research start/poll/wait/cancel/import service; wait and verified import remain service compositions over typed backend operations. |
 | `_settings_service.py` | Private P6.6 transport-neutral account settings/limits/language service over three typed backend operations. |
 | `_chat/service.py` | Private P6.1 transport-neutral Chat ask/history/configuration/save-note service over six typed backend operations. |
@@ -1076,7 +1076,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/transport.py` | `WebTransport` (P9.1): the web backend's two transport verbs — `call` (one deadline-bound `batchexecute` call over `WebExecutionRuntime`, tagging escaped native errors `dispatched`) and `stream` (the chat-aware authed POST) — plus the frozen `WebRequest`/`WebStreamRequest` values and `assemble` for codec rows. Lifecycle stays on `WebRpcBackend`. |
 | `_web/error_policy.py` | Closed native-to-semantic error classification and safe-diagnostic allowlist shared by the composed web backend. |
 | `_web/failure_projection.py` | Bounded, serializable projection of public exception graphs into transport-neutral source failure records. |
-| `_web/labels.py` | P6.4 source-label/collection web workflow mixin; since P9.3 only the four create/update composites and the shared set read they preflight through remain here (the list/get/delete/generate leaves are `_web/bindings/labels.py` rows). |
+| `_web/labels.py` | P6.4 source-label/collection web workflow mixin; since P9.3 only the two create composites plus the shared set read they baseline through remain here (the list/get/delete/generate leaves are `_web/bindings/labels.py` rows; both update workflows are service-owned since P9.2-2/3). |
 | `_web/bindings/__init__.py` | `WEB_BINDING_ROWS` (P9.3): the union of every domain's binding rows, checked for one row per operation and canonical definitions; `_web/registry.py` partitions the supported set between these rows and the remaining handler names. |
 | `_web/bindings/research.py` | P9.3 research codec rows: `RESEARCH_START` (input-keyed fast/deep `NativeCallSpec` with the deep-start `map_error` that mints `RESEARCH_START_UNAVAILABLE`), `RESEARCH_POLL`, `RESEARCH_CANCEL`, `RESEARCH_IMPORT` (inherits the caller's deadline, forwards the service's `attempt_timeout`); the P6.2 research mixin these rows replace is deleted. |
 | `_web/errors.py` | Shared native-to-neutral failure translation (`translate_web_error`, `error_diagnostics`) that `WebRpcBackend._translate_error` delegates to and row-level `map_error` hooks call without importing the backend head. |
@@ -1084,15 +1084,15 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/bindings/_invoker_caller.py` | `InvokerRpcCaller` (P9.4b): the `RpcCaller` view a custom row hands the legacy note-backed helpers — maps each `RPCMethod` they select onto the row's declared spec key, dispatches through the row-scoped invoker, and surfaces a semantic deadline expiry as the `RPCTimeoutError` they expect with the selected native's tag preserved. Replaces the P6 deadline-bound legacy caller. |
 | `_web/bindings/notebooks.py` | P9.3 notebook codec rows: `NOTEBOOK_LIST` (non-uniform decoder over the empty/`[None]`/`[[rows]]` shapes), `NOTEBOOK_GET` (input-selected source-id-only branch), `NOTEBOOK_DELETE`, `NOTEBOOK_REMOVE_RECENT`, `NOTEBOOK_SUMMARIZE`, `NOTEBOOK_DESCRIBE` — `encode → one native call → decode`; plus the P9.4b deferred-product custom rows `NOTEBOOK_CREATE` (snapshot → guarded create → probe/reconcile with the quota diagnosis) and `NOTEBOOK_UPDATE` (mutate → readback). |
 | `_web/bindings/notes.py` | P9.3 plain-note codec rows: `NOTE_LIST`, `NOTE_GET`, `NOTE_CREATE`, `NOTE_UPDATE`, `NOTE_DELETE` over `_web/codec/notes.py`; `NoteService` sequences them above the port and the walker derives their catalog authorities from the module-level assignments. |
+| `_web/bindings/primitives.py` | P9.2 primitive codec rows: `LABEL_MUTATE` (input-keyed over the five `UPDATE_LABEL` variants, one call per member), `LABEL_ALLOCATE` (manual `CREATE_LABEL` for either dialect), `SHARING_MUTATE` (one `SHARE_NOTEBOOK` visibility or grant envelope), and `SOURCE_PATCH_TITLE` (one `UPDATE_SOURCE` title set-op) — the single-native leaves the hoisted workflows sequence above the port. |
 | `_web/bindings/labels.py` | P9.3 labels/collections codec rows: `LABEL_LIST`, `LABEL_GET`, `LABEL_GENERATE`, `LABEL_DELETE`, `COLLECTION_LIST`, `COLLECTION_GET`, `COLLECTION_DELETE` — one `LIST_LABELS`/`CREATE_LABEL`/`DELETE_LABEL` call per row; the get rows select by exact id inside `decode`. |
 | `_web/bindings/chat.py` | P9.4 `CHAT_ASK` protocol custom row (streamed query, then the conditional `GET_LAST_CONVERSATION_ID` read, through the row-scoped invoker) plus the P9.3 chat codec rows: `CHAT_GET_CONVERSATION`, `CHAT_GET_HISTORY`, `CHAT_DELETE_HISTORY`, `CHAT_SAVE_NOTE`, and the input-keyed `CHAT_CONFIGURE` (`GET_NOTEBOOK` read or `RENAME_NOTEBOOK` mutation selected from the action) — `encode → one native call → decode`. |
 | `_web/bindings/settings.py` | P9.3 settings/suggestions codec rows: `SETTINGS_GET`, `SETTINGS_GET_LIMITS`, `SETTINGS_SET_LANGUAGE`, `ARTIFACT_SUGGEST_REPORTS` — `encode → one native call → decode` with the `NativeCallSpec` as the sole method authority; since P9.4b also the input-defaulting `NOTEBOOK_SUGGEST_PROMPTS` *deferred-product* custom row (conditional `GET_NOTEBOOK` read, then `SUGGEST_PROMPTS`). The walker derives their catalog authorities from these module-level assignments. |
 | `_web/bindings/sharing.py` | Sharing rows: the P9.3 codec rows `SHARING_GET`, `LEGACY_SHARE_ARTIFACT` (`encode → one native call → decode`, the `NativeCallSpec` as sole method authority) and the P9.4 *deferred-product* `CustomBinding` rows `SHARING_SET_PUBLIC`, `SHARING_SET_VIEW_LEVEL`, `SHARING_UPDATE_USERS`, whose handlers sequence the declared `mutate` and `readback` specs through the row-scoped invoker; the P6.5 sharing mixin is deleted. |
-| `_web/bindings/sources.py` | P9.3 source codec rows: `SOURCE_LIST`, `SOURCE_GET` (exact-id select inside `decode`), `SOURCE_WAIT` (the one `DeadlineMode.IGNORE` row), `SOURCE_DELETE`, `SOURCE_REFRESH`, `SOURCE_CHECK_FRESHNESS`, `SOURCE_GET_GUIDE`, `SOURCE_GET_FULLTEXT`; and, since P9.4b, the source-add family as `CustomBinding` rows (`SOURCE_ADD_URL`, `SOURCE_ADD_URL_BATCH`, `SOURCE_ADD_DRIVE`, `SOURCE_ADD_FILE` *protocol*; `SOURCE_ADD_TEXT` *compatibility*) whose handlers sequence their declared `snapshot`/`create`/`rename`/`register`/`limits` specs through the row-scoped invoker; `upload_backend()` builds the upload pipeline's callbacks over a `SOURCE_ADD_FILE` invoker. |
+| `_web/bindings/sources.py` | P9.3 source codec rows: `SOURCE_LIST`, `SOURCE_GET` (exact-id select inside `decode`), `SOURCE_WAIT` (the one `DeadlineMode.IGNORE` row), `SOURCE_DELETE`, `SOURCE_REFRESH`, `SOURCE_CHECK_FRESHNESS`, `SOURCE_GET_GUIDE`, `SOURCE_GET_FULLTEXT`; and, since P9.4b, the source-add family as `CustomBinding` rows (`SOURCE_ADD_URL`, `SOURCE_ADD_URL_BATCH`, `SOURCE_ADD_DRIVE`, `SOURCE_ADD_FILE` *protocol*; `SOURCE_ADD_TEXT` *compatibility*) whose handlers sequence their declared `snapshot`/`create`/`rename`/`register`/`limits` specs through the row-scoped invoker; `upload_backend()` builds the upload pipeline's callbacks over a `SOURCE_ADD_FILE` invoker. Since P9.2-4 `SOURCE_GET` is also the null-echo hydration leaf for service-owned `SOURCE_UPDATE`. |
 | `_web/bindings/studio.py` | P9.3 Studio leaf codec rows: `ARTIFACT_EXPORT`, `ARTIFACT_REVISE_SLIDE`, `ARTIFACT_RETRY`, `ARTIFACT_DELETE`, `ARTIFACT_WAIT` (inherits the caller's deadline; the polling loop stays in `_studio/lifecycle.py`), and the input-keyed `ARTIFACT_DOWNLOAD` (`LIST_ARTIFACTS` / `GET_NOTES_AND_MIND_MAPS` / `GET_INTERACTIVE_HTML` chosen from `value.action`); since P9.4b also the *deferred-product* custom rows for the eight `CREATE_ARTIFACT` generate families (conditional `GET_NOTEBOOK` default-source read, then the guarded kickoff) and `ARTIFACT_RENAME` (title set, then `LIST_ARTIFACTS` readback). |
-| `_web/source_variants.py` | Web workflow mixin holding only `SOURCE_UPDATE` and the composite snapshot helper it hydrates through (the source leaves and the source-add family are `_web/bindings/sources.py` rows since P9.3/P9.4b); deleted with its P9.2 hoist. |
-| `_web/policy.py` | Exact P4 ledger for all 82 active web workflows: semantic policy, every reachable native method/variant, reviewed native idempotency, and optional reported divergence. |
-| `_web/registry.py` | Closed web disposition registry over every `Operation`: 82 executable typed handlers plus explicit composite dispositions. |
+| `_web/policy.py` | Exact P4 ledger for all 83 directly supported web operations plus the three service-owned workflows: semantic policy, every reachable native method/variant, reviewed native idempotency, and optional reported divergence. |
+| `_web/registry.py` | Closed web disposition registry over all 91 operations: 83 directly supported, three service-owned, and five explicitly unsupported. |
 | `_studio/catalog.py` | Typed P5.1 Studio list/get service over neutral artifact operation records. |
 | `_studio/classifiers.py` | Closed neutral-artifact family classifier shared by Studio catalog selection. |
 | `_studio/data_views.py` | P5.6 typed data-table and mind-map generation plus dual-backing catalog selection. |
@@ -1289,12 +1289,12 @@ src/notebooklm/
 ├── _artifact_records.py         # Neutral artifact parse-failure records split from the shared record hub
 ├── _notebook_records.py         # Neutral notebook inputs/results/records and typed operation definitions
 ├── _note_records.py             # Neutral plain-note inputs/results/records and typed operation definitions
-├── _source_records.py           # Neutral source inputs/results/records and typed operation definitions
+├── _source_records.py           # Neutral source records, including source.patch_title primitive DTOs
 ├── _notebook_mutation_service.py # Transport-neutral notebook mutation service (P2.2)
 ├── _notebook_guide_service.py   # Transport-neutral notebook summary/description service
 ├── _mutation_services.py        # Transport-neutral URL-source mutation service (P2.3, live)
 ├── _read_services.py            # Transport-neutral notebook/source list/get services (P2.1)
-├── _source_service.py           # Transport-neutral source content/mutation/wait service
+├── _source_service.py           # Source leaves plus service-owned source.update workflow
 ├── _label_service.py            # Transport-neutral source-label/collection service (P6.4)
 ├── _label_records.py            # Neutral source-label/collection records/operation definitions (P6.4)
 ├── _research_service.py         # Transport-neutral Research service (P6.2)
@@ -1351,6 +1351,7 @@ src/notebooklm/
 │   │   ├── mind_maps.py         # mind-map leaf codec rows + generate/catalog custom rows
 │   │   ├── notebooks.py         # notebook read/leaf codec rows + create/update custom rows
 │   │   ├── notes.py             # plain-note codec rows
+│   │   ├── primitives.py        # P9.2 primitive rows (labels, sharing, source patch-title)
 │   │   ├── research.py          # research codec rows (input-keyed start)
 │   │   ├── settings.py          # settings/suggestion codec rows
 │   │   ├── sharing.py           # sharing codec rows + custom mutate-then-readback rows (P9.4)
@@ -1358,7 +1359,6 @@ src/notebooklm/
 │   │   └── studio.py            # Studio leaf codec rows + generate/rename custom rows
 │   ├── policy.py                # P4 semantic/native policy parity ledger (reporting only)
 │   ├── registry.py              # Closed active/unsupported web dispositions
-│   ├── source_variants.py       # SOURCE_UPDATE composite (leaves and source-add family are bindings/sources.py rows)
 │   ├── transport.py             # P9.1 WebTransport call/stream verbs, WebRequest/WebStreamRequest
 │   └── codec/                   # P3 web response codecs producing neutral records/value exemptions
 │       ├── __init__.py          # Private codec re-exports

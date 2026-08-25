@@ -152,15 +152,8 @@ ALLOWLIST: tuple[str, ...] = (
     "_web/codec/suggestions.py:decode_prompt_suggestions",
     "_web/codec/suggestions.py:decode_report_suggestions",
     "_web/labels.py:LabelSetWebHandlers._collection_create",
-    "_web/labels.py:LabelSetWebHandlers._collection_update",
     "_web/labels.py:LabelSetWebHandlers._label_create",
-    "_web/labels.py:LabelSetWebHandlers._label_field_readback",
-    "_web/labels.py:LabelSetWebHandlers._label_membership_readback",
     "_web/labels.py:LabelSetWebHandlers._label_set_list",
-    "_web/labels.py:LabelSetWebHandlers._label_update",
-    "_web/labels.py:LabelSetWebHandlers._label_update_preflight",
-    "_web/source_variants.py:SourceVariantWebHandlers._source_snapshot_records",
-    "_web/source_variants.py:SourceVariantWebHandlers._source_update",
 )
 
 

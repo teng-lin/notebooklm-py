@@ -33,6 +33,31 @@ class NativePolicyBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowLeaf:
+    """One leaf operation a service-owned workflow invokes, with its allowed variants."""
+
+    operation: Operation
+    allowed_variants: frozenset[str | None]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowPolicyBinding:
+    """A service-owned workflow: its policy, hand-reviewed natives, and leaf edges.
+
+    ``native_bindings`` stays hand-reviewed so the P4 parity audit remains an
+    independent check: the audit derives the workflow's native set transitively
+    from ``leaf_operations`` (each leaf's ledger row filtered by the allowed
+    variants) and compares it with these expected natives exactly as it did
+    when the workflow was one web handler.
+    """
+
+    policy: CallPolicy
+    native_bindings: tuple[NativePolicyBinding, ...]
+    leaf_operations: tuple[WorkflowLeaf, ...]
+    known_divergence: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class WebCallPolicyBinding:
     """Whole-workflow policy plus every native call reachable in its web handler."""
 
@@ -187,12 +212,9 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.MUTATION,
             (_native(RPCMethod.DELETE_SOURCE, _IDEMPOTENT, "idempotent source delete"),),
         ),
-        Operation.SOURCE_UPDATE: WebCallPolicyBinding(
+        Operation.SOURCE_PATCH_TITLE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "source title set-op"),
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "conditional null-echo readback"),
-            ),
+            (_native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "source title set-op"),),
         ),
         Operation.SOURCE_REFRESH: WebCallPolicyBinding(
             CallPolicy.MUTATION,
@@ -332,10 +354,11 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.CREATE_LABEL, _NO_RETRY, "manual source-label allocation"),
             ),
         ),
-        Operation.LABEL_UPDATE: WebCallPolicyBinding(
+        # P9.2 primitives: one native set-op each, sequenced by the hoisted
+        # label/collection workflows above the port.
+        Operation.LABEL_MUTATE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (
-                _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "preflight and readback"),
                 _native(RPCMethod.UPDATE_LABEL, _IDEMPOTENT, "name/emoji set-op"),
                 _native(
                     RPCMethod.UPDATE_LABEL,
@@ -349,7 +372,23 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                     "source membership removal",
                     variant="remove_sources",
                 ),
+                _native(
+                    RPCMethod.UPDATE_LABEL,
+                    _NO_RETRY,
+                    "notebook membership append",
+                    variant="add_notebooks",
+                ),
+                _native(
+                    RPCMethod.UPDATE_LABEL,
+                    _IDEMPOTENT,
+                    "notebook membership removal",
+                    variant="remove_notebooks",
+                ),
             ),
+        ),
+        Operation.LABEL_ALLOCATE: WebCallPolicyBinding(
+            CallPolicy.MUTATION,
+            (_native(RPCMethod.CREATE_LABEL, _NO_RETRY, "manual group allocation"),),
         ),
         Operation.LABEL_DELETE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
@@ -368,25 +407,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             (
                 _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "baseline and create readback"),
                 _native(RPCMethod.CREATE_LABEL, _NO_RETRY, "account collection allocation"),
-            ),
-        ),
-        Operation.COLLECTION_UPDATE: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "preflight and readback"),
-                _native(RPCMethod.UPDATE_LABEL, _IDEMPOTENT, "collection field set-op"),
-                _native(
-                    RPCMethod.UPDATE_LABEL,
-                    _NO_RETRY,
-                    "notebook membership append",
-                    variant="add_notebooks",
-                ),
-                _native(
-                    RPCMethod.UPDATE_LABEL,
-                    _IDEMPOTENT,
-                    "notebook membership removal",
-                    variant="remove_notebooks",
-                ),
             ),
         ),
         Operation.COLLECTION_DELETE: WebCallPolicyBinding(
@@ -711,6 +731,10 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_SHARE_STATUS, _IDEMPOTENT, "post-mutation read"),
             ),
         ),
+        Operation.SHARING_MUTATE: WebCallPolicyBinding(
+            CallPolicy.MUTATION,
+            (_native(RPCMethod.SHARE_NOTEBOOK, _PROBE_CREATE, "guarded link/ACL mutation"),),
+        ),
         Operation.LEGACY_SHARE_ARTIFACT: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (
@@ -752,14 +776,186 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
 )
 
 
+def _leaf(operation: Operation, *variants: str | None) -> WorkflowLeaf:
+    return WorkflowLeaf(operation, frozenset(variants))
+
+
+# P9.2 service-owned workflows. Each row keeps the natives the P6 handler
+# executed (reviewed by hand) plus the leaf edges the semantic service now
+# sequences; the audit checks the two agree.
+SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]] = (
+    MappingProxyType(
+        {
+            Operation.LABEL_UPDATE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "preflight and readback"),
+                    _native(RPCMethod.UPDATE_LABEL, _IDEMPOTENT, "name/emoji set-op"),
+                    _native(
+                        RPCMethod.UPDATE_LABEL,
+                        _NO_RETRY,
+                        "source membership append",
+                        variant="add_sources",
+                    ),
+                    _native(
+                        RPCMethod.UPDATE_LABEL,
+                        _IDEMPOTENT,
+                        "source membership removal",
+                        variant="remove_sources",
+                    ),
+                ),
+                (
+                    _leaf(Operation.LABEL_GET, None),
+                    _leaf(Operation.LABEL_MUTATE, None, "add_sources", "remove_sources"),
+                ),
+            ),
+            Operation.COLLECTION_UPDATE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.LIST_LABELS, _IDEMPOTENT, "preflight and readback"),
+                    _native(RPCMethod.UPDATE_LABEL, _IDEMPOTENT, "collection field set-op"),
+                    _native(
+                        RPCMethod.UPDATE_LABEL,
+                        _NO_RETRY,
+                        "notebook membership append",
+                        variant="add_notebooks",
+                    ),
+                    _native(
+                        RPCMethod.UPDATE_LABEL,
+                        _IDEMPOTENT,
+                        "notebook membership removal",
+                        variant="remove_notebooks",
+                    ),
+                ),
+                (
+                    _leaf(Operation.COLLECTION_GET, None),
+                    _leaf(Operation.LABEL_MUTATE, None, "add_notebooks", "remove_notebooks"),
+                ),
+            ),
+            Operation.SOURCE_UPDATE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "source title set-op"),
+                    _native(
+                        RPCMethod.GET_NOTEBOOK,
+                        _IDEMPOTENT,
+                        "conditional null-echo readback",
+                    ),
+                ),
+                (
+                    _leaf(Operation.SOURCE_PATCH_TITLE, None),
+                    _leaf(Operation.SOURCE_GET, None),
+                ),
+            ),
+        }
+    )
+)
+
+
+def derive_workflow_natives(
+    workflow: WorkflowPolicyBinding,
+    *,
+    bindings: Mapping[Operation, WebCallPolicyBinding] = WEB_CALL_POLICY_BINDINGS,
+) -> frozenset[tuple[RPCMethod, str | None]]:
+    """Return the native set a workflow reaches through its leaf edges."""
+    natives: set[tuple[RPCMethod, str | None]] = set()
+    for leaf in workflow.leaf_operations:
+        leaf_binding = bindings.get(leaf.operation)
+        if leaf_binding is None:
+            continue
+        natives.update(
+            (native.method, native.variant)
+            for native in leaf_binding.native_bindings
+            if native.variant in leaf.allowed_variants
+        )
+    return frozenset(natives)
+
+
+def audit_service_owned_workflows(
+    workflows: Mapping[Operation, OperationDef[Any, Any]],
+    *,
+    bindings: Mapping[Operation, WebCallPolicyBinding] = WEB_CALL_POLICY_BINDINGS,
+    workflow_bindings: Mapping[Operation, WorkflowPolicyBinding] = SERVICE_OWNED_WORKFLOW_BINDINGS,
+    registry: IdempotencyRegistry = IDEMPOTENCY_REGISTRY,
+) -> tuple[str, ...]:
+    """Audit every service-owned workflow row against its leaves and the registry."""
+    errors: list[str] = []
+    missing = set(workflows) - set(workflow_bindings)
+    stale = set(workflow_bindings) - set(workflows)
+    if missing:
+        errors.append(
+            "service-owned workflows lack ledger rows: "
+            + ", ".join(sorted(operation.value for operation in missing))
+        )
+    if stale:
+        errors.append(
+            "workflow ledger rows name operations that are not service-owned: "
+            + ", ".join(sorted(operation.value for operation in stale))
+        )
+    for operation in sorted(set(workflows) & set(workflow_bindings), key=lambda item: item.value):
+        definition = workflows[operation]
+        workflow = workflow_bindings[operation]
+        if definition.policy is not workflow.policy:
+            errors.append(
+                f"{operation.value}: semantic policy is {definition.policy.value}, "
+                f"reviewed workflow row expects {workflow.policy.value}"
+            )
+        if not workflow.leaf_operations:
+            errors.append(f"{operation.value}: service-owned workflow names no leaf operations")
+        for leaf in workflow.leaf_operations:
+            leaf_binding = bindings.get(leaf.operation)
+            if leaf_binding is None:
+                errors.append(
+                    f"{operation.value}: leaf {leaf.operation.value} is not an active web binding"
+                )
+                continue
+            declared = {native.variant for native in leaf_binding.native_bindings}
+            if unknown := leaf.allowed_variants - declared:
+                errors.append(
+                    f"{operation.value}: leaf {leaf.operation.value} declares no variant "
+                    f"{sorted(str(item) for item in unknown)}"
+                )
+        expected = {(native.method, native.variant) for native in workflow.native_bindings}
+        derived = derive_workflow_natives(workflow, bindings=bindings)
+        if expected != derived and workflow.known_divergence is None:
+            errors.append(
+                f"{operation.value}: reviewed natives {_native_names(expected)} differ from the "
+                f"leaf-derived set {_native_names(derived)}"
+            )
+        for native in workflow.native_bindings:
+            actual = registry.get_entry(native.method, operation_variant=native.variant).policy
+            if actual is not native.expected_policy:
+                errors.append(
+                    f"{operation.value}: {native.method.name}:"
+                    f"{native.variant or '<default>'} idempotency is {actual.value}, "
+                    f"reviewed workflow row expects {native.expected_policy.value}"
+                )
+    return tuple(errors)
+
+
+def _native_names(
+    natives: frozenset[tuple[RPCMethod, str | None]] | set[tuple[RPCMethod, str | None]],
+) -> list[str]:
+    return sorted(f"{method.name}:{variant or '<default>'}" for method, variant in natives)
+
+
 def audit_web_call_policy_bindings(
     definitions: Mapping[Operation, OperationDef[Any, Any]],
     *,
     bindings: Mapping[Operation, WebCallPolicyBinding] = WEB_CALL_POLICY_BINDINGS,
     registry: IdempotencyRegistry = IDEMPOTENCY_REGISTRY,
+    workflows: Mapping[Operation, OperationDef[Any, Any]] | None = None,
 ) -> tuple[str, ...]:
-    """Return deterministic active-binding drift errors without changing retry behavior."""
+    """Return deterministic active-binding drift errors without changing retry behavior.
+
+    ``workflows`` names the service-owned operations (P9.2); their rows live in
+    :data:`SERVICE_OWNED_WORKFLOW_BINDINGS` and are audited against their leaves.
+    """
     errors: list[str] = []
+    if workflows is not None:
+        errors.extend(
+            audit_service_owned_workflows(workflows, bindings=bindings, registry=registry)
+        )
     missing = set(definitions) - set(bindings)
     stale = set(bindings) - set(definitions)
     if missing:
@@ -813,7 +1009,7 @@ def web_call_policy_report() -> dict[str, object]:
         operation, _binding = item
         return operation.value
 
-    return {
+    report: dict[str, object] = {
         operation.value: {
             "call_policy": binding.policy.value,
             "known_divergence": binding.known_divergence,
@@ -829,12 +1025,45 @@ def web_call_policy_report() -> dict[str, object]:
         }
         for operation, binding in sorted(WEB_CALL_POLICY_BINDINGS.items(), key=operation_key)
     }
+    for operation, workflow in sorted(
+        SERVICE_OWNED_WORKFLOW_BINDINGS.items(), key=lambda item: item[0].value
+    ):
+        report[operation.value] = {
+            "call_policy": workflow.policy.value,
+            "known_divergence": workflow.known_divergence,
+            "service_owned": True,
+            "leaf_operations": [
+                {
+                    "operation": leaf.operation.value,
+                    "allowed_variants": sorted(
+                        "<default>" if variant is None else variant
+                        for variant in leaf.allowed_variants
+                    ),
+                }
+                for leaf in workflow.leaf_operations
+            ],
+            "native_bindings": [
+                {
+                    "rpc_method": native.method.name,
+                    "variant": native.variant,
+                    "idempotency_policy": native.expected_policy.value,
+                    "role": native.role,
+                }
+                for native in workflow.native_bindings
+            ],
+        }
+    return report
 
 
 __all__ = [
     "NativePolicyBinding",
+    "SERVICE_OWNED_WORKFLOW_BINDINGS",
     "WEB_CALL_POLICY_BINDINGS",
     "WebCallPolicyBinding",
+    "WorkflowLeaf",
+    "WorkflowPolicyBinding",
+    "audit_service_owned_workflows",
     "audit_web_call_policy_bindings",
+    "derive_workflow_natives",
     "web_call_policy_report",
 ]

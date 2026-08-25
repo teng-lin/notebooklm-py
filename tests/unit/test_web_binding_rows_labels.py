@@ -138,14 +138,19 @@ def test_label_rows_replace_their_handlers_in_the_registry_and_table() -> None:
     ):
         assert not hasattr(WebRpcBackend, name)
         assert not hasattr(labels_handlers.LabelSetWebHandlers, name)
-    # The four composites stay handlers until their P9.2 hoists.
+    # The remaining composites stay handlers until their P9.2 hoists; label.update
+    # is service-owned since P9.2-2 (no handler, no row, not invokable).
     for operation, handler in (
         (Operation.LABEL_CREATE, "_label_create"),
-        (Operation.LABEL_UPDATE, "_label_update"),
         (Operation.COLLECTION_CREATE, "_collection_create"),
-        (Operation.COLLECTION_UPDATE, "_collection_update"),
     ):
         assert WEB_OPERATION_REGISTRY[operation].handler_name == handler
+    for operation in (Operation.LABEL_UPDATE, Operation.COLLECTION_UPDATE):
+        assert WEB_OPERATION_REGISTRY[operation].handler_name is None
+        assert WEB_OPERATION_REGISTRY[operation].row is None
+        assert WEB_OPERATION_REGISTRY[operation].service_owned is True
+    assert not hasattr(labels_handlers.LabelSetWebHandlers, "_label_update")
+    assert not hasattr(labels_handlers.LabelSetWebHandlers, "_collection_update")
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.LABEL_LIST] is label_rows.LABEL_LIST
 

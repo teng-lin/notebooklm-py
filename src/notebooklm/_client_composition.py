@@ -222,6 +222,9 @@ def compose_client(
     # Assemble the private semantic port once every backend-owned collaborator
     # is available. The resolved transport factory remains a construction
     # parameter rather than a backend kind/capability.
+    # One factory serves the backend's CLIENT_TIMEOUT composites and the
+    # service-owned workflows (P9.2 contract 3), so both mint identical budgets.
+    deadline_factory = RuntimeDeadlineFactory(lambda: internals.lifecycle._timeout)
     client._backend = WebRpcBackend(
         internals.executor,
         transport_factory=internals.web_transport_factory,
@@ -234,7 +237,7 @@ def compose_client(
         # contract. Each semantic call captures the current client timeout
         # once; an already-started RuntimeDeadline remains immutable even if a
         # later test/internal reconfiguration changes the lifecycle scalar.
-        deadline_factory=RuntimeDeadlineFactory(lambda: internals.lifecycle._timeout),
+        deadline_factory=deadline_factory,
         metrics=internals.metrics,
         drain_tracker=internals.drain_tracker,
         reqid=internals.reqid,
@@ -259,6 +262,7 @@ def compose_client(
         uploader=source_uploader,
         upload_timeout=upload_timeout,
         max_concurrent_uploads=max_concurrent_uploads,
+        deadline_factory=deadline_factory,
         _backend=client._backend,
     )
     client.notebooks = NotebooksAPI(
@@ -328,8 +332,14 @@ def compose_client(
     # Source labels. Takes a narrow ``list_sources`` callable (not the whole
     # SourcesAPI) for the membership->Source join in ``labels.sources()``;
     # wired after ``client.sources`` exists. Same client/bound loop (ADR-0004).
-    client.labels = LabelsAPI(client._backend, list_sources=client.sources.list)
+    client.labels = LabelsAPI(
+        client._backend, list_sources=client.sources.list, deadline_factory=deadline_factory
+    )
     # Collections (account-level notebook groups). Takes a narrow ``list_notebooks``
     # callable for the membership->Notebook join in ``collections.notebooks()``;
     # wired after ``client.notebooks`` exists. Same client/bound loop (ADR-0004).
-    client.collections = CollectionsAPI(client._backend, list_notebooks=client.notebooks.list)
+    client.collections = CollectionsAPI(
+        client._backend,
+        list_notebooks=client.notebooks.list,
+        deadline_factory=deadline_factory,
+    )

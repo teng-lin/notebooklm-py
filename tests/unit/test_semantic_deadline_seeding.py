@@ -38,7 +38,6 @@ _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
         Operation.SOURCE_ADD_URL,
         Operation.SOURCE_ADD_URL_BATCH,
         Operation.SOURCE_ADD_DRIVE,
-        Operation.SOURCE_UPDATE,
         Operation.ARTIFACT_LIST,
         Operation.ARTIFACT_GET,
         Operation.ARTIFACT_GENERATE_AUDIO,
@@ -54,9 +53,7 @@ _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
         Operation.MIND_MAP_GENERATE_NOTE,
         Operation.MIND_MAP_GENERATE_INTERACTIVE,
         Operation.LABEL_CREATE,
-        Operation.LABEL_UPDATE,
         Operation.COLLECTION_CREATE,
-        Operation.COLLECTION_UPDATE,
         Operation.SHARING_SET_PUBLIC,
         Operation.SHARING_SET_VIEW_LEVEL,
         Operation.SHARING_UPDATE_USERS,
@@ -72,7 +69,7 @@ _EXPECTED_WORKFLOW_OWNED_OPERATIONS = frozenset(
     }
 )
 _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS = frozenset(
-    {Operation.ARTIFACT_DOWNLOAD, Operation.CHAT_CONFIGURE}
+    {Operation.ARTIFACT_DOWNLOAD, Operation.CHAT_CONFIGURE, Operation.LABEL_MUTATE}
 )
 
 

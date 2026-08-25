@@ -21,6 +21,7 @@ from typing import Literal
 
 from ._backend import BackendAdapter, BackendError
 from ._backend_compat import project_backend_error, project_local_not_found
+from ._deadline import RuntimeDeadlineFactory
 from ._label_service import LabelSetService, require_member_ids
 from ._lookup import unwrap_or_raise
 from ._operations import Operation
@@ -47,12 +48,20 @@ class LabelsAPI:
             await client.labels.delete(nb, [mine.id])
     """
 
-    def __init__(self, backend: BackendAdapter, *, list_sources: ListSources) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        *,
+        list_sources: ListSources,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
+    ) -> None:
         """``list_sources`` is ``client.sources.list`` (wired in
         ``_client_composition.py`` after ``SourcesAPI`` is constructed) — needed for the
         membership→Source join in ``sources()``. Same client/bound loop, so no
         loop-affinity concern (ADR-0004)."""
-        self._service = LabelSetService(backend, LabelKind.SOURCE_LABEL)
+        self._service = LabelSetService(
+            backend, LabelKind.SOURCE_LABEL, deadline_factory=deadline_factory
+        )
         self._list_sources = list_sources
 
     # -- read ---------------------------------------------------------------

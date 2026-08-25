@@ -1018,19 +1018,14 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_label_service.py", "_records", "LabelListInput"),
         ("_label_service.py", "_records", "LabelRecord"),
         ("_label_service.py", "_records", "LabelUpdateInput"),
-        ("_web/labels.py", "_backend", "BackendContractError"),
         ("_web/labels.py", "_backend", "BackendError"),
         ("_web/labels.py", "_backend", "BackendErrorReason"),
         ("_web/labels.py", "_records", "LabelCreateInput"),
         ("_web/labels.py", "_records", "LabelCreateResult"),
-        ("_web/labels.py", "_records", "LabelGetInput"),
-        ("_web/labels.py", "_records", "LabelGetResult"),
         ("_web/labels.py", "_records", "LabelKind"),
         ("_web/labels.py", "_records", "LabelListInput"),
         ("_web/labels.py", "_records", "LabelListResult"),
         ("_web/labels.py", "_records", "LabelRecord"),
-        ("_web/labels.py", "_records", "LabelUpdateInput"),
-        ("_web/labels.py", "_records", "LabelUpdateResult"),
         ("_web/registry.py", "_records", "COLLECTION_CREATE_DEF"),
         ("_web/registry.py", "_records", "COLLECTION_DELETE_DEF"),
         ("_web/registry.py", "_records", "COLLECTION_GET_DEF"),
@@ -1344,7 +1339,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/backend.py", "_records", "SourceAddFailureRecord"),
         ("_web/failure_projection.py", "_records", "SourceAddFailureKind"),
         ("_web/failure_projection.py", "_records", "SourceAddFailureRecord"),
-        ("_web/source_variants.py", "_records", "SourceRecord"),
         ("_web/backend.py", "registry", "WEB_OPERATION_REGISTRY"),
         ("_web/backend.py", "registry", "WEB_SUPPORTED_OPERATIONS"),
         ("_web/codec/artifacts.py", "_records", "ArtifactInfographicRecord"),
@@ -1623,10 +1617,6 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_sources.py", "_projectors", "project_source_guide"),
         ("_sources.py", "_projectors", "record_source"),
         ("_sources.py", "_source_service", "SourceService"),
-        ("_web/source_variants.py", "_backend", "BackendError"),
-        ("_web/source_variants.py", "_backend", "BackendErrorReason"),
-        ("_web/source_variants.py", "_records", "SourceUpdateInput"),
-        ("_web/source_variants.py", "_records", "SourceUpdateResult"),
         ("_web/codec/sources.py", "_records", "SourceFileRegistrationRecord"),
         ("_web/codec/sources.py", "_records", "SourceFulltextRecord"),
         ("_web/codec/sources.py", "_records", "SourceGuideRecord"),
@@ -1876,7 +1866,8 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_label_service.py:LabelSetService.generate",
         "_label_service.py:LabelSetService.get",
         "_label_service.py:LabelSetService.list",
-        "_label_service.py:LabelSetService.update",
+        "_label_service.py:LabelSetService._mutate",
+        "_label_service.py:LabelSetService._read",
         "_notebook_mutation_service.py:NotebookMutationService.create",
         "_notebook_mutation_service.py:NotebookMutationService.delete",
         "_notebook_mutation_service.py:NotebookMutationService.update",
@@ -2122,6 +2113,76 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/codec/sharing.py", "_records", "SharingSetPublicInput"),
         ("_web/codec/sharing.py", "_records", "SharingSetViewLevelInput"),
         ("_web/codec/sharing.py", "_records", "SharingUpdateUsersInput"),
+    }
+)
+
+# P9.2-2: LabelSetService sequences label.update from the leaves; the backend
+# head lets codec rows raise the transport's pre-dispatch expiry.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_label_service.py", "_backend", "BackendContractError"),
+        ("_label_service.py", "_backend", "BackendDeadlineExceededError"),
+        ("_label_service.py", "_backend", "BackendError"),
+        ("_label_service.py", "_backend", "BackendErrorReason"),
+        ("_label_service.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_label_service.py", "_backend", "rebind_operation"),
+        ("_label_service.py", "_backend", "require_leaves"),
+        ("_label_service.py", "_records", "LABEL_MUTATE_DEF"),
+        ("_label_service.py", "_records", "LabelMutateInput"),
+        ("_web/backend.py", "_binding", "CodecBinding"),
+    }
+)
+# P9.2 primitives: the foundational leaf rows and their codec/record imports.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_web/bindings/primitives.py", "_binding", "Binding"),
+        ("_web/bindings/primitives.py", "_binding", "CodecBinding"),
+        ("_web/bindings/primitives.py", "_binding", "NativeCallSpec"),
+        ("_web/bindings/primitives.py", "_binding", "NativeChoice"),
+        ("_web/bindings/primitives.py", "_records", "LABEL_ALLOCATE_DEF"),
+        ("_web/bindings/primitives.py", "_records", "LABEL_MUTATE_DEF"),
+        ("_web/bindings/primitives.py", "_records", "LabelMutateInput"),
+        ("_web/bindings/primitives.py", "_records", "SHARING_MUTATE_DEF"),
+        ("_web/bindings/primitives.py", "codec", "labels"),
+        ("_web/bindings/primitives.py", "codec", "sharing"),
+        ("_web/codec/labels.py", "_records", "LabelAllocateInput"),
+        ("_web/codec/labels.py", "_records", "LabelAllocateResult"),
+        ("_web/codec/labels.py", "_records", "LabelMutateInput"),
+        ("_web/codec/labels.py", "_records", "LabelMutateResult"),
+        ("_web/codec/sharing.py", "_backend", "BackendContractError"),
+        ("_web/codec/sharing.py", "_records", "SharingMutateInput"),
+        ("_web/codec/sharing.py", "_records", "SharingMutateResult"),
+        ("_web/registry.py", "_records", "LABEL_ALLOCATE_DEF"),
+        ("_web/registry.py", "_records", "LABEL_MUTATE_DEF"),
+        ("_web/registry.py", "_records", "SHARING_MUTATE_DEF"),
+    }
+)
+# P9.2-4: SourceService sequences source.update from the patch-title and get
+# leaves; the old composite handler and its input/result imports are gone.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_source_service.py", "_records", "SourceUpdateInput"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_service.py", "_backend", "BackendDeadlineExceededError"),
+        ("_source_service.py", "_backend", "BackendError"),
+        ("_source_service.py", "_backend", "BackendErrorReason"),
+        ("_source_service.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_source_service.py", "_backend", "rebind_operation"),
+        ("_source_service.py", "_backend", "require_leaves"),
+        ("_source_service.py", "_records", "SOURCE_GET_DEF"),
+        ("_source_service.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
+        ("_source_service.py", "_records", "SourceGetInput"),
+        ("_source_service.py", "_records", "SourcePatchTitleInput"),
+        ("_web/bindings/primitives.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
+        ("_web/bindings/primitives.py", "_records", "SourcePatchTitleInput"),
+        ("_web/bindings/primitives.py", "_records", "SourcePatchTitleResult"),
+        ("_web/bindings/primitives.py", "codec", "sources"),
+        ("_web/codec/sources.py", "_records", "SourcePatchTitleInput"),
+        ("_web/codec/sources.py", "_records", "SourcePatchTitleResult"),
+        ("_web/registry.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
     }
 )
 

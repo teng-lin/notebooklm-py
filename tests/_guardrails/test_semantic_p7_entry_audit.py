@@ -24,7 +24,7 @@ from typing import Any
 import pytest
 
 from notebooklm._operations import Operation
-from notebooklm._web.registry import WEB_SUPPORTED_OPERATIONS
+from notebooklm._web.registry import WEB_SERVICE_OWNED_OPERATIONS, WEB_SUPPORTED_OPERATIONS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "notebooklm"
@@ -57,7 +57,7 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.SOURCE_ADD_DRIVE,
         Operation.SOURCE_ADD_FILE,
         Operation.SOURCE_DELETE,
-        Operation.SOURCE_UPDATE,
+        Operation.SOURCE_PATCH_TITLE,
         Operation.SOURCE_REFRESH,
         Operation.SOURCE_CHECK_FRESHNESS,
         Operation.SOURCE_GET_GUIDE,
@@ -107,18 +107,19 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.LABEL_GET,
         Operation.LABEL_GENERATE,
         Operation.LABEL_CREATE,
-        Operation.LABEL_UPDATE,
         Operation.LABEL_DELETE,
+        Operation.LABEL_MUTATE,
+        Operation.LABEL_ALLOCATE,
         Operation.COLLECTION_LIST,
         Operation.COLLECTION_GET,
         Operation.COLLECTION_CREATE,
-        Operation.COLLECTION_UPDATE,
         Operation.COLLECTION_DELETE,
         Operation.SHARING_GET,
         Operation.SHARING_SET_PUBLIC,
         Operation.SHARING_SET_VIEW_LEVEL,
         Operation.SHARING_UPDATE_USERS,
         Operation.LEGACY_SHARE_ARTIFACT,
+        Operation.SHARING_MUTATE,
         Operation.RESEARCH_START,
         Operation.RESEARCH_POLL,
         Operation.RESEARCH_CANCEL,
@@ -415,7 +416,13 @@ def collect_unsupported_semantic_operations(
     for spec in operation_specs:
         operation = getattr(spec, "operation", None)
         disposition = getattr(getattr(spec, "disposition", None), "value", None)
-        if disposition == "semantic" and operation not in WEB_SUPPORTED_OPERATIONS:
+        # P9.2: a service-owned workflow is sequenced from active leaf bindings by
+        # its semantic service; it is not invokable but it is not unmigrated.
+        if (
+            disposition == "semantic"
+            and operation not in WEB_SUPPORTED_OPERATIONS
+            and operation not in WEB_SERVICE_OWNED_OPERATIONS
+        ):
             unsupported.append(operation.value)
     return sorted(unsupported)
 
@@ -828,7 +835,7 @@ def test_remaining_non_web_rpc_method_imports_are_exact_and_classified() -> None
 
 def test_active_semantic_operation_inventory_is_exact_for_p7() -> None:
     """P7's runtime-collapse input is the exact P4-supported operation set."""
-    assert len(KNOWN_ACTIVE_SEMANTIC_OPERATIONS) == 82
+    assert len(KNOWN_ACTIVE_SEMANTIC_OPERATIONS) == 83
     assert WEB_SUPPORTED_OPERATIONS == KNOWN_ACTIVE_SEMANTIC_OPERATIONS
 
 

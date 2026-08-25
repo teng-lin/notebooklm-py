@@ -17,6 +17,7 @@ from ._backend_compat import (
     project_backend_error,
     project_source_add_failure,
 )
+from ._deadline import RuntimeDeadlineFactory
 from ._lookup import unwrap_or_raise
 from ._mutation_services import SourceUrlMutationService
 from ._projectors import (
@@ -77,6 +78,7 @@ class SourcesAPI:
         uploader: SourceUploadPipeline,
         upload_timeout: httpx.Timeout | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
         _backend: BackendAdapter | None = None,
     ):
         """Initialize the sources API.
@@ -105,6 +107,8 @@ class SourcesAPI:
             max_concurrent_uploads: Ceiling for concurrent
                 :meth:`add_file` uploads. The semaphore is owned by this
                 Sources upload pipeline, not by the shared core/session.
+            deadline_factory: Private composition dependency used to mint one
+                aggregate deadline for service-owned Source workflows.
             _backend: Private semantic backend supplied by the client composition root.
         """
         # ``upload_timeout`` / ``max_concurrent_uploads`` are accepted for API
@@ -116,7 +120,11 @@ class SourcesAPI:
         self._url_mutation_service = (
             SourceUrlMutationService(_backend) if _backend is not None else None
         )
-        self._source_service = SourceService(_backend) if _backend is not None else None
+        self._source_service = (
+            SourceService(_backend, deadline_factory=deadline_factory)
+            if _backend is not None
+            else None
+        )
         self._adder = SourceAddService()
         self._content = SourceContentRenderer(None, logger=logger)
         self._upload_timeout = upload_timeout

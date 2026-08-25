@@ -98,6 +98,7 @@ def test_registry_dispositions_are_three_way_and_supported_set_is_direct() -> No
     dispositions = {binding.disposition for binding in WEB_OPERATION_REGISTRY.values()}
     assert dispositions == {
         OperationDisposition.SUPPORTED_DIRECT,
+        OperationDisposition.SERVICE_OWNED,
         OperationDisposition.UNSUPPORTED,
     }
     direct = frozenset(
@@ -106,7 +107,7 @@ def test_registry_dispositions_are_three_way_and_supported_set_is_direct() -> No
         if binding.disposition is OperationDisposition.SUPPORTED_DIRECT
     )
     assert direct == WEB_SUPPORTED_OPERATIONS
-    assert len(WEB_SUPPORTED_OPERATIONS) == 82
+    assert len(WEB_SUPPORTED_OPERATIONS) == registry._EXPECTED_SUPPORTED_COUNT
 
 
 def test_audit_rejects_missing_and_extra_rows_in_both_directions() -> None:
@@ -380,7 +381,7 @@ def test_backend_resolves_every_handler_at_construction() -> None:
     table = backend._bindings
     assert set(table) == WEB_SUPPORTED_OPERATIONS
     row_backed = {op for op, binding in WEB_OPERATION_REGISTRY.items() if binding.row is not None}
-    assert table.resolved_handler_count == 82 - len(row_backed)
+    assert table.resolved_handler_count == len(WEB_SUPPORTED_OPERATIONS) - len(row_backed)
     # Derived, not a literal: every P9.3/P9.4 domain PR grows the row set.
     assert table.codec_count + table.custom_count == len(row_backed) == len(WEB_BINDING_ROWS)
     assert row_backed == set(WEB_BINDING_ROWS)

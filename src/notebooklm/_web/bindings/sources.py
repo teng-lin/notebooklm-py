@@ -21,8 +21,8 @@ yet expressible as ``map_error``); all but ``SOURCE_ADD_URL`` re-raise their
 established public leaves raw (``ErrorMode.RAW_PASSTHROUGH``).  The upload
 pipeline is reached only as the ``SOURCE_ADD_FILE`` row's declared collaborator
 and runs its callbacks through that row's invoker for the invocation (plan open
-item 1).  ``SOURCE_UPDATE`` stays a handler in ``_web/source_variants.py`` until
-its P9.2 hoist.
+item 1). ``SOURCE_UPDATE`` is service-owned since P9.2-4 and hydrates through
+the ``SOURCE_GET`` row on a null patch-title echo.
 """
 
 from __future__ import annotations

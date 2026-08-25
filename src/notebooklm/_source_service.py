@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import MappingProxyType
 
-from ._backend import BackendAdapter
-from ._deadline import RuntimeDeadline
+from ._backend import (
+    BackendAdapter,
+    BackendDeadlineExceededError,
+    BackendError,
+    BackendErrorReason,
+    mark_backend_outcome_unknown,
+    rebind_operation,
+    require_leaves,
+)
+from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
@@ -13,8 +22,10 @@ from ._records import (
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
+    SOURCE_GET_DEF,
     SOURCE_GET_FULLTEXT_DEF,
     SOURCE_GET_GUIDE_DEF,
+    SOURCE_PATCH_TITLE_DEF,
     SOURCE_REFRESH_DEF,
     SOURCE_UPDATE_DEF,
     SOURCE_WAIT_DEF,
@@ -31,12 +42,13 @@ from ._records import (
     SourceFreshnessInput,
     SourceFulltextInput,
     SourceFulltextResult,
+    SourceGetInput,
     SourceGuideInput,
     SourceGuideResult,
+    SourcePatchTitleInput,
     SourceProgressCallback,
     SourceRecord,
     SourceRefreshInput,
-    SourceUpdateInput,
     SourceUpdateResult,
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
@@ -46,10 +58,18 @@ from ._records import (
 class SourceService:
     """Invoke typed Source operations without web/RPC/public-model vocabulary."""
 
-    __slots__ = ("_backend",)
+    __slots__ = ("_backend", "_deadline_factory")
 
-    def __init__(self, backend: BackendAdapter) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        *,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
+    ) -> None:
         self._backend = backend
+        # P9.2 contract 3: a service-owned workflow mints one deadline
+        # before its first leaf and threads that identity through every phase.
+        self._deadline_factory = deadline_factory
 
     async def add_urls_batch(
         self,
@@ -213,17 +233,54 @@ class SourceService:
         new_title: str,
         *,
         return_object: bool,
+        deadline: RuntimeDeadline | None = None,
     ) -> SourceUpdateResult:
-        return await self._backend.invoke(
-            SOURCE_UPDATE_DEF,
-            SourceUpdateInput(
-                notebook_id,
-                source_id,
-                new_title,
-                return_object=return_object,
-            ),
-            deadline=None,
-        )
+        """Rename through one patch leaf and hydrate only a null echo."""
+        workflow = SOURCE_UPDATE_DEF.key
+        # The conditional leaf set is still checked up front: a later backend
+        # must never perform the title write and only then discover it cannot
+        # execute the null-echo hydration path.
+        require_leaves(self._backend, SOURCE_PATCH_TITLE_DEF.key, SOURCE_GET_DEF.key)
+        if deadline is None and self._deadline_factory is not None:
+            deadline = self._deadline_factory.start()
+
+        write_dispatched = False
+        try:
+            patched = await self._backend.invoke(
+                SOURCE_PATCH_TITLE_DEF,
+                SourcePatchTitleInput(notebook_id, source_id, new_title),
+                deadline=deadline,
+            )
+            write_dispatched = True
+            source = patched.source
+            if source is None:
+                hydrated = await self._backend.invoke(
+                    SOURCE_GET_DEF,
+                    SourceGetInput(notebook_id, source_id),
+                    deadline=deadline,
+                )
+                source = hydrated.source
+                if source is None:
+                    raise BackendError(
+                        message=f"Source not found: {source_id}",
+                        operation=workflow,
+                        diagnostics=MappingProxyType(
+                            {
+                                "source_id": source_id,
+                                "raw_response": None,
+                            }
+                        ),
+                        reason=BackendErrorReason.SOURCE_NOT_FOUND,
+                    )
+            return SourceUpdateResult(source if return_object else None)
+        except BackendError as error:
+            if error.operation is workflow:
+                raise
+            if write_dispatched and isinstance(error, BackendDeadlineExceededError):
+                # The patch landed but the hydration read exhausted the shared
+                # budget: the workflow outcome is now unsafe to retry blindly.
+                error = mark_backend_outcome_unknown(error)
+            raise rebind_operation(error, workflow) from error.__cause__
 
     async def refresh(self, notebook_id: str, source_id: str) -> None:
         await self._backend.invoke(

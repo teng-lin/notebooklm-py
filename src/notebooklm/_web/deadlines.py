@@ -33,7 +33,6 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.SOURCE_ADD_URL: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SOURCE_ADD_URL_BATCH: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SOURCE_ADD_DRIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.SOURCE_UPDATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_LIST: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GET: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GENERATE_AUDIO: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
@@ -49,9 +48,7 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.MIND_MAP_GENERATE_NOTE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.MIND_MAP_GENERATE_INTERACTIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.LABEL_CREATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.LABEL_UPDATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.COLLECTION_CREATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.COLLECTION_UPDATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SHARING_SET_PUBLIC: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SHARING_SET_VIEW_LEVEL: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SHARING_UPDATE_USERS: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
@@ -67,6 +64,8 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             # execute both native sites, so aggregating them would invent a budget.
             Operation.ARTIFACT_DOWNLOAD: SemanticDeadlineAuthority.BRANCH_EXCLUSIVE,
             Operation.CHAT_CONFIGURE: SemanticDeadlineAuthority.BRANCH_EXCLUSIVE,
+            # P9.2 primitive: one UPDATE_LABEL call per input, variant chosen from it.
+            Operation.LABEL_MUTATE: SemanticDeadlineAuthority.BRANCH_EXCLUSIVE,
         }
     )
 )

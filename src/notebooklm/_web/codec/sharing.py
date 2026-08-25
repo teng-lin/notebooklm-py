@@ -6,7 +6,9 @@ import logging
 import reprlib
 from typing import Any
 
+from ..._backend import BackendContractError
 from ..._binding import CodecPayload
+from ..._operations import Operation
 from ..._records import (
     LegacyShareArtifactInput,
     LegacyShareArtifactResult,
@@ -17,6 +19,8 @@ from ..._records import (
     ShareViewScope,
     SharingGetInput,
     SharingGetResult,
+    SharingMutateInput,
+    SharingMutateResult,
     SharingSetPublicInput,
     SharingSetViewLevelInput,
     SharingUpdateUsersInput,
@@ -364,6 +368,8 @@ def encode_sharing_update_users(value: SharingUpdateUsersInput) -> CodecPayload:
 
 
 __all__ = [
+    "decode_sharing_mutate",
+    "encode_sharing_mutate",
     "build_get_share_status_params",
     "build_legacy_share_artifact_params",
     "build_share_grants_params",
@@ -380,3 +386,37 @@ __all__ = [
     "encode_sharing_set_view_level",
     "encode_sharing_update_users",
 ]
+
+
+def encode_sharing_mutate(value: SharingMutateInput) -> CodecPayload:
+    """Payload for the ``sharing.mutate`` row: one ``SHARE_NOTEBOOK`` set-op.
+
+    Exactly one of ``public`` (link visibility) or ``grants`` (individual
+    users) is requested; ``allow_null`` preserves the status-3/null success
+    the visibility and grant envelopes both return.
+    """
+    if (value.public is None) == (not value.grants):
+        raise BackendContractError(
+            "sharing.mutate requires exactly one of a visibility or a grant set",
+            operation=Operation.SHARING_MUTATE,
+        )
+    if value.public is not None:
+        params = build_share_visibility_params(value.notebook_id, value.public)
+    else:
+        params = build_share_grants_params(
+            value.notebook_id,
+            value.grants,
+            notify=value.notify,
+            welcome_message=value.welcome_message,
+        )
+    return CodecPayload(
+        params=params,
+        source_path=f"/notebook/{value.notebook_id}",
+        allow_null=True,
+    )
+
+
+def decode_sharing_mutate(value: SharingMutateInput, data: Any) -> SharingMutateResult:
+    """Row decoder for ``sharing.mutate``: the workflow reads status back itself."""
+    del value, data
+    return SharingMutateResult()
