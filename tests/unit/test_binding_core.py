@@ -92,6 +92,7 @@ def test_registry_dispositions_are_three_way_and_supported_set_is_direct() -> No
     dispositions = {binding.disposition for binding in WEB_OPERATION_REGISTRY.values()}
     assert dispositions == {
         OperationDisposition.SUPPORTED_DIRECT,
+        OperationDisposition.SERVICE_OWNED,
         OperationDisposition.UNSUPPORTED,
     }
     direct = frozenset(

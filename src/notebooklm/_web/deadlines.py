@@ -49,7 +49,6 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.MIND_MAP_GENERATE_NOTE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.MIND_MAP_GENERATE_INTERACTIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.LABEL_CREATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.LABEL_UPDATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.COLLECTION_CREATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.COLLECTION_UPDATE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SHARING_SET_PUBLIC: SemanticDeadlineAuthority.CLIENT_TIMEOUT,

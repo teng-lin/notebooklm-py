@@ -76,7 +76,6 @@ from notebooklm._records import (
     LABEL_GET_DEF,
     LABEL_LIST_DEF,
     LABEL_MUTATE_DEF,
-    LABEL_UPDATE_DEF,
     LEGACY_SHARE_ARTIFACT_DEF,
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
@@ -334,7 +333,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         LABEL_GET_DEF: (Operation.LABEL_GET, CallPolicy.READ),
         LABEL_GENERATE_DEF: (Operation.LABEL_GENERATE, CallPolicy.STATEFUL_START),
         LABEL_CREATE_DEF: (Operation.LABEL_CREATE, CallPolicy.MUTATION),
-        LABEL_UPDATE_DEF: (Operation.LABEL_UPDATE, CallPolicy.MUTATION),
         LABEL_DELETE_DEF: (Operation.LABEL_DELETE, CallPolicy.MUTATION),
         COLLECTION_LIST_DEF: (Operation.COLLECTION_LIST, CallPolicy.READ),
         COLLECTION_GET_DEF: (Operation.COLLECTION_GET, CallPolicy.READ),
@@ -702,21 +700,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             [
                 IdempotencyPolicy.IDEMPOTENT_SET_OP,
                 IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-            ],
-        ),
-        (
-            LABEL_UPDATE_DEF,
-            [
-                (RPCMethod.LIST_LABELS, None),
-                (RPCMethod.UPDATE_LABEL, None),
-                (RPCMethod.UPDATE_LABEL, "add_sources"),
-                (RPCMethod.UPDATE_LABEL, "remove_sources"),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
             ],
         ),
         (

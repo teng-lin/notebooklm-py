@@ -38,6 +38,7 @@ from .._binding import (
     Binding,
     BindingAuditError,
     BindingTable,
+    CodecBinding,
     OperationDisposition,
     ResolvedHandlerBinding,
     audit_bindings,
@@ -396,7 +397,14 @@ class WebRpcBackend(ChatWebHandlers):
             deadline = self._deadline_factory.start()
         if self._closed:
             raise BackendContractError("WebRpcBackend is closed")
-        if deadline is not None and deadline.expired():
+        # A codec row lets ``WebTransport.call`` raise the pre-dispatch expiry so
+        # the error names the blocked native (``method_id``) exactly as the
+        # composite handlers' ``_rpc_call`` did; nothing is dispatched either way.
+        if (
+            deadline is not None
+            and deadline.expired()
+            and not isinstance(binding.row, CodecBinding)
+        ):
             raise BackendDeadlineExceededError(
                 operation.key,
                 diagnostics=MappingProxyType(

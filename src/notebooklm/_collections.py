@@ -22,6 +22,7 @@ from collections.abc import Awaitable, Callable
 
 from ._backend import BackendAdapter, BackendError
 from ._backend_compat import project_backend_error, project_local_not_found
+from ._deadline import RuntimeDeadlineFactory
 from ._label_service import LabelSetService, require_member_ids
 from ._lookup import unwrap_or_raise
 from ._operations import Operation
@@ -49,12 +50,20 @@ class CollectionsAPI:
             await client.collections.delete(coll.id)
     """
 
-    def __init__(self, backend: BackendAdapter, *, list_notebooks: ListNotebooks) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        *,
+        list_notebooks: ListNotebooks,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
+    ) -> None:
         """``list_notebooks`` is ``client.notebooks.list`` (wired in
         ``_client_composition.py`` after ``NotebooksAPI`` is constructed) — needed
         for the membership→``Notebook`` join in ``notebooks()``. Same client /
         bound loop, so no loop-affinity concern (ADR-0004)."""
-        self._service = LabelSetService(backend, LabelKind.COLLECTION)
+        self._service = LabelSetService(
+            backend, LabelKind.COLLECTION, deadline_factory=deadline_factory
+        )
         self._list_notebooks = list_notebooks
 
     # -- read ---------------------------------------------------------------

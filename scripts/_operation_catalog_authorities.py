@@ -697,8 +697,10 @@ SHARED_RPC_AUTHORITY_RULES.update(
         (Operation.LABEL_CREATE, _b(RPCMethod.LIST_LABELS)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_set_list", "pre-create identity baseline")
         ),
+        # P9.2-2: label.update is service-owned; its reads run through the
+        # label.get leaf row and its writes through the label.mutate primitive.
         (Operation.LABEL_UPDATE, _b(RPCMethod.LIST_LABELS)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_set_list", "update preflight/readback")
+            ("_web/bindings/labels.py:LABEL_GET", "update preflight/readback via label.get")
         ),
         (Operation.COLLECTION_CREATE, _b(RPCMethod.LIST_LABELS)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._label_set_list", "baseline/create readback")
@@ -755,16 +757,16 @@ SHARED_RPC_AUTHORITY_RULES.update(
             ("_web/bindings/notebooks.py:NOTEBOOK_DESCRIBE", "description/topics projection")
         ),
         (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL)): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_update", "label field-mask mutation")
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "label field-mask mutation via leaf")
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL)): _rules(
             ("_web/labels.py:LabelSetWebHandlers._collection_update", "collection name mutation")
         ),
         (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL, "add_sources")): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_update", "one source append per call")
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "one source append per call via leaf")
         ),
         (Operation.LABEL_UPDATE, _b(RPCMethod.UPDATE_LABEL, "remove_sources")): _rules(
-            ("_web/labels.py:LabelSetWebHandlers._label_update", "one source removal per call")
+            ("_web/bindings/primitives.py:LABEL_MUTATE", "one source removal per call via leaf")
         ),
         (Operation.COLLECTION_UPDATE, _b(RPCMethod.UPDATE_LABEL, "add_notebooks")): _rules(
             (

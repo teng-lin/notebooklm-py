@@ -615,6 +615,22 @@
     "label.update": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "label.get"
+        },
+        {
+          "allowed_variants": [
+            "<default>",
+            "add_sources",
+            "remove_sources"
+          ],
+          "operation": "label.mutate"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -640,7 +656,8 @@
           "rpc_method": "UPDATE_LABEL",
           "variant": "remove_sources"
         }
-      ]
+      ],
+      "service_owned": true
     },
     "mind_map.delete": {
       "call_policy": "mutation",
@@ -4175,8 +4192,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/primitives.py:LABEL_MUTATE",
-        "_web/labels.py:LabelSetWebHandlers._collection_update",
-        "_web/labels.py:LabelSetWebHandlers._label_update"
+        "_web/labels.py:LabelSetWebHandlers._collection_update"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -4264,8 +4280,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/primitives.py:LABEL_MUTATE",
-        "_web/labels.py:LabelSetWebHandlers._label_update"
+        "_web/bindings/primitives.py:LABEL_MUTATE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -4350,8 +4365,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/primitives.py:LABEL_MUTATE",
-        "_web/labels.py:LabelSetWebHandlers._label_update"
+        "_web/bindings/primitives.py:LABEL_MUTATE"
       ],
       "golden_disposition": "golden_exempt",
       "golden_evidence": "client discards this RPC's response; any returned object is decoded from a separate (golden-covered) read RPC",
@@ -6315,26 +6329,26 @@
       "execution_authorities": [
         {
           "binding": "LIST_LABELS:<default>",
-          "discriminator": "update preflight/readback",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_set_list",
+          "discriminator": "update preflight/readback via label.get",
+          "site": "_web/bindings/labels.py:LABEL_GET",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_LABEL:<default>",
-          "discriminator": "label field-mask mutation",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_update",
+          "discriminator": "label field-mask mutation via leaf",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_LABEL:add_sources",
-          "discriminator": "one source append per call",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_update",
+          "discriminator": "one source append per call via leaf",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_LABEL:remove_sources",
-          "discriminator": "one source removal per call",
-          "site": "_web/labels.py:LabelSetWebHandlers._label_update",
+          "discriminator": "one source removal per call via leaf",
+          "site": "_web/bindings/primitives.py:LABEL_MUTATE",
           "transport_kind": "rpc"
         }
       ],

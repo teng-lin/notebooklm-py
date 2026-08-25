@@ -25,7 +25,6 @@ from .codec.labels import (
     build_create_label_params,
     build_rename_collection_params,
     build_update_collection_notebooks_params,
-    build_update_label_params,
     decode_label_create_echo,
     decode_label_set_list_result,
     encode_label_set_list,
@@ -43,8 +42,10 @@ class LabelSetWebHandlers(StudioDataWebHandlers):
     """Composite source-label/collection handlers mixed into the web backend.
 
     Since P9.3 the leaf reads, the batch deletes and auto-grouping are codec
-    rows in ``_web/bindings/labels.py``; only the four create/update composites
-    remain here, with the shared set read they preflight and read back through.
+    rows in ``_web/bindings/labels.py``; since P9.2-2 ``label.update`` is
+    sequenced by ``LabelSetService`` from the ``label.get`` and ``label.mutate``
+    leaves. Only the two create composites and ``collection.update`` remain
+    here, with the shared set read they preflight and read back through.
     """
 
     # -- labels and collections ---------------------------------------------
@@ -276,97 +277,6 @@ class LabelSetWebHandlers(StudioDataWebHandlers):
                     "a concurrent create, or read-after-write lag on the re-list, can cause "
                     "this — retry from a fresh list"
                 ),
-            )
-        )
-
-    async def _label_update(
-        self,
-        value: LabelUpdateInput,
-        *,
-        deadline: RuntimeDeadline | None,
-    ) -> LabelUpdateResult:
-        """Apply one source-label field or membership mutation.
-
-        A membership write is per id: the server honours only the first id of a
-        set-op group per call, so a single multi-id call would silently assign
-        one member. The writes are therefore **not atomic** across ids — a
-        mid-loop failure leaves the earlier ids written and raises.
-        """
-        self._require_label_kind(value.kind, LabelKind.SOURCE_LABEL, Operation.LABEL_UPDATE)
-        notebook_id = self._require_notebook_scope(value.notebook_id, Operation.LABEL_UPDATE)
-        source_path = f"/notebook/{notebook_id}"
-        if value.add_member_ids or value.remove_member_ids:
-            write_may_have_committed = False
-            for source_id in value.add_member_ids:
-                await self._rpc_call(
-                    RPCMethod.UPDATE_LABEL,
-                    build_update_label_params(
-                        notebook_id,
-                        value.label_id,
-                        add_source_id=source_id,
-                    ),
-                    operation=Operation.LABEL_UPDATE,
-                    deadline=deadline,
-                    source_path=source_path,
-                    allow_null=True,
-                    operation_variant="add_sources",  # -> NON_IDEMPOTENT_NO_RETRY
-                    outcome_unknown_on_expiry=write_may_have_committed,
-                )
-                write_may_have_committed = True
-            for source_id in value.remove_member_ids:
-                await self._rpc_call(
-                    RPCMethod.UPDATE_LABEL,
-                    build_update_label_params(
-                        notebook_id,
-                        value.label_id,
-                        remove_source_id=source_id,
-                    ),
-                    operation=Operation.LABEL_UPDATE,
-                    deadline=deadline,
-                    source_path=source_path,
-                    allow_null=True,
-                    operation_variant="remove_sources",  # -> IDEMPOTENT_SET_OP
-                    outcome_unknown_on_expiry=write_may_have_committed,
-                )
-                write_may_have_committed = True
-            return LabelUpdateResult(
-                label=await self._label_membership_readback(
-                    value,
-                    notebook_id=notebook_id,
-                    kind=LabelKind.SOURCE_LABEL,
-                    operation=Operation.LABEL_UPDATE,
-                    deadline=deadline,
-                )
-            )
-
-        current = await self._label_update_preflight(
-            value,
-            notebook_id=notebook_id,
-            kind=LabelKind.SOURCE_LABEL,
-            operation=Operation.LABEL_UPDATE,
-            deadline=deadline,
-        )
-        await self._rpc_call(
-            RPCMethod.UPDATE_LABEL,
-            build_update_label_params(
-                notebook_id,
-                value.label_id,
-                name=value.name,
-                emoji=self._effective_emoji(value, current),
-            ),
-            operation=Operation.LABEL_UPDATE,
-            deadline=deadline,
-            source_path=source_path,
-            allow_null=True,
-            operation_variant=None,  # default IDEMPOTENT_SET_OP (not "add_sources")
-        )
-        return LabelUpdateResult(
-            label=await self._label_field_readback(
-                value,
-                notebook_id=notebook_id,
-                kind=LabelKind.SOURCE_LABEL,
-                operation=Operation.LABEL_UPDATE,
-                deadline=deadline,
             )
         )
 

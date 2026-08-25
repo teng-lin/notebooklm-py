@@ -1,4 +1,8 @@
-"""Deadline uncertainty after a semantic mutation has reached the server."""
+"""Deadline uncertainty after a semantic mutation has reached the server.
+
+The ``label.update`` cases moved to ``tests/unit/test_label_update_workflow.py``
+with the P9.2-2 hoist: the workflow is sequenced by ``LabelSetService`` now.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,6 @@ from notebooklm._records import (
     ARTIFACT_RENAME_DEF,
     COLLECTION_CREATE_DEF,
     COLLECTION_UPDATE_DEF,
-    LABEL_UPDATE_DEF,
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
@@ -132,20 +135,6 @@ _COLLECTION_ROW = ["Existing", None, "collection-1", ""]
             id="collection-create-readback",
         ),
         pytest.param(
-            LABEL_UPDATE_DEF,
-            LabelUpdateInput(
-                LabelKind.SOURCE_LABEL,
-                "label-1",
-                "nb-1",
-                name="Renamed",
-            ),
-            ([[_LABEL_ROW]], None),
-            2,
-            (RPCMethod.LIST_LABELS, RPCMethod.UPDATE_LABEL),
-            RPCMethod.LIST_LABELS,
-            id="label-field-readback",
-        ),
-        pytest.param(
             COLLECTION_UPDATE_DEF,
             LabelUpdateInput(LabelKind.COLLECTION, "collection-1", name="Renamed"),
             ([None, [_COLLECTION_ROW]], None),
@@ -153,20 +142,6 @@ _COLLECTION_ROW = ["Existing", None, "collection-1", ""]
             (RPCMethod.LIST_LABELS, RPCMethod.UPDATE_LABEL),
             RPCMethod.LIST_LABELS,
             id="collection-field-readback",
-        ),
-        pytest.param(
-            LABEL_UPDATE_DEF,
-            LabelUpdateInput(
-                LabelKind.SOURCE_LABEL,
-                "label-1",
-                "nb-1",
-                add_member_ids=("source-1",),
-            ),
-            (None,),
-            1,
-            (RPCMethod.UPDATE_LABEL,),
-            RPCMethod.LIST_LABELS,
-            id="label-membership-readback",
         ),
         pytest.param(
             COLLECTION_UPDATE_DEF,
@@ -180,20 +155,6 @@ _COLLECTION_ROW = ["Existing", None, "collection-1", ""]
             (RPCMethod.UPDATE_LABEL,),
             RPCMethod.LIST_LABELS,
             id="collection-membership-readback",
-        ),
-        pytest.param(
-            LABEL_UPDATE_DEF,
-            LabelUpdateInput(
-                LabelKind.SOURCE_LABEL,
-                "label-1",
-                "nb-1",
-                add_member_ids=("source-1", "source-2"),
-            ),
-            (None,),
-            1,
-            (RPCMethod.UPDATE_LABEL,),
-            RPCMethod.UPDATE_LABEL,
-            id="label-second-membership-write",
         ),
         pytest.param(
             COLLECTION_UPDATE_DEF,
@@ -245,18 +206,6 @@ async def test_expiry_after_a_write_is_truthfully_unconfirmed(
 @pytest.mark.parametrize(
     ("definition", "value", "baseline", "blocked_method"),
     [
-        pytest.param(
-            LABEL_UPDATE_DEF,
-            LabelUpdateInput(
-                LabelKind.SOURCE_LABEL,
-                "label-1",
-                "nb-1",
-                name="Renamed",
-            ),
-            [[_LABEL_ROW]],
-            RPCMethod.UPDATE_LABEL,
-            id="label-preflight",
-        ),
         pytest.param(
             COLLECTION_CREATE_DEF,
             LabelCreateInput(LabelKind.COLLECTION, "New"),

@@ -76,7 +76,6 @@ from notebooklm._records import (
     LABEL_GET_DEF,
     LABEL_LIST_DEF,
     LABEL_MUTATE_DEF,
-    LABEL_UPDATE_DEF,
     LEGACY_SHARE_ARTIFACT_DEF,
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
@@ -280,7 +279,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.LABEL_GET,
         Operation.LABEL_GENERATE,
         Operation.LABEL_CREATE,
-        Operation.LABEL_UPDATE,
         Operation.LABEL_DELETE,
         Operation.LABEL_MUTATE,
         Operation.LABEL_ALLOCATE,
@@ -371,7 +369,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.LABEL_GET: LABEL_GET_DEF,
         Operation.LABEL_GENERATE: LABEL_GENERATE_DEF,
         Operation.LABEL_CREATE: LABEL_CREATE_DEF,
-        Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
         Operation.LABEL_DELETE: LABEL_DELETE_DEF,
         Operation.LABEL_MUTATE: LABEL_MUTATE_DEF,
         Operation.LABEL_ALLOCATE: LABEL_ALLOCATE_DEF,
@@ -1873,11 +1870,15 @@ async def test_expired_deadline_fails_before_executor() -> None:
 
     assert caught.value.operation is Operation.NOTEBOOK_LIST
     assert caught.value.reason is BackendErrorReason.TIMEOUT
+    # P9.2: a codec row lets the transport raise the pre-dispatch expiry so the
+    # error names the blocked native, as the composite handlers' phases did.
     assert caught.value.diagnostics == {
         "timeout": 2.0,
         "remaining": 0.0,
         "timeout_seconds": 2.0,
+        "method_id": RPCMethod.LIST_NOTEBOOKS.value,
     }
+    assert caught.value.dispatched is False
     assert executor.calls == []
 
 

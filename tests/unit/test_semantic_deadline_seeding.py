@@ -54,7 +54,6 @@ _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
         Operation.MIND_MAP_GENERATE_NOTE,
         Operation.MIND_MAP_GENERATE_INTERACTIVE,
         Operation.LABEL_CREATE,
-        Operation.LABEL_UPDATE,
         Operation.COLLECTION_CREATE,
         Operation.COLLECTION_UPDATE,
         Operation.SHARING_SET_PUBLIC,

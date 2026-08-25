@@ -49,6 +49,16 @@ from .rpc import RPCMethod
 _T = TypeVar("_T")
 
 
+# The legacy not-found ``method_id`` per workflow phase: a preflight or a
+# membership readback reports the mutation the miss blocked, a field readback
+# reports the read that proved absence (exactly what the P6.4 handler set).
+_LABEL_NOT_FOUND_PHASE_METHOD_IDS: Mapping[str | None, str] = {
+    "preflight": RPCMethod.UPDATE_LABEL.value,
+    "membership_readback": RPCMethod.UPDATE_LABEL.value,
+    "field_readback": RPCMethod.LIST_LABELS.value,
+}
+
+
 def _preserve_outcome(error: BackendError, projected: Exception) -> Exception:
     diagnostics = error.diagnostics or {}
     public_failure = diagnostics.get("public_error_failure")
@@ -429,6 +439,12 @@ def project_backend_error(error: BackendError) -> Exception:
                 operation=error.operation,
             )
         method_id = cast(str | None, _optional(error, diagnostics, "method_id", str))
+        if method_id is None:
+            # P9.2: a service-owned workflow names the phase whose read proved
+            # the group absent; the legacy ``method_id`` is a projector concern.
+            method_id = _LABEL_NOT_FOUND_PHASE_METHOD_IDS.get(
+                cast(str | None, _optional(error, diagnostics, "phase", str))
+            )
         # A collection is a label with a distinct discriminator, so one neutral
         # reason carries both domains; the discriminator picks the exact public
         # class each facade documented before the migration.

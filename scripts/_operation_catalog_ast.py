@@ -1810,6 +1810,8 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_label_service.py:LabelSetService.get",
         "_label_service.py:LabelSetService.list",
         "_label_service.py:LabelSetService.update",
+        "_label_service.py:LabelSetService._mutate",
+        "_label_service.py:LabelSetService._read",
         "_notebook_mutation_service.py:NotebookMutationService.create",
         "_notebook_mutation_service.py:NotebookMutationService.delete",
         "_notebook_mutation_service.py:NotebookMutationService.update",
@@ -2033,6 +2035,22 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
         ("_idempotency_create.py", "_backend", "BackendError"),
         ("_idempotency_create.py", "_backend", "may_have_committed"),
+    }
+)
+# P9.2-2: LabelSetService sequences label.update from the leaves; the backend
+# head lets codec rows raise the transport's pre-dispatch expiry.
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_label_service.py", "_backend", "BackendContractError"),
+        ("_label_service.py", "_backend", "BackendDeadlineExceededError"),
+        ("_label_service.py", "_backend", "BackendError"),
+        ("_label_service.py", "_backend", "BackendErrorReason"),
+        ("_label_service.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_label_service.py", "_backend", "rebind_operation"),
+        ("_label_service.py", "_backend", "require_leaves"),
+        ("_label_service.py", "_records", "LABEL_MUTATE_DEF"),
+        ("_label_service.py", "_records", "LabelMutateInput"),
+        ("_web/backend.py", "_binding", "CodecBinding"),
     }
 )
 # P9.2 primitives: the foundational leaf rows and their codec/record imports.
