@@ -52,10 +52,11 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: custom rows + handler-backed operations at P9.4a; shrinks with every hoist.
 RESIDUAL_COMPOSITE_CEILING = 31
 #: Exact custom-row counts per justification category (P9.4a: the three sharing
-#: mutate-then-readback composites). P9.4b PRs raise these as handlers convert;
-#: P9.2 hoists lower ``deferred-product``, which must reach zero before any
-#: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 0, "compatibility": 0, "deferred-product": 3}
+#: mutate-then-readback composites; P9.4b Studio: the eight generate families,
+#: prompt suggestions and the rename composite). P9.4b PRs raise these as handlers
+#: convert; P9.2 hoists lower ``deferred-product``, which must reach zero before
+#: any second backend.
+CUSTOM_ROW_COUNTS = {"protocol": 0, "compatibility": 0, "deferred-product": 13}
 
 # --- 2. class size ---------------------------------------------------------------
 
@@ -91,19 +92,9 @@ MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
         "labels.py:LabelSetWebHandlers._collection_update",
         "labels.py:LabelSetWebHandlers._label_create",
         "labels.py:LabelSetWebHandlers._label_update",
-        "settings_suggestions.py:SettingsSuggestionWebHandlers._notebook_suggest_prompts",
         "source_variants.py:SourceVariantWebHandlers._source_add_drive",
         "source_variants.py:SourceVariantWebHandlers._source_add_url",
-        "studio_data.py:StudioDataWebHandlers._data_table_generate",
         "studio_data.py:StudioDataWebHandlers._mind_map_generate",
-        "studio_documents.py:StudioDocumentWebHandlers._report_generate",
-        "studio_documents.py:StudioDocumentWebHandlers._video_generate",
-        "studio_media.py:StudioMediaWebHandlers._audio_generate",
-        "studio_media.py:StudioMediaWebHandlers._flashcards_generate",
-        "studio_media.py:StudioMediaWebHandlers._infographic_generate",
-        "studio_media.py:StudioMediaWebHandlers._interactive_generate",
-        "studio_media.py:StudioMediaWebHandlers._quiz_generate",
-        "studio_media.py:StudioMediaWebHandlers._slide_deck_generate",
     }
 )
 

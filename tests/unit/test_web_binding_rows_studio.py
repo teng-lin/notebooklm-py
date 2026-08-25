@@ -43,7 +43,7 @@ from notebooklm._records import (
     ArtifactReviseSlideInput,
     DriveExportInput,
 )
-from notebooklm._web import studio_data, studio_facade
+from notebooklm._web import studio_data
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import studio as studio_rows
@@ -97,7 +97,8 @@ def test_studio_leaves_are_rows_and_composites_stay_handlers() -> None:
         Operation.ARTIFACT_WAIT: studio_rows.ARTIFACT_WAIT,
         Operation.ARTIFACT_DOWNLOAD: studio_rows.ARTIFACT_DOWNLOAD,
     }
-    assert dict(studio_rows.STUDIO_ROWS) == converted
+    # Codec-row slice only: the P9.4b custom rows share this domain module.
+    assert {op: studio_rows.STUDIO_ROWS[op] for op in converted} == converted
     for operation, row in converted.items():
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
@@ -137,12 +138,15 @@ def test_studio_leaves_are_rows_and_composites_stay_handlers() -> None:
         "_feature_unavailable",
     ):
         assert not hasattr(WebRpcBackend, name)
-    assert hasattr(studio_facade.StudioFacadeWebHandlers, "_artifact_rename")
+    # P9.4b: rename and the generate families are custom rows; the mind-map
+    # compatibility composite and the catalog merge stay handlers.
     assert hasattr(studio_data.StudioDataWebHandlers, "_mind_map_generate")
+    assert WEB_OPERATION_REGISTRY[Operation.ARTIFACT_RENAME].row is studio_rows.ARTIFACT_RENAME
+    assert WEB_OPERATION_REGISTRY[Operation.ARTIFACT_GENERATE_DATA_TABLE].row is (
+        studio_rows.ARTIFACT_GENERATE_DATA_TABLE
+    )
     for operation, handler in (
-        (Operation.ARTIFACT_RENAME, "_artifact_rename"),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, "_mind_map_generate"),
-        (Operation.ARTIFACT_GENERATE_DATA_TABLE, "_data_table_generate"),
         (Operation.ARTIFACT_LIST, "_artifact_list"),
         (Operation.ARTIFACT_GET, "_artifact_get"),
     ):

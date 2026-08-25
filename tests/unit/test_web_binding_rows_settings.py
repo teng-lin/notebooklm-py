@@ -34,7 +34,6 @@ from notebooklm._records import (
     SettingsGetLimitsInput,
     SettingsSetLanguageInput,
 )
-from notebooklm._web import settings_suggestions
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import settings as settings_rows
@@ -74,7 +73,8 @@ def test_settings_rows_replace_their_handlers_in_the_registry_and_table() -> Non
         Operation.ARTIFACT_SUGGEST_REPORTS: settings_rows.ARTIFACT_SUGGEST_REPORTS,
     }
     # Domain-scoped: other P9.3 domains add their own rows to WEB_BINDING_ROWS.
-    assert dict(settings_rows.SETTINGS_ROWS) == converted
+    # Codec-row slice only: the P9.4b prompt-suggestion custom row shares this module.
+    assert {op: settings_rows.SETTINGS_ROWS[op] for op in converted} == converted
     for operation, row in converted.items():
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
@@ -93,11 +93,12 @@ def test_settings_rows_replace_their_handlers_in_the_registry_and_table() -> Non
         "_artifact_suggest_reports",
     ):
         assert not hasattr(WebRpcBackend, name)
-        assert not hasattr(settings_suggestions.SettingsSuggestionWebHandlers, name)
-    # The input-defaulting composite stays a handler until its P9.4 custom row.
-    assert WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_SUGGEST_PROMPTS].handler_name == (
-        "_notebook_suggest_prompts"
+    # P9.4b: the input-defaulting composite is a custom row, not a handler.
+    assert WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_SUGGEST_PROMPTS].handler_name is None
+    assert WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_SUGGEST_PROMPTS].row is (
+        settings_rows.NOTEBOOK_SUGGEST_PROMPTS
     )
+    assert not hasattr(WebRpcBackend, "_notebook_suggest_prompts")
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.SETTINGS_GET] is settings_rows.SETTINGS_GET
 
