@@ -44,6 +44,7 @@ from .._binding import (
     ResolvedHandlerBinding,
     audit_bindings,
     invoke_binding,
+    row_invoker,
 )
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._env import get_default_language
@@ -104,6 +105,7 @@ from ..rpc import (
     safe_index,
 )
 from ..types import ClientMetricsSnapshot
+from .bindings.sources import upload_backend
 from .chat import ChatWebHandlers
 from .codec import settings as settings_codec
 from .codec.artifacts import decode_artifact, decode_mind_map_artifact
@@ -140,17 +142,9 @@ artifact_logger = logging.getLogger("notebooklm._artifact.listing")
 _CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
 
 # Handler-backed composites whose established public leaves ``invoke()`` re-raises
-# unchanged (callers inspect ``source_id``/``stage`` and the causal chain). A
-# custom row states the same choice as ``ErrorMode.RAW_PASSTHROUGH`` metadata;
-# this set only covers operations that have not yet become rows (P9.4b).
-_RAW_PASSTHROUGH_HANDLER_OPERATIONS: frozenset[Operation] = frozenset(
-    {
-        Operation.SOURCE_ADD_URL_BATCH,
-        Operation.SOURCE_ADD_TEXT,
-        Operation.SOURCE_ADD_DRIVE,
-        Operation.SOURCE_ADD_FILE,
-    }
-)
+# unchanged. Empty since the source-add family became ``ErrorMode.RAW_PASSTHROUGH``
+# custom rows (P9.4b); kept so the head's projection stays row-metadata-driven.
+_RAW_PASSTHROUGH_HANDLER_OPERATIONS: frozenset[Operation] = frozenset()
 
 #: The closed set of collaborator names the head supplies to custom rows. A row
 #: declaring any other name is rejected by the construction-time audit.
@@ -215,13 +209,6 @@ class WebRpcBackend(ChatWebHandlers):
         self._pipeline = pipeline
         self._transport_factory = transport_factory
         self._source_uploader = source_uploader
-        if self._source_uploader is not None:
-            self._source_uploader.configure_source_limit_lookup(self._source_file_limit)
-            self._source_uploader.configure_source_backend(
-                list_sources=self._source_upload_list,
-                register_file_source=self._source_register_file,
-                rename_source=self._source_upload_rename,
-            )
         self._chat_transport = chat_transport
         self._chat_reqid = chat_reqid
         self._chat_timeout = chat_timeout
@@ -242,6 +229,7 @@ class WebRpcBackend(ChatWebHandlers):
         # missing handler fails here, at construction, rather than on that
         # operation's first invocation.
         self._bindings = _resolve_handler_bindings(self)
+        _configure_default_upload_backend(self)
 
     @property
     def kind(self) -> BackendKind:
@@ -1074,6 +1062,33 @@ class WebRpcBackend(ChatWebHandlers):
     ) -> BackendError:
         """Delegate to the shared ``_web.errors`` translation (kept on the head for callers)."""
         return translate_web_error(operation, exc)
+
+
+def _configure_default_upload_backend(backend: WebRpcBackend) -> None:
+    """Install the pipeline's default callbacks under the ``SOURCE_ADD_FILE`` row.
+
+    P9.4b (plan open item 1): the defaults execute through the row's own invoker
+    — its declared natives, options and failure tagging — so the legacy
+    registration helper never bypasses the binding table; the row binds a fresh,
+    invocation-scoped set on every ``source.add_file`` call.
+    """
+    uploader = backend._source_uploader
+    if uploader is None:
+        return
+    default = upload_backend(
+        row_invoker(
+            backend._bindings,
+            backend._transport,
+            backend._translate_native_error,
+            Operation.SOURCE_ADD_FILE,
+        )
+    )
+    uploader.configure_source_limit_lookup(default.get_source_limit)
+    uploader.configure_source_backend(
+        list_sources=default.list_sources,
+        register_file_source=default.register_file_source,
+        rename_source=default.rename_source,
+    )
 
 
 def _resolve_handler_bindings(
