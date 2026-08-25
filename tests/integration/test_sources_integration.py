@@ -17,7 +17,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 import notebooklm._sources as _sources_mod
-import notebooklm._web.source_variants as _source_variants_mod
+import notebooklm._web.bindings.sources as _source_variants_mod
 from notebooklm import NotebookLMClient, Source, SourceType
 from notebooklm._source.add import SourceAddService
 from notebooklm.exceptions import DecodingError, RPCError
