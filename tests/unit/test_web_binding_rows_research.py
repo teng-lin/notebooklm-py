@@ -40,7 +40,6 @@ from notebooklm._records import (
     ResearchSearchSource,
     ResearchStartInput,
 )
-from notebooklm._web import settings_suggestions
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import research as research_rows
@@ -120,9 +119,7 @@ def test_research_rows_replace_their_handlers_in_the_registry_and_table() -> Non
     for name in ("_research_start", "_research_poll", "_research_cancel", "_research_import"):
         assert not hasattr(WebRpcBackend, name)
     # The P6.2 mixin is gone and the chain re-links around it.
-    # The chain re-linked past the deleted research mixin; the next base keeps
-    # changing as later slices delete their own classes, so pin only the deletion.
-    assert settings_suggestions.SettingsSuggestionWebHandlers in WebRpcBackend.__mro__
+    # Later slices delete their own chain classes too, so pin only this deletion.
     assert "ResearchWebHandlers" not in {klass.__name__ for klass in WebRpcBackend.__mro__}
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.RESEARCH_START] is research_rows.RESEARCH_START
