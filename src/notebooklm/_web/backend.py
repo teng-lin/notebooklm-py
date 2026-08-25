@@ -76,7 +76,6 @@ source_logger = logging.getLogger("notebooklm").getChild("_sources")
 ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset(
     {
         "source_uploader",
-        "deadline_factory",
         "capture_public_failure",
         # ``chat.ask`` (P9.4b): the request-id counter, the configured chat read
         # timeout, and whether the composed chat transport exists — never the
@@ -580,7 +579,6 @@ def _row_collaborators_of(backend: WebRpcBackend) -> Mapping[str, object]:
     return MappingProxyType(
         {
             "source_uploader": backend._source_uploader,
-            "deadline_factory": backend._deadline_factory,
             "capture_public_failure": backend._capture_public_failure,
             "chat_reqid": backend._chat_reqid,
             "chat_timeout": backend._chat_timeout,
