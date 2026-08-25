@@ -2141,6 +2141,8 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/primitives.py", "_binding", "NativeChoice"),
         ("_web/bindings/primitives.py", "_records", "LABEL_ALLOCATE_DEF"),
         ("_web/bindings/primitives.py", "_records", "LABEL_MUTATE_DEF"),
+        ("_web/bindings/primitives.py", "_records", "LabelAllocateInput"),
+        ("_web/bindings/primitives.py", "_records", "LabelAllocateResult"),
         ("_web/bindings/primitives.py", "_records", "LabelMutateInput"),
         ("_web/bindings/primitives.py", "_records", "SHARING_MUTATE_DEF"),
         ("_web/bindings/primitives.py", "codec", "labels"),

@@ -50,7 +50,7 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 # --- 1. residual composites ---------------------------------------------------
 
 #: custom rows + handler-backed operations at P9.4a; shrinks with every hoist.
-RESIDUAL_COMPOSITE_CEILING = 31
+RESIDUAL_COMPOSITE_CEILING = 28
 #: Exact custom-row counts per justification category: the three sharing
 #: mutate-then-readback composites, five source-add rows, ``CHAT_ASK``, the Studio
 #: generation/prompt/rename rows, and the notebook/mind-map/catalog composites.
@@ -66,7 +66,6 @@ CLASS_BODY_LINE_CEILING = 500
 #: and shrinks on its own schedule; the remaining chain classes are P9.4b targets
 #: (``WebRpcBackend`` dropped under the ceiling with the P9.4b notebook/mind-map rows).
 OVERSIZED_CLASS_CEILINGS = {
-    "labels.py:LabelSetWebHandlers": 522,
     "runtime.py:WebExecutionRuntime": 597,
 }
 
@@ -83,9 +82,7 @@ _OWNER_VERBS = {
 MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
     {
         "labels.py:LabelSetWebHandlers._collection_create",
-        "labels.py:LabelSetWebHandlers._collection_update",
         "labels.py:LabelSetWebHandlers._label_create",
-        "labels.py:LabelSetWebHandlers._label_update",
     }
 )
 

@@ -10,6 +10,7 @@ oracles (outcome-unknown truth table, registry pins).
 
 from __future__ import annotations
 
+import asyncio
 from types import MappingProxyType
 from typing import Any
 
@@ -21,6 +22,7 @@ from notebooklm._backend import (
     BackendError,
     BackendErrorReason,
     UnsupportedOperationError,
+    may_have_committed,
 )
 from notebooklm._backend_compat import project_backend_error
 from notebooklm._collections import CollectionsAPI
@@ -42,7 +44,7 @@ from notebooklm._web.policy import SERVICE_OWNED_WORKFLOW_BINDINGS, derive_workf
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import CollectionNotFoundError, RPCTimeoutError
 from notebooklm.rpc import RPCMethod
-from tests._fixtures.recording_backend import RecordingBackend
+from tests._fixtures.recording_backend import RecordingBackend, scripted_error
 from tests._fixtures.web_backend import build_web_backend
 
 _COLLECTION = LabelRecord("c1", "Old", LabelKind.COLLECTION, None, emoji="", member_ids=("n1",))
@@ -252,6 +254,63 @@ async def test_one_deadline_identity_covers_every_leaf() -> None:
     deadlines = [invocation.deadline for invocation in backend.invocations]
     assert len(deadlines) == 3 and all(d is deadlines[0] for d in deadlines)
     assert deadlines[0] is not None and deadlines[0].timeout == 30.0
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [BackendErrorReason.SERVER, BackendErrorReason.NETWORK, BackendErrorReason.RATE_LIMIT],
+)
+@pytest.mark.asyncio
+async def test_dispatched_write_failures_keep_their_commit_uncertainty(
+    reason: BackendErrorReason,
+) -> None:
+    backend = RecordingBackend()
+    backend.set_result(COLLECTION_GET_DEF, _FOUND)
+    backend.set_sequence(
+        LABEL_MUTATE_DEF,
+        [_DONE, scripted_error(reason, operation=Operation.LABEL_MUTATE, dispatched=True)],
+    )
+
+    with pytest.raises(BackendError) as caught:
+        await _service(backend).update("c1", add_member_ids=("n2", "n3"))
+
+    error = caught.value
+    assert type(error) is BackendError
+    assert error.operation is Operation.COLLECTION_UPDATE
+    assert error.reason is reason
+    assert error.dispatched is True
+    assert may_have_committed(error) is True
+    assert error.outcome_unknown is False
+    assert error.diagnostics is not None
+    assert error.diagnostics["leaf_operation"] is Operation.LABEL_MUTATE
+    assert _ops(backend) == [Operation.LABEL_MUTATE, Operation.LABEL_MUTATE]
+
+
+@pytest.mark.parametrize("cancel_during_readback", [False, True])
+@pytest.mark.asyncio
+async def test_cancellation_instance_propagates_without_rebinding(
+    cancel_during_readback: bool,
+) -> None:
+    cancelled = asyncio.CancelledError()
+    backend = RecordingBackend()
+    backend.set_sequence(
+        LABEL_MUTATE_DEF,
+        [_DONE if cancel_during_readback else cancelled],
+    )
+    backend.set_sequence(
+        COLLECTION_GET_DEF,
+        [cancelled] if cancel_during_readback else [_FOUND],
+    )
+
+    with pytest.raises(asyncio.CancelledError) as caught:
+        await _service(backend).update("c1", add_member_ids=("n2",))
+
+    assert caught.value is cancelled
+    assert _ops(backend) == (
+        [Operation.LABEL_MUTATE, Operation.COLLECTION_GET]
+        if cancel_during_readback
+        else [Operation.LABEL_MUTATE]
+    )
 
 
 _COLLECTION_ROW = ["Old", ["n1"], "c1", ""]

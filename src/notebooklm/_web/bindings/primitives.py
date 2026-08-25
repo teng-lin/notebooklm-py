@@ -23,6 +23,8 @@ from ..._records import (
     LABEL_MUTATE_DEF,
     SHARING_MUTATE_DEF,
     SOURCE_PATCH_TITLE_DEF,
+    LabelAllocateInput,
+    LabelAllocateResult,
     LabelMutateInput,
     SourcePatchTitleInput,
     SourcePatchTitleResult,
