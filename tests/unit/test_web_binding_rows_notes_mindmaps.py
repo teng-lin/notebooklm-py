@@ -122,7 +122,8 @@ def test_note_and_mind_map_rows_replace_their_handlers_in_the_registry_and_table
     assert dict(note_rows.NOTE_ROWS) == {
         op: row for op, row in _CONVERTED.items() if op.value.startswith("note.")
     }
-    assert dict(mind_map_rows.MIND_MAP_ROWS) == {
+    # P9.4b adds the generate and catalog custom rows to the same table.
+    assert {op: row for op, row in mind_map_rows.MIND_MAP_ROWS.items() if op in _CONVERTED} == {
         op: row for op, row in _CONVERTED.items() if op.value.startswith("mind_map.")
     }
     for operation, row in _CONVERTED.items():
@@ -150,13 +151,10 @@ def test_note_and_mind_map_rows_replace_their_handlers_in_the_registry_and_table
         "_mind_map_delete",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # The input-defaulting generate composites stay handlers until their P9.4 rows.
-    assert WEB_OPERATION_REGISTRY[Operation.MIND_MAP_GENERATE_NOTE].handler_name == (
-        "_mind_map_generate_note"
-    )
-    assert WEB_OPERATION_REGISTRY[Operation.MIND_MAP_GENERATE_INTERACTIVE].handler_name == (
-        "_mind_map_generate_interactive"
-    )
+    # P9.4b: the input-defaulting generate composites are custom rows.
+    for operation in (Operation.MIND_MAP_GENERATE_NOTE, Operation.MIND_MAP_GENERATE_INTERACTIVE):
+        assert WEB_OPERATION_REGISTRY[operation].handler_name is None
+        assert WEB_OPERATION_REGISTRY[operation].row is not None
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.NOTE_CREATE] is note_rows.NOTE_CREATE
     assert backend._bindings[Operation.MIND_MAP_GET] is mind_map_rows.MIND_MAP_GET

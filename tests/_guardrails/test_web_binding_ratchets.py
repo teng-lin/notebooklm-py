@@ -52,18 +52,21 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: custom rows + handler-backed operations at P9.4a; shrinks with every hoist.
 RESIDUAL_COMPOSITE_CEILING = 31
 #: Exact custom-row counts per justification category (P9.4a: the three sharing
-#: mutate-then-readback composites). P9.4b PRs raise these as handlers convert;
+#: mutate-then-readback composites; P9.4b notebooks/mind maps: the two notebook
+#: composites and two input-defaulting generate members as deferred-product, the
+#: note-backed mind-map generation and the two catalog merges as compatibility).
+#: P9.4b PRs raise these as handlers convert;
 #: P9.2 hoists lower ``deferred-product``, which must reach zero before any
 #: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 0, "compatibility": 0, "deferred-product": 3}
+CUSTOM_ROW_COUNTS = {"protocol": 0, "compatibility": 3, "deferred-product": 7}
 
 # --- 2. class size ---------------------------------------------------------------
 
 CLASS_BODY_LINE_CEILING = 500
 #: Measured at P9.4a; shrink-only. ``WebExecutionRuntime`` is the transport engine
-#: and shrinks on its own schedule; the three chain classes are P9.4b targets.
+#: and shrinks on its own schedule; the remaining chain classes are P9.4b targets
+#: (``WebRpcBackend`` dropped under the ceiling with the P9.4b notebook/mind-map rows).
 OVERSIZED_CLASS_CEILINGS = {
-    "backend.py:WebRpcBackend": 897,
     "labels.py:LabelSetWebHandlers": 522,
     "runtime.py:WebExecutionRuntime": 597,
     "source_variants.py:SourceVariantWebHandlers": 683,
@@ -81,11 +84,6 @@ _OWNER_VERBS = {
 #: than one transport call; each P9.4b PR removes the entries it converts.
 MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
     {
-        "backend.py:WebRpcBackend._mind_map_generate_interactive",
-        "backend.py:WebRpcBackend._mind_map_generate_note",
-        "backend.py:WebRpcBackend._notebook_create",
-        "backend.py:WebRpcBackend._notebook_limit_error",
-        "backend.py:WebRpcBackend._notebook_update",
         "chat.py:ChatWebHandlers._chat_ask",
         "labels.py:LabelSetWebHandlers._collection_create",
         "labels.py:LabelSetWebHandlers._collection_update",
@@ -95,7 +93,6 @@ MULTI_CALL_HANDLER_ALLOWLIST = frozenset(
         "source_variants.py:SourceVariantWebHandlers._source_add_drive",
         "source_variants.py:SourceVariantWebHandlers._source_add_url",
         "studio_data.py:StudioDataWebHandlers._data_table_generate",
-        "studio_data.py:StudioDataWebHandlers._mind_map_generate",
         "studio_documents.py:StudioDocumentWebHandlers._report_generate",
         "studio_documents.py:StudioDocumentWebHandlers._video_generate",
         "studio_media.py:StudioMediaWebHandlers._audio_generate",

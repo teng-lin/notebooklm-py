@@ -245,11 +245,12 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
 
     assert sites[(RPCMethod.GET_NOTEBOOK, None)] == [
         "_notebooks.py:NotebooksAPI.get_raw",
-        "_web/backend.py:WebRpcBackend._mind_map_generate_interactive",
-        "_web/backend.py:WebRpcBackend._mind_map_generate_note",
-        "_web/backend.py:WebRpcBackend._notebook_update",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
+        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
+        "_web/bindings/notebooks.py:NOTEBOOK_UPDATE",
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT",
@@ -583,12 +584,14 @@ def test_operation_authorities_are_exact_discriminated_and_include_non_rpc_paths
         "GET_NOTEBOOK:<default>",
         "UPDATE_NOTE:<default>",
     ]
+    # The shared natives (GET_NOTEBOOK, GENERATE_MIND_MAP, CREATE_NOTE/plain) are
+    # allocated to the row; UPDATE_NOTE/DELETE_NOTE are single-consumer natives,
+    # so their direct sites — the legacy note family the row drives and the row
+    # itself — are derived.
     assert {row["site"] for row in note_backed["execution_authorities"]} == {
-        "_note_service.py:LegacyNoteBackedService.create_note",
         "_note_service.py:LegacyNoteBackedService.delete_note",
         "_note_service.py:LegacyNoteBackedService.update_note",
-        "_web/studio_data.py:StudioDataWebHandlers._data_source_ids",
-        "_web/studio_data.py:StudioDataWebHandlers._mind_map_generate",
+        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
     }
     assert "CREATE_ARTIFACT:<default>" not in note_backed["native_bindings"]
     assert {row["transport_kind"] for row in rows["chat.ask"]["execution_authorities"]} >= {
@@ -713,13 +716,13 @@ def test_notebook_create_catalog_has_no_phantom_get_notebook_recency() -> None:
         (RPCMethod.GET_NOTEBOOK, None),
     ) not in catalog_authorities.SHARED_RPC_AUTHORITY_RULES
 
-    backend_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_web" / "backend.py")
-    create_handler = catalog_ast._find_class_method(
-        backend_tree,
-        "WebRpcBackend",
-        "_notebook_create",
-    )
-    assert create_handler is not None
+    # P9.4b: the create composite is a custom row; neither its declared specs nor
+    # its handler body reach GET_NOTEBOOK.
+    rows_tree = catalog_ast._parse(catalog_ast.SRC_ROOT / "_web" / "bindings" / "notebooks.py")
+    create_row = catalog_ast._find_module_assignment(rows_tree, "NOTEBOOK_CREATE")
+    create_handler = catalog_ast._find_module_function(rows_tree, "_notebook_create")
+    assert create_row is not None and create_handler is not None
+    assert catalog_ast._native_choice_count(create_row, RPCMethod.GET_NOTEBOOK) == 0
     assert catalog_ast._rpc_binding_call_count(create_handler, RPCMethod.GET_NOTEBOOK) == 0
 
 
@@ -738,7 +741,7 @@ def test_update_and_chat_recency_conditions_are_explicit() -> None:
             "maximum_calls": 1,
             "unit": "public_call",
             "condition": "always after a successful mutation",
-            "authority_sites": ["_web/backend.py:WebRpcBackend._notebook_update"],
+            "authority_sites": ["_web/bindings/notebooks.py:NOTEBOOK_UPDATE"],
         }
     ]
     chat_contracts = rows["chat.configure"]["recency_contract"]

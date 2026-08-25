@@ -11,10 +11,11 @@ import httpx
 import pytest
 
 from notebooklm._auth.cookie_types import CookieJar
+from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._chat import notes as chat_notes
 from notebooklm._chat import wire as chat_wire
 from notebooklm._kernel import Kernel
-from notebooklm._operations import Operation
+from notebooklm._records import ARTIFACT_LIST_DEF, ArtifactListInput
 from notebooklm._runtime.web_backend_session import WebBackendSession
 from notebooklm._web.codec import chat_stream
 from notebooklm._web_cookie_provider import WebCookieGeneration
@@ -41,24 +42,20 @@ async def _artifact_rows_after_mind_map_failure(
     monkeypatch: pytest.MonkeyPatch,
     failure: Exception,
 ) -> tuple[object, ...]:
-    backend = build_web_backend(object())
+    """Drive the ``ARTIFACT_LIST`` custom row (P9.4b) with a failing mind-map merge."""
     calls: list[RPCMethod] = []
 
-    async def rpc_call(method: RPCMethod, _params: list[Any], **_kwargs: Any) -> Any:
-        calls.append(method)
-        if method is RPCMethod.LIST_ARTIFACTS:
-            return []
-        raise failure
+    class _Runtime:
+        async def rpc_call(self, method: RPCMethod, _params: list[Any], **_kwargs: Any) -> Any:
+            calls.append(method)
+            if method is RPCMethod.LIST_ARTIFACTS:
+                return []
+            raise failure
 
-    monkeypatch.setattr(backend, "_rpc_call", rpc_call)
-    result = await backend._artifact_catalog_records(
-        "nb-1",
-        operation=Operation.ARTIFACT_LIST,
-        deadline=None,
-        include_mind_maps=True,
-    )
+    backend = build_web_backend(_Runtime())
+    result = await backend.invoke(ARTIFACT_LIST_DEF, ArtifactListInput("nb-1"), deadline=None)
     assert calls == [RPCMethod.LIST_ARTIFACTS, RPCMethod.GET_NOTES_AND_MIND_MAPS]
-    return result
+    return result.artifacts
 
 
 @pytest.mark.asyncio
@@ -85,12 +82,20 @@ async def test_artifact_partial_availability_retains_raw_httpx_compatibility(
 async def test_artifact_partial_availability_does_not_swallow_network_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The legacy net caught raw HTTPError, not the public NetworkError family."""
-    with pytest.raises(NetworkError, match="connection reset"):
+    """The legacy net caught raw HTTPError, not the public NetworkError family.
+
+    Through ``invoke()`` (P9.4b: the merge lives in the ``ARTIFACT_LIST`` row)
+    the untouched ``NetworkError`` reaches the head and is translated, never
+    swallowed into a partial catalog.
+    """
+    with pytest.raises(BackendError) as caught:
         await _artifact_rows_after_mind_map_failure(
             monkeypatch,
             NetworkError("connection reset"),
         )
+    assert caught.value.reason is BackendErrorReason.NETWORK
+    assert isinstance(caught.value.__cause__, NetworkError)
+    assert str(caught.value.__cause__) == "connection reset"
 
 
 def test_chat_wire_injects_compat_stripper_without_mutating_codec_global(
