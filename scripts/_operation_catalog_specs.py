@@ -578,6 +578,10 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         (_b(RPCMethod.GET_LAST_CONVERSATION_ID), _b(RPCMethod.GET_NOTEBOOK)),
         ("streamed_query",),
         recency_effect="one GET_NOTEBOOK on every ask where source_ids is omitted",
+        known_divergence=(
+            "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the "
+            "CHAT_ASK row dispatches"
+        ),
     ),
     OperationSpec(
         Operation.CHAT_GET_CONVERSATION,
@@ -1010,6 +1014,7 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
 
 DIVERGENCE_KINDS: Mapping[Operation, str] = {
     Operation.ARTIFACT_DOWNLOAD: "authority",
+    Operation.CHAT_ASK: "authority",
     Operation.SOURCE_REFRESH: "policy",
 }
 

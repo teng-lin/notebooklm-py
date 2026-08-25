@@ -552,6 +552,7 @@ def test_known_divergences_remain_reported_but_do_not_fail_audit() -> None:
 
     assert {row["operation"] for row in divergences} == {
         "artifact.download",
+        "chat.ask",
         "source.refresh",
     }
 

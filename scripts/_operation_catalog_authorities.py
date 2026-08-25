@@ -260,7 +260,7 @@ NON_RPC_AUTHORITY_RULES: Mapping[Operation, tuple[tuple[str, str, str, str], ...
         (
             "stream",
             "streamed_query",
-            "_web/chat.py:ChatWebHandlers._chat_ask",
+            "_web/bindings/chat.py:_ask",
             "adapter-owned GenerateFreeFormStreamed phase; bytes are incrementally buffered",
         ),
     ),
@@ -305,7 +305,7 @@ NON_RPC_AUTHORITY_RULES: Mapping[Operation, tuple[tuple[str, str, str, str], ...
 NON_RPC_SOURCE_CONTRACTS: Mapping[str, tuple[tuple[str, ...], ...]] = {
     # P9.1: the streamed POST is the transport's ``stream`` verb; the chat
     # handler reaches it through the shell-owned ``WebTransport``.
-    "_web/chat.py:ChatWebHandlers._chat_ask": (("_transport", "stream"),),
+    "_web/bindings/chat.py:_ask": (("invoke", "stream"),),
     "_source/drive_import.py:DriveFetcher._request": (("stream",),),
     "_source/upload.py:SourceUploadPipeline.start_resumable_upload": (("post",),),
     "_source/upload.py:SourceUploadPipeline.upload_file_streaming._do_finalize": (
@@ -851,7 +851,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.CHAT_ASK, _b(RPCMethod.GET_LAST_CONVERSATION_ID)): _rules(
             (
-                "_web/chat.py:ChatWebHandlers._chat_conversation_id",
+                "_web/bindings/chat.py:CHAT_ASK",
                 "post-stream resolution when no server-issued id is already known",
             )
         ),
