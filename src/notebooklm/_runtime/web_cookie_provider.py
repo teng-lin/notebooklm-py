@@ -26,6 +26,7 @@ from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
 from .._reqid_counter import ReqidCounter
 from .._rpc_semaphore import RpcSemaphore
+from .._source_upload_port import UploadLifecycleHooks
 from .._transport_drain import TransportDrainTracker
 from .._web_cookie_provider import (
     WebCookieGeneration,
@@ -38,7 +39,6 @@ from .lifecycle import ClientLifecycle
 
 if TYPE_CHECKING:
     from .._chat import ChatAPI
-    from .._source.upload import SourceUploadPipeline
 
 RefreshSession = Callable[..., Awaitable[AuthTokens]]
 T = TypeVar("T")
@@ -195,7 +195,7 @@ class RuntimeWebCookieProvider(LoopBoundPrimitive):
                 raise RuntimeError("web cookie provider is closing")
             return self._current_generation
 
-    async def open(self, *, uploader: SourceUploadPipeline, chat: ChatAPI) -> None:
+    async def open(self, *, uploader: UploadLifecycleHooks, chat: ChatAPI) -> None:
         """Open the provider-owned acquisition lifecycle."""
         if self.is_open:
             return

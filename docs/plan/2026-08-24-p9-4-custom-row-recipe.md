@@ -27,10 +27,12 @@ goldens.
   forces the sequence), *compatibility* (a public identity or raw swallow cannot yet be
   reproduced from records), *deferred-product* ("Input-defaulting member kept adapter-owned under
   P9.2 contract 1; hoisting needs a resolved-input primitive per family").
-- `error_mode`: `TRANSLATE` (default), `RAW_PASSTHROUGH` (the four source-add rows the head used
-  to list by operation — remove them from `_RAW_PASSTHROUGH_HANDLER_OPERATIONS` in
-  `_web/backend.py` when their rows land), `TRANSLATE_SCRUBBED` (`CHAT_ASK`). `map_error` only
-  where the handler translated a raw native error semantically.
+- `error_mode`: `TRANSLATE` (default) or `TRANSLATE_SCRUBBED` (`CHAT_ASK`). `map_error` only
+  where the handler translated a raw native error semantically. There is no raw-passthrough
+  mode: P10 R3.1 deleted `ErrorMode.RAW_PASSTHROUGH` (invariant I8). A row that owns a public
+  compatibility leaf captures it with `_web.failure_projection._capture_public_failure` and
+  raises its own `BackendError(reason=SOURCE_ADD, diagnostics={"source_add_failure": …})`;
+  `_backend_compat` replays an equal — not identical — public exception at the facade.
 
 ## 2. Handler body
 

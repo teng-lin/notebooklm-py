@@ -38,7 +38,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._binding import CodecBinding, CustomBinding
+from notebooklm._binding import CodecBinding, CustomBinding, ErrorMode
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 
@@ -210,6 +210,22 @@ def test_residual_composites_only_shrink() -> None:
         assert row.category in CUSTOM_ROW_COUNTS
     codec = sum(1 for row in WEB_BINDING_ROWS.values() if isinstance(row, CodecBinding))
     assert codec + residual == len([b for b in WEB_OPERATION_REGISTRY.values() if b.is_supported])
+
+
+def test_no_row_lets_a_native_failure_escape_the_port() -> None:
+    """P10 invariant I8: ``ErrorMode.RAW_PASSTHROUGH`` is gone, member and rows.
+
+    A row that owns a public compatibility leaf (the source-add family's
+    ``SourceAddError`` wrap, the unconfirmed transport four-tuple, rejected
+    input) captures it as neutral evidence and raises its own ``BackendError``.
+    Nothing asks the head to re-raise a public exception object across the port,
+    so no semantic service can observe one.
+    """
+    assert {mode.name for mode in ErrorMode} == {"TRANSLATE", "TRANSLATE_SCRUBBED"}
+    for row in _custom_rows():
+        assert row.error_mode in (ErrorMode.TRANSLATE, ErrorMode.TRANSLATE_SCRUBBED), (
+            f"{row.definition.key.value} declares a non-translating error mode"
+        )
 
 
 def test_web_classes_stay_under_the_body_line_ceiling() -> None:

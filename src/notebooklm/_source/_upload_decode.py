@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import mimetypes
 import re
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Literal, NoReturn
 from urllib.parse import SplitResult, parse_qsl, urlsplit
@@ -19,6 +18,7 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 import httpx
 
 from .._env import PERSONAL_APP_HOSTS
+from .._source_upload_port import GetSourceLimit
 from .._transport_errors import parse_retry_after
 from .._types.sources import _HTML_FILE_EXTENSIONS
 from ..exceptions import (
@@ -509,8 +509,6 @@ def raise_for_upload_status(response: httpx.Response, filename: str) -> None:
     except httpx.HTTPStatusError as exc:
         _raise_from_upload_http_status(exc, filename)
 
-
-GetSourceLimit = Callable[[], Awaitable[int | None]]
 
 _SOURCE_LIMIT_HINT_FLOOR = 50
 _TIER_SOURCE_LIMITS_SUMMARY = "50/100/300/600"

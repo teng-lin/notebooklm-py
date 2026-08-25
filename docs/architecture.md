@@ -1055,6 +1055,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_research_records.py` | P6.2 neutral Research records and four typed operation definitions, re-exported from `_records.py`. |
 | `_settings_records.py` | P6.6 neutral account-settings records and three typed operation definitions, re-exported from `_records.py`. |
 | `_sharing_records.py` | P6.5 neutral Sharing records and seven typed operation definitions, including the two P9.2 primitives, re-exported from `_records.py` while keeping the shared record module below the size ratchet. |
+| `_source_upload_port.py` | The neutral port the file-upload (Scotty) pipeline is reached through (R3.1): the `SourceUploadBackend` callback contract one `source.add_file` invocation supplies, and the narrow `UploadLifecycleHooks` protocol the client lifecycle and the backend head drive, so neither names the `_source` package. |
 | `_source_records.py` | Frozen, slotted, protocol-neutral source read/add/content/refresh/Drive/upload records, including the P9.2 `SOURCE_PATCH_TITLE` primitive DTOs and the fourteen typed source operation definitions (R1.4), split from `_records.py` to keep the shared record surface below the module-size ratchet. |
 | `_backoff.py` | Shared capped exponential-backoff calculation with deterministic test injection |
 | `_reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
@@ -1299,6 +1300,7 @@ src/notebooklm/
 ├── _notebook_records.py         # Neutral notebook inputs/results/records and typed operation definitions
 ├── _note_records.py             # Neutral plain-note inputs/results/records and typed operation definitions
 ├── _source_records.py           # Neutral source records/operation definitions, incl. source.patch_title DTOs
+├── _source_upload_port.py       # Neutral upload callback contract + UploadLifecycleHooks (R3.1)
 ├── _notebook_mutation_service.py # Transport-neutral notebook mutation service (P2.2)
 ├── _notebook_guide_service.py   # Transport-neutral notebook summary/description service
 ├── _mutation_services.py        # Transport-neutral URL-source mutation service (P2.3, live)
