@@ -42,7 +42,7 @@ from notebooklm._web.policy import (
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
-from notebooklm.rpc.types import ShareViewLevel
+from notebooklm.rpc.types import ShareAccess, ShareViewLevel
 from tests._fixtures.recording_backend import RecordingBackend, scripted_error
 from tests._fixtures.web_backend import build_web_backend
 
@@ -138,7 +138,11 @@ async def test_visibility_workflow_sequences_the_closed_mutation_then_readback()
     assert backend.invocations[1].value == SharingGetInput(_NB)
     assert status.notebook_id == _NB
     assert status.is_public is True
-    assert status.view_level is ShareViewLevel.FULL_NOTEBOOK
+    # Neutral record vocabulary (P10 R6.3 / invariant I1). The public
+    # ``ShareAccess`` / ``ShareViewLevel`` projection of the same workflow is
+    # asserted below, where ``SharingAPI`` now performs it.
+    assert status.access is ShareAccessLevel.ANYONE_WITH_LINK
+    assert status.view_level is ShareViewScope.FULL_NOTEBOOK
     assert status.max_individuals_share_limit == 1000
     assert status.is_public_sharing_allowed is True
 
@@ -149,7 +153,14 @@ async def test_public_facade_preserves_both_native_payloads_and_runtime_kwargs()
     executor = _RecordingExecutor(None, payload)
     api = SharingAPI(_backend=build_web_backend(executor))
 
-    await api.set_public(_NB, True)
+    status = await api.set_public(_NB, True)
+
+    assert status.notebook_id == _NB
+    assert status.is_public is True
+    assert status.access is ShareAccess.ANYONE_WITH_LINK
+    assert status.view_level is ShareViewLevel.FULL_NOTEBOOK
+    assert status.max_individuals_share_limit == 1000
+    assert status.is_public_sharing_allowed is True
 
     mutate, readback = executor.calls
     assert mutate.method is RPCMethod.SHARE_NOTEBOOK
