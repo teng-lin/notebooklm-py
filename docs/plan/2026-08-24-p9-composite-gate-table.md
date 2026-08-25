@@ -1,10 +1,12 @@
 # P9.2 composite decomposition gate table
 
-**Status:** approved at the P9.2 stop/go review on 2026-08-24 (entry criterion of
+**Status:** approved at the P9.2 stop/go review on 2026-08-24 and fully implemented at
+`b2b6fa94` (entry criterion of
 [the semantic backend refactor plan](2026-08-13-semantic-backend-refactor.md), "P9 — Decompose the
 web backend"). Measured 2026-08-24 on `refactor/semantic-backend-dev` at `436573ba`. Every row is
 derived from code, not from the plan's prose; where the code contradicts the plan the last section
-says so. Nothing here is implemented.
+says so. Sections 2–3 preserve that historical pre-implementation evidence; §4's hoist sequence
+and counts now describe the landed result.
 
 Reading guide: §2 re-measures the 34 multi-native members by *maximum calls per input* and keeps
 only the sequential ones as hoist scope; §3 is the table proper, one subsection per sequential row
@@ -291,25 +293,27 @@ messages, (f) raw native exception types caught or leaked, (g) input-defaulting 
 - (b) `RENAME_NOTEBOOK` → **`NOTEBOOK_PATCH`**; `GET_NOTEBOOK` → `NOTEBOOK_GET` (existing leaf,
   `include_notebook=True`, same native and side effect).
 - (c) Backend-independent sequence.
-- (d) **Decision required.** `NOTEBOOK_GET` today lets the `NOT_FOUND` `ClientError` through as
-  reason `CLIENT` and the *facade* translates it (`_notebooks.py:326-349`); the composite translates
-  it *below* the port. Three ways to keep `NOTEBOOK_UPDATE`'s identity after the hoist:
+- (d) **Resolved in P9.2-11.** At the gate baseline, `NOTEBOOK_GET` let the `NOT_FOUND`
+  `ClientError` through as reason `CLIENT` and the *facade* translated it
+  (`_notebooks.py:326-349`), while the composite translated it *below* the port. The reviewed
+  choices were:
   (1) a `map_error` on the `NOTEBOOK_GET` row that maps `NOT_FOUND` to `NOTEBOOK_NOT_FOUND` for
   every caller — changes `notebook.get`'s error path, which `tests/unit/test_get_or_none.py:215-236`
   pins down to the chained `ClientError` cause and `rpc_code == 5`; (2) the service recognises
   `reason is CLIENT` plus a status code — names wire vocabulary in a service; (3) a neutral
-  `BackendErrorReason.NOT_FOUND` emitted by `map_error` only on a readback-specific leaf. None is
-  free; (1) is cleanest if the compat projector's `NOTEBOOK_NOT_FOUND` branch
-  (`_backend_compat.py:335-365`) is shown to reproduce the `test_get_or_none` chain. This row is
-  ordered after every row that needs no such decision.
+  `BackendErrorReason.NOT_FOUND` emitted only for the required readback. The implementation uses
+  the third contract without adding a second operation: the `NOTEBOOK_GET` row maps the raw status
+  only when `NotebookGetInput.require_notebook` is true, and `NotebookMutationService.update`
+  projects that neutral leaf failure to workflow-level `NOTEBOOK_NOT_FOUND`. Ordinary
+  `notebook.get` retains its pinned facade path.
 - (e) `test_web_backend.py::test_notebook_title_update_mutates_then_reads_back` (3 kwargs lines),
   `::test_notebook_update_readback_not_found_preserves_public_error_context`,
   `tests/unit/test_semantic_deadline_seeding.py` (2 tests, deadline identity across both natives),
   `tests/unit/test_semantic_p4_convergence_characterization.py::test_web_rpc_backend_passes_single_deadline_without_nested_resets`,
   `tests/unit/test_backend_compat.py:369-371` ("Notebook not found: missing" + reason).
-- (f) **Catches `ClientError`** (raw) on the readback — a leaf-level translation, not a swallow.
-  Per the plan's rule this keeps the row adapter-owned until the catch is expressed on the leaf
-  (option (1)/(3) above).
+- (f) At the gate baseline the composite **caught `ClientError`** (raw) on the readback — a
+  leaf-level translation, not a swallow. P9.2-11 expressed that catch through the conditional
+  `NOTEBOOK_GET` map described in (d), removing the adapter-ownership blocker.
 - (g) No.
 - (h) **`NOTEBOOK_PATCH`**: `(notebook_id, title | None, emoji | None)` → `()`, `MUTATION`,
   `(RENAME_NOTEBOOK, None)`, one call, call site `NotebookMutationService.update`
@@ -333,6 +337,9 @@ messages, (f) raw native exception types caught or leaked, (g) input-defaulting 
   not read it; the `NOTEBOOK_ALLOCATE` row's `map_error` must expose it neutrally — recommended:
   keep reason `RPC` (so the not-at-limit re-raise keeps today's public projection) and add a
   neutral diagnostic `quota_rejection: True`; the service diagnoses on that flag. No new reason.
+  **Implemented in P9.2-12:** the row adds that diagnostic only for the guarded create rejection;
+  the service preserves the original retry projection, including the legacy `(ServerError)` warning
+  label fixed in the follow-up.
 - (e) `test_backend_compat.py:381-383` ("notebook limit reached", `NOTEBOOK_LIMIT`);
   `test_web_backend.py` ×4 (`::test_notebook_create_uses_baseline_and_disables_executor_retries`,
   `::…_adopts_unique_baseline_diff_after_transport_loss`,
@@ -506,14 +513,19 @@ first; raw-catch rows last):
 | P9.2-11 | **`NOTEBOOK_PATCH`** + hoist `NOTEBOOK_UPDATE` (after the §3.10(d) decision) | 95 | 80 | 10 | |
 | P9.2-12 | **`NOTEBOOK_ALLOCATE`** + hoist `NOTEBOOK_CREATE` | 96 | 80 | 11 | |
 
+All rows in this sequence landed. Final normalization commits after the historical stop/go point
+were `392aff5e` (sharing), `5ef9b6f6` (label create), `066e298b` (collection create), `ab2ecb60`
+(artifact rename), `347cc4bf` (notebook update), and `3abaca3a` (notebook create); the integrated
+stack and recorded GO ancestry meet at `b2b6fa94`.
+
 Invariant per PR: `SL + SO + unsupported(5) == OP`. Rollback runs in reverse; the three
 foundational primitives stay until their last consumer is reverted. `_web/deadlines.py` loses the
 hoisted members' `CLIENT_TIMEOUT` entries in each hoist PR (the service mints the deadline), so
 `_EXPECTED_CLIENT_TIMEOUT_OPERATIONS` in `tests/unit/test_semantic_deadline_seeding.py` shrinks
 from 28 to 17 over the sequence.
 
-Residual custom rows at P9.4 if every hoist lands: **20** (11 deferred-product + 5 protocol +
-4 compatibility). The plan's estimate of "at least fourteen" omits the three URL/Drive/batch
+Final residual custom rows after every hoist landed: **20** (11 deferred-product + 5 protocol +
+4 compatibility). The plan's estimate of "at least fourteen" omitted the three URL/Drive/batch
 source-add rows, `SOURCE_ADD_TEXT`, and the two catalog rows.
 
 ## 5. Primitive vocabulary
@@ -561,10 +573,11 @@ workflow is exactly today's ledger row.
 - **`ARTIFACT_LIST`/`ARTIFACT_GET`**: sequential via the collaborator, raw swallow → compatibility
   custom rows (§3.14). The deadline-seeding test's `hidden_collaborator_composites` set
   (`test_semantic_deadline_seeding.py:133`) becomes unnecessary once rows declare their specs.
-- **`CHAT_ASK`/`CHAT_GET_HISTORY`** ledger rows over-attribute one native each (§2). The P4
-  parity audit derives `(method, variant)` per row from the specs a row declares; both rows will
-  show a divergence that must be recorded in `known_divergence`, or the ledger rows corrected, in
-  P9.2-0.
+- **`CHAT_ASK`/`CHAT_GET_HISTORY`** ledger resolution: the P4 parity audit derives
+  `(method, variant)` per row from the specs a row declares. `CHAT_GET_HISTORY` dropped the
+  over-attributed `GET_LAST_CONVERSATION_ID` native. `CHAT_ASK` retains the facade-owned
+  `GET_NOTEBOOK` recency read as a reviewed authority divergence because its custom row dispatches
+  only `GET_LAST_CONVERSATION_ID` plus the stream.
 
 ## 7. P9.3 leaf column
 
@@ -612,6 +625,12 @@ deadline, error, catalog, and MRO gates. If the outcome had been REVISE or ABAND
 eight hoist rows would have become `CustomBinding` rows under *deferred-product* and the residual
 count in §4 would have risen from 20 to 28
 (with `LABEL_MUTATE`, `LABEL_ALLOCATE` and `SHARING_MUTATE` already landed as codec rows).
+
+The GO path is complete at `b2b6fa94`: all eight remaining hoists landed in §4 order, producing
+the final 96/80/11/5 operation partition, 80 binding rows, zero handlers, 17 client-timeout seeds,
+and 20 custom rows partitioned 5 protocol + 4 compatibility + 11 deferred-product. The integrated
+focused gate passed 329 tests; the catalog audit and Ruff on the touched set are green. The main
+plan's P9 exit record keeps the phase-ending canonical repository verification explicitly open.
 
 ## 9. Where the code contradicts the plan's assumptions
 

@@ -1,11 +1,16 @@
 # P9.4 custom-row conversion recipe
 
-The sharing composites PR (P9.4a) is the pattern. A P9.4b domain PR converts every remaining
-handler-backed composite of its domain into a `CustomBinding` row, deletes the emptied chain
-class, and moves the ratchets by exactly the converted set. Each step is derivation, never a
-loosening of a guard. `docs/plan/2026-08-24-p9-composite-gate-table.md` §4 fixes each row's
-category; the P9.3 recipe (`2026-08-24-p9-3-domain-conversion-recipe.md`) still governs codec
-helpers, inventories and goldens.
+**Status:** row conversion completed 2026-08-24 at `771056fe`; the later P9.2 hoists closed the
+zero-handler/direct-shell exit architecture at `b2b6fa94`. At the P9.4 conversion point there were
+26 custom rows and five P9.2-hoist handlers; the final integrated state is 20 custom rows and zero
+handlers. This file is the frozen execution recipe.
+
+The sharing composites PR (P9.4a) was the pattern. Each P9.4b domain PR converted the remaining
+handler-backed composites of its domain into `CustomBinding` rows, deleted emptied chain classes,
+and moved the ratchets by exactly the converted set. Each step was derivation, never a loosening of
+a guard. `docs/plan/2026-08-24-p9-composite-gate-table.md` §4 fixed each row's category; the P9.3
+recipe (`2026-08-24-p9-3-domain-conversion-recipe.md`) governed codec helpers, inventories and
+goldens.
 
 ## 1. Row shape
 
@@ -19,8 +24,8 @@ helpers, inventories and goldens.
   mismatch behind `known_divergence`.
 - `category` and a one-sentence `justification` come from gate table §4: *protocol* (the wire
   forces the sequence), *compatibility* (a public identity or raw swallow cannot yet be
-  reproduced from records), *deferred-product* ("Hoist candidate P9.2-N per gate table §4;
-  awaits the stop/go review").
+  reproduced from records), *deferred-product* ("Input-defaulting member kept adapter-owned under
+  P9.2 contract 1; hoisting needs a resolved-input primitive per family").
 - `error_mode`: `TRANSLATE` (default), `RAW_PASSTHROUGH` (the four source-add rows the head used
   to list by operation — remove them from `_RAW_PASSTHROUGH_HANDLER_OPERATIONS` in
   `_web/backend.py` when their rows land), `TRANSLATE_SCRUBBED` (`CHAT_ASK`). `map_error` only
@@ -44,7 +49,7 @@ helpers, inventories and goldens.
   `DeadlineRpcCaller` is replaced by an invoker-backed caller that declares its `RPCMethod`s as
   the row's specs, so selected-spec attribution survives its rethrow (plan open item 2); the
   `SourceUploadPipeline` callbacks run through the `SOURCE_ADD_FILE` row's invoker (open item 1).
-- Composites that today call a private helper on the chain (`_list_notebooks`,
+- Composites that called a private helper on the pre-conversion chain (`_list_notebooks`,
   `_source_snapshot_records`, `_label_set_list`, …) inline the helper's call as a keyed spec or
   move the helper into the row module as a plain function over the invoker.
 
@@ -52,7 +57,7 @@ helpers, inventories and goldens.
 
 - Delete the converted handler methods; when a chain class is empty delete it and re-link its
   neighbour's base (`class Next(Deleted)` → `class Next(DeletedBase)`). The MRO shrinks by one per
-  emptied class; `WebRpcBackend` ends with no bases in P9.4c.
+  emptied class; after the later P9.2 hoists, `WebRpcBackend` ends with no bases at `b2b6fa94`.
 - Remove the converted operations from `_HANDLER_NAMES` in `_web/registry.py` (pins unchanged).
 
 ## 4. Ratchets (`tests/_guardrails/test_web_binding_ratchets.py`)

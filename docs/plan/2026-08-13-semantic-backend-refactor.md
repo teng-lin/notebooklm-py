@@ -1,11 +1,11 @@
 # Semantic backend refactoring plan
 
-**Status:** Accepted for P0-P8; P7-last, P3, and P8 approved by owner decision
+**Status:** Accepted for P0-P9; P7-last, P3, P8, and P9 approved by owner decision
 **Implementation status:** P0's catalog and compatibility-contract evidence are complete and
-frozen. P1–P8 are implemented on `refactor/semantic-backend-dev` with per-phase completion
-evidence recorded below; they are not yet merged to `main`. P9 (web-backend decomposition) is
-proposed 2026-08-24, not approved and not started; its entry record is measured and its
-projections are estimates.
+frozen. P1–P9 are implemented on `refactor/semantic-backend-dev` with per-phase completion
+evidence recorded below; they are not yet merged to `main`. P9's implementation is complete at
+`b2b6fa94`; its focused integration gate is green and the phase-ending canonical repository gate
+is still to be recorded in the exit report.
 **Planning date:** 2026-08-13
 **Planning base:** `main` at `3bb0c185` (re-pinned; the original `dd710a09` base had drifted).
 P0's inventory is independently measured at its PR merge base, which for this frozen baseline is
@@ -804,16 +804,18 @@ the coupling the transitional backend exists to break. The plan's original order
    lifecycle, awaited-`from_storage()` cleanup, and backend isolation; it does not reimplement
    single-flight, profile storage, recovery, locking, or persistence merely to make the seam exist.
 
-P1-P8 are therefore approved subject to their entry criteria, acceptance criteria, and stop/go
-reviews. Public-surface (vNext) work and a mobile backend remain separate decisions; P9 below is
-the proposed web-backend decomposition and requires its own approval.
+P1-P8 were therefore approved subject to their entry criteria, acceptance criteria, and stop/go
+reviews. P9 was separately approved by the plan owner on 2026-08-24 and is now implemented.
+Public-surface (vNext) work and a mobile backend remain separate decisions.
 
 ## Phase and PR sequence
 
 The phases are ordered by dependency. P0 through P6 establish the semantic core. P7 and P8 simplify
-the web runtime and authentication after callers are isolated. A public vNext surface and a mobile
-backend are separate future decisions, not phases in this plan. P9 (web-backend decomposition) is
-proposed and not part of the approved sequence.
+the web runtime and authentication after callers are isolated. P9 decomposes the web backend after
+that boundary exists. A public vNext surface and a mobile backend are separate future decisions,
+not phases in this plan. P9.3 and P9.4 executed before the remaining P9.2 hoists because they
+depended only on P9.2's binding-row foundations; the final integration still followed the P9.2 gate
+table's strict hoist order.
 
 ```text
 P0 operation inventory + ADR
@@ -825,6 +827,7 @@ P0 operation inventory + ADR
             -> P6 remaining feature migration
               -> P7 web runtime collapse
                 -> P8 cookie-provider extraction
+                  -> P9 web-backend decomposition
 ```
 
 ### P0 — Decide the boundary and inventory operations
@@ -1755,15 +1758,16 @@ inherit the pre-P8 baseline.
 
 **Purpose:** make `WebRpcBackend` a shell over a transport, a codec, and a table of typed
 bindings, and move product-policy workflows above the port, so that a second backend differs
-from the first only below the port. Below the port, domain vocabulary appears only in binding rows
-and in a capped custom-handler section; no `_web/` class or free function outside that section
-sequences more than one transport call.
+from the first only below the port. Below the port, domain vocabulary appears only in binding rows,
+including a capped `CustomBinding` section; no `_web/` class or free function outside a custom-row
+handler sequences more than one transport call.
 
-**Status:** proposed 2026-08-24 (revised the same day); execution approved by the plan owner
-on 2026-08-24 and in progress on `refactor/semantic-backend-dev`. The entry record is measured;
-every projection is labelled as an estimate. Owner-directed deviation: P9 opens on the P0–P8
-development branch before that branch merges to `main`, so the "P8 merged to `main`" entry
-criterion is replaced by "P8 complete at the branch head" for this execution.
+**Status:** proposed and approved 2026-08-24; implementation complete at `b2b6fa94` on
+`refactor/semantic-backend-dev`. The entry and exit records are measured below. The focused
+integration gate is green; the phase-ending canonical repository gate remains to be recorded.
+Owner-directed deviation: P9 opened on the P0–P8 development branch before that branch merged to
+`main`, so the "P8 merged to `main`" entry criterion was replaced by "P8 complete at the branch
+head" for this execution.
 
 #### Why now
 
@@ -2108,11 +2112,11 @@ change on every operation, its own PR — or the swallow set is expressed exactl
 reasons. Gate column (f) records, per composite, the raw native exception types it catches or
 lets leak.
 
-**P9.2 stop/go review.** Held after the gate table is complete and the first three hoists have
+**P9.2 stop/go review.** Held after the gate table was complete and the first three hoists had
 merged. Outcomes: GO (continue in table order), REVISE (re-plan the remaining rows), ABANDON
 (remaining product composites become `CustomBinding` rows in P9.4 under a third justification
 category, *deferred-product*, with its own ratchet that must reach zero before any second
-backend is approved; P9.3 proceeds). Decider: the plan owner. Outcome placeholder:
+backend is approved; P9.3 proceeds). Decider: the plan owner.
 
 #### P9.2 stop/go outcome — GO (2026-08-24)
 
@@ -2130,12 +2134,28 @@ The exact `RPCMethod` guard has no allowlist growth. Focused validation covered 
 workflow/binding tests, 10 exact-method/ratchet tests, 68 P7/P8/catalog guardrails, and 53
 P7/P8 runtime/observability tests; the catalog audit, Ruff, and mypy are green.
 
-**Decision: GO.** Continue with P9.2-5 through P9.2-12 in table order.
+**Decision at the checkpoint: GO.** Continue with P9.2-5 through P9.2-12 in table order.
 
-**P9.3 — Remaining leaf handlers become `CodecBinding` rows, one domain per PR.** *In
-progress. Execution-order deviation (2026-08-24): the P9.3 domain conversions run before the P9.2
-hoists, because P9.3 depends only on P9.2's first PR (row-derived catalog authorities, landed)
-while the hoists wait on the owner's stop/go review. Pattern PR — settings/suggestions —
+#### P9.2 implementation completion (2026-08-24)
+
+All remaining hoists landed in the gate table's order. Sharing completed through `392aff5e`, label
+create through `5ef9b6f6`, collection create through `066e298b`, artifact rename through
+`ab2ecb60`, notebook update through `347cc4bf`, and notebook create through `3abaca3a`; the
+stop/go decision ancestry and final stack meet at `b2b6fa94`.
+
+The final P9.2 state is 96 operations = 80 supported-direct + 11 service-owned + 5 unsupported;
+80 binding rows and zero handler-backed operations; 17 client-timeout seeds; and 20 residual
+custom rows partitioned as 5 protocol + 4 compatibility + 11 deferred-product. All nine primitive
+members and all eleven service-owned workflows in the gate table are present. `WebRpcBackend` now
+inherits directly from `object`, with zero unbound `_translate_error` sites and no growth in the
+exact `RPCMethod` guard. The final integrated focused gate passed 329 tests in 15.53 seconds; the
+catalog audit and Ruff on the integrated touched set are green. The phase-ending canonical suite
+is tracked separately in the P9 exit record below.
+
+**P9.3 — Remaining leaf handlers become `CodecBinding` rows, one domain per PR.** *Done
+2026-08-24 at `b9e1c7d3`. Execution-order deviation: the P9.3 domain conversions ran before the
+remaining P9.2 hoists because P9.3 depended only on P9.2's first PR (row-derived catalog
+authorities, landed) while the hoists waited on the owner's stop/go review. Pattern PR — settings/suggestions —
 done 2026-08-24 (`b4e44d5b`, `c0e52c8c`, `852e7921`, `428493cf`; merged at `692c6830`): rows live
 in `_web/bindings/<domain>.py` as module-level `CodecBinding` constants assembled into
 `WEB_BINDING_ROWS`; `_web/registry.py` partitions the 82 supported operations into handler-backed
@@ -2232,20 +2252,24 @@ pipeline owns the calls). `source.wait` and `artifact.wait` are single reads —
 and `_studio/lifecycle.py` — and are codec rows. `ARTIFACT_LIST`/`ARTIFACT_GET` reach a second
 native through a collaborator and are classified by the gate table.
 
-**P9.4 — Residual composites as `CustomBinding`; the chain is deleted.**
-The composites that stayed adapter-owned after P9.2 become `CustomBinding` rows whose handler
-receives the row-scoped `RowInvoker` (never a raw transport). `DeadlineRpcCaller`, through which the residual mind-map merge reaches `LegacyNoteBackedService`,
-is rewritten to go through the row's `RowInvoker` with its `RPCMethod`s declared as specs, and `planned:_web/bindings.py` importing
-`_note_service`/`_mind_map` is recorded in `REVIEWED_BACKEND_IMPORTS` as the compatibility-category
-inverted import the custom-row ratchet burns down. The last chain classes go; `WebRpcBackend`
-has no bases and no handler methods; `_HANDLER_NAMES` is deleted; `registry.py` keeps `_SUPPORTED_DEFINITIONS`, the
-count assertions and the three dispositions. The custom-row count becomes a guardrail ratchet
-that may only decrease, and every custom row states its justification in one sentence under one
-of three categories: *protocol* (the wire forces the sequence — canonical example: `chat.ask`'s
+**P9.4 — Residual composites as `CustomBinding`; the chain is deleted.** *The P9.4 row
+conversion completed 2026-08-24 at `771056fe` with 26 custom rows (5 protocol + 4 compatibility +
+17 deferred-product) and five P9.2-hoist handlers, for 31 residual composites. The later P9.2
+hoists closed the exit architecture at `b2b6fa94`: 20 custom rows (5 + 4 + 11), zero handlers,
+and a direct `WebRpcBackend -> object` MRO.*
+The composites that stayed adapter-owned after P9.2 are `CustomBinding` rows whose handler receives
+the row-scoped `RowInvoker` (never a raw transport). `DeadlineRpcCaller`, through which the residual
+mind-map merge reached `LegacyNoteBackedService`, was replaced by an invoker-backed caller with its
+`RPCMethod`s declared as specs. The compatibility-category inverted imports are recorded in
+`REVIEWED_BACKEND_IMPORTS` and governed by the custom-row ratchet. The chain classes are gone;
+`WebRpcBackend` has no bases and no handler methods, and `_HANDLER_NAMES` is deleted. `registry.py`
+keeps `_SUPPORTED_DEFINITIONS`, the count assertions, and the three dispositions. The custom-row
+count is a shrink-only guardrail ratchet, and every custom row states its justification in one
+sentence under one of three categories: *protocol* (the wire forces the sequence — canonical example: `chat.ask`'s
 conversation-id fetch after the streamed answer), *compatibility* (public exception identity or a
 raw-exception swallow cannot yet be reproduced from records), or *deferred-product* (a hoist the
-P9.2 stop/go deferred; its own ratchet, must reach zero before any second backend). `_translate_error` moves to
-`planned:_web/errors.py`, and the ten unbound test call sites are rebound in this slice.
+P9.2 contract deferred; its own ratchet must reach zero before any second backend). The shared
+translator lives in `_web/errors.py`, and the ten former unbound test call sites are rebound.
 
 A second backend, if approved separately, is the same modules under `planned:_mobile/`: a
 transport, a codec, a binding table of leaf rows, an error mapper. Two guardrails hard-code
@@ -2366,11 +2390,13 @@ flag exists at any point.
 - **A hoist changes when a public method returns or retries** — the workflow `CallPolicy` stays
   on its `OperationDef`; the P4 parity audit and P7 equality gates are the tripwire; any change to
   a public wait or retry is a separate decision outside this plan (see P5's acceptance criteria).
-- **Estimates.** Measured: the entry record. Estimates that may move: P9.0 ≈ 40 lines; the
-  primitive count (at least five); `_web/` ≈ 6,300 lines, `policy.py` ≈ 150 lines and `WebRpcBackend` ≈ 300
-  lines at exit; the residual custom-row count — at least fourteen at P9.4 (eleven deferred-product
-  input-defaulting rows, the mind-map compatibility row, `chat.ask`, `source.add_file`), with only
-  the protocol/compatibility subset expected to stay permanently.
+- **Entry estimates versus exit.** The entry projections were planning inputs, not gates. At
+  `b2b6fa94` the vocabulary has nine primitives; `_web/` has 13,801 Python lines; `policy.py` has
+  1,122 lines; `WebRpcBackend` has 434 class-body lines in a 639-line file; and the residual count
+  is 20 custom rows. The residual partition is the gate table's measured 5 protocol + 4
+  compatibility + 11 deferred-product, not the original floor of fourteen. Only the
+  protocol/compatibility subset is expected to stay permanently; the deferred-product ratchet must
+  reach zero before a second backend.
 
 #### P9 entry record
 
@@ -2400,15 +2426,59 @@ P8; re-measured at the merge commit before P9.0 opens.
 | Catalog `_web/` strings — strict `file.py:Class.method`: JSON / unit test; any `_web/*.py` path: JSON / authorities script / guardrail | 319 / 20; 504 / 122 / 4 |
 | Per-file coverage floors on `_web/` | 0 |
 
+#### P9 exit record
+
+Measured 2026-08-24 on `refactor/semantic-backend-dev` at `b2b6fa94` with
+`scripts/measure_web_backend_chain.py`, the disposition/ratchet guards, and the operation-catalog
+audit. This is the exit comparison for the historical entry record above.
+
+| Measure | P9 exit value |
+|---|---|
+| `WebRpcBackend.__mro__` depth (excl. `object`) | 1 (`WebRpcBackend -> object`) |
+| Class-body lines across the chain / file lines | 434 / 639 |
+| Methods (`vars()` per class, summed) / non-dunder callables on the instance (`dir()`) | 13 / 14 (22 `vars()` entries counting properties, classmethods and `__init__`) |
+| State attributes, all in the head's `__init__` | 21 |
+| `super()` calls / abstract seams | 0 / 0 |
+| Cross-class calls / of which `_rpc_call`; total `self._rpc_call(` sites | 0 / 0; 0 |
+| Links with zero dependency on immediate base | 0 of 0 |
+| Registry handler names / unresolved leaf names / binding rows | 0 / 0 / 80 |
+| Operations by policy ledger: single-native / multi-native | 57 / 23 |
+| Natives appearing only in multi-native bindings: by ledger / by handler code | 7 / 0 |
+| `capabilities.supports()` consumers outside the port | 1 |
+| `_rpc_call` keyword usage at the zero call sites | all zero |
+| `policy.py` lines / `RPCMethod.` member refs / any `RPCMethod` token | 1,122 / 141 / 148 |
+| `_idempotency.py` `RPCMethod` tokens / member refs | 18 / 0 |
+| Tests reaching into chain internals | 0 unbound `_translate_error` sites |
+| Recorded-kwargs assertion lines (pinned pattern) | 123 in 26 files (29 in `test_web_backend.py`) |
+| Files with direct `WebRpcBackend(...)` constructions / files using `build_web_backend` | 13 / 68 |
+| Catalog `_web/` strings — strict `file.py:Class.method`: JSON / unit test; any `_web/*.py` path: JSON / authorities script / guardrail | 56 / 0; 658 / 139 / 67 |
+| Per-file coverage floors on `_web/` | 0 |
+
+The final disposition and workflow gates are 96 operations = 80 supported-direct + 11
+service-owned + 5 unsupported; 80 binding rows; zero handlers; 17 client-timeout operations; and
+20 residual custom rows = 5 protocol + 4 compatibility + 11 deferred-product. `Operation` gained
+the gate table's nine primitives, and its eleven approved composites are service-owned.
+
+The catalog audit reports 96 operations, 47 RPC ids, 56 native rows, 146 namespace methods (eight
+local-only), ten root-client members, 169 allocated authority rows, 44 multi-authority operations,
+20 multi-site native rows, two authority divergences, one policy divergence, four honest golden
+gaps, and 56/56 override proof.
+
+The final integrated focused gate passed 329 tests in 15.53 seconds; the catalog audit and Ruff on
+the touched set are green. This record does **not** claim the phase-ending canonical repository
+gate: the full pytest run, full Ruff check and format check, mypy, pre-commit, optional-adapter
+coverage and per-file floors, public API compatibility, metrics/event, exception-lattice,
+secret-regression, and cassette-rewrite rows remain to be recorded before that gate is closed.
+
 ### Deliberately out of scope
 
 A **public vNext surface** (previously labelled P9) and a **mobile gRPC backend** (previously P10)
 remain outside this plan. Neither is required for the internal refactor and both are gated on
 decisions nobody has made; a second backend is the only consumer of the capability/`BackendKind`
-machinery beyond its audits. The P9 label now names the web-backend decomposition above. After
-P9.4 a second backend would be a transport, a codec, a binding table of leaf rows and an error
-mapper under its own package, plus a widening of the two guardrails that name `_web/` as the sole
-binding root — but building it still requires its own decision and evidence package.
+machinery beyond its audits. The P9 label now names the web-backend decomposition above. With
+P9.4 complete, a second backend would be a transport, a codec, a binding table of leaf rows and an
+error mapper under its own package, plus a widening of the two guardrails that name `_web/` as the
+sole binding root — but building it still requires its own decision and evidence package.
 
 - A new public client surface, immutable models, or the ADR-0028 naming question require their own
   API ADR. Write it when there is a caller need.
@@ -2953,3 +3023,6 @@ These are design-review stop conditions, not reasons to bypass tests or broaden 
 The per-phase **Acceptance criteria** above are the definition of done; this plan does not maintain
 a second copy of them. The internal refactor may be declared successful after P8 -- neither a
 breaking public API nor a second backend is required to realize its primary architectural benefit.
+P9's implementation is additionally complete at `b2b6fa94`; its phase-ending canonical repository
+verification remains explicitly open in the P9 exit record rather than being implied by the focused
+integration gate.

@@ -279,7 +279,8 @@ MIND_MAP_GENERATE_NOTE = CustomBinding(
         NativeCallSpec.constant(RPCMethod.GENERATE_MIND_MAP, key=_GENERATE),
     ),
     justification=(
-        "Input-defaulting member kept adapter-owned (gate table §3.17); awaits the stop/go review."
+        "Input-defaulting member kept adapter-owned under P9.2 contract 1; hoisting needs a "
+        "resolved-input primitive for the note-backed family (gate table §3.17)."
     ),
     category="deferred-product",
 )
@@ -292,7 +293,8 @@ MIND_MAP_GENERATE_INTERACTIVE = CustomBinding(
         NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
     ),
     justification=(
-        "Input-defaulting member kept adapter-owned (gate table §3.17); awaits the stop/go review."
+        "Input-defaulting member kept adapter-owned under P9.2 contract 1; hoisting needs a "
+        "resolved-input primitive for the interactive family (gate table §3.17)."
     ),
     category="deferred-product",
 )
