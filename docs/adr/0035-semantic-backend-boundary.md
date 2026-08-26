@@ -385,13 +385,19 @@ row"). The invokability meaning is preserved exactly; the amendment is the addit
 the lifted deferral.
 
 **Rationale.** With `supports()` alone the registry cannot distinguish "not a product feature" from
-"available, through a service workflow" — the research wait and import-verify operations are
-implemented in a service while the registry reports them unsupported. Redefining `supports()` to
-mean the union was rejected: `invoke()` gates on it, the recording backend gates its own `invoke` on
-it, and the leaf-preflight helper and its call sites all read it, so widening it would make the
-backend claim it can directly invoke workflows it refuses. An additive view fixes reporting without
-touching enforcement; `workflows` is a data field asserted by tests and reported by the catalog
-audit, and no product code branches on it.
+"available, through a service workflow" — eleven operations (`artifact.rename`, `collection.create`
+and `collection.update`, `label.create` and `label.update`, `notebook.create` and `notebook.update`,
+`sharing.set_public`, `sharing.set_view_level` and `sharing.update_users`, `source.update` — the
+current contents of `WEB_SERVICE_OWNED_OPERATIONS`) are sequenced by a semantic service over this
+backend's leaves while the registry reports `supports()` as `False` for every one of them. (The
+research wait and import-verify operations are a similar shape but are not among these yet: they
+have no typed `OperationDef` at all, so both `supports()` and `available()` report `False` for them
+today via `_UNSUPPORTED_REASONS`; R6.4 gives them typed inputs/results and moves them into
+`workflows`.) Redefining `supports()` to mean the union was rejected: `invoke()` gates on it, the
+recording backend gates its own `invoke` on it, and the leaf-preflight helper and its call sites all
+read it, so widening it would make the backend claim it can directly invoke workflows it refuses. An
+additive view fixes reporting without touching enforcement; `workflows` is a data field asserted by
+tests and reported by the catalog audit, and no product code branches on it.
 
 ### D7 — Projection is a facade responsibility, not a service dependency
 
