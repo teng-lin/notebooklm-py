@@ -1253,7 +1253,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_research.py", "_semantic.records", "ResearchStartInput"),
         ("_research.py", "_semantic.records", "ResearchTaskSelectionResult"),
         ("_research.py", "_semantic.records", "ResearchWaitInput"),
-        ("_research.py", "_semantic.records", "SourceRecord"),
         ("_research.py", "_semantic.services.research", "SourceRecordLister"),
         ("_research_import.py", "_semantic.records", "ResearchImportCandidate"),
         ("_research_import.py", "_semantic.records", "ResearchImportedSourceRecord"),

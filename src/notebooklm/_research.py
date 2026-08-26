@@ -42,7 +42,6 @@ from ._semantic.records import (
     ResearchStartInput,
     ResearchTaskSelectionResult,
     ResearchWaitInput,
-    SourceRecord,
 )
 from ._semantic.services.read import SourceReadService
 from ._semantic.services.research import ResearchService, SourceRecordLister
@@ -75,17 +74,6 @@ _DEFAULT_RESEARCH_POLL_INTERVAL = 5.0
 
 _SEARCH_SOURCES = {source.value: source for source in ResearchSearchSource}
 _MODES = {mode.value: mode for mode in ResearchMode}
-
-
-class _MissingSourceLister:
-    """Standalone seam that fails only when import verification needs sources."""
-
-    async def list(self, notebook_id: str, *, strict: bool = False) -> list[SourceRecord]:
-        del notebook_id, strict
-        raise RuntimeError(
-            "ResearchAPI.import_sources_with_verification requires a "
-            "composition-injected source lister"
-        )
 
 
 def _coerce_research_source(source: ResearchSourceInput) -> ResearchSource:
@@ -286,23 +274,22 @@ class ResearchAPI:
             _backend: Private semantic backend supplied by the client
                 composition root.
         """
-        self._source_lister: SourceRecordLister = (
-            source_lister
-            if source_lister is not None
-            else (SourceReadService(_backend) if _backend is not None else _MissingSourceLister())
-        )
         self._base_timeout = base_timeout
         self._import_research_timeout = import_research_timeout
-        self._service = (
-            ResearchService(
+        # Without a backend there is no service either, so every public method
+        # fails in ``_require_service`` before a lister could be consulted --
+        # which is why the no-backend case needs no explanatory stub.
+        self._source_lister: SourceRecordLister | None = source_lister
+        self._service: ResearchService | None = None
+        if _backend is not None:
+            if self._source_lister is None:
+                self._source_lister = SourceReadService(_backend)
+            self._service = ResearchService(
                 _backend,
                 source_lister=self._source_lister,
                 base_timeout=base_timeout,
                 import_research_timeout=import_research_timeout,
             )
-            if _backend is not None
-            else None
-        )
 
     def _require_service(self) -> ResearchService:
         """Return the composition-root service for the migrated research domain."""
