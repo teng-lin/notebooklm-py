@@ -76,7 +76,7 @@ def get_notebook(decoded: Any) -> Notebook:
 def add_source(decoded: Any) -> Source:
     """``ADD_SOURCE`` -> the created :class:`Source`.
 
-    Mirrors ``_source/add.py``: the decoded payload is handed straight to
+    Mirrors the source-add decode path: the decoded payload is handed straight to
     :meth:`Source.from_api_response` tagged with the ``ADD_SOURCE`` method id.
     """
     return Source.from_api_response(decoded, method_id=RPCMethod.ADD_SOURCE.value)

@@ -128,8 +128,10 @@ class ErrorCategory(Enum):
     #: specific source input (invalid/inaccessible/paywalled/empty/unparseable
     #: URL). Distinct from the generic :attr:`LIBRARY` catch-all so adapters
     #: project it as a 4xx input error and, in a batch add, ISOLATE it as a
-    #: per-item error instead of aborting the whole batch. ``_source/add.py``
-    #: re-raises every infra signal (auth/rate-limit/server/network) UNWRAPPED,
+    #: per-item error instead of aborting the whole batch. The source-add
+    #: workflows (``_source_service.py``, replayed at the facade by
+    #: ``_backend_compat.py``) re-raise every infra signal
+    #: (auth/rate-limit/server/network) UNWRAPPED,
     #: and a post-registration upload failure (``_source/upload.py``) does too
     #: (with ``source_id``/``stage`` attributes attached rather than a wrapper
     #: type), so a ``SourceAddError`` reaching THIS category is a per-item input
@@ -389,8 +391,9 @@ def _category_for(exc: BaseException) -> ErrorCategory:
 
     # --- Per-source ADD failure (SourceAddError). ----------------------------
     # A SourceError -> NotebookLMError (NOT an RPCError), so it reaches here only
-    # after every RPC/infra branch missed. ``_source/add.py`` re-raises the TYPED
-    # infra signals (auth/rate-limit/server/network) UNWRAPPED and wraps only a
+    # after every RPC/infra branch missed. The source-add workflows
+    # (``_source_service.py``) re-raise the TYPED infra signals
+    # (auth/rate-limit/server/network) UNWRAPPED and wrap only a
     # residual RPCError as SourceAddError — usually a genuine per-source rejection
     # (bad URL, FAILED_PRECONDITION, …), which isolates as the NON-fatal SOURCE_ADD.
     # A post-registration upload failure (``_source/upload.py``) does the same: the

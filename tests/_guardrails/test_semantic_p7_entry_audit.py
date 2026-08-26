@@ -209,7 +209,6 @@ def collect_rpc_caller_consumers(src_dir: Path = SRC_ROOT) -> set[tuple[str, str
 
 MIGRATED_SOURCE_MODULES = frozenset(
     {
-        "_source/add.py",
         "_source/batch.py",
         "_source/content.py",
         "_source/listing.py",

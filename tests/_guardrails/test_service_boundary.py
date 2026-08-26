@@ -2,17 +2,13 @@
 
 Governed by :doc:`ADR-0035 <../../docs/adr/0035-semantic-backend-boundary>` and
 ``docs/plan/2026-08-25-p10-semantic-remediation.md`` (the P10 remediation
-plan). Three of that plan's target invariants are enforced here, and P10's
-final purge (R6.5) leaves them in two different shapes:
-
-* **I1 and I9 are hard rules.** Their migrations are finished, so there is no
-  seed allowlist left to park a new violation in: a breach fails on the commit
-  that introduces it. I1's only escape is the single *named permanent*
-  exemption below, and widening it is an ADR-level decision (ADR-0035 addendum
-  **D7**) rather than a test edit; I9's only escape is its enumerated set.
-* **I2 is still a shrink-only ratchet**, because its seed is not empty yet: one
-  ``_web`` file still imports a domain package. See :data:`I2_SEED_ALLOWLIST`
-  for which and why. It converts to a hard rule when that entry drains.
+plan). Three of that plan's target invariants are enforced here, and all
+three are now **hard rules**: their migrations are finished, so there is no
+seed allowlist left to park a new violation in and a breach fails on the commit
+that introduces it. I1's only escape is the single *named permanent* exemption
+below, and widening it is an ADR-level decision (ADR-0035 addendum **D7**)
+rather than a test edit; I9's only escape is its enumerated set; I2 has none at
+all.
 
 **I1 — semantic service modules stay neutral.** A semantic service module
 (``src/notebooklm/_*_service.py``, ``_read_services.py``,
@@ -33,7 +29,9 @@ Since R6.5 this is a hard rule with exactly one named exemption,
 semantic service module. Neutral helper modules (``_records*``,
 ``_research_neutral``, ``_deadline``, ``_request_types``, ``_markdown``) stay
 permitted and are asserted as such below, so the rule cannot be widened into
-one that forbids the neutral direction too.
+one that forbids the neutral direction too. **Met.** The seed drained to empty
+and R6.5's successor slice deleted it, so this is a hard rule with no exemption
+of any kind; see the I2 section below for what the last entry was.
 
 **I9 — no ``Legacy*`` class below ``_app``** except the enumerated exemptions:
 the legacy-mapping records consumed only by ``_backend_compat``/the projectors
@@ -162,23 +160,29 @@ I2_FORBIDDEN_DOMAIN_PACKAGES: frozenset[str] = frozenset(
     {"_artifact", "_chat", "_source", "_studio"}
 )
 
-#: Shrinking seed: the ``_web`` files that import a domain package today, as
-#: paths relative to ``src/notebooklm/_web``. ``codec/chat_stream.py`` and
-#: ``codec/chat.py`` retired in R2.1 (the codec now owns the streamed-ask wire
-#: and emits records), and ``backend.py`` retired once R2.3 drained its
-#: ``_chat`` edge and R3.1 put its ``_source.upload`` edge behind
-#: ``_source_upload_port``. ``bindings/mind_maps.py`` retired in R4.2
-#: (the note-backed generation and the catalog merge moved above the port), and
-#: ``bindings/sources.py`` is last of all (R3.1 took its ``_source.upload`` edge
-#: and R3.5 its ``_source.batch`` one; the surviving ``_source.add`` edge is
-#: ``honor_requested_title``, which the permanent ``SOURCE_ADD_FILE`` row
-#: reaches under decision D4, so retiring the entry needs that helper relocated
-#: to a neutral module — not another hoist).
-I2_SEED_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "bindings/sources.py",
-    }
-)
+# I2 has no allowlist. The shrink-only seed it used to carry drained entry by
+# entry — ``codec/chat_stream.py`` and ``codec/chat.py`` in R2.1 (the codec took
+# the streamed-ask wire and emits records), ``backend.py`` once R2.3 drained its
+# ``_chat`` edge and R3.1 put its ``_source.upload`` edge behind
+# ``_source_upload_port``, ``bindings/mind_maps.py`` in R4.2 (the note-backed
+# generation and the catalog merge moved above the port) — and
+# ``bindings/sources.py`` went last.
+#
+# That final edge did not hoist. It was ``honor_requested_title``, the
+# ``SOURCE_ADD_FILE`` row's post-add rename, and that row stays custom
+# permanently under decision D4, so there was nothing above the port to move it
+# to. Nor was it neutral: it takes and returns a public ``Source`` and catches
+# the raw ``RPCError``/``NetworkError`` families, all three of which a neutral
+# module is forbidden to name, so parking it in one would have recorded the
+# coupling as compliance rather than removing it. It moved *down* instead, into
+# ``_web/bindings/sources.py`` beside the one row that calls it, where that
+# vocabulary is already licensed; ``SourceService._honor_requested_title`` owns
+# the record-based contract above the port. ``_source/add.py`` held nothing
+# else and was deleted with it.
+#
+# So there is no seed to add to. A ``_web`` module that takes a domain import
+# fails on the commit that introduces it, and the fix is to move the dependency,
+# not to widen this file.
 
 #: Neutral helpers ``_web`` legitimately imports. Asserted to be *permitted* so
 #: the domain rule cannot be broadened into one that also severs the neutral
@@ -240,7 +244,7 @@ def _tree(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 
-def _imports(path: Path) -> list[tuple[int, str, bool]]:
+def _imports(path: Path, src_root: Path = SRC_ROOT) -> list[tuple[int, str, bool]]:
     """Every import in ``path`` as ``(lineno, dotted, first_party)``.
 
     ``dotted`` is relative to the ``notebooklm`` package for a first-party
@@ -258,7 +262,7 @@ def _imports(path: Path) -> list[tuple[int, str, bool]]:
     ``if TYPE_CHECKING:`` is still reported — a type-only import still couples
     the service to the layer it names.
     """
-    package_parts = list(path.relative_to(SRC_ROOT).parts[:-1])
+    package_parts = list(path.relative_to(src_root).parts[:-1])
     found: list[tuple[int, str, bool]] = []
     for node in ast.walk(_tree(path)):
         if isinstance(node, ast.Import):
@@ -282,7 +286,7 @@ def _imports(path: Path) -> list[tuple[int, str, bool]]:
         if base_parts:
             found.append((node.lineno, ".".join(base_parts), True))
         for alias in node.names:
-            target = SRC_ROOT.joinpath(*base_parts, alias.name)
+            target = src_root.joinpath(*base_parts, alias.name)
             if target.with_suffix(".py").is_file() or (target / "__init__.py").is_file():
                 found.append((node.lineno, ".".join([*base_parts, alias.name]), True))
     return found
@@ -350,20 +354,32 @@ def _i1_import_violations() -> dict[str, list[tuple[int, str]]]:
     return violations
 
 
-def _i2_domain_violations() -> dict[str, list[tuple[int, str]]]:
-    """``_web`` file → the domain imports it makes, as ``(lineno, dotted)``."""
+def _is_i2_forbidden(dotted: str, first_party: bool) -> bool:
+    """Whether one import names a domain package or a semantic service module."""
     forbidden = I2_FORBIDDEN_DOMAIN_PACKAGES | _service_module_roots()
+    return first_party and dotted.partition(".")[0] in forbidden
+
+
+def _i2_domain_violations(
+    web_root: Path = WEB_ROOT, src_root: Path = SRC_ROOT
+) -> dict[str, list[tuple[int, str]]]:
+    """``_web`` file → the domain imports it makes, as ``(lineno, dotted)``.
+
+    The roots are parameters only so the non-vacuity test can run this exact
+    walk over a synthetic tree that *does* violate: I2 has no violation left in
+    live source and no seed whose entries would prove the detector still fires.
+    """
     violations: dict[str, list[tuple[int, str]]] = {}
-    for path in sorted(WEB_ROOT.rglob("*.py")):
+    for path in sorted(web_root.rglob("*.py")):
         bad = sorted(
             {
                 (lineno, dotted)
-                for lineno, dotted, first_party in _imports(path)
-                if first_party and dotted.partition(".")[0] in forbidden
+                for lineno, dotted, first_party in _imports(path, src_root)
+                if _is_i2_forbidden(dotted, first_party)
             }
         )
         if bad:
-            violations[_relative(path, WEB_ROOT)] = bad
+            violations[_relative(path, web_root)] = bad
     return violations
 
 
@@ -588,32 +604,67 @@ def test_the_neutral_return_vocabulary_is_discovered_not_empty() -> None:
 # --- I2 ---------------------------------------------------------------------
 
 
-def test_i2_seed_names_real_web_modules() -> None:
-    web_files = {_relative(path, WEB_ROOT) for path in WEB_ROOT.rglob("*.py")}
-    missing = sorted(I2_SEED_ALLOWLIST - web_files)
-    assert not missing, f"I2 seed names files that do not exist: {missing}"
-
-
-def test_no_new_web_module_imports_a_domain_package() -> None:
-    """I2, growth half: ``_web`` consumes neutral records, never a domain."""
+def test_no_web_module_imports_a_domain_package() -> None:
+    """I2 — a hard rule: ``_web`` consumes neutral records, never a domain."""
     violations = _i2_domain_violations()
-    unexpected = {
-        module: found for module, found in violations.items() if module not in I2_SEED_ALLOWLIST
-    }
-    assert not unexpected, (
+    assert not violations, (
         "_web module(s) imported a domain package or semantic service. The web "
         "backend owns wire encode/decode and consumes neutral records only "
-        f"(P10 invariant I2): {unexpected}"
+        "(P10 invariant I2). There is no seed allowlist to add to: move the "
+        "dependency — above the port if the workflow belongs there, or down "
+        "into _web beside the row that reaches it if it already speaks the "
+        f"wire's vocabulary: {violations}"
     )
 
 
-def test_the_i2_allowlist_carries_no_module_that_already_conforms() -> None:
-    """I2, ratchet half: a seed that no longer violates must be removed."""
-    stale = sorted(I2_SEED_ALLOWLIST - _i2_domain_violations().keys())
-    assert not stale, (
-        "I2 seed entries that no longer import a domain package — the "
-        f"allowlist shrinks only, so delete them from I2_SEED_ALLOWLIST: {stale}"
+def test_i2_governs_the_whole_web_tree_and_its_detector_fires(tmp_path: Path) -> None:
+    """Non-vacuity: the scan reaches every ``_web`` family and the walk bites.
+
+    A boundary rule that scans nothing passes for free, and this repo has
+    shipped exactly that before — a ``_chat/`` import ban whose scan never
+    covered ``_chat/``. I2 is now the most exposed of the three: it has no
+    violation left anywhere in live source and no shrinking seed whose entries
+    would prove it still fires, so *nothing* real exercises it. Pin the scan
+    scope, the forbidden predicate, and an end-to-end walk over a synthetic
+    ``_web`` tree that does violate.
+    """
+    scanned = {_relative(path, WEB_ROOT) for path in WEB_ROOT.rglob("*.py")}
+    assert {"backend.py", "registry.py", "transport.py"} <= scanned
+    for family in ("bindings/", "codec/"):
+        assert any(name.startswith(family) for name in scanned), (
+            f"no _web/{family} module is scanned; I2 would be vacuous there"
+        )
+
+    forbidden = I2_FORBIDDEN_DOMAIN_PACKAGES | _service_module_roots()
+    assert forbidden >= I2_FORBIDDEN_DOMAIN_PACKAGES
+    assert "_source_service" in forbidden, (
+        "semantic service discovery lost the source service; I2's service arm "
+        "would stop naming the modules the plan wrote it for"
     )
+    for root in sorted(forbidden):
+        assert _is_i2_forbidden(root, True), root
+        assert _is_i2_forbidden(f"{root}.submodule", True), root
+    for neutral in sorted(I2_PERMITTED_NEUTRAL_HELPERS):
+        assert not _is_i2_forbidden(neutral, True), neutral
+    # A third-party distribution that happened to share a name is not first
+    # party, so the predicate must not fire on it.
+    assert not _is_i2_forbidden("_chat", False)
+
+    # End-to-end: the same walk, over a tree laid out exactly like src/notebooklm.
+    web_root = tmp_path / "_web"
+    (web_root / "bindings").mkdir(parents=True)
+    (web_root / "clean.py").write_text(
+        "from .._records import SourceRecord\nfrom .._deadline import RuntimeDeadline\n",
+        encoding="utf-8",
+    )
+    (web_root / "bindings" / "offender.py").write_text(
+        "from ..._source.upload import SourceUploadPipeline\n"
+        "from ..._source_service import SourceService\n",
+        encoding="utf-8",
+    )
+    assert _i2_domain_violations(web_root, tmp_path) == {
+        "bindings/offender.py": [(1, "_source.upload"), (2, "_source_service")],
+    }, "the I2 walk no longer reports a domain import it is handed"
 
 
 def test_i2_leaves_the_neutral_helper_direction_open() -> None:

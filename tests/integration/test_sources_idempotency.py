@@ -1,7 +1,7 @@
 """Variant-keyed idempotency tests for ADD_SOURCE + ADD_SOURCE_FILE.
 
 Tier 9 Wave 2 (P0-3-sources, P1-2-sources): the previous behavior in
-``_source/add.py``/``_source/upload.py`` relied on the inner transport
+the source-add family and ``_source/upload.py`` relied on the inner transport
 retry loop to handle 5xx for mutating create RPCs, which could duplicate
 sources when the server already committed the write before returning the
 5xx. The fix is two-fold:

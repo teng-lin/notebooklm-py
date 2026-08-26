@@ -187,17 +187,17 @@ R7 last
 
 ## 6. Definition of done — measurable
 
-"Now" is measured from the live tree at R6.5 (2026-08-26), after PR1–PR6; the
-pre-programme figures it replaces are in the revision history. Ten of the
-fourteen rows are at target; the four that are not are marked **short** and
-say what is left.
+"Now" is measured from the live tree at R6.5 (2026-08-26), after PR1–PR6 and
+the I2 close-out; the pre-programme figures it replaces are in the revision
+history. Eleven of the fourteen rows are at target; the three that are not are
+marked **short** and say what is left.
 
 | Metric | Now | Target |
 |---|---|---|
 | Custom rows (protocol / compatibility / deferred-product) | 1 / 0 / 1 — **short**: `mind_map.generate_note` stays deferred-product (input-defaulting; hoisting it needs a resolved-input primitive for the note) | 1 (upload) / 0 / 0 |
 | `ROW_COLLABORATOR_NAMES` | 1 — exactly `{"source_uploader"}` | exactly `{"source_uploader"}` |
 | I1 allowlist | 1 — the named exemption only; R6.5 deleted the drained seed and I1 is now a hard rule | 1 (`_studio/downloads.py`, named exemption) |
-| I2 allowlist | 1 — **short**: `bindings/sources.py`, whose surviving `_source.add` edge is `honor_requested_title`, reached by the permanent `SOURCE_ADD_FILE` row under D4; draining it needs that helper relocated to a neutral module, so I2 stays a shrink-only ratchet | 0 (`backend.py:69` retired by R3.1's `UploadLifecycleHooks`) |
+| I2 allowlist | 0 — `bindings/sources.py` drained last and I2 is now a hard rule with no exemption. Its `_source.add` edge was `honor_requested_title`, reached by the permanent `SOURCE_ADD_FILE` row under D4, so there was nothing above the port to hoist it to; it is not neutral either (public `Source`, raw `RPCError`/`NetworkError`), so a neutral module would have recorded the coupling as compliance. It moved *down* into `_web/bindings/sources.py` beside the only row that calls it, and the 68-line `_source/add.py` was deleted | 0 (`backend.py:69` retired by R3.1's `UploadLifecycleHooks`) |
 | `RAW_PASSTHROUGH` rows / enum member | 0 / deleted (`ErrorMode` is `{TRANSLATE, TRANSLATE_SCRUBBED}`) | 0 / deleted |
 | `RPCMethod` tokens in `_web/policy.py` | 0 — module deleted; the reviewed intent moved as planned | 0 (module deleted; reviewed intent lives in `scripts/_web_policy_intent.py`) |
 | `_web/registry.py` hand-written direct defs | 0 — the supported set is derived from the row table | 0 |
