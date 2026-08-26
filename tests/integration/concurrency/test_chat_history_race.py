@@ -290,7 +290,7 @@ async def test_concurrent_follow_ups_serialize_on_conversation_id(auth_tokens) -
         # Seed the conversation cache so both follow-ups have at least one
         # prior turn to read. ``ask`` would normally populate this on a
         # first call but we want a known, fixed seed to assert against.
-        client.chat._cache.cache_conversation_turn(cid, "q1", "answer-1", turn_number=1)
+        client.chat._workflow._cache.cache_conversation_turn(cid, "q1", "answer-1", turn_number=1)
 
         results = await asyncio.gather(
             client.chat.ask(
@@ -383,8 +383,8 @@ async def test_different_conversation_ids_run_in_parallel(auth_tokens) -> None:
         # (the path the lock protects). New-conversation asks would
         # also fan out in parallel but for a different reason — fresh
         # UUIDs — so this test wants the follow-up path specifically.
-        client.chat._cache.cache_conversation_turn(cid_a, "q0", "a0", turn_number=1)
-        client.chat._cache.cache_conversation_turn(cid_b, "q0", "a0", turn_number=1)
+        client.chat._workflow._cache.cache_conversation_turn(cid_a, "q0", "a0", turn_number=1)
+        client.chat._workflow._cache.cache_conversation_turn(cid_b, "q0", "a0", turn_number=1)
 
         await asyncio.gather(
             client.chat.ask(notebook_id, "qA", source_ids=["src_001"], conversation_id=cid_a),
@@ -497,7 +497,7 @@ async def test_new_conversation_cache_update_waits_for_resolved_conversation_loc
 ) -> None:
     """A null ask resolving to a conversation shares that conversation's lock.
 
-    The explicit follow-up contends ``_conversation_locks[conversation_id]``.
+    The explicit follow-up contends the workflow's ``_conversation_locks[conversation_id]``.
     Under the #1875 two-phase design the null ask resolves that same id under
     the notebook lock and then holds the conversation lock across BOTH its POST
     and its cache write — so the two serialize on one lock (peak in-flight 1)
@@ -523,7 +523,7 @@ async def test_new_conversation_cache_update_waits_for_resolved_conversation_loc
 
     client = _make_client(transport, auth_tokens)
     try:
-        client.chat._cache.cache_conversation_turn(
+        client.chat._workflow._cache.cache_conversation_turn(
             conversation_id,
             "q0",
             "answer-0",
@@ -580,7 +580,9 @@ async def test_null_ask_serializes_with_explicit_current_conversation(auth_token
 
     client = _make_client(transport, auth_tokens)
     try:
-        client.chat._cache.cache_conversation_turn(conversation_id, "q0", "answer-0", turn_number=1)
+        client.chat._workflow._cache.cache_conversation_turn(
+            conversation_id, "q0", "answer-0", turn_number=1
+        )
         await asyncio.gather(
             client.chat.ask(notebook_id, "q-null", source_ids=["src_001"]),
             client.chat.ask(
@@ -628,7 +630,9 @@ async def test_null_ask_parallel_with_followup_on_other_conversation(auth_tokens
 
     client = _make_client(transport, auth_tokens)
     try:
-        client.chat._cache.cache_conversation_turn(conversation_y, "q0", "answer-0", turn_number=1)
+        client.chat._workflow._cache.cache_conversation_turn(
+            conversation_y, "q0", "answer-0", turn_number=1
+        )
         await asyncio.gather(
             client.chat.ask(notebook_id, "q-null", source_ids=["src_001"]),
             client.chat.ask(
@@ -734,7 +738,7 @@ async def test_null_ask_recovers_when_current_conversation_deleted_mid_flight(
     try:
         # Seed a turn under the soon-to-be-deleted id so we can prove the cache
         # entry is gone (delete clears it) and the new turn lands under Y, not X.
-        client.chat._cache.cache_conversation_turn(deleted_id, "q0", "a0", turn_number=1)
+        client.chat._workflow._cache.cache_conversation_turn(deleted_id, "q0", "a0", turn_number=1)
         # Delete is gathered first so it acquires the conversation lock before the
         # null ask, which then resolves X and parks on that same lock.
         _, result = await asyncio.gather(

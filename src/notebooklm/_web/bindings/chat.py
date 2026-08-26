@@ -8,7 +8,7 @@ because the operation-catalog walker derives execution authorities from them.
 notebook read, the mutation branch the settings replacement.
 
 ``chat.ask`` is not here.  P10 R2.2 made it a service-owned workflow that
-``ChatService`` sequences from two leaves — the streamed ``CHAT_STREAM_ANSWER``
+``ChatWorkflowService`` sequences from two leaves — the streamed ``CHAT_STREAM_ANSWER``
 row in :mod:`.primitives` and, only when the caller resolved no conversation
 id, the ``CHAT_GET_CONVERSATION`` row below.
 """

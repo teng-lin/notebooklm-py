@@ -68,14 +68,16 @@ class TestDeleteConversation:
     async def test_clears_local_cache_for_deleted_conversation(
         self, api: ChatAPI, mock_rpc: MagicMock
     ) -> None:
-        api._cache.cache_conversation_turn("conv_abc", "Q1?", "A1.", turn_number=1)
-        api._cache.cache_conversation_turn("conv_other", "Q?", "A.", turn_number=1)
-        assert api._cache.get_cached_conversation("conv_abc"), "precondition: cache seeded"
+        api._workflow._cache.cache_conversation_turn("conv_abc", "Q1?", "A1.", turn_number=1)
+        api._workflow._cache.cache_conversation_turn("conv_other", "Q?", "A.", turn_number=1)
+        assert api._workflow._cache.get_cached_conversation("conv_abc"), (
+            "precondition: cache seeded"
+        )
 
         await api.delete_conversation("nb_xyz", "conv_abc")
 
-        assert api._cache.get_cached_conversation("conv_abc") == []
-        assert api._cache.get_cached_conversation("conv_other"), (
+        assert api._workflow._cache.get_cached_conversation("conv_abc") == []
+        assert api._workflow._cache.get_cached_conversation("conv_other"), (
             "unrelated cached conversations must survive a targeted delete"
         )
 
@@ -86,13 +88,13 @@ class TestDeleteConversation:
         # Seed BEFORE arming the failure so the test detects a regression
         # that clears the cache pre- or mid-failure. Seeding after would
         # mask exactly the bug the test is meant to catch.
-        api._cache.cache_conversation_turn("conv_abc", "Q1?", "A1.", turn_number=1)
+        api._workflow._cache.cache_conversation_turn("conv_abc", "Q1?", "A1.", turn_number=1)
         mock_rpc.rpc_call.side_effect = RuntimeError("server 500")
 
         with pytest.raises(RuntimeError, match="server 500"):
             await api.delete_conversation("nb_xyz", "conv_abc")
 
         # Cache must survive a failed delete so the caller can retry.
-        assert api._cache.get_cached_conversation("conv_abc"), (
+        assert api._workflow._cache.get_cached_conversation("conv_abc"), (
             "cache cleared despite RPC failure — retry path now broken"
         )

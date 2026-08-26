@@ -1034,7 +1034,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_secrets.py` | Canonical runtime registry of must-scrub bare session-cookie names (`RUNTIME_SESSION_COOKIES`), `__Secure-*` / `__Host-*` prefix umbrellas (`SECURE_HOST_UMBRELLA_PATTERNS`, fail-closed for future names), and carrier-agnostic Google credential shapes (`AUTH_TOKEN_SHAPE_PATTERNS` — `g.a000-` / `sidts-` / `ya29.` tokens + the `AIza…` API key) that `_logging.py` redaction and `exceptions.py` scrubbing DERIVE from. Runtime code cannot import from `tests/`, so this restates the cassette sanitizer's must-scrub shapes; `tests/_guardrails/test_runtime_secret_registry_parity.py` asserts lockstep with `tests/cassette_patterns.py` on every axis — bare-cookie superset, umbrella coverage, and regex-string shape equality (issues #1517/#1518). |
 | `_callbacks.py` | Sync-or-async callback invocation helper used by telemetry/retry hooks |
 | `_lookup.py` | `unwrap_or_raise(obj, exc)` — the shared single-row-lookup helper backing the public `get`/`get_or_none` pair (ADR-0019 Enforcement tier-2). The four `sources`/`artifacts`/`notes`/`mind_maps` `get()` methods call it directly to raise their `*NotFoundError` on a miss (the v0.8.0 flip, issue #1247); `notebooks.get()` already raised on its own path and does not route through it. |
-| `_loop_bound.py` | `LoopBoundPrimitive` — template-method base for loop-affinity binding. Clear-on-rebind owners (`RpcSemaphore`/`SourceUploadPipeline`/`ChatAPI`) discard cached loop-bound primitives. |
+| `_loop_bound.py` | `LoopBoundPrimitive` — template-method base for loop-affinity binding. Clear-on-rebind owners (`RpcSemaphore`/`SourceUploadPipeline`/`ChatWorkflowService`) discard cached loop-bound primitives. |
 | `_deprecation.py` | Deprecation helper, gated by `NOTEBOOKLM_QUIET_DEPRECATIONS`. The immutable `DEPRECATION_SPECS` table owns the two Phase 13D auth-storage messages, replacements, since/removal versions, categories, and public-boundary stacklevels; `warn_registered_deprecation` emits them through `warn_deprecated`. `scripts/check_deprecation_targets.py` parses the table and callsites without importing application code and fails closed on malformed, missing, stale, lapsed, or structurally unresolved entries. Unrelated one-off deprecations continue to use `warn_deprecated`; `deprecations_quiet` / `_deprecations_quiet` / `_QUIET_ENV_VAR` retain the live suppression gate. ADR-0018 forbids inline `warnings.warn(..., DeprecationWarning)` outside this module — `tests/_guardrails/test_no_inline_deprecation_warnings.py` enforces it (only for `DeprecationWarning`; inline `RuntimeWarning`/`UserWarning` remains allowed). The permanent `save_cookies_to_storage(original_snapshot=None)` race advisory is therefore still an ungated `RuntimeWarning`. See `docs/deprecations.md`. |
 | `_runtime/helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
 | `_error_injection.py` | Synthetic-error env-var resolver + startup guard |
@@ -1072,7 +1072,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_label_service.py` | Private P6.4 transport-neutral source-label/collection service over one discriminated neutral record family; since P9.2 it owns both update workflows (one get preflight/readback plus one `label.mutate` per member) and both create workflows (list baseline, `label.allocate`, then echo reconciliation for labels or a collection-list readback). Each workflow has one deadline and rebinds leaf failures to the workflow operation. |
 | `_research_service.py` | Private P6.2 transport-neutral Research start/poll/wait/cancel/import service; wait and verified import remain service compositions over typed backend operations. |
 | `_settings_service.py` | Private P6.6 transport-neutral account settings/limits/language service over three typed backend operations. |
-| `_chat/service.py` | Private P6.1 transport-neutral Chat history/configuration/save-note service, plus the P10 R2.2 service-owned `chat.ask` workflow that sequences the streamed `chat.stream_answer` leaf and the conditional `chat.get_conversation` readback. |
+| `_chat/workflow.py` | Private transport-neutral chat workflow service (P10 R2.3). Owns the client-local conversation state — the two lazy `asyncio.Lock` maps, the turn cache, the recently-deleted-conversation tracker, the one-shot created-session hint — and the six semantic chat operations beside it, including the service-owned `chat.ask` workflow that sequences the streamed `chat.stream_answer` leaf and the conditional `chat.get_conversation` readback. |
 | `_sharing_service.py` | Private P6.5 transport-neutral sharing service; since P9.2-5/6/7 it owns all three sharing composites over `SHARING_MUTATE` or `SHARING_PATCH_VIEW_LEVEL` plus `SHARING_GET`, including one workflow deadline, view-level replacement, and leaf-error rebinding. |
 | `_suggestion_service.py` | Private P6.6 transport-neutral notebook-prompt and report-format suggestion service over two typed backend operations. |
 | `_studio/` | Private transport-neutral Studio boundary: the P5.1 heterogeneous catalog/classifier; P5.2–P5.6 family/generation/export services; P5.7 trusted representation retrieval plus local serialization clients; P5.8 management, lifecycle, suggestions, and representation orchestration; and the P6.3 interactive mind-map family. |
@@ -1159,7 +1159,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_markdown.py` | Neutral HTML-to-Markdown conversion policy for source fulltext, including Markdown-source and LaTeX/table handling |
 | `_sources.py` | `client.sources` API |
 | `_artifacts.py` | `client.artifacts` compatibility facade — validates public inputs, delegates to typed Studio services, and projects existing public return/error types without native RPC authority. |
-| `_chat/api.py` | `client.chat` API |
+| `_chat/api.py` | `client.chat` API — public-vocabulary facade only: loop-affinity assertion, `BackendError` projection, and record-to-public-model projection over `_chat/workflow.py` |
 | `_research.py` | `client.research` API |
 | `_research_import.py` | Free-function helpers for `ResearchAPI` source import + verification: URL normalization, the report-source predicate, imported-entry/merge helpers, and the #1961 idempotency pre-filter (skip already-present URLs) with its `already_present` side-channel carrier. Split out of `_research.py` under the ADR-0008 module-size ratchet. |
 | `_notes.py` | `client.notes` API |
@@ -1311,7 +1311,7 @@ src/notebooklm/
 ├── _suggestion_service.py       # Transport-neutral suggestion service (P6.6)
 ├── _chat_records.py             # Neutral Chat records/operation definitions (P6.1)
 ├── _chat/                       # Chat facade and transport-neutral service
-│   └── service.py               # Transport-neutral six-operation Chat service (P6.1)
+│   └── workflow.py              # Stateful transport-neutral chat workflow service (P10 R2.3)
 ├── _sharing_service.py          # Transport-neutral Sharing service (P6.5)
 ├── _sharing_records.py          # Neutral Sharing records/operation definitions (P6.5)
 ├── _records.py                  # Compatibility re-export hub for neutral P2/P5/P6 DTOs/definitions
@@ -1478,6 +1478,7 @@ src/notebooklm/
 ├── _chat/                       # Chat-feature subpackage — facade + helpers unified (#1328)
 │   ├── __init__.py              # Re-exports ChatAPI so `from ._chat import ChatAPI` keeps resolving
 │   ├── api.py                   # ChatAPI facade (was _chat.py)
+│   ├── workflow.py              # ChatWorkflowService — conversation state + the six chat operations
 │   ├── history.py               # Record-only turn counting and Q/A pairing
 │   ├── history_legacy.py        # Raw-payload half, for the compatibility parser
 │   └── deleted_tracker.py       # Bounded RecentlyDeletedConversations set — serializes null-ask vs delete (#1875)

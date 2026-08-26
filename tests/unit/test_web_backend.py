@@ -2195,7 +2195,7 @@ def test_only_migrated_feature_runtime_reads_private_backend() -> None:
         package / "_sources.py",
         package / "_suggestion_service.py",
         package / "_source_service.py",
-        package / "_chat" / "service.py",
+        package / "_chat" / "workflow.py",
     }
     allowed.update((package / "_studio").rglob("*.py"))
     allowed.update((package / "_web").rglob("*.py"))

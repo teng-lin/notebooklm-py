@@ -65,9 +65,9 @@ from .runtime import WebExecutionRuntime
 from .transport import WebRequest, WebTransport
 
 if TYPE_CHECKING:
-    from .._chat import ChatAPI
     from .._client_metrics import ClientMetrics
     from .._reqid_counter import ReqidCounter
+    from .._runtime.contracts import ChatLifecycleHooks
     from .._runtime.pipeline import RuntimePipeline
     from .._runtime.transport import RuntimeTransport
     from .._source.upload import SourceUploadPipeline
@@ -207,7 +207,7 @@ class WebRpcBackend:
         self,
         *,
         uploader: SourceUploadPipeline,
-        chat: ChatAPI,
+        chat: ChatLifecycleHooks,
     ) -> None:
         """Open provider acquisition, then seed the private backend session."""
         session = self._backend_session
