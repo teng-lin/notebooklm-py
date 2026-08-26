@@ -1,8 +1,9 @@
-"""P9.4b: the Studio generate families and prompt suggestions as custom rows.
+"""P9.4b: the Studio generate families as custom rows, plus prompt suggestions.
 
-The eight ``CREATE_ARTIFACT`` generate members and ``NOTEBOOK_SUGGEST_PROMPTS``
-dispatch as ``CustomBinding`` rows exactly as the P5/P6
-handlers did.  These tests pin the conversion oracles: the identical keyword set
+The eight ``CREATE_ARTIFACT`` generate members dispatch as ``CustomBinding``
+rows exactly as the P5/P6 handlers did; ``NOTEBOOK_SUGGEST_PROMPTS`` became an
+ordinary single-native codec row in P10 R5.1c, once its default-source read
+moved above the port into ``SuggestionService``.  These tests pin the conversion oracles: the identical keyword set
 reaches the runtime for every phase (the conditional default-source read and
 the guarded kickoff), option validation rejects an
 unreviewed input before any native call, the null-kickoff projection is the
@@ -13,6 +14,7 @@ collapsed source-id decoder preserves each family's warning surface.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -26,7 +28,7 @@ from notebooklm._backend import (
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CustomBinding, RpcNative
+from notebooklm._binding import CodecBinding, CustomBinding, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_payloads import build_get_notebook_params
 from notebooklm._operations import Operation
@@ -132,7 +134,7 @@ _GENERATE_IDS = [definition.key.value for definition, _factory, _kind in _GENERA
 # --- registry partition ----------------------------------------------------------
 
 
-def test_generate_families_and_prompts_are_deferred_product_custom_rows() -> None:
+def test_generate_families_are_deferred_product_custom_rows() -> None:
     rows = {
         Operation.ARTIFACT_GENERATE_AUDIO: studio_rows.ARTIFACT_GENERATE_AUDIO,
         Operation.ARTIFACT_GENERATE_QUIZ: studio_rows.ARTIFACT_GENERATE_QUIZ,
@@ -142,7 +144,6 @@ def test_generate_families_and_prompts_are_deferred_product_custom_rows() -> Non
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC: studio_rows.ARTIFACT_GENERATE_INFOGRAPHIC,
         Operation.ARTIFACT_GENERATE_SLIDE_DECK: studio_rows.ARTIFACT_GENERATE_SLIDE_DECK,
         Operation.ARTIFACT_GENERATE_DATA_TABLE: studio_rows.ARTIFACT_GENERATE_DATA_TABLE,
-        Operation.NOTEBOOK_SUGGEST_PROMPTS: settings_rows.NOTEBOOK_SUGGEST_PROMPTS,
     }
     for operation, row in rows.items():
         assert WEB_BINDING_ROWS[operation] is row
@@ -154,14 +155,30 @@ def test_generate_families_and_prompts_are_deferred_product_custom_rows() -> Non
         assert row.category == "deferred-product"
         assert row.justification.strip()
         assert row.collaborators == ()
-    for operation in list(rows)[:8]:
-        row = rows[operation]
         assert [spec.key for spec in row.native] == ["sources", "create"]
         assert row.spec("sources").select(None) == RpcNative(RPCMethod.GET_NOTEBOOK)
         assert row.spec("create").select(None) == RpcNative(RPCMethod.CREATE_ARTIFACT)
-    prompts = settings_rows.NOTEBOOK_SUGGEST_PROMPTS
-    assert [spec.key for spec in prompts.native] == ["sources", "suggest"]
-    assert prompts.spec("suggest").select(None) == RpcNative(RPCMethod.SUGGEST_PROMPTS)
+
+
+def test_suggest_prompts_is_a_single_native_codec_row_over_a_resolved_input() -> None:
+    """R5.1c: no ``GET_NOTEBOOK`` spec survives below the port for this row."""
+    row = settings_rows.NOTEBOOK_SUGGEST_PROMPTS
+    binding = WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_SUGGEST_PROMPTS]
+    assert WEB_BINDING_ROWS[Operation.NOTEBOOK_SUGGEST_PROMPTS] is row
+    assert binding.is_supported
+    assert binding.row is row
+    assert isinstance(row, CodecBinding)
+    assert not isinstance(row, CustomBinding)
+    assert row.definition is binding.definition
+    assert row.native.is_constant
+    assert row.native.select(None) == RpcNative(RPCMethod.SUGGEST_PROMPTS)
+    assert NOTEBOOK_SUGGEST_PROMPTS_DEF.input_type is NotebookSuggestPromptsInput
+    # The resolved scope is a required field, so no input can mean "resolve me".
+    assert "source_ids" not in {
+        field.name
+        for field in dataclasses.fields(NotebookSuggestPromptsInput)
+        if field.default is not dataclasses.MISSING
+    }
 
 
 def test_emptied_chain_classes_are_gone_and_the_chain_re_links() -> None:
@@ -442,20 +459,19 @@ async def test_post_dispatch_timeout_becomes_a_dispatched_deadline_error() -> No
 
 
 @pytest.mark.asyncio
-async def test_suggest_prompts_resolves_sources_then_reads_with_allow_null() -> None:
-    executor = _RecordingExecutor(_NOTEBOOK_WITH_SOURCES, [[["Title", "Prompt"]]])
+async def test_suggest_prompts_reads_once_with_allow_null_over_the_resolved_scope() -> None:
+    """The encoded request and its keyword set are byte-identical to the P9.4b row."""
+    executor = _RecordingExecutor([[["Title", "Prompt"]]])
     backend = build_web_backend(executor)
 
     result = await backend.invoke(
         NOTEBOOK_SUGGEST_PROMPTS_DEF,
-        NotebookSuggestPromptsInput("nb", None, mode=3, query="why"),
+        NotebookSuggestPromptsInput("nb", ("src-a", "src-b"), mode=3, query="why"),
         deadline=None,
     )
 
     assert [(row.title, row.prompt) for row in result.suggestions] == [("Title", "Prompt")]
-    read, suggest = executor.calls
-    assert read.method is RPCMethod.GET_NOTEBOOK
-    assert read.kwargs == {**_BASE_KWARGS, "source_path": "/notebook/nb"}
+    (suggest,) = executor.calls
     assert suggest.method is RPCMethod.SUGGEST_PROMPTS
     assert suggest.params == encode_prompt_suggestions(
         "nb", ["src-a", "src-b"], mode=3, query="why"

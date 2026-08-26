@@ -1048,12 +1048,6 @@
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
-          "role": "optional source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
-        {
-          "idempotency_policy": "idempotent_set_op",
           "role": "prompt suggestion read",
           "rpc_method": "SUGGEST_PROMPTS",
           "variant": null
@@ -3154,7 +3148,6 @@
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
-        "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
         "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
         "_web/bindings/sources.py:SOURCE_ADD_URL",
@@ -7803,8 +7796,8 @@
       "execution_authorities": [
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "source_ids is None",
-          "site": "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
+          "discriminator": "service-resolved default source scope",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         },
         {
@@ -7829,7 +7822,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,

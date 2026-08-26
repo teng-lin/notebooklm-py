@@ -738,14 +738,12 @@
     "notebook.suggest_prompts": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "GET_NOTEBOOK:<default>",
         "SUGGEST_PROMPTS:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "GET_NOTEBOOK:<default>",
         "SUGGEST_PROMPTS:<default>"
       ],
       "reviewed_streams": []

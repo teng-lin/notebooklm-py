@@ -89,7 +89,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         ),
     ),
     (Operation.NOTEBOOK_SUGGEST_PROMPTS, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS", "source_ids is None")
+        ("_web/bindings/notebooks.py:NOTEBOOK_GET", "service-resolved default source scope")
     ),
     (Operation.SOURCE_LIST, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/bindings/sources.py:SOURCE_LIST", "public=sources.list")
@@ -341,7 +341,9 @@ _GET_SOURCES = "_web/bindings/sources.py:SOURCE_LIST"
 _GET_SOURCE_LIST = "_web/bindings/sources.py:SOURCE_LIST"
 _GET_SOURCE = "_web/bindings/sources.py:SOURCE_GET"
 _GET_SOURCE_WAIT = "_web/bindings/sources.py:SOURCE_WAIT"
-_GET_PROMPT_SOURCES = "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS"
+# P10 R5.1c: the default-scope read is an ordinary NOTEBOOK_GET the suggestion
+# service issues above the port, not a second native of the suggestion row.
+_GET_PROMPT_SOURCES = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 
 
 RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {

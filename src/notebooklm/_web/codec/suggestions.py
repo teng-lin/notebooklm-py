@@ -73,18 +73,18 @@ def decode_prompt_source_ids(data: Any, *, notebook_id: str) -> tuple[str, ...]:
     )
 
 
-def encode_notebook_suggest_prompts(
-    value: NotebookSuggestPromptsInput, *, source_ids: Sequence[str]
-) -> CodecPayload:
-    """Payload for the ``notebook.suggest_prompts`` kickoff (P9.4b custom row).
+def encode_notebook_suggest_prompts(value: NotebookSuggestPromptsInput) -> CodecPayload:
+    """Payload for the ``notebook.suggest_prompts`` codec row (P10 R5.1c).
 
-    ``allow_null`` travels with the params — an empty suggestion response decodes
-    to no suggestions — so the row never names a method.
+    The input carries its resolved source scope, so this encoder is a pure
+    function of the record. ``allow_null`` travels with the params — an empty
+    suggestion response decodes to no suggestions — so the row never names a
+    method.
     """
     return CodecPayload(
         params=encode_prompt_suggestions(
             value.notebook_id,
-            source_ids,
+            value.source_ids,
             mode=value.mode,
             query=value.query,
         ),
@@ -107,6 +107,14 @@ def decode_prompt_suggestions(data: Any) -> NotebookSuggestPromptsResult:
             if row.is_well_formed
         )
     )
+
+
+def decode_notebook_suggest_prompts(
+    value: NotebookSuggestPromptsInput, data: Any
+) -> NotebookSuggestPromptsResult:
+    """Row decoder for ``notebook.suggest_prompts``."""
+    del value
+    return decode_prompt_suggestions(data)
 
 
 def decode_report_suggestions(data: Any) -> ArtifactSuggestReportsResult:
@@ -143,6 +151,7 @@ def decode_artifact_suggest_reports(
 
 __all__ = [
     "decode_artifact_suggest_reports",
+    "decode_notebook_suggest_prompts",
     "decode_prompt_source_ids",
     "decode_prompt_suggestions",
     "decode_report_suggestions",

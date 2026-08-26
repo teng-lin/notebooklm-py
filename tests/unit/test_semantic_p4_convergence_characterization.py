@@ -421,8 +421,8 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         (
             NOTEBOOK_SUGGEST_PROMPTS_DEF,
-            [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.SUGGEST_PROMPTS, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.IDEMPOTENT_SET_OP],
+            [(RPCMethod.SUGGEST_PROMPTS, None)],
+            [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
             ARTIFACT_SUGGEST_REPORTS_DEF,

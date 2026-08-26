@@ -422,10 +422,7 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
         ),
         Operation.NOTEBOOK_SUGGEST_PROMPTS: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional source resolution"),
-                _native(RPCMethod.SUGGEST_PROMPTS, _IDEMPOTENT, "prompt suggestion read"),
-            ),
+            (_native(RPCMethod.SUGGEST_PROMPTS, _IDEMPOTENT, "prompt suggestion read"),),
         ),
         Operation.ARTIFACT_SUGGEST_REPORTS: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
