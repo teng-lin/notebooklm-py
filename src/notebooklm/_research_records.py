@@ -309,13 +309,34 @@ RESEARCH_IMPORT_DEF: OperationDef[ResearchImportInput, ResearchImportResult] = O
     ResearchImportInput,
     ResearchImportResult,
 )
+# The two service-owned research workflows. Both keep a canonical definition
+# with no direct web row: ``ResearchService`` sequences them from the leaves
+# above, so ``invoke`` refuses them while ``capabilities.available()`` reports
+# them (P10 defect N2, decision D6). They gained these definitions in R6.4,
+# which is what let their registry disposition move off UNSUPPORTED.
+RESEARCH_WAIT_DEF: OperationDef[ResearchWaitInput, ResearchTaskSelectionResult] = OperationDef(
+    Operation.RESEARCH_WAIT,
+    CallPolicy.READ,
+    ResearchWaitInput,
+    ResearchTaskSelectionResult,
+)
+RESEARCH_IMPORT_VERIFY_DEF: OperationDef[ResearchImportVerifyInput, ResearchImportVerifyResult] = (
+    OperationDef(
+        Operation.RESEARCH_IMPORT_VERIFY,
+        CallPolicy.MUTATION,
+        ResearchImportVerifyInput,
+        ResearchImportVerifyResult,
+    )
+)
 
 __all__ = [
     "RESEARCH_CANCEL_DEF",
     "RESEARCH_IMPORT_DEF",
+    "RESEARCH_IMPORT_VERIFY_DEF",
     "RESEARCH_POLL_DEF",
     "RESEARCH_START_DEF",
     "RESEARCH_TERMINAL_STATUSES",
+    "RESEARCH_WAIT_DEF",
     "ResearchCancelInput",
     "ResearchCancelResult",
     "ResearchImportBatchInput",

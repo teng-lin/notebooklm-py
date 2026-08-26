@@ -1508,6 +1508,8 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/registry.py", "_records", "SHARING_UPDATE_USERS_DEF"),
         ("_web/registry.py", "_records", "RESEARCH_CANCEL_DEF"),
         ("_web/registry.py", "_records", "RESEARCH_IMPORT_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_IMPORT_VERIFY_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_WAIT_DEF"),
         ("_web/registry.py", "_records", "RESEARCH_POLL_DEF"),
         ("_web/registry.py", "_records", "RESEARCH_START_DEF"),
         ("_web/registry.py", "_records", "SOURCE_ADD_URL_DEF"),

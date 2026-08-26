@@ -1105,6 +1105,39 @@
         }
       ]
     },
+    "research.import_verify": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "research.import"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.list"
+        }
+      ],
+      "native_bindings": [
+        {
+          "idempotency_policy": "non_idempotent_no_retry",
+          "role": "non-idempotent source import",
+          "rpc_method": "IMPORT_RESEARCH",
+          "variant": null
+        },
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "pre-import baseline and post-failure verification probe",
+          "rpc_method": "GET_NOTEBOOK",
+          "variant": null
+        }
+      ],
+      "service_owned": true
+    },
     "research.poll": {
       "call_policy": "read",
       "known_divergence": null,
@@ -1134,6 +1167,27 @@
           "variant": null
         }
       ]
+    },
+    "research.wait": {
+      "call_policy": "read",
+      "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "research.poll"
+        }
+      ],
+      "native_bindings": [
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "research task poll",
+          "rpc_method": "POLL_RESEARCH",
+          "variant": null
+        }
+      ],
+      "service_owned": true
     },
     "settings.get": {
       "call_policy": "read",
@@ -8019,7 +8073,7 @@
       ],
       "route_context": "notebook+research-task",
       "tier": "product",
-      "unsupported_reason": "facade/service workflow without a typed def: ResearchService sequences research.import and a source-listing probe within one budget; R6.4 adds typed inputs/results and flips it to service-owned",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8130,7 +8184,7 @@
       ],
       "route_context": "notebook+research-task",
       "tier": "product",
-      "unsupported_reason": "facade/service workflow without a typed def: ResearchService polls research.poll under its own total budget; R6.4 adds typed inputs/results and flips it to service-owned",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
