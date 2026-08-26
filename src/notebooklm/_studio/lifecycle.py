@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from .._artifact.polling import ArtifactPollingService, PollStatusCallback
+from .._artifact.polling import ArtifactPollingService, PollStatusCallback, StatusChangeCallback
 from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline
 from .._polling_registry import PollRegistry
@@ -14,7 +13,6 @@ from .._records import ARTIFACT_WAIT_DEF, ArtifactPollInput, GenerationStatusRec
 if TYPE_CHECKING:
     from .._artifact.polling import OperationScopeProvider
     from .._runtime.contracts import LoopGuard
-    from ..types import GenerationStatus
 
 
 class ArtifactLifecycleService:
@@ -53,7 +51,7 @@ class ArtifactLifecycleService:
         )
         return result.status
 
-    async def wait_for_completion(
+    async def _wait_for_completion(
         self,
         notebook_id: str,
         task_id: str,
@@ -64,9 +62,17 @@ class ArtifactLifecycleService:
         max_not_found: int,
         min_not_found_window: float,
         poll_status: PollStatusCallback,
-        on_status_change: Callable[[GenerationStatus], object] | None,
+        on_status_change: StatusChangeCallback | None,
         deadline: RuntimeDeadline | None = None,
-    ) -> GenerationStatus:
+    ) -> object:
+        """Delegate to the shared poll loop.
+
+        Not I1-public: the return value and ``on_status_change`` payload are
+        the caller-supplied :class:`~notebooklm.types.GenerationStatus`
+        values the ``poll_status``/``on_status_change`` callbacks themselves
+        carry (the facade builds both), so this collaboration seam stays
+        private rather than naming that public type in its own signature.
+        """
         return await self._polling.wait_for_completion(
             notebook_id,
             task_id,

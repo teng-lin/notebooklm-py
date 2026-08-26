@@ -448,6 +448,24 @@ class InteractiveMetadataRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class MindMapGenerateOutcomeRecord:
+    """Interactive mind-map generation outcome handed from the Studio family
+    service to its facade.
+
+    ``record`` is the resolved catalog row once the post-create readback
+    confirms its interactive identity (``None`` while a newly allocated
+    type-4 row briefly lacks its variant); ``mind_map_id`` is the allocated
+    identity regardless, so the facade can still build a minimal envelope on
+    a ``None`` record. ``tree`` is the parsed JSON tree fetched only when the
+    caller waited for completion.
+    """
+
+    mind_map_id: str
+    record: ArtifactRecord | None
+    tree: dict[str, object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ReportMetadataRecord:
     """Report readiness and format metadata derived from one catalog row."""
 
@@ -797,6 +815,7 @@ __all__ = [
     "InteractiveGenerateInput",
     "InteractiveGenerateResult",
     "InteractiveMetadataRecord",
+    "MindMapGenerateOutcomeRecord",
     "ReportGenerateInput",
     "ReportGenerateResult",
     "ReportMetadataRecord",

@@ -194,7 +194,7 @@ def _arrange_list_miss(api: object) -> None:
 
 def _arrange_artifact_miss(api: object) -> None:
     """Force a miss through the semantic Studio catalog lookup."""
-    api._catalog = MagicMock(get_or_none=AsyncMock(return_value=None))  # type: ignore[attr-defined]
+    api._catalog = MagicMock(get_record=AsyncMock(return_value=None))  # type: ignore[attr-defined]
 
 
 def _arrange_notebooks_miss(api: object) -> None:

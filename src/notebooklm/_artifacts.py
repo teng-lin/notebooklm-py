@@ -10,7 +10,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 # ``_mind_map`` re-exported as ``_artifacts._mind_map`` for legacy monkeypatch seams (runtime uses injected services).
 from . import _mind_map  # noqa: F401 — re-exported as facade attribute
@@ -253,10 +253,8 @@ class ArtifactsAPI:
             family = (
                 None if artifact_type is None else getattr(artifact_type, "value", artifact_type)
             )
-            return await self._catalog.list(
-                notebook_id,
-                family,
-            )
+            records = await self._catalog.list_records(notebook_id, family)
+            return [project_artifact(record) for record in records]
         except BackendError as error:
             public_error = project_backend_error(error)
         assert public_error is not None
@@ -342,7 +340,8 @@ class ArtifactsAPI:
             raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
         public_error: Exception | None = None
         try:
-            return await self._catalog.get_or_none(notebook_id, artifact_id)
+            record = await self._catalog.get_record(notebook_id, artifact_id)
+            return None if record is None else project_artifact(record)
         except BackendError as error:
             public_error = project_backend_error(error)
         assert public_error is not None
@@ -1085,16 +1084,22 @@ class ArtifactsAPI:
         """
         if self._lifecycle_service is None:
             raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        return await self._lifecycle_service.wait_for_completion(
-            notebook_id,
-            task_id,
-            initial_interval=initial_interval,
-            max_interval=max_interval,
-            timeout=timeout,
-            max_not_found=max_not_found,
-            min_not_found_window=min_not_found_window,
-            poll_status=self.poll_status,
-            on_status_change=on_status_change,
+        # ``_wait_for_completion`` is private: the service stays I1-neutral by
+        # not naming the public ``GenerationStatus`` its callbacks carry, so
+        # the facade — which already owns that type — restores it here.
+        return cast(
+            GenerationStatus,
+            await self._lifecycle_service._wait_for_completion(
+                notebook_id,
+                task_id,
+                initial_interval=initial_interval,
+                max_interval=max_interval,
+                timeout=timeout,
+                max_not_found=max_not_found,
+                min_not_found_window=min_not_found_window,
+                poll_status=self.poll_status,
+                on_status_change=on_status_change,
+            ),
         )
 
     # =========================================================================

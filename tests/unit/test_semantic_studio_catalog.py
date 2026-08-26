@@ -6,7 +6,6 @@ from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
-from notebooklm import ArtifactType
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
 from notebooklm._records import (
@@ -51,6 +50,10 @@ def test_artifact_records_are_frozen_slotted_and_definitions_are_closed() -> Non
 
 @pytest.mark.asyncio
 async def test_catalog_filters_neutral_records_and_records_one_typed_invocation() -> None:
+    """``list_records`` stays record-only (P10 I1); public projection is the
+    facade's job — see ``ArtifactsAPI.list`` in the VCR/integration suite
+    (e.g. ``tests/integration/test_artifacts_integration.py``) for the
+    ``ArtifactType`` assertion this test previously carried."""
     audio = ArtifactRecord("audio-id", "Audio", "audio", "completed")
     report = ArtifactRecord("report-id", "Report", "report", "completed")
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 11.0)
@@ -58,23 +61,26 @@ async def test_catalog_filters_neutral_records_and_records_one_typed_invocation(
     backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((audio, report)))
     catalog = StudioCatalog(backend)
 
-    assert [item.id for item in await catalog.list("notebook-id", "audio", deadline=deadline)] == [
-        "audio-id"
-    ]
+    records = await catalog.list_records("notebook-id", "audio", deadline=deadline)
+
+    assert [item.id for item in records] == ["audio-id"]
     assert backend.invocations[0].value == ArtifactListInput("notebook-id", "audio")
     assert backend.invocations[0].deadline is deadline
 
 
 @pytest.mark.asyncio
-async def test_catalog_get_projects_optional_result_without_a_second_invocation() -> None:
+async def test_catalog_get_record_returns_the_neutral_row_without_a_second_invocation() -> None:
+    """``get_record`` stays record-only (P10 I1); public projection is the
+    facade's job — see ``ArtifactsAPI.get_or_none`` in the VCR/integration
+    suite for the ``ArtifactType`` assertion this test previously carried."""
     record = ArtifactRecord("mind-map-id", "Map", "mind_map", "completed")
     backend = RecordingBackend()
     backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(record))
     catalog = StudioCatalog(backend)
 
-    artifact = await catalog.get_or_none("notebook-id", "mind-map-id")
+    artifact = await catalog.get_record("notebook-id", "mind-map-id")
 
     assert artifact is not None
     assert artifact.id == "mind-map-id"
-    assert artifact.kind is ArtifactType.MIND_MAP
+    assert artifact.family == "mind_map"
     assert len(backend.invocations) == 1

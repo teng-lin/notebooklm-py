@@ -95,10 +95,6 @@ I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
         "_research_service.py",
         "_settings_service.py",
         "_sharing_service.py",
-        "_studio/catalog.py",
-        "_studio/lifecycle.py",
-        "_studio/mind_maps.py",
-        "_studio/representations.py",
         "_suggestion_service.py",
     }
 )

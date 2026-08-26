@@ -16,12 +16,13 @@ from .._records import (
     ArtifactRepresentationRecord,
     MindMapRepresentationRecord,
 )
-from ..exceptions import UnknownRPCMethodError, ValidationError
-from ..types import (
+from ..exceptions import (
     ArtifactDownloadError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    UnknownRPCMethodError,
+    ValidationError,
 )
 from .downloads import DownloadResult, StudioDownloadClient
 from .serialization import StudioSerializationClient
