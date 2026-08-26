@@ -221,6 +221,18 @@ Reviewers return `VERDICT: APPROVE|REVISE`, numbered BLOCKING (factual error, mi
 
 - D1 is an owner decision; the plan is written for (a) and lists the deltas for (b).
 - `_studio/downloads.py`'s permanent I1 exemption should get its own later slice (download transport under `_web`); not in P10.
+- `source.add_file` is the one source-add workflow D4 keeps adapter-owned, and it is therefore the last
+  operation that projects records into **public models below the port**: the upload port's `ListSources`
+  and `RenameSource` aliases are typed on `notebooklm.types.Source`, and the row builds those callbacks by
+  projecting. That is defect S1's deliberate residue, not an oversight. Narrowing the two aliases to records
+  would finish S1 without reopening D4's row-ownership decision, but it retypes roughly nine signatures
+  across the 1,168-line Scotty pipeline and touches the failure graph R3.1's 29-field equality oracle pins,
+  so it belongs in its own slice with its own parity evidence; not in P10.
+- `_request_types.py` and `_source_upload_port.py` stay at the package root by design, not as un-migrated
+  debt: each is a contract **shared** between `_web`, `_runtime` and the root modules, so moving it into
+  either consumer would invent a dependency direction that does not exist. Both are indexed in
+  `docs/architecture.md`. Neither belongs under `_semantic/`, which means neutral: `_request_types` is
+  transport vocabulary and `_source_upload_port` names a public model.
 
 ## 9. Change log (rev 1 → rev 2)
 
