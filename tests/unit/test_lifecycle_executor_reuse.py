@@ -137,5 +137,8 @@ def test_client_raw_rpc_uses_backend_owned_runtime() -> None:
     """The client publishes no second executor owner."""
     core = NotebookLMClient(_make_auth())
 
-    assert core.notebooks._legacy_rpc is core._backend._runtime
+    # R6.2 removed the notebook facade's raw-call collaborator; the remaining
+    # raw consumer still borrows the one backend-owned runtime.
+    assert not hasattr(core.notebooks, "_legacy_rpc")
+    assert core.sources._rpc is core._backend._runtime
     assert not hasattr(core, "_rpc_executor")

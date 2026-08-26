@@ -10,7 +10,7 @@ import types
 from collections.abc import Sequence
 from typing import Any
 
-from ..._backend import BackendError, BackendErrorReason
+from ..._backend import BackendContractError, BackendError, BackendErrorReason
 from ..._binding import CodecPayload
 from ..._operations import Operation
 from ..._records import (
@@ -34,6 +34,9 @@ from ..._records import (
     SourceRecord,
     SourceRefreshInput,
     SourceRefreshResult,
+    SourceRegisterInput,
+    SourceRegisterKind,
+    SourceRegisterResult,
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
 )
@@ -866,6 +869,63 @@ def encode_register_file_source_payload(filename: str, notebook_id: str) -> Code
     )
 
 
+def source_register_variant(value: SourceRegisterInput) -> str:
+    """Return the one wire variant a registration request dispatches under."""
+    return value.kind.value
+
+
+def encode_source_register(value: SourceRegisterInput) -> CodecPayload:
+    """Encode one registration write, rejecting a payload its kind cannot carry.
+
+    Each branch delegates to the same encoder the pre-P10 source-add handlers
+    used, so the request body — and therefore every cassette's ``freq`` match —
+    is unchanged by the leaf.
+    """
+    kind = value.kind
+    if kind is SourceRegisterKind.URL:
+        if not value.urls or len(value.urls) != len(value.youtube_flags):
+            raise BackendContractError(
+                "source.register url needs one YouTube discriminator per URL",
+                operation=Operation.SOURCE_REGISTER,
+            )
+        return encode_add_url_payload(
+            value.notebook_id,
+            value.urls,
+            youtube_flags=value.youtube_flags,
+        )
+    if kind is SourceRegisterKind.TEXT:
+        if value.title is None or value.content is None:
+            raise BackendContractError(
+                "source.register text needs both a title and a body",
+                operation=Operation.SOURCE_REGISTER,
+            )
+        return encode_add_text_payload(value.notebook_id, value.title, value.content)
+    if value.file_id is None or value.title is None or value.mime_type is None:
+        raise BackendContractError(
+            "source.register drive needs a file id, a title and a MIME type",
+            operation=Operation.SOURCE_REGISTER,
+        )
+    return encode_add_drive_payload(
+        value.notebook_id,
+        value.file_id,
+        value.title,
+        value.mime_type,
+    )
+
+
+def decode_source_register(value: SourceRegisterInput, payload: Any) -> SourceRegisterResult:
+    """Decode every identified row a registration echoed, preserving wire order.
+
+    A Drive create legally echoes ``None`` (``allow_null``) and a URL batch may
+    echo fewer rows than requested; both surface here as a shorter tuple for
+    the sequencing workflow to reconcile.
+    """
+    del value
+    if payload is None:
+        return SourceRegisterResult(())
+    return SourceRegisterResult(decode_add_source_records(payload))
+
+
 def encode_rename_source_payload(notebook_id: str, source_id: str, new_title: str) -> CodecPayload:
     """Payload for the optional post-create title set-op (null echoes are legal)."""
     return CodecPayload(
@@ -888,13 +948,16 @@ def rename_target_missing(source_id: str) -> SourceNotFoundError:
 __all__ = [
     "decode_add_source_records",
     "decode_renamed_source",
+    "decode_source_register",
     "encode_add_drive_payload",
     "encode_add_text_payload",
     "encode_add_url_payload",
     "encode_register_file_source_payload",
     "encode_rename_source_payload",
+    "encode_source_register",
     "encode_source_snapshot_payload",
     "rename_target_missing",
+    "source_register_variant",
     "decode_file_registration",
     "decode_source",
     "decode_source_check_freshness",

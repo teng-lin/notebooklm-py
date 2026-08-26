@@ -4,18 +4,25 @@ These tests verify that URL validation functions correctly prevent
 substring-based bypass attacks (CodeQL: py/incomplete-url-substring-sanitization).
 """
 
+import logging
+from collections.abc import Callable
+from urllib.parse import urlparse
+
 import pytest
 
 from notebooklm._url_utils import (
     contains_google_auth_redirect,
+    extract_youtube_video_id,
     find_cookie_mismatch_hop,
     is_cookie_mismatch_redirect,
     is_google_auth_redirect,
     is_notebooklm_app_host,
     is_notebooklm_unavailable_redirect,
+    is_valid_youtube_video_id,
     is_youtube_url,
     notebooklm_unavailable_location,
     pdf_url_display_title,
+    youtube_video_id_from_parsed_url,
 )
 
 
@@ -437,3 +444,66 @@ class TestCookieMismatchRedirect:
 
     def test_find_hop_handles_empty_chain(self):
         assert find_cookie_mismatch_hop(()) is None
+
+
+def _raising(error: Exception) -> Callable[..., object]:
+    def _raise(*_args: object, **_kwargs: object) -> object:
+        raise error
+
+    return _raise
+
+
+class TestExtractYoutubeVideoId:
+    """P10 R3.3 moved the source-add family's YouTube dispatch here.
+
+    It is a pure URL-parsing question, so the hoisted ``source.add_url``
+    workflow above the semantic port and the below-port batch path read one
+    implementation instead of each owning a copy.
+    """
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://youtube.com/shorts/NZdU4m72QeI", "NZdU4m72QeI"),
+            ("https://www.youtube.com/embed/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://music.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("  https://m.youtube.com/watch?v=dQw4w9WgXcQ  ", "dQw4w9WgXcQ"),
+            # A YouTube *host* with no video address, and a non-YouTube host
+            # that ``is_youtube_url`` would still accept by suffix.
+            ("https://youtube.com/", None),
+            ("https://youtube.com/watch?v=bad%20id", None),
+            ("https://example.com/watch?v=dQw4w9WgXcQ", None),
+            ("https://youtu.be/", None),
+        ],
+    )
+    def test_supported_url_formats(self, url: str, expected: str | None) -> None:
+        assert extract_youtube_video_id(url, logger=logging.getLogger(__name__)) == expected
+
+    def test_a_parse_failure_is_logged_and_reported_as_no_video_id(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """The diagnostic stays on the *caller's* logger, which is why it is a parameter.
+
+        ``http://[`` is a genuinely unparseable URL -- ``urlparse`` raises
+        ``ValueError: Invalid IPv6 URL`` on it -- so this exercises the real
+        failure branch without monkeypatching a module global (ADR-0007).
+        """
+        logger = logging.getLogger("notebooklm._sources")
+
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
+            assert extract_youtube_video_id("http://[", logger=logger) is None
+
+        assert [record.name for record in caplog.records] == [logger.name]
+        assert "Failed to parse YouTube URL" in caplog.records[0].getMessage()
+
+    def test_the_id_readers_are_reachable_on_their_own(self) -> None:
+        """``SourcesAPI`` still exposes both halves as private helpers."""
+        parsed = urlparse("https://www.youtube.com/live/NZdU4m72QeI")
+
+        assert youtube_video_id_from_parsed_url(parsed, "www.youtube.com") == "NZdU4m72QeI"
+        assert is_valid_youtube_video_id("NZdU4m72QeI") is True
+        assert is_valid_youtube_video_id("bad id") is False
+        assert is_valid_youtube_video_id("") is False

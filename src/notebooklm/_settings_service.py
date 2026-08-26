@@ -6,20 +6,25 @@ from typing import cast
 
 from ._backend import BackendAdapter
 from ._deadline import RuntimeDeadline
-from ._projectors import project_account_limits, project_user_settings
 from ._records import (
     SETTINGS_GET_DEF,
     SETTINGS_GET_LIMITS_DEF,
     SETTINGS_SET_LANGUAGE_DEF,
+    AccountLimitsRecord,
     SettingsGetInput,
     SettingsGetLimitsInput,
     SettingsSetLanguageInput,
+    UserSettingsRecord,
 )
-from .types import AccountLimits, UserSettings
 
 
 class SettingsService:
-    """Invoke typed account operations and project their public values."""
+    """Invoke typed account operations and return their neutral records.
+
+    Neutral per P10 invariant I1: the record to public-model projection is
+    :class:`~notebooklm._settings.SettingsAPI`'s job, so nothing here names
+    ``_projectors`` or ``notebooklm.types``.
+    """
 
     __slots__ = ("_backend",)
 
@@ -30,13 +35,13 @@ class SettingsService:
         self,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> UserSettings:
+    ) -> UserSettingsRecord:
         result = await self._backend.invoke(
             SETTINGS_GET_DEF,
             SettingsGetInput(),
             deadline=deadline,
         )
-        return project_user_settings(result.settings)
+        return result.settings
 
     async def get_output_language(
         self,
@@ -54,13 +59,13 @@ class SettingsService:
         self,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> AccountLimits:
+    ) -> AccountLimitsRecord:
         result = await self._backend.invoke(
             SETTINGS_GET_LIMITS_DEF,
             SettingsGetLimitsInput(),
             deadline=deadline,
         )
-        return project_account_limits(result.limits)
+        return result.limits
 
     async def set_output_language(
         self,

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from ._backend_compat import project_backend_call
 from ._lookup import unwrap_or_raise
-from ._projectors import project_artifact
+from ._projectors import project_artifact, project_mind_map
 from ._types.mind_maps import MindMap, MindMapKind
 from ._web.codec.mind_maps import (
     decode_created_interactive_id,
@@ -101,7 +101,8 @@ class MindMapsAPI:
 
     async def list_note_backed(self, notebook_id: str) -> builtins.list[MindMap]:
         """List note-backed mind maps without consulting the Studio catalog."""
-        return await self._backend_call(self._notes.list_mind_maps(notebook_id))
+        records = await self._backend_call(self._notes.list_mind_maps(notebook_id))
+        return [project_mind_map(record) for record in records]
 
     async def list(self, notebook_id: str) -> builtins.list[MindMap]:
         """List both representations in stable note-backed-then-interactive order."""
@@ -138,12 +139,14 @@ class MindMapsAPI:
     ) -> MindMap:
         """Generate through the selected semantic note or Studio family."""
         if kind == MindMapKind.NOTE_BACKED:
-            return await self._backend_call(
-                self._notes.generate_mind_map(
-                    notebook_id,
-                    source_ids,
-                    language,
-                    instructions,
+            return project_mind_map(
+                await self._backend_call(
+                    self._notes.generate_mind_map(
+                        notebook_id,
+                        source_ids,
+                        language,
+                        instructions,
+                    )
                 )
             )
         outcome = await self._backend_call(
@@ -242,10 +245,12 @@ class MindMapsAPI:
             if await self._backend_call(self._studio.get_or_none(notebook_id, mind_map_id)) is None:
                 return None
         elif kind == MindMapKind.NOTE_BACKED:
-            note_map = await self._backend_call(
+            note_record = await self._backend_call(
                 self._notes.get_mind_map_or_none(notebook_id, mind_map_id)
             )
-            return None if note_map is None else note_map.tree
+            # ``_parse_tree`` is the same soft-invalid parse ``project_mind_map``
+            # applies, without constructing a public model to read one field.
+            return None if note_record is None else _parse_tree(note_record.tree_json)
         return await self._backend_call(self._studio.get_tree(notebook_id, mind_map_id))
 
     async def _detect_kind(self, notebook_id: str, mind_map_id: str) -> MindMapKind:

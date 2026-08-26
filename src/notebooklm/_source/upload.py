@@ -8,7 +8,7 @@ import os
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 from typing import IO, TYPE_CHECKING, Any, Protocol, cast
@@ -26,12 +26,17 @@ from .._idempotency import (
 )
 from .._idempotency import mark_unconfirmed as _unconfirmed
 from .._loop_bound import LoopBoundPrimitive
-from .._records import SourceFileRegistrationRecord
 from .._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     normalize_max_concurrent_uploads,
 )
 from .._runtime.contracts import Kernel, LoopGuard
+from .._source_upload_port import (
+    ListSources,
+    RegisterFileSource,
+    RenameSource,
+    SourceUploadBackend,
+)
 from .._web_cookie_provider import WebCookieGeneration
 from ..exceptions import (
     AuthError,
@@ -131,30 +136,6 @@ class AsyncClientFactory(Protocol):
         timeout: httpx.Timeout,
         cookies: httpx.Cookies,
     ) -> httpx.AsyncClient: ...
-
-
-ListSources = Callable[[str], Awaitable[list[Source]]]
-RegisterFileSource = Callable[[str, str], Awaitable[SourceFileRegistrationRecord]]
-RenameSource = Callable[[str, str, str], Awaitable[Source | None]]
-
-
-@dataclass(frozen=True, slots=True)
-class SourceUploadBackend:
-    """The transport-neutral callbacks one ``source.add_file`` invocation supplies.
-
-    P9.4 (plan open item 1): the ``SOURCE_ADD_FILE`` binding row binds closures
-    over its own row-scoped invoker for exactly the duration of its invocation
-    through :meth:`SourceUploadPipeline.bind_backend`, so every registration,
-    listing, rename and limit lookup the pipeline performs for that upload runs
-    under the row's declared natives and failure tagging.  ``configure_source_backend``
-    remains for callers that own the pipeline directly; a bound backend always
-    wins over the configured callbacks.
-    """
-
-    list_sources: ListSources
-    register_file_source: RegisterFileSource
-    rename_source: RenameSource
-    get_source_limit: GetSourceLimit | None = None
 
 
 _ACTIVE_UPLOAD_BACKEND: ContextVar[SourceUploadBackend | None] = ContextVar(

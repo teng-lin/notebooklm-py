@@ -1427,7 +1427,7 @@ CLI_PROJECTION_SPECS: tuple[dict[str, object], ...] = (
         "mode": "transitive-research-import-new-source-projection",
         "keys": ("id", "title"),
         "evidence": (
-            "notebooklm/_research_import.py:def _imported_source_entry",
+            "notebooklm/_research.py:def _imported_entry",
             "notebooklm/cli/research_cmd.py:imported_sources",
         ),
     },
@@ -1436,7 +1436,7 @@ CLI_PROJECTION_SPECS: tuple[dict[str, object], ...] = (
         "mode": "transitive-research-import-existing-source-projection",
         "keys": ("id", "title", "url"),
         "evidence": (
-            "notebooklm/_research_import.py:def _partition_requested_sources",
+            "notebooklm/_research.py:def _project_import_verification",
             "notebooklm/cli/research_cmd.py:already_present_sources",
         ),
     },

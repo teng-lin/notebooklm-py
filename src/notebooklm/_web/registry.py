@@ -2,10 +2,11 @@
 
 Direct P2 notebook/source operations, P5 Studio family operations, and P6.1–P6.7 domain
 workflows have executable rows from ``_web.bindings``, and the directly supported definition set
-is derived from that row table rather than re-listed here. P9.2 service-owned workflows keep their
-canonical definition but no direct web binding. Every other operation has an unsupported
-disposition, and the count assertions force a deliberate registry update when the closed
-:class:`Operation` enum changes.
+is derived from that row table rather than re-listed here. Service-owned workflows (P9.2's
+decomposition, P10 R2.2's chat ask, P10 R3.2-R3.5's source adds and P10 R6.4's two research
+workflows) keep their canonical definition but no direct web binding. Every other operation has
+an unsupported disposition, and the count assertions force a deliberate registry update when the
+closed :class:`Operation` enum changes.
 """
 
 from __future__ import annotations
@@ -29,9 +30,15 @@ from .._records import (
     LABEL_UPDATE_DEF,
     NOTEBOOK_CREATE_DEF,
     NOTEBOOK_UPDATE_DEF,
+    RESEARCH_IMPORT_VERIFY_DEF,
+    RESEARCH_WAIT_DEF,
     SHARING_SET_PUBLIC_DEF,
     SHARING_SET_VIEW_LEVEL_DEF,
     SHARING_UPDATE_USERS_DEF,
+    SOURCE_ADD_DRIVE_DEF,
+    SOURCE_ADD_TEXT_DEF,
+    SOURCE_ADD_URL_BATCH_DEF,
+    SOURCE_ADD_URL_DEF,
     SOURCE_UPDATE_DEF,
 )
 from .bindings import WEB_BINDING_ROWS
@@ -86,16 +93,24 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
     {operation: row.definition for operation, row in WEB_BINDING_ROWS.items()}
 )
 
-# P9.2 service-owned workflows: the semantic service sequences the workflow's
+# Service-owned workflows: the semantic service sequences the workflow's
 # leaf operations; ``capabilities.supports()`` reports
 # ``False`` because ``invoke()`` refuses them (the port's ``supports`` means
-# invokable). Each entry names the owning service call site.
+# invokable), while ``capabilities.available()`` reports ``True``. Each entry
+# names the owning service call site. Eleven arrived with P9.2's decomposition;
+# P10 R2.2's chat.ask and R3.2-R3.5's four source adds hoisted their sequencing
+# above the port; and the two research workflows joined in P10 R6.4, which gave
+# them the typed definitions their UNSUPPORTED disposition was waiting on.
 _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = MappingProxyType(
     {
         Operation.LABEL_CREATE: LABEL_CREATE_DEF,
         Operation.LABEL_UPDATE: LABEL_UPDATE_DEF,
         Operation.COLLECTION_CREATE: COLLECTION_CREATE_DEF,
         Operation.COLLECTION_UPDATE: COLLECTION_UPDATE_DEF,
+        Operation.SOURCE_ADD_URL: SOURCE_ADD_URL_DEF,
+        Operation.SOURCE_ADD_URL_BATCH: SOURCE_ADD_URL_BATCH_DEF,
+        Operation.SOURCE_ADD_TEXT: SOURCE_ADD_TEXT_DEF,
+        Operation.SOURCE_ADD_DRIVE: SOURCE_ADD_DRIVE_DEF,
         Operation.SOURCE_UPDATE: SOURCE_UPDATE_DEF,
         Operation.SHARING_SET_PUBLIC: SHARING_SET_PUBLIC_DEF,
         Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
@@ -107,6 +122,8 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.NOTEBOOK_CREATE: NOTEBOOK_CREATE_DEF,
         Operation.NOTEBOOK_UPDATE: NOTEBOOK_UPDATE_DEF,
         Operation.CHAT_ASK: CHAT_ASK_DEF,
+        Operation.RESEARCH_WAIT: RESEARCH_WAIT_DEF,
+        Operation.RESEARCH_IMPORT_VERIFY: RESEARCH_IMPORT_VERIFY_DEF,
     }
 )
 _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
@@ -126,6 +143,25 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.COLLECTION_UPDATE: (
             "service-owned since P9.2-3: LabelSetService.update sequences collection.get and "
             "label.mutate"
+        ),
+        Operation.SOURCE_ADD_URL: (
+            "service-owned since P10 R3.3: SourceService.add_url sequences the source.list "
+            "baseline, one source.register url allocation, the reconciling source.list probe "
+            "and the source.patch_title finalise"
+        ),
+        Operation.SOURCE_ADD_URL_BATCH: (
+            "service-owned since P10 R3.5: SourceService.add_urls_batch runs one non-replayed "
+            "source.register url batch write and reconciles the entries its echo omitted "
+            "against a source.list of ERROR rows"
+        ),
+        Operation.SOURCE_ADD_TEXT: (
+            "service-owned since P10 R3.2: SourceService.add_text refuses a non-idempotent "
+            "replay and runs one source.register text allocation"
+        ),
+        Operation.SOURCE_ADD_DRIVE: (
+            "service-owned since P10 R3.4: SourceService.add_drive sequences the source.list "
+            "baseline, one source.register drive allocation, the reconciling source.list probe "
+            "matched on drive_document_id and the source.patch_title finalise"
         ),
         Operation.SOURCE_UPDATE: (
             "service-owned since P9.2-4: SourceService.update sequences source.patch_title and "
@@ -172,6 +208,15 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "and, "
             "only when the caller resolved no id, chat.get_conversation"
         ),
+        Operation.RESEARCH_WAIT: (
+            "service-owned since P10 R6.4: ResearchService.wait_for_completion polls "
+            "research.poll under its own total budget and cadence"
+        ),
+        Operation.RESEARCH_IMPORT_VERIFY: (
+            "service-owned since P10 R6.4: "
+            "ResearchService.import_sources_with_verification sequences research.import "
+            "and source.list within one max_elapsed"
+        ),
     }
 )
 
@@ -185,9 +230,10 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     {
         Operation.NOTEBOOK_METADATA: (
             "facade composition without a typed def: NotebooksAPI.get_metadata delegates to "
-            "NotebookMetadataService, which gathers the public notebooks.get and sources.list "
-            "reads concurrently (_notebook_metadata.py); R6.2 decides whether it earns a typed "
-            "NOTEBOOK_METADATA_DEF workflow"
+            "NotebookMetadataService, which concurrently gathers the late-bound public "
+            "notebooks.get and the injected NotebookSourceLister.list (_notebook_metadata.py); "
+            "both collaborators are replaceable public-model seams rather than typed leaves, so "
+            "the composition stays untyped and no NOTEBOOK_METADATA_DEF exists"
         ),
         Operation.LABEL_SOURCES: (
             "facade composition without a typed def: LabelsAPI.sources joins the label's "
@@ -199,26 +245,23 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "collection's membership ids against the public notebook listing client-side and "
             "issues no native call of its own"
         ),
-        Operation.RESEARCH_WAIT: (
-            "facade/service workflow without a typed def: ResearchService polls research.poll "
-            "under its own total budget; R6.4 adds typed inputs/results and flips it to "
-            "service-owned"
-        ),
-        Operation.RESEARCH_IMPORT_VERIFY: (
-            "facade/service workflow without a typed def: ResearchService sequences "
-            "research.import and a source-listing probe within one budget; R6.4 adds typed "
-            "inputs/results and flips it to service-owned"
-        ),
     }
 )
 
-# The frozen catalog currently contains 98 operations (87 product members plus the
-# ten P9.2 primitives and the P10 R2.2 streamed-answer leaf). This assertion is
-# repeated at the runtime registry boundary: a new enum member must not silently
-# inherit an unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 98
-_EXPECTED_SUPPORTED_COUNT: Final = 78
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 15
+# The frozen catalog currently contains 99 operations (87 product members plus the
+# twelve decomposition primitives: the nine P9.2 leaves, P10 R2.2's streamed-answer
+# leaf, P10 R3.2's source-registration leaf, and P10 R4.2's mind-map generation
+# leaf). This assertion is repeated at
+# the runtime registry boundary: a new enum member must not silently inherit an
+# unsupported disposition without a web-registry review.
+_EXPECTED_OPERATION_COUNT: Final = 99
+_EXPECTED_SUPPORTED_COUNT: Final = 75
+# 11 from P9.2, P10 R2.2's chat.ask, P10 R3.2-R3.5's four source adds, the two
+# research workflows R6.4 typed, and P10 R4.2's three Studio/mind-map workflows.
+# R6.4's flip leaves the vocabulary and the
+# directly-supported row set alone: it moves two members from UNSUPPORTED to
+# SERVICE_OWNED, which is a disposition change only.
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 21
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:

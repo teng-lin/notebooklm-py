@@ -58,6 +58,33 @@ class BackendErrorReason(str, Enum):
     UNKNOWN_RPC_METHOD = "unknown_rpc_method"
 
 
+@unique
+class BackendStatus(str, Enum):
+    """Closed neutral normalization of a native call-status code.
+
+    :class:`BackendErrorReason` says which *kind* of failure occurred; this
+    says which status the transport reported underneath one of them, for the
+    handful of cases where a semantic service must tell two failures with the
+    same reason apart.  It is deliberately narrow — a member exists only where
+    a service branches on the distinction — so it never becomes a second copy
+    of the wire's status table living above the port.
+
+    ``FAILED_PRECONDITION`` is the documented ``IMPORT_RESEARCH`` rejection of
+    a ``task_id`` an earlier attempt already partially mutated (#1926 F2b);
+    ``ResearchService`` shares its verification probe with a timeout for that
+    one status and re-raises for every other.
+    """
+
+    FAILED_PRECONDITION = "failed_precondition"
+
+
+#: ``BackendError.diagnostics`` key under which an adapter publishes the
+#: :class:`BackendStatus` it normalized the native status code to. Absent
+#: whenever the native carried no status this vocabulary names, so a service
+#: reads it with ``.get()`` and treats a miss as "not that status".
+BACKEND_STATUS_DIAGNOSTIC: Final = "backend_status"
+
+
 #: Reasons under which a dispatched mutation may have committed server-side
 #: before the failure surfaced. This reproduces the web adapter's class tuple
 #: ``(RateLimitError, ServerError, NetworkError)`` — ``RPCTimeoutError`` is a
@@ -331,6 +358,7 @@ def require_leaves(backend: BackendAdapter, *operations: Operation) -> None:
 
 
 __all__ = [
+    "BACKEND_STATUS_DIAGNOSTIC",
     "BackendAdapter",
     "BackendCapabilities",
     "BackendContractError",
@@ -338,6 +366,7 @@ __all__ = [
     "BackendError",
     "BackendErrorReason",
     "BackendKind",
+    "BackendStatus",
     "COMMIT_UNCERTAIN_REASONS",
     "annotate_backend_error",
     "mark_backend_outcome_unknown",

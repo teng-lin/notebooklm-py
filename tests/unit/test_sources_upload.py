@@ -263,9 +263,9 @@ class TestWaitArgsKeywordOnly:
     )
     async def test_keyword_wait_args_forward(self, sources_api, method_name, args):
         source_record = SourceRecord(id="src_123", title="Source")
+        sources_api._source_service = MagicMock()
+        target = sources_api._source_service
         if method_name == "add_url":
-            sources_api._url_mutation_service = MagicMock()
-            target = sources_api._url_mutation_service
             response = SourceAddUrlResult(
                 source_record,
                 SourceAddUrlReceipt(
@@ -274,8 +274,6 @@ class TestWaitArgsKeywordOnly:
                 ),
             )
         else:
-            sources_api._source_service = MagicMock()
-            target = sources_api._source_service
             response = {
                 "add_text": SourceAddTextResult(source_record),
                 "add_file": SourceAddFileResult(source_record),

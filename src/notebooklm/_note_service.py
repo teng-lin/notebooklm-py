@@ -1,10 +1,14 @@
 """Semantic plain-note service.
 
 ``NoteService`` owns the migrated NOTE_* workflow used by ``NotesAPI`` and the
-note-backed side of ``MindMapsAPI``. The deferred raw note-row implementation
-that still serves saved-chat/artifact mind-map compatibility callers lives in
-:mod:`notebooklm._mind_map` alongside its only consumer; this module is
-backend-neutral and reaches the wire only through ``BackendAdapter``.
+note-backed side of ``MindMapsAPI``. It is backend-neutral: it reaches the wire
+only through ``BackendAdapter``, and it returns the neutral ``NoteRecord`` /
+``MindMapRecord`` values the backend produced rather than public models —
+projection belongs to the two facades above it (P10 invariant I1).
+
+The raw compatibility listings ``NotesAPI`` still publishes come back as
+undecoded wire rows through the ``MIND_MAP_LIST`` raw-payload flag, so the
+public ``list[Any]`` contract survives without a wire import here.
 """
 
 from __future__ import annotations
@@ -16,7 +20,6 @@ from typing import Any
 
 from ._backend import BackendAdapter
 from ._deadline import RuntimeDeadline
-from ._projectors import project_mind_map, project_note
 from ._records import (
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_LIST_DEF,
@@ -38,7 +41,6 @@ from ._records import (
     NoteUpdateInput,
 )
 from .exceptions import MindMapNotFoundError
-from .types import MindMap, Note
 
 __all__ = ["NoteService"]
 
@@ -69,7 +71,7 @@ class NoteService:
     def __init__(self, backend: BackendAdapter) -> None:
         self._backend = backend
 
-    async def list_notes(self, notebook_id: str) -> list[Note]:
+    async def list_notes(self, notebook_id: str) -> list[NoteRecord]:
         """Return active non-mind-map notes in backend order."""
 
         result = await self._backend.invoke(
@@ -77,9 +79,9 @@ class NoteService:
             NoteListInput(notebook_id),
             deadline=None,
         )
-        return [project_note(record) for record in result.notes]
+        return list(result.notes)
 
-    async def get_note_or_none(self, notebook_id: str, note_id: str) -> Note | None:
+    async def get_note_or_none(self, notebook_id: str, note_id: str) -> NoteRecord | None:
         """Select the first exact note identity, or return a genuine miss."""
 
         result = await self._backend.invoke(
@@ -87,26 +89,7 @@ class NoteService:
             NoteGetInput(notebook_id, note_id),
             deadline=None,
         )
-        return None if result.note is None else project_note(result.note)
-
-    async def create_note(
-        self,
-        notebook_id: str,
-        title: str = "New Note",
-        content: str = "",
-        *,
-        operation_variant: str = "plain",
-    ) -> Note:
-        """Create and finalize a note with cancellation-safe orphan cleanup."""
-
-        return project_note(
-            await self.create_note_record(
-                notebook_id,
-                title,
-                content,
-                operation_variant=operation_variant,
-            )
-        )
+        return result.note
 
     async def create_note_record(
         self,
@@ -198,14 +181,21 @@ class NoteService:
             deadline=None,
         )
 
-    async def list_mind_maps(self, notebook_id: str) -> list[MindMap]:
-        """Return active note-backed mind maps without exposing note rows."""
+    async def list_mind_maps(self, notebook_id: str) -> list[MindMapRecord]:
+        """Return active note-backed mind maps without exposing note rows.
 
-        return [
-            project_mind_map(record) for record in await self._list_mind_map_records(notebook_id)
-        ]
+        The records keep the exact persisted JSON, which is what
+        :meth:`rename_mind_map` re-sends on a title-only update.
+        """
 
-    async def list_mind_map_rows(self, notebook_id: str) -> list[Any]:
+        result = await self._backend.invoke(
+            MIND_MAP_LIST_DEF,
+            MindMapListInput(notebook_id),
+            deadline=None,
+        )
+        return list(result.mind_maps)
+
+    async def list_mind_map_rows(self, notebook_id: str) -> list[object]:
         """Return the active note-backed mind-map rows exactly as the wire sent them.
 
         The raw compatibility listing ``NotesAPI.list_mind_maps`` publishes: the
@@ -215,12 +205,12 @@ class NoteService:
 
         return await self._list_raw_rows(notebook_id, RAW_MIND_MAP_ROWS)
 
-    async def list_note_rows(self, notebook_id: str) -> list[Any]:
+    async def list_note_rows(self, notebook_id: str) -> list[object]:
         """Return the whole raw note+mind-map row collection, deletions included."""
 
         return await self._list_raw_rows(notebook_id, RAW_ALL_NOTE_ROWS)
 
-    async def _list_raw_rows(self, notebook_id: str, scope: str) -> list[Any]:
+    async def _list_raw_rows(self, notebook_id: str, scope: str) -> list[object]:
         result = await self._backend.invoke(
             MIND_MAP_LIST_DEF,
             MindMapListInput(notebook_id, raw_rows=scope),
@@ -228,17 +218,9 @@ class NoteService:
         )
         return list(result.rows)
 
-    async def _list_mind_map_records(self, notebook_id: str) -> tuple[MindMapRecord, ...]:
-        """Keep exact persisted JSON available for title-only updates."""
-
-        result = await self._backend.invoke(
-            MIND_MAP_LIST_DEF,
-            MindMapListInput(notebook_id),
-            deadline=None,
-        )
-        return result.mind_maps
-
-    async def get_mind_map_or_none(self, notebook_id: str, mind_map_id: str) -> MindMap | None:
+    async def get_mind_map_or_none(
+        self, notebook_id: str, mind_map_id: str
+    ) -> MindMapRecord | None:
         """Select one exact note-backed identity from the semantic listing."""
 
         return next(
@@ -252,7 +234,7 @@ class NoteService:
         source_ids: list[str] | None,
         language: str | None,
         instructions: str | None,
-    ) -> MindMap:
+    ) -> MindMapRecord:
         """Generate JSON through MIND_MAP_* and persist it through semantic NOTE_* ops."""
 
         generated = await self._backend.invoke(
@@ -267,7 +249,7 @@ class NoteService:
         )
         tree_json = generated.tree_json
         if tree_json is None:
-            return project_mind_map(MindMapRecord("", notebook_id, "Mind Map", "note_backed"))
+            return MindMapRecord("", notebook_id, "Mind Map", "note_backed")
         title = "Mind Map"
         try:
             tree = json.loads(tree_json)
@@ -277,16 +259,14 @@ class NoteService:
             candidate = tree.get("name")
             if isinstance(candidate, str) and candidate:
                 title = candidate
-        note = await self.create_note(notebook_id, title=title, content=tree_json)
-        return project_mind_map(
-            MindMapRecord(
-                note.id,
-                notebook_id,
-                title,
-                "note_backed",
-                note.created_at,
-                tree_json,
-            )
+        note = await self.create_note_record(notebook_id, title=title, content=tree_json)
+        return MindMapRecord(
+            note.id,
+            notebook_id,
+            title,
+            "note_backed",
+            note.created_at,
+            tree_json,
         )
 
     async def rename_mind_map(
@@ -298,11 +278,7 @@ class NoteService:
         """Retitle a note-backed mind map after an exact semantic preflight."""
 
         existing = next(
-            (
-                item
-                for item in await self._list_mind_map_records(notebook_id)
-                if item.id == mind_map_id
-            ),
+            (item for item in await self.list_mind_maps(notebook_id) if item.id == mind_map_id),
             None,
         )
         if existing is None:

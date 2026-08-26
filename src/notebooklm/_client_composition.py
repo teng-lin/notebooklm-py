@@ -27,6 +27,7 @@ from ._mind_maps_api import MindMapsAPI
 from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
+from ._read_services import SourceReadService
 from ._research import ResearchAPI
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
@@ -265,7 +266,6 @@ def compose_client(
         _backend=client._backend,
     )
     client.notebooks = NotebooksAPI(
-        internals.executor,
         sources_api=client.sources,
         share_manager=ShareManager(backend=client._backend),
         _backend=client._backend,
@@ -310,11 +310,13 @@ def compose_client(
         notes=note_service,
         studio=mind_map_studio,
     )
-    # Research runs entirely on the semantic backend. Source reconciliation
-    # receives the already-composed SourcesAPI explicitly; the facade owns no
-    # RpcCaller compatibility dependency.
+    # Research runs entirely on the semantic backend, source reconciliation
+    # included: the import/verify loop probes the semantic SourceReadService for
+    # neutral records rather than calling back up through the public
+    # ``sources.list`` facade it used to receive (P10 R6.4, defect S7). Same
+    # SOURCE_LIST operation on the same backend — one fewer layer crossed.
     client.research = ResearchAPI(
-        source_lister=client.sources,
+        source_lister=SourceReadService(client._backend),
         base_timeout=timeout,
         import_research_timeout=import_research_timeout,
         _backend=client._backend,

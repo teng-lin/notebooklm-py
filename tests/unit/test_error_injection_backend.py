@@ -23,7 +23,6 @@ def _notebooks_api(backend: RecordingBackend) -> tuple[NotebooksAPI, AsyncMock]:
     rpc_call = AsyncMock()
     return (
         NotebooksAPI(
-            MagicMock(rpc_call=rpc_call),
             sources_api=MagicMock(),
             _backend=backend,
         ),

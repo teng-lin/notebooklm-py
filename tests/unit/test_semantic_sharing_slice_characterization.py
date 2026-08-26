@@ -11,12 +11,19 @@ from __future__ import annotations
 
 import inspect
 import logging
+from dataclasses import replace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from notebooklm._operations import CallPolicy, Operation
+from notebooklm._projectors import (
+    _SHARE_ACCESS,
+    _SHARE_PERMISSIONS,
+    _SHARE_VIEW_LEVELS,
+    project_share_status,
+)
 from notebooklm._records import (
     LEGACY_SHARE_ARTIFACT_DEF,
     SHARING_GET_DEF,
@@ -28,9 +35,10 @@ from notebooklm._records import (
     LegacyShareArtifactResult,
     ShareAccessLevel,
     SharePermissionLevel,
+    ShareStatusRecord,
     ShareViewScope,
 )
-from notebooklm._sharing import SharingAPI
+from notebooklm._sharing import _PERMISSION_LEVELS, _VIEW_SCOPES, SharingAPI
 from notebooklm._sharing_service import SharingService
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import primitives as primitive_rows
@@ -518,3 +526,88 @@ def test_sharing_service_holds_no_wire_vocabulary() -> None:
     source = inspect.getsource(SharingService)
     assert "RPCMethod" not in source
     assert "SHARE_NOTEBOOK" not in source
+
+
+def test_sharing_service_returns_records_and_never_a_public_or_legacy_type() -> None:
+    """P10 R6.3 / invariant I1: the service speaks ``ShareStatusRecord`` only.
+
+    Sharing decides who can read a notebook, so the two directions of the
+    boundary are pinned by name rather than by an import audit alone: no
+    public model or ``Legacy*`` mapping record (an I9 exemption owned by
+    ``_backend_compat``/the projectors) may appear on the service's surface.
+    """
+    for name in (
+        "get_status",
+        "set_public",
+        "set_view_level",
+        "set_users",
+        "update_user",
+        "remove_user",
+    ):
+        method = getattr(SharingService, name)
+        annotation = inspect.signature(method).return_annotation
+        assert annotation == "ShareStatusRecord", (name, annotation)
+
+    source = inspect.getsource(SharingService)
+    assert "ShareStatus\n" not in source and "-> ShareStatus:" not in source
+    assert "project_share_status" not in source
+    assert "Legacy" not in source
+
+
+def test_every_neutral_sharing_value_has_exactly_one_public_projection() -> None:
+    """Total, injective mappings both ways across the projection boundary.
+
+    A missing entry would raise ``KeyError`` on a real notebook; a duplicated
+    target would silently widen or narrow someone's access. Both maps are
+    asserted total and one-to-one so neither failure can land unnoticed.
+    """
+    assert _SHARE_ACCESS == {
+        ShareAccessLevel.RESTRICTED: ShareAccess.RESTRICTED,
+        ShareAccessLevel.ANYONE_WITH_LINK: ShareAccess.ANYONE_WITH_LINK,
+    }
+    assert _SHARE_VIEW_LEVELS == {
+        ShareViewScope.FULL_NOTEBOOK: ShareViewLevel.FULL_NOTEBOOK,
+        ShareViewScope.CHAT_ONLY: ShareViewLevel.CHAT_ONLY,
+    }
+    assert _SHARE_PERMISSIONS == {
+        SharePermissionLevel.OWNER: SharePermission.OWNER,
+        SharePermissionLevel.EDITOR: SharePermission.EDITOR,
+        SharePermissionLevel.VIEWER: SharePermission.VIEWER,
+        SharePermissionLevel.REMOVE: SharePermission._REMOVE,
+    }
+    # The facade's inbound direction, exactly inverse to the outbound maps.
+    assert {public: neutral for neutral, public in _SHARE_PERMISSIONS.items()} == _PERMISSION_LEVELS
+    assert {public: neutral for neutral, public in _SHARE_VIEW_LEVELS.items()} == _VIEW_SCOPES
+
+    for neutral_enum, mapping, public_enum in (
+        (ShareAccessLevel, _SHARE_ACCESS, ShareAccess),
+        (ShareViewScope, _SHARE_VIEW_LEVELS, ShareViewLevel),
+        (SharePermissionLevel, _SHARE_PERMISSIONS, SharePermission),
+    ):
+        assert set(mapping) == set(neutral_enum), neutral_enum
+        assert set(mapping.values()) == set(public_enum), public_enum
+        assert len(set(mapping.values())) == len(mapping), neutral_enum
+
+
+def test_share_url_default_is_derived_only_for_a_public_notebook() -> None:
+    """The one defaulted field in the projection, pinned in both directions."""
+    record = ShareStatusRecord(
+        notebook_id="nb 123/x",
+        is_public=True,
+        access=ShareAccessLevel.ANYONE_WITH_LINK,
+        view_level=ShareViewScope.FULL_NOTEBOOK,
+    )
+
+    assert (
+        project_share_status(record).share_url
+        == "https://notebook.google.com/notebook/nb%20123%2Fx"
+    )
+    assert project_share_status(replace(record, share_url="https://given")).share_url == (
+        "https://given"
+    )
+    assert (
+        project_share_status(
+            replace(record, is_public=False, access=ShareAccessLevel.RESTRICTED)
+        ).share_url
+        is None
+    )

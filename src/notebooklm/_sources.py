@@ -7,7 +7,6 @@ import time
 from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import IO, Any, Final, Literal, cast
-from urllib.parse import urlparse
 
 import httpx
 
@@ -19,7 +18,6 @@ from ._backend_compat import (
 )
 from ._deadline import RuntimeDeadlineFactory
 from ._lookup import unwrap_or_raise
-from ._mutation_services import SourceUrlMutationService
 from ._projectors import (
     project_source,
     project_source_fulltext,
@@ -29,7 +27,6 @@ from ._projectors import (
 from ._read_services import SourceReadService
 from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._source import upload as _source_upload
-from ._source.add import SourceAddService
 from ._source.batch import SourceUrlBatchItem
 from ._source.content import SourceContentRenderer
 from ._source.listing import _snapshot_enum_filter
@@ -37,6 +34,11 @@ from ._source.polling import SourcePoller
 from ._source.upload import SourceUploadPipeline
 from ._source_service import SourceService
 from ._types.research import SourceGuide
+from ._url_utils import (
+    extract_youtube_video_id,
+    is_valid_youtube_video_id,
+    youtube_video_id_from_parsed_url,
+)
 from .exceptions import (
     SourceAddError,
     SourceNotFoundError,
@@ -117,15 +119,11 @@ class SourcesAPI:
         # historical attributes for callers that introspect the instance.
         self._rpc = rpc
         self._read_service = SourceReadService(_backend) if _backend is not None else None
-        self._url_mutation_service = (
-            SourceUrlMutationService(_backend) if _backend is not None else None
-        )
         self._source_service = (
             SourceService(_backend, deadline_factory=deadline_factory)
             if _backend is not None
             else None
         )
-        self._adder = SourceAddService()
         self._content = SourceContentRenderer(None, logger=logger)
         self._upload_timeout = upload_timeout
         self._max_concurrent_uploads = max_concurrent_uploads
@@ -136,12 +134,6 @@ class SourcesAPI:
         if self._read_service is None:
             raise RuntimeError("SourcesAPI semantic read backend was not configured")
         return self._read_service
-
-    def _require_url_mutation_service(self) -> SourceUrlMutationService:
-        """Return the composition-root service for the migrated URL mutation."""
-        if self._url_mutation_service is None:
-            raise RuntimeError("SourcesAPI semantic URL backend was not configured")
-        return self._url_mutation_service
 
     def _require_source_service(self) -> SourceService:
         """Return the composition-root service for the migrated Source slice."""
@@ -189,7 +181,7 @@ class SourcesAPI:
         )
         public_error: Exception | None = None
         try:
-            return await self._require_read_service().list(
+            records = await self._require_read_service().list(
                 notebook_id,
                 strict=strict,
                 statuses=(
@@ -205,6 +197,8 @@ class SourcesAPI:
             )
         except BackendError as error:
             public_error = self._compat_read_error(error)
+        else:
+            return [project_source(record) for record in records]
         assert public_error is not None
         raise public_error
 
@@ -253,9 +247,11 @@ class SourcesAPI:
 
         public_error: Exception | None = None
         try:
-            return await self._require_read_service().get(notebook_id, source_id)
+            record = await self._require_read_service().get(notebook_id, source_id)
         except BackendError as error:
             public_error = self._compat_read_error(error)
+        else:
+            return None if record is None else project_source(record)
         assert public_error is not None
         raise public_error
 
@@ -517,7 +513,7 @@ class SourcesAPI:
         """
         public_error: Exception | None = None
         try:
-            result = await self._require_url_mutation_service().add_url(
+            result = await self._require_source_service().add_url(
                 notebook_id,
                 url,
                 wait=wait,
@@ -539,7 +535,7 @@ class SourcesAPI:
                 requested_title = title.strip() if title else ""
                 if requested_title and source.title != requested_title:
                     finalized = await project_backend_call(
-                        self._require_url_mutation_service().finalize_title(
+                        self._require_source_service().finalize_title(
                             notebook_id,
                             record_source(source),
                             requested_title,
@@ -1084,13 +1080,7 @@ class SourcesAPI:
         Returns:
             The video ID if found and valid, None otherwise.
         """
-        return self._adder.extract_youtube_video_id(
-            url,
-            parse_url=urlparse,
-            extract_video_id_from_parsed_url=self._extract_video_id_from_parsed_url,
-            is_valid_video_id=self._is_valid_video_id,
-            logger=logger,
-        )
+        return extract_youtube_video_id(url, logger=logger)
 
     def _extract_video_id_from_parsed_url(self, parsed: Any, hostname: str) -> str | None:
         """Extract video ID from a parsed YouTube URL.
@@ -1102,7 +1092,7 @@ class SourcesAPI:
         Returns:
             The raw video ID (not yet validated), or None.
         """
-        return self._adder.extract_video_id_from_parsed_url(parsed, hostname)
+        return youtube_video_id_from_parsed_url(parsed, hostname)
 
     def _is_valid_video_id(self, video_id: str) -> bool:
         """Validate YouTube video ID format.
@@ -1116,7 +1106,7 @@ class SourcesAPI:
         Returns:
             True if the video ID format is valid, False otherwise.
         """
-        return self._adder.is_valid_video_id(video_id)
+        return is_valid_youtube_video_id(video_id)
 
     async def _add_youtube_source(self, notebook_id: str, url: str) -> Any:
         """Compatibility helper delegating to the semantic URL workflow."""

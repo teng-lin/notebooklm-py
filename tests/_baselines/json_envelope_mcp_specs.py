@@ -1374,7 +1374,7 @@ MCP_PROJECTION_SPECS: tuple[dict[str, object], ...] = (
         "mode": "transitive-research-import-new-source-projection",
         "keys": ("id", "title"),
         "evidence": (
-            "notebooklm/_research_import.py:def _imported_source_entry",
+            "notebooklm/_research.py:def _imported_entry",
             "notebooklm/mcp/tools/research.py:newly_imported = to_jsonable(outcome.newly_imported)",
         ),
     },
@@ -1383,7 +1383,7 @@ MCP_PROJECTION_SPECS: tuple[dict[str, object], ...] = (
         "mode": "transitive-research-import-existing-source-projection",
         "keys": ("id", "title", "url"),
         "evidence": (
-            "notebooklm/_research_import.py:def _partition_requested_sources",
+            "notebooklm/_research.py:def _project_import_verification",
             "notebooklm/mcp/tools/research.py:already_present = to_jsonable(outcome.already_present)",
         ),
     },

@@ -52,14 +52,44 @@ class AppAuthoritySourceContract:
 SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRule, ...]] = {
     (Operation.SOURCE_ADD_URL, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_URL",
-            "web or YouTube URL payload selected by semantic flag",
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "web or YouTube URL allocation via the source.register leaf",
         ),
     ),
     (Operation.SOURCE_ADD_URL_BATCH, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
-            "one non-replayed batch payload",
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "one non-replayed batch payload via the source.register leaf",
+        ),
+    ),
+    (Operation.SOURCE_REGISTER, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
+        (
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "registration kind url selects the URL/YouTube payload",
+        ),
+    ),
+    (Operation.SOURCE_REGISTER, _b(RPCMethod.ADD_SOURCE, "text")): _rules(
+        (
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "registration kind text selects the pasted-text payload",
+        ),
+    ),
+    (Operation.SOURCE_REGISTER, _b(RPCMethod.ADD_SOURCE, "drive")): _rules(
+        (
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "registration kind drive selects the Drive-document payload",
+        ),
+    ),
+    (Operation.SOURCE_ADD_TEXT, _b(RPCMethod.ADD_SOURCE, "text")): _rules(
+        (
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "pasted-text allocation via the source.register leaf",
+        ),
+    ),
+    (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.ADD_SOURCE, "drive")): _rules(
+        (
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "native Drive-document allocation via the source.register leaf",
         ),
     ),
     (Operation.NOTEBOOK_LIST, _b(RPCMethod.LIST_NOTEBOOKS)): _rules(
@@ -75,8 +105,10 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         ("_web/bindings/notebooks.py:NOTEBOOK_LIST", "collection membership expansion")
     ),
     (Operation.NOTEBOOK_GET, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/bindings/notebooks.py:NOTEBOOK_GET", "typed notebook/source-id lookup"),
-        ("_notebooks.py:NotebooksAPI.get_raw", "narrow raw compatibility lookup"),
+        (
+            "_web/bindings/notebooks.py:NOTEBOOK_GET",
+            "typed notebook/source-id lookup plus the row's undecoded raw branch",
+        ),
     ),
     (Operation.NOTEBOOK_UPDATE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/bindings/notebooks.py:NOTEBOOK_GET", "unconditional post-mutation read")
@@ -99,20 +131,24 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_ADD_URL, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_URL",
-            "unconditional baseline plus ambiguity probes",
-        )
+            "_web/bindings/sources.py:SOURCE_LIST",
+            "unconditional baseline plus ambiguity probes via source.list",
+        ),
+        (
+            "_web/bindings/sources.py:SOURCE_GET",
+            "null UPDATE_SOURCE echo only via source.get",
+        ),
     ),
     (Operation.SOURCE_ADD_URL_BATCH, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
-            "one snapshot only for omitted-row reconciliation",
+            "_web/bindings/sources.py:SOURCE_LIST",
+            "one snapshot only for omitted-row reconciliation via source.list",
         )
     ),
     (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
-            "unconditional baseline plus ambiguity probes",
+            "_web/bindings/sources.py:SOURCE_LIST",
+            "unconditional baseline plus ambiguity probes via source.list",
         )
     ),
     (Operation.SOURCE_ADD_FILE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
@@ -346,7 +382,6 @@ class RecencyRule:
 
 
 _UPDATE_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
-_GET_RAW = "_notebooks.py:NotebooksAPI.get_raw"
 _GET_SOURCES = "_web/bindings/sources.py:SOURCE_LIST"
 # P9.3: source list/get/wait reads dispatch through their own codec rows.
 _GET_SOURCE_LIST = "_web/bindings/sources.py:SOURCE_LIST"
@@ -360,20 +395,12 @@ _GET_PROMPT_SOURCES = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
     Operation.NOTEBOOK_GET: (
         RecencyRule(
-            _p("notebooks", "get", "get_or_none", "get_source_ids"),
+            _p("notebooks", "get", "get_or_none", "get_raw", "get_source_ids"),
             1,
             1,
             "public_call",
-            "always",
+            "always: one row call per public read, decoded or raw",
             (_GET_TYPED,),
-        ),
-        RecencyRule(
-            _p("notebooks", "get_raw"),
-            1,
-            1,
-            "public_call",
-            "narrow raw compatibility call",
-            (_GET_RAW,),
         ),
     ),
     Operation.NOTEBOOK_UPDATE: (
@@ -435,7 +462,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "private_app_call",
             "one snapshot only when ADD_SOURCE omits positional outcomes",
-            ("_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",),
+            (_GET_SOURCE_LIST,),
         ),
     ),
     Operation.SOURCE_ADD_URL: (
@@ -446,7 +473,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             "public_call",
             "one baseline plus ambiguity probes and, when wait=True, one snapshot per "
             "facade-owned readiness poll tick",
-            ("_web/bindings/sources.py:SOURCE_ADD_URL",),
+            (_GET_SOURCE_LIST, _GET_SOURCE),
         ),
     ),
     Operation.SOURCE_ADD_DRIVE: (
@@ -457,7 +484,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             "public_call",
             "one baseline plus ambiguity probes and, when wait=True, one snapshot per "
             "facade-owned readiness poll tick",
-            ("_web/bindings/sources.py:SOURCE_ADD_DRIVE",),
+            (_GET_SOURCE_LIST,),
         ),
     ),
     Operation.SOURCE_ADD_FILE: (
@@ -824,14 +851,14 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SOURCE_ADD_URL, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
-                "_web/bindings/sources.py:SOURCE_ADD_URL",
-                "optional post-create title",
+                "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
+                "optional post-create title via source.patch_title",
             )
         ),
         (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
-                "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
-                "optional post-create title",
+                "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
+                "optional post-create title via source.patch_title",
             )
         ),
         (Operation.SOURCE_ADD_FILE, _b(RPCMethod.UPDATE_SOURCE)): _rules(

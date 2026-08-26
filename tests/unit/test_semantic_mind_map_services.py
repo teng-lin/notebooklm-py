@@ -72,20 +72,24 @@ async def test_note_service_generates_and_persists_exact_mind_map_shape() -> Non
         "focus",
     )
 
+    # R6.6: the service returns the neutral record carrying the exact persisted
+    # JSON; ``MindMapsAPI.generate`` projects it, and
+    # ``test_mind_maps_api.py::test_generate_note_backed_delegates`` asserts the
+    # public ``MindMap`` (including the parsed ``tree``) that comes out.
     assert (
         result.id,
         result.notebook_id,
         result.title,
         result.kind,
         result.created_at,
-        result.tree,
+        result.tree_json,
     ) == (
         "note-id",
         "notebook-id",
         "Generated Map",
-        MindMapKind.NOTE_BACKED,
+        MindMapKind.NOTE_BACKED.value,
         created_at,
-        {"name": "Generated Map", "children": [{"name": "Leaf"}]},
+        tree_json,
     )
     assert backend.invocations == [
         BackendInvocation(

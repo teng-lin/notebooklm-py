@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, unique
+from typing import Any
 
 from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 
@@ -104,20 +105,32 @@ class NotebookGetInput:
     ``source_diagnostics`` selects how the decoder reports a snapshot whose
     source slot it cannot read; the callers that resolve a default source set
     differ only in that report.
+
+    ``include_raw`` selects the undecoded compatibility branch: the backend
+    returns the payload the transport produced without running any positional
+    decode, which is the contract ``NotebooksAPI.get_raw`` publishes. It is
+    mutually exclusive with the decoded branches, so a raw request also leaves
+    ``include_notebook`` off.
     """
 
     notebook_id: str
     include_notebook: bool = True
     require_notebook: bool = False
     source_diagnostics: SourceIdDiagnostics = SourceIdDiagnostics.GUARDED
+    include_raw: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class NotebookGetResult:
-    """Notebook get result; ``None`` is the semantic not-found state."""
+    """Notebook get result; ``None`` is the semantic not-found state.
+
+    ``raw`` carries the undecoded payload for ``include_raw`` requests only,
+    and stays ``None`` on every decoded branch.
+    """
 
     notebook: NotebookRecord | None
     source_ids: tuple[str, ...] = ()
+    raw: Any = None
 
 
 @dataclass(frozen=True, slots=True)

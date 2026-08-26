@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
-from notebooklm._records import ArtifactRecord, MindMapGenerateOutcomeRecord
+from notebooklm._records import ArtifactRecord, MindMapGenerateOutcomeRecord, MindMapRecord
 from notebooklm._row_adapters.notes import NoteRow
 from notebooklm.exceptions import (
     ArtifactError,
@@ -18,7 +18,7 @@ from notebooklm.exceptions import (
     UnknownRPCMethodError,
 )
 from notebooklm.rpc.types import RPCMethod
-from notebooklm.types import MindMap, MindMapKind
+from notebooklm.types import MindMapKind
 
 
 def _interactive_artifact(artifact_id: str, title: str = "INT") -> ArtifactRecord:
@@ -51,21 +51,20 @@ def _make_api(*, note_rows=None, interactive=None):
     # than dotted AsyncMock attribute assignment, which the forbidden-
     # monkeypatch lint rejects on the rpc_call seam.
     rpc = MagicMock(rpc_call=AsyncMock(return_value=None))
+    # R6.6: ``NoteService`` hands the facade neutral records and the facade
+    # projects them, so the stub yields exactly what the real service yields —
+    # the persisted JSON as text, parsed by ``project_mind_map`` downstream.
     note_maps = []
     for row in note_rows or []:
         note_row = NoteRow(row)
-        try:
-            parsed = json.loads(note_row.content or "")
-        except json.JSONDecodeError:
-            parsed = None
         note_maps.append(
-            MindMap(
+            MindMapRecord(
                 id=note_row.id,
                 notebook_id="nb",
                 title=note_row.title,
-                kind=MindMapKind.NOTE_BACKED,
+                kind=MindMapKind.NOTE_BACKED.value,
                 created_at=note_row.created_at,
-                tree=parsed if isinstance(parsed, dict) else None,
+                tree_json=note_row.content,
             )
         )
     # Matches MindMapFamilyService.list_mind_maps'/.get_or_none's own filter:
@@ -256,8 +255,12 @@ async def test_get_tree_interactive_reads_v9rmvd_position():
 @pytest.mark.asyncio
 async def test_generate_note_backed_delegates():
     api, _, notes, _, _ = _make_api()
-    notes.generate_mind_map.return_value = MindMap(
-        "n1", "nb", "G", MindMapKind.NOTE_BACKED, tree={"name": "G", "children": []}
+    notes.generate_mind_map.return_value = MindMapRecord(
+        "n1",
+        "nb",
+        "G",
+        MindMapKind.NOTE_BACKED.value,
+        tree_json=json.dumps({"name": "G", "children": []}),
     )
     mm = await api.generate("nb", ["s1"], kind=MindMapKind.NOTE_BACKED)
     assert mm.kind == MindMapKind.NOTE_BACKED
@@ -492,8 +495,12 @@ async def test_get_tree_interactive_non_list_options_block_reraises():
 @pytest.mark.asyncio
 async def test_generate_note_backed_non_str_name_falls_back_to_placeholder():
     api, _, notes, _, _ = _make_api()
-    notes.generate_mind_map.return_value = MindMap(
-        "n1", "nb", "Mind Map", MindMapKind.NOTE_BACKED, tree={"name": 123, "children": []}
+    notes.generate_mind_map.return_value = MindMapRecord(
+        "n1",
+        "nb",
+        "Mind Map",
+        MindMapKind.NOTE_BACKED.value,
+        tree_json=json.dumps({"name": 123, "children": []}),
     )
     mm = await api.generate("nb", ["s1"], kind=MindMapKind.NOTE_BACKED)
     assert mm.title == "Mind Map"  # numeric name rejected, placeholder used
@@ -502,8 +509,12 @@ async def test_generate_note_backed_non_str_name_falls_back_to_placeholder():
 @pytest.mark.asyncio
 async def test_generate_note_backed_empty_name_falls_back_to_placeholder():
     api, _, notes, _, _ = _make_api()
-    notes.generate_mind_map.return_value = MindMap(
-        "n1", "nb", "Mind Map", MindMapKind.NOTE_BACKED, tree={"name": "", "children": []}
+    notes.generate_mind_map.return_value = MindMapRecord(
+        "n1",
+        "nb",
+        "Mind Map",
+        MindMapKind.NOTE_BACKED.value,
+        tree_json=json.dumps({"name": "", "children": []}),
     )
     mm = await api.generate("nb", ["s1"], kind=MindMapKind.NOTE_BACKED)
     assert mm.title == "Mind Map"  # empty name rejected, placeholder used

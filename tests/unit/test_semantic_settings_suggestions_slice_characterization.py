@@ -98,7 +98,7 @@ async def test_prompt_recency_is_exactly_conditional_and_report_has_none() -> No
     )
     executor = MagicMock(rpc_call=rpc_call)
     backend = build_web_backend(executor)
-    notebooks = NotebooksAPI(executor, _backend=backend)
+    notebooks = NotebooksAPI(_backend=backend)
 
     await notebooks.suggest_prompts("nb", source_ids=["src-pinned"])
     await notebooks.suggest_prompts("nb", source_ids=[])

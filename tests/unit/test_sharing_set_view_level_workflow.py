@@ -158,7 +158,9 @@ async def test_workflow_sequences_patch_then_read_and_replaces_the_missing_view_
         ShareViewScope.CHAT_ONLY,
     )
     assert backend.invocations[1].value == SharingGetInput(_NB)
-    assert status.view_level is ShareViewLevel.CHAT_ONLY
+    # Neutral record vocabulary (P10 R6.3 / invariant I1); the public
+    # ``ShareViewLevel`` projection is asserted on the facade below.
+    assert status.view_level is ShareViewScope.CHAT_ONLY
     assert status.max_individuals_share_limit == 1000
     assert status.is_public_sharing_allowed is True
 
@@ -189,6 +191,8 @@ async def test_public_facade_preserves_both_native_payloads_and_runtime_kwargs()
     assert readback.kwargs["disable_internal_retries"] is False
     assert readback.kwargs["operation_variant"] is None
     assert status.view_level is ShareViewLevel.CHAT_ONLY
+    assert status.max_individuals_share_limit == 1000
+    assert status.is_public_sharing_allowed is True
 
 
 @pytest.mark.asyncio

@@ -8,8 +8,8 @@ once and a new one fails immediately:
 
 **I1 — semantic service modules stay neutral.** A semantic service module
 (``src/notebooklm/_*_service.py``, ``_read_services.py``,
-``_mutation_services.py``, ``_chat/service.py`` — later ``_chat/workflow.py`` —
-and ``_studio/*.py``) may import none of ``_projectors``,
+``_chat/service.py`` — later ``_chat/workflow.py`` — and ``_studio/*.py``) may
+import none of ``_projectors``,
 ``notebooklm.types``, ``_types.*``, ``_backend_compat``, ``rpc.*``,
 ``_row_adapters.*``, ``_web.*`` or ``httpx``, and its public methods must
 return ``*Record`` / ``*Result`` types, neutral enums, built-in scalars or
@@ -27,9 +27,10 @@ one that forbids the neutral direction too.
 
 **I9 — no ``Legacy*`` class below ``_app``** except the enumerated exemptions:
 the legacy-mapping records consumed only by ``_backend_compat``/the projectors
-and the auth storage-migration types. The two deletion targets that P10 owns
-are recorded separately from the exemptions so they cannot be quietly
-reclassified as permanent.
+and the auth storage-migration types. The deletion targets that P10 owns are
+recorded separately from the exemptions so they cannot be quietly reclassified
+as permanent. ``NotebookLegacyRpc`` left that set in R6.2 when
+``NotebooksAPI.get_raw`` moved onto the ``NOTEBOOK_GET`` row.
 
 **I10 is deliberately not enforced here.** The plan's tenth invariant caps
 ``src/notebooklm/_records.py`` at 1,500 lines; that is already
@@ -39,13 +40,15 @@ measures exactly ``MODULE_SIZE_BUDGET`` lines and is not in
 on the first line of growth. Duplicating it here would create a second
 authority for one ceiling.
 
-This module also carries, verbatim, the five assertions of the retired
+This module also carries the five assertions of the retired
 ``test_semantic_read_boundary.py``. I1 subsumes that guard's *intent* but not
-all of its checks: it pinned the exact import sets of ``_read_services.py`` and
-``_mutation_services.py`` (tighter than I1's forbidden-list rule, and
-``_read_services.py`` is an I1 seed so I1 does not inspect it at all), and it
-also constrained ``_projectors.py``, which is not a service module. Those
-checks are ported below under "Read-core pins" so no assertion is lost.
+all of its checks: it pinned the exact import sets of ``_read_services.py``
+and ``_mutation_services.py`` (an allowlist, tighter than I1's forbidden-list
+rule), and it also constrained ``_projectors.py``, which is not a service
+module at all. Those checks are ported below under "Read-core pins" so no
+assertion is lost; the ``_mutation_services.py`` half went away with the module
+itself in R3.3, and the ``_read_services.py`` set was *narrowed* in R6.1 when
+that module left the I1 seed.
 """
 
 from __future__ import annotations
@@ -82,22 +85,12 @@ I1_FORBIDDEN_FIRST_PARTY_ROOTS: frozenset[str] = frozenset(
     }
 )
 
-#: Shrinking seed: the semantic service modules that violate I1 today. Entries
-#: leave as their retiring slice lands (R5.2 for ``_studio``, R6.1-R6.4 for the
-#: root services, R6.6 for ``_note_service``); nothing may be added. The plan's
-#: §6 target is an empty set beside the permanent exemption below.
-I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "_note_service.py",
-        "_notebook_guide_service.py",
-        "_notebook_mutation_service.py",
-        "_read_services.py",
-        "_research_service.py",
-        "_settings_service.py",
-        "_sharing_service.py",
-        "_suggestion_service.py",
-    }
-)
+#: Shrinking seed: the semantic service modules that violate I1. Entries leave
+#: as their retiring slice lands, and nothing may be added. The plan's §6 target
+#: is an empty set beside the permanent exemption below, and P10 reaches it:
+#: R6.1-R6.6 drained the root services and R5.2 the four ``_studio/*`` modules
+#: (``catalog.py``, ``lifecycle.py``, ``mind_maps.py``, ``representations.py``).
+I1_SEED_ALLOWLIST: frozenset[str] = frozenset()
 
 #: Permanent, *named* exemption — not a shrinking seed. ``_studio/downloads.py``
 #: owns the byte-download clients (``httpx`` plus ``_curl_cffi_transport``);
@@ -105,9 +98,27 @@ I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
 #: deferred to a separate download-transport slice (plan §0, §8).
 I1_PERMANENT_EXEMPTIONS: frozenset[str] = frozenset({"_studio/downloads.py"})
 
+#: Governed by I1's *import* half only. ``_source_add_reports.py`` holds no
+#: service methods: it is the neutral failure-report vocabulary P10 R3.4 split
+#: out of ``_source_service.py``, and its constructors return the port's own
+#: ``BackendError`` — which services *raise* rather than return, so the return
+#: half's neutral vocabulary deliberately excludes it. Keeping the module under
+#: the import half is the point of listing it at all; widening the return
+#: vocabulary to admit ``BackendError`` would weaken the check for every real
+#: service.
+I1_RETURN_ARM_EXEMPTIONS: frozenset[str] = frozenset({"_source_add_reports.py"})
+
 #: Built-in scalars and collection constructors a neutral service may name in a
 #: return annotation. Deliberately minimal: widening it is a reviewed change,
 #: which is the point of the invariant.
+#:
+#: ``object`` was added in R6.6 for the two raw-row compatibility listings
+#: ``NoteService.list_mind_map_rows`` / ``list_note_rows``, whose elements are
+#: undecoded wire rows the frozen public ``NotesAPI.list_mind_maps ->
+#: list[Any]`` contract republishes verbatim. It is the opaque top type, not
+#: the unchecked ``Any``: a service may say "this element has no known type",
+#: which the already-permitted bare ``list`` / ``dict`` spellings say too, but
+#: it still may not annotate a return ``Any`` and wave anything through.
 I1_PERMITTED_RETURN_BUILTINS: frozenset[str] = frozenset(
     {
         "None",
@@ -118,6 +129,7 @@ I1_PERMITTED_RETURN_BUILTINS: frozenset[str] = frozenset(
         "frozenset",
         "int",
         "list",
+        "object",
         "set",
         "str",
         "tuple",
@@ -138,11 +150,17 @@ I2_FORBIDDEN_DOMAIN_PACKAGES: frozenset[str] = frozenset(
 #: Shrinking seed: the ``_web`` files that import a domain package today, as
 #: paths relative to ``src/notebooklm/_web``. ``codec/chat_stream.py`` and
 #: ``codec/chat.py`` retired in R2.1 (the codec now owns the streamed-ask wire
-#: and emits records); ``backend.py`` retires in R2.3/R3.1,
-#: ``bindings/mind_maps.py`` in R4.2 and ``bindings/sources.py`` in R3.5.
+#: and emits records), and ``backend.py`` retired once R2.3 drained its
+#: ``_chat`` edge and R3.1 put its ``_source.upload`` edge behind
+#: ``_source_upload_port``. ``bindings/mind_maps.py`` retired in R4.2
+#: (the note-backed generation and the catalog merge moved above the port), and
+#: ``bindings/sources.py`` is last of all (R3.1 took its ``_source.upload`` edge
+#: and R3.5 its ``_source.batch`` one; the surviving ``_source.add`` edge is
+#: ``honor_requested_title``, which the permanent ``SOURCE_ADD_FILE`` row
+#: reaches under decision D4, so retiring the entry needs that helper relocated
+#: to a neutral module — not another hoist).
 I2_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "backend.py",
         "bindings/sources.py",
     }
 )
@@ -182,15 +200,23 @@ I9_EXEMPT_LEGACY_CLASSES: frozenset[str] = frozenset(
 )
 
 #: P10 deletion targets, recorded separately from the exemptions so neither can
-#: be reclassified as permanent by editing one set. ``LegacyNoteBackedService``
-#: went in R4.2 (its wire graph moved above the port with the mind-map
-#: workflows) and ``_mind_map.py`` went with it; ``NotebookLegacyRpc`` goes in
-#: R6.2 with ``NotebooksAPI.get_raw``.
-I9_DELETION_TARGETS: frozenset[str] = frozenset({"_notebooks.py::NotebookLegacyRpc"})
+#: be reclassified as permanent by editing one set. Both named targets are now
+#: gone, so the invariant is met and the target set is empty:
+#: ``LegacyNoteBackedService`` went in R4.2 (its wire graph moved above the port
+#: with the mind-map workflows, and ``_mind_map.py``, the module R4.1 had moved
+#: it to, went with it), and ``NotebookLegacyRpc`` went in R6.2
+#: (``NotebooksAPI.get_raw`` reads through the ``NOTEBOOK_GET`` row, so the
+#: facade needs no raw-call collaborator at all).
+I9_DELETION_TARGETS: frozenset[str] = frozenset()
 
 #: Already deleted by their owning slice. Kept named so a reintroduction under
-#: the old name is a visible edit here rather than a silent revival.
-I9_DELETED_TARGETS: frozenset[str] = frozenset({"_mind_map.py::LegacyNoteBackedService"})
+#: an old name is a visible edit here rather than a silent revival.
+I9_DELETED_TARGETS: frozenset[str] = frozenset(
+    {
+        "_mind_map.py::LegacyNoteBackedService",
+        "_notebooks.py::NotebookLegacyRpc",
+    }
+)
 
 
 # --- AST helpers -------------------------------------------------------------
@@ -266,7 +292,13 @@ def _semantic_service_modules() -> tuple[Path, ...]:
             {
                 *root_services,
                 SRC_ROOT / "_read_services.py",
-                SRC_ROOT / "_mutation_services.py",
+                # P10 R3.4 split the source-add family's neutral report
+                # vocabulary out of ``_source_service.py`` to keep it inside the
+                # module-size budget. It is service code by every other measure,
+                # so I1 governs it too — otherwise the split would have moved
+                # the workflows' vocabulary out from under the guard that keeps
+                # it transport-neutral.
+                SRC_ROOT / "_source_add_reports.py",
                 *chat_services,
                 *studio,
             }
@@ -324,8 +356,8 @@ def _i2_domain_violations() -> dict[str, list[tuple[int, str]]]:
 def _legacy_classes(root: Path) -> dict[str, tuple[str, int]]:
     """``<relpath>::<class>`` → ``(relpath, lineno)`` for every ``Legacy`` class.
 
-    Matched on *containment*, not prefix: ``NotebookLegacyRpc`` is one of the
-    plan's two named deletion targets and a prefix match would miss it.
+    Matched on *containment*, not prefix: R6.2's deletion target was named
+    ``NotebookLegacyRpc``, and a prefix match would have missed it.
     """
     found: dict[str, tuple[str, int]] = {}
     for path in sorted(root.rglob("*.py")):
@@ -460,7 +492,11 @@ def test_conforming_semantic_services_return_only_neutral_types() -> None:
     offenders: dict[str, list[tuple[str, str]]] = {}
     for path in _semantic_service_modules():
         module = _relative(path, SRC_ROOT)
-        if module in I1_SEED_ALLOWLIST or module in I1_PERMANENT_EXEMPTIONS:
+        if (
+            module in I1_SEED_ALLOWLIST
+            or module in I1_PERMANENT_EXEMPTIONS
+            or module in I1_RETURN_ARM_EXEMPTIONS
+        ):
             continue
         bad = [
             (qualname, annotation)
@@ -474,6 +510,25 @@ def test_conforming_semantic_services_return_only_neutral_types() -> None:
         "*Result, a neutral enum, a built-in scalar or collection thereof, or "
         f"None (P10 invariant I1): {offenders}"
     )
+
+
+def test_the_return_arm_exemption_is_exactly_what_still_needs_it() -> None:
+    """A return-arm exemption must name a module that would otherwise fail it."""
+    permitted = I1_PERMITTED_RETURN_BUILTINS | _neutral_enum_names()
+    public_models = _public_model_names()
+    governed = {_relative(path, SRC_ROOT) for path in _semantic_service_modules()}
+    assert governed >= I1_RETURN_ARM_EXEMPTIONS, (
+        "a return-arm exemption names a module I1 does not govern: "
+        f"{sorted(I1_RETURN_ARM_EXEMPTIONS - governed)}"
+    )
+    for module in sorted(I1_RETURN_ARM_EXEMPTIONS):
+        annotations = _public_return_annotations(SRC_ROOT / module)
+        assert any(
+            atom not in permitted
+            and not (atom.endswith(("Record", "Result")) and atom not in public_models)
+            for _qualname, _annotation, atoms in annotations
+            for atom in atoms
+        ), f"{module} no longer needs its return-arm exemption; drop it"
 
 
 def test_the_neutral_return_vocabulary_is_discovered_not_empty() -> None:
@@ -568,16 +623,18 @@ def test_the_i9_deletion_targets_stay_separate_from_the_exemptions() -> None:
     assert not (I9_EXEMPT_LEGACY_CLASSES & I9_DELETED_TARGETS), (
         "a deleted P10 target came back as a permanent I9 exemption"
     )
+    live_class_names = {key.partition("::")[2] for key in _legacy_classes(SRC_ROOT)}
     for target in I9_DELETED_TARGETS:
-        module, _, _class = target.partition("::")
-        assert not (SRC_ROOT / module).exists(), f"{target} was deleted in P10; {module} is back"
+        _module, _, class_name = target.partition("::")
+        assert class_name not in live_class_names, (
+            f"{target} was deleted in P10; {class_name} is back"
+        )
 
 
 # --- Read-core pins (ported from the retired test_semantic_read_boundary.py) --
 
 _PROJECTORS = SRC_ROOT / "_projectors.py"
 _SERVICES = SRC_ROOT / "_read_services.py"
-_MUTATION_SERVICES = SRC_ROOT / "_mutation_services.py"
 
 _FORBIDDEN_MODULE_PARTS = frozenset(
     {
@@ -615,38 +672,34 @@ def _identifiers(path: Path) -> set[str]:
     return {node.id for node in ast.walk(_tree(path)) if isinstance(node, ast.Name)}
 
 
-def test_read_services_depend_only_on_semantic_port_records_deadline_and_projectors() -> None:
+def test_read_services_depend_only_on_semantic_port_records_and_deadline() -> None:
+    """The read services import strictly less than the retired pin allowed.
+
+    R6.1 moved projection up to ``NotebooksAPI`` / ``SourcesAPI``, so
+    ``_projectors`` and the public ``types`` module leave this set, and with
+    them the ``typing.TYPE_CHECKING`` block that guarded the public model
+    names — a tightening of the ported pin, not a loosening. ``builtins``
+    stays: ``get_source_ids`` still spells its return ``builtins.list[str]``
+    to name the built-in rather than the sibling ``list`` method.
+    """
     assert _imported_modules(_SERVICES) <= {
         "__future__",
         "builtins",
-        "typing",
         "_backend",
         "_deadline",
-        "_projectors",
         "_records",
-        "types",
     }
     assert not (_identifiers(_SERVICES) & _FORBIDDEN_IDENTIFIERS)
 
 
 def test_read_core_has_no_transport_wire_or_adapter_dependencies() -> None:
-    for path in (_MUTATION_SERVICES, _PROJECTORS, _SERVICES):
+    for path in (_PROJECTORS, _SERVICES):
         assert not {
             module
             for module in _imported_modules(path)
             if any(part in _FORBIDDEN_MODULE_PARTS for part in module.split("."))
         }
         assert not (_identifiers(path) & _FORBIDDEN_IDENTIFIERS)
-
-
-def test_url_mutation_service_depends_only_on_semantic_port_deadline_and_records() -> None:
-    assert _imported_modules(_MUTATION_SERVICES) <= {
-        "__future__",
-        "_backend",
-        "_deadline",
-        "_records",
-    }
-    assert not any(isinstance(node, ast.Subscript) for node in ast.walk(_tree(_MUTATION_SERVICES)))
 
 
 def test_projectors_use_normal_public_constructors_without_wire_factories() -> None:

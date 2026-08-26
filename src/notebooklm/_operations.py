@@ -43,6 +43,9 @@ class Operation(str, Enum):
     SOURCE_UPDATE = "source.update"
     # P9.2 primitive: one native title set-op consumed by source.update.
     SOURCE_PATCH_TITLE = "source.patch_title"
+    # P10 primitive: one source-registration write, its wire variant and its
+    # retry classification both chosen by the request's registration kind.
+    SOURCE_REGISTER = "source.register"
     SOURCE_REFRESH = "source.refresh"
     SOURCE_CHECK_FRESHNESS = "source.check_freshness"
     SOURCE_GET_GUIDE = "source.get_guide"

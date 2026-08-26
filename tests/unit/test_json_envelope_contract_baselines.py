@@ -1888,7 +1888,11 @@ def test_json_envelope_allocates_every_live_projection_to_an_exact_terminal() ->
     assert allocated_projection_ids == live_projection_ids
     assert reachability["site_count"] == 350
     private_paths = reachability["private_dataclass_projection_paths"]
-    assert len(private_paths) == 34
+    # 33 since P10 R6.4: ``_ImportProbeOutcome`` no longer carries public
+    # ``ResearchSource`` rows — the reconciliation walks neutral
+    # ``ResearchImportCandidate`` records, so that private path to a public
+    # model does not exist any more (defect N1).
+    assert len(private_paths) == 33
     provider_auth_paths = {
         (path["private_model"], path["field_path"], path["public_model"])
         for path in private_paths

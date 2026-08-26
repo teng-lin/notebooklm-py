@@ -107,7 +107,6 @@ def _client_with_real_notebooks(error: BaseException) -> TestClient:
     fake = FakeClient()
     core = make_fake_core(rpc_call=AsyncMock(side_effect=error))
     fake.notebooks = NotebooksAPI(  # type: ignore[assignment]
-        core.rpc_executor,
         sources_api=MagicMock(),
         _backend=build_web_backend(core.rpc_executor),
     )

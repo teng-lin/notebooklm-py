@@ -26,7 +26,9 @@ from ..exceptions import (
     ChatResponseParseError,
     ClientError,
     DecodingError,
+    IdempotencyVariantError,
     NetworkError,
+    NonIdempotentRetryError,
     NotebookLMError,
     RateLimitError,
     RPCError,
@@ -38,6 +40,7 @@ from ..exceptions import (
     SourceProcessingError,
     SourceTimeoutError,
     UnknownRPCMethodError,
+    ValidationError,
 )
 
 _CHAT_OPERATIONS = frozenset(
@@ -71,6 +74,9 @@ def _capture_public_failure(
     kind_by_type: dict[type[BaseException], SourceAddFailureKind] = {
         SourceAddError: SourceAddFailureKind.SOURCE_ADD,
         SourceNotFoundError: SourceAddFailureKind.SOURCE_NOT_FOUND,
+        ValidationError: SourceAddFailureKind.VALIDATION,
+        NonIdempotentRetryError: SourceAddFailureKind.NON_IDEMPOTENT_RETRY,
+        IdempotencyVariantError: SourceAddFailureKind.IDEMPOTENCY_VARIANT,
         SourceProcessingError: SourceAddFailureKind.SOURCE_PROCESSING,
         SourceTimeoutError: SourceAddFailureKind.SOURCE_TIMEOUT,
         AuthError: SourceAddFailureKind.AUTH,

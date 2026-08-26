@@ -93,7 +93,7 @@ def test_catalog_projection_covers_the_live_authorities() -> None:
         for method, variant, _entry in IDEMPOTENCY_REGISTRY.iter_entries()
     }
     assert set(catalog["public_methods"]) == set(collect_public_namespace_methods())
-    assert len(Operation.__members__) == len(Operation) == len(catalog["operations"]) == 98
+    assert len(Operation.__members__) == len(Operation) == len(catalog["operations"]) == 99
     assert {row["policy"] for row in catalog["operations"]} == {
         policy.value for policy in CallPolicy
     }

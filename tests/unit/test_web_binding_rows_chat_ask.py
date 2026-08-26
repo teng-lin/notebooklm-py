@@ -175,7 +175,7 @@ def test_chat_ask_is_service_owned_over_a_streamed_primitive_leaf() -> None:
     # A streamed verb is not a method: the leaf reaches the wire without ever
     # naming one, so it declares no collaborator either.
     assert not getattr(row, "collaborators", ())
-    assert {"capture_public_failure", "source_uploader"} == ROW_COLLABORATOR_NAMES
+    assert {"source_uploader"} == ROW_COLLABORATOR_NAMES
 
     # The ledger keeps the facade's GET_NOTEBOOK recency read as a reviewed
     # divergence, now on the workflow row rather than a direct binding.

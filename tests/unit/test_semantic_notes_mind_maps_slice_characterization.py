@@ -32,7 +32,12 @@ from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
 from notebooklm._note_service import NoteService, _cleanup_tasks
 from notebooklm._notes import NotesAPI
-from notebooklm._records import ArtifactRecord, MindMapGenerateOutcomeRecord
+from notebooklm._records import (
+    ArtifactRecord,
+    MindMapGenerateOutcomeRecord,
+    MindMapRecord,
+    NoteRecord,
+)
 from notebooklm._row_adapters.notes import NoteRow
 from notebooklm._types.mind_maps import MindMapKind
 from notebooklm.exceptions import (
@@ -131,12 +136,24 @@ def test_note_service_public_signatures_are_frozen() -> None:
         "note_id",
     ]
 
-    create_sig = inspect.signature(NoteService.create_note).parameters
-    assert list(create_sig) == ["self", "notebook_id", "title", "content", "operation_variant"]
+    # P10 R6.6 deleted ``create_note``: once the service returns records it was
+    # a byte-identical delegate of ``create_note_record``, the one
+    # cancellation-safe create. The pinned defaults move here unchanged.
+    create_sig = inspect.signature(NoteService.create_note_record).parameters
+    assert list(create_sig) == [
+        "self",
+        "notebook_id",
+        "title",
+        "content",
+        "operation_variant",
+        "deadline",
+    ]
     assert create_sig["title"].default == "New Note"
     assert create_sig["content"].default == ""
     assert create_sig["operation_variant"].kind is inspect.Parameter.KEYWORD_ONLY
     assert create_sig["operation_variant"].default == "plain"
+    assert create_sig["deadline"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert create_sig["deadline"].default is None
 
     assert list(inspect.signature(NoteService.update_note).parameters) == [
         "self",
@@ -361,11 +378,14 @@ async def test_note_service_crud_wire_payloads_and_endpoints() -> None:
     mock_session = make_fake_core(rpc_call=AsyncMock(return_value=[["note-new"]]))
     service = make_note_stack(mock_session)[0]
 
-    # 1. create_note (CREATE_NOTE followed by shielded UPDATE_NOTE)
-    note = await service.create_note(
+    # 1. create_note_record (CREATE_NOTE followed by shielded UPDATE_NOTE)
+    note = await service.create_note_record(
         "nb-100", title="Research Plan", content="# Goals", operation_variant="plain"
     )
-    assert isinstance(note, Note)
+    # R6.6: the neutral record, not the public model. The ``Note`` the facade
+    # projects out of it is pinned in
+    # ``test_notes_unit.py::test_create_projects_the_allocation_record``.
+    assert isinstance(note, NoteRecord)
     assert note.id == "note-new"
     assert note.notebook_id == "nb-100"
     assert note.title == "Research Plan"
@@ -446,7 +466,7 @@ async def test_note_service_create_note_handles_id_extraction_and_timestamps() -
             "Initial Title",
         ]
     ]
-    note = await service.create_note("nb-100", title="Title", content="Body")
+    note = await service.create_note_record("nb-100", title="Title", content="Body")
     assert note.id == "note-nested"
     assert note.created_at == datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
 
@@ -458,7 +478,7 @@ async def test_note_service_create_note_handles_id_extraction_and_timestamps() -
         None,
         "Initial Title",
     ]
-    note_flat = await service.create_note("nb-100", title="Title", content="Body")
+    note_flat = await service.create_note_record("nb-100", title="Title", content="Body")
     assert note_flat.id == "note-flat"
     assert note_flat.created_at == datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
 
@@ -490,7 +510,7 @@ async def test_note_service_create_note_cancellation_triggers_fire_and_forget_cl
     mock_session = make_fake_core(rpc_call=AsyncMock(side_effect=_mock_rpc_call))
     service = make_note_stack(mock_session)[0]
 
-    task = asyncio.create_task(service.create_note("nb-100", title="Title", content="Body"))
+    task = asyncio.create_task(service.create_note_record("nb-100", title="Title", content="Body"))
     await update_started.wait()
 
     # Cancel outer create task while UPDATE_NOTE is running under shield
@@ -548,6 +568,9 @@ async def test_notes_api_list_filters_deleted_and_mind_maps() -> None:
     notes = await api.list("nb-100")
     assert len(notes) == 1
     note = notes[0]
+    # R6.6 moved projection here from ``NoteService``, so the public-type pin
+    # that used to sit on the service's create sits on the facade's reads.
+    assert isinstance(note, Note)
     assert note.id == "n-plain"
     assert note.notebook_id == "nb-100"
     assert note.title == "Note Title"
@@ -569,6 +592,7 @@ async def test_notes_api_get_and_get_or_none_exact_id_selection() -> None:
 
     # Exact ID match
     note = await api.get("nb-100", "note-123")
+    assert isinstance(note, Note)
     assert note.id == "note-123"
     assert note.title == "Title 123"
 
@@ -655,7 +679,7 @@ async def test_note_backed_mind_map_operations() -> None:
     rows = await service.list_mind_map_rows("nb-100")
     assert len(rows) == 1
     assert NoteRow(rows[0]).id == "mm-1"
-    records = await service._list_mind_map_records("nb-100")
+    records = await service.list_mind_maps("nb-100")
     assert [record.tree_json for record in records] == [mm_json]
 
     # 2. rename_mind_map (re-sends existing JSON content with new title)
@@ -704,21 +728,20 @@ def _make_mind_maps_api(
     interactive_artifacts: list[ArtifactRecord] | None = None,
 ) -> tuple[MindMapsAPI, MagicMock, MagicMock, MagicMock, MagicMock]:
     rpc = MagicMock(rpc_call=rpc_call or AsyncMock(return_value=None))
-    note_maps: list[MindMap] = []
+    # R6.6: the note service returns neutral records and ``MindMapsAPI``
+    # projects them, so the stub yields the persisted JSON as text exactly as
+    # the real service does.
+    note_maps: list[MindMapRecord] = []
     for row in note_rows or []:
         note_row = NoteRow(row)
-        try:
-            parsed = json.loads(note_row.content or "")
-        except json.JSONDecodeError:
-            parsed = None
         note_maps.append(
-            MindMap(
+            MindMapRecord(
                 note_row.id,
                 "nb-100",
                 note_row.title,
-                MindMapKind.NOTE_BACKED,
+                MindMapKind.NOTE_BACKED.value,
                 note_row.created_at,
-                parsed if isinstance(parsed, dict) else None,
+                note_row.content,
             )
         )
     # Matches MindMapFamilyService.list_mind_maps'/.get_or_none's own filter:
@@ -825,13 +848,13 @@ async def test_mind_maps_api_generate_note_backed_vs_interactive() -> None:
     api, _, mock_notes, mock_studio, _ = _make_mind_maps_api()
 
     # 1. Note-backed generation
-    mock_notes.generate_mind_map.return_value = MindMap(
+    mock_notes.generate_mind_map.return_value = MindMapRecord(
         "note-gen-1",
         "nb-100",
         "Generated Note Map",
-        MindMapKind.NOTE_BACKED,
+        MindMapKind.NOTE_BACKED.value,
         datetime(2023, 11, 14, tzinfo=timezone.utc),
-        {"name": "Generated Note Map", "children": []},
+        json.dumps({"name": "Generated Note Map", "children": []}),
     )
     nb_res = await api.generate(
         "nb-100", ["src-1"], kind=MindMapKind.NOTE_BACKED, instructions="Prompt"
@@ -1055,8 +1078,8 @@ async def test_notes_and_mind_maps_get_notebook_recency_bump_inventory() -> None
     await api.get_tree("nb-1", "mm1")
 
     # generate with explicit source_ids -> 0 get_source_ids calls -> 0 GET_NOTEBOOK
-    mock_notes.generate_mind_map.return_value = MindMap(
-        "note-new", "nb-1", "Map", MindMapKind.NOTE_BACKED
+    mock_notes.generate_mind_map.return_value = MindMapRecord(
+        "note-new", "nb-1", "Map", MindMapKind.NOTE_BACKED.value
     )
     mock_studio.generate.return_value = MindMapGenerateOutcomeRecord(
         mind_map_id="art-new", record=None, tree=None

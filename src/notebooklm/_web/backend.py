@@ -38,8 +38,8 @@ from .._binding import (
 )
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._operations import CallPolicy, Operation, OperationDef
-from .._records import SourceAddFailureRecord
 from .._runtime.config import assert_resolved_read_timeout
+from .._source_upload_port import UploadLifecycleHooks
 from .._web_cookie_provider import WebCookieProvider, WebCookieSession
 from ..exceptions import (
     ChatError,
@@ -70,7 +70,6 @@ if TYPE_CHECKING:
     from .._runtime.contracts import ChatLifecycleHooks
     from .._runtime.pipeline import RuntimePipeline
     from .._runtime.transport import RuntimeTransport
-    from .._source.upload import SourceUploadPipeline
     from .._transport_drain import TransportDrainTracker
 
 source_logger = logging.getLogger("notebooklm").getChild("_sources")
@@ -79,31 +78,29 @@ source_logger = logging.getLogger("notebooklm").getChild("_sources")
 #: declaring any other name is rejected by the construction-time audit.
 #: P10 R2.2 drained the three ``chat_*`` names with the ``chat.ask`` custom row:
 #: the streamed verb is a codec row now, and everything it needs is attempt-
-#: scoped transport state rather than a row collaborator.
-ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset(
-    {
-        "source_uploader",
-        "capture_public_failure",
-    }
-)
+#: scoped transport state rather than a row collaborator. P10 R3.1 drained
+#: ``capture_public_failure`` with the source-add rows, which project their own
+#: failures inside the binding module. ``source_uploader`` is the sole survivor
+#: and is invariant I4's target.
+ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset({"source_uploader"})
 
 
-def _row_error_projection(row: Binding | None, operation: Operation) -> tuple[bool, bool | None]:
-    """Return ``(raw_passthrough, scrub_request_urls)`` for one operation's failures.
+def _row_error_projection(row: Binding | None, operation: Operation) -> bool | None:
+    """Return ``scrub_request_urls`` for one operation's failures.
 
     A custom row carries its own projection as ``error_mode`` metadata:
-    ``RAW_PASSTHROUGH`` re-raises the native exception unchanged,
     ``TRANSLATE_SCRUBBED`` translates with request URLs scrubbed, ``TRANSLATE``
-    translates plainly. ``operation`` remains in this private helper's shape
-    for the characterization tests that compare every row's projection.
+    translates plainly. Every row translates (P10 invariant I8): a row that owns
+    a public compatibility leaf raises its own ``BackendError`` rather than
+    letting the native exception escape the port. A codec row answers ``None``,
+    keeping the shared translator's operation-specific default. ``operation``
+    remains in this private helper's shape for the characterization tests that
+    compare every row's projection.
     """
     del operation
     if isinstance(row, CustomBinding):
-        return (
-            row.error_mode is ErrorMode.RAW_PASSTHROUGH,
-            row.error_mode is ErrorMode.TRANSLATE_SCRUBBED,
-        )
-    return False, None
+        return row.error_mode is ErrorMode.TRANSLATE_SCRUBBED
+    return None
 
 
 class WebRpcBackend:
@@ -206,7 +203,7 @@ class WebRpcBackend:
     async def open_client(
         self,
         *,
-        uploader: SourceUploadPipeline,
+        uploader: UploadLifecycleHooks,
         chat: ChatLifecycleHooks,
     ) -> None:
         """Open provider acquisition, then seed the private backend session."""
@@ -317,15 +314,6 @@ class WebRpcBackend:
     def capabilities(self) -> BackendCapabilities:
         return self._capabilities
 
-    def _capture_public_failure(
-        self,
-        exc: Exception,
-        *,
-        operation: Operation,
-    ) -> SourceAddFailureRecord:
-        """Project the bounded public error graph for source workflow receipts."""
-        return _capture_public_failure(exc, operation=operation)
-
     def _row_collaborators(self) -> Mapping[str, object]:
         """The closed, named collaborator set a custom row may declare and reach."""
         return _row_collaborators_of(self)
@@ -368,9 +356,7 @@ class WebRpcBackend:
         # failure still names the blocked native (``method_id``) exactly as the
         # composite handlers' ``_rpc_call`` did. Nothing is dispatched either way.
 
-        raw_passthrough, scrub_request_urls = _row_error_projection(
-            self._bindings.get(operation.key), operation.key
-        )
+        scrub_request_urls = _row_error_projection(self._bindings.get(operation.key), operation.key)
         try:
             result = await invoke_binding(
                 self._bindings,
@@ -384,8 +370,6 @@ class WebRpcBackend:
         except BackendError:
             raise
         except RPCTimeoutError as exc:
-            if raw_passthrough:
-                raise
             if deadline is not None and deadline.expired():
                 diagnostics = dict(self._error_diagnostics(exc, BackendErrorReason.TIMEOUT))
                 diagnostics.update({"timeout": deadline.timeout, "remaining": deadline.remaining()})
@@ -404,13 +388,6 @@ class WebRpcBackend:
             )
             raise translated from exc
         except NotebookLMError as exc:
-            # Source registration/upload compatibility requires the original
-            # exception object (not merely its class/payload), especially after
-            # file registration where callers inspect source_id/stage and the
-            # original causal chain. These workflows are backend-owned, but
-            # deliberately re-raise their established public leaves unchanged.
-            if raw_passthrough:
-                raise
             # Catch the closed library family rather than a broad ``RPCError``
             # wrap.  ``_translate_error`` still accepts only the exact reviewed
             # transport types and fails closed for any semantic exception.
@@ -537,7 +514,7 @@ def _configure_default_upload_backend(backend: WebRpcBackend) -> None:
     registration helper never bypasses the binding table; the row binds a fresh,
     invocation-scoped set on every ``source.add_file`` call.
     """
-    uploader = backend._source_uploader
+    uploader: UploadLifecycleHooks | None = backend._source_uploader
     if uploader is None:
         return
     default = upload_backend(
@@ -567,7 +544,6 @@ def _row_collaborators_of(backend: WebRpcBackend) -> Mapping[str, object]:
     return MappingProxyType(
         {
             "source_uploader": backend._source_uploader,
-            "capture_public_failure": backend._capture_public_failure,
         }
     )
 

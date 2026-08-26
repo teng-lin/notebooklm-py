@@ -46,7 +46,7 @@ def api(mock_rpc: MagicMock) -> NotebooksAPI:
     The default-all-sources path resolves ids through ``get_source_ids``; tests
     that pass explicit ``source_ids`` assert it is never awaited.
     """
-    return NotebooksAPI(mock_rpc, _backend=build_web_backend(mock_rpc))
+    return NotebooksAPI(_backend=build_web_backend(mock_rpc))
 
 
 # ---------------------------------------------------------------------------

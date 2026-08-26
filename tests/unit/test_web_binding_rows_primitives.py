@@ -4,7 +4,9 @@
 ``LABEL_ALLOCATE`` (one manual ``CREATE_LABEL``) and ``SHARING_MUTATE`` (one
 ``SHARE_NOTEBOOK`` envelope) are the three foundational rows; P9.2-4 adds
 ``SOURCE_PATCH_TITLE`` (one ``UPDATE_SOURCE`` title set-op) and P9.2-7 adds
-``SHARING_PATCH_VIEW_LEVEL`` (one viewer-scope ``RENAME_NOTEBOOK`` mask). All are
+``SHARING_PATCH_VIEW_LEVEL`` (one viewer-scope ``RENAME_NOTEBOOK`` mask), and P10
+R3.2 adds ``SOURCE_REGISTER`` (input-keyed over the three ``ADD_SOURCE``
+registration variants). All are
 ``encode → one native call → decode`` rows in ``_web/bindings/primitives.py``.
 These tests pin the oracles the hoists rely on: each variant's payload and
 keyword set equals what the old composite handlers sent (route, ``allow_null``,
@@ -20,7 +22,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from scripts._web_policy_intent import WEB_CALL_POLICY_BINDINGS
+from scripts._web_policy_intent import (
+    SERVICE_OWNED_WORKFLOW_BINDINGS,
+    WEB_CALL_POLICY_BINDINGS,
+)
 
 from notebooklm._backend import (
     BackendContractError,
@@ -31,11 +36,13 @@ from notebooklm._backend import (
 )
 from notebooklm._binding import CodecBinding, DeadlineMode
 from notebooklm._deadline import RuntimeDeadline
+from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm._operations import Operation
 from notebooklm._records import (
     LABEL_ALLOCATE_DEF,
     LABEL_MUTATE_DEF,
     SHARING_MUTATE_DEF,
+    SOURCE_REGISTER_DEF,
     LabelAllocateInput,
     LabelAllocateResult,
     LabelKind,
@@ -47,11 +54,15 @@ from notebooklm._records import (
     SharingMutateResult,
     SharingUserGrant,
     SharingVisibility,
+    SourceRegisterInput,
+    SourceRegisterKind,
+    SourceRegisterResult,
 )
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import primitives as primitive_rows
 from notebooklm._web.codec import labels as labels_codec
 from notebooklm._web.codec import sharing as sharing_codec
+from notebooklm._web.codec import sources as sources_codec
 from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES, SemanticDeadlineAuthority
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from notebooklm.exceptions import RPCTimeoutError, ServerError
@@ -67,6 +78,11 @@ _COLLECTION_OPTS = [
     [1, None, None, None, None, None, None, None, None, None, [1, 3]],
 ]
 _COLLECTION_CREATE_OPTS = labels_codec.build_create_collection_params("x")[0]
+
+
+def _source_entry(source_id: str, *, title: str, url: str | None = None) -> list[Any]:
+    metadata = [None, 11, [1704067200, 0], None, 5, None, None, [url] if url else None]
+    return [[source_id], title, metadata, [None, 2]]
 
 
 @dataclass
@@ -108,6 +124,7 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
         Operation.LABEL_ALLOCATE: primitive_rows.LABEL_ALLOCATE,
         Operation.SHARING_MUTATE: primitive_rows.SHARING_MUTATE,
         Operation.SOURCE_PATCH_TITLE: primitive_rows.SOURCE_PATCH_TITLE,
+        Operation.SOURCE_REGISTER: primitive_rows.SOURCE_REGISTER,
         Operation.SHARING_PATCH_VIEW_LEVEL: primitive_rows.SHARING_PATCH_VIEW_LEVEL,
     }
     # ``CHAT_STREAM_ANSWER`` is the one primitive whose native is a streamed
@@ -134,15 +151,14 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
         }
         assert declared == ledger
     assert not primitive_rows.LABEL_MUTATE.native.is_constant
+    assert not primitive_rows.SOURCE_REGISTER.native.is_constant
     assert primitive_rows.LABEL_ALLOCATE.native.is_constant
     assert primitive_rows.SHARING_MUTATE.native.is_constant
     assert primitive_rows.SOURCE_PATCH_TITLE.native.is_constant
     assert primitive_rows.SHARING_PATCH_VIEW_LEVEL.native.is_constant
-    # One UPDATE_LABEL call per input, the variant chosen from it.
-    assert (
-        SEMANTIC_DEADLINE_AUTHORITIES[Operation.LABEL_MUTATE]
-        is SemanticDeadlineAuthority.BRANCH_EXCLUSIVE
-    )
+    # One UPDATE_LABEL / one ADD_SOURCE call per input, the variant chosen from it.
+    for keyed in (Operation.LABEL_MUTATE, Operation.SOURCE_REGISTER):
+        assert SEMANTIC_DEADLINE_AUTHORITIES[keyed] is SemanticDeadlineAuthority.BRANCH_EXCLUSIVE
     assert Operation.LABEL_ALLOCATE not in SEMANTIC_DEADLINE_AUTHORITIES
     assert Operation.SHARING_MUTATE not in SEMANTIC_DEADLINE_AUTHORITIES
     assert Operation.SOURCE_PATCH_TITLE not in SEMANTIC_DEADLINE_AUTHORITIES
@@ -152,6 +168,53 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
         SEMANTIC_DEADLINE_AUTHORITIES[Operation.CHAT_STREAM_ANSWER]
         is SemanticDeadlineAuthority.WORKFLOW_OWNED
     )
+
+
+def test_source_register_keeps_a_distinct_retry_policy_per_declared_choice() -> None:
+    """P10 R3.2's precondition: one keyed leaf, per-``NativeChoice`` policy.
+
+    ``SOURCE_REGISTER`` collapses the source-add family's registration writes
+    onto one row.  Two of the five ledger rows it replaces are classified
+    differently from the other three, so the check that matters is not "the row
+    declares three natives" but "each declared choice still resolves to the
+    classification its own operation had".  Both the reviewed ledger and the
+    live idempotency registry key on ``(method, variant)`` — the exact pair a
+    ``NativeChoice`` carries — so nothing here is flattened.
+    """
+    expected = {
+        "url": IdempotencyPolicy.PROBE_THEN_CREATE,
+        "text": IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        "drive": IdempotencyPolicy.PROBE_THEN_CREATE,
+    }
+    reviewed = {
+        native.variant: native.expected_policy
+        for native in WEB_CALL_POLICY_BINDINGS[Operation.SOURCE_REGISTER].native_bindings
+    }
+
+    assert reviewed == expected
+    for choice in primitive_rows.SOURCE_REGISTER.native.choices:
+        assert choice.method is RPCMethod.ADD_SOURCE
+        live = IDEMPOTENCY_REGISTRY.get_entry(
+            choice.method, operation_variant=choice.variant
+        ).policy
+        assert live is expected[str(choice.variant)]
+
+    # The leaf never widens a per-variant classification: every variant it
+    # declares keeps the disposition its product operation reviewed — whether
+    # that operation still has a row or has already been hoisted above the port.
+    for product in (
+        Operation.SOURCE_ADD_URL,
+        Operation.SOURCE_ADD_URL_BATCH,
+        Operation.SOURCE_ADD_TEXT,
+        Operation.SOURCE_ADD_DRIVE,
+    ):
+        ledger_row = WEB_CALL_POLICY_BINDINGS.get(product) or SERVICE_OWNED_WORKFLOW_BINDINGS.get(
+            product
+        )
+        assert ledger_row is not None
+        for native in ledger_row.native_bindings:
+            if native.method is RPCMethod.ADD_SOURCE:
+                assert reviewed[str(native.variant)] is native.expected_policy
 
 
 # --- LABEL_MUTATE ---------------------------------------------------------------
@@ -403,6 +466,238 @@ async def test_sharing_mutate_rejects_a_value_outside_the_closed_union_before_di
         await backend.invoke(SHARING_MUTATE_DEF, value, deadline=None)
     assert caught.value.operation is Operation.SHARING_MUTATE
     assert executor.calls == []
+
+
+# --- SOURCE_REGISTER ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "variant", "params", "allow_null"),
+    [
+        pytest.param(
+            SourceRegisterInput(
+                _NB,
+                SourceRegisterKind.URL,
+                urls=("https://example.com/doc",),
+                youtube_flags=(False,),
+            ),
+            "url",
+            [
+                [
+                    [
+                        None,
+                        None,
+                        ["https://example.com/doc"],
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        1,
+                    ]
+                ],
+                _NB,
+                _OPTS,
+            ],
+            False,
+            id="url-single",
+        ),
+        pytest.param(
+            SourceRegisterInput(
+                _NB,
+                SourceRegisterKind.URL,
+                urls=("https://a.example/", "https://youtu.be/x"),
+                youtube_flags=(False, True),
+            ),
+            "url",
+            [
+                [
+                    [
+                        None,
+                        None,
+                        ["https://a.example/"],
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        1,
+                    ],
+                    [
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        ["https://youtu.be/x"],
+                        None,
+                        None,
+                        1,
+                    ],
+                ],
+                _NB,
+                _OPTS,
+            ],
+            False,
+            id="url-true-batch",
+        ),
+        pytest.param(
+            SourceRegisterInput(_NB, SourceRegisterKind.TEXT, title="Pasted", content="body"),
+            "text",
+            [
+                [[None, ["Pasted", "body"], None, 2, None, None, None, None, None, None, 1]],
+                _NB,
+                _OPTS,
+            ],
+            False,
+            id="text",
+        ),
+        pytest.param(
+            SourceRegisterInput(
+                _NB,
+                SourceRegisterKind.DRIVE,
+                file_id="file-id",
+                title="Doc",
+                mime_type="application/pdf",
+            ),
+            "drive",
+            [
+                [
+                    [
+                        ["file-id", "application/pdf", 1, "Doc"],
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        1,
+                    ]
+                ],
+                _NB,
+                [2],
+                [1, None, None, None, None, None, None, None, None, None, [1]],
+            ],
+            True,
+            id="drive",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_source_register_selects_the_variant_and_sends_the_family_payload(
+    value: SourceRegisterInput,
+    variant: str,
+    params: list[Any],
+    allow_null: bool,
+) -> None:
+    """One row, three registration payloads, byte-identical to the P9.4b handlers."""
+    choice = primitive_rows.SOURCE_REGISTER.native.select(value)
+    assert (choice.method, choice.variant) == (RPCMethod.ADD_SOURCE, variant)
+
+    executor = _RecordingExecutor([[_source_entry("src", title="Echoed")]])
+    result = await build_web_backend(executor).invoke(SOURCE_REGISTER_DEF, value, deadline=None)
+
+    assert isinstance(result, SourceRegisterResult)
+    assert [source.id for source in result.sources] == ["src"]
+    (call,) = executor.calls
+    assert call.method is RPCMethod.ADD_SOURCE
+    assert call.params == params
+    assert call.kwargs == {
+        **_BASE_KWARGS,
+        "source_path": f"/notebook/{_NB}",
+        "allow_null": allow_null,
+        "operation_variant": variant,
+    }
+
+
+@pytest.mark.asyncio
+async def test_source_register_decodes_every_echoed_row_in_wire_order() -> None:
+    """A true batch echo stays positional: reconciliation is the workflow's job."""
+    executor = _RecordingExecutor(
+        [[_source_entry("a", title="A"), _source_entry("b", title="B")]],
+    )
+    value = SourceRegisterInput(
+        _NB,
+        SourceRegisterKind.URL,
+        urls=("https://a.example/", "https://b.example/"),
+        youtube_flags=(False, False),
+    )
+
+    result = await build_web_backend(executor).invoke(SOURCE_REGISTER_DEF, value, deadline=None)
+
+    assert [source.id for source in result.sources] == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_source_register_tolerates_the_drive_null_echo() -> None:
+    """``allow_null`` is legal on the Drive variant; the leaf reports no rows."""
+    executor = _RecordingExecutor(None)
+    value = SourceRegisterInput(
+        _NB,
+        SourceRegisterKind.DRIVE,
+        file_id="file-id",
+        title="Doc",
+        mime_type="application/pdf",
+    )
+
+    result = await build_web_backend(executor).invoke(SOURCE_REGISTER_DEF, value, deadline=None)
+
+    assert result == SourceRegisterResult(())
+
+
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        pytest.param(
+            SourceRegisterInput(_NB, SourceRegisterKind.URL),
+            "one YouTube discriminator per URL",
+            id="url-without-urls",
+        ),
+        pytest.param(
+            SourceRegisterInput(
+                _NB, SourceRegisterKind.URL, urls=("https://a.example/",), youtube_flags=()
+            ),
+            "one YouTube discriminator per URL",
+            id="url-flag-count-mismatch",
+        ),
+        pytest.param(
+            SourceRegisterInput(_NB, SourceRegisterKind.TEXT, title="Pasted"),
+            "a title and a body",
+            id="text-without-body",
+        ),
+        pytest.param(
+            SourceRegisterInput(_NB, SourceRegisterKind.DRIVE, file_id="f"),
+            "a file id, a title and a MIME type",
+            id="drive-without-title",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_source_register_contract_errors_fire_before_any_wire_call(
+    value: SourceRegisterInput, match: str
+) -> None:
+    """A payload its kind cannot carry is rejected ahead of the create."""
+    executor = _RecordingExecutor()
+    with pytest.raises(BackendContractError, match=match) as caught:
+        await build_web_backend(executor).invoke(SOURCE_REGISTER_DEF, value, deadline=None)
+    assert caught.value.operation is Operation.SOURCE_REGISTER
+    assert executor.calls == []
+
+
+def test_source_register_variant_is_the_registration_kind() -> None:
+    """One field fixes the payload shape and the reviewed retry classification."""
+    for kind in SourceRegisterKind:
+        value = SourceRegisterInput(_NB, kind)
+        assert sources_codec.source_register_variant(value) == kind.value
 
 
 # --- failure projection ---------------------------------------------------------

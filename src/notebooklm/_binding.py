@@ -65,7 +65,6 @@ class ErrorMode(str, Enum):
     """Per-row failure projection applied at translation time."""
 
     TRANSLATE = "translate"
-    RAW_PASSTHROUGH = "raw_passthrough"
     TRANSLATE_SCRUBBED = "translate_scrubbed"
 
 

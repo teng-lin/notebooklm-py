@@ -23,7 +23,7 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._lookup import unwrap_or_raise
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notebooks import NotebooksAPI
-from notebooklm._records import ArtifactRecord
+from notebooklm._records import ArtifactRecord, NoteRecord
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import ClientError, NotebookNotFoundError, RPCError
 from notebooklm.types import MindMap, MindMapKind, Note, Source
@@ -66,7 +66,6 @@ def _make_notebooks_api(rpc_call: AsyncMock) -> NotebooksAPI:
 
     core = make_fake_core(rpc_call=rpc_call)
     return NotebooksAPI(
-        core.rpc_executor,
         sources_api=MagicMock(),
         _backend=build_web_backend(core.rpc_executor),
     )
@@ -301,12 +300,14 @@ class TestArtifactsGetOrNone:
 class TestNotesGetOrNone:
     @pytest.mark.asyncio
     async def test_returns_note_on_hit(self, notes_api):
-        found = Note(id="note_1", notebook_id="nb_1", title="Title", content="Body")
+        # R6.6: the service hands back a ``NoteRecord`` and the facade owns the
+        # projection, so the hit is asserted by value rather than by identity.
+        found = NoteRecord(id="note_1", notebook_id="nb_1", title="Title", content="Body")
         notes_api._notes = MagicMock(get_note_or_none=AsyncMock(return_value=found))
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
             result = await notes_api.get_or_none("nb_1", "note_1")
-        assert result is found
+        assert result == Note(id="note_1", notebook_id="nb_1", title="Title", content="Body")
 
     @pytest.mark.asyncio
     async def test_returns_none_on_miss(self, notes_api):
@@ -317,11 +318,12 @@ class TestNotesGetOrNone:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_returns_semantic_service_projection_unchanged(self, notes_api):
-        found = Note(id="12345", notebook_id="nb_1", title="Title", content="Body")
+    async def test_projects_the_semantic_record_field_for_field(self, notes_api):
+        """A numeric-looking id is carried through the projection unchanged."""
+        found = NoteRecord(id="12345", notebook_id="nb_1", title="Title", content="Body")
         notes_api._notes = MagicMock(get_note_or_none=AsyncMock(return_value=found))
         result = await notes_api.get_or_none("nb_1", "12345")
-        assert result is found
+        assert result == Note(id="12345", notebook_id="nb_1", title="Title", content="Body")
 
     @pytest.mark.asyncio
     async def test_propagates_rpc_error(self, notes_api):

@@ -26,14 +26,21 @@ from notebooklm._records import (
     RESEARCH_IMPORT_DEF,
     RESEARCH_POLL_DEF,
     RESEARCH_START_DEF,
+    ResearchImportBatchInput,
+    ResearchImportedSourceRecord,
     ResearchImportEntry,
     ResearchImportEntryKind,
+    ResearchImportVerifyInput,
+    ResearchImportVerifyResult,
     ResearchMode,
     ResearchSearchSource,
     ResearchSourceRecord,
+    ResearchStartInput,
     ResearchTaskRecord,
+    ResearchWaitInput,
+    SourceRecord,
 )
-from notebooklm._research import ResearchAPI
+from notebooklm._research import ResearchAPI, _import_candidates
 from notebooklm._research_service import ResearchService
 from notebooklm._web.codec.research import (
     build_report_import_entry,
@@ -52,6 +59,7 @@ from notebooklm.exceptions import (
     DecodingError,
     ResearchStartUnavailableError,
     RPCError,
+    RPCTimeoutError,
     ValidationError,
 )
 from notebooklm.rpc import RPCMethod
@@ -83,6 +91,20 @@ def _service(rpc: _RecordingRpc, source_lister: object | None = None) -> Researc
     return ResearchService(
         build_web_backend(rpc),
         source_lister=source_lister or MagicMock(),  # type: ignore[arg-type]
+    )
+
+
+def _api(rpc: _RecordingRpc, source_lister: object | None = None) -> ResearchAPI:
+    """The facade over the same injected backend.
+
+    P10 R6.4 moved exception projection out of ``ResearchService`` and onto
+    this facade, so a test that asserts the *public* exception a caller sees
+    has to drive the facade; the service's own failures are neutral
+    :class:`BackendError` records.
+    """
+    return ResearchAPI(
+        source_lister=source_lister or MagicMock(),  # type: ignore[arg-type]
+        _backend=build_web_backend(rpc),
     )
 
 
@@ -345,7 +367,7 @@ def test_unmapped_discovery_mode_label_projects_the_reserved_unknown_member() ->
 @pytest.mark.asyncio
 async def test_start_dispatches_the_mode_specific_rpc_and_routes_by_notebook() -> None:
     rpc = _RecordingRpc(["task_1", "report_1"])
-    result = await _service(rpc).start("nb", "q", "web", "deep")
+    result = await _api(rpc).start("nb", "q", "web", "deep")
 
     method, params, kwargs = rpc.calls[0]
     assert method is RPCMethod.START_DEEP_RESEARCH
@@ -372,22 +394,25 @@ async def test_start_validates_before_any_dispatch(
 ) -> None:
     rpc = _RecordingRpc()
     with pytest.raises(ValidationError, match=message):
-        await _service(rpc).start("nb", "q", source, mode)
+        await _api(rpc).start("nb", "q", source, mode)
     assert rpc.calls == []
 
 
-@pytest.mark.asyncio
-async def test_deep_start_null_result_keeps_its_domain_error_and_rejecting_cause() -> None:
-    rejected = RPCError(
+def _rejected_deep_start() -> RPCError:
+    return RPCError(
         "NotebookLM rejected this request",
         method_id=RPCMethod.START_DEEP_RESEARCH.value,
         rpc_code=13,
         found_ids=[RPCMethod.START_DEEP_RESEARCH.value],
     )
-    rpc = _RecordingRpc(rejected)
+
+
+@pytest.mark.asyncio
+async def test_deep_start_null_result_keeps_its_domain_error_and_rejecting_cause() -> None:
+    rpc = _RecordingRpc(_rejected_deep_start())
 
     with pytest.raises(ResearchStartUnavailableError) as caught:
-        await _service(rpc).start("nb", "q", "web", "deep")
+        await _api(rpc).start("nb", "q", "web", "deep")
 
     error = caught.value
     assert error.notebook_id == "nb"
@@ -402,6 +427,33 @@ async def test_deep_start_null_result_keeps_its_domain_error_and_rejecting_cause
 
 
 @pytest.mark.asyncio
+async def test_deep_start_null_result_reaches_the_service_as_neutral_evidence() -> None:
+    """Below the facade the same failure is the closed record, not the class.
+
+    The pairing with the test above is the point of P10 defect S7: the service
+    no longer knows which public exception this becomes, and the facade no
+    longer knows which wire status produced it.
+    """
+    rpc = _RecordingRpc(_rejected_deep_start())
+
+    with pytest.raises(BackendError) as caught:
+        await _service(rpc).start(
+            ResearchStartInput(
+                notebook_id="nb",
+                query="q",
+                search_source=ResearchSearchSource.WEB,
+                mode=ResearchMode.DEEP,
+            )
+        )
+
+    error = caught.value
+    assert type(error) is BackendError
+    assert not isinstance(error, ResearchStartUnavailableError)
+    assert error.reason is BackendErrorReason.RESEARCH_START_UNAVAILABLE
+    assert error.operation is Operation.RESEARCH_START
+
+
+@pytest.mark.asyncio
 async def test_fast_start_null_result_is_not_reclassified() -> None:
     rejected = RPCError(
         "NotebookLM rejected this request",
@@ -409,8 +461,97 @@ async def test_fast_start_null_result_is_not_reclassified() -> None:
         found_ids=[RPCMethod.START_FAST_RESEARCH.value],
     )
     with pytest.raises(RPCError) as caught:
-        await _service(_RecordingRpc(rejected)).start("nb", "q", "web", "fast")
+        await _api(_RecordingRpc(rejected)).start("nb", "q", "web", "fast")
     assert not isinstance(caught.value, ResearchStartUnavailableError)
+
+
+# --- Exception-chain parity across the moved projection ----------------------
+
+
+_TIMED_OUT_IMPORT = "Timed out"
+
+
+def _exception_chain(error: BaseException) -> list[tuple[str, str, bool]]:
+    """The full ``__cause__``/``__context__`` walk a caller can observe."""
+    walk: list[tuple[str, str, bool]] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        walk.append((type(current).__name__, str(current), current.__suppress_context__))
+        current = current.__cause__ or current.__context__
+    return walk
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "expected_type"),
+    [
+        (RPCTimeoutError(_TIMED_OUT_IMPORT, timeout_seconds=30.0), RPCTimeoutError),
+        (RPCError("rejected (failed precondition)", rpc_code=9), RPCError),
+        (RPCError("Unauthenticated", rpc_code=16), RPCError),
+    ],
+    ids=["timeout", "failed-precondition", "other-rpc"],
+)
+async def test_the_retried_import_raises_the_same_chain_as_a_one_shot_import(
+    failure: Exception,
+    expected_type: type[Exception],
+) -> None:
+    """R6.4's whole risk, pinned: the retry loop's exception chain is unchanged.
+
+    Before the migration the loop caught the *projected* public exception and
+    re-raised that object; now it catches the neutral ``BackendError`` and the
+    facade projects once, outside the handler frame. Both forms must hand the
+    caller the same class, the same reconstructed fields and — the part a
+    ``raise`` inside an ``except`` block would silently change — the same
+    ``__cause__`` / ``__context__`` walk.
+
+    ``max_elapsed=0`` runs exactly one attempt, so the one-shot and the retried
+    call fail on the identical injected failure and the comparison is between
+    the two projection *paths* rather than between two different failures.
+    """
+    lister = MagicMock()
+    lister.list = AsyncMock(return_value=[])
+    sources = [{"url": "https://example.com", "title": "One"}]
+
+    with pytest.raises(expected_type) as one_shot:
+        await _api(_RecordingRpc(failure), lister).import_sources("nb", "task", sources)
+    with pytest.raises(expected_type) as retried:
+        await _api(_RecordingRpc(failure), lister).import_sources_with_verification(
+            "nb", "task", sources, max_elapsed=0
+        )
+
+    assert type(retried.value) is type(one_shot.value)
+    assert _exception_chain(retried.value) == _exception_chain(one_shot.value)
+    assert _exception_chain(retried.value) == [(expected_type.__name__, str(failure), False)]
+    for field in ("rpc_code", "timeout_seconds", "method_id"):
+        sentinel = object()
+        assert getattr(retried.value, field, sentinel) == getattr(one_shot.value, field, sentinel)
+
+
+@pytest.mark.asyncio
+async def test_a_budget_exhausted_retry_raises_the_last_attempt_unchained() -> None:
+    """The give-up raise happens outside any handler, as it did before R6.4.
+
+    The loop re-raises the failure it stored from an earlier iteration. Raising
+    it from inside the ``except`` block instead would chain the *second*
+    timeout onto the first and change what a caller printing the traceback
+    sees, so this pins the walk at exactly one entry.
+    """
+    lister = MagicMock()
+    lister.list = AsyncMock(return_value=[])
+    rpc = _RecordingRpc(
+        RPCTimeoutError(_TIMED_OUT_IMPORT, timeout_seconds=30.0),
+        RPCTimeoutError(_TIMED_OUT_IMPORT, timeout_seconds=30.0),
+    )
+
+    with pytest.raises(RPCTimeoutError) as caught:
+        await _api(rpc, lister).import_sources_with_verification(
+            "nb", "task", [{"url": "https://example.com", "title": "One"}], max_elapsed=0
+        )
+
+    assert _exception_chain(caught.value) == [("RPCTimeoutError", _TIMED_OUT_IMPORT, False)]
+    assert caught.value.timeout_seconds == 30.0
 
 
 def test_start_unavailable_projection_requires_its_closed_evidence() -> None:
@@ -462,9 +603,11 @@ async def test_cancel_is_fire_and_forget_and_routes_on_the_notebook() -> None:
 async def test_import_hands_the_resolved_attempt_window_to_the_transport() -> None:
     rpc = _RecordingRpc([[[["src_1"], "One"]]])
     imported = await _service(rpc).import_sources(
-        "nb",
-        "task",
-        [{"url": "https://example.com", "title": "One"}],
+        ResearchImportBatchInput(
+            notebook_id="nb",
+            task_id="task",
+            candidates=_import_candidates([{"url": "https://example.com", "title": "One"}]),
+        )
     )
 
     method, params, kwargs = rpc.calls[0]
@@ -472,14 +615,20 @@ async def test_import_hands_the_resolved_attempt_window_to_the_transport() -> No
     assert params[2:4] == ["task", "nb"]
     # One source: the batch-scaled 60 + 3 * 1 window, floored at the default.
     assert kwargs["read_timeout"] == 63.0
-    assert imported == [{"id": "src_1", "title": "One"}]
+    assert imported == (ResearchImportedSourceRecord(id="src_1", title="One"),)
 
 
 @pytest.mark.asyncio
 async def test_import_skips_the_rpc_when_nothing_survives_partitioning() -> None:
     rpc = _RecordingRpc()
-    assert await _service(rpc).import_sources("nb", "task", []) == []
-    assert await _service(rpc).import_sources("nb", "task", [{"title": "no url"}]) == []
+
+    def _batch(sources: list[Any]) -> ResearchImportBatchInput:
+        return ResearchImportBatchInput(
+            notebook_id="nb", task_id="task", candidates=_import_candidates(sources)
+        )
+
+    assert await _service(rpc).import_sources(_batch([])) == ()
+    assert await _service(rpc).import_sources(_batch([{"title": "no url"}])) == ()
     assert rpc.calls == []
 
 
@@ -497,7 +646,17 @@ async def test_poll_raises_on_an_ambiguous_unfiltered_selection() -> None:
 @pytest.mark.asyncio
 async def test_poll_carries_siblings_and_pins_a_requested_task() -> None:
     rpc = _RecordingRpc([[_task_row("task_a"), _task_row("task_b")]])
-    result = await _service(rpc).poll("nb", "task_b")
+    selection = await _service(rpc).poll("nb", "task_b")
+    assert selection.task is not None
+    assert selection.task.task_id == "task_b"
+    assert [task.task_id for task in selection.tasks] == ["task_b"]
+    # A record is one observation; siblings are the selection's own field, so
+    # a task record carries no nested task list to leak into the projection.
+    assert all(not hasattr(task, "tasks") for task in selection.tasks)
+
+    # The facade renders the same selection as the published nested shape.
+    rpc = _RecordingRpc([[_task_row("task_a"), _task_row("task_b")]])
+    result = await _api(rpc).poll("nb", "task_b")
     assert result.task_id == "task_b"
     assert [task.task_id for task in result.tasks] == ["task_b"]
     assert all(task.tasks == () for task in result.tasks)
@@ -505,8 +664,15 @@ async def test_poll_carries_siblings_and_pins_a_requested_task() -> None:
 
 @pytest.mark.asyncio
 async def test_poll_distinguishes_an_empty_poll_from_a_missing_pinned_task() -> None:
-    assert (await _service(_RecordingRpc([])).poll("nb")).status is ResearchStatus.NO_RESEARCH
-    missing = await _service(_RecordingRpc([])).poll("nb", "task_x")
+    # Neutrally, the two absences are structural rather than status strings.
+    empty = await _service(_RecordingRpc([])).poll("nb")
+    assert (empty.task, empty.tasks, empty.missing_task_id) == (None, (), None)
+    absent = await _service(_RecordingRpc([])).poll("nb", "task_x")
+    assert (absent.task, absent.tasks, absent.missing_task_id) == (None, (), "task_x")
+
+    # The facade turns each into the lifecycle sentinel callers have always seen.
+    assert (await _api(_RecordingRpc([])).poll("nb")).status is ResearchStatus.NO_RESEARCH
+    missing = await _api(_RecordingRpc([])).poll("nb", "task_x")
     assert missing.status is ResearchStatus.NOT_FOUND
     assert missing.task_id == "task_x"
     assert missing.tasks == ()
@@ -526,23 +692,34 @@ async def test_wait_pins_the_first_task_and_polls_once_per_tick(monkeypatch) -> 
         [[_task_row("task_a", status_code=2)]],
     )
 
-    result = await _service(rpc).wait_for_completion("nb", timeout=100, initial_interval=1)
+    result = await _service(rpc).wait_for_completion(
+        ResearchWaitInput(notebook_id="nb", timeout=100, poll_interval=1)
+    )
 
     # A sibling appearing mid-wait must not substitute its result: the loop
     # pinned task_a on the first poll and stayed on it.
-    assert result.task_id == "task_a"
+    assert result.task is not None
+    assert result.task.task_id == "task_a"
     assert rpc.methods == [RPCMethod.POLL_RESEARCH] * 3
     assert slept == [1, 1]
 
 
 @pytest.mark.asyncio
 async def test_wait_rejects_a_non_numeric_explicit_interval() -> None:
+    """Cadence validation belongs to the published keyword, so it sits above.
+
+    R6.4 moved it to the facade with the ``initial_interval`` sentinel it reads;
+    the service receives an already-resolved ``poll_interval``. The exceptions a
+    caller sees are unchanged, and the rejection still costs no dispatch.
+    """
+    rpc = _RecordingRpc()
     with pytest.raises(TypeError, match="poll interval must be a number"):
-        await _service(_RecordingRpc()).wait_for_completion("nb", initial_interval=None)  # type: ignore[arg-type]
+        await _api(rpc).wait_for_completion("nb", initial_interval=None)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="timeout must be non-negative"):
-        await _service(_RecordingRpc()).wait_for_completion("nb", timeout=-1)
+        await _api(rpc).wait_for_completion("nb", timeout=-1)
     with pytest.raises(ValueError, match="poll interval must be positive"):
-        await _service(_RecordingRpc()).wait_for_completion("nb", initial_interval=0)
+        await _api(rpc).wait_for_completion("nb", initial_interval=0)
+    assert rpc.calls == []
 
 
 # --- GET_NOTEBOOK recency inventory -----------------------------------------
@@ -558,10 +735,23 @@ async def test_research_operations_bump_no_recency() -> None:
         [[[["src_1"], "One"]]],
     )
     service = _service(rpc)
-    await service.start("nb", "q")
+    await service.start(
+        ResearchStartInput(
+            notebook_id="nb",
+            query="q",
+            search_source=ResearchSearchSource.WEB,
+            mode=ResearchMode.FAST,
+        )
+    )
     await service.poll("nb")
     await service.cancel("nb", "task_1")
-    await service.import_sources("nb", "task_1", [{"url": "https://e.com", "title": "One"}])
+    await service.import_sources(
+        ResearchImportBatchInput(
+            notebook_id="nb",
+            task_id="task_1",
+            candidates=_import_candidates([{"url": "https://e.com", "title": "One"}]),
+        )
+    )
 
     assert RPCMethod.GET_NOTEBOOK not in rpc.methods
     assert rpc.methods == [
@@ -573,6 +763,40 @@ async def test_research_operations_bump_no_recency() -> None:
 
 
 @pytest.mark.asyncio
+async def test_the_facade_renders_the_verify_result_as_a_list_with_a_side_channel() -> None:
+    """The published import shape survives the move to a neutral result record.
+
+    The service returns ``ResearchImportVerifyResult``; only ``ResearchAPI``
+    knows that callers have always received a plain ``list`` of ``{id, title}``
+    dicts carrying the skipped set on ``already_present`` (#1961). Asserted at
+    the facade because that is where the shape is now built — the service-level
+    assertions this replaces moved down to the record above.
+    """
+    lister = MagicMock()
+    lister.list = AsyncMock(
+        return_value=[SourceRecord(id="src_old", title="Old", url="https://example.com/old")]
+    )
+    rpc = _RecordingRpc([[[["src_1"], "One"]]])
+
+    imported = await _api(rpc, lister).import_sources_with_verification(
+        "nb",
+        "task",
+        [
+            {"url": "https://example.com/new", "title": "One"},
+            {"url": "https://example.com/old", "title": "Old"},
+        ],
+    )
+
+    assert isinstance(imported, list)
+    assert imported == [{"id": "src_1", "title": "One"}]
+    assert imported[0] == {"id": "src_1", "title": "One"}
+    assert len(imported) == 1
+    assert imported.already_present == [
+        {"id": "src_old", "title": "Old", "url": "https://example.com/old"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_verified_import_reads_one_baseline_snapshot_on_the_happy_path() -> None:
     """One snapshot, no probe: the probe only runs after a failed attempt."""
     lister = MagicMock()
@@ -580,12 +804,16 @@ async def test_verified_import_reads_one_baseline_snapshot_on_the_happy_path() -
     rpc = _RecordingRpc([[[["src_1"], "One"]]])
 
     imported = await _service(rpc, lister).import_sources_with_verification(
-        "nb",
-        "task",
-        [{"url": "https://example.com", "title": "One"}],
+        ResearchImportVerifyInput(
+            notebook_id="nb",
+            task_id="task",
+            candidates=_import_candidates([{"url": "https://example.com", "title": "One"}]),
+        )
     )
 
-    assert imported == [{"id": "src_1", "title": "One"}]
+    assert imported == ResearchImportVerifyResult(
+        imported=(ResearchImportedSourceRecord(id="src_1", title="One"),)
+    )
     assert lister.list.await_count == 1
     assert lister.list.await_args.kwargs == {"strict": False}
     assert rpc.methods == [RPCMethod.IMPORT_RESEARCH]

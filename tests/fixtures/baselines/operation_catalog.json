@@ -1138,6 +1138,39 @@
         }
       ]
     },
+    "research.import_verify": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "research.import"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.list"
+        }
+      ],
+      "native_bindings": [
+        {
+          "idempotency_policy": "non_idempotent_no_retry",
+          "role": "non-idempotent source import",
+          "rpc_method": "IMPORT_RESEARCH",
+          "variant": null
+        },
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "pre-import baseline and post-failure verification probe",
+          "rpc_method": "GET_NOTEBOOK",
+          "variant": null
+        }
+      ],
+      "service_owned": true
+    },
     "research.poll": {
       "call_policy": "read",
       "known_divergence": null,
@@ -1167,6 +1200,27 @@
           "variant": null
         }
       ]
+    },
+    "research.wait": {
+      "call_policy": "read",
+      "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "research.poll"
+        }
+      ],
+      "native_bindings": [
+        {
+          "idempotency_policy": "idempotent_set_op",
+          "role": "research task poll",
+          "rpc_method": "POLL_RESEARCH",
+          "variant": null
+        }
+      ],
+      "service_owned": true
     },
     "settings.get": {
       "call_policy": "read",
@@ -1354,6 +1408,26 @@
     "source.add_drive": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.list"
+        },
+        {
+          "allowed_variants": [
+            "drive"
+          ],
+          "operation": "source.register"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.patch_title"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "probe_then_create",
@@ -1373,7 +1447,8 @@
           "rpc_method": "UPDATE_SOURCE",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.add_file": {
       "call_policy": "mutation",
@@ -1408,6 +1483,14 @@
     "source.add_text": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "text"
+          ],
+          "operation": "source.register"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "non_idempotent_no_retry",
@@ -1415,11 +1498,38 @@
           "rpc_method": "ADD_SOURCE",
           "variant": "text"
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.add_url": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.list"
+        },
+        {
+          "allowed_variants": [
+            "url"
+          ],
+          "operation": "source.register"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.patch_title"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.get"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -1439,11 +1549,26 @@
           "rpc_method": "UPDATE_SOURCE",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.add_url_batch": {
       "call_policy": "mutation",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "url"
+          ],
+          "operation": "source.register"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "source.list"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "probe_then_create",
@@ -1457,7 +1582,8 @@
           "rpc_method": "GET_NOTEBOOK",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "source.check_freshness": {
       "call_policy": "read",
@@ -1552,6 +1678,30 @@
           "role": "accepted duplicate refresh kickoff",
           "rpc_method": "REFRESH_SOURCE",
           "variant": null
+        }
+      ]
+    },
+    "source.register": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "native_bindings": [
+        {
+          "idempotency_policy": "probe_then_create",
+          "role": "guarded generic/YouTube create (single or true batch)",
+          "rpc_method": "ADD_SOURCE",
+          "variant": "url"
+        },
+        {
+          "idempotency_policy": "non_idempotent_no_retry",
+          "role": "non-idempotent pasted-text allocation",
+          "rpc_method": "ADD_SOURCE",
+          "variant": "text"
+        },
+        {
+          "idempotency_policy": "probe_then_create",
+          "role": "guarded Drive-document allocation",
+          "rpc_method": "ADD_SOURCE",
+          "variant": "drive"
         }
       ]
     },
@@ -2066,7 +2216,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/sources.py:SOURCE_ADD_DRIVE"
+        "_web/bindings/primitives.py:SOURCE_REGISTER"
       ],
       "golden_disposition": "not_recorded",
       "golden_evidence": [],
@@ -2101,7 +2251,8 @@
       "rpc_id": "izAoDd",
       "rpc_method": "ADD_SOURCE",
       "semantic_operations": [
-        "source.add_drive"
+        "source.add_drive",
+        "source.register"
       ],
       "variant": "drive"
     },
@@ -2109,7 +2260,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/sources.py:SOURCE_ADD_TEXT"
+        "_web/bindings/primitives.py:SOURCE_REGISTER"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2149,7 +2300,8 @@
       "rpc_id": "izAoDd",
       "rpc_method": "ADD_SOURCE",
       "semantic_operations": [
-        "source.add_text"
+        "source.add_text",
+        "source.register"
       ],
       "variant": "text"
     },
@@ -2157,8 +2309,7 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/sources.py:SOURCE_ADD_URL",
-        "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH"
+        "_web/bindings/primitives.py:SOURCE_REGISTER"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -2199,7 +2350,8 @@
       "rpc_method": "ADD_SOURCE",
       "semantic_operations": [
         "source.add_url",
-        "source.add_url_batch"
+        "source.add_url_batch",
+        "source.register"
       ],
       "variant": "url"
     },
@@ -3154,14 +3306,10 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_notebooks.py:NotebooksAPI.get_raw",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
-        "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
-        "_web/bindings/sources.py:SOURCE_ADD_URL",
-        "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT"
@@ -4720,9 +4868,7 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
-        "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
-        "_web/bindings/sources.py:SOURCE_ADD_FILE",
-        "_web/bindings/sources.py:SOURCE_ADD_URL"
+        "_web/bindings/sources.py:SOURCE_ADD_FILE"
       ],
       "golden_disposition": "golden_covered",
       "golden_evidence": [
@@ -7585,13 +7731,7 @@
       "execution_authorities": [
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "narrow raw compatibility lookup",
-          "site": "_notebooks.py:NotebooksAPI.get_raw",
-          "transport_kind": "rpc"
-        },
-        {
-          "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "typed notebook/source-id lookup",
+          "discriminator": "typed notebook/source-id lookup plus the row's undecoded raw branch",
           "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         }
@@ -7615,25 +7755,14 @@
           "authority_sites": [
             "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
-          "condition": "always",
+          "condition": "always: one row call per public read, decoded or raw",
           "maximum_calls": 1,
           "minimum_calls": 1,
           "public_methods": [
             "notebooks.get",
             "notebooks.get_or_none",
+            "notebooks.get_raw",
             "notebooks.get_source_ids"
-          ],
-          "unit": "public_call"
-        },
-        {
-          "authority_sites": [
-            "_notebooks.py:NotebooksAPI.get_raw"
-          ],
-          "condition": "narrow raw compatibility call",
-          "maximum_calls": 1,
-          "minimum_calls": 1,
-          "public_methods": [
-            "notebooks.get_raw"
           ],
           "unit": "public_call"
         }
@@ -7750,7 +7879,7 @@
       ],
       "route_context": "notebook",
       "tier": "product",
-      "unsupported_reason": "facade composition without a typed def: NotebooksAPI.get_metadata delegates to NotebookMetadataService, which gathers the public notebooks.get and sources.list reads concurrently (_notebook_metadata.py); R6.2 decides whether it earns a typed NOTEBOOK_METADATA_DEF workflow",
+      "unsupported_reason": "facade composition without a typed def: NotebooksAPI.get_metadata delegates to NotebookMetadataService, which concurrently gathers the late-bound public notebooks.get and the injected NotebookSourceLister.list (_notebook_metadata.py); both collaborators are replaceable public-model seams rather than typed leaves, so the composition stays untyped and no NOTEBOOK_METADATA_DEF exists",
       "web_paths": []
     },
     {
@@ -8088,7 +8217,7 @@
       ],
       "route_context": "notebook+research-task",
       "tier": "product",
-      "unsupported_reason": "facade/service workflow without a typed def: ResearchService sequences research.import and a source-listing probe within one budget; R6.4 adds typed inputs/results and flips it to service-owned",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8199,7 +8328,7 @@
       ],
       "route_context": "notebook+research-task",
       "tier": "product",
-      "unsupported_reason": "facade/service workflow without a typed def: ResearchService polls research.poll under its own total budget; R6.4 adds typed inputs/results and flips it to service-owned",
+      "unsupported_reason": null,
       "web_paths": []
     },
     {
@@ -8563,25 +8692,25 @@
       "app_callers": [
         "_app/source_mutations.py:execute_source_add_drive"
       ],
-      "composite_behavior": "Takes an unconditional source-id baseline and reconciles by new exact Drive document id.",
+      "composite_behavior": "Service-owned since P10 R3.4: SourceService.add_drive takes an unconditional source-id baseline over source.list, allocates the Drive document through one source.register drive write, reconciles an uncertain commit against that baseline by exact new Drive document id, and applies an optional title through source.patch_title afterward.",
       "disposition": "semantic",
       "execution_authorities": [
         {
           "binding": "ADD_SOURCE:drive",
-          "discriminator": "direct semantic binding",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
+          "discriminator": "native Drive-document allocation via the source.register leaf",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "unconditional baseline plus ambiguity probes",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
+          "discriminator": "unconditional baseline plus ambiguity probes via source.list",
+          "site": "_web/bindings/sources.py:SOURCE_LIST",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_SOURCE:<default>",
-          "discriminator": "optional post-create title",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
+          "discriminator": "optional post-create title via source.patch_title",
+          "site": "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
           "transport_kind": "rpc"
         }
       ],
@@ -8601,7 +8730,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/sources.py:SOURCE_ADD_DRIVE"
+            "_web/bindings/sources.py:SOURCE_LIST"
           ],
           "condition": "one baseline plus ambiguity probes and, when wait=True, one snapshot per facade-owned readiness poll tick",
           "maximum_calls": null,
@@ -8747,13 +8876,13 @@
       "app_callers": [
         "_app/source_add.py:add_source"
       ],
-      "composite_behavior": "Creates text without a safe probe key; idempotent=True is rejected up front.",
+      "composite_behavior": "Service-owned since P10 R3.2: SourceService.add_text rejects idempotent=True up front and runs one source.register text allocation, which has no safe probe key.",
       "disposition": "semantic",
       "execution_authorities": [
         {
           "binding": "ADD_SOURCE:text",
-          "discriminator": "direct semantic binding",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_TEXT",
+          "discriminator": "pasted-text allocation via the source.register leaf",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
           "transport_kind": "rpc"
         }
       ],
@@ -8794,25 +8923,31 @@
       "app_callers": [
         "_app/source_add.py:add_source"
       ],
-      "composite_behavior": "Takes an unconditional source-id baseline, routes YouTube URLs to their wire shape, uses exact new-row reconciliation, and applies an optional title afterward.",
+      "composite_behavior": "Service-owned since P10 R3.3: SourceService.add_url takes an unconditional source-id baseline over source.list, routes YouTube URLs to their wire shape through one source.register url allocation, reconciles an uncertain commit against that baseline, and applies an optional title through source.patch_title afterward.",
       "disposition": "semantic",
       "execution_authorities": [
         {
           "binding": "ADD_SOURCE:url",
-          "discriminator": "web or YouTube URL payload selected by semantic flag",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_URL",
+          "discriminator": "web or YouTube URL allocation via the source.register leaf",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "unconditional baseline plus ambiguity probes",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_URL",
+          "discriminator": "null UPDATE_SOURCE echo only via source.get",
+          "site": "_web/bindings/sources.py:SOURCE_GET",
+          "transport_kind": "rpc"
+        },
+        {
+          "binding": "GET_NOTEBOOK:<default>",
+          "discriminator": "unconditional baseline plus ambiguity probes via source.list",
+          "site": "_web/bindings/sources.py:SOURCE_LIST",
           "transport_kind": "rpc"
         },
         {
           "binding": "UPDATE_SOURCE:<default>",
-          "discriminator": "optional post-create title",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_URL",
+          "discriminator": "optional post-create title via source.patch_title",
+          "site": "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
           "transport_kind": "rpc"
         }
       ],
@@ -8832,7 +8967,8 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/sources.py:SOURCE_ADD_URL"
+            "_web/bindings/sources.py:SOURCE_GET",
+            "_web/bindings/sources.py:SOURCE_LIST"
           ],
           "condition": "one baseline plus ambiguity probes and, when wait=True, one snapshot per facade-owned readiness poll tick",
           "maximum_calls": null,
@@ -8866,19 +9002,19 @@
     },
     {
       "app_callers": [],
-      "composite_behavior": "Sends validated URL/YouTube entries once, never blindly replays an uncertain write, and reconciles omitted positions against exact URL identities.",
+      "composite_behavior": "Service-owned since P10 R3.5: SourceService.add_urls_batch sends validated URL/YouTube entries once through one source.register url write, never blindly replays an uncertain write, and reconciles omitted positions against exact URL identities plus a source.list of ERROR rows.",
       "disposition": "semantic",
       "execution_authorities": [
         {
           "binding": "ADD_SOURCE:url",
-          "discriminator": "one non-replayed batch payload",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
+          "discriminator": "one non-replayed batch payload via the source.register leaf",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
           "transport_kind": "rpc"
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "one snapshot only for omitted-row reconciliation",
-          "site": "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
+          "discriminator": "one snapshot only for omitted-row reconciliation via source.list",
+          "site": "_web/bindings/sources.py:SOURCE_LIST",
           "transport_kind": "rpc"
         }
       ],
@@ -8895,7 +9031,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH"
+            "_web/bindings/sources.py:SOURCE_LIST"
           ],
           "condition": "one snapshot only when ADD_SOURCE omits positional outcomes",
           "maximum_calls": 1,
@@ -9238,6 +9374,52 @@
       "response_decoders_projectors": [],
       "route_context": "notebook+source",
       "tier": "product",
+      "unsupported_reason": null,
+      "web_paths": []
+    },
+    {
+      "app_callers": [],
+      "composite_behavior": "P10 primitive: one ADD_SOURCE allocation whose wire variant \u2014 and therefore whose reviewed retry classification \u2014 is chosen from the request's registration kind.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "ADD_SOURCE:drive",
+          "discriminator": "registration kind drive selects the Drive-document payload",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
+          "transport_kind": "rpc"
+        },
+        {
+          "binding": "ADD_SOURCE:text",
+          "discriminator": "registration kind text selects the pasted-text payload",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
+          "transport_kind": "rpc"
+        },
+        {
+          "binding": "ADD_SOURCE:url",
+          "discriminator": "registration kind url selects the URL/YouTube payload",
+          "site": "_web/bindings/primitives.py:SOURCE_REGISTER",
+          "transport_kind": "rpc"
+        }
+      ],
+      "key": "source.register",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [
+        "ADD_SOURCE:drive",
+        "ADD_SOURCE:text",
+        "ADD_SOURCE:url"
+      ],
+      "owner": "SourceService",
+      "policy": "mutation",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [
+        "_row_adapters/sources.py:unwrap_add_source_rows",
+        "_web/codec/sources.py:decode_add_source_records"
+      ],
+      "route_context": "notebook",
+      "tier": "primitive",
       "unsupported_reason": null,
       "web_paths": []
     },
