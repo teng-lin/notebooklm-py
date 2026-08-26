@@ -9,8 +9,9 @@ only move them in the direction the plan requires:
    ``CustomBinding`` rows. P9.4b converted handlers into custom rows one domain
    at a time (the residual was unchanged) and every P9.2 hoist removed one. Per
    category the custom-row counts are exact literals that each PR updates as
-   derivation; the *deferred-product* count must reach zero before any second
-   backend is approved (plan, P9.4 acceptance criteria).
+   derivation; the *deferred-product* category had to reach zero before any
+   second backend was approved (plan, P9.4 acceptance criteria) and P10 R5.1b
+   deleted it outright.
 
 2. **Class size.** No class under ``src/notebooklm/_web/`` may exceed
    ``CLASS_BODY_LINE_CEILING`` body lines unless it is listed in
@@ -62,9 +63,10 @@ RESIDUAL_COMPOSITE_CEILING = 1
 #: whole table: ``SOURCE_ADD_FILE``, the permanent upload row of decision D4.
 #: ``compatibility`` reached zero once R3.2 hoisted ``source.add_text`` and R4.2
 #: hoisted the catalog reads and the note-backed mind-map generation.
-#: ``deferred-product`` reached zero with R5.1b's ``mind_map.generate_note``; the
-#: category is deleted in the follow-up commit that completes invariant I3.
-CUSTOM_ROW_COUNTS = {"protocol": 1, "compatibility": 0, "deferred-product": 0}
+#: ``deferred-product`` reached zero with R5.1b's ``mind_map.generate_note`` and
+#: the category itself is deleted (P10 invariant I3), so a row can no longer be
+#: justified by "the port still defaults this input".
+CUSTOM_ROW_COUNTS = {"protocol": 1, "compatibility": 0}
 
 # --- 2. class size ---------------------------------------------------------------
 
@@ -208,7 +210,7 @@ def test_residual_composites_only_shrink() -> None:
         counts[row.category] += 1
     assert counts == CUSTOM_ROW_COUNTS, (
         f"custom-row counts per category changed to {counts}; update CUSTOM_ROW_COUNTS as "
-        "derivation (deferred-product must reach zero before any second backend)"
+        "derivation (only protocol variance and public compatibility leaves justify a custom row)"
     )
     for row in custom:
         assert row.justification.strip(), f"{row.definition.key.value} lacks a justification"

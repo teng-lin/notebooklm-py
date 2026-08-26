@@ -68,8 +68,12 @@ class ErrorMode(str, Enum):
     TRANSLATE_SCRUBBED = "translate_scrubbed"
 
 
-CustomCategory = Literal["protocol", "compatibility", "deferred-product"]
-CUSTOM_CATEGORIES: Final[tuple[str, ...]] = ("protocol", "compatibility", "deferred-product")
+#: P10 invariant I3 retired ``"deferred-product"``: every row that carried it
+#: existed only to default an input below the port, and R5.1a-c hoisted the last
+#: of them (``mind_map.generate_note``).  A custom row is justified by protocol
+#: variance or by a public compatibility leaf now, or it does not exist.
+CustomCategory = Literal["protocol", "compatibility"]
+CUSTOM_CATEGORIES: Final[tuple[str, ...]] = ("protocol", "compatibility")
 
 
 class BindingAuditError(Exception):
