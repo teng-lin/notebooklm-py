@@ -19,7 +19,7 @@ dependencies a service may take, so I1 is authorised by the plan's decision
 **D7** (an ADR-0035 addendum landed in R0.0), not by the unamended ADR.
 
 **I2 — ``_web/**`` imports no domain package.** The web backend may not import
-``_chat``, ``_source``, ``_studio``, ``_artifact``, ``_mind_map`` or any
+``_chat``, ``_source``, ``_studio``, ``_artifact`` or any
 semantic service module. Neutral helper modules (``_records*``,
 ``_research_neutral``, ``_deadline``, ``_request_types``, ``_markdown``) stay
 permitted and are asserted as such below, so the rule cannot be widened into
@@ -148,7 +148,7 @@ NEUTRAL_RECORD_MODULE_NAMES: frozenset[str] = frozenset({"_records.py", "_resear
 #: Domain *packages* above the semantic port. ``_web`` consumes their neutral
 #: records, never their modules.
 I2_FORBIDDEN_DOMAIN_PACKAGES: frozenset[str] = frozenset(
-    {"_artifact", "_chat", "_mind_map", "_source", "_studio"}
+    {"_artifact", "_chat", "_source", "_studio"}
 )
 
 #: Shrinking seed: the ``_web`` files that import a domain package today, as
@@ -156,15 +156,15 @@ I2_FORBIDDEN_DOMAIN_PACKAGES: frozenset[str] = frozenset(
 #: ``codec/chat.py`` retired in R2.1 (the codec now owns the streamed-ask wire
 #: and emits records), and ``backend.py`` retired once R2.3 drained its
 #: ``_chat`` edge and R3.1 put its ``_source.upload`` edge behind
-#: ``_source_upload_port``. ``bindings/mind_maps.py`` retires in R4.2, and
-#: ``bindings/sources.py`` last of all (R3.1 took its ``_source.upload`` edge
+#: ``_source_upload_port``. ``bindings/mind_maps.py`` retired in R4.2
+#: (the note-backed generation and the catalog merge moved above the port), and
+#: ``bindings/sources.py`` is last of all (R3.1 took its ``_source.upload`` edge
 #: and R3.5 its ``_source.batch`` one; the surviving ``_source.add`` edge is
 #: ``honor_requested_title``, which the permanent ``SOURCE_ADD_FILE`` row
 #: reaches under decision D4, so retiring the entry needs that helper relocated
 #: to a neutral module — not another hoist).
 I2_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "bindings/mind_maps.py",
         "bindings/sources.py",
     }
 )
@@ -204,14 +204,21 @@ I9_EXEMPT_LEGACY_CLASSES: frozenset[str] = frozenset(
 )
 
 #: P10 deletion targets, recorded separately from the exemptions so neither can
-#: be reclassified as permanent by editing one set. ``LegacyNoteBackedService``
-#: goes in R4.2 (its wire graph moves above the port with the mind-map
-#: workflows). ``NotebookLegacyRpc`` was deleted in R6.2: ``NotebooksAPI.get_raw``
-#: now reads through the ``NOTEBOOK_GET`` row, so the facade needs no raw-call
-#: collaborator at all.
-I9_DELETION_TARGETS: frozenset[str] = frozenset(
+#: be reclassified as permanent by editing one set. Both named targets are now
+#: gone, so the invariant is met and the target set is empty:
+#: ``LegacyNoteBackedService`` went in R4.2 (its wire graph moved above the port
+#: with the mind-map workflows, and ``_mind_map.py``, the module R4.1 had moved
+#: it to, went with it), and ``NotebookLegacyRpc`` went in R6.2
+#: (``NotebooksAPI.get_raw`` reads through the ``NOTEBOOK_GET`` row, so the
+#: facade needs no raw-call collaborator at all).
+I9_DELETION_TARGETS: frozenset[str] = frozenset()
+
+#: Already deleted by their owning slice. Kept named so a reintroduction under
+#: an old name is a visible edit here rather than a silent revival.
+I9_DELETED_TARGETS: frozenset[str] = frozenset(
     {
-        "_note_service.py::LegacyNoteBackedService",
+        "_mind_map.py::LegacyNoteBackedService",
+        "_notebooks.py::NotebookLegacyRpc",
     }
 )
 
@@ -614,6 +621,15 @@ def test_the_i9_deletion_targets_stay_separate_from_the_exemptions() -> None:
     assert not (I9_EXEMPT_LEGACY_CLASSES & I9_DELETION_TARGETS), (
         "a P10 deletion target was reclassified as a permanent I9 exemption"
     )
+    assert not (I9_EXEMPT_LEGACY_CLASSES & I9_DELETED_TARGETS), (
+        "a deleted P10 target came back as a permanent I9 exemption"
+    )
+    live_class_names = {key.partition("::")[2] for key in _legacy_classes(SRC_ROOT)}
+    for target in I9_DELETED_TARGETS:
+        _module, _, class_name = target.partition("::")
+        assert class_name not in live_class_names, (
+            f"{target} was deleted in P10; {class_name} is back"
+        )
 
 
 # --- Read-core pins (ported from the retired test_semantic_read_boundary.py) --

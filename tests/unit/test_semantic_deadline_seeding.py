@@ -29,8 +29,6 @@ from notebooklm.rpc import RPCMethod
 _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
     {
         Operation.NOTEBOOK_SUGGEST_PROMPTS,
-        Operation.ARTIFACT_LIST,
-        Operation.ARTIFACT_GET,
         Operation.ARTIFACT_GENERATE_AUDIO,
         Operation.ARTIFACT_GENERATE_VIDEO,
         Operation.ARTIFACT_GENERATE_REPORT,
@@ -39,7 +37,6 @@ _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC,
         Operation.ARTIFACT_GENERATE_SLIDE_DECK,
         Operation.ARTIFACT_GENERATE_DATA_TABLE,
-        Operation.ARTIFACT_GENERATE_MIND_MAP,
         Operation.MIND_MAP_GENERATE_NOTE,
         Operation.MIND_MAP_GENERATE_INTERACTIVE,
     }
@@ -115,12 +112,13 @@ def test_multi_native_deadline_authority_ledger_is_closed_and_active() -> None:
         | _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS
         | _EXPECTED_WORKFLOW_OWNED_OPERATIONS
     )
-    # ARTIFACT_LIST/GET also call the note-backed mind-map collaborator;
-    # their second native call is intentionally invisible to a ``self`` AST walk.
-    hidden_collaborator_composites = {Operation.ARTIFACT_LIST, Operation.ARTIFACT_GET}
+    # ``artifact.list``/``artifact.get`` used to sit here: their second native
+    # went through a collaborator no ``self`` walk could see. P10 R4.2 made them
+    # service-owned, so they leave this ledger entirely and ``StudioCatalog``
+    # mints their budget from the client-scoped factory, as the other
+    # service-owned workflows do.
     assert (
         syntactic_composites
-        | hidden_collaborator_composites
         | (custom_row_composites - _EXPECTED_WORKFLOW_OWNED_OPERATIONS)
         | (keyed_row_composites & _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS)
     ) == (_EXPECTED_CLIENT_TIMEOUT_OPERATIONS | _EXPECTED_BRANCH_EXCLUSIVE_OPERATIONS)

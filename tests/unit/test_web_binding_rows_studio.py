@@ -150,20 +150,21 @@ def test_studio_leaves_are_rows_and_rename_is_service_owned() -> None:
         "_feature_unavailable",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # P9.4b generation and mind-map/catalog composites remain custom rows.
+    # P9.4b generation and mind-map composites remain custom rows.
     assert WEB_OPERATION_REGISTRY[Operation.ARTIFACT_GENERATE_DATA_TABLE].row is (
         studio_rows.ARTIFACT_GENERATE_DATA_TABLE
     )
+    # P10 R4.2: the two catalog composites and the note-backed generate join
+    # rename as service-owned workflows sequenced from their leaves.
     for operation in (
-        Operation.ARTIFACT_GENERATE_MIND_MAP,
+        Operation.ARTIFACT_RENAME,
         Operation.ARTIFACT_LIST,
         Operation.ARTIFACT_GET,
+        Operation.ARTIFACT_GENERATE_MIND_MAP,
     ):
         binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.row is not None
-    rename = WEB_OPERATION_REGISTRY[Operation.ARTIFACT_RENAME]
-    assert rename.service_owned is True
-    assert rename.row is None
+        assert binding.service_owned is True
+        assert binding.row is None
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.ARTIFACT_DOWNLOAD] is studio_rows.ARTIFACT_DOWNLOAD
 

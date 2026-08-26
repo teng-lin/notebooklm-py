@@ -21,7 +21,6 @@ import pytest
 
 from notebooklm._artifact.listing import ArtifactListingService
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._row_adapters.artifacts import ArtifactRow
 from notebooklm.exceptions import ArtifactNotFoundError, UnknownRPCMethodError
 from notebooklm.rpc import (
@@ -155,8 +154,6 @@ def artifacts_api() -> ArtifactsAPI:
 
     rows = [_completed_row("art_a", ArtifactTypeCode.VIDEO.value, "Video prompt text")]
     core = make_fake_core(rpc_call=AsyncMock(return_value=rows))
-    mind_maps = MagicMock(spec=NoteBackedMindMapService)
-    mind_maps.list_mind_maps = AsyncMock(return_value=[])
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
@@ -164,7 +161,6 @@ def artifacts_api() -> ArtifactsAPI:
         drain=core,
         lifecycle=core,
         notebooks=notebooks,
-        mind_maps=mind_maps,
     )
 
 
@@ -206,8 +202,6 @@ class TestArtifactsAPIGetPrompt:
             return []  # no studio artifacts
 
         core = make_fake_core(rpc_call=AsyncMock(side_effect=routed_rpc_call))
-        mind_maps = MagicMock(spec=NoteBackedMindMapService)
-        mind_maps.list_mind_maps = AsyncMock(return_value=[note_backed_row])
         notebooks = MagicMock()
         notebooks.get_source_ids = AsyncMock(return_value=[])
         api = ArtifactsAPI(
@@ -215,7 +209,6 @@ class TestArtifactsAPIGetPrompt:
             drain=core,
             lifecycle=core,
             notebooks=notebooks,
-            mind_maps=mind_maps,
         )
         result = await api.get_prompt("nb_1", "mm_1")
         assert result is None
@@ -227,8 +220,6 @@ class TestArtifactsAPIGetPrompt:
 
         studio_rows: list = []
         core = make_fake_core(rpc_call=AsyncMock(return_value=studio_rows))
-        mind_maps = MagicMock(spec=NoteBackedMindMapService)
-        mind_maps.list_mind_maps = AsyncMock(return_value=[])
         notebooks = MagicMock()
         notebooks.get_source_ids = AsyncMock(return_value=[])
         api = ArtifactsAPI(
@@ -236,7 +227,6 @@ class TestArtifactsAPIGetPrompt:
             drain=core,
             lifecycle=core,
             notebooks=notebooks,
-            mind_maps=mind_maps,
         )
         with pytest.raises(ArtifactNotFoundError):
             await api.get_prompt("nb_1", "ghost")

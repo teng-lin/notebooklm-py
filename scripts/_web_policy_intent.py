@@ -413,28 +413,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 ),
             ),
         ),
-        Operation.ARTIFACT_LIST: WebCallPolicyBinding(
-            CallPolicy.READ,
-            (
-                _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "studio catalog read"),
-                _native(
-                    RPCMethod.GET_NOTES_AND_MIND_MAPS,
-                    _IDEMPOTENT,
-                    "conditional note-backed mind-map merge",
-                ),
-            ),
-        ),
-        Operation.ARTIFACT_GET: WebCallPolicyBinding(
-            CallPolicy.READ,
-            (
-                _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "catalog identity scan"),
-                _native(
-                    RPCMethod.GET_NOTES_AND_MIND_MAPS,
-                    _IDEMPOTENT,
-                    "note-backed mind-map identity scan",
-                ),
-            ),
-        ),
         Operation.ARTIFACT_GENERATE_AUDIO: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
             (
@@ -513,21 +491,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             (
                 _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional source-set read"),
                 _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "data-table kickoff"),
-            ),
-        ),
-        Operation.ARTIFACT_GENERATE_MIND_MAP: WebCallPolicyBinding(
-            CallPolicy.STATEFUL_START,
-            (
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional source-set read"),
-                _native(RPCMethod.GENERATE_MIND_MAP, _PROBE_CREATE, "mind-map tree generation"),
-                _native(
-                    RPCMethod.CREATE_NOTE,
-                    _NO_RETRY,
-                    "non-idempotent note allocation",
-                    variant="plain",
-                ),
-                _native(RPCMethod.UPDATE_NOTE, _IDEMPOTENT, "persist tree and title"),
-                _native(RPCMethod.DELETE_NOTE, _IDEMPOTENT, "cancelled create cleanup"),
             ),
         ),
         Operation.ARTIFACT_EXPORT: WebCallPolicyBinding(
@@ -677,6 +640,16 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
         Operation.MIND_MAP_DELETE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (_native(RPCMethod.DELETE_ARTIFACT, _IDEMPOTENT, "idempotent interactive delete"),),
+        ),
+        Operation.MIND_MAP_GENERATE: WebCallPolicyBinding(
+            CallPolicy.STATEFUL_START,
+            (
+                _native(
+                    RPCMethod.GENERATE_MIND_MAP,
+                    _PROBE_CREATE,
+                    "resolved-source tree generation",
+                ),
+            ),
         ),
         Operation.SHARING_GET: WebCallPolicyBinding(
             CallPolicy.READ,
@@ -942,6 +915,57 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.SHARING_PATCH_VIEW_LEVEL, None),
                     _leaf(Operation.SHARING_GET, None),
+                ),
+            ),
+            Operation.ARTIFACT_GENERATE_MIND_MAP: WorkflowPolicyBinding(
+                CallPolicy.STATEFUL_START,
+                (
+                    _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional source-set read"),
+                    _native(RPCMethod.GENERATE_MIND_MAP, _PROBE_CREATE, "mind-map tree generation"),
+                    _native(
+                        RPCMethod.CREATE_NOTE,
+                        _NO_RETRY,
+                        "non-idempotent note allocation",
+                        variant="plain",
+                    ),
+                    _native(RPCMethod.UPDATE_NOTE, _IDEMPOTENT, "persist tree and title"),
+                    _native(RPCMethod.DELETE_NOTE, _IDEMPOTENT, "cancelled create cleanup"),
+                ),
+                (
+                    _leaf(Operation.MIND_MAP_GENERATE_NOTE, None),
+                    _leaf(Operation.NOTE_CREATE, "plain"),
+                    _leaf(Operation.NOTE_UPDATE, None),
+                    _leaf(Operation.NOTE_DELETE, None),
+                ),
+            ),
+            Operation.ARTIFACT_LIST: WorkflowPolicyBinding(
+                CallPolicy.READ,
+                (
+                    _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "studio catalog read"),
+                    _native(
+                        RPCMethod.GET_NOTES_AND_MIND_MAPS,
+                        _IDEMPOTENT,
+                        "conditional note-backed mind-map merge",
+                    ),
+                ),
+                (
+                    _leaf(Operation.ARTIFACT_CATALOG, None),
+                    _leaf(Operation.MIND_MAP_LIST, None),
+                ),
+            ),
+            Operation.ARTIFACT_GET: WorkflowPolicyBinding(
+                CallPolicy.READ,
+                (
+                    _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "catalog identity scan"),
+                    _native(
+                        RPCMethod.GET_NOTES_AND_MIND_MAPS,
+                        _IDEMPOTENT,
+                        "note-backed mind-map identity scan",
+                    ),
+                ),
+                (
+                    _leaf(Operation.ARTIFACT_CATALOG, None),
+                    _leaf(Operation.MIND_MAP_LIST, None),
                 ),
             ),
             Operation.ARTIFACT_RENAME: WorkflowPolicyBinding(

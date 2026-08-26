@@ -121,7 +121,7 @@ else:  # pragma: no cover - direct script execution
     )
 
 SCHEMA_VERSION = 3
-_EXPECTED_OPERATION_COUNT = 98
+_EXPECTED_OPERATION_COUNT = 99
 _native_key_text = native_key_text
 
 

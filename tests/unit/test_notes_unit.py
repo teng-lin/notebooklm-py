@@ -31,7 +31,7 @@ def notes_api(mock_core):
     """
     from tests._fixtures.note_stack import make_note_stack
 
-    return make_note_stack(mock_core)[3]
+    return make_note_stack(mock_core)[1]
 
 
 # =============================================================================

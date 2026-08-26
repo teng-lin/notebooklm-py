@@ -51,18 +51,19 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: Custom rows at P9.4c; shrinks with every later hoist.
 #: Sharing, artifact-rename, and notebook create/update hoists removed six
 #: custom rows; the label- and collection-create hoists removed the final two
-#: handlers from the P9.2 stop/go baseline. P10 then took five more above the
-#: port: R2.2's ``CHAT_ASK`` and R3.2-R3.5's four probed source-add rows,
-#: 20 -> 15. The ratchet asserts equality, so a hoist that does not tighten it
-#: leaves this gate red.
-RESIDUAL_COMPOSITE_CEILING = 15
+#: handlers from the P9.2 stop/go baseline. P10 then took eight more above the
+#: port: R2.2's ``CHAT_ASK``, R3.2-R3.5's four probed source-add rows, and
+#: R4.2's three mind-map/catalog compatibility rows, 20 -> 12. The ratchet
+#: asserts equality, so a hoist that does not tighten it leaves this gate red.
+RESIDUAL_COMPOSITE_CEILING = 12
 #: Exact custom-row counts per justification category: ``SOURCE_ADD_FILE`` (the
-#: permanent upload row of decision D4), the Studio generation/prompt rows and
-#: the notebook/mind-map/catalog composites.
+#: permanent upload row of decision D4) and the Studio generation/prompt rows.
+#: ``compatibility`` reached zero once R3.2 hoisted ``source.add_text`` and R4.2
+#: hoisted the catalog reads and the note-backed mind-map generation.
 #: P9.4b PRs raise these as handlers convert;
 #: P9.2 hoists lower ``deferred-product``, which must reach zero before any
 #: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 1, "compatibility": 3, "deferred-product": 11}
+CUSTOM_ROW_COUNTS = {"protocol": 1, "compatibility": 0, "deferred-product": 11}
 
 # --- 2. class size ---------------------------------------------------------------
 

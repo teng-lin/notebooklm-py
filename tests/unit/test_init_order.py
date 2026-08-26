@@ -75,17 +75,16 @@ def test_phase8_source_read_facade_wiring_is_current() -> None:
 def test_phase7_artifact_download_patch_seams_are_current() -> None:
     """Artifact downloads must use canonical helpers and collaborators.
 
-    Phase 5 (refactor-history.md Migration Plan steps 6-7) moves the mind-map
-    create/list/extract paths off the ``_mind_map`` module-level seams
-    and onto the injected ``NoteService`` + ``NoteBackedMindMapService``
-    instances. Downloads should now import their canonical helpers directly
-    rather than resolving through ``notebooklm._artifacts`` at runtime or in
-    type-checking-only imports.
+    Phase 5 (refactor-history.md Migration Plan steps 6-7) moved the mind-map
+    create/list/extract paths off the ``_mind_map`` module-level seams and onto
+    injected services; P10 R4.2 deleted the module itself, so the seam is gone
+    rather than merely unused. Downloads should import their canonical helpers
+    directly rather than resolving through ``notebooklm._artifacts`` at runtime
+    or in type-checking-only imports.
     """
     import notebooklm._artifact.downloads as artifact_downloads
     import notebooklm._artifact.formatters as artifact_formatters
     import notebooklm._artifacts as artifacts
-    import notebooklm._mind_map as mind_map
     import notebooklm._studio.representations as artifact_representations
     import notebooklm._web.codec.artifact_formatters as codec_artifact_formatters
     import notebooklm._web.codec.artifacts as artifact_codec
@@ -109,7 +108,7 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
                 )
 
     assert artifact_facade_imports == []
-    assert artifacts._mind_map is mind_map
+    assert not hasattr(artifacts, "_mind_map")
     assert not hasattr(artifact_downloads, "_artifact_seams")
     assert artifact_downloads.load_httpx_cookies is auth.load_httpx_cookies
     assert not hasattr(artifact_downloads, "_extract_app_data")
@@ -207,7 +206,6 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
     docs/refactor-history.md Step 4) — the parameter was removed in favor of
     explicit ``mind_maps`` (Phase 5; P10 R1.1 then dropped the companion
     ``note_service`` input). The mind-map decoupling is now structural."""
-    from notebooklm._mind_map import NoteBackedMindMapService
 
     core = MagicMock()
     api = ArtifactsAPI(
@@ -215,7 +213,6 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
         drain=core,
         lifecycle=core,
         notebooks=MagicMock(),
-        mind_maps=MagicMock(spec=NoteBackedMindMapService),
     )
     assert api is not None
     # The legacy private attribute must not leak back: code that depends on
@@ -226,20 +223,15 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
 def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None:
     """The legacy ``notes_api=`` kwarg was removed in Phase 3
     (docs/refactor-history.md Step 4). Passing it must raise ``TypeError``."""
-    from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 
     core = MagicMock()
-    notes = NotesAPI(
-        notes=MagicMock(spec=NoteService),
-        mind_maps=MagicMock(spec=NoteBackedMindMapService),
-    )
+    notes = NotesAPI(notes=MagicMock(spec=NoteService))
     with pytest.raises(TypeError):
         ArtifactsAPI(  # type: ignore[call-arg]
             core,
             notes_api=notes,
             notebooks=MagicMock(),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
         )
 
 
@@ -250,7 +242,6 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
     dependency on each other; this test pins that building either one
     first still yields working APIs.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 
     core = MagicMock()
@@ -261,14 +252,10 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
         )
 
     def _make_notes() -> NotesAPI:
-        return NotesAPI(
-            notes=MagicMock(spec=NoteService),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
-        )
+        return NotesAPI(notes=MagicMock(spec=NoteService))
 
     artifacts_first = _make_artifacts()
     notes_first = _make_notes()
@@ -336,28 +323,25 @@ def _make_core_for_mind_map_flow() -> tuple[FakeSession, list[tuple[Any, Any]]]:
 
 
 def _build_artifacts_with_real_mind_map_service(core: FakeSession) -> ArtifactsAPI:
-    """Build an ``ArtifactsAPI`` whose mind-map services are real
-    instances backed by ``core.rpc_executor`` so the mind-map flow
-    exercises the live RPC callbacks against the canned executor.
-    """
-    from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import LegacyNoteBackedService
+    """Build an ``ArtifactsAPI`` whose mind-map generation runs for real.
 
-    note_service = LegacyNoteBackedService(core.rpc_executor)
-    mind_maps = NoteBackedMindMapService(note_service)
+    The semantic backend over ``core.rpc_executor`` is now the whole graph:
+    the workflow sequences its leaves through it, so the flow still exercises
+    the live RPC callbacks against the canned executor.
+    """
+
     return ArtifactsAPI(
         drain=core,
         lifecycle=core,
         notebooks=MagicMock(get_source_ids=AsyncMock(return_value=["src_1"])),
-        mind_maps=mind_maps,
         _backend=build_web_backend(core),
     )
 
 
 @pytest.mark.asyncio
 async def test_generate_mind_map_works_without_notes_injection() -> None:
-    """``generate_mind_map`` must persist the mind map via ``_mind_map``
-    primitives, not via an injected ``NotesAPI``."""
+    """``generate_mind_map`` must persist the mind map through the note leaves,
+    not via an injected ``NotesAPI``."""
     core, calls = _make_core_for_mind_map_flow()
     api = _build_artifacts_with_real_mind_map_service(core)
 

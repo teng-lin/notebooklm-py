@@ -39,7 +39,6 @@ from tests._fixtures.web_backend import build_web_backend
 @pytest.fixture
 def mock_artifacts_api(tmp_path):
     """ArtifactsAPI wired to mocks -- no real network, real httpx clients."""
-    from notebooklm._mind_map import NoteBackedMindMapService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(
@@ -51,7 +50,6 @@ def mock_artifacts_api(tmp_path):
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=AsyncMock(),
-        mind_maps=AsyncMock(spec=NoteBackedMindMapService),
         storage_path=tmp_path / "storage.json",
     )
     return api

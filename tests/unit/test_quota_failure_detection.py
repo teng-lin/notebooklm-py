@@ -77,7 +77,6 @@ def _make_api(
     ``rpc_call`` overrides the RPC seam so a test can answer with a real
     decoded response instead of a bare mock return value.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(
@@ -86,14 +85,12 @@ def _make_api(
     )
     # ``ArtifactsAPI`` constructs its own ``PollRegistry`` internally; the fake
     # core does not need to provide one.
-    mind_maps = MagicMock(spec=NoteBackedMindMapService)
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
         drain=core,
         lifecycle=core,
         notebooks=notebooks,
-        mind_maps=mind_maps,
         _backend=build_web_backend(core) if backend is None else backend,
     )
 

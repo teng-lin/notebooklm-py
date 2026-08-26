@@ -10,8 +10,6 @@ import pytest
 from notebooklm._note_service import NoteService
 from notebooklm._operations import Operation
 from notebooklm._records import (
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
@@ -21,8 +19,6 @@ from notebooklm._records import (
     NOTE_CREATE_DEF,
     NOTE_DELETE_DEF,
     NOTE_UPDATE_DEF,
-    ArtifactGetResult,
-    ArtifactListResult,
     ArtifactRecord,
     MindMapDeleteInput,
     MindMapDeleteResult,
@@ -47,7 +43,11 @@ from notebooklm._records import (
 )
 from notebooklm._studio import MindMapFamilyService, StudioCatalog
 from notebooklm.types import MindMapKind
-from tests._fixtures.recording_backend import BackendInvocation, RecordingBackend
+from tests._fixtures.recording_backend import (
+    BackendInvocation,
+    RecordingBackend,
+    set_studio_catalog,
+)
 
 
 @pytest.mark.asyncio
@@ -151,12 +151,12 @@ async def test_interactive_service_uses_studio_catalog_and_typed_family_operatio
         created_at=created_at,
     )
     backend = RecordingBackend()
-    backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((record,)))
+    set_studio_catalog(backend, (record,))
     backend.set_result(
         MIND_MAP_GENERATE_INTERACTIVE_DEF,
         MindMapGenerateInteractiveResult("mind-map-id"),
     )
-    backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(record))
+
     backend.set_result(
         MIND_MAP_GET_DEF,
         MindMapGetResult('{"name":"Generated Map","children":[]}'),
@@ -193,7 +193,8 @@ async def test_interactive_service_uses_studio_catalog_and_typed_family_operatio
         {"name": "Generated Map", "children": []},
     )
     wait_for_completion.assert_awaited_once_with("notebook-id", "mind-map-id")
-    assert backend.invocations[1].value == MindMapGenerateInteractiveInput(
+    # The listing above is two invocations: the catalog read and its merge.
+    assert backend.invocations[2].value == MindMapGenerateInteractiveInput(
         "notebook-id", ("source-id",), "focus"
     )
     assert backend.invocations[-3:] == [

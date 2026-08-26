@@ -19,6 +19,9 @@ from typing import Any, Final
 from .._binding import Binding, OperationDisposition
 from .._operations import Operation, OperationDef
 from .._records import (
+    ARTIFACT_GENERATE_MIND_MAP_DEF,
+    ARTIFACT_GET_DEF,
+    ARTIFACT_LIST_DEF,
     ARTIFACT_RENAME_DEF,
     CHAT_ASK_DEF,
     COLLECTION_CREATE_DEF,
@@ -113,6 +116,9 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.SHARING_UPDATE_USERS: SHARING_UPDATE_USERS_DEF,
         Operation.SHARING_SET_VIEW_LEVEL: SHARING_SET_VIEW_LEVEL_DEF,
         Operation.ARTIFACT_RENAME: ARTIFACT_RENAME_DEF,
+        Operation.ARTIFACT_LIST: ARTIFACT_LIST_DEF,
+        Operation.ARTIFACT_GET: ARTIFACT_GET_DEF,
+        Operation.ARTIFACT_GENERATE_MIND_MAP: ARTIFACT_GENERATE_MIND_MAP_DEF,
         Operation.NOTEBOOK_CREATE: NOTEBOOK_CREATE_DEF,
         Operation.NOTEBOOK_UPDATE: NOTEBOOK_UPDATE_DEF,
         Operation.CHAT_ASK: CHAT_ASK_DEF,
@@ -177,6 +183,18 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "service-owned since P9.2-10: StudioManagementService.rename sequences "
             "artifact.patch_title and artifact.catalog"
         ),
+        Operation.ARTIFACT_LIST: (
+            "service-owned since P10 R4.2: StudioCatalog.list_records sequences "
+            "artifact.catalog and the supplemental mind_map.list merge"
+        ),
+        Operation.ARTIFACT_GET: (
+            "service-owned since P10 R4.2: StudioCatalog.get_record selects one identity "
+            "from the artifact.catalog and mind_map.list merge"
+        ),
+        Operation.ARTIFACT_GENERATE_MIND_MAP: (
+            "service-owned since P10 R4.2: NoteBackedMindMapFamilyService.generate sequences "
+            "mind_map.generate_note and the note.create/note.update/note.delete persistence"
+        ),
         Operation.NOTEBOOK_CREATE: (
             "service-owned since P9.2-12: NotebookMutationService.create sequences "
             "notebook.list, notebook.allocate, and settings.get_limits"
@@ -230,18 +248,20 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
     }
 )
 
-# The frozen catalog currently contains 98 operations (87 product members plus the
-# eleven decomposition primitives: the nine P9.2 leaves, P10 R2.2's streamed-answer
-# leaf, and P10 R3.2's source-registration leaf). This assertion is repeated at
+# The frozen catalog currently contains 99 operations (87 product members plus the
+# twelve decomposition primitives: the nine P9.2 leaves, P10 R2.2's streamed-answer
+# leaf, P10 R3.2's source-registration leaf, and P10 R4.2's mind-map generation
+# leaf). This assertion is repeated at
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
-_EXPECTED_OPERATION_COUNT: Final = 98
-_EXPECTED_SUPPORTED_COUNT: Final = 77
-# 11 from P9.2, P10 R2.2's chat.ask, P10 R3.2-R3.5's four source adds, and the two
-# research workflows R6.4 typed. R6.4's flip leaves the vocabulary and the
+_EXPECTED_OPERATION_COUNT: Final = 99
+_EXPECTED_SUPPORTED_COUNT: Final = 75
+# 11 from P9.2, P10 R2.2's chat.ask, P10 R3.2-R3.5's four source adds, the two
+# research workflows R6.4 typed, and P10 R4.2's three Studio/mind-map workflows.
+# R6.4's flip leaves the vocabulary and the
 # directly-supported row set alone: it moves two members from UNSUPPORTED to
 # SERVICE_OWNED, which is a disposition change only.
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 18
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 21
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:

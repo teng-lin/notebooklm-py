@@ -14,10 +14,6 @@ from notebooklm._operations import CallPolicy, Operation
 from notebooklm._records import (
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_VIDEO_DEF,
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
-    ArtifactGetResult,
-    ArtifactListResult,
     ArtifactMediaRecord,
     ArtifactRecord,
     GenerationStatusRecord,
@@ -34,7 +30,7 @@ from notebooklm._studio import (
     StudioCatalog,
     VideoFamilyService,
 )
-from tests._fixtures.recording_backend import RecordingBackend
+from tests._fixtures.recording_backend import RecordingBackend, set_studio_catalog
 
 
 def _artifact(
@@ -217,7 +213,7 @@ async def test_report_and_video_services_filter_catalog_records_without_extra_fe
     video = _artifact("video", "video", url="https://example.invalid/video.mp4")
     report = _artifact("report", "report", report_kind="Study Guide")
     list_backend = RecordingBackend()
-    list_backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((video, report)))
+    set_studio_catalog(list_backend, (video, report))
 
     videos = await VideoFamilyService(list_backend, StudioCatalog(list_backend)).list("nb")
     reports = await ReportFamilyService(list_backend, StudioCatalog(list_backend)).list("nb")
@@ -227,10 +223,11 @@ async def test_report_and_video_services_filter_catalog_records_without_extra_fe
     assert len(list_backend.invocations) == 2
 
     get_backend = RecordingBackend()
-    get_backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(report))
+    set_studio_catalog(get_backend, (report,))
     video_service = VideoFamilyService(get_backend, StudioCatalog(get_backend))
     assert await video_service.get("nb", "report") is None
-    assert len(get_backend.invocations) == 1
+    # One complete catalog read: artifact.catalog plus the mind-map merge.
+    assert len(get_backend.invocations) == 2
 
 
 def test_document_metadata_keeps_lifecycle_and_family_usability_distinct() -> None:

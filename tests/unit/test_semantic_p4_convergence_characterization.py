@@ -59,13 +59,10 @@ from notebooklm._records import (
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
     ARTIFACT_GENERATE_FLASHCARDS_DEF,
     ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-    ARTIFACT_GENERATE_MIND_MAP_DEF,
     ARTIFACT_GENERATE_QUIZ_DEF,
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
     ARTIFACT_GENERATE_VIDEO_DEF,
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
     ARTIFACT_PATCH_TITLE_DEF,
     ARTIFACT_RETRY_DEF,
     ARTIFACT_REVISE_SLIDE_DEF,
@@ -88,6 +85,7 @@ from notebooklm._records import (
     LABEL_MUTATE_DEF,
     LEGACY_SHARE_ARTIFACT_DEF,
     MIND_MAP_DELETE_DEF,
+    MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_GET_DEF,
@@ -255,8 +253,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         SOURCE_GET_FULLTEXT_DEF: (Operation.SOURCE_GET_FULLTEXT, CallPolicy.READ),
         SOURCE_WAIT_DEF: (Operation.SOURCE_WAIT, CallPolicy.MUTATION),
         SOURCE_PATCH_TITLE_DEF: (Operation.SOURCE_PATCH_TITLE, CallPolicy.MUTATION),
-        ARTIFACT_LIST_DEF: (Operation.ARTIFACT_LIST, CallPolicy.READ),
-        ARTIFACT_GET_DEF: (Operation.ARTIFACT_GET, CallPolicy.READ),
         ARTIFACT_GENERATE_AUDIO_DEF: (
             Operation.ARTIFACT_GENERATE_AUDIO,
             CallPolicy.STATEFUL_START,
@@ -289,10 +285,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             Operation.ARTIFACT_GENERATE_DATA_TABLE,
             CallPolicy.STATEFUL_START,
         ),
-        ARTIFACT_GENERATE_MIND_MAP_DEF: (
-            Operation.ARTIFACT_GENERATE_MIND_MAP,
-            CallPolicy.STATEFUL_START,
-        ),
         ARTIFACT_EXPORT_DEF: (Operation.ARTIFACT_EXPORT, CallPolicy.MUTATION),
         ARTIFACT_REVISE_SLIDE_DEF: (
             Operation.ARTIFACT_REVISE_SLIDE,
@@ -321,6 +313,7 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         MIND_MAP_UPDATE_DEF: (Operation.MIND_MAP_UPDATE, CallPolicy.MUTATION),
         MIND_MAP_DELETE_DEF: (Operation.MIND_MAP_DELETE, CallPolicy.MUTATION),
+        MIND_MAP_GENERATE_DEF: (Operation.MIND_MAP_GENERATE, CallPolicy.STATEFUL_START),
         # P6.4 migrates labels and collections as one slice: they are a single
         # wire surface addressed through an explicit kind discriminator, so each
         # dialect's key carries the same policy as its twin.
@@ -441,28 +434,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             [IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY],
         ),
         (
-            ARTIFACT_LIST_DEF,
-            [
-                (RPCMethod.LIST_ARTIFACTS, None),
-                (RPCMethod.GET_NOTES_AND_MIND_MAPS, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
-        ),
-        (
-            ARTIFACT_GET_DEF,
-            [
-                (RPCMethod.LIST_ARTIFACTS, None),
-                (RPCMethod.GET_NOTES_AND_MIND_MAPS, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
-        ),
-        (
             ARTIFACT_GENERATE_AUDIO_DEF,
             [
                 (RPCMethod.GET_NOTEBOOK, None),
@@ -507,23 +478,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             ARTIFACT_GENERATE_DATA_TABLE_DEF,
             [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.CREATE_ARTIFACT, None)],
             [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.PROBE_THEN_CREATE],
-        ),
-        (
-            ARTIFACT_GENERATE_MIND_MAP_DEF,
-            [
-                (RPCMethod.GET_NOTEBOOK, None),
-                (RPCMethod.GENERATE_MIND_MAP, None),
-                (RPCMethod.CREATE_NOTE, "plain"),
-                (RPCMethod.UPDATE_NOTE, None),
-                (RPCMethod.DELETE_NOTE, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.PROBE_THEN_CREATE,
-                IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
         ),
         (
             ARTIFACT_EXPORT_DEF,
@@ -612,6 +566,11 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             MIND_MAP_GET_DEF,
             [(RPCMethod.GET_INTERACTIVE_HTML, None)],
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
+        ),
+        (
+            MIND_MAP_GENERATE_DEF,
+            [(RPCMethod.GENERATE_MIND_MAP, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             MIND_MAP_GENERATE_NOTE_DEF,
@@ -871,9 +830,9 @@ def test_the_parity_audit_reports_two_distinguishable_columns() -> None:
     assert chat_ask["known_divergence"] is not None
 
     assert report["summary"] == {
-        "direct_rows": 77,
+        "direct_rows": 75,
         "direct_row_divergences": 0,
-        "service_owned_workflows": 18,
+        "service_owned_workflows": 21,
         "end_to_end_divergences": 1,
     }
 

@@ -6,7 +6,6 @@ import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._runtime.contracts import LoopGuard
 from notebooklm._sources import SourcesAPI
@@ -199,7 +198,6 @@ class TestGetSuggestedReportFormats:
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
             _backend=build_web_backend(core.rpc_executor),
         )
 

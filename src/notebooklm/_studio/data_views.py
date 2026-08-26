@@ -2,18 +2,55 @@
 
 from __future__ import annotations
 
-from .._backend import BackendAdapter
-from .._deadline import RuntimeDeadline
+import json
+
+from .._backend import BackendAdapter, BackendError, rebind_operation, require_leaves
+from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from .._note_service import NoteService
+from .._operations import Operation
 from .._records import (
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
-    ARTIFACT_GENERATE_MIND_MAP_DEF,
+    MIND_MAP_GENERATE_NOTE_DEF,
+    NOTE_CREATE_DEF,
+    NOTE_DELETE_DEF,
+    NOTE_UPDATE_DEF,
     ArtifactRecord,
     DataTableGenerateInput,
     DataTableGenerateResult,
     MindMapGenerateInput,
+    MindMapGenerateNoteInput,
     MindMapGenerateResult,
 )
 from .catalog import StudioCatalog
+
+#: The title a generated tree carries when it names none of its own.
+_DEFAULT_MIND_MAP_TITLE = "Mind Map"
+
+
+def _derive_tree(tree_json: str) -> object:
+    """Parse the serialized tree, keeping an unparseable payload as its text.
+
+    Ported from the codec rather than re-derived: the ``except`` clause is
+    ``json.JSONDecodeError`` alone, so a non-string payload — already
+    ``json.dumps``-ed on its way across the port — round-trips to the same
+    object the composite returned, and a string that is not JSON is passed
+    through as itself.
+    """
+
+    try:
+        return json.loads(tree_json)
+    except json.JSONDecodeError:
+        return tree_json
+
+
+def _derive_title(tree: object) -> str:
+    """Take the tree's own ``name`` when it has a usable one."""
+
+    if isinstance(tree, dict):
+        name = tree.get("name")
+        if isinstance(name, str) and name:
+            return name
+    return _DEFAULT_MIND_MAP_TITLE
 
 
 class DataTableFamilyService:
@@ -62,13 +99,25 @@ class NoteBackedMindMapFamilyService:
     The catalog implements ADR-0019 partial availability: an ordinary RPC
     failure in the optional note-backed subfetch leaves interactive Studio
     maps available, while transport and decoding failures still surface.
+
+    Generation is a workflow, not a leaf: the tree the generation native
+    returns is not persisted server-side, so this service sequences the
+    generation and the note allocation that stores it under one budget.
     """
 
-    __slots__ = ("_backend", "_catalog")
+    __slots__ = ("_backend", "_catalog", "_deadline_factory", "_notes")
 
-    def __init__(self, backend: BackendAdapter, catalog: StudioCatalog) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        catalog: StudioCatalog,
+        *,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
+    ) -> None:
         self._backend = backend
         self._catalog = catalog
+        self._deadline_factory = deadline_factory
+        self._notes = NoteService(backend)
 
     async def generate(
         self,
@@ -76,11 +125,62 @@ class NoteBackedMindMapFamilyService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> MindMapGenerateResult:
-        return await self._backend.invoke(
-            ARTIFACT_GENERATE_MIND_MAP_DEF,
-            value,
-            deadline=deadline,
+        """Generate a tree, then persist it as a note.
+
+        The note allocation runs through :meth:`NoteService.create_note_record`,
+        which owns the package's one cancellation-safe create: the finalizing
+        ``note.update`` is shielded from an outer cancel and, if one arrives, a
+        best-effort ``note.delete`` is scheduled after the shielded update
+        settles, so a cancelled generation never leaves an orphan row holding a
+        half-written mind map.
+        """
+
+        workflow = Operation.ARTIFACT_GENERATE_MIND_MAP
+        require_leaves(
+            self._backend,
+            MIND_MAP_GENERATE_NOTE_DEF.key,
+            NOTE_CREATE_DEF.key,
+            NOTE_UPDATE_DEF.key,
+            NOTE_DELETE_DEF.key,
         )
+        deadline = self._start_deadline(deadline)
+        try:
+            generated = await self._backend.invoke(
+                MIND_MAP_GENERATE_NOTE_DEF,
+                MindMapGenerateNoteInput(
+                    value.notebook_id,
+                    value.source_ids,
+                    value.language,
+                    value.instructions,
+                ),
+                deadline=deadline,
+            )
+            tree_json = generated.tree_json
+            if tree_json is None:
+                # An absent leaf is a semantically empty generation, not a
+                # failure: nothing is persisted and the caller sees no note.
+                return MindMapGenerateResult()
+            tree = _derive_tree(tree_json)
+            note = await self._notes.create_note_record(
+                value.notebook_id,
+                title=_derive_title(tree),
+                content=tree_json,
+                deadline=deadline,
+            )
+        except BackendError as error:
+            raise rebind_operation(error, workflow) from error.__cause__
+        return MindMapGenerateResult(
+            mind_map=tree,
+            note_id=note.id or None,
+            created_at=note.created_at,
+        )
+
+    def _start_deadline(self, deadline: RuntimeDeadline | None) -> RuntimeDeadline | None:
+        """Mint one workflow deadline unless the caller supplied its own."""
+
+        if deadline is not None or self._deadline_factory is None:
+            return deadline
+        return self._deadline_factory.start()
 
     async def list(
         self,

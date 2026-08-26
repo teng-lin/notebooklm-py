@@ -116,27 +116,6 @@
       ],
       "reviewed_streams": []
     },
-    "artifact.generate_mind_map": {
-      "call_policy": "stateful_start",
-      "derived_natives": [
-        "CREATE_NOTE:plain",
-        "DELETE_NOTE:<default>",
-        "GENERATE_MIND_MAP:<default>",
-        "GET_NOTEBOOK:<default>",
-        "UPDATE_NOTE:<default>"
-      ],
-      "derived_streams": [],
-      "known_divergence": null,
-      "parity": "match",
-      "reviewed_natives": [
-        "CREATE_NOTE:plain",
-        "DELETE_NOTE:<default>",
-        "GENERATE_MIND_MAP:<default>",
-        "GET_NOTEBOOK:<default>",
-        "UPDATE_NOTE:<default>"
-      ],
-      "reviewed_streams": []
-    },
     "artifact.generate_quiz": {
       "call_policy": "stateful_start",
       "derived_natives": [
@@ -194,36 +173,6 @@
       "reviewed_natives": [
         "CREATE_ARTIFACT:<default>",
         "GET_NOTEBOOK:<default>"
-      ],
-      "reviewed_streams": []
-    },
-    "artifact.get": {
-      "call_policy": "read",
-      "derived_natives": [
-        "GET_NOTES_AND_MIND_MAPS:<default>",
-        "LIST_ARTIFACTS:<default>"
-      ],
-      "derived_streams": [],
-      "known_divergence": null,
-      "parity": "match",
-      "reviewed_natives": [
-        "GET_NOTES_AND_MIND_MAPS:<default>",
-        "LIST_ARTIFACTS:<default>"
-      ],
-      "reviewed_streams": []
-    },
-    "artifact.list": {
-      "call_policy": "read",
-      "derived_natives": [
-        "GET_NOTES_AND_MIND_MAPS:<default>",
-        "LIST_ARTIFACTS:<default>"
-      ],
-      "derived_streams": [],
-      "known_divergence": null,
-      "parity": "match",
-      "reviewed_natives": [
-        "GET_NOTES_AND_MIND_MAPS:<default>",
-        "LIST_ARTIFACTS:<default>"
       ],
       "reviewed_streams": []
     },
@@ -507,6 +456,19 @@
       "parity": "match",
       "reviewed_natives": [
         "DELETE_ARTIFACT:<default>"
+      ],
+      "reviewed_streams": []
+    },
+    "mind_map.generate": {
+      "call_policy": "stateful_start",
+      "derived_natives": [
+        "GENERATE_MIND_MAP:<default>"
+      ],
+      "derived_streams": [],
+      "known_divergence": null,
+      "parity": "match",
+      "reviewed_natives": [
+        "GENERATE_MIND_MAP:<default>"
       ],
       "reviewed_streams": []
     },
@@ -1063,6 +1025,65 @@
     }
   },
   "end_to_end_authority": {
+    "artifact.generate_mind_map": {
+      "call_policy": "stateful_start",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "CREATE_NOTE:plain",
+        "DELETE_NOTE:<default>",
+        "GENERATE_MIND_MAP:<default>",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_NOTE:<default>"
+      ],
+      "leaf_operations": [
+        "mind_map.generate_note",
+        "note.create",
+        "note.update",
+        "note.delete"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "CREATE_NOTE:plain",
+        "DELETE_NOTE:<default>",
+        "GENERATE_MIND_MAP:<default>",
+        "GET_NOTEBOOK:<default>",
+        "UPDATE_NOTE:<default>"
+      ]
+    },
+    "artifact.get": {
+      "call_policy": "read",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "leaf_operations": [
+        "artifact.catalog",
+        "mind_map.list"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ]
+    },
+    "artifact.list": {
+      "call_policy": "read",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ],
+      "leaf_operations": [
+        "artifact.catalog",
+        "mind_map.list"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTES_AND_MIND_MAPS:<default>",
+        "LIST_ARTIFACTS:<default>"
+      ]
+    },
     "artifact.rename": {
       "call_policy": "mutation",
       "known_divergence": null,
@@ -1383,8 +1404,8 @@
   },
   "summary": {
     "direct_row_divergences": 0,
-    "direct_rows": 77,
+    "direct_rows": 75,
     "end_to_end_divergences": 1,
-    "service_owned_workflows": 18
+    "service_owned_workflows": 21
   }
 }

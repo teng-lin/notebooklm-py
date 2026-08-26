@@ -91,15 +91,15 @@ def test_the_research_workflows_are_available_once_they_carry_a_typed_def() -> N
 
 
 def test_product_operations_are_the_vocabulary_minus_the_primitives() -> None:
-    """98 members are 87 product operations plus the eleven decomposition leaves."""
+    """99 members are 87 product operations plus the twelve decomposition leaves."""
     primitives = {
         operation
         for operation, binding in WEB_OPERATION_REGISTRY.items()
         if binding.definition is not None and binding.definition.tier is OperationTier.PRIMITIVE
     }
 
-    assert len(Operation) == 98
-    assert len(primitives) == 11
+    assert len(Operation) == 99
+    assert len(primitives) == 12
     assert len(Operation) - len(primitives) == 87
 
 

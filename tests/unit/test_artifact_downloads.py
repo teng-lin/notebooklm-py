@@ -54,8 +54,6 @@ def mock_artifacts_api():
     drive responses through ``mock_core.rpc_executor.rpc_call`` (via
     ``side_effect``) since the services delegate down to that single RPC seam.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
-    from notebooklm._note_service import LegacyNoteBackedService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(
@@ -64,17 +62,12 @@ def mock_artifacts_api():
     )
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
-    # Use real NoteService + NoteBackedMindMapService so the wire RPC
-    # surface stays consistent with production behavior. Tests that
-    # need to override list_mind_maps continue to patch it via
-    # ``patch.object(api._mind_maps, "list_mind_maps", ...)``.
-    note_service = LegacyNoteBackedService(mock_core)
-    mind_maps = NoteBackedMindMapService(note_service)
+    # The semantic backend over ``mock_core`` is the whole graph, so the wire
+    # RPC surface stays consistent with production behavior.
     api = ArtifactsAPI(
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=mock_notebooks,
-        mind_maps=mind_maps,
         _backend=build_web_backend(mock_core),
     )
     return api, mock_core

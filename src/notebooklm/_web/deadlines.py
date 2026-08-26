@@ -21,15 +21,16 @@ class SemanticDeadlineAuthority(str, Enum):
 # This is deliberately a closed ledger, not a broad "seed every invoke" rule.
 # CLIENT_TIMEOUT entries can issue more than one native RPC during one typed
 # backend operation, so production captures the configured client timeout once
-# and hands the same RuntimeDeadline to every phase. WORKFLOW_OWNED entries
+# and hands the same RuntimeDeadline to every phase. A service-owned workflow is
+# absent from this ledger and mints the same budget itself from the client-scoped
+# factory (``StudioCatalog``, ``StudioManagementService``): the backend never
+# invokes it, so there is nothing here for it to seed. WORKFLOW_OWNED entries
 # retain their documented upload/poll/chat budget. BRANCH_EXCLUSIVE handlers
 # contain more than one syntactic RPC site, but each input selects exactly one.
 SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlineAuthority]] = (
     MappingProxyType(
         {
             Operation.NOTEBOOK_SUGGEST_PROMPTS: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_LIST: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GET: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GENERATE_AUDIO: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GENERATE_VIDEO: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GENERATE_REPORT: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
@@ -38,7 +39,6 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.ARTIFACT_GENERATE_INFOGRAPHIC: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GENERATE_SLIDE_DECK: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.ARTIFACT_GENERATE_DATA_TABLE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_MIND_MAP: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.MIND_MAP_GENERATE_NOTE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.MIND_MAP_GENERATE_INTERACTIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             # Source file registration/upload, source polling, artifact shared-leader
