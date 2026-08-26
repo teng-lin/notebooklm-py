@@ -14,11 +14,7 @@ from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
-    ArtifactGetResult,
     ArtifactInfographicRecord,
-    ArtifactListResult,
     ArtifactRecord,
     ArtifactSlideRecord,
     GenerationStatusRecord,
@@ -34,7 +30,7 @@ from notebooklm._studio import (
     StudioGenerationInputs,
     VisualFamilyService,
 )
-from tests._fixtures.recording_backend import RecordingBackend
+from tests._fixtures.recording_backend import RecordingBackend, set_studio_catalog
 
 
 def _generation_inputs(backend: RecordingBackend) -> StudioGenerationInputs:
@@ -152,8 +148,7 @@ async def test_visual_catalog_and_get_preserve_rendered_accessibility_metadata()
     infographic = _infographic()
     slides = _slide_deck()
     backend = RecordingBackend()
-    backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((infographic, slides)))
-    backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(slides))
+    set_studio_catalog(backend, (infographic, slides))
     service = VisualFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
 
     assert await service.list_infographics("nb") == (infographic,)
@@ -170,10 +165,12 @@ async def test_visual_catalog_and_get_preserve_rendered_accessibility_metadata()
     assert slide_metadata.slides[0].height == 768
     assert slide_metadata.slides[0].alt_text == "Accessible slide"
     assert slide_metadata.slides[0].text == "Visible slide text"
+    # Two family listings skip the note-backed merge; the identity read cannot.
     assert [item.operation for item in backend.invocations] == [
-        Operation.ARTIFACT_LIST,
-        Operation.ARTIFACT_LIST,
-        Operation.ARTIFACT_GET,
+        Operation.ARTIFACT_CATALOG,
+        Operation.ARTIFACT_CATALOG,
+        Operation.ARTIFACT_CATALOG,
+        Operation.MIND_MAP_LIST,
     ]
 
 

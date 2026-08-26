@@ -21,7 +21,10 @@ class SemanticDeadlineAuthority(str, Enum):
 # This is deliberately a closed ledger, not a broad "seed every invoke" rule.
 # CLIENT_TIMEOUT entries can issue more than one native RPC during one typed
 # backend operation, so production captures the configured client timeout once
-# and hands the same RuntimeDeadline to every phase. WORKFLOW_OWNED entries
+# and hands the same RuntimeDeadline to every phase. A service-owned workflow is
+# absent from this ledger and mints the same budget itself from the client-scoped
+# factory (``StudioCatalog``, ``StudioManagementService``): the backend never
+# invokes it, so there is nothing here for it to seed. WORKFLOW_OWNED entries
 # retain their documented upload/poll/chat budget. BRANCH_EXCLUSIVE handlers
 # contain more than one syntactic RPC site, but each input selects exactly one.
 SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlineAuthority]] = (
@@ -30,14 +33,11 @@ SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlin
             Operation.SOURCE_ADD_URL: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SOURCE_ADD_URL_BATCH: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SOURCE_ADD_DRIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_LIST: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GET: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             # P10 R5.1a took the eight ``artifact.generate_*`` operations out of
-            # this ledger: their rows are single-native now, and the family
-            # service captures the one budget the read and the kickoff share.
-            Operation.ARTIFACT_GENERATE_MIND_MAP: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
+            # this ledger and R5.1b ``mind_map.generate_interactive``: their rows
+            # are single-native now, and the family service captures the one
+            # budget the default-source read and the kickoff share.
             Operation.MIND_MAP_GENERATE_NOTE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.MIND_MAP_GENERATE_INTERACTIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             # Source file registration/upload, source polling, artifact shared-leader
             # polling, chat streaming, and research reconciliation all have explicit
             # existing budgets whose observable semantics P4.2 preserves.

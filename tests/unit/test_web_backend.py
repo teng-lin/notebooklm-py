@@ -34,13 +34,10 @@ from notebooklm._records import (
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
     ARTIFACT_GENERATE_FLASHCARDS_DEF,
     ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-    ARTIFACT_GENERATE_MIND_MAP_DEF,
     ARTIFACT_GENERATE_QUIZ_DEF,
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
     ARTIFACT_GENERATE_VIDEO_DEF,
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
     ARTIFACT_PATCH_TITLE_DEF,
     ARTIFACT_RETRY_DEF,
     ARTIFACT_REVISE_SLIDE_DEF,
@@ -63,6 +60,7 @@ from notebooklm._records import (
     LABEL_MUTATE_DEF,
     LEGACY_SHARE_ARTIFACT_DEF,
     MIND_MAP_DELETE_DEF,
+    MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_GET_DEF,
@@ -327,8 +325,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.NOTE_CREATE,
         Operation.NOTE_UPDATE,
         Operation.NOTE_DELETE,
-        Operation.ARTIFACT_LIST,
-        Operation.ARTIFACT_GET,
         Operation.ARTIFACT_CATALOG,
         Operation.ARTIFACT_PATCH_TITLE,
         Operation.ARTIFACT_GENERATE_AUDIO,
@@ -339,7 +335,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC,
         Operation.ARTIFACT_GENERATE_SLIDE_DECK,
         Operation.ARTIFACT_GENERATE_DATA_TABLE,
-        Operation.ARTIFACT_GENERATE_MIND_MAP,
         Operation.ARTIFACT_EXPORT,
         Operation.MIND_MAP_LIST,
         Operation.MIND_MAP_GET,
@@ -347,6 +342,7 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.MIND_MAP_GENERATE_INTERACTIVE,
         Operation.MIND_MAP_UPDATE,
         Operation.MIND_MAP_DELETE,
+        Operation.MIND_MAP_GENERATE,
         Operation.LABEL_LIST,
         Operation.LABEL_GET,
         Operation.LABEL_GENERATE,
@@ -413,8 +409,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.NOTE_CREATE: NOTE_CREATE_DEF,
         Operation.NOTE_UPDATE: NOTE_UPDATE_DEF,
         Operation.NOTE_DELETE: NOTE_DELETE_DEF,
-        Operation.ARTIFACT_LIST: ARTIFACT_LIST_DEF,
-        Operation.ARTIFACT_GET: ARTIFACT_GET_DEF,
         Operation.ARTIFACT_CATALOG: ARTIFACT_CATALOG_DEF,
         Operation.ARTIFACT_PATCH_TITLE: ARTIFACT_PATCH_TITLE_DEF,
         Operation.ARTIFACT_GENERATE_AUDIO: ARTIFACT_GENERATE_AUDIO_DEF,
@@ -425,7 +419,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC: ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
         Operation.ARTIFACT_GENERATE_SLIDE_DECK: ARTIFACT_GENERATE_SLIDE_DECK_DEF,
         Operation.ARTIFACT_GENERATE_DATA_TABLE: ARTIFACT_GENERATE_DATA_TABLE_DEF,
-        Operation.ARTIFACT_GENERATE_MIND_MAP: ARTIFACT_GENERATE_MIND_MAP_DEF,
         Operation.ARTIFACT_EXPORT: ARTIFACT_EXPORT_DEF,
         Operation.MIND_MAP_LIST: MIND_MAP_LIST_DEF,
         Operation.MIND_MAP_GET: MIND_MAP_GET_DEF,
@@ -433,6 +426,7 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.MIND_MAP_GENERATE_INTERACTIVE: MIND_MAP_GENERATE_INTERACTIVE_DEF,
         Operation.MIND_MAP_UPDATE: MIND_MAP_UPDATE_DEF,
         Operation.MIND_MAP_DELETE: MIND_MAP_DELETE_DEF,
+        Operation.MIND_MAP_GENERATE: MIND_MAP_GENERATE_DEF,
         Operation.LABEL_LIST: LABEL_LIST_DEF,
         Operation.LABEL_GET: LABEL_GET_DEF,
         Operation.LABEL_GENERATE: LABEL_GENERATE_DEF,
@@ -1023,27 +1017,21 @@ async def test_mind_map_handlers_preserve_codecs_payloads_and_deadline() -> None
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("definition", "value"),
-    [
-        (MIND_MAP_GENERATE_NOTE_DEF, MindMapGenerateNoteInput("nb", None)),
-        (
-            MIND_MAP_GENERATE_INTERACTIVE_DEF,
-            MindMapGenerateInteractiveInput("nb", None),
-        ),
-    ],
-)
-async def test_mind_map_generation_resolves_default_sources_once(
-    definition: OperationDef[Any, Any],
-    value: object,
-) -> None:
-    generated = [["id"]] if definition is MIND_MAP_GENERATE_INTERACTIVE_DEF else [["{}"]]
+async def test_mind_map_note_generation_resolves_default_sources_once() -> None:
+    """``mind_map.generate_note`` is the one row still defaulting its own scope.
+
+    P10 R5.1b hoisted the interactive family's read into
+    ``MindMapFamilyService``; the note-backed row keeps its ``GET_NOTEBOOK``
+    spec until its own hoist.
+    """
     executor = _RecordingExecutor(
         [["Notebook", [[[["src-a"]]], [["src-b"]]], "nb"]],
-        generated,
+        [["{}"]],
     )
 
-    await _backend(executor).invoke(definition, value, deadline=None)
+    await _backend(executor).invoke(
+        MIND_MAP_GENERATE_NOTE_DEF, MindMapGenerateNoteInput("nb", None), deadline=None
+    )
 
     assert [call.method for call in executor.calls[:1]] == [RPCMethod.GET_NOTEBOOK]
     assert len(executor.calls) == 2

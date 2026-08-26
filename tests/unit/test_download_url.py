@@ -27,21 +27,17 @@ from tests._fixtures.web_backend import build_web_backend
 @pytest.fixture
 def mock_artifacts_api():
     """ArtifactsAPI wired to MagicMocks -- no real I/O."""
-    from notebooklm._mind_map import NoteBackedMindMapService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(
         rpc_call=AsyncMock(),
         get_source_ids=AsyncMock(return_value=[]),
     )
-    mind_maps = MagicMock(spec=NoteBackedMindMapService)
-    mind_maps.list_mind_maps = AsyncMock(return_value=[])
     api = ArtifactsAPI(
         _backend=build_web_backend(mock_core),
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=MagicMock(),
-        mind_maps=mind_maps,
     )
     return api
 

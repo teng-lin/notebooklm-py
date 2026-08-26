@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
-from ._operations import CallPolicy, Operation, OperationDef
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,18 +21,52 @@ class MindMapRecord:
     tree_json: str | None = None
 
 
+#: Diagnostics key the supplemental catalog read's partial-availability net
+#: matches on.  ``mind_map.list``'s ``map_error`` stamps it on the one failure
+#: it translates, so the swallowing service recognises that failure without
+#: widening its reason set to every network failure.
+SUPPLEMENTAL_TRANSPORT_FAILURE = "supplemental_transport_failure"
+
+#: ``MindMapListInput.raw_rows``: return the mind-map rows only.
+RAW_MIND_MAP_ROWS = "mind_maps"
+#: ``MindMapListInput.raw_rows``: return the whole normalized row collection.
+RAW_ALL_NOTE_ROWS = "all"
+
+
 @dataclass(frozen=True, slots=True)
 class MindMapListInput:
-    """Notebook whose active note-backed mind maps are requested."""
+    """Notebook whose active note-backed mind maps are requested.
+
+    ``raw_rows`` selects the undecoded compatibility branch that
+    ``NotesAPI.list_mind_maps`` and ``NotesAPI._get_all_notes_and_mind_maps``
+    publish: :data:`RAW_MIND_MAP_ROWS` yields the normalized mind-map rows and
+    :data:`RAW_ALL_NOTE_ROWS` the whole normalized collection, both exactly as
+    the wire produced them.  ``None`` is the record branch every semantic
+    caller uses.
+
+    ``supplemental`` marks the optional read the Studio catalog merges into a
+    complete listing.  It selects nothing about the request or the decode; it
+    tells the row only that this one caller applies ADR-0019 Rule 3's
+    partial-availability policy, so the row may translate the raw transport
+    leaf that policy has always swallowed.  Every other consumer leaves it
+    ``False`` and keeps observing that leaf unchanged.
+    """
 
     notebook_id: str
+    raw_rows: str | None = None
+    supplemental: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class MindMapListResult:
-    """Active note-backed mind maps in backend order."""
+    """Active note-backed mind maps in backend order.
+
+    ``rows`` carries the undecoded payload for ``raw_rows`` requests only and
+    stays empty on the record branch, which in turn leaves ``mind_maps`` empty.
+    """
 
     mind_maps: tuple[MindMapRecord, ...]
+    rows: tuple[Any, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,11 +102,43 @@ class MindMapGenerateNoteResult:
 
 
 @dataclass(frozen=True, slots=True)
-class MindMapGenerateInteractiveInput:
-    """Interactive Studio mind-map generation options."""
+class MindMapGenerateTreeInput:
+    """Resolved note-backed generation request for the ``mind_map.generate`` leaf.
+
+    ``source_ids`` is required: a primitive never resolves a default source set
+    of its own, so the sequencing service supplies the exact set the native is
+    called with.
+    """
 
     notebook_id: str
-    source_ids: tuple[str, ...] | None = None
+    source_ids: tuple[str, ...]
+    language: str | None = "en"
+    instructions: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class MindMapGenerateTreeResult:
+    """Serialized tree the generation native produced, or ``None`` when absent.
+
+    Only the JSON text crosses the port. The parsed tree and its display title
+    are derived above the port so no public value is decoded below it.
+    """
+
+    tree_json: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class MindMapGenerateInteractiveInput:
+    """Interactive Studio mind-map generation options with a resolved scope.
+
+    ``source_ids`` is required: "no scope given means every source" is a
+    service-level default (:class:`~notebooklm._studio.MindMapFamilyService`
+    resolves the notebook's full source set through ``NOTEBOOK_GET`` before
+    invoking), not something the backend re-derives below the port.
+    """
+
+    notebook_id: str
+    source_ids: tuple[str, ...]
     instructions: str | None = field(default=None, repr=False)
 
 
@@ -164,6 +231,17 @@ MIND_MAP_GENERATE_NOTE_DEF: OperationDef[MindMapGenerateNoteInput, MindMapGenera
 )
 
 
+MIND_MAP_GENERATE_DEF: OperationDef[MindMapGenerateTreeInput, MindMapGenerateTreeResult] = (
+    OperationDef(
+        Operation.MIND_MAP_GENERATE,
+        CallPolicy.STATEFUL_START,
+        MindMapGenerateTreeInput,
+        MindMapGenerateTreeResult,
+        tier=OperationTier.PRIMITIVE,
+    )
+)
+
+
 MIND_MAP_GENERATE_INTERACTIVE_DEF: OperationDef[
     MindMapGenerateInteractiveInput, MindMapGenerateInteractiveResult
 ] = OperationDef(
@@ -192,6 +270,7 @@ MIND_MAP_DELETE_DEF: OperationDef[MindMapDeleteInput, MindMapDeleteResult] = Ope
 
 __all__ = [
     "MIND_MAP_DELETE_DEF",
+    "MIND_MAP_GENERATE_DEF",
     "MIND_MAP_GENERATE_INTERACTIVE_DEF",
     "MIND_MAP_GENERATE_NOTE_DEF",
     "MIND_MAP_GET_DEF",
@@ -205,6 +284,8 @@ __all__ = [
     "MindMapGenerateNoteInput",
     "MindMapGenerateNoteResult",
     "MindMapGenerateResult",
+    "MindMapGenerateTreeInput",
+    "MindMapGenerateTreeResult",
     "MindMapGetInput",
     "MindMapGetResult",
     "MindMapListInput",
@@ -213,4 +294,7 @@ __all__ = [
     "MindMapRepresentationRecord",
     "MindMapUpdateInput",
     "MindMapUpdateResult",
+    "RAW_ALL_NOTE_ROWS",
+    "RAW_MIND_MAP_ROWS",
+    "SUPPLEMENTAL_TRANSPORT_FAILURE",
 ]

@@ -541,7 +541,6 @@ def _make_parse_api():
         drain=core,
         lifecycle=core,
         notebooks=notebooks,
-        mind_maps=MagicMock(),
     )
 
 

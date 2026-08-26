@@ -19,7 +19,7 @@ dependencies a service may take, so I1 is authorised by the plan's decision
 **D7** (an ADR-0035 addendum landed in R0.0), not by the unamended ADR.
 
 **I2 — ``_web/**`` imports no domain package.** The web backend may not import
-``_chat``, ``_source``, ``_studio``, ``_artifact``, ``_mind_map`` or any
+``_chat``, ``_source``, ``_studio``, ``_artifact`` or any
 semantic service module. Neutral helper modules (``_records*``,
 ``_research_neutral``, ``_deadline``, ``_request_types``, ``_markdown``) stay
 permitted and are asserted as such below, so the rule cannot be widened into
@@ -132,7 +132,7 @@ NEUTRAL_RECORD_MODULE_NAMES: frozenset[str] = frozenset({"_records.py", "_resear
 #: Domain *packages* above the semantic port. ``_web`` consumes their neutral
 #: records, never their modules.
 I2_FORBIDDEN_DOMAIN_PACKAGES: frozenset[str] = frozenset(
-    {"_artifact", "_chat", "_mind_map", "_source", "_studio"}
+    {"_artifact", "_chat", "_source", "_studio"}
 )
 
 #: Shrinking seed: the ``_web`` files that import a domain package today, as
@@ -143,7 +143,6 @@ I2_FORBIDDEN_DOMAIN_PACKAGES: frozenset[str] = frozenset(
 I2_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
         "backend.py",
-        "bindings/mind_maps.py",
         "bindings/sources.py",
     }
 )
@@ -184,14 +183,14 @@ I9_EXEMPT_LEGACY_CLASSES: frozenset[str] = frozenset(
 
 #: P10 deletion targets, recorded separately from the exemptions so neither can
 #: be reclassified as permanent by editing one set. ``LegacyNoteBackedService``
-#: goes in R4.2 (its wire graph moves above the port with the mind-map
-#: workflows); ``NotebookLegacyRpc`` goes in R6.2 with ``NotebooksAPI.get_raw``.
-I9_DELETION_TARGETS: frozenset[str] = frozenset(
-    {
-        "_note_service.py::LegacyNoteBackedService",
-        "_notebooks.py::NotebookLegacyRpc",
-    }
-)
+#: went in R4.2 (its wire graph moved above the port with the mind-map
+#: workflows) and ``_mind_map.py`` went with it; ``NotebookLegacyRpc`` goes in
+#: R6.2 with ``NotebooksAPI.get_raw``.
+I9_DELETION_TARGETS: frozenset[str] = frozenset({"_notebooks.py::NotebookLegacyRpc"})
+
+#: Already deleted by their owning slice. Kept named so a reintroduction under
+#: the old name is a visible edit here rather than a silent revival.
+I9_DELETED_TARGETS: frozenset[str] = frozenset({"_mind_map.py::LegacyNoteBackedService"})
 
 
 # --- AST helpers -------------------------------------------------------------
@@ -566,6 +565,12 @@ def test_the_i9_deletion_targets_stay_separate_from_the_exemptions() -> None:
     assert not (I9_EXEMPT_LEGACY_CLASSES & I9_DELETION_TARGETS), (
         "a P10 deletion target was reclassified as a permanent I9 exemption"
     )
+    assert not (I9_EXEMPT_LEGACY_CLASSES & I9_DELETED_TARGETS), (
+        "a deleted P10 target came back as a permanent I9 exemption"
+    )
+    for target in I9_DELETED_TARGETS:
+        module, _, _class = target.partition("::")
+        assert not (SRC_ROOT / module).exists(), f"{target} was deleted in P10; {module} is back"
 
 
 # --- Read-core pins (ported from the retired test_semantic_read_boundary.py) --

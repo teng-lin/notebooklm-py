@@ -92,6 +92,9 @@ class Operation(str, Enum):
     MIND_MAP_GENERATE_INTERACTIVE = "mind_map.generate_interactive"
     MIND_MAP_UPDATE = "mind_map.update"
     MIND_MAP_DELETE = "mind_map.delete"
+    # P9.2 primitive: one native call on an already-resolved source set, the
+    # generation leaf the note-backed mind-map workflows sequence.
+    MIND_MAP_GENERATE = "mind_map.generate"
 
     RESEARCH_START = "research.start"
     RESEARCH_POLL = "research.poll"

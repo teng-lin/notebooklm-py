@@ -67,8 +67,6 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.SETTINGS_SET_LANGUAGE,
         Operation.NOTEBOOK_SUGGEST_PROMPTS,
         Operation.SOURCE_WAIT,
-        Operation.ARTIFACT_LIST,
-        Operation.ARTIFACT_GET,
         Operation.ARTIFACT_GENERATE_AUDIO,
         Operation.ARTIFACT_GENERATE_QUIZ,
         Operation.ARTIFACT_GENERATE_FLASHCARDS,
@@ -77,7 +75,6 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC,
         Operation.ARTIFACT_GENERATE_SLIDE_DECK,
         Operation.ARTIFACT_GENERATE_DATA_TABLE,
-        Operation.ARTIFACT_GENERATE_MIND_MAP,
         Operation.ARTIFACT_EXPORT,
         Operation.ARTIFACT_REVISE_SLIDE,
         Operation.ARTIFACT_RETRY,
@@ -104,6 +101,7 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
         Operation.MIND_MAP_GENERATE_INTERACTIVE,
         Operation.MIND_MAP_UPDATE,
         Operation.MIND_MAP_DELETE,
+        Operation.MIND_MAP_GENERATE,
         Operation.LABEL_LIST,
         Operation.LABEL_GET,
         Operation.LABEL_GENERATE,
@@ -124,15 +122,11 @@ KNOWN_ACTIVE_SEMANTIC_OPERATIONS: frozenset[Operation] = frozenset(
     }
 )
 
-# Exact legacy exceptions to the zero-semantic-RpcCaller entry rule.
-# ``LegacyNoteBackedService`` is explicitly retained by the P6.3 plan for
-# deferred saved-chat/artifact compatibility. ``ShareManager`` is fully
-# semantic and no longer owns the runtime-wide RpcCaller capability.
-AUTHORIZED_LEGACY_RPC_CALLERS: frozenset[tuple[str, str, str]] = frozenset(
-    {
-        ("_note_service.py", "LegacyNoteBackedService.__init__", "rpc"),
-    }
-)
+# Exact legacy exceptions to the zero-semantic-RpcCaller entry rule. P10 R4.2
+# deleted the last one — ``LegacyNoteBackedService``, retained by the P6.3 plan
+# for deferred saved-chat/artifact compatibility — when the mind-map workflows
+# moved above the port, so the authorized set is now empty and stays exact.
+AUTHORIZED_LEGACY_RPC_CALLERS: frozenset[tuple[str, str, str]] = frozenset()
 
 # No semantic facade/service may consume the old runtime-wide capability at P7
 # entry. Keep this named empty baseline so a deliberate future exception cannot
@@ -262,7 +256,6 @@ MIGRATED_FEATURE_RPC_NEUTRAL_MODULES = frozenset(
 # a feature facade is never admitted here as a convenient exception.
 CLASSIFIED_NON_WEB_RPC_METHOD_IMPORTS: dict[str, str] = {
     "_backend_compat.py": "legacy public exception diagnostic projector",
-    "_note_service.py": "plan-authorized LegacyNoteBackedService",
     "_notebooks.py": "documented public raw-RPC compatibility owner",
     "_research_task_parser.py": "legacy research wire decoder",
     "_row_adapters/artifacts.py": "artifact positional row decoder",
@@ -801,10 +794,8 @@ def test_rpccaller_consumer_inventory_is_exact_and_fails_closed() -> None:
 
 
 def test_authorized_legacy_rpc_callers_are_exact_and_semantic_baseline_is_zero() -> None:
-    """Only the plan-backed note compatibility implementation is exempt."""
-    assert {
-        ("_note_service.py", "LegacyNoteBackedService.__init__", "rpc"),
-    } == AUTHORIZED_LEGACY_RPC_CALLERS
+    """Nothing takes the runtime-wide RpcCaller capability any more."""
+    assert frozenset() == AUTHORIZED_LEGACY_RPC_CALLERS
     assert not KNOWN_SEMANTIC_RPC_CALLER_BLOCKERS
 
 
@@ -831,7 +822,7 @@ def test_remaining_non_web_rpc_method_imports_are_exact_and_classified() -> None
 
 def test_active_semantic_operation_inventory_is_exact_for_p7() -> None:
     """P7's runtime-collapse input is the exact P4-supported operation set."""
-    assert len(KNOWN_ACTIVE_SEMANTIC_OPERATIONS) == 80
+    assert len(KNOWN_ACTIVE_SEMANTIC_OPERATIONS) == 78
     assert WEB_SUPPORTED_OPERATIONS == KNOWN_ACTIVE_SEMANTIC_OPERATIONS
 
 

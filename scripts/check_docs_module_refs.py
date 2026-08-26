@@ -98,6 +98,12 @@ _ALLOWLIST: dict[str, str] = {
     # `_web/bindings/_invoker_caller.py` in P9.4b; the refactor plan names it as
     # history (the P9 entry record and the P9.1/P9.4 slice text).
     "docs/plan/2026-08-13-semantic-backend-refactor.md:_web/deadline_rpc.py": "historical: P6 caller deleted in P9.4b, named by the plan's slice record",
+    # `_mind_map.py` and `_web/bindings/_invoker_caller.py` were deleted in P10
+    # R4.2 when the mind-map workflows moved above the semantic port. The two
+    # plans name them as the history of that move, not as live modules.
+    "docs/plan/2026-08-13-semantic-backend-refactor.md:_mind_map.py": "historical: deleted in P10 R4.2, named by the plan's slice record",
+    "docs/plan/2026-08-25-p10-semantic-remediation.md:_mind_map.py": "historical: deleted in P10 R4.2, named by the slice that deletes it",
+    "docs/plan/2026-08-25-p10-semantic-remediation.md:_web/bindings/_invoker_caller.py": "historical: deleted in P10 R4.2, named by the slice that deletes it",
 }
 
 

@@ -46,7 +46,6 @@ _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
     "_env.py",
     "_idempotency.py",
     "_logging.py",
-    "_mind_map.py",
     "_session.py",
     "_url_utils.py",
     "_version_check.py",
@@ -71,7 +70,6 @@ _SOURCE_SERVICE_MODULES = [
 _NOTEBOOK_COMPOSITION_SERVICE_MODULES = [
     "_notebook_metadata.py",
     "_sharing_manager.py",
-    "_mind_map.py",
 ]
 
 _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {

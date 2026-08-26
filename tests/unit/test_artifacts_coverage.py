@@ -36,17 +36,13 @@ def mock_artifacts_api():
     )
     # ``ArtifactsAPI`` constructs its own ``PollRegistry`` internally; the fake
     # core does not need to provide one.
-    from notebooklm._mind_map import NoteBackedMindMapService
 
-    mind_maps = MagicMock(spec=NoteBackedMindMapService)
-    mind_maps.list_mind_maps = AsyncMock(return_value=[])
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
     api = ArtifactsAPI(
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=mock_notebooks,
-        mind_maps=mind_maps,
         _backend=build_web_backend(mock_core),
     )
     return api, mock_core

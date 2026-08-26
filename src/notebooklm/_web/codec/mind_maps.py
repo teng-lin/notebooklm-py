@@ -9,13 +9,17 @@ from typing import Any
 
 from ..._binding import CodecPayload
 from ..._env import get_default_language
+from ..._operations import Operation
 from ..._records import (
+    RAW_MIND_MAP_ROWS,
     MindMapDeleteInput,
     MindMapDeleteResult,
-    MindMapGenerateInput,
     MindMapGenerateInteractiveInput,
+    MindMapGenerateInteractiveResult,
     MindMapGenerateNoteInput,
     MindMapGenerateNoteResult,
+    MindMapGenerateTreeInput,
+    MindMapGenerateTreeResult,
     MindMapGetInput,
     MindMapGetResult,
     MindMapListInput,
@@ -30,7 +34,8 @@ from .artifact_payloads import (
     build_interactive_mind_map_artifact_params,
     build_mind_map_params,
 )
-from .notes import decode_note_backed_mind_maps
+from .notes import decode_note_backed_mind_maps, decode_note_row_collection
+from .studio_documents import artifact_feature_unavailable
 
 logger = logging.getLogger("notebooklm._mind_maps_api")
 
@@ -163,7 +168,16 @@ def encode_mind_map_delete(value: MindMapDeleteInput) -> CodecPayload:
 
 
 def decode_mind_map_list(value: MindMapListInput, data: Any) -> MindMapListResult:
-    """Row decoder for ``mind_map.list``."""
+    """Row decoder for ``mind_map.list``; the input selects the raw-row branch."""
+    if value.raw_rows is not None:
+        # Undecoded compatibility branch. ``NotesAPI.list_mind_maps`` and
+        # ``NotesAPI._get_all_notes_and_mind_maps`` publish the wire rows, so no
+        # record projection may run here — it would turn a row those helpers
+        # returned verbatim into a record that drops fields they exposed.
+        return MindMapListResult(
+            (),
+            decode_note_row_collection(data, mind_maps_only=value.raw_rows == RAW_MIND_MAP_ROWS),
+        )
     return MindMapListResult(decode_note_backed_mind_maps(data, value.notebook_id))
 
 
@@ -218,28 +232,11 @@ def decode_mind_map_generate_note(result: Any) -> MindMapGenerateNoteResult:
     return MindMapGenerateNoteResult(decode_generated_tree(result))
 
 
-def encode_mind_map_generate_interactive(
-    value: MindMapGenerateInteractiveInput, source_ids: tuple[str, ...]
-) -> CodecPayload:
-    """Payload for the ``CREATE_ARTIFACT`` phase of ``mind_map.generate_interactive``."""
-    return CodecPayload(
-        params=build_interactive_mind_map_artifact_params(
-            value.notebook_id,
-            list(source_ids),
-            instructions=value.instructions,
-        ),
-        source_path=_notebook_route(value.notebook_id),
-        allow_null=True,
-    )
-
-
-def encode_artifact_mind_map_generate(
-    value: MindMapGenerateInput, source_ids: tuple[str, ...]
-) -> CodecPayload:
-    """Payload for the ``GENERATE_MIND_MAP`` phase of ``artifact.generate_mind_map``."""
+def encode_mind_map_generate(value: MindMapGenerateTreeInput) -> CodecPayload:
+    """Payload for the ``mind_map.generate`` leaf (already-resolved source set)."""
     return CodecPayload(
         params=build_mind_map_params(
-            list(source_ids),
+            list(value.source_ids),
             language=(get_default_language() if value.language is None else value.language),
             instructions=value.instructions,
         ),
@@ -248,49 +245,66 @@ def encode_artifact_mind_map_generate(
     )
 
 
-def decode_artifact_mind_map_leaf(result: Any) -> tuple[str, object, str] | None:
-    """Decode ``artifact.generate_mind_map``'s leaf into ``(json, data, title)``.
+def decode_mind_map_generate(
+    value: MindMapGenerateTreeInput, result: Any
+) -> MindMapGenerateTreeResult:
+    """Row decoder for ``mind_map.generate``; only the serialized tree crosses."""
+    del value
+    return MindMapGenerateTreeResult(decode_generated_tree(result))
 
-    ``None`` means the leaf was absent (the semantic result is empty).  The JSON
-    text is what the composite persists as the note content; ``data`` is the
-    parsed tree (or the raw string when it does not parse); ``title`` is the
-    tree's ``name`` when present, else ``"Mind Map"``.
+
+def encode_mind_map_generate_interactive(
+    value: MindMapGenerateInteractiveInput,
+) -> CodecPayload:
+    """Payload for the ``mind_map.generate_interactive`` codec row (P10 R5.1b).
+
+    The input carries its resolved source scope, so this encoder is a pure
+    function of the record and never reads a notebook of its own.
     """
-    mind_map_json = unwrap_mind_map_generation_leaf(
-        result,
-        method_id=RPCMethod.GENERATE_MIND_MAP.value,
-        source="ArtifactsAPI",
+    return CodecPayload(
+        params=build_interactive_mind_map_artifact_params(
+            value.notebook_id,
+            list(value.source_ids),
+            instructions=value.instructions,
+        ),
+        source_path=_notebook_route(value.notebook_id),
+        allow_null=True,
     )
-    if mind_map_json is MIND_MAP_LEAF_ABSENT:
-        return None
-    if isinstance(mind_map_json, str):
-        try:
-            mind_map_data: object = json.loads(mind_map_json)
-        except json.JSONDecodeError:
-            mind_map_data = mind_map_json
-    else:
-        mind_map_data = mind_map_json
-        mind_map_json = json.dumps(mind_map_json)
-    title = "Mind Map"
-    if isinstance(mind_map_data, dict):
-        name = mind_map_data.get("name")
-        if isinstance(name, str) and name:
-            title = name
-    return mind_map_json, mind_map_data, title
+
+
+def decode_mind_map_generate_interactive(
+    value: MindMapGenerateInteractiveInput, result: Any, *, method_id: str
+) -> MindMapGenerateInteractiveResult:
+    """Row decoder for ``mind_map.generate_interactive``.
+
+    A response that allocates no identity is the closed
+    ``ARTIFACT_FEATURE_UNAVAILABLE`` failure the composite raised, kept here so
+    the public exception is unchanged. ``method_id`` is threaded from the row's
+    ``NativeCallSpec`` value, as the research rows already do, so this decoder
+    keeps no second copy of the native it decodes.
+    """
+    del value
+    mind_map_id = decode_created_interactive_id(result)
+    if mind_map_id is None:
+        raise artifact_feature_unavailable(
+            Operation.MIND_MAP_GENERATE_INTERACTIVE, "mind_map", method_id=method_id
+        )
+    return MindMapGenerateInteractiveResult(mind_map_id)
 
 
 __all__ = [
-    "decode_artifact_mind_map_leaf",
     "decode_created_interactive_id",
     "decode_generated_tree",
     "decode_interactive_tree",
     "decode_mind_map_delete",
+    "decode_mind_map_generate",
+    "decode_mind_map_generate_interactive",
     "decode_mind_map_generate_note",
     "decode_mind_map_get",
     "decode_mind_map_list",
     "decode_mind_map_update",
-    "encode_artifact_mind_map_generate",
     "encode_mind_map_delete",
+    "encode_mind_map_generate",
     "encode_mind_map_generate_interactive",
     "encode_mind_map_generate_note",
     "encode_mind_map_get",

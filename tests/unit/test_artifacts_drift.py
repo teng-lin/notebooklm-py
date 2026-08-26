@@ -33,7 +33,6 @@ from tests._fixtures.web_backend import build_web_backend
 @pytest.fixture
 def artifacts_api():
     """Build a minimal ArtifactsAPI for direct parser invocation."""
-    from notebooklm._mind_map import NoteBackedMindMapService
     from tests._fixtures.fake_core import make_fake_core
 
     mock_core = make_fake_core(rpc_call=AsyncMock())
@@ -42,7 +41,6 @@ def artifacts_api():
         drain=mock_core,
         lifecycle=mock_core,
         notebooks=MagicMock(),
-        mind_maps=MagicMock(spec=NoteBackedMindMapService),
     )
 
 

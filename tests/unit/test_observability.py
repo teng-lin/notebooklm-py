@@ -15,7 +15,6 @@ from notebooklm import (
     get_request_id,
 )
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._runtime.transport import RuntimeTransport
 from notebooklm._source.upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
@@ -244,7 +243,6 @@ async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> No
         drain=core._backend._drain_tracker,
         lifecycle=core._provider._lifecycle,
         notebooks=MagicMock(),
-        mind_maps=MagicMock(spec=NoteBackedMindMapService),
     )
     first_poll_started = asyncio.Event()
     release_first_poll = asyncio.Event()
@@ -391,7 +389,6 @@ async def test_wait_for_completion_status_change_callback(auth_tokens: AuthToken
         drain=core._backend._drain_tracker,
         lifecycle=core._provider._lifecycle,
         notebooks=MagicMock(),
-        mind_maps=MagicMock(spec=NoteBackedMindMapService),
     )
     statuses = [
         GenerationStatus(task_id="task_1", status="in_progress"),

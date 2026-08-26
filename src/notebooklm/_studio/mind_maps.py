@@ -6,7 +6,8 @@ import json
 from collections.abc import Awaitable, Callable
 
 from .._backend import BackendAdapter
-from .._deadline import RuntimeDeadline
+from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from .._read_services import NotebookReadService
 from .._records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
@@ -19,6 +20,7 @@ from .._records import (
     MindMapGenerateOutcomeRecord,
     MindMapGetInput,
     MindMapUpdateInput,
+    SourceIdDiagnostics,
 )
 from .catalog import StudioCatalog
 
@@ -28,7 +30,13 @@ WaitForCompletion = Callable[[str, str], Awaitable[object]]
 class MindMapFamilyService:
     """Interactive mind-map discovery and mutations over the Studio port."""
 
-    __slots__ = ("_backend", "_catalog", "_wait_for_completion")
+    __slots__ = (
+        "_backend",
+        "_catalog",
+        "_deadline_factory",
+        "_notebooks",
+        "_wait_for_completion",
+    )
 
     def __init__(
         self,
@@ -36,10 +44,15 @@ class MindMapFamilyService:
         catalog: StudioCatalog,
         *,
         wait_for_completion: WaitForCompletion,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
     ) -> None:
         self._backend = backend
         self._catalog = catalog
         self._wait_for_completion = wait_for_completion
+        self._deadline_factory = deadline_factory
+        # The default source scope is resolved here, above the port: the
+        # generation operation itself takes an already-resolved input record.
+        self._notebooks = NotebookReadService(backend)
 
     async def list_mind_maps(
         self,
@@ -71,13 +84,22 @@ class MindMapFamilyService:
         wait: bool,
         deadline: RuntimeDeadline | None = None,
     ) -> MindMapGenerateOutcomeRecord:
+        """Generate over a source scope, defaulting to the whole notebook.
+
+        ``source_ids=None`` is this service's documented default for "every
+        source in the notebook": it costs one extra ``NOTEBOOK_GET`` read, which
+        shares the creation call's budget so the pair spends one client timeout.
+        An explicit list — the empty one included — is used verbatim. The read
+        decodes with :attr:`SourceIdDiagnostics.SILENT`, which is what this
+        family has always reported about a snapshot it cannot read: nothing.
+        """
+        if deadline is None and self._deadline_factory is not None:
+            # Captured once, before the read: both natives spend one budget.
+            deadline = self._deadline_factory.start()
+        scope = await self._resolve_scope(notebook_id, source_ids, deadline=deadline)
         created: MindMapGenerateInteractiveResult = await self._backend.invoke(
             MIND_MAP_GENERATE_INTERACTIVE_DEF,
-            MindMapGenerateInteractiveInput(
-                notebook_id,
-                None if source_ids is None else tuple(source_ids),
-                instructions,
-            ),
+            MindMapGenerateInteractiveInput(notebook_id, scope, instructions),
             deadline=deadline,
         )
         if wait:
@@ -103,6 +125,24 @@ class MindMapFamilyService:
             else None
         )
         return MindMapGenerateOutcomeRecord(created.mind_map_id, resolved, tree)
+
+    async def _resolve_scope(
+        self,
+        notebook_id: str,
+        source_ids: list[str] | None,
+        *,
+        deadline: RuntimeDeadline | None,
+    ) -> tuple[str, ...]:
+        """Expand an omitted scope into the notebook's full embedded source set."""
+        if source_ids is not None:
+            return tuple(source_ids)
+        return tuple(
+            await self._notebooks.get_source_ids(
+                notebook_id,
+                diagnostics=SourceIdDiagnostics.SILENT,
+                deadline=deadline,
+            )
+        )
 
     async def rename(
         self,

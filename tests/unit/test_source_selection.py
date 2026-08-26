@@ -220,12 +220,8 @@ def mock_mind_map_service(mock_core):
     collaborators that construction sites splat into ``ArtifactsAPI(...)``
     calls via ``**mock_mind_map_service``.
     """
-    from notebooklm._mind_map import NoteBackedMindMapService
 
-    return {
-        "mind_maps": MagicMock(spec=NoteBackedMindMapService),
-        "_backend": build_web_backend(mock_core.rpc_executor),
-    }
+    return {"_backend": build_web_backend(mock_core.rpc_executor)}
 
 
 class TestChatSourceSelection:

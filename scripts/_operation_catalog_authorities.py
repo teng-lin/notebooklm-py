@@ -191,12 +191,12 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.MIND_MAP_GENERATE_INTERACTIVE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
             (
-                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
-                "kind=INTERACTIVE and source_ids is None",
+                "_web/bindings/notebooks.py:NOTEBOOK_GET",
+                "service-resolved default source scope",
             )
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.GENERATE_MIND_MAP)): _rules(
-            ("_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP", "semantic facade")
+            ("_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE", "semantic facade via leaf")
         ),
         (Operation.MIND_MAP_GENERATE_NOTE, _b(RPCMethod.GENERATE_MIND_MAP)): _rules(
             (
@@ -204,10 +204,16 @@ SHARED_RPC_AUTHORITY_RULES.update(
                 "kind=NOTE_BACKED",
             )
         ),
+        (Operation.MIND_MAP_GENERATE, _b(RPCMethod.GENERATE_MIND_MAP)): _rules(
+            (
+                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE",
+                "resolved source set",
+            )
+        ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.CREATE_NOTE, "plain")): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
-                "persist generated JSON through the legacy note family",
+                "_web/bindings/notes.py:NOTE_CREATE",
+                "persist generated JSON through the semantic note leaf",
             )
         ),
         (Operation.NOTE_CREATE, _b(RPCMethod.CREATE_NOTE, "plain")): _rules(
@@ -226,7 +232,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-            ("_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP", "source_ids is None")
+            ("_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE", "source_ids is None via leaf")
         ),
         (Operation.MIND_MAP_GENERATE_NOTE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
             (
@@ -555,7 +561,7 @@ for _operation in (*_GENERATION_OPERATIONS, Operation.ARTIFACT_GENERATE_MIND_MAP
     # spec (R5.1b); since R5.1a the eight artifact families read through the
     # service-owned ``NOTEBOOK_GET`` row instead.
     _recency_site = (
-        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP"
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
         if _operation is Operation.ARTIFACT_GENERATE_MIND_MAP
         else _GET_TYPED
     )
@@ -573,10 +579,13 @@ for _operation, _kind in (
     (Operation.MIND_MAP_GENERATE_NOTE, "NOTE_BACKED"),
     (Operation.MIND_MAP_GENERATE_INTERACTIVE, "INTERACTIVE"),
 ):
+    # P10 R5.1b: the interactive family's default-scope read is an ordinary
+    # NOTEBOOK_GET that MindMapFamilyService issues above the port, not a second
+    # native of the generation row.
     _recency_site = (
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
         if _operation is Operation.MIND_MAP_GENERATE_NOTE
-        else "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE"
+        else "_web/bindings/notebooks.py:NOTEBOOK_GET"
     )
     RECENCY_CONTRACTS[_operation] = (
         RecencyRule(
@@ -592,24 +601,24 @@ for _operation, _kind in (
 SHARED_RPC_AUTHORITY_RULES.update(
     {
         (Operation.ARTIFACT_LIST, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
-            ("_web/bindings/mind_maps.py:ARTIFACT_LIST", "heterogeneous list")
+            ("_web/bindings/studio.py:ARTIFACT_CATALOG", "heterogeneous list via leaf")
         ),
         (Operation.ARTIFACT_GET, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_GET",
-                "select artifact for get/get_or_none/get_prompt",
+                "_web/bindings/studio.py:ARTIFACT_CATALOG",
+                "select artifact for get/get_or_none/get_prompt via leaf",
             ),
         ),
         (Operation.ARTIFACT_LIST, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
-                "merge note-backed mind maps",
+                "_web/bindings/mind_maps.py:MIND_MAP_LIST",
+                "merge note-backed mind maps via leaf",
             )
         ),
         (Operation.ARTIFACT_GET, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_GET",
-                "select note-backed mind map",
+                "_web/bindings/mind_maps.py:MIND_MAP_LIST",
+                "select note-backed mind map via leaf",
             )
         ),
         (Operation.ARTIFACT_DOWNLOAD, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
@@ -638,19 +647,19 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.MIND_MAP_LIST, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+                "_web/bindings/studio.py:ARTIFACT_CATALOG",
                 "filter interactive maps",
             )
         ),
         (Operation.MIND_MAP_GET, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+                "_web/bindings/studio.py:ARTIFACT_CATALOG",
                 "auto-detect/select interactive id",
             )
         ),
         (Operation.MIND_MAP_GENERATE_INTERACTIVE, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+                "_web/bindings/studio.py:ARTIFACT_CATALOG",
                 "post-create settle/id match",
             )
         ),
@@ -806,7 +815,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.UPDATE_NOTE)): _rules(
             (
-                "_note_service.py:LegacyNoteBackedService.update_note",
+                "_web/bindings/notes.py:NOTE_UPDATE",
                 "persist generated JSON and title",
             )
         ),
@@ -883,7 +892,7 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.DELETE_NOTE)): _rules(
             (
-                "_note_service.py:LegacyNoteBackedService.delete_note",
+                "_web/bindings/notes.py:NOTE_DELETE",
                 "cancelled generated-note cleanup",
             )
         ),

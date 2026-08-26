@@ -14,10 +14,6 @@ from notebooklm._operations import CallPolicy, Operation
 from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
-    ArtifactGetResult,
-    ArtifactListResult,
     ArtifactMediaRecord,
     ArtifactRecord,
     AudioGenerateInput,
@@ -31,7 +27,7 @@ from notebooklm._studio import (
     StudioCatalog,
     StudioGenerationInputs,
 )
-from tests._fixtures.recording_backend import RecordingBackend
+from tests._fixtures.recording_backend import RecordingBackend, set_studio_catalog
 
 
 def _generation_inputs(backend: RecordingBackend) -> StudioGenerationInputs:
@@ -122,17 +118,15 @@ async def test_audio_generate_records_deadline_and_neutral_options() -> None:
 async def test_audio_get_reuses_one_catalog_fetch_and_rejects_other_family() -> None:
     audio = _audio("audio")
     backend = RecordingBackend()
-    backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(audio))
+    set_studio_catalog(backend, (audio,))
     service = AudioFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
 
     assert await service.get("nb", "audio") == audio
-    assert len(backend.invocations) == 1
+    # One complete catalog read: artifact.catalog plus the mind-map merge.
+    assert len(backend.invocations) == 2
 
     report_backend = RecordingBackend()
-    report_backend.set_result(
-        ARTIFACT_GET_DEF,
-        ArtifactGetResult(ArtifactRecord("report", "Report", "report", "completed")),
-    )
+    set_studio_catalog(report_backend, (ArtifactRecord("report", "Report", "report", "completed"),))
     report_service = AudioFamilyService(
         report_backend, StudioCatalog(report_backend), _generation_inputs(report_backend)
     )
@@ -150,7 +144,7 @@ async def test_audio_catalog_and_download_metadata_use_exact_recency() -> None:
         created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
     )
     backend = RecordingBackend()
-    backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((older, newer)))
+    set_studio_catalog(backend, (older, newer))
     service = AudioFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
 
     latest = await service.select_download("nb", None)
@@ -179,7 +173,7 @@ async def test_audio_latest_selection_preserves_legacy_seconds_precision_and_sta
         created_at=datetime(2026, 1, 1, 0, 0, 0, 900_000, tzinfo=timezone.utc),
     )
     backend = RecordingBackend()
-    backend.set_result(ARTIFACT_LIST_DEF, ArtifactListResult((first, second)))
+    set_studio_catalog(backend, (first, second))
 
     selected = await AudioFamilyService(
         backend, StudioCatalog(backend), _generation_inputs(backend)
