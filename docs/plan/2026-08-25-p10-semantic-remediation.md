@@ -194,7 +194,7 @@ marked **short** and say what is left.
 
 | Metric | Now | Target |
 |---|---|---|
-| Custom rows (protocol / compatibility / deferred-product) | 1 / 0 / 1 — **short**: `mind_map.generate_note` stays deferred-product (input-defaulting; hoisting it needs a resolved-input primitive for the note) | 1 (upload) / 0 / 0 |
+| Custom rows (protocol / compatibility / deferred-product) | 1 / 0 / — : R5.1d hoisted `mind_map.generate_note`, the eleventh row in R5.1's scope, so the count reached zero and the `deferred-product` **category itself is deleted** (invariant I3's terminal state). The one survivor is `source.add_file`, permanent under decision D4 | 1 (upload) / 0 / 0 |
 | `ROW_COLLABORATOR_NAMES` | 1 — exactly `{"source_uploader"}` | exactly `{"source_uploader"}` |
 | I1 allowlist | 1 — the named exemption only; R6.5 deleted the drained seed and I1 is now a hard rule | 1 (`_studio/downloads.py`, named exemption) |
 | I2 allowlist | 0 — `bindings/sources.py` drained last and I2 is now a hard rule with no exemption. Its `_source.add` edge was `honor_requested_title`, reached by the permanent `SOURCE_ADD_FILE` row under D4, so there was nothing above the port to hoist it to; it is not neutral either (public `Source`, raw `RPCError`/`NetworkError`), so a neutral module would have recorded the coupling as compliance. It moved *down* into `_web/bindings/sources.py` beside the only row that calls it, and the 68-line `_source/add.py` was deleted | 0 (`backend.py:69` retired by R3.1's `UploadLifecycleHooks`) |
@@ -202,11 +202,11 @@ marked **short** and say what is left.
 | `RPCMethod` tokens in `_web/policy.py` | 0 — module deleted; the reviewed intent moved as planned | 0 (module deleted; reviewed intent lives in `scripts/_web_policy_intent.py`) |
 | `_web/registry.py` hand-written direct defs | 0 — the supported set is derived from the row table | 0 |
 | `WebRpcBackend.__init__` parameters | 13 | 13 (`transport_factory` dead — R1.2; `chat_reqid` duplicate — R2.2; `reqid` feeds the transport) |
-| `_chat/api.py` lines | 517 — **short** of the ceiling, though down from 830 | ≤ 350 |
+| `_chat/api.py` lines | 517 — down from 830, and **the layering goal is met**: `_chat/workflow.py` (552 lines) owns both lock maps, the `ConversationCache`, the `DeletedConversationTracker` and the loop-rebind hooks, and `api.py` holds no conversation state at all. What remains is 18 public facade methods and their docstrings. The 350 figure was an estimate that ~450 lines would move; ~313 did, because the facade surface is larger than the plan assumed. Recorded rather than met by compressing a facade to hit a number | ≤ 350 (estimate; see Now) |
 | I9 deletion targets (`LegacyNoteBackedService` in R4.2, `NotebookLegacyRpc` in R6.2) | 0 — both deleted; R6.5 removed the target set itself and restated I9 as a hard rule over its enumerated exemptions | 0 |
 | `capabilities.available()` true for service-owned ops (incl. research wait/import_verify after R6.4) | yes | yes |
 | `Operation` members / product members | 99 / 87 (12 primitives) | 99 under D1(a), 109 under D1(b) / 87 |
-| Root-level `_*_service.py` / `_*_records.py` modules | 10 / 10 — **short**: this is R7's structure work, which has not landed | 0 |
+| Root-level `_*_service.py` / `_*_records.py` modules | 0 / 0 — PR7 moved records, projectors and compat to `_semantic/`, the services to `_semantic/services/` and the port to `_semantic/`, with every importer updated in the same commit and no re-export shims. Test collection is byte-identical either side of the move | 0 |
 | Public API, cassettes, adapter payload baselines | unchanged — no cassette and no public-surface baseline moved; `json_envelope.json` moved only in its private-model provenance (`evidence`, `shape_derivation`, `private_dataclass_projection_paths`), with every emitted key set and projection id identical | unchanged |
 
 ---
