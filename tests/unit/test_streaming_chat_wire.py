@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import ast
-import builtins
 import copy
-import importlib
-import importlib.util
 import inspect
 import json
 import logging
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -18,10 +14,12 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import pytest
 
-from notebooklm import ConversationTurnKey, MagicArtifactType
-from notebooklm._chat.wire import (
+from notebooklm import MagicArtifactType, NextStepSuggestion
+from notebooklm._projectors import project_chat_reference
+from notebooklm._records import ChatTurnKeyRecord
+from notebooklm._web.codec.chat_stream import (
     StreamingChatParseResult,
-    build_streaming_chat_request,
+    encode_ask_stream,
     extract_answer_and_refs_from_chunk,
     extract_fragment_range,
     extract_score,
@@ -144,7 +142,7 @@ def _citation(
 
 def test_module_signatures_are_stable() -> None:
     signatures = {
-        "build_streaming_chat_request": inspect.signature(build_streaming_chat_request),
+        "encode_ask_stream": inspect.signature(encode_ask_stream),
         "parse_streaming_chat_response": inspect.signature(parse_streaming_chat_response),
         "extract_answer_and_refs_from_chunk": inspect.signature(extract_answer_and_refs_from_chunk),
         "raise_if_rate_limited": inspect.signature(raise_if_rate_limited),
@@ -156,7 +154,7 @@ def test_module_signatures_are_stable() -> None:
         "extract_uuid_from_nested": inspect.signature(extract_uuid_from_nested),
     }
 
-    assert list(signatures["build_streaming_chat_request"].parameters) == [
+    assert list(signatures["encode_ask_stream"].parameters) == [
         "snapshot",
         "notebook_id",
         "question",
@@ -165,7 +163,7 @@ def test_module_signatures_are_stable() -> None:
         "conversation_id",
         "reqid",
     ]
-    assert signatures["build_streaming_chat_request"].parameters["snapshot"].kind is (
+    assert signatures["encode_ask_stream"].parameters["snapshot"].kind is (
         inspect.Parameter.KEYWORD_ONLY
     )
     assert list(signatures["parse_streaming_chat_response"].parameters) == ["response_text"]
@@ -189,7 +187,7 @@ def test_build_request_preserves_url_body_and_param_invariants(monkeypatch) -> N
     monkeypatch.setenv("NOTEBOOKLM_BL", "boq_labs-custom_99999999.00_p0")
     monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
 
-    url, body, extra_headers = build_streaming_chat_request(
+    url, body, extra_headers = encode_ask_stream(
         snapshot=_snapshot(account_email="me@example.com", authuser=5),
         notebook_id="nb-123",
         question="Q?",
@@ -218,7 +216,7 @@ def test_build_request_preserves_url_body_and_param_invariants(monkeypatch) -> N
 
 
 def test_build_request_omits_default_authuser_and_blank_csrf() -> None:
-    url, body, _ = build_streaming_chat_request(
+    url, body, _ = encode_ask_stream(
         snapshot=_snapshot(csrf_token="", authuser=0, account_email=None),
         notebook_id="nb-123",
         question="Q?",
@@ -236,7 +234,7 @@ def test_build_request_omits_default_authuser_and_blank_csrf() -> None:
 
 
 def test_build_request_uses_authuser_index_when_email_absent() -> None:
-    url, _, _ = build_streaming_chat_request(
+    url, _, _ = encode_ask_stream(
         snapshot=_snapshot(authuser=3, account_email=None),
         notebook_id="nb-123",
         question="Q?",
@@ -257,7 +255,7 @@ def test_build_request_sends_null_conversation_id_for_new_conversations() -> Non
     conversation list. The previous behavior generated ``uuid.uuid4()``
     client-side and orphaned the conversation from the UI.
     """
-    _, body, _ = build_streaming_chat_request(
+    _, body, _ = encode_ask_stream(
         snapshot=_snapshot(),
         notebook_id="nb-123",
         question="Q?",
@@ -278,7 +276,7 @@ def test_build_request_sends_null_conversation_id_for_new_conversations() -> Non
 
 def test_build_request_passes_through_caller_conversation_id_for_follow_ups() -> None:
     """Follow-ups must forward the caller-supplied conversation_id verbatim."""
-    _, body, _ = build_streaming_chat_request(
+    _, body, _ = encode_ask_stream(
         snapshot=_snapshot(),
         notebook_id="nb-123",
         question="Q?",
@@ -326,16 +324,16 @@ def test_xssi_prefix_strip_matches_shared_helper_on_real_wire_format() -> None:
 
 def test_chat_parser_uses_shared_strip_anti_xssi(monkeypatch) -> None:
     """``parse_streaming_chat_response`` calls the shared ``strip_anti_xssi``."""
-    import notebooklm._chat.wire as chat_wire
+    from notebooklm._web.codec import chat_stream
 
     seen: list[str] = []
-    real_strip = chat_wire.strip_anti_xssi
+    real_strip = chat_stream.strip_anti_xssi
 
     def _spy(response: str) -> str:
         seen.append(response)
         return real_strip(response)
 
-    monkeypatch.setattr(chat_wire, "strip_anti_xssi", _spy)
+    monkeypatch.setattr(chat_stream, "strip_anti_xssi", _spy)
 
     response = _length_prefixed(_chunk("Answer.", conversation_id="conv"))
     result = parse_streaming_chat_response(response)
@@ -371,8 +369,11 @@ def test_next_step_suggestions_decode_and_preserve_unknown_codes() -> None:
         ("What happens next?", 9),
         ("A future suggestion", 99),
     ]
-    assert result.next_steps[0].kind is MagicArtifactType.CONVERSATIONAL_TEXT_CHIP
-    assert result.next_steps[1].kind is None
+    # ``kind`` is the public type's mapping over the preserved ``type_code``;
+    # the codec emits records, so project the way the facade does (P10 R2.1).
+    public = [NextStepSuggestion(step.question, step.type_code) for step in result.next_steps]
+    assert public[0].kind is MagicArtifactType.CONVERSATIONAL_TEXT_CHIP
+    assert public[1].kind is None
 
 
 def test_next_steps_are_collected_from_a_textless_chunk() -> None:
@@ -512,8 +513,11 @@ def test_parse_citations_extracts_multiple_references_and_assigns_numbers() -> N
         (100, 200),
         (200, 350),
     ]
-    # The deprecated aliases keep reporting the same values (#2120).
-    assert [(ref.answer_start_char, ref.answer_end_char) for ref in result.references] == [
+    # The deprecated aliases keep reporting the same values (#2120). They live
+    # on the public ``ChatReference``, which the facade projects the codec's
+    # records onto (P10 R2.1), so project here the same way.
+    public_refs = [project_chat_reference(ref) for ref in result.references]
+    assert [(ref.answer_start_char, ref.answer_end_char) for ref in public_refs] == [
         (100, 200),
         (200, 350),
     ]
@@ -678,7 +682,8 @@ def test_skipped_citation_row_leaves_numbering_hole_for_markers(caplog) -> None:
     the skipped row leaves a hole: marker ``[2]`` resolves to ``None`` and
     its anchor is dropped — never mis-anchored.
     """
-    from notebooklm._chat.notes import _resolve_reference
+    from notebooklm._projectors import chat_reference_record
+    from notebooklm._web.codec.chat_saved_note import _resolve_reference
 
     good_1 = _citation(source_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", chunk_id="chunk-1")
     bad_2 = ["present-but-unusable"]
@@ -698,10 +703,11 @@ def test_skipped_citation_row_leaves_numbering_hole_for_markers(caplog) -> None:
 
     # Downstream marker resolution: the hole yields None (anchor skipped),
     # the surviving markers resolve to their own chunks.
-    resolved_1 = _resolve_reference(result.references, 1)
+    records = tuple(chat_reference_record(ref) for ref in result.references)
+    resolved_1 = _resolve_reference(records, 1)
     assert resolved_1 is not None and resolved_1.chunk_id == "chunk-1"
-    assert _resolve_reference(result.references, 2) is None
-    resolved_3 = _resolve_reference(result.references, 3)
+    assert _resolve_reference(records, 2) is None
+    resolved_3 = _resolve_reference(records, 3)
     assert resolved_3 is not None and resolved_3.chunk_id == "chunk-3"
 
 
@@ -841,7 +847,7 @@ def test_drifted_answer_row_raises(drifted_inner: Any) -> None:
     soft-mode opt-out was retired in v0.7.0), so this raises
     :class:`UnknownRPCMethodError` instead of silently collapsing to an empty
     answer — that silent collapse was the gap the
-    ``architecture-gap-review`` flagged for ``_chat.wire`` (ADR-0011:38).
+    ``architecture-gap-review`` flagged for the chat parser (ADR-0011:38).
     """
     from notebooklm.exceptions import UnknownRPCMethodError
 
@@ -967,7 +973,14 @@ def test_e_terminator_frame_does_not_break_successful_answer() -> None:
     assert result.answer == "Real answer."
 
 
-def test_chat_wire_static_import_guard() -> None:
+def test_chat_stream_codec_imports_no_domain_package() -> None:
+    """The streamed-chat codec depends on no chat-domain module (P10 invariant I2).
+
+    Successor to the ``_chat/wire.py`` static import guard: R2.1 moved the ask
+    encoder into this codec and deleted the shim, so the module that owns the
+    wire must not import back up into ``notebooklm._chat`` (nor the client
+    facade or the RPC override registry) to get there.
+    """
     forbidden = {
         "notebooklm",
         "notebooklm.client",
@@ -975,136 +988,29 @@ def test_chat_wire_static_import_guard() -> None:
         "notebooklm._core",
         "notebooklm.rpc.overrides",
     }
-    tree = ast.parse((SRC_ROOT / "_chat" / "wire.py").read_text(encoding="utf-8"))
+    module = SRC_ROOT / "_web" / "codec" / "chat_stream.py"
+    tree = ast.parse(module.read_text(encoding="utf-8"))
 
+    # ``_web/codec/chat_stream.py`` is three levels below the package root, so a
+    # ``level`` of 3 resolves to ``notebooklm`` itself and 1/2 stay inside the
+    # subpackages; anything shallower than the package root cannot name a
+    # forbidden module.
+    package_parts = ("notebooklm", "_web", "codec")
     imports: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imports.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-            if node.level == 1 or node.level == 2:
-                module = f"notebooklm.{module}" if module else "notebooklm"
-            imports.add(module)
+            module_name = node.module or ""
+            if node.level:
+                prefix = ".".join(package_parts[: len(package_parts) - node.level + 1])
+                module_name = f"{prefix}.{module_name}" if module_name else prefix
+            imports.add(module_name)
             for alias in node.names:
-                imports.add(f"{module}.{alias.name}" if module else alias.name)
+                imports.add(f"{module_name}.{alias.name}" if module_name else alias.name)
 
     violations = forbidden & imports
-    assert not violations, f"_chat_wire.py imported forbidden modules: {violations}"
-
-
-def test_chat_wire_runtime_import_does_not_request_forbidden_modules(monkeypatch) -> None:
-    import notebooklm  # noqa: F401
-
-    forbidden = {
-        "notebooklm.client",
-        "notebooklm._chat",
-        "notebooklm._core",
-        "notebooklm.rpc.overrides",
-    }
-    sys.modules.pop("notebooklm._chat.wire", None)
-    real_import = builtins.__import__
-
-    def guarded_import(
-        name: str,
-        globals_: dict[str, Any] | None = None,
-        locals_: dict[str, Any] | None = None,
-        fromlist: tuple[str, ...] = (),
-        level: int = 0,
-    ) -> Any:
-        resolved = name
-        if level:
-            package = globals_.get("__package__") if globals_ else None
-            if package:
-                resolved = importlib.util.resolve_name(f"{'.' * level}{name}", package)
-        candidates = {resolved}
-        if fromlist:
-            candidates.update(f"{resolved}.{item}" for item in fromlist)
-        violations = forbidden & candidates
-        if violations:
-            raise AssertionError(f"_chat_wire imported forbidden modules {violations}")
-        return real_import(name, globals_, locals_, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", guarded_import)
-
-    module = importlib.import_module("notebooklm._chat.wire")
-    assert module.__name__ == "notebooklm._chat.wire"
-
-
-def test_chat_wire_and_chat_smoke_import_order() -> None:
-    for name in ("notebooklm._chat", "notebooklm._chat.wire"):
-        sys.modules.pop(name, None)
-    protocol = importlib.import_module("notebooklm._chat.wire")
-    chat = importlib.import_module("notebooklm._chat")
-    assert protocol.__name__ == "notebooklm._chat.wire"
-    assert chat.__name__ == "notebooklm._chat"
-
-    for name in ("notebooklm._chat", "notebooklm._chat.wire"):
-        sys.modules.pop(name, None)
-    chat = importlib.import_module("notebooklm._chat")
-    protocol = importlib.import_module("notebooklm._chat.wire")
-    assert chat.__name__ == "notebooklm._chat"
-    assert protocol.__name__ == "notebooklm._chat.wire"
-
-
-def test_chat_module_keeps_only_delegating_stream_parser_wrappers() -> None:
-    tree = ast.parse((SRC_ROOT / "_chat" / "api.py").read_text(encoding="utf-8"))
-    wrapper_names = {
-        "_parse_ask_response_with_references",
-        "_extract_answer_and_refs_from_chunk",
-        "_raise_if_rate_limited",
-        "_parse_citations",
-        "_parse_single_citation",
-        "_extract_text_passages",
-        "_extract_uuid_from_nested",
-    }
-    expected_delegate = {
-        "_parse_ask_response_with_references": "parse_streaming_chat_response",
-        "_extract_answer_and_refs_from_chunk": "extract_answer_and_refs_from_chunk",
-        "_raise_if_rate_limited": "raise_if_rate_limited",
-        "_parse_citations": "parse_citations",
-        "_parse_single_citation": "parse_single_citation",
-        "_extract_text_passages": "extract_text_passages",
-        "_extract_uuid_from_nested": "extract_uuid_from_nested",
-    }
-
-    wrappers = {
-        node.name: node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name in wrapper_names
-    }
-    assert set(wrappers) == wrapper_names
-
-    for name, node in wrappers.items():
-        constants = {child.value for child in ast.walk(node) if isinstance(child, ast.Constant)}
-        assert "wrb.fr" not in constants, f"{name} owns streamed wrb.fr parsing"
-        called_helpers = {
-            child.func.id
-            for child in ast.walk(node)
-            if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
-        }
-        called_helpers.update(
-            child.func.attr
-            for child in ast.walk(node)
-            if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute)
-        )
-        assert expected_delegate[name] in called_helpers, f"{name} does not delegate"
-        for child in ast.walk(node):
-            assert not (
-                isinstance(child, ast.Call)
-                and isinstance(child.func, ast.Attribute)
-                and child.func.attr == "loads"
-                and isinstance(child.func.value, ast.Name)
-                and child.func.value.id == "json"
-            ), f"{name} owns JSON streamed chunk parsing"
-            assert not (
-                name == "_extract_uuid_from_nested"
-                and isinstance(child, ast.Call)
-                and isinstance(child.func, ast.Attribute)
-                and isinstance(child.func.value, ast.Name)
-                and child.func.value.id == "self"
-                and child.func.attr == "_extract_uuid_from_nested"
-            ), "_chat.py owns local UUID recursion"
+    assert not violations, f"chat_stream.py imported forbidden modules: {violations}"
 
 
 # ---------------------------------------------------------------------------
@@ -1136,7 +1042,7 @@ def test_captured_stream_selects_the_final_chunk_and_carries_its_turn_key(caplog
         result = parse_streaming_chat_response(_captured_stream_body())
 
     assert result.answer == "A task wraps a **coroutine** [1]."
-    assert result.turn_key == ConversationTurnKey(
+    assert result.turn_key == ChatTurnKeyRecord(
         session_id="3afea005-7d13-41d0-9257-6a9e28597818",
         turn_id="b38d4003-5be1-487d-a121-5c5958709021",
         turn_code=2187103311,
@@ -1271,7 +1177,7 @@ def test_turn_key_survives_a_losing_chunk() -> None:
         _chunk("Partial", turn_key=["conv-uuid", "turn-uuid", 42], is_final=False),
         _chunk("Partial answer, complete.", turn_key=None),
     )
-    assert parse_streaming_chat_response(body).turn_key == ConversationTurnKey(
+    assert parse_streaming_chat_response(body).turn_key == ChatTurnKeyRecord(
         "conv-uuid", "turn-uuid", 42
     )
 
@@ -1287,7 +1193,7 @@ def test_last_chunk_to_carry_a_turn_key_wins() -> None:
         _chunk("Partial", turn_key=["conv-uuid", "turn-EARLY", 1], is_final=False),
         _chunk("Partial answer, complete.", turn_key=["conv-uuid", "turn-LATE", 2]),
     )
-    assert parse_streaming_chat_response(body).turn_key == ConversationTurnKey(
+    assert parse_streaming_chat_response(body).turn_key == ChatTurnKeyRecord(
         "conv-uuid", "turn-LATE", 2
     )
 
@@ -1370,7 +1276,7 @@ def test_turn_key_is_kept_from_a_chunk_that_carried_no_answer_text() -> None:
     """
     result = parse_streaming_chat_response(_length_prefixed(_multi_item_chunk(("", True))))
     assert result.answer == ""
-    assert result.turn_key == ConversationTurnKey("conv-uuid", "turn-uuid", 7)
+    assert result.turn_key == ChatTurnKeyRecord("conv-uuid", "turn-uuid", 7)
 
 
 def test_empty_answer_stream_from_the_capture_still_reports_its_turn_key() -> None:

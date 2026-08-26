@@ -7,7 +7,14 @@ the request's kind and form), ``LABEL_ALLOCATE`` (one manual ``CREATE_LABEL``),
 the two patch leaves: ``SOURCE_PATCH_TITLE`` (one ``UPDATE_SOURCE`` title
 set-op) and ``SHARING_PATCH_VIEW_LEVEL`` (one ``RENAME_NOTEBOOK`` viewer-scope
 field mask).
-Each row is ``encode → one native call → decode``; the :class:`NativeCallSpec`
+
+``CHAT_STREAM_ANSWER`` (P10 R2.2) is the one leaf whose native is a
+:class:`StreamNative`: it dispatches the streamed ``GenerateFreeFormStreamed``
+POST that ``chat.ask`` sequences ahead of its conversation-id readback.  A
+streamed verb is not a method on the wire enum, so the row declares no
+``RPCMethod`` at all and contributes nothing to the policy ledger's native set.
+
+Each row is ``encode → one native → decode``; the :class:`NativeCallSpec`
 is the sole authority for the native it dispatches, so the method the policy
 ledger audits is the method that runs.  The rows are module-level assignments
 because the operation-catalog walker derives execution authorities from them.
@@ -18,9 +25,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..._binding import Binding, CodecBinding, NativeCallSpec, NativeChoice
+from ..._binding import Binding, CodecBinding, NativeCallSpec, RpcNative
 from ..._operations import Operation
 from ..._records import (
+    CHAT_STREAM_ANSWER_DEF,
     LABEL_ALLOCATE_DEF,
     LABEL_MUTATE_DEF,
     SHARING_MUTATE_DEF,
@@ -33,16 +41,17 @@ from ..._records import (
     SourcePatchTitleResult,
 )
 from ...rpc import RPCMethod
+from ..codec import chat as chat_codec
 from ..codec import labels as labels_codec
 from ..codec import sharing as sharing_codec
 from ..codec import sources as sources_codec
 
-_MUTATE_FIELD = NativeChoice(RPCMethod.UPDATE_LABEL)
-_MUTATE_ADD_SOURCES = NativeChoice(RPCMethod.UPDATE_LABEL, "add_sources")
-_MUTATE_REMOVE_SOURCES = NativeChoice(RPCMethod.UPDATE_LABEL, "remove_sources")
-_MUTATE_ADD_NOTEBOOKS = NativeChoice(RPCMethod.UPDATE_LABEL, "add_notebooks")
-_MUTATE_REMOVE_NOTEBOOKS = NativeChoice(RPCMethod.UPDATE_LABEL, "remove_notebooks")
-_MUTATE_CHOICES: Mapping[str | None, NativeChoice[RPCMethod]] = MappingProxyType(
+_MUTATE_FIELD = RpcNative(RPCMethod.UPDATE_LABEL)
+_MUTATE_ADD_SOURCES = RpcNative(RPCMethod.UPDATE_LABEL, "add_sources")
+_MUTATE_REMOVE_SOURCES = RpcNative(RPCMethod.UPDATE_LABEL, "remove_sources")
+_MUTATE_ADD_NOTEBOOKS = RpcNative(RPCMethod.UPDATE_LABEL, "add_notebooks")
+_MUTATE_REMOVE_NOTEBOOKS = RpcNative(RPCMethod.UPDATE_LABEL, "remove_notebooks")
+_MUTATE_CHOICES: Mapping[str | None, RpcNative[RPCMethod]] = MappingProxyType(
     {
         None: _MUTATE_FIELD,
         "add_sources": _MUTATE_ADD_SOURCES,
@@ -53,7 +62,7 @@ _MUTATE_CHOICES: Mapping[str | None, NativeChoice[RPCMethod]] = MappingProxyType
 )
 
 
-def _select_mutate(value: LabelMutateInput) -> NativeChoice[RPCMethod]:
+def _select_mutate(value: LabelMutateInput) -> RpcNative[RPCMethod]:
     """Pick the one ``UPDATE_LABEL`` variant a mutate request dispatches under."""
     return _MUTATE_CHOICES[labels_codec.label_mutate_variant(value)]
 
@@ -80,7 +89,7 @@ def _decode_label_allocate(
     payload: object,
 ) -> LabelAllocateResult:
     """Thread the method diagnostic from the row's sole native authority."""
-    method_id = _LABEL_ALLOCATE_NATIVE.select(value).method.value
+    method_id = _LABEL_ALLOCATE_NATIVE.select_rpc(value).method.value
     return labels_codec.decode_label_allocate(value, payload, method_id=method_id)
 
 
@@ -106,7 +115,7 @@ def _decode_source_patch_title(
     payload: object,
 ) -> SourcePatchTitleResult:
     """Thread the method diagnostic from the row's sole native authority."""
-    method_id = _SOURCE_PATCH_TITLE_NATIVE.select(value).method.value
+    method_id = _SOURCE_PATCH_TITLE_NATIVE.select_rpc(value).method.value
     return sources_codec.decode_source_patch_title(value, payload, method_id=method_id)
 
 
@@ -124,6 +133,15 @@ SHARING_PATCH_VIEW_LEVEL = CodecBinding(
     native=NativeCallSpec.constant(RPCMethod.RENAME_NOTEBOOK),
 )
 
+#: The parse label the chat transport attaches to the streamed POST; it is the
+#: label the streamed-chat error messages have always carried.
+CHAT_STREAM_ANSWER = CodecBinding(
+    definition=CHAT_STREAM_ANSWER_DEF,
+    encode=chat_codec.encode_chat_stream_answer,
+    decode=chat_codec.decode_chat_stream_answer,
+    native=NativeCallSpec.streamed("chat.ask"),
+)
+
 PRIMITIVE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
     {
         LABEL_MUTATE.definition.key: LABEL_MUTATE,
@@ -131,10 +149,12 @@ PRIMITIVE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
         SHARING_MUTATE.definition.key: SHARING_MUTATE,
         SOURCE_PATCH_TITLE.definition.key: SOURCE_PATCH_TITLE,
         SHARING_PATCH_VIEW_LEVEL.definition.key: SHARING_PATCH_VIEW_LEVEL,
+        CHAT_STREAM_ANSWER.definition.key: CHAT_STREAM_ANSWER,
     }
 )
 
 __all__ = [
+    "CHAT_STREAM_ANSWER",
     "LABEL_ALLOCATE",
     "LABEL_MUTATE",
     "PRIMITIVE_ROWS",

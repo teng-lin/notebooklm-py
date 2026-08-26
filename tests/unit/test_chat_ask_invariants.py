@@ -34,6 +34,7 @@ from notebooklm import NotebookLMClient
 from notebooklm._chat import ChatAPI
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES
+from notebooklm._web.codec.chat_stream import encode_ask_stream
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError
 from tests._fixtures.web_backend import build_web_backend
@@ -128,7 +129,7 @@ class TestChatTimeoutRouting:
             backend=build_web_backend(
                 rpc,
                 chat_transport=transport,
-                chat_reqid=reqid,
+                reqid=reqid,
                 chat_timeout=45.0,
                 chat_response_max_bytes=987654,
             ),
@@ -518,7 +519,7 @@ class TestChatBlOverride:
 
 
 # ---------------------------------------------------------------------------
-# _build_chat_request direct unit-level coverage
+# encode_ask_stream direct unit-level coverage
 # ---------------------------------------------------------------------------
 
 
@@ -539,16 +540,16 @@ class TestChatNewConversationLocks:
     def test_same_notebook_reuses_new_conversation_lock(self):
         chat = self._factory()
 
-        lock_a = chat._get_new_conversation_lock("nb-1")
-        lock_b = chat._get_new_conversation_lock("nb-1")
+        lock_a = chat._workflow._get_new_conversation_lock("nb-1")
+        lock_b = chat._workflow._get_new_conversation_lock("nb-1")
 
         assert lock_a is lock_b
 
     def test_different_notebooks_get_distinct_new_conversation_locks(self):
         chat = self._factory()
 
-        lock_a = chat._get_new_conversation_lock("nb-1")
-        lock_b = chat._get_new_conversation_lock("nb-2")
+        lock_a = chat._workflow._get_new_conversation_lock("nb-1")
+        lock_b = chat._workflow._get_new_conversation_lock("nb-2")
 
         assert lock_a is not lock_b
 
@@ -583,12 +584,12 @@ class TestChatNewConversationLocks:
             backend=build_web_backend(
                 SimpleNamespace(rpc_call=rpc_call),
                 chat_transport=transport,
-                chat_reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
+                reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
             ),
             loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
             notebooks=SimpleNamespace(),
         )
-        new_conversation_lock = chat._get_new_conversation_lock("nb-1")
+        new_conversation_lock = chat._workflow._get_new_conversation_lock("nb-1")
 
         with pytest.raises(ChatError, match="hPTbtc lookup failed"):
             await chat.ask("nb-1", "first ask", source_ids=["s1"])
@@ -606,34 +607,23 @@ class TestChatNewConversationLocks:
 
 
 class TestBuildChatRequestFactory:
-    """Direct unit tests for the new ``ChatAPI._build_chat_request`` factory.
+    """Direct unit tests for the codec's ``encode_ask_stream`` encoder.
 
     Bypassing the full ``ask`` plumbing keeps these checks focused on the
     URL/body assembly contract that ``chat_aware_authed_post`` relies on.
+    P10 R2.1 moved the encoder out of ``ChatAPI._build_chat_request`` (a
+    delegating wrapper, now deleted) into ``_web/codec/chat_stream.py``; the
+    assertions below are unchanged.
     """
 
-    def _factory(self) -> ChatAPI:
-        # Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary):
-        # ``ChatAPI`` takes direct collaborators by keyword arg. Pure
-        # ``_build_chat_request`` exercise — none of these collaborators
-        # are touched, so they are bare ``MagicMock()`` placeholders.
-        from unittest.mock import MagicMock
-
-        return ChatAPI(
-            backend=build_web_backend(MagicMock()),
-            loop_guard=MagicMock(),
-            notebooks=MagicMock(),
-        )
-
     def test_build_request_omits_authuser_for_default_profile(self):
-        chat = self._factory()
         snapshot = AuthSnapshot(
             csrf_token="csrf",
             session_id="sid",
             authuser=0,
             account_email=None,
         )
-        url, body, headers = chat._build_chat_request(
+        url, body, headers = encode_ask_stream(
             snapshot=snapshot,
             notebook_id="nb_x",
             question="Q?",
@@ -648,14 +638,13 @@ class TestBuildChatRequestFactory:
         assert headers == {}
 
     def test_build_request_authuser_email_wins_over_index(self):
-        chat = self._factory()
         snapshot = AuthSnapshot(
             csrf_token="csrf",
             session_id="sid",
             authuser=5,
             account_email="me@example.com",
         )
-        url, _, _ = chat._build_chat_request(
+        url, _, _ = encode_ask_stream(
             snapshot=snapshot,
             notebook_id="nb_x",
             question="Q?",
@@ -668,14 +657,13 @@ class TestBuildChatRequestFactory:
         assert _extract_query_param(url, "authuser") == "me@example.com"
 
     def test_build_request_omits_at_when_csrf_blank(self):
-        chat = self._factory()
         snapshot = AuthSnapshot(
             csrf_token="",
             session_id="sid",
             authuser=0,
             account_email=None,
         )
-        _, body, _ = chat._build_chat_request(
+        _, body, _ = encode_ask_stream(
             snapshot=snapshot,
             notebook_id="nb_x",
             question="Q?",
@@ -687,14 +675,13 @@ class TestBuildChatRequestFactory:
         assert "at=" not in body
 
     def test_build_request_source_encoding_is_triple_nested(self):
-        chat = self._factory()
         snapshot = AuthSnapshot(
             csrf_token="csrf",
             session_id="sid",
             authuser=0,
             account_email=None,
         )
-        _, body, _ = chat._build_chat_request(
+        _, body, _ = encode_ask_stream(
             snapshot=snapshot,
             notebook_id="nb_x",
             question="Q?",

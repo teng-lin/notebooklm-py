@@ -55,7 +55,9 @@ def test_registry_and_ledger_counts(measurements: dict[str, Any]) -> None:
         == handler_names
     )
     assert (
-        measurements["ledger_single_native"] + measurements["ledger_multi_native"]
+        measurements["ledger_single_native"]
+        + measurements["ledger_multi_native"]
+        + measurements["ledger_streamed_only"]
         == handler_names + binding_rows
     )
     assert measurements["cross_class_rpc_calls"] <= measurements["rpc_call_sites"]

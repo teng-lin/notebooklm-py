@@ -91,7 +91,7 @@ __all__ = [
 #: Recursion bound for nested table decoding. ``TableCell.content`` holds
 #: ``StructuralElement`` rows, which may themselves be tables, so the walk is
 #: mutually recursive over server-controlled input. Matches the intent of
-#: ``_source/content.extract_all_text``'s and ``_chat/wire.extract_uuid_from_nested``'s
+#: ``_source/content.extract_all_text``'s and the chat codec's ``extract_uuid_from_nested``'s
 #: bounds: a pathological tree must degrade, not raise ``RecursionError``.
 #: Real documents nest one or two levels.
 _MAX_BLOCK_DEPTH = 20

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from scripts._web_policy_intent import WEB_CALL_POLICY_BINDINGS
 
 from notebooklm._backend import (
     BackendContractError,
@@ -52,7 +53,6 @@ from notebooklm._web.bindings import primitives as primitive_rows
 from notebooklm._web.codec import labels as labels_codec
 from notebooklm._web.codec import sharing as sharing_codec
 from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES, SemanticDeadlineAuthority
-from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from notebooklm.exceptions import RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
@@ -110,7 +110,12 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
         Operation.SOURCE_PATCH_TITLE: primitive_rows.SOURCE_PATCH_TITLE,
         Operation.SHARING_PATCH_VIEW_LEVEL: primitive_rows.SHARING_PATCH_VIEW_LEVEL,
     }
-    assert dict(primitive_rows.PRIMITIVE_ROWS) == converted
+    # ``CHAT_STREAM_ANSWER`` is the one primitive whose native is a streamed
+    # verb rather than a wire method; ``test_web_binding_rows_chat_ask`` owns it.
+    assert dict(primitive_rows.PRIMITIVE_ROWS) == {
+        **converted,
+        Operation.CHAT_STREAM_ANSWER: primitive_rows.CHAT_STREAM_ANSWER,
+    }
     for operation, row in converted.items():
         assert WEB_BINDING_ROWS[operation] is row
         binding = WEB_OPERATION_REGISTRY[operation]
@@ -142,6 +147,11 @@ def test_primitive_rows_are_supported_direct_rows_with_ledger_parity() -> None:
     assert Operation.SHARING_MUTATE not in SEMANTIC_DEADLINE_AUTHORITIES
     assert Operation.SOURCE_PATCH_TITLE not in SEMANTIC_DEADLINE_AUTHORITIES
     assert Operation.SHARING_PATCH_VIEW_LEVEL not in SEMANTIC_DEADLINE_AUTHORITIES
+    # The streamed leaf keeps chat's own read budget instead of a client-timeout seed.
+    assert (
+        SEMANTIC_DEADLINE_AUTHORITIES[Operation.CHAT_STREAM_ANSWER]
+        is SemanticDeadlineAuthority.WORKFLOW_OWNED
+    )
 
 
 # --- LABEL_MUTATE ---------------------------------------------------------------

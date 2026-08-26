@@ -100,6 +100,12 @@ def test_backend_type_surface_is_protocol_narrow_and_shallow_repr_is_redacted() 
     # both the parameter and the instance state it once fed must stay gone.
     assert "transport_factory" not in signature.parameters
     assert "_transport_factory" not in vars(backend)
+    # P10 R2.2 deleted ``chat_reqid``, which named the very object ``reqid``
+    # already did (14 -> 13 params): the streamed row draws its request ids from
+    # the shared counter inside ``WebTransport``.
+    assert "chat_reqid" not in signature.parameters
+    assert "_chat_reqid" not in vars(backend)
+    assert len(signature.parameters) == 14  # ``self`` plus 13 inputs
 
     introspection = repr((backend, vars(backend), provider, vars(provider), session, vars(session)))
     for secret in ("cookie-old", "csrf-old", "session-old"):

@@ -12,7 +12,7 @@ import pytest
 
 import notebooklm.cli.chat_cmd as chat_cmd_module
 from notebooklm._chat import ChatAPI
-from notebooklm._chat.history import count_prior_server_turns
+from notebooklm._chat.history_legacy import count_prior_server_turns
 from notebooklm.exceptions import ChatError, UnknownRPCMethodError
 
 

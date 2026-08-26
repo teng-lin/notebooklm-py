@@ -614,7 +614,7 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
     OperationSpec(
         Operation.CHAT_ASK,
         CallPolicy.STREAM,
-        "ChatService",
+        "ChatWorkflowService",
         "notebook+conversation+source-set",
         "Two-phase all-or-nothing operation: streamed query first, then conversation-id RPC. "
         "Citation anchors index answer_document.text, raw_response stays truncated, the byte cap "
@@ -630,9 +630,21 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         ),
     ),
     OperationSpec(
+        Operation.CHAT_STREAM_ANSWER,
+        CallPolicy.STREAM,
+        "ChatWorkflowService",
+        "notebook+conversation+source-set",
+        "P10 primitive: one streamed GenerateFreeFormStreamed POST, decoded into the answer "
+        "record plus the truncated raw slice chat.ask reports. It resolves no conversation id "
+        "and dispatches no batchexecute method, so it holds no native binding at all.",
+        (),
+        (),
+        ("streamed_query",),
+    ),
+    OperationSpec(
         Operation.CHAT_GET_CONVERSATION,
         CallPolicy.READ,
-        "ChatService",
+        "ChatWorkflowService",
         "notebook",
         "Gets the most recent server conversation id.",
         _p("chat", "get_conversation_id"),
@@ -641,7 +653,7 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
     OperationSpec(
         Operation.CHAT_GET_HISTORY,
         CallPolicy.READ,
-        "ChatService",
+        "ChatWorkflowService",
         "notebook+conversation",
         "Loads turns and exposes raw or question/answer history projections.",
         _p("chat", "get_conversation_turns", "get_history"),
@@ -650,7 +662,7 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
     OperationSpec(
         Operation.CHAT_DELETE_HISTORY,
         CallPolicy.MUTATION,
-        "ChatService",
+        "ChatWorkflowService",
         "notebook+conversation",
         "Deletes the conversation turns.",
         _p("chat", "delete_conversation"),
@@ -659,7 +671,7 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
     OperationSpec(
         Operation.CHAT_CONFIGURE,
         CallPolicy.MUTATION,
-        "ChatService",
+        "ChatWorkflowService",
         "notebook",
         "Reads or mutates chat settings embedded in the notebook payload.",
         _p("chat", "configure", "set_mode", "get_settings"),
@@ -669,7 +681,7 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
     OperationSpec(
         Operation.CHAT_SAVE_NOTE,
         CallPolicy.MUTATION,
-        "ChatService",
+        "ChatWorkflowService",
         "notebook+conversation-turn",
         "Saves an answer through the seven-element saved_from_chat note variant.",
         _p("chat", "save_answer_as_note"),

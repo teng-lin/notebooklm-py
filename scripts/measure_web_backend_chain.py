@@ -4,7 +4,8 @@
 ``docs/plan/2026-08-13-semantic-backend-refactor.md`` carries a "P9 entry
 record": a table of structural measurements over ``WebRpcBackend`` and its
 ancestor classes in ``src/notebooklm/_web/``, the operation registry, the
-call-policy ledger, ``_idempotency.py``, and the tests/catalog strings that
+reviewed call-policy ledger (``scripts/_web_policy_intent.py`` since P10 R2.5),
+``_idempotency.py``, and the tests/catalog strings that
 reach into the chain. The plan's entry criteria require those numbers to be
 re-measured with a committed script before P9.0 opens; this is that script.
 
@@ -43,7 +44,9 @@ CATALOG_UNIT_TEST = TESTS_ROOT / "unit" / "test_operation_catalog.py"
 AUTHORITIES_SCRIPT = REPO_ROOT / "scripts" / "_operation_catalog_authorities.py"
 GUARDRAILS_DIR = TESTS_ROOT / "_guardrails"
 WEB_BACKEND_TEST = TESTS_ROOT / "unit" / "test_web_backend.py"
-POLICY_PATH = SRC_ROOT / "_web" / "policy.py"
+# P10 R2.5 moved the reviewed half of the call-policy ledger out of
+# production; the measurement follows it to its new home.
+POLICY_PATH = REPO_ROOT / "scripts" / "_web_policy_intent.py"
 IDEMPOTENCY_PATH = SRC_ROOT / "_idempotency.py"
 CAPABILITY_PORT = SRC_ROOT / "_backend.py"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
@@ -289,8 +292,12 @@ def _per_file_floors_on_web() -> int | None:
 
 def measure() -> dict[str, Any]:
     """Compute every mechanically measurable entry-record row."""
+    if __package__:
+        from ._web_policy_intent import WEB_CALL_POLICY_BINDINGS
+    else:  # pragma: no cover - direct script execution
+        from _web_policy_intent import WEB_CALL_POLICY_BINDINGS
+
     from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES
-    from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
     from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 
     chain = _chain_classes()
@@ -378,6 +385,9 @@ def measure() -> dict[str, Any]:
     # Policy ledger.
     single = [op for op, b in WEB_CALL_POLICY_BINDINGS.items() if len(b.native_bindings) == 1]
     multi = [op for op, b in WEB_CALL_POLICY_BINDINGS.items() if len(b.native_bindings) >= 2]
+    # A streamed verb is not a wire method, so a stream-only row declares no
+    # native at all and belongs to neither bucket (P10 R2.2).
+    streamed = [op for op, b in WEB_CALL_POLICY_BINDINGS.items() if not b.native_bindings]
     single_natives = {
         n.method for op in single for n in WEB_CALL_POLICY_BINDINGS[op].native_bindings
     }
@@ -401,7 +411,7 @@ def measure() -> dict[str, Any]:
         if p != CAPABILITY_PORT and re.search(r"\.supports\(", p.read_text(encoding="utf-8"))
     ]
 
-    # policy.py / _idempotency.py.
+    # _web_policy_intent.py / _idempotency.py.
     policy_lines = len(POLICY_PATH.read_text(encoding="utf-8").splitlines())
     policy_rpc_refs = _count_matches(POLICY_PATH, RPC_METHOD_RE)
     policy_rpc_member_refs = _count_matches(POLICY_PATH, RPC_METHOD_MEMBER_RE)
@@ -460,6 +470,7 @@ def measure() -> dict[str, Any]:
         "deadline_ledger_entries": ledger_multi_deadline,
         "ledger_single_native": len(single),
         "ledger_multi_native": len(multi),
+        "ledger_streamed_only": len(streamed),
         "natives_only_multi_by_ledger": only_multi_by_ledger,
         "natives_only_multi_by_code": only_multi_by_code,
         "supports_consumers_outside_port": supports_consumers,
@@ -529,8 +540,9 @@ def format_markdown(m: dict[str, Any]) -> str:
             f"{len(m['registry_binding_rows'])} binding rows)",
         ),
         (
-            "Operations by policy ledger: single-native / multi-native",
-            f"{m['ledger_single_native']} / {m['ledger_multi_native']}",
+            "Operations by policy ledger: single-native / multi-native / streamed-only",
+            f"{m['ledger_single_native']} / {m['ledger_multi_native']} / "
+            f"{m['ledger_streamed_only']}",
         ),
         (
             "Natives appearing only in multi-native bindings: by ledger / by handler code",
@@ -546,7 +558,8 @@ def format_markdown(m: dict[str, Any]) -> str:
             " · ".join(str(kw[k]) for k in RPC_CALL_KEYWORDS),
         ),
         (
-            "`policy.py` lines / `RPCMethod` references (`RPCMethod.` member refs; any token)",
+            "`_web_policy_intent.py` lines / `RPCMethod` references "
+            "(`RPCMethod.` member refs; any token)",
             f"{m['policy_lines']} / {m['policy_rpc_method_member_refs']}; "
             f"{m['policy_rpc_method_refs']}",
         ),

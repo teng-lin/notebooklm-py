@@ -16,7 +16,7 @@ from ._auth.cookie_types import CookieJar
 
 if TYPE_CHECKING:
     from ._auth.profile_store import ProfileStore
-    from ._chat import ChatAPI
+    from ._runtime.contracts import ChatLifecycleHooks
     from ._source.upload import SourceUploadPipeline
     from .auth import AuthTokens
 
@@ -131,7 +131,7 @@ class WebCookieProvider(Protocol):
         """Return whether the provider acquisition session is open."""
         ...
 
-    async def open(self, *, uploader: SourceUploadPipeline, chat: ChatAPI) -> None:
+    async def open(self, *, uploader: SourceUploadPipeline, chat: ChatLifecycleHooks) -> None:
         """Open provider-owned acquisition and persistence resources."""
         ...
 

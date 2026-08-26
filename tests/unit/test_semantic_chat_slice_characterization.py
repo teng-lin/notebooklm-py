@@ -40,6 +40,7 @@ from notebooklm._backend import BackendDeadlineExceededError
 from notebooklm._chat import ChatAPI
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebook_payloads import build_get_notebook_params
+from notebooklm._operations import Operation
 from notebooklm._records import ChatAskInput
 from notebooklm._streaming_post import stream_post_with_size_cap
 from notebooklm._transport_errors import TransportAuthExpired, TransportServerError
@@ -135,7 +136,7 @@ def _chat(
     backend = build_web_backend(
         rpc,
         chat_transport=transport,
-        chat_reqid=reqid,
+        reqid=reqid,
         chat_timeout=45.0,
         chat_response_max_bytes=chat_response_max_bytes,
     )
@@ -222,7 +223,7 @@ async def test_chat_backend_forwards_one_deadline_and_clamps_stream_attempt() ->
     chat = _chat(transport=transport)
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 12.0)
 
-    result = await chat._service.ask(
+    result = await chat._workflow.ask(
         ChatAskInput(
             notebook_id="nb-1",
             question="Q?",
@@ -248,7 +249,7 @@ async def test_chat_backend_marks_expiry_after_stream_commit_as_outcome_unknown(
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: next(times))
 
     with pytest.raises(BackendDeadlineExceededError) as caught:
-        await chat._service.ask(
+        await chat._workflow.ask(
             ChatAskInput(
                 notebook_id="nb-1",
                 question="Q?",
@@ -259,7 +260,11 @@ async def test_chat_backend_marks_expiry_after_stream_commit_as_outcome_unknown(
         )
 
     assert caught.value.outcome_unknown is True
+    # ``rebind_operation`` retains the leaf that failed under its own key; the
+    # public ``RPCTimeoutError`` reads only ``timeout_seconds``, so the extra
+    # neutral evidence changes no public identity.
     assert caught.value.diagnostics == {
+        "leaf_operation": Operation.CHAT_STREAM_ANSWER,
         "timeout": 5.0,
         "remaining": 0.0,
         "timeout_seconds": 5.0,
@@ -280,7 +285,7 @@ async def test_chat_deadline_clamped_read_timeout_maps_to_semantic_expiry() -> N
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: next(times))
 
     with pytest.raises(BackendDeadlineExceededError) as caught:
-        await chat._service.ask(
+        await chat._workflow.ask(
             ChatAskInput(
                 notebook_id="nb-1",
                 question="Q?",
@@ -291,7 +296,11 @@ async def test_chat_deadline_clamped_read_timeout_maps_to_semantic_expiry() -> N
         )
 
     assert caught.value.outcome_unknown is True
+    # ``rebind_operation`` retains the leaf that failed under its own key; the
+    # public ``RPCTimeoutError`` reads only ``timeout_seconds``, so the extra
+    # neutral evidence changes no public identity.
     assert caught.value.diagnostics == {
+        "leaf_operation": Operation.CHAT_STREAM_ANSWER,
         "timeout": 5.0,
         "remaining": 0.0,
         "timeout_seconds": 5.0,
@@ -309,7 +318,7 @@ async def test_chat_phase_two_predispatch_expiry_is_outcome_unknown() -> None:
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: next(times))
 
     with pytest.raises(BackendDeadlineExceededError) as caught:
-        await chat._service.ask(
+        await chat._workflow.ask(
             ChatAskInput(
                 notebook_id="nb-1",
                 question="Q?",
@@ -518,8 +527,8 @@ async def test_loop_affinity_guard_fires_before_any_lock_or_io() -> None:
         ),
     )
     locks_taken: list[str] = []
-    chat._get_conversation_lock = lambda cid: locks_taken.append(cid)  # type: ignore[assignment]
-    chat._get_new_conversation_lock = lambda nb: locks_taken.append(nb)  # type: ignore[assignment]
+    chat._workflow._get_conversation_lock = lambda cid: locks_taken.append(cid)  # type: ignore[assignment]
+    chat._workflow._get_new_conversation_lock = lambda nb: locks_taken.append(nb)  # type: ignore[assignment]
 
     with pytest.raises(RuntimeError, match="different event loop"):
         await chat.ask("nb-1", "Q?", conversation_id="conv-1")

@@ -65,9 +65,9 @@ from .runtime import WebExecutionRuntime
 from .transport import WebRequest, WebTransport
 
 if TYPE_CHECKING:
-    from .._chat import ChatAPI
     from .._client_metrics import ClientMetrics
     from .._reqid_counter import ReqidCounter
+    from .._runtime.contracts import ChatLifecycleHooks
     from .._runtime.pipeline import RuntimePipeline
     from .._runtime.transport import RuntimeTransport
     from .._source.upload import SourceUploadPipeline
@@ -77,16 +77,13 @@ source_logger = logging.getLogger("notebooklm").getChild("_sources")
 
 #: The closed set of collaborator names the head supplies to custom rows. A row
 #: declaring any other name is rejected by the construction-time audit.
+#: P10 R2.2 drained the three ``chat_*`` names with the ``chat.ask`` custom row:
+#: the streamed verb is a codec row now, and everything it needs is attempt-
+#: scoped transport state rather than a row collaborator.
 ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset(
     {
         "source_uploader",
         "capture_public_failure",
-        # ``chat.ask`` (P9.4b): the request-id counter, the configured chat read
-        # timeout, and whether the composed chat transport exists — never the
-        # transport itself.
-        "chat_reqid",
-        "chat_timeout",
-        "chat_transport_composed",
     }
 )
 
@@ -118,7 +115,6 @@ class WebRpcBackend:
         *,
         source_uploader: Any | None = None,
         chat_transport: RuntimeTransport | None = None,
-        chat_reqid: ReqidCounter | None = None,
         chat_timeout: float | None = None,
         chat_response_max_bytes: int | None = None,
         deadline_factory: RuntimeDeadlineFactory | None = None,
@@ -149,7 +145,6 @@ class WebRpcBackend:
         # their factories from their own composition paths.
         self._source_uploader = source_uploader
         self._chat_transport = chat_transport
-        self._chat_reqid = chat_reqid
         self._chat_timeout = chat_timeout
         self._chat_response_max_bytes = chat_response_max_bytes
         self._deadline_factory = deadline_factory
@@ -164,6 +159,10 @@ class WebRpcBackend:
             runtime_provider=lambda: self._runtime,
             chat_transport=chat_transport,
             chat_response_max_bytes=chat_response_max_bytes,
+            chat_timeout=chat_timeout,
+            # P10 R2.2: the streamed row's request ids come from the one shared
+            # counter, drawn inside the transport immediately before its POST.
+            reqid=reqid,
         )
         self._bindings = _build_binding_table()
         _configure_default_upload_backend(self)
@@ -208,7 +207,7 @@ class WebRpcBackend:
         self,
         *,
         uploader: SourceUploadPipeline,
-        chat: ChatAPI,
+        chat: ChatLifecycleHooks,
     ) -> None:
         """Open provider acquisition, then seed the private backend session."""
         session = self._backend_session
@@ -569,9 +568,6 @@ def _row_collaborators_of(backend: WebRpcBackend) -> Mapping[str, object]:
         {
             "source_uploader": backend._source_uploader,
             "capture_public_failure": backend._capture_public_failure,
-            "chat_reqid": backend._chat_reqid,
-            "chat_timeout": backend._chat_timeout,
-            "chat_transport_composed": backend._chat_transport is not None,
         }
     )
 

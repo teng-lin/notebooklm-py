@@ -1,6 +1,6 @@
 """Unit tests for the saved-from-chat CREATE_NOTE encoder (issue #660).
 
-These tests exercise ``_chat.notes.build_save_chat_as_note_params`` and
+These tests exercise ``_web/codec/chat_saved_note.build_save_note_params`` and
 pin its output against the wire-captured payload at
 ``tests/unit/fixtures/save_chat_as_note_create_note_request.json``.
 
@@ -10,8 +10,11 @@ produces the same payload Google's web UI sends when its "Save to note"
 button is clicked. Drift from that payload risks the server silently
 dropping citation anchors and reverting the note to plain text.
 
-The production encoder now lives in ``_web/codec/chat_saved_note.py``. The
-``_chat.notes`` imports below also pin the private compatibility re-exports.
+The encoder takes neutral :class:`ChatReferenceRecord` inputs; the module-local
+``build_save_chat_as_note_params`` / ``_resolve_reference`` helpers below project
+the public ``ChatReference`` fixtures onto that record shape through the real
+``_projectors.chat_reference_record``, so these cases keep asserting against the
+public citation objects a caller actually holds.
 """
 
 from __future__ import annotations
@@ -21,19 +24,47 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._chat.notes import (
-    _CITATION_MARKER_RE,
-    _resolve_reference,
-    _strip_citation_markers,
-    build_save_chat_as_note_params,
-)
+from notebooklm._projectors import chat_reference_record
 from notebooklm._records import ChatReferenceRecord
+from notebooklm._web.codec.chat_saved_note import (
+    _CITATION_MARKER_RE,
+    _strip_citation_markers,
+)
+from notebooklm._web.codec.chat_saved_note import (
+    _resolve_reference as _resolve_record,
+)
 from notebooklm._web.codec.chat_saved_note import (
     build_save_note_params as build_semantic_save_note_params,
 )
 from notebooklm.types import ChatReference
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def build_save_chat_as_note_params(
+    notebook_id: str,
+    answer_text: str,
+    references: list[ChatReference],
+    title: str,
+) -> list[object]:
+    """Encode from public citations, the shape a caller of ``save_answer_as_note`` holds."""
+    return build_semantic_save_note_params(
+        notebook_id,
+        answer_text,
+        tuple(chat_reference_record(reference) for reference in references),
+        title,
+    )
+
+
+def _resolve_reference(
+    references: list[ChatReference],
+    citation_number: int,
+) -> ChatReferenceRecord | None:
+    """Resolve marker ``[N]`` against public citations projected onto records."""
+    return _resolve_record(
+        tuple(chat_reference_record(reference) for reference in references),
+        citation_number,
+    )
 
 
 def _load_request_fixture() -> dict:

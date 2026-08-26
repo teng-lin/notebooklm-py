@@ -123,7 +123,7 @@ def test_inventory_covers_every_current_terminal_adapter_site() -> None:
 def test_private_dto_catalog_covers_every_annotation_proven_public_model_path() -> None:
     rows = discover_private_dataclass_projection_paths()
 
-    assert len(rows) == 38
+    assert len(rows) == 34
     triples = {(row.private_model, row.field_path, row.public_model) for row in rows}
     assert (
         "notebooklm._app.source_mutations.SourceRenameResult",
@@ -164,9 +164,19 @@ def test_private_dto_catalog_covers_every_annotation_proven_public_model_path() 
     ) in triples
     assert (
         "notebooklm._web.codec.chat_stream.StreamingChatParseResult",
-        "references[]",
-        "notebooklm.types.ChatReference",
+        "answer_document",
+        "notebooklm._types.documents.StructuredDocument",
     ) in triples
+    # P10 R2.1: the streamed-chat codec emits records, so no ``_web`` codec
+    # carries a ``notebooklm.types`` model onto an adapter sink any more. Only
+    # the ADR-0035-exempt ``_types.documents`` value types remain, which is why
+    # the spot check above is the document one.
+    assert not [
+        row
+        for row in rows
+        if row.private_model.startswith("notebooklm._web.codec.")
+        and row.public_model.startswith("notebooklm.types.")
+    ]
     assert (
         "notebooklm._source.batch.SourceUrlBatchItem",
         "source",
@@ -1335,7 +1345,7 @@ def test_checked_in_reachability_allocations_are_exact() -> None:
     )
     assert contract["site_count"] == 350
     private_paths = contract["private_dataclass_projection_paths"]
-    assert len(private_paths) == 38
+    assert len(private_paths) == 34
     provider_auth_paths = [
         path
         for path in private_paths

@@ -20,6 +20,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from scripts._operation_catalog_specs import DIVERGENCE_KINDS, OPERATION_SPECS
+from scripts._web_policy_intent import (
+    SERVICE_OWNED_WORKFLOW_BINDINGS,
+    WEB_CALL_POLICY_BINDINGS,
+    StreamedPolicyBinding,
+)
+from scripts.audit_operation_catalog import (
+    audit_direct_row_native_parity,
+    audit_web_call_policy_bindings,
+    derive_row_dispatch,
+    web_policy_parity_report,
+)
 
 from notebooklm import artifacts as artifact_helpers
 from notebooklm._app.errors import ErrorCategory, classify
@@ -60,12 +71,12 @@ from notebooklm._records import (
     ARTIFACT_REVISE_SLIDE_DEF,
     ARTIFACT_SUGGEST_REPORTS_DEF,
     ARTIFACT_WAIT_DEF,
-    CHAT_ASK_DEF,
     CHAT_CONFIGURE_DEF,
     CHAT_DELETE_HISTORY_DEF,
     CHAT_GET_CONVERSATION_DEF,
     CHAT_GET_HISTORY_DEF,
     CHAT_SAVE_NOTE_DEF,
+    CHAT_STREAM_ANSWER_DEF,
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,
     COLLECTION_LIST_DEF,
@@ -129,10 +140,7 @@ from notebooklm._records import (
     SourceRecord,
 )
 from notebooklm._web.backend import WebRpcBackend
-from notebooklm._web.policy import (
-    WEB_CALL_POLICY_BINDINGS,
-    audit_web_call_policy_bindings,
-)
+from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from notebooklm.exceptions import (
     ArtifactError,
@@ -213,7 +221,7 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         SOURCE_LIST_DEF: (Operation.SOURCE_LIST, CallPolicy.MUTATION),
         SOURCE_GET_DEF: (Operation.SOURCE_GET, CallPolicy.MUTATION),
         SOURCE_ADD_URL_DEF: (Operation.SOURCE_ADD_URL, CallPolicy.MUTATION),
-        CHAT_ASK_DEF: (Operation.CHAT_ASK, CallPolicy.STREAM),
+        CHAT_STREAM_ANSWER_DEF: (Operation.CHAT_STREAM_ANSWER, CallPolicy.STREAM),
         CHAT_GET_CONVERSATION_DEF: (Operation.CHAT_GET_CONVERSATION, CallPolicy.READ),
         CHAT_GET_HISTORY_DEF: (Operation.CHAT_GET_HISTORY, CallPolicy.READ),
         CHAT_DELETE_HISTORY_DEF: (Operation.CHAT_DELETE_HISTORY, CallPolicy.MUTATION),
@@ -420,17 +428,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             ARTIFACT_SUGGEST_REPORTS_DEF,
             [(RPCMethod.GET_SUGGESTED_REPORTS, None)],
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
-        ),
-        (
-            CHAT_ASK_DEF,
-            [
-                (RPCMethod.GET_NOTEBOOK, None),
-                (RPCMethod.GET_LAST_CONVERSATION_ID, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
         ),
         (
             CHAT_GET_CONVERSATION_DEF,
@@ -816,6 +813,88 @@ def test_active_policy_binding_audit_fails_closed_on_semantic_or_native_drift() 
     errors = audit_web_call_policy_bindings(definitions, bindings=drifted)
     assert any("semantic policy" in error for error in errors)
     assert any("idempotency is" in error for error in errors)
+
+
+def test_direct_row_parity_derives_the_actual_natives_from_the_row_spec() -> None:
+    """P10 R2.5 / invariant I7: the audit's left side comes from ``NativeCallSpec``.
+
+    Nothing in production hand-lists what a row dispatches, so the reviewed
+    intent is compared against a set the rows themselves produce.
+    """
+    assert audit_direct_row_native_parity() == ()
+
+    natives, streams = derive_row_dispatch(WEB_BINDING_ROWS[Operation.NOTEBOOK_GET])
+    assert natives == frozenset({(RPCMethod.GET_NOTEBOOK, None)})
+    assert streams == frozenset()
+
+    # A stream-only row (R2.2's chat.stream_answer) reaches the wire with no
+    # RPCMethod at all; the streamed half of the ledger is what records it.
+    natives, streams = derive_row_dispatch(WEB_BINDING_ROWS[Operation.CHAT_STREAM_ANSWER])
+    assert natives == frozenset()
+    assert streams == frozenset({"chat.ask"})
+
+
+def test_direct_row_parity_fails_closed_on_reviewed_native_drift() -> None:
+    drifted = dict(WEB_CALL_POLICY_BINDINGS)
+    notebook_get = drifted[Operation.NOTEBOOK_GET]
+    drifted[Operation.NOTEBOOK_GET] = replace(
+        notebook_get,
+        native_bindings=(
+            replace(notebook_get.native_bindings[0], method=RPCMethod.LIST_NOTEBOOKS),
+        ),
+    )
+    errors = audit_direct_row_native_parity(bindings=drifted)
+    assert [error for error in errors if error.startswith("direct-row parity: notebook.get ")]
+
+    # The streamed half fails closed on its own terms: dropping the declared
+    # streamed verb is not excused by a row having no natives to compare.
+    drifted = dict(WEB_CALL_POLICY_BINDINGS)
+    stream_row = drifted[Operation.CHAT_STREAM_ANSWER]
+    drifted[Operation.CHAT_STREAM_ANSWER] = replace(stream_row, streamed_bindings=())
+    errors = audit_direct_row_native_parity(bindings=drifted)
+    assert any("chat.stream_answer streams ['chat.ask']" in error for error in errors)
+
+    drifted[Operation.CHAT_STREAM_ANSWER] = replace(
+        stream_row, streamed_bindings=(StreamedPolicyBinding("chat.other", "renamed"),)
+    )
+    errors = audit_direct_row_native_parity(bindings=drifted)
+    assert any("chat.stream_answer streams" in error for error in errors)
+
+
+def test_the_parity_audit_reports_two_distinguishable_columns() -> None:
+    """Direct-row parity and end-to-end operation authority are not the same check.
+
+    ``chat.ask`` is green in the first sense (its two leaf rows dispatch exactly
+    what they are reviewed to dispatch) and divergent in the second: the
+    reviewed product operation reaches ``GET_NOTEBOOK``, which the facade issues
+    through ``NOTEBOOK_GET`` and no leaf row of the workflow dispatches. P10
+    R2.5 keeps that recorded rather than "fixing" it.
+    """
+    report = web_policy_parity_report()
+    direct = report["direct_row_parity"]
+    end_to_end = report["end_to_end_authority"]
+    assert isinstance(direct, dict) and isinstance(end_to_end, dict)
+
+    assert set(direct) == {operation.value for operation in WEB_BINDING_ROWS}
+    assert set(end_to_end) == {operation.value for operation in SERVICE_OWNED_WORKFLOW_BINDINGS}
+    assert set(direct) & set(end_to_end) == set()
+
+    assert all(row["parity"] == "match" for row in direct.values())
+    assert direct["chat.stream_answer"]["derived_streams"] == ["chat.ask"]
+
+    chat_ask = end_to_end["chat.ask"]
+    assert chat_ask["parity"] == "recorded_divergence"
+    assert chat_ask["leaf_operations"] == ["chat.stream_answer", "chat.get_conversation"]
+    assert "GET_NOTEBOOK:<default>" in chat_ask["reviewed_natives"]
+    assert "GET_NOTEBOOK:<default>" not in chat_ask["leaf_derived_natives"]
+    assert chat_ask["known_divergence"] is not None
+
+    assert report["summary"] == {
+        "direct_rows": 80,
+        "direct_row_divergences": 0,
+        "service_owned_workflows": 12,
+        "end_to_end_divergences": 1,
+    }
 
 
 def test_call_policy_does_not_control_transport_retries() -> None:

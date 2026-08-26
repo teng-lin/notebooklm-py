@@ -43,7 +43,7 @@ def test_operation_definition_is_inert_frozen_slotted_vocabulary() -> None:
 def test_operation_and_call_policy_vocabularies_are_total_non_vacuous_and_alias_free() -> None:
     rows = catalog.build_operation_catalog()["operations"]
 
-    assert len(Operation.__members__) == len(Operation) == len(catalog.OPERATION_SPECS) == 96
+    assert len(Operation.__members__) == len(Operation) == len(catalog.OPERATION_SPECS) == 97
     assert {row["policy"] for row in rows} == {policy.value for policy in CallPolicy}
     assert next(row for row in rows if row["key"] == "chat.ask")["policy"] == "stream"
 
@@ -204,8 +204,11 @@ def test_call_policy_audit_rejects_an_unused_vocabulary_arm(
         catalog,
         "OPERATION_SPECS",
         tuple(
+            # ``stream`` is carried by two specs since P10 R2.2 — the ``chat.ask``
+            # workflow and its ``chat.stream_answer`` leaf — so draining the arm
+            # means draining every spec that holds it, not one named operation.
             dataclasses.replace(spec, policy=CallPolicy.STATEFUL_START)
-            if spec.operation is Operation.CHAT_ASK
+            if spec.policy is CallPolicy.STREAM
             else spec
             for spec in catalog.OPERATION_SPECS
         ),

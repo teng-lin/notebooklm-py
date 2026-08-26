@@ -24,7 +24,7 @@ from notebooklm._backend import (
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, DeadlineMode, NativeChoice
+from notebooklm._binding import CodecBinding, DeadlineMode, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
@@ -134,9 +134,9 @@ def test_studio_leaves_are_rows_and_rename_is_service_owned() -> None:
     download = studio_rows.ARTIFACT_DOWNLOAD.native
     assert not download.is_constant
     assert set(download.choices) == {
-        NativeChoice(RPCMethod.LIST_ARTIFACTS),
-        NativeChoice(RPCMethod.GET_NOTES_AND_MIND_MAPS),
-        NativeChoice(RPCMethod.GET_INTERACTIVE_HTML),
+        RpcNative(RPCMethod.LIST_ARTIFACTS),
+        RpcNative(RPCMethod.GET_NOTES_AND_MIND_MAPS),
+        RpcNative(RPCMethod.GET_INTERACTIVE_HTML),
     }
     for name in (
         "_artifact_export",
@@ -171,14 +171,14 @@ def test_studio_leaves_are_rows_and_rename_is_service_owned() -> None:
 @pytest.mark.parametrize(
     ("action", "expected"),
     [
-        ("catalog", NativeChoice(RPCMethod.LIST_ARTIFACTS)),
-        ("mind_maps", NativeChoice(RPCMethod.GET_NOTES_AND_MIND_MAPS)),
-        ("interactive_html", NativeChoice(RPCMethod.GET_INTERACTIVE_HTML)),
-        ("mind_map_tree", NativeChoice(RPCMethod.GET_INTERACTIVE_HTML)),
+        ("catalog", RpcNative(RPCMethod.LIST_ARTIFACTS)),
+        ("mind_maps", RpcNative(RPCMethod.GET_NOTES_AND_MIND_MAPS)),
+        ("interactive_html", RpcNative(RPCMethod.GET_INTERACTIVE_HTML)),
+        ("mind_map_tree", RpcNative(RPCMethod.GET_INTERACTIVE_HTML)),
     ],
 )
 def test_download_selector_picks_one_native_per_action(
-    action: str, expected: NativeChoice[RPCMethod]
+    action: str, expected: RpcNative[RPCMethod]
 ) -> None:
     value = ArtifactDownloadInput("nb", action, "artifact-id")
     assert studio_rows.ARTIFACT_DOWNLOAD.native.select(value) == expected

@@ -42,7 +42,7 @@ from notebooklm.paths import get_profile_dir
 # Substrings in ChatError / skip messages that mark a server-side rate-limit
 # or quota rejection rather than a client bug. Covers both the explicit
 # UserDisplayableError message and the HTTP-status-wrapped 429 path in
-# ``notebooklm._chat.transport.chat_aware_authed_post``, the generation skip
+# ``notebooklm._web.chat_transport.chat_aware_authed_post``, the generation skip
 # phrase in assert_generation_started, and the "Rate limit:" prefix
 # _install_generation_rate_limit_skip adds to typed RateLimitError skips.
 _RATE_LIMIT_PHRASES = (

@@ -168,7 +168,7 @@ async def test_skips_emit_when_rpc_method_absent(
     Pins the regression guard for the pre-PR-12.4 invariant: requests
     flowing through the chain WITHOUT ``rpc_method`` in context must not
     appear in the RPC counters or telemetry stream. The chat streaming
-    path (``_chat.transport.chat_aware_authed_post``) is the production caller
+    path (``_web.chat_transport.chat_aware_authed_post``) is the production caller
     that exercises this branch — chat requests have never been counted
     as RPCs and continue not to be.
     """

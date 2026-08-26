@@ -3,11 +3,17 @@
 A binding row ties one closed :class:`~notebooklm._operations.OperationDef` to
 the way a backend executes it. Two row kinds exist:
 
-* :class:`CodecBinding` — ``encode → one native call → decode``; the row's
-  :class:`NativeCallSpec` is the sole authority for the native method.
+* :class:`CodecBinding` — ``encode → one native → decode``; the row's
+  :class:`NativeCallSpec` is the sole authority for the native it dispatches.
 * :class:`CustomBinding` — a handler that may sequence several declared
   natives through a row-scoped :class:`RowInvoker`; every such row states a
   one-sentence justification under a closed category so the count can ratchet.
+
+A native is one of two kinds — an :class:`RpcNative` method on the backend's own
+enum, or a :class:`StreamNative` streamed verb — and the kind is what picks the
+transport verb: :func:`invoke_binding` ``call``s the first and ``stream``s the
+second.  Keeping the streamed verb *inside* the spec is what makes the row's
+sole-authority rule hold for a streamed operation too.
 
 This module is deliberately backend-agnostic: it names no wire enum, no HTTP
 client, and no ``_web`` module.  Request assembly is delegated to the backend's
@@ -21,7 +27,7 @@ from collections.abc import Awaitable, Callable, Iterator, Mapping
 from dataclasses import dataclass
 from enum import Enum, unique
 from types import MappingProxyType
-from typing import Any, Final, Generic, Literal, Protocol, TypeVar
+from typing import Any, Final, Generic, Literal, Protocol, TypeAlias, TypeVar
 
 from ._backend import BackendContractError, BackendDeadlineExceededError, BackendError
 from ._deadline import RuntimeDeadline
@@ -72,11 +78,35 @@ class BindingAuditError(Exception):
 
 
 @dataclass(frozen=True, slots=True)
-class NativeChoice(Generic[MethodT]):
-    """One selected ``(method, variant)`` pair."""
+class RpcNative(Generic[MethodT]):
+    """One selected ``(method, variant)`` pair on the backend's method enum."""
 
     method: MethodT
     variant: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamNative:
+    """One selected streamed verb: a parse label and no wire method.
+
+    A streamed request is not a method on the backend's native enum — it never
+    appears in the policy ledger's native set — yet it *is* the native a row
+    dispatches, so it is a member of :data:`NativeChoice` rather than a second
+    field beside it.  ``label`` is the backend-side parse label the transport
+    attaches to the streamed request.
+    """
+
+    label: str
+
+    def __post_init__(self) -> None:
+        if not self.label:
+            raise ValueError("a streamed native carries a non-empty label")
+
+
+#: The two kinds of native a row may select.  The name is retained from the
+#: single-kind era: it is the vocabulary every binding module, the catalog
+#: walker and the ``RPCMethod``-below-the-port gate already speak.
+NativeChoice: TypeAlias = RpcNative[MethodT] | StreamNative
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +139,7 @@ class NativeCallSpec(Generic[MethodT]):
         *,
         key: str | None = None,
     ) -> NativeCallSpec[MethodT]:
-        return cls(choices=(NativeChoice(method, variant),), key=key)
+        return cls(choices=(RpcNative(method, variant),), key=key)
 
     @classmethod
     def keyed(
@@ -119,6 +149,15 @@ class NativeCallSpec(Generic[MethodT]):
         key: str | None = None,
     ) -> NativeCallSpec[MethodT]:
         return cls(choices=tuple(choices), selector=selector, key=key)
+
+    @staticmethod
+    def streamed(label: str, *, key: str | None = None) -> NativeCallSpec[Any]:
+        """A constant spec whose one choice is a streamed verb, not a method.
+
+        The method type is ``Any`` because there is none: a row built on this
+        spec names no member of the backend's wire enum anywhere.
+        """
+        return NativeCallSpec(choices=(StreamNative(label),), key=key)
 
     @property
     def is_constant(self) -> bool:
@@ -132,6 +171,16 @@ class NativeCallSpec(Generic[MethodT]):
         if choice not in self.choices:
             raise BackendContractError(
                 f"native call spec selected an undeclared native {choice!r}",
+            )
+        return choice
+
+    def select_rpc(self, value: Any) -> RpcNative[MethodT]:
+        """:meth:`select` where the caller needs the wire method itself."""
+        choice = self.select(value)
+        if not isinstance(choice, RpcNative):
+            raise BackendContractError(
+                f"native call spec selected the streamed native {choice!r} where a "
+                "wire method is required",
             )
         return choice
 
@@ -153,34 +202,16 @@ class CodecPayload:
 
 
 @dataclass(frozen=True, slots=True)
-class StreamSpec:
-    """One declared streamed verb of a custom row.
+class StreamRequestPayload:
+    """Encoder output for one streamed request: the encoded request data.
 
-    A streamed request is not a native method: it never appears in the policy
-    ledger's native set, so it lives beside ``native`` rather than inside it.
-    ``key`` names the spec for the row-scoped invoker; ``label`` is the
-    backend-side parse label the transport attaches to the streamed request.
+    ``data`` is the backend-specific, already-encoded request the backend's
+    transport materialises against its live auth snapshot.  The port never
+    inspects it — a streamed request cannot be described as ``params`` — so the
+    concrete type is the backend transport's own contract, checked there.
     """
 
-    key: str
-    label: str
-
-    def __post_init__(self) -> None:
-        if not self.key or not self.label:
-            raise ValueError("a stream spec carries a non-empty key and label")
-
-
-@dataclass(frozen=True, slots=True)
-class StreamPayload:
-    """Encoder output for one streamed request: the request builder and its read budget.
-
-    ``build_request`` is the backend-specific request builder the transport
-    materialises against its live auth snapshot; ``attempt_timeout`` is the
-    per-attempt read window the row computed under the caller's deadline.
-    """
-
-    build_request: Callable[..., Any]
-    attempt_timeout: float | None = None
+    data: Any
 
 
 class Transport(Protocol[MethodT, RequestT]):
@@ -189,7 +220,7 @@ class Transport(Protocol[MethodT, RequestT]):
     def assemble(
         self,
         definition: OperationDef[Any, Any],
-        native: NativeChoice[MethodT],
+        native: RpcNative[MethodT],
         payload: CodecPayload,
         *,
         retry_flag: bool,
@@ -200,8 +231,8 @@ class Transport(Protocol[MethodT, RequestT]):
     def assemble_stream(
         self,
         definition: OperationDef[Any, Any],
-        spec: StreamSpec,
-        payload: StreamPayload,
+        native: StreamNative,
+        payload: StreamRequestPayload,
         *,
         deadline: RuntimeDeadline | None,
     ) -> RequestT: ...
@@ -236,7 +267,8 @@ class RowInvoker(Protocol):
     probe-then-create disables replay; a readback after a dispatched write marks
     a pre-dispatch expiry as commit-uncertain).  ``collaborator`` returns one of
     the row's declared, backend-supplied collaborators (never the transport or
-    the runtime).
+    the runtime).  There is no streamed verb here: a streamed request is a
+    :class:`StreamNative` on a codec row, dispatched by :func:`invoke_binding`.
     """
 
     async def call(
@@ -248,15 +280,6 @@ class RowInvoker(Protocol):
         deadline: RuntimeDeadline | None,
         disable_internal_retries: bool = False,
         outcome_unknown_on_expiry: bool = False,
-    ) -> Any: ...
-
-    async def stream(
-        self,
-        spec_key: str,
-        payload: StreamPayload,
-        *,
-        value: Any = None,
-        deadline: RuntimeDeadline | None,
     ) -> Any: ...
 
     def collaborator(self, name: str) -> Any: ...
@@ -278,7 +301,7 @@ class CodecBinding(Generic[InputT, OutputT, MethodT]):
     """``encode → one native call → decode`` with the native fixed by the spec."""
 
     definition: OperationDef[InputT, OutputT]
-    encode: Callable[[InputT], CodecPayload]
+    encode: Callable[[InputT], CodecPayload | StreamRequestPayload]
     decode: Callable[[InputT, Any], OutputT]
     native: NativeCallSpec[MethodT]
     deadline: DeadlineMode = DeadlineMode.INHERIT
@@ -302,9 +325,6 @@ class CustomBinding(Generic[InputT, OutputT, MethodT]):
     #: ``invoke.collaborator(name)``; audited at construction against what the
     #: backend provides, so a row can never reach an object it did not declare.
     collaborators: tuple[str, ...] = ()
-    #: Declared streamed verbs, keyed like natives but never part of the policy
-    #: ledger's native set; ``invoke.stream`` resolves only these.
-    streams: tuple[StreamSpec, ...] = ()
 
     def __post_init__(self) -> None:
         if self.category not in CUSTOM_CATEGORIES:
@@ -314,9 +334,6 @@ class CustomBinding(Generic[InputT, OutputT, MethodT]):
         keys = [spec.key for spec in self.native]
         if any(key is None for key in keys) or len(set(keys)) != len(keys):
             raise ValueError("custom binding natives carry unique, non-empty keys")
-        stream_keys = [spec.key for spec in self.streams]
-        if len(set(stream_keys)) != len(stream_keys) or set(stream_keys) & set(keys):
-            raise ValueError("custom binding stream keys are unique and distinct from natives")
         names = self.collaborators
         if any(not name for name in names) or len(set(names)) != len(names):
             raise ValueError("custom binding collaborators are unique, non-empty names")
@@ -327,15 +344,6 @@ class CustomBinding(Generic[InputT, OutputT, MethodT]):
                 return candidate
         raise BackendContractError(
             f"{self.definition.key.value} declares no native spec {key!r}",
-            operation=self.definition.key,
-        )
-
-    def stream_spec(self, key: str) -> StreamSpec:
-        for candidate in self.streams:
-            if candidate.key == key:
-                return candidate
-        raise BackendContractError(
-            f"{self.definition.key.value} declares no stream spec {key!r}",
             operation=self.definition.key,
         )
 
@@ -421,7 +429,7 @@ def _names(operations: frozenset[Operation]) -> str:
     return ", ".join(sorted(operation.value for operation in operations))
 
 
-def _native_method_id(native: NativeChoice[Any]) -> Any:
+def _native_method_id(native: RpcNative[Any]) -> Any:
     """The wire identity of a selected native, without naming a wire enum.
 
     ``MethodT`` is a backend's own method type; every backend models it as an
@@ -460,13 +468,13 @@ def _raise_if_expired(
         "remaining": remaining,
         "timeout_seconds": deadline.timeout,
     }
-    if native is not None:
+    if isinstance(native, RpcNative):
         diagnostics["method_id"] = _native_method_id(native)
     raise BackendDeadlineExceededError(operation, diagnostics=MappingProxyType(diagnostics))
 
 
-def _tag_native(error: BaseException, native: NativeChoice[Any] | StreamSpec) -> None:
-    """Attach the selected native (or stream spec) to a failure for row attribution."""
+def _tag_native(error: BaseException, native: NativeChoice[Any]) -> None:
+    """Attach the selected native to a failure for row attribution."""
     try:
         error.binding_native = native  # type: ignore[attr-defined]
     except (AttributeError, TypeError):
@@ -519,9 +527,8 @@ class _RowScopedInvoker:
         *,
         disable_internal_retries: bool,
         outcome_unknown_on_expiry: bool,
-    ) -> tuple[NativeChoice[Any], Any]:
-        spec = self._row.spec(spec_key)
-        choice = spec.select(value)
+    ) -> tuple[RpcNative[Any], Any]:
+        choice = self._row.spec(spec_key).select_rpc(value)
         request = self._transport.assemble(
             self._row.definition,
             choice,
@@ -532,13 +539,11 @@ class _RowScopedInvoker:
         )
         return choice, request
 
-    def _failed(
-        self, exc: BaseException, value: Any, choice: NativeChoice[Any] | StreamSpec
-    ) -> None:
+    def _failed(self, exc: BaseException, value: Any, choice: NativeChoice[Any]) -> None:
         """Tag the failure with its native and apply the row's semantic mapper."""
         _tag_native(exc, choice)
         if self._row.map_error is not None and isinstance(exc, Exception):
-            mapped = self._row.map_error(value, exc, choice)  # type: ignore[arg-type]
+            mapped = self._row.map_error(value, exc, choice)
             if mapped is not None:
                 raise mapped from exc
 
@@ -566,28 +571,6 @@ class _RowScopedInvoker:
             self._failed(exc, value, choice)
             raise
 
-    async def stream(
-        self,
-        spec_key: str,
-        payload: StreamPayload,
-        *,
-        value: Any = None,
-        deadline: RuntimeDeadline | None,
-    ) -> Any:
-        """Perform one declared streamed verb; failures are tagged with its spec."""
-        spec = self._row.stream_spec(spec_key)
-        request = self._transport.assemble_stream(
-            self._row.definition,
-            spec,
-            payload,
-            deadline=deadline,
-        )
-        try:
-            return await self._transport.stream(request, deadline=deadline)
-        except BaseException as exc:
-            self._failed(exc, value, spec)
-            raise
-
 
 def row_invoker(
     table: Mapping[Operation, Binding],
@@ -611,6 +594,51 @@ def row_invoker(
             operation=operation,
         )
     return _RowScopedInvoker(row, transport, errors, collaborators)
+
+
+async def _dispatch_codec_native(
+    transport: Transport[Any, Any],
+    row: CodecBinding[Any, Any, Any],
+    choice: NativeChoice[Any],
+    payload: CodecPayload | StreamRequestPayload,
+    *,
+    deadline: RuntimeDeadline | None,
+) -> Any:
+    """Assemble and perform one codec row's selected native.
+
+    The row's :class:`NativeCallSpec` decides the transport verb: an
+    :class:`RpcNative` is assembled and ``call``ed, a :class:`StreamNative` is
+    assembled and ``stream``ed.  The encoder's payload kind must match the
+    native kind — the pairing is a row contract, so a mismatch fails closed
+    here rather than reaching the backend transport untyped.
+    """
+    if isinstance(choice, StreamNative):
+        if not isinstance(payload, StreamRequestPayload):
+            raise BackendContractError(
+                f"{row.definition.key.value} streams a native but its encoder returned "
+                f"{type(payload).__name__}",
+                operation=row.definition.key,
+            )
+        return await transport.stream(
+            transport.assemble_stream(row.definition, choice, payload, deadline=deadline),
+            deadline=deadline,
+        )
+    if not isinstance(payload, CodecPayload):
+        raise BackendContractError(
+            f"{row.definition.key.value} calls a native but its encoder returned "
+            f"{type(payload).__name__}",
+            operation=row.definition.key,
+        )
+    return await transport.call(
+        transport.assemble(
+            row.definition,
+            choice,
+            payload,
+            retry_flag=row.forward_disable_internal_retries,
+            deadline=deadline,
+        ),
+        deadline=deadline,
+    )
 
 
 async def invoke_binding(
@@ -657,14 +685,13 @@ async def invoke_binding(
             # Inside the row's failure handling so an expiry is attributed and
             # mapped exactly like any other failure of this native.
             _raise_if_expired(operation.key, row_deadline, native=choice)
-            request = transport.assemble(
-                row.definition,
+            raw = await _dispatch_codec_native(
+                transport,
+                row,
                 choice,
                 payload,
-                retry_flag=row.forward_disable_internal_retries,
                 deadline=row_deadline,
             )
-            raw = await transport.call(request, deadline=row_deadline)
         except BaseException as exc:
             _tag_native(exc, choice)
             if row.map_error is not None and isinstance(exc, Exception):
@@ -697,8 +724,9 @@ __all__ = [
     "NativeChoice",
     "OperationDisposition",
     "RowInvoker",
-    "StreamPayload",
-    "StreamSpec",
+    "RpcNative",
+    "StreamNative",
+    "StreamRequestPayload",
     "Transport",
     "audit_bindings",
     "invoke_binding",

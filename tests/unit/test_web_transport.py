@@ -8,13 +8,24 @@ from typing import Any
 import pytest
 
 from notebooklm._backend import BackendContractError, BackendDeadlineExceededError
-from notebooklm._binding import CodecPayload, NativeChoice
+from notebooklm._binding import CodecPayload, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import NOTEBOOK_LIST_DEF
+from notebooklm._web.codec.chat_stream import ChatStreamRequestData
 from notebooklm._web.transport import WebRequest, WebStreamRequest, WebTransport
 from notebooklm.exceptions import NetworkError, ServerError
 from notebooklm.rpc import RPCMethod
+
+
+def _stream_data(question: str) -> ChatStreamRequestData:
+    return ChatStreamRequestData(
+        notebook_id="nb-1",
+        question=question,
+        source_ids=("source-1",),
+        conversation_history=None,
+        conversation_id=None,
+    )
 
 
 @dataclass
@@ -202,7 +213,7 @@ def test_assemble_builds_the_request_from_the_native_choice_and_payload() -> Non
 
     request = transport.assemble(
         NOTEBOOK_LIST_DEF,
-        NativeChoice(RPCMethod.LIST_NOTEBOOKS, "recent"),
+        RpcNative(RPCMethod.LIST_NOTEBOOKS, "recent"),
         payload,
         retry_flag=True,
         deadline=None,
@@ -229,8 +240,8 @@ def test_request_and_transport_reprs_do_not_leak_params() -> None:
         params=["cookie-old", "csrf-old"],
     )
     stream = WebStreamRequest(
-        operation=Operation.CHAT_ASK,
-        build_request=lambda snapshot: ("cookie-old", "", {}),  # type: ignore[arg-type,return-value]
+        operation=Operation.CHAT_STREAM_ANSWER,
+        data=_stream_data("cookie-old"),
         parse_label="chat.ask",
     )
 
@@ -248,8 +259,8 @@ async def test_stream_rejects_batchexecute_requests_and_missing_chat_transport()
         await transport.stream(request, deadline=None)
 
     stream = WebStreamRequest(
-        operation=Operation.CHAT_ASK,
-        build_request=lambda snapshot: ("", "", {}),  # type: ignore[arg-type,return-value]
+        operation=Operation.CHAT_STREAM_ANSWER,
+        data=_stream_data("q"),
         parse_label="chat.ask",
     )
     with pytest.raises(BackendContractError):

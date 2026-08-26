@@ -73,6 +73,7 @@ class Operation(str, Enum):
     ARTIFACT_SUGGEST_REPORTS = "artifact.suggest_reports"
 
     CHAT_ASK = "chat.ask"
+    CHAT_STREAM_ANSWER = "chat.stream_answer"
     CHAT_GET_CONVERSATION = "chat.get_conversation"
     CHAT_GET_HISTORY = "chat.get_history"
     CHAT_DELETE_HISTORY = "chat.delete_history"

@@ -22,7 +22,7 @@ from notebooklm._backend import (
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, DeadlineMode, NativeChoice
+from notebooklm._binding import CodecBinding, DeadlineMode, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
@@ -102,11 +102,11 @@ def test_research_rows_replace_their_handlers_in_the_registry_and_table() -> Non
     start = research_rows.RESEARCH_START
     assert not start.native.is_constant
     assert set(start.native.choices) == {
-        NativeChoice(RPCMethod.START_FAST_RESEARCH),
-        NativeChoice(RPCMethod.START_DEEP_RESEARCH),
+        RpcNative(RPCMethod.START_FAST_RESEARCH),
+        RpcNative(RPCMethod.START_DEEP_RESEARCH),
     }
-    assert start.native.select(_FAST_INPUT) == NativeChoice(RPCMethod.START_FAST_RESEARCH)
-    assert start.native.select(_DEEP_INPUT) == NativeChoice(RPCMethod.START_DEEP_RESEARCH)
+    assert start.native.select(_FAST_INPUT) == RpcNative(RPCMethod.START_FAST_RESEARCH)
+    assert start.native.select(_DEEP_INPUT) == RpcNative(RPCMethod.START_DEEP_RESEARCH)
     assert start.map_error is not None
     for row in (
         research_rows.RESEARCH_POLL,

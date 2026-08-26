@@ -14,10 +14,17 @@ Contents:
 * :class:`RpcCaller` (~17 consumers) and :class:`LoopGuard` (2
   consumers) — the surviving shared capability Protocols that meet the
   ADR-0013 ≥2-feature bar.
+* :class:`ChatLifecycleHooks` (4 consumers) — the two loop-affinity hooks
+  ``ClientLifecycle.open`` drives on the chat collaborator, named
+  structurally so the three ports it is threaded through (both cookie
+  providers and ``WebRpcBackend.open_client``) do not have to name
+  ``ChatAPI``. ``_web`` may not import a domain package at all (P10
+  invariant I2), so the type it declares has to live below the port.
 
 Feature APIs that need more than one capability take their direct
 collaborators by keyword-only constructor argument (``ChatAPI`` in
-``_chat/api.py``, ``ArtifactsAPI`` in ``_artifacts.py``, and
+``_chat/api.py``, which passes all but the loop guard on to its workflow
+service, ``ArtifactsAPI`` in ``_artifacts.py``, and
 ``SourceUploadPipeline`` in ``_source/upload.py``). The feature-local
 composite Protocols ``ArtifactsRuntime`` and ``UploadRuntime`` (and
 their corresponding adapter dataclasses) that previously bundled three
@@ -31,6 +38,7 @@ production consumers is indirection that no production code varies.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from typing import Any, Protocol
 
@@ -96,7 +104,29 @@ class LoopGuard(Protocol):
     def assert_bound_loop(self) -> None: ...
 
 
+class ChatLifecycleHooks(Protocol):
+    """The two loop-affinity hooks ``ClientLifecycle.open`` drives on chat.
+
+    These are exactly the members ``lifecycle.py`` reaches on its ``chat=``
+    collaborator: the captured-loop propagation and the close→reopen reset
+    that rebuilds the per-conversation / per-notebook locks on the new loop
+    (#1225). The three ports the collaborator is threaded through — both
+    ``WebCookieProvider.open`` implementations and
+    ``WebRpcBackend.open_client`` — pass it through opaquely and need no
+    wider surface.
+
+    Both ``ChatAPI`` (which forwards) and the ``ChatWorkflowService`` that
+    actually owns the lock maps satisfy this structurally, so the hooks stay
+    describable without naming either.
+    """
+
+    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None: ...
+
+    def reset_after_open(self) -> None: ...
+
+
 __all__ = [
+    "ChatLifecycleHooks",
     "Kernel",
     "LoopGuard",
     "RpcCaller",
