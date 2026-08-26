@@ -8,6 +8,12 @@ import pytest
 
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
+from notebooklm._projectors import (
+    project_account_limits,
+    project_prompt_suggestions,
+    project_report_suggestions,
+    project_user_settings,
+)
 from notebooklm._records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
@@ -55,7 +61,7 @@ def test_p66_operation_definitions_are_concrete_frozen_values() -> None:
 
 
 @pytest.mark.asyncio
-async def test_settings_service_projects_each_public_shape_without_combining_calls() -> None:
+async def test_settings_service_returns_each_neutral_record_without_combining_calls() -> None:
     backend = RecordingBackend()
     limits = AccountLimitsRecord(200, 100, (6, 200, 100, 500000, 99), 99)
     backend.set_result(
@@ -66,12 +72,12 @@ async def test_settings_service_projects_each_public_shape_without_combining_cal
     backend.set_result(SETTINGS_SET_LANGUAGE_DEF, SettingsSetLanguageResult("ja"))
     service = SettingsService(backend)
 
-    assert await service.get_user_settings() == UserSettings(
-        limits=AccountLimits(200, 100, (6, 200, 100, 500000, 99), 99),
+    assert await service.get_user_settings() == UserSettingsRecord(
+        limits=AccountLimitsRecord(200, 100, (6, 200, 100, 500000, 99), 99),
         output_language="fr",
     )
     assert await service.get_output_language() == "fr"
-    assert await service.get_account_limits() == AccountLimits(
+    assert await service.get_account_limits() == AccountLimitsRecord(
         200,
         100,
         (6, 200, 100, 500000, 99),
@@ -86,8 +92,35 @@ async def test_settings_service_projects_each_public_shape_without_combining_cal
     ]
 
 
+def test_settings_records_project_to_the_public_models_the_facade_returns() -> None:
+    """The public shapes this service used to build, now pinned where they are built.
+
+    ``SettingsAPI`` owns the projection since P10 R6.3 (invariant I1). The
+    end-to-end facade assertions live in
+    ``test_user_settings_api.py::test_get_user_settings_fetches_once_returns_both``
+    and ``::test_get_account_limits_calls_user_settings_rpc``; this pins the
+    record-to-model equivalence for the same values the service test uses.
+    """
+    limits = AccountLimitsRecord(200, 100, (6, 200, 100, 500000, 99), 99)
+
+    assert project_account_limits(limits) == AccountLimits(
+        200,
+        100,
+        (6, 200, 100, 500000, 99),
+        99,
+    )
+    assert project_user_settings(UserSettingsRecord(limits, "fr")) == UserSettings(
+        limits=AccountLimits(200, 100, (6, 200, 100, 500000, 99), 99),
+        output_language="fr",
+    )
+
+
 @pytest.mark.asyncio
-async def test_suggestion_service_preserves_models_unknowns_and_deadline_identity() -> None:
+async def test_suggestion_service_preserves_records_unknowns_and_deadline_identity() -> None:
+    """R6.2: the service hands back records; the projections it used to build
+    are asserted here on ``_projectors`` so the unknown-level passthrough and
+    the field order this test pinned survive the move above the port.
+    """
     backend = RecordingBackend()
     backend.set_result(
         NOTEBOOK_SUGGEST_PROMPTS_DEF,
@@ -109,15 +142,20 @@ async def test_suggestion_service_preserves_models_unknowns_and_deadline_identit
     service = SuggestionService(backend)
     deadline = RuntimeDeadline(timeout=4.0, started_at=10.0, monotonic=lambda: 11.0)
 
-    assert await service.suggest_prompts(
+    prompts = await service.suggest_prompts(
         "nb",
         source_ids=["src"],
         mode=7,
         query=" steer ",
         deadline=deadline,
-    ) == [PromptSuggestion("Title", "Prompt")]
+    )
+    assert prompts == [PromptSuggestionRecord("Title", "Prompt")]
+    assert project_prompt_suggestions(tuple(prompts)) == [PromptSuggestion("Title", "Prompt")]
     reports = await service.suggest_reports("nb", deadline=deadline)
-    assert reports == [ReportSuggestion("Report", "Description", "Prompt", "unknown-level")]
+    assert reports == [ReportSuggestionRecord("Report", "Description", "Prompt", "unknown-level")]
+    assert project_report_suggestions(tuple(reports)) == [
+        ReportSuggestion("Report", "Description", "Prompt", "unknown-level")
+    ]
     assert all(invocation.deadline is deadline for invocation in backend.invocations)
     prompt_input = backend.invocations[0].value
     assert prompt_input.source_ids == ("src",)

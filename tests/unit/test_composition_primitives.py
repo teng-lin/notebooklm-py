@@ -26,7 +26,7 @@ def test_public_construction_publishes_one_complete_runtime() -> None:
     backend = client._backend
 
     assert backend.runtime_ready
-    assert backend._runtime is client.notebooks._legacy_rpc
+    assert backend._runtime is client.sources._rpc
     assert backend._chat_transport is backend._runtime._transport
     assert backend._pipeline is backend._runtime._transport.pipeline
     assert client._provider._rpc_semaphore.max_concurrent_rpcs == 3

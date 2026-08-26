@@ -990,6 +990,30 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                     _leaf(Operation.NOTEBOOK_GET, None),
                 ),
             ),
+            # P10 R6.4. Both were UNSUPPORTED until they gained typed
+            # definitions: the wait loop and the import reconciliation have
+            # always been sequenced by ``ResearchService``, so the flip records
+            # what already ran rather than moving any execution.
+            Operation.RESEARCH_WAIT: WorkflowPolicyBinding(
+                CallPolicy.READ,
+                (_native(RPCMethod.POLL_RESEARCH, _IDEMPOTENT, "research task poll"),),
+                (_leaf(Operation.RESEARCH_POLL, None),),
+            ),
+            Operation.RESEARCH_IMPORT_VERIFY: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(RPCMethod.IMPORT_RESEARCH, _NO_RETRY, "non-idempotent source import"),
+                    _native(
+                        RPCMethod.GET_NOTEBOOK,
+                        _IDEMPOTENT,
+                        "pre-import baseline and post-failure verification probe",
+                    ),
+                ),
+                (
+                    _leaf(Operation.RESEARCH_IMPORT, None),
+                    _leaf(Operation.SOURCE_LIST, None),
+                ),
+            ),
         }
     )
 )

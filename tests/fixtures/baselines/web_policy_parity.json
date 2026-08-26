@@ -1209,6 +1209,37 @@
         "RENAME_NOTEBOOK:<default>"
       ]
     },
+    "research.import_verify": {
+      "call_policy": "mutation",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "GET_NOTEBOOK:<default>",
+        "IMPORT_RESEARCH:<default>"
+      ],
+      "leaf_operations": [
+        "research.import",
+        "source.list"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "GET_NOTEBOOK:<default>",
+        "IMPORT_RESEARCH:<default>"
+      ]
+    },
+    "research.wait": {
+      "call_policy": "read",
+      "known_divergence": null,
+      "leaf_derived_natives": [
+        "POLL_RESEARCH:<default>"
+      ],
+      "leaf_operations": [
+        "research.poll"
+      ],
+      "parity": "match",
+      "reviewed_natives": [
+        "POLL_RESEARCH:<default>"
+      ]
+    },
     "sharing.set_public": {
       "call_policy": "mutation",
       "known_divergence": null,
@@ -1354,6 +1385,6 @@
     "direct_row_divergences": 0,
     "direct_rows": 77,
     "end_to_end_divergences": 1,
-    "service_owned_workflows": 16
+    "service_owned_workflows": 18
   }
 }

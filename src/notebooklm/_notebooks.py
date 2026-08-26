@@ -1,7 +1,7 @@
 """Notebook operations API."""
 
 import logging
-from typing import Any, Protocol
+from typing import Any
 
 from ._backend import BackendAdapter, BackendError
 from ._backend_compat import project_backend_call, project_backend_error
@@ -13,10 +13,13 @@ from ._notebook_metadata import (
 )
 from ._notebook_mutation_service import NotebookMutationService
 from ._notebook_payloads import build_create_notebook_params as build_create_notebook_params
-from ._notebook_payloads import (
-    build_get_notebook_params,
+from ._projectors import (
+    project_notebook,
+    project_notebook_description,
+    project_prompt_suggestions,
+    project_source,
 )
-from ._read_services import NotebookReadService
+from ._read_services import NotebookReadService, SourceReadService
 from ._sharing_manager import ShareManager
 from ._suggestion_service import PROMPT_SUGGESTIONS_DEFAULT_MODE, SuggestionService
 from .exceptions import (
@@ -29,33 +32,31 @@ from .types import (
     NotebookDescription,
     NotebookMetadata,
     PromptSuggestion,
+    Source,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class NotebookLegacyRpc(Protocol):
-    """Narrow compatibility collaborator for notebook-only raw RPC helpers.
+class _SemanticSourceLister:
+    """Adapt the neutral source read service to the public lister protocol.
 
-    The semantic notebook services depend on :class:`BackendAdapter`.  A few
-    retained compatibility methods still expose raw notebook behavior, so the
-    facade receives only their call-shaped leaf instead of owning the shared
-    runtime-wide ``RpcCaller`` capability.
+    ``SourceReadService`` returns :class:`~notebooklm._records.SourceRecord`
+    values; :class:`NotebookSourceLister` — shared with the injected
+    :class:`SourcesAPI` — is a public-model contract. Projection is a facade
+    responsibility, so the notebook facade owns it here for the
+    direct-construction path that has no injected ``sources_api``.
     """
 
-    async def rpc_call(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-        read_timeout: float | None = None,
-        raise_on_null_status: bool = True,
-    ) -> Any: ...
+    __slots__ = ("_service",)
+
+    def __init__(self, backend: BackendAdapter) -> None:
+        self._service = SourceReadService(backend)
+
+    async def list(self, notebook_id: str, *, strict: bool = False) -> list[Source]:
+        """List one notebook's sources as public models."""
+        records = await self._service.list(notebook_id, strict=strict)
+        return [project_source(record) for record in records]
 
 
 class NotebooksAPI:
@@ -73,7 +74,6 @@ class NotebooksAPI:
 
     def __init__(
         self,
-        legacy_rpc: NotebookLegacyRpc,
         sources_api: NotebookSourceLister | None = None,
         *,
         metadata_service: NotebookMetadataService | None = None,
@@ -84,10 +84,6 @@ class NotebooksAPI:
         """Initialize the notebooks API.
 
         Args:
-            legacy_rpc: Narrow raw-call collaborator retained only for notebook
-                compatibility helpers that have not become semantic operations.
-                Semantic notebook reads, mutations, and suggestions use
-                ``_backend`` instead.
             sources_api: Optional source lister for cross-API metadata composition.
                 When omitted alongside a semantic backend, direct construction
                 uses a backend-owned ``SourceReadService``.
@@ -95,7 +91,6 @@ class NotebooksAPI:
             share_manager: Optional explicit legacy share manager for tests or advanced wiring.
             _backend: Private semantic backend supplied by the client composition root.
         """
-        self._legacy_rpc = legacy_rpc
         self._read_service = NotebookReadService(_backend) if _backend is not None else None
         self._mutation_service = (
             NotebookMutationService(_backend, deadline_factory=_deadline_factory)
@@ -116,13 +111,12 @@ class NotebooksAPI:
                 source_lister=sources_api,
             )
         elif _backend is not None:
-            assert self._read_service is not None
             self._metadata_service = NotebookMetadataService(
                 # Preserve the same late-bound public seam as production
                 # composition while keeping standalone metadata source reads on
                 # the semantic backend rather than the legacy raw collaborator.
                 get_notebook=lambda notebook_id: self.get(notebook_id),
-                source_lister=self._read_service.source_lister(),
+                source_lister=_SemanticSourceLister(_backend),
             )
         else:
             self._metadata_service = None
@@ -225,7 +219,7 @@ class NotebooksAPI:
         .. versionadded:: 0.8.0
         """
         logger.debug("Suggesting prompts for notebook %s (mode=%d)", notebook_id, mode)
-        return await project_backend_call(
+        records = await project_backend_call(
             self._require_suggestion_service().suggest_prompts(
                 notebook_id,
                 source_ids=source_ids,
@@ -233,6 +227,7 @@ class NotebooksAPI:
                 query=query,
             )
         )
+        return project_prompt_suggestions(tuple(records))
 
     async def list(self) -> list[Notebook]:
         """List notebooks (most-recently-viewed first).
@@ -250,13 +245,15 @@ class NotebooksAPI:
         logger.debug("Listing notebooks")
         public_error: Exception | None = None
         try:
-            return await self._require_read_service().list()
+            records = await self._require_read_service().list()
         except BackendError as error:
             # WebRpcBackend deliberately exposes only the neutral BackendError
             # vocabulary. At this public compatibility facade, reconstruct the
             # exact pre-migration RPC/Network exception class and its reviewed
             # structured diagnostics without reaching through ``__cause__``.
             public_error = project_backend_error(error)
+        else:
+            return [project_notebook(record) for record in records]
         raise public_error
 
     async def create(self, title: str) -> Notebook:
@@ -291,14 +288,14 @@ class NotebooksAPI:
         logger.debug("Creating notebook: %s", title)
         public_error: Exception | None = None
         try:
-            notebook = await self._require_mutation_service().create(title)
+            record = await self._require_mutation_service().create(title)
         except BackendError as error:
             public_error = project_backend_error(error)
         else:
-            if notebook.id and notebook.chat_sessions:
-                self._created_chat_session_ids[notebook.id] = notebook.chat_sessions[0].id
-            logger.debug("Created notebook: %s", notebook.id)
-            return notebook
+            if record.id and record.chat_sessions:
+                self._created_chat_session_ids[record.id] = record.chat_sessions[0].id
+            logger.debug("Created notebook: %s", record.id)
+            return project_notebook(record)
         # Raise outside the private BackendError catch frame so a reviewed
         # reconstructed quota cause/context graph remains the public graph.
         assert public_error is not None
@@ -322,10 +319,13 @@ class NotebooksAPI:
                 post-validation further down still catches.
         """
         public_error: Exception | None = None
+        notebook: Notebook | None = None
         try:
-            notebook = await self._require_read_service().get(notebook_id)
+            record = await self._require_read_service().get(notebook_id)
         except BackendError as error:
             public_error = project_backend_error(error)
+        else:
+            notebook = None if record is None else project_notebook(record)
 
         if isinstance(public_error, ClientError):
             # Translate the status-5 rejection into this method's documented
@@ -444,13 +444,15 @@ class NotebooksAPI:
         logger.debug("Updating notebook %s (title=%r, emoji=%r)", notebook_id, title, emoji)
         public_error: Exception | None = None
         try:
-            return await self._require_mutation_service().update(
+            record = await self._require_mutation_service().update(
                 notebook_id,
                 title=title,
                 emoji=emoji,
             )
         except BackendError as error:
             public_error = project_backend_error(error)
+        else:
+            return project_notebook(record)
         assert public_error is not None
         raise public_error
 
@@ -468,9 +470,11 @@ class NotebooksAPI:
         """Get AI-generated summary and suggested topics for a notebook."""
         public_error: Exception | None = None
         try:
-            return await self._require_guide_service().get_description(notebook_id)
+            record = await self._require_guide_service().get_description(notebook_id)
         except BackendError as error:
             public_error = project_backend_error(error)
+        else:
+            return project_notebook_description(record)
         assert public_error is not None
         raise public_error
 
@@ -497,12 +501,15 @@ class NotebooksAPI:
         Returns:
             Raw API response data.
         """
-        params = build_get_notebook_params(notebook_id)
-        return await self._legacy_rpc.rpc_call(
-            RPCMethod.GET_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
+        public_error: Exception | None = None
+        try:
+            result = await self._require_read_service().get_raw(notebook_id)
+        except BackendError as error:
+            public_error = project_backend_error(error)
+        else:
+            return result.raw
+        assert public_error is not None
+        raise public_error
 
     def get_share_url(self, notebook_id: str, artifact_id: str | None = None) -> str:
         """Get share URL for a notebook or artifact.

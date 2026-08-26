@@ -360,6 +360,12 @@ def decode_notebook_list(value: NotebookListInput, result: Any) -> NotebookListR
 
 def decode_notebook_get(value: NotebookGetInput, result: Any) -> NotebookGetResult:
     """Row decoder for ``notebook.get``: the input selects the source-id-only branch."""
+    if value.include_raw:
+        # Undecoded compatibility branch. ``NotebooksAPI.get_raw`` publishes the
+        # payload the transport produced, so nothing positional may run here —
+        # any decode would turn a shape this row tolerates into a failure the
+        # raw helper never raised.
+        return NotebookGetResult(notebook=None, source_ids=(), raw=result)
     if not value.include_notebook:
         return NotebookGetResult(
             notebook=None,

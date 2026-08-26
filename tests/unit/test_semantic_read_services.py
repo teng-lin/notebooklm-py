@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from notebooklm._backend import BackendErrorReason
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm._operations import Operation
@@ -31,16 +32,24 @@ from notebooklm._records import (
     SourceListResult,
     SourceRecord,
 )
+from notebooklm._sources import SourcesAPI
+from notebooklm.exceptions import NetworkError
 from notebooklm.types import (
     ChatGoal,
     ChatResponseLength,
     DriveSourceStatus,
+    Notebook,
     SharePermission,
+    Source,
     SourceStatus,
     SourceType,
     UnknownTypeWarning,
 )
-from tests._fixtures.recording_backend import BackendInvocation, RecordingBackend
+from tests._fixtures.recording_backend import (
+    BackendInvocation,
+    RecordingBackend,
+    scripted_error,
+)
 
 
 def _notebook_record() -> NotebookRecord:
@@ -193,11 +202,14 @@ async def test_read_services_invoke_typed_operations_and_preserve_backend_order(
     )
     fetched_source = await sources.get("notebook-id", "source-id", deadline=deadline)
 
-    assert [item.id for item in listed_notebooks] == ["notebook-id"]
-    assert fetched_notebook is not None and fetched_notebook.id == "notebook-id"
+    # R6.1: the read services hand back the backend's neutral records
+    # untouched; projection to Notebook/Source belongs to the facades and is
+    # pinned in the NotebooksAPI/SourcesAPI tests below.
+    assert listed_notebooks == [notebook]
+    assert fetched_notebook is notebook
     assert source_ids == ["source-a", "source-b"]
-    assert [item.id for item in listed_sources] == ["source-id"]
-    assert fetched_source is not None and fetched_source.id == "source-id"
+    assert listed_sources == [source]
+    assert fetched_source is source
     assert backend.invocations == [
         BackendInvocation(Operation.NOTEBOOK_LIST, NotebookListInput(), deadline),
         BackendInvocation(
@@ -246,7 +258,6 @@ async def test_notebooks_facade_delegates_live_reads_without_parallel_rpc_calls(
     backend.set_result(NOTEBOOK_GET_DEF, NotebookGetResult(notebook))
     rpc_call = AsyncMock()
     api = NotebooksAPI(
-        MagicMock(rpc_call=rpc_call),
         sources_api=MagicMock(),
         _backend=backend,
     )
@@ -255,15 +266,49 @@ async def test_notebooks_facade_delegates_live_reads_without_parallel_rpc_calls(
     fetched = await api.get("notebook-id")
     optional = await api.get_or_none("notebook-id")
 
-    assert [item.id for item in listed] == ["notebook-id"]
-    assert fetched.id == "notebook-id"
-    assert optional is not None and optional.id == "notebook-id"
+    # The facade owns the record -> public model projection (R6.1).
+    expected = project_notebook(notebook)
+    assert listed == [expected]
+    assert isinstance(fetched, Notebook) and fetched == expected
+    assert optional == expected
     assert [invocation.operation for invocation in backend.invocations] == [
         Operation.NOTEBOOK_LIST,
         Operation.NOTEBOOK_GET,
         Operation.NOTEBOOK_GET,
     ]
     rpc_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_notebooks_get_raw_reads_the_undecoded_payload_through_the_row() -> None:
+    """R6.2: ``get_raw`` is a ``NOTEBOOK_GET`` invocation, not a raw ``rpc_call``."""
+    payload = [["Test Notebook", [["src1"], ["src2"]], "notebook-id", "📘"], ["extra"]]
+    backend = RecordingBackend()
+    backend.set_result(NOTEBOOK_GET_DEF, NotebookGetResult(None, (), payload))
+    api = NotebooksAPI(_backend=backend)
+
+    assert await api.get_raw("notebook-id") == payload
+    assert backend.invocations == [
+        BackendInvocation(
+            Operation.NOTEBOOK_GET,
+            NotebookGetInput("notebook-id", include_notebook=False, include_raw=True),
+            None,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_notebooks_get_raw_projects_a_backend_failure_to_its_public_error() -> None:
+    """The raw helper raised transport exceptions before; it still does."""
+    backend = RecordingBackend()
+    backend.set_error(
+        NOTEBOOK_GET_DEF,
+        scripted_error(BackendErrorReason.NETWORK, operation=Operation.NOTEBOOK_GET),
+    )
+    api = NotebooksAPI(_backend=backend)
+
+    with pytest.raises(NetworkError):
+        await api.get_raw("notebook-id")
 
 
 @pytest.mark.asyncio
@@ -274,7 +319,7 @@ async def test_direct_notebooks_metadata_uses_two_semantic_reads_without_raw_tra
     backend.set_result(NOTEBOOK_GET_DEF, NotebookGetResult(notebook))
     backend.set_result(SOURCE_LIST_DEF, SourceListResult((source,)))
     rpc_call = AsyncMock()
-    api = NotebooksAPI(MagicMock(rpc_call=rpc_call), _backend=backend)
+    api = NotebooksAPI(_backend=backend)
 
     metadata = await api.get_metadata("notebook-id")
 
@@ -301,7 +346,7 @@ async def test_direct_notebooks_metadata_keeps_get_late_bound_with_semantic_list
     backend = RecordingBackend()
     backend.set_result(SOURCE_LIST_DEF, SourceListResult((source,)))
     rpc_call = AsyncMock()
-    api = NotebooksAPI(MagicMock(rpc_call=rpc_call), _backend=backend)
+    api = NotebooksAPI(_backend=backend)
     replacement_get = AsyncMock(
         return_value=project_notebook(
             NotebookRecord("notebook-id", "Late-bound notebook", sources_count=1)
@@ -321,3 +366,30 @@ async def test_direct_notebooks_metadata_keeps_get_late_bound_with_semantic_list
         )
     ]
     rpc_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sources_facade_projects_read_service_records_into_public_models() -> None:
+    """The Source read projection lives on SourcesAPI, not the read service (R6.1)."""
+    record = _source_record()
+    backend = RecordingBackend()
+    backend.set_result(SOURCE_LIST_DEF, SourceListResult((record,)))
+    backend.set_result(SOURCE_GET_DEF, SourceGetResult(record))
+    api = SourcesAPI(MagicMock(), uploader=MagicMock(), _backend=backend)
+
+    listed = await api.list("notebook-id")
+    fetched = await api.get_or_none("notebook-id", "source-id")
+
+    expected = project_source(record)
+    assert listed == [expected]
+    assert isinstance(listed[0], Source)
+    assert fetched == expected
+
+
+@pytest.mark.asyncio
+async def test_sources_facade_preserves_the_none_on_miss_lookup_after_projection() -> None:
+    backend = RecordingBackend()
+    backend.set_result(SOURCE_GET_DEF, SourceGetResult(None))
+    api = SourcesAPI(MagicMock(), uploader=MagicMock(), _backend=backend)
+
+    assert await api.get_or_none("notebook-id", "missing-source") is None

@@ -3,6 +3,7 @@
 from ._backend import BackendAdapter
 from ._backend_compat import project_backend_call
 from ._deadline import RuntimeDeadlineFactory
+from ._projectors import project_share_status
 from ._records import SharePermissionLevel, ShareViewScope
 from ._sharing_service import SharingService
 from .rpc.types import SharePermission, ShareViewLevel
@@ -87,7 +88,9 @@ class SharingAPI:
         Returns:
             ShareStatus with current sharing state and user list.
         """
-        return await project_backend_call(self._service.get_status(notebook_id))
+        return project_share_status(
+            await project_backend_call(self._service.get_status(notebook_id))
+        )
 
     async def set_public(
         self,
@@ -108,7 +111,9 @@ class SharingAPI:
             reflects the state immediately after the operation but may not
             include concurrent changes from other clients.
         """
-        return await project_backend_call(self._service.set_public(notebook_id, public))
+        return project_share_status(
+            await project_backend_call(self._service.set_public(notebook_id, public))
+        )
 
     async def set_view_level(
         self,
@@ -135,7 +140,9 @@ class SharingAPI:
         scope = _VIEW_SCOPES.get(level)
         if scope is None:
             raise ValueError(f"Unknown share view level: {level!r}")
-        return await project_backend_call(self._service.set_view_level(notebook_id, scope))
+        return project_share_status(
+            await project_backend_call(self._service.set_view_level(notebook_id, scope))
+        )
 
     async def add_user(
         self,
@@ -213,12 +220,14 @@ class SharingAPI:
             ValueError: If grants is empty, contains a duplicate email, or a
                 permission is OWNER or _REMOVE.
         """
-        return await project_backend_call(
-            self._service.set_users(
-                notebook_id,
-                [(email, self._permission_level(permission)) for email, permission in grants],
-                notify=notify,
-                welcome_message=welcome_message,
+        return project_share_status(
+            await project_backend_call(
+                self._service.set_users(
+                    notebook_id,
+                    [(email, self._permission_level(permission)) for email, permission in grants],
+                    notify=notify,
+                    welcome_message=welcome_message,
+                )
             )
         )
 
@@ -241,11 +250,13 @@ class SharingAPI:
         Returns:
             Updated ShareStatus.
         """
-        return await project_backend_call(
-            self._service.update_user(
-                notebook_id,
-                email,
-                self._permission_level(permission),
+        return project_share_status(
+            await project_backend_call(
+                self._service.update_user(
+                    notebook_id,
+                    email,
+                    self._permission_level(permission),
+                )
             )
         )
 
@@ -270,4 +281,6 @@ class SharingAPI:
         Returns:
             Updated ShareStatus.
         """
-        return await project_backend_call(self._service.remove_user(notebook_id, email))
+        return project_share_status(
+            await project_backend_call(self._service.remove_user(notebook_id, email))
+        )

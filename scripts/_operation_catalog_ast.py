@@ -1147,7 +1147,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_mind_map.py", "_note_service", "LegacyNoteBackedService"),
         ("_mind_map.py", "_note_service", "NoteRowKind"),
         ("_notebook_mutation_service.py", "_backend", "BackendAdapter"),
-        ("_notebook_mutation_service.py", "_projectors", "project_notebook"),
         ("_notebook_mutation_service.py", "_records", "NOTEBOOK_CREATE_DEF"),
         ("_notebook_mutation_service.py", "_records", "NOTEBOOK_DELETE_DEF"),
         ("_notebook_mutation_service.py", "_records", "NOTEBOOK_UPDATE_DEF"),
@@ -1164,7 +1163,11 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_notebooks.py", "_backend_compat", "project_backend_error"),
         ("_notebooks.py", "_notebook_mutation_service", "NotebookMutationService"),
         ("_notebooks.py", "_read_services", "NotebookReadService"),
+        ("_notebooks.py", "_read_services", "SourceReadService"),
+        ("_notebooks.py", "_projectors", "project_notebook"),
         ("_notebooks.py", "_projectors", "project_notebook_description"),
+        ("_notebooks.py", "_projectors", "project_prompt_suggestions"),
+        ("_notebooks.py", "_projectors", "project_source"),
         ("_mutation_services.py", "_backend", "BackendAdapter"),
         ("_mutation_services.py", "_records", "SOURCE_ADD_URL_DEF"),
         ("_mutation_services.py", "_records", "SourceAddUrlInput"),
@@ -1209,16 +1212,17 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_projectors.py", "_records", "SharedUserRecord"),
         ("_projectors.py", "_records", "SourceRecord"),
         ("_read_services.py", "_backend", "BackendAdapter"),
-        ("_read_services.py", "_projectors", "project_notebook"),
-        ("_read_services.py", "_projectors", "project_source"),
         ("_read_services.py", "_records", "NOTEBOOK_GET_DEF"),
         ("_read_services.py", "_records", "NOTEBOOK_LIST_DEF"),
         ("_read_services.py", "_records", "NotebookGetInput"),
+        ("_read_services.py", "_records", "NotebookGetResult"),
         ("_read_services.py", "_records", "NotebookListInput"),
+        ("_read_services.py", "_records", "NotebookRecord"),
         ("_read_services.py", "_records", "SOURCE_GET_DEF"),
         ("_read_services.py", "_records", "SOURCE_LIST_DEF"),
         ("_read_services.py", "_records", "SourceGetInput"),
         ("_read_services.py", "_records", "SourceListInput"),
+        ("_read_services.py", "_records", "SourceRecord"),
         ("_sharing.py", "_backend", "BackendAdapter"),
         ("_sharing.py", "_backend_compat", "project_backend_call"),
         ("_sharing.py", "_records", "SharePermissionLevel"),
@@ -1239,12 +1243,47 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_sharing_service.py", "_records", "SharingUpdateUsersInput"),
         ("_sharing_service.py", "_records", "SharingUserGrant"),
         ("_research.py", "_backend", "BackendAdapter"),
-        ("_research.py", "_research_service", "_INITIAL_INTERVAL_UNSET"),
+        ("_client_composition.py", "_read_services", "SourceReadService"),
+        ("_research.py", "_projectors", "project_research_task"),
+        ("_research.py", "_read_services", "SourceReadService"),
+        ("_research.py", "_records", "ResearchImportBatchInput"),
+        ("_research.py", "_records", "ResearchImportCandidate"),
+        ("_research.py", "_records", "ResearchImportVerifyInput"),
+        ("_research.py", "_records", "ResearchImportVerifyResult"),
+        ("_research.py", "_records", "ResearchImportedSourceRecord"),
+        ("_research.py", "_records", "ResearchMode"),
+        ("_research.py", "_records", "ResearchSearchSource"),
+        ("_research.py", "_records", "ResearchSourceRecord"),
+        ("_research.py", "_records", "ResearchStartInput"),
+        ("_research.py", "_records", "ResearchTaskSelectionResult"),
+        ("_research.py", "_records", "ResearchWaitInput"),
+        ("_research.py", "_records", "SourceRecord"),
+        ("_research.py", "_research_service", "SourceRecordLister"),
+        ("_research_import.py", "_records", "ResearchImportCandidate"),
+        ("_research_import.py", "_records", "ResearchImportedSourceRecord"),
+        ("_research_import.py", "_records", "ResearchPresentSourceRecord"),
+        ("_research_import.py", "_records", "ResearchSourceRecord"),
+        ("_research_import.py", "_records", "SourceRecord"),
+        ("_research_service.py", "_records", "RESEARCH_TERMINAL_STATUSES"),
+        ("_research_service.py", "_records", "ResearchImportBatchInput"),
+        ("_research_service.py", "_records", "ResearchImportCandidate"),
+        ("_research_service.py", "_records", "ResearchImportVerifyInput"),
+        ("_research_service.py", "_records", "ResearchImportVerifyResult"),
+        ("_research_service.py", "_records", "ResearchImportedSourceRecord"),
+        ("_research_service.py", "_records", "ResearchPresentSourceRecord"),
+        ("_research_service.py", "_records", "ResearchStartResult"),
+        ("_research_service.py", "_records", "ResearchTaskRecord"),
+        ("_research_service.py", "_records", "ResearchTaskSelectionResult"),
+        ("_research_service.py", "_records", "ResearchTaskStatus"),
+        ("_research_service.py", "_records", "ResearchWaitInput"),
+        ("_research_service.py", "_records", "SourceRecord"),
+        ("_research.py", "_backend_compat", "project_backend_call"),
         ("_research.py", "_research_service", "ResearchService"),
         ("_research_service.py", "_backend", "BackendAdapter"),
+        ("_research_service.py", "_backend", "BACKEND_STATUS_DIAGNOSTIC"),
         ("_research_service.py", "_backend", "BackendError"),
-        ("_research_service.py", "_backend_compat", "project_backend_error"),
-        ("_research_service.py", "_projectors", "project_research_task"),
+        ("_research_service.py", "_backend", "BackendErrorReason"),
+        ("_research_service.py", "_backend", "BackendStatus"),
         ("_research_service.py", "_records", "RESEARCH_CANCEL_DEF"),
         ("_research_service.py", "_records", "RESEARCH_IMPORT_DEF"),
         ("_research_service.py", "_records", "RESEARCH_POLL_DEF"),
@@ -1253,9 +1292,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_research_service.py", "_records", "ResearchImportEntry"),
         ("_research_service.py", "_records", "ResearchImportEntryKind"),
         ("_research_service.py", "_records", "ResearchImportInput"),
-        ("_research_service.py", "_records", "ResearchMode"),
         ("_research_service.py", "_records", "ResearchPollInput"),
-        ("_research_service.py", "_records", "ResearchSearchSource"),
         ("_research_service.py", "_records", "ResearchStartInput"),
         ("_source/listing.py", "_projectors", "project_source"),
         ("_source/listing.py", "_records", "SourceRecord"),
@@ -1385,6 +1422,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/codec/research.py", "_records", "ResearchPollInput"),
         ("_web/codec/research.py", "_records", "ResearchPollResult"),
         ("_web/codec/research.py", "_records", "ResearchStartInput"),
+        ("_web/errors.py", "_backend", "BACKEND_STATUS_DIAGNOSTIC"),
         ("_web/errors.py", "_backend", "BackendContractError"),
         ("_web/errors.py", "_backend", "BackendError"),
         ("_web/errors.py", "_backend", "BackendErrorReason"),
@@ -1483,6 +1521,8 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/registry.py", "_records", "SHARING_UPDATE_USERS_DEF"),
         ("_web/registry.py", "_records", "RESEARCH_CANCEL_DEF"),
         ("_web/registry.py", "_records", "RESEARCH_IMPORT_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_IMPORT_VERIFY_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_WAIT_DEF"),
         ("_web/registry.py", "_records", "RESEARCH_POLL_DEF"),
         ("_web/registry.py", "_records", "RESEARCH_START_DEF"),
         ("_web/registry.py", "_records", "SOURCE_ADD_URL_DEF"),
@@ -1513,12 +1553,12 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_settings_service.py", "_records", "SettingsGetLimitsInput"),
         ("_settings_service.py", "_records", "SettingsSetLanguageInput"),
         ("_suggestion_service.py", "_backend", "BackendAdapter"),
-        ("_suggestion_service.py", "_projectors", "project_prompt_suggestions"),
-        ("_suggestion_service.py", "_projectors", "project_report_suggestions"),
         ("_suggestion_service.py", "_records", "ARTIFACT_SUGGEST_REPORTS_DEF"),
         ("_suggestion_service.py", "_records", "ArtifactSuggestReportsInput"),
         ("_suggestion_service.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
         ("_suggestion_service.py", "_records", "NotebookSuggestPromptsInput"),
+        ("_suggestion_service.py", "_records", "PromptSuggestionRecord"),
+        ("_suggestion_service.py", "_records", "ReportSuggestionRecord"),
         # P9.3 settings/suggestions codec rows and their row-facing codec helpers.
         ("_web/bindings/__init__.py", "_binding", "Binding"),
         ("_web/bindings/labels.py", "_binding", "Binding"),
@@ -1805,6 +1845,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/codec/chat.py", "_records", "ChatTurnDecodeErrorRecord"),
         ("_web/codec/chat_saved_note.py", "_records", "ChatReferenceRecord"),
         ("_web/error_policy.py", "_backend", "BackendErrorReason"),
+        ("_web/error_policy.py", "_backend", "BackendStatus"),
         ("_web/registry.py", "_records", "CHAT_ASK_DEF"),
         ("_web/registry.py", "_records", "CHAT_CONFIGURE_DEF"),
         ("_web/registry.py", "_records", "CHAT_DELETE_HISTORY_DEF"),
@@ -2011,13 +2052,10 @@ INERT_P1_BACKEND_INVOKE_SITES: frozenset[str] = frozenset()
 # Final notebook semantic slice: guide generation, recent-list removal, and
 # source-id extraction now cross the typed backend boundary instead of the
 # public facade owning raw positional/RPC execution.
-REVIEWED_BACKEND_IMPORTS -= frozenset(
-    {("_notebooks.py", "_projectors", "project_notebook_description")}
-)
 REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
         ("_notebook_guide_service.py", "_backend", "BackendAdapter"),
-        ("_notebook_guide_service.py", "_projectors", "project_notebook_description"),
+        ("_notebook_guide_service.py", "_records", "NotebookDescriptionRecord"),
         ("_notebook_guide_service.py", "_records", "NOTEBOOK_DESCRIBE_DEF"),
         ("_notebook_guide_service.py", "_records", "NOTEBOOK_SUMMARIZE_DEF"),
         ("_notebook_guide_service.py", "_records", "NotebookGuideInput"),
@@ -2085,6 +2123,7 @@ ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
         "_notebook_guide_service.py:NotebookGuideService.get_description",
         "_notebook_guide_service.py:NotebookGuideService.get_summary",
         "_notebook_mutation_service.py:NotebookMutationService.remove_from_recent",
+        "_read_services.py:NotebookReadService.get_raw",
         "_read_services.py:NotebookReadService.get_source_ids",
         "_sharing_manager.py:ShareManager.share",
     }
@@ -2613,6 +2652,34 @@ ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
         "_chat/workflow.py:ChatWorkflowService._read_back_conversation_id",
     }
 )
+# P10 R6.3 (invariant I1): SettingsService returns neutral records; the
+# public-model projection moved up to SettingsAPI.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_settings_service.py", "_projectors", "project_account_limits"),
+        ("_settings_service.py", "_projectors", "project_user_settings"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_settings.py", "_projectors", "project_account_limits"),
+        ("_settings.py", "_projectors", "project_user_settings"),
+        ("_settings_service.py", "_records", "AccountLimitsRecord"),
+        ("_settings_service.py", "_records", "UserSettingsRecord"),
+    }
+)
+# P10 R6.3 (invariant I1): SharingService speaks ShareStatusRecord only; the
+# access/view-level/permission projection moved up to SharingAPI.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_sharing_service.py", "_projectors", "project_share_status"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_sharing.py", "_projectors", "project_share_status"),
+    }
+)
 
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose
@@ -2632,7 +2699,12 @@ _KEYWORD_BACKEND_FACADES = frozenset(
         "StudioCatalog",
     }
 )
-_POSITIONAL_BACKEND_FACADES = frozenset({"CollectionsAPI", "LabelsAPI"})
+# ``SourceReadService`` is not a facade: P10 R6.4 has the composition root build
+# one semantic read service directly and hand it to ``ResearchAPI`` as the
+# neutral source lister its import reconciliation probes, replacing the public
+# ``sources.list`` facade call the research service used to make (defect S7).
+# It binds the backend positionally like the two migrated facades below.
+_POSITIONAL_BACKEND_FACADES = frozenset({"CollectionsAPI", "LabelsAPI", "SourceReadService"})
 
 
 def audit_inert_p1_backend_dataflow(

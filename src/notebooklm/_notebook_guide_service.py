@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from ._backend import BackendAdapter
 from ._deadline import RuntimeDeadline
-from ._projectors import project_notebook_description
 from ._records import (
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_SUMMARIZE_DEF,
+    NotebookDescriptionRecord,
     NotebookGuideInput,
 )
 
-if TYPE_CHECKING:
-    from .types import NotebookDescription
-
 
 class NotebookGuideService:
-    """Generate notebook guides and preserve each public projection."""
+    """Generate notebook guides and return their neutral records."""
 
     __slots__ = ("_backend",)
 
@@ -43,13 +38,13 @@ class NotebookGuideService:
         notebook_id: str,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> NotebookDescription:
+    ) -> NotebookDescriptionRecord:
         result = await self._backend.invoke(
             NOTEBOOK_DESCRIBE_DEF,
             NotebookGuideInput(notebook_id),
             deadline=deadline,
         )
-        return project_notebook_description(result.description)
+        return result.description
 
 
 __all__ = ["NotebookGuideService"]

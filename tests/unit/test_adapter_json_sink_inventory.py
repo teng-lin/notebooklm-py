@@ -123,7 +123,12 @@ def test_inventory_covers_every_current_terminal_adapter_site() -> None:
 def test_private_dto_catalog_covers_every_annotation_proven_public_model_path() -> None:
     rows = discover_private_dataclass_projection_paths()
 
-    assert len(rows) == 34
+    # 33 since P10 R6.4: ``_ImportProbeOutcome`` stopped carrying public
+    # ``ResearchSource`` rows when the reconciliation moved onto neutral
+    # ``ResearchImportCandidate`` records (defect N1), so that annotation-proven
+    # private path to a public model no longer exists. R2.1 had already taken
+    # the six ``chat_stream`` rows off the count and put two back.
+    assert len(rows) == 33
     triples = {(row.private_model, row.field_path, row.public_model) for row in rows}
     assert (
         "notebooklm._app.source_mutations.SourceRenameResult",
@@ -1345,7 +1350,7 @@ def test_checked_in_reachability_allocations_are_exact() -> None:
     )
     assert contract["site_count"] == 350
     private_paths = contract["private_dataclass_projection_paths"]
-    assert len(private_paths) == 34
+    assert len(private_paths) == 33  # see the R6.4 note above
     provider_auth_paths = [
         path
         for path in private_paths

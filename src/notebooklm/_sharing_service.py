@@ -11,6 +11,13 @@ grant writes use ``sharing.mutate``; viewer scope uses
 ``sharing.patch_view_level``. Each workflow then invokes ``sharing.get`` under
 one deadline and rebinds leaf failures while retaining the blocked leaf in
 diagnostics.
+
+Since P10 R6.3 every method speaks ``ShareStatusRecord`` only. The public
+``ShareStatus`` — and with it the neutral-to-public access, view-level and
+permission mappings that decide who can see a notebook — is built by
+:class:`~notebooklm._sharing.SharingAPI`, per invariant I1. The ``Legacy*``
+share records in ``_sharing_records.py`` are an I9 mapping exemption for
+``_backend_compat``/the projectors and never appear here.
 """
 
 from __future__ import annotations
@@ -18,7 +25,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING
 
 from ._backend import (
     BackendAdapter,
@@ -30,7 +36,6 @@ from ._backend import (
 )
 from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ._operations import Operation
-from ._projectors import project_share_status
 from ._records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
@@ -51,9 +56,6 @@ from ._records import (
     SharingUserGrant,
     SharingVisibility,
 )
-
-if TYPE_CHECKING:
-    from .types import ShareStatus
 
 # Explicitly the pre-migration logger name rather than ``__name__``. These
 # DEBUG lines are the only record of which grantee a call actually addressed —
@@ -83,14 +85,14 @@ class SharingService:
         notebook_id: str,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> ShareStatus:
+    ) -> ShareStatusRecord:
         logger.debug("Getting share status for notebook: %s", notebook_id)
         result = await self._backend.invoke(
             SHARING_GET_DEF,
             SharingGetInput(notebook_id),
             deadline=deadline,
         )
-        return project_share_status(result.status)
+        return result.status
 
     async def set_public(
         self,
@@ -98,16 +100,15 @@ class SharingService:
         public: bool,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> ShareStatus:
+    ) -> ShareStatusRecord:
         logger.debug("Setting notebook %s public=%s", notebook_id, public)
         value = SharingSetPublicInput(notebook_id, public)
-        status = await self._mutate_then_read_status(
+        return await self._mutate_then_read_status(
             value.notebook_id,
             SharingVisibility(value.public),
             workflow=SHARING_SET_PUBLIC_DEF.key,
             deadline=deadline,
         )
-        return project_share_status(status)
 
     def _start_deadline(self, deadline: RuntimeDeadline | None) -> RuntimeDeadline | None:
         """Mint the workflow deadline unless the caller already supplied one."""
@@ -158,14 +159,17 @@ class SharingService:
         view_level: ShareViewScope,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> ShareStatus:
+    ) -> ShareStatusRecord:
         logger.debug("Setting notebook %s view level to %s", notebook_id, view_level.name)
         value = SharingSetViewLevelInput(notebook_id, view_level)
         status = await self._patch_view_level_then_read_status(
             value,
             deadline=deadline,
         )
-        return project_share_status(replace(status, view_level=value.view_level))
+        # ``GET_SHARE_STATUS`` does not report viewer scope, so the record
+        # carries the scope this workflow just set. Every other decoded field
+        # is kept (#2130).
+        return replace(status, view_level=value.view_level)
 
     async def _patch_view_level_then_read_status(
         self,
@@ -209,7 +213,7 @@ class SharingService:
         notify: bool = True,
         welcome_message: str = "",
         deadline: RuntimeDeadline | None = None,
-    ) -> ShareStatus:
+    ) -> ShareStatusRecord:
         """Upsert several individual-user permissions in one request.
 
         Rejects an empty batch, an owner assignment, a removal smuggled in as a
@@ -248,13 +252,12 @@ class SharingService:
             notify=notify,
             welcome_message=welcome_message,
         )
-        status = await self._mutate_then_read_status(
+        return await self._mutate_then_read_status(
             value.notebook_id,
             SharingGrants(value.grants, value.notify, value.welcome_message),
             workflow=SHARING_UPDATE_USERS_DEF.key,
             deadline=deadline,
         )
-        return project_share_status(status)
 
     async def update_user(
         self,
@@ -263,7 +266,7 @@ class SharingService:
         permission: SharePermissionLevel,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> ShareStatus:
+    ) -> ShareStatusRecord:
         """Replace one user's permission through the shared upsert."""
         logger.debug(
             "Updating user %s permission to %s in notebook %s",
@@ -284,7 +287,7 @@ class SharingService:
         email: str,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> ShareStatus:
+    ) -> ShareStatusRecord:
         """Revoke one user's access.
 
         Singular by design. A batch of removals only works when every target is
@@ -300,13 +303,12 @@ class SharingService:
             (SharingUserGrant(email, SharePermissionLevel.REMOVE),),
             notify=False,
         )
-        status = await self._mutate_then_read_status(
+        return await self._mutate_then_read_status(
             value.notebook_id,
             SharingGrants(value.grants, value.notify, value.welcome_message),
             workflow=SHARING_UPDATE_USERS_DEF.key,
             deadline=deadline,
         )
-        return project_share_status(status)
 
 
 __all__ = ["SharingService"]

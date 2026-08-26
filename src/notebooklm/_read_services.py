@@ -3,54 +3,70 @@
 from __future__ import annotations
 
 import builtins
-from typing import TYPE_CHECKING
 
 from ._backend import BackendAdapter
 from ._deadline import RuntimeDeadline
-from ._projectors import project_notebook, project_source
 from ._records import (
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,
     SOURCE_GET_DEF,
     SOURCE_LIST_DEF,
     NotebookGetInput,
+    NotebookGetResult,
     NotebookListInput,
+    NotebookRecord,
     SourceGetInput,
     SourceListInput,
+    SourceRecord,
 )
-
-if TYPE_CHECKING:
-    from .types import Notebook, Source
 
 
 class NotebookReadService:
-    """Invoke semantic notebook reads and project their neutral records."""
+    """Invoke semantic notebook reads and return their neutral records."""
 
     __slots__ = ("_backend",)
 
     def __init__(self, backend: BackendAdapter) -> None:
         self._backend = backend
 
-    async def list(self, *, deadline: RuntimeDeadline | None = None) -> list[Notebook]:
+    async def list(self, *, deadline: RuntimeDeadline | None = None) -> list[NotebookRecord]:
         result = await self._backend.invoke(
             NOTEBOOK_LIST_DEF,
             NotebookListInput(),
             deadline=deadline,
         )
-        return [project_notebook(record) for record in result.notebooks]
+        return list(result.notebooks)
 
     async def get(
         self,
         notebook_id: str,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> Notebook | None:
+    ) -> NotebookRecord | None:
         result = await self._backend.invoke(
             NOTEBOOK_GET_DEF,
             NotebookGetInput(notebook_id),
             deadline=deadline,
         )
-        return None if result.notebook is None else project_notebook(result.notebook)
+        return result.notebook
+
+    async def get_raw(
+        self,
+        notebook_id: str,
+        *,
+        deadline: RuntimeDeadline | None = None,
+    ) -> NotebookGetResult:
+        """Return one notebook snapshot with its payload left undecoded.
+
+        The result's ``raw`` field is the compatibility payload
+        ``NotebooksAPI.get_raw`` publishes; ``notebook`` and ``source_ids``
+        stay empty because this branch runs no positional decode.
+        """
+        return await self._backend.invoke(
+            NOTEBOOK_GET_DEF,
+            NotebookGetInput(notebook_id, include_notebook=False, include_raw=True),
+            deadline=deadline,
+        )
 
     async def get_source_ids(
         self,
@@ -66,18 +82,9 @@ class NotebookReadService:
         )
         return list(result.source_ids)
 
-    def source_lister(self) -> SourceReadService:
-        """Build a semantic source lister sharing this service's backend.
-
-        Direct facade construction uses this narrow composition seam for
-        notebook metadata. Production still injects its client-owned source
-        facade explicitly.
-        """
-        return SourceReadService(self._backend)
-
 
 class SourceReadService:
-    """Invoke semantic source reads and project their neutral records."""
+    """Invoke semantic source reads and return their neutral records."""
 
     __slots__ = ("_backend",)
 
@@ -92,7 +99,7 @@ class SourceReadService:
         statuses: frozenset[str] | None = None,
         kinds: frozenset[str] | None = None,
         deadline: RuntimeDeadline | None = None,
-    ) -> list[Source]:
+    ) -> list[SourceRecord]:
         result = await self._backend.invoke(
             SOURCE_LIST_DEF,
             SourceListInput(
@@ -103,7 +110,7 @@ class SourceReadService:
             ),
             deadline=deadline,
         )
-        return [project_source(record) for record in result.sources]
+        return list(result.sources)
 
     async def get(
         self,
@@ -111,13 +118,13 @@ class SourceReadService:
         source_id: str,
         *,
         deadline: RuntimeDeadline | None = None,
-    ) -> Source | None:
+    ) -> SourceRecord | None:
         result = await self._backend.invoke(
             SOURCE_GET_DEF,
             SourceGetInput(notebook_id, source_id),
             deadline=deadline,
         )
-        return None if result.source is None else project_source(result.source)
+        return result.source
 
 
 __all__ = ["NotebookReadService", "SourceReadService"]

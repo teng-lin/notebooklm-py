@@ -3,12 +3,22 @@
 Consumes the private semantic port: every wire call this domain makes is one
 typed :mod:`notebooklm._records` operation invoked on a
 :class:`~notebooklm._backend.BackendAdapter`.  What stays here is the part that
-is not protocol-specific -- argument validation, task selection and ambiguity,
-the wait loop's deadline and cadence, and the import batch's provenance
-validation, idempotency pre-filter, and timeout reconciliation.
+is not protocol-specific -- task selection and ambiguity, the wait loop's
+deadline and cadence, and the import batch's provenance validation, idempotency
+pre-filter, and timeout reconciliation.
+
+Every method speaks neutral records in both directions (P10 invariant I1,
+defect N1).  Two workflows have no direct row and are sequenced here from
+leaves: ``research.wait`` polls ``research.poll`` under its own total budget,
+and ``research.import_verify`` sequences ``research.import`` against a
+``source.list`` probe within one ``max_elapsed``.  Both carry a typed
+``OperationDef``, so ``capabilities.available()`` reports them even though
+``invoke`` refuses them.
 
 ``ResearchAPI`` is the compatibility facade over this service; it owns the
-published signatures and docstrings and adds no behavior of its own.
+published signatures, the public argument validation, the coercion of a public
+request into neutral candidates, and the projection of records and neutral
+failures back onto the published models and exceptions.
 """
 
 from __future__ import annotations
@@ -17,34 +27,44 @@ import asyncio
 import logging
 import time
 from collections.abc import Sequence
-from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
-from ._backend import BackendAdapter, BackendError
-from ._backend_compat import project_backend_error
+from ._backend import (
+    BACKEND_STATUS_DIAGNOSTIC,
+    BackendAdapter,
+    BackendError,
+    BackendErrorReason,
+    BackendStatus,
+)
 from ._deadline import RuntimeDeadline
-from ._notebook_metadata import NotebookSourceLister
 from ._operations import OperationDef
-from ._projectors import project_research_task
 from ._records import (
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,
     RESEARCH_POLL_DEF,
     RESEARCH_START_DEF,
+    RESEARCH_TERMINAL_STATUSES,
     ResearchCancelInput,
+    ResearchImportBatchInput,
+    ResearchImportCandidate,
+    ResearchImportedSourceRecord,
     ResearchImportEntry,
     ResearchImportEntryKind,
     ResearchImportInput,
-    ResearchMode,
+    ResearchImportVerifyInput,
+    ResearchImportVerifyResult,
     ResearchPollInput,
-    ResearchSearchSource,
+    ResearchPresentSourceRecord,
     ResearchStartInput,
+    ResearchStartResult,
+    ResearchTaskRecord,
+    ResearchTaskSelectionResult,
+    ResearchTaskStatus,
+    ResearchWaitInput,
+    SourceRecord,
 )
 from ._research_import import (
     _import_research_read_timeout,
-    _imported_result,
-    _is_import_research_failed_precondition,
-    _is_importable_report_source,
     _merge_imported_sources,
     _no_import_verification_url_entry_count,
     _normalize_import_verification_url,
@@ -58,49 +78,83 @@ from ._runtime.config import (
     DEFAULT_TIMEOUT,
     MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
 )
-from ._types.research import (
-    ResearchSource,
-    ResearchSourceInput,
-    ResearchStart,
-    ResearchStatus,
-    ResearchTask,
-)
-from .exceptions import (
-    AmbiguousResearchTaskError,
-    NetworkError,
-    ResearchTimeoutError,
-    RPCError,
-    RPCTimeoutError,
-    ValidationError,
-)
-
-if TYPE_CHECKING:
-    from .types import Source
+from .exceptions import AmbiguousResearchTaskError, ResearchTimeoutError
 
 # Keep research diagnostics on the historical logger channel so existing log
 # filters see the same records after the service extraction.
 logger = logging.getLogger("notebooklm._research")
 
-# Sentinel for "``initial_interval`` not passed" in ``wait_for_completion``. Kept
-# as ``object()`` (not literal ``5.0``) so the public-API compat default-repr
-# check sees no changed-default break; unset resolves to the default below.
-_INITIAL_INTERVAL_UNSET: Any = object()
+#: Neutral image of ``except RPCError`` — every reason whose compatibility
+#: projection is an ``RPCError`` (its ``AuthError`` / ``ClientError`` /
+#: ``DecodingError`` / ``RateLimitError`` / ``RPCResponseTooLargeError`` /
+#: ``ServerError`` / ``UnknownRPCMethodError`` subclasses included). Reasons
+#: outside it — a chat failure, an idempotency-variant refusal — were never
+#: caught by the class tuples this replaces and still propagate untouched.
+_RPC_FAILURE_REASONS: frozenset[BackendErrorReason] = frozenset(
+    {
+        BackendErrorReason.AUTH,
+        BackendErrorReason.CLIENT,
+        BackendErrorReason.DECODING,
+        BackendErrorReason.RATE_LIMIT,
+        BackendErrorReason.RESPONSE_TOO_LARGE,
+        BackendErrorReason.RPC,
+        BackendErrorReason.SERVER,
+        BackendErrorReason.UNKNOWN_RPC_METHOD,
+    }
+)
 
-# Default poll cadence (seconds) when ``initial_interval`` is unset.
-_DEFAULT_RESEARCH_POLL_INTERVAL = 5.0
+#: Neutral image of the import loop's ``except (RPCTimeoutError, RPCError)``.
+#: ``RPCTimeoutError`` is a ``NetworkError`` subclass, so a *plain* network
+#: failure of the import attempt is deliberately absent: it propagated out of
+#: the retry loop before this migration and must keep doing so.
+_IMPORT_ATTEMPT_FAILURE_REASONS: frozenset[BackendErrorReason] = _RPC_FAILURE_REASONS | frozenset(
+    {BackendErrorReason.TIMEOUT}
+)
 
-_SEARCH_SOURCES = {source.value: source for source in ResearchSearchSource}
-_MODES = {mode.value: mode for mode in ResearchMode}
+#: Neutral image of the snapshot/probe ``except (NetworkError, RPCError)``,
+#: which — unlike the loop above — did catch a plain network failure.
+_SOURCE_PROBE_FAILURE_REASONS: frozenset[BackendErrorReason] = (
+    _IMPORT_ATTEMPT_FAILURE_REASONS | frozenset({BackendErrorReason.NETWORK})
+)
 
 
-def _coerce_research_source(source: ResearchSourceInput) -> ResearchSource:
-    if isinstance(source, ResearchSource):
-        return source
-    return ResearchSource.from_public_dict(source)
+def _is_import_research_failed_precondition(error: BackendError) -> bool:
+    """True for IMPORT_RESEARCH's documented retry-time FAILED_PRECONDITION.
+
+    The server rejects an ``IMPORT_RESEARCH`` call against a ``task_id`` whose
+    state an earlier attempt against that same id already partially mutated —
+    commonly this loop's own prior (client-timed-out) call, but not necessarily;
+    documented backend behavior, not a novel failure (#1926, item F2b).
+    :meth:`ResearchService.import_sources_with_verification` shares its
+    post-error source probe with a timeout for this one status, but — unlike a
+    timeout — accepts only a fully-verified success; a partial or absent match
+    re-raises rather than retrying the rejected ``task_id``.
+
+    Reads the adapter's normalized :class:`BackendStatus`, never a wire code:
+    which gRPC number that is stays behind the port (``_web/error_policy.py``).
+    The status is carried on the failure of whichever operation raised it, and
+    the guarded ``try`` issues exactly one — a second operation there would
+    need this predicate revisited, as the ``rpc_code`` form it replaces did.
+    """
+    if error.reason is not BackendErrorReason.RPC:
+        return False
+    diagnostics = error.diagnostics or {}
+    return diagnostics.get(BACKEND_STATUS_DIAGNOSTIC) is BackendStatus.FAILED_PRECONDITION
 
 
-def _coerce_research_sources(sources: Sequence[ResearchSourceInput]) -> list[ResearchSource]:
-    return [_coerce_research_source(source) for source in sources]
+class SourceRecordLister(Protocol):
+    """Neutral source-listing seam this service reconciles imports against.
+
+    Deliberately narrower than the semantic read service that satisfies it: the
+    reconciliation needs one tolerant listing of a notebook and nothing else.
+    Naming a facade here instead (the public ``sources.list``) is what defect S7
+    called out — a service reaching back up through the layer above it.
+    """
+
+    async def list(
+        self, notebook_id: str, *, strict: bool = False
+    ) -> list[SourceRecord]:  # pragma: no cover - structural protocol
+        """List one notebook's sources as neutral records."""
 
 
 class ResearchService:
@@ -115,7 +169,7 @@ class ResearchService:
         self,
         backend: BackendAdapter,
         *,
-        source_lister: NotebookSourceLister,
+        source_lister: SourceRecordLister,
         base_timeout: float | None = DEFAULT_TIMEOUT,
         import_research_timeout: float | None = AUTO_READ_TIMEOUT,
     ) -> None:
@@ -131,31 +185,21 @@ class ResearchService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> Any:
-        """Invoke one operation, projecting neutral failures onto public errors."""
-        public_error: Exception | None = None
-        try:
-            result = await self._backend.invoke(definition, value, deadline=deadline)
-        except BackendError as error:
-            public_error = project_backend_error(error)
-        else:
-            return result
-        # Raise outside the BackendError catch frame so the reconstructed public
-        # error's own cause/context graph is not replaced by the private one.
-        assert public_error is not None
-        raise public_error
+        """Invoke one operation and let its neutral failure propagate."""
+        return await self._backend.invoke(definition, value, deadline=deadline)
 
-    async def _poll_tasks(self, notebook_id: str) -> list[ResearchTask]:
+    async def _poll_tasks(self, notebook_id: str) -> list[ResearchTaskRecord]:
         result = await self._invoke(RESEARCH_POLL_DEF, ResearchPollInput(notebook_id))
-        return [project_research_task(record) for record in result.tasks]
+        return list(result.tasks)
 
     @staticmethod
     def _select_polled_tasks(
-        parsed_tasks: list[ResearchTask],
+        parsed_tasks: list[ResearchTaskRecord],
         *,
         notebook_id: str,
         task_id: str | None,
         raise_on_ambiguous: bool,
-    ) -> list[ResearchTask]:
+    ) -> list[ResearchTaskRecord]:
         # Task-id discriminator: when supplied, filter parsed_tasks down to
         # the matched task so callers iterating ``tasks`` don't see siblings.
         # When omitted but multiple tasks are in flight, the selection is
@@ -173,61 +217,31 @@ class ResearchService:
         return parsed_tasks
 
     @staticmethod
-    def _public_poll_result(
-        selected_task: ResearchTask,
-        parsed_tasks: list[ResearchTask],
-    ) -> ResearchTask:
-        # Carry the sibling tasks on the selected task's ``tasks`` field. The
-        # sub-tasks themselves leave ``tasks`` empty (their default), matching
-        # the historical nested-dict shape.
-        return replace(selected_task, tasks=tuple(parsed_tasks))
+    def _selection(
+        selected_task: ResearchTaskRecord,
+        parsed_tasks: list[ResearchTaskRecord],
+    ) -> ResearchTaskSelectionResult:
+        # Carry the sibling tasks alongside the selection. The sub-tasks
+        # themselves stay bare records, matching the historical nested shape a
+        # facade rebuilds from them.
+        return ResearchTaskSelectionResult(task=selected_task, tasks=tuple(parsed_tasks))
 
-    async def start(
-        self,
-        notebook_id: str,
-        query: str,
-        source: str = "web",
-        mode: str = "fast",
-    ) -> ResearchStart:
-        """Start one research run after validating its source/mode combination."""
+    async def start(self, value: ResearchStartInput) -> ResearchStartResult:
+        """Start one research run for an already-validated request."""
         logger.debug(
             "Starting %s research in notebook %s: %s",
-            mode,
-            notebook_id,
-            query[:50] if query else "",
+            value.mode.value,
+            value.notebook_id,
+            value.query[:50] if value.query else "",
         )
-        source_lower = source.lower()
-        mode_lower = mode.lower()
-
-        if source_lower not in _SEARCH_SOURCES:
-            raise ValidationError(f"Invalid source '{source}'. Use 'web' or 'drive'.")
-        if mode_lower not in _MODES:
-            raise ValidationError(f"Invalid mode '{mode}'. Use 'fast' or 'deep'.")
-        if mode_lower == "deep" and source_lower == "drive":
-            raise ValidationError("Deep Research only supports Web sources.")
-
-        result = await self._invoke(
-            RESEARCH_START_DEF,
-            ResearchStartInput(
-                notebook_id=notebook_id,
-                query=query,
-                search_source=_SEARCH_SOURCES[source_lower],
-                mode=_MODES[mode_lower],
-            ),
-        )
-        return ResearchStart(
-            task_id=result.task_id,
-            report_id=result.report_id,
-            notebook_id=notebook_id,
-            query=query,
-            mode=mode_lower,
-        )
+        result: ResearchStartResult = await self._invoke(RESEARCH_START_DEF, value)
+        return result
 
     async def poll(
         self,
         notebook_id: str,
         task_id: str | None = None,
-    ) -> ResearchTask:
+    ) -> ResearchTaskSelectionResult:
         """Select one task out of a single poll of ``notebook_id``."""
         logger.debug("Polling research status for notebook %s", notebook_id)
         parsed_tasks = self._select_polled_tasks(
@@ -241,53 +255,40 @@ class ResearchService:
         )
 
         if parsed_tasks:
-            # ``parsed_tasks`` is a typed ``list[ResearchTask]``; the unpack avoids
-            # a ``name[int]`` positional read on a decoded payload.
+            # ``parsed_tasks`` is a typed ``list[ResearchTaskRecord]``; the
+            # unpack avoids a ``name[int]`` positional read on a decoded payload.
             first_task, *_ = parsed_tasks
-            return self._public_poll_result(first_task, parsed_tasks)
+            return self._selection(first_task, parsed_tasks)
 
-        # A pinned ``task_id`` that matched nothing is a poll-observed absence —
-        # a typed ``NOT_FOUND`` sentinel carrying the id. A falsy ``task_id``
-        # (``None`` or empty string) is no discriminator, so it stays
-        # ``NO_RESEARCH`` and preserves the legacy empty-poll shape (ADR-0019
-        # Rule 4, #1346).
+        # A pinned ``task_id`` that matched nothing is a poll-observed absence,
+        # reported as such and rendered by the facade as the typed ``NOT_FOUND``
+        # sentinel carrying the id. A falsy ``task_id`` (``None`` or empty
+        # string) is no discriminator, so it stays the empty poll and preserves
+        # the legacy ``NO_RESEARCH`` shape (ADR-0019 Rule 4, #1346).
         if task_id:
-            return ResearchTask.not_found(task_id)
+            return ResearchTaskSelectionResult(missing_task_id=task_id)
 
-        return ResearchTask.empty()
+        return ResearchTaskSelectionResult()
 
     async def wait_for_completion(
         self,
-        notebook_id: str,
-        task_id: str | None = None,
-        *,
-        timeout: float = 1800,
-        initial_interval: float = _INITIAL_INTERVAL_UNSET,
-    ) -> ResearchTask:
-        """Poll until research reaches a terminal state or ``timeout`` elapses."""
-        # Unset sentinel → default cadence. An *explicit* non-numeric value
-        # (``None``, ``"1"``) is a caller bug: fail fast with TypeError rather
-        # than silently coercing it back to the default.
-        if initial_interval is _INITIAL_INTERVAL_UNSET:
-            poll_interval = _DEFAULT_RESEARCH_POLL_INTERVAL
-        elif isinstance(initial_interval, bool) or not isinstance(initial_interval, (int, float)):
-            raise TypeError("poll interval must be a number")
-        else:
-            poll_interval = float(initial_interval)
+        value: ResearchWaitInput,
+    ) -> ResearchTaskSelectionResult:
+        """Poll until research reaches a terminal state or the budget elapses.
 
-        if timeout < 0:
-            raise ValueError("timeout must be non-negative")
-        if poll_interval <= 0:
-            raise ValueError("poll interval must be positive")
-
+        ``value`` arrives with its cadence and budget already validated: the
+        public ``initial_interval`` sentinel and the ``TypeError`` /
+        ``ValueError`` it raises describe a published keyword, so they belong to
+        the facade.
+        """
         loop = asyncio.get_running_loop()
         start = loop.time()
-        pinned_task_id = task_id
+        pinned_task_id = value.task_id
 
         while True:
             parsed_tasks = self._select_polled_tasks(
-                await self._poll_tasks(notebook_id),
-                notebook_id=notebook_id,
+                await self._poll_tasks(value.notebook_id),
+                notebook_id=value.notebook_id,
                 task_id=pinned_task_id,
                 raise_on_ambiguous=pinned_task_id is None,
             )
@@ -295,28 +296,27 @@ class ResearchService:
             if pinned_task_id is None and selected_task is not None:
                 pinned_task_id = selected_task.task_id
 
-            status_val: ResearchStatus = (
-                selected_task.status if selected_task is not None else ResearchStatus.NO_RESEARCH
+            status = (
+                ResearchTaskStatus(selected_task.status)
+                if selected_task is not None
+                else ResearchTaskStatus.NO_RESEARCH
             )
-            if selected_task is not None and status_val in (
-                ResearchStatus.COMPLETED,
-                ResearchStatus.FAILED,
-            ):
-                return self._public_poll_result(selected_task, parsed_tasks)
-            if status_val == ResearchStatus.NO_RESEARCH and pinned_task_id is None:
-                return ResearchTask.empty()
+            if selected_task is not None and status in RESEARCH_TERMINAL_STATUSES:
+                return self._selection(selected_task, parsed_tasks)
+            if status is ResearchTaskStatus.NO_RESEARCH and pinned_task_id is None:
+                return ResearchTaskSelectionResult()
 
             elapsed = loop.time() - start
-            if elapsed >= timeout:
+            if elapsed >= value.timeout:
                 task_label = pinned_task_id or "unknown"
                 raise ResearchTimeoutError(
-                    notebook_id,
+                    value.notebook_id,
                     task_label,
-                    timeout,
-                    last_status=status_val.value,
+                    value.timeout,
+                    last_status=status.value,
                 )
 
-            sleep_for = min(poll_interval, timeout - elapsed)
+            sleep_for = min(value.poll_interval, value.timeout - elapsed)
             if sleep_for > 0:
                 await asyncio.sleep(sleep_for)
 
@@ -327,8 +327,7 @@ class ResearchService:
 
     @staticmethod
     def _import_entries(
-        source_inputs: list[ResearchSourceInput],
-        source_models: list[ResearchSource],
+        candidates: Sequence[ResearchImportCandidate],
     ) -> tuple[ResearchImportEntry, ...]:
         """Order one import batch: report entries first, then web sources.
 
@@ -336,20 +335,9 @@ class ResearchService:
         before the web rows; the timeout reconciliation below relies on that
         ordering when it decides a newly-observed URL implies the report landed.
         """
-        report_source_indexes = {
-            index
-            for index, (source_input, source) in enumerate(
-                zip(source_inputs, source_models, strict=True)
-            )
-            if _is_importable_report_source(source_input, source)
-        }
-        report_sources = [source_models[index] for index in sorted(report_source_indexes)]
-        valid_sources = [
-            source
-            for index, source in enumerate(source_models)
-            if source.url and index not in report_source_indexes
-        ]
-        skipped_count = len(source_models) - len(valid_sources) - len(report_sources)
+        report_sources = [c.source for c in candidates if c.report]
+        valid_sources = [c.source for c in candidates if not c.report and c.source.url]
+        skipped_count = len(candidates) - len(valid_sources) - len(report_sources)
         if skipped_count > 0:
             logger.warning(
                 "Skipping %d source(s) that cannot be imported (missing URLs or report entries)",
@@ -376,21 +364,16 @@ class ResearchService:
 
     async def import_sources(
         self,
-        notebook_id: str,
-        task_id: str,
-        sources: Sequence[ResearchSourceInput],
-        *,
-        _remaining_budget: float | None = None,
-    ) -> list[dict[str, str]]:
-        """Run one import attempt for the requested sources."""
-        if not sources:
-            return []
-        source_inputs: list[ResearchSourceInput] = list(sources)
-        source_models = _coerce_research_sources(source_inputs)
+        value: ResearchImportBatchInput,
+    ) -> tuple[ResearchImportedSourceRecord, ...]:
+        """Run one import attempt for the requested candidates."""
+        if not value.candidates:
+            return ()
+        candidates = list(value.candidates)
         logger.debug(
             "Importing %d research sources into notebook %s",
-            len(source_models),
-            notebook_id,
+            len(candidates),
+            value.notebook_id,
         )
 
         # Per-source ``research_task_id`` provenance: mismatches raise, a
@@ -398,63 +381,59 @@ class ResearchService:
         # returned. Shared with ``import_sources_with_verification`` (which runs
         # it up front, before the #1961 idempotency pre-filter) so provenance is
         # validated even for entries the pre-filter would drop.
-        effective_task_id = _validate_research_task_provenance(source_models, task_id)
+        effective_task_id = _validate_research_task_provenance(candidates, value.task_id)
 
-        entries = self._import_entries(source_inputs, source_models)
+        entries = self._import_entries(candidates)
         if not entries:
-            return []
+            return ()
 
         result = await self._invoke(
             RESEARCH_IMPORT_DEF,
             ResearchImportInput(
-                notebook_id=notebook_id,
+                notebook_id=value.notebook_id,
                 task_id=effective_task_id,
                 entries=entries,
                 attempt_timeout=_import_research_read_timeout(
                     len(entries),
                     base_timeout=self._base_timeout,
                     override=self._import_research_timeout,
-                    remaining_budget=_remaining_budget,
+                    remaining_budget=value.remaining_budget,
                 ),
             ),
         )
-        return [{"id": record.id, "title": record.title} for record in result.imported]
+        return tuple(result.imported)
 
     async def import_sources_with_verification(
         self,
-        notebook_id: str,
-        task_id: str,
-        sources: Sequence[ResearchSourceInput],
-        *,
-        max_elapsed: float = 1800,
-        initial_delay: float = 5,
-        backoff_factor: float = 2,
-        max_delay: float = 60,
-        allow_duplicate: bool = False,
-    ) -> list[dict[str, str]]:
-        """Import sources, reconciling timeouts against the notebook's source list."""
-        if not sources:
-            return _imported_result([], [])
-        source_inputs: list[ResearchSourceInput] = list(sources)
-        source_models = _coerce_research_sources(sources)
+        value: ResearchImportVerifyInput,
+    ) -> ResearchImportVerifyResult:
+        """Import candidates, reconciling failures against the notebook's sources."""
+        notebook_id = value.notebook_id
+        task_id = value.task_id
+        max_elapsed = value.max_elapsed
+        max_delay = value.max_delay
+        allow_duplicate = value.allow_duplicate
+        if not value.candidates:
+            return ResearchImportVerifyResult()
+        candidates = list(value.candidates)
 
         # Validate research-task provenance on the FULL requested set up front —
         # before the #1961 idempotency pre-filter can drop already-present
         # entries — so a source carrying the wrong ``research_task_id`` is
         # rejected even when its URL already exists in the notebook.
-        _validate_research_task_provenance(source_models, task_id)
+        _validate_research_task_provenance(candidates, task_id)
 
         started_at = time.monotonic()
-        delay = initial_delay
+        delay = value.initial_delay
         attempt = 1
-        verified_imported: list[dict[str, str]] = []
+        verified_imported: list[ResearchImportedSourceRecord] = []
         verified_imported_ids: set[str] = set()
 
         # Anchor verified-success on URLs of *new* sources (not on a
         # baseline→current URL delta) so concurrent additions from another
         # session and pre-existing URLs cannot satisfy the check. The same
         # snapshot doubles as the idempotency pre-filter baseline (#1961).
-        baseline: list[Source] | None
+        baseline: list[SourceRecord] | None
         baseline_ids: set[str] | None
         try:
             # Research reconciliation needs every uniquely addressable row it
@@ -464,7 +443,9 @@ class ResearchService:
             # duplicate collision cannot disable the idempotency baseline.
             baseline = await self._source_lister.list(notebook_id, strict=False)
             baseline_ids = {src.id for src in baseline}
-        except (NetworkError, RPCError) as snapshot_exc:
+        except BackendError as snapshot_exc:
+            if snapshot_exc.reason not in _SOURCE_PROBE_FAILURE_REASONS:
+                raise
             logger.warning(
                 "Pre-import sources.list snapshot failed for %s: %s; "
                 "verified-success path and idempotency pre-filter disabled for this call",
@@ -480,16 +461,16 @@ class ResearchService:
         # path below already filters already-present URLs; this generalizes that
         # to the happy path. Skipped when the caller opts into duplicates or the
         # baseline snapshot failed (can't tell what's already present).
-        already_present: list[dict[str, str]] = []
+        already_present: list[ResearchPresentSourceRecord] = []
         if not allow_duplicate and baseline is not None:
-            existing_by_norm_url: dict[str, Source] = {}
+            existing_by_norm_url: dict[str, SourceRecord] = {}
             for existing in baseline:
                 if existing.url:
                     existing_by_norm_url.setdefault(
                         _normalize_import_verification_url(existing.url), existing
                     )
-            source_inputs, source_models, already_present = _partition_requested_sources(
-                source_inputs, source_models, existing_by_norm_url
+            candidates, already_present = _partition_requested_sources(
+                candidates, existing_by_norm_url
             )
             if already_present:
                 logger.info(
@@ -497,19 +478,19 @@ class ResearchService:
                     "present by URL; importing %d new source(s)",
                     notebook_id,
                     len(already_present),
-                    len(source_models),
+                    len(candidates),
                 )
             # Every requested source was already present — nothing new to
             # import. Return without an RPC (and without entering the
             # timeout-retry loop), reporting the skipped set.
-            if not source_inputs:
-                return _imported_result([], already_present)
+            if not candidates:
+                return ResearchImportVerifyResult(already_present=tuple(already_present))
 
-        requested_urls_norm = _requested_import_verification_urls(source_models)
+        requested_urls_norm = _requested_import_verification_urls(candidates)
         # Track how many non-URL entries (research reports, pasted text) the
         # request includes so concurrent no-URL additions cannot inflate the
         # synthesized return after a timeout.
-        requested_no_url_count = _no_import_verification_url_entry_count(source_models)
+        requested_no_url_count = _no_import_verification_url_entry_count(candidates)
 
         def _log_discarded_progress() -> None:
             # #2187 silent-failure-hunter finding: ``verified_imported`` (probe-
@@ -522,10 +503,10 @@ class ResearchService:
                     "check sources.list rather than assuming a total loss",
                     notebook_id,
                     len(verified_imported),
-                    [entry["id"] for entry in verified_imported],
+                    [entry.id for entry in verified_imported],
                 )
 
-        last_error: RPCTimeoutError | RPCError | None = None
+        last_error: BackendError | None = None
         while True:
             # Clamp this attempt's read window to what is left of ``max_elapsed``
             # (#2205): without it a late retry is *granted* the full
@@ -556,28 +537,32 @@ class ResearchService:
                 raise last_error
             try:
                 imported = await self.import_sources(
-                    notebook_id,
-                    task_id,
-                    source_inputs,
-                    # The first attempt always runs on its natural window even
-                    # when the budget is already spent (``max_elapsed=0`` is a
-                    # documented "one shot" idiom); only retries must fit.
-                    _remaining_budget=attempt_budget if budget_is_viable else None,
+                    ResearchImportBatchInput(
+                        notebook_id=notebook_id,
+                        task_id=task_id,
+                        candidates=tuple(candidates),
+                        # The first attempt always runs on its natural window
+                        # even when the budget is already spent
+                        # (``max_elapsed=0`` is a documented "one shot" idiom);
+                        # only retries must fit.
+                        remaining_budget=attempt_budget if budget_is_viable else None,
+                    )
                 )
-                return _imported_result(
-                    _merge_imported_sources(imported, verified_imported, verified_imported_ids),
-                    already_present,
+                return ResearchImportVerifyResult(
+                    imported=_merge_imported_sources(
+                        imported, verified_imported, verified_imported_ids
+                    ),
+                    already_present=tuple(already_present),
                 )
-            except (RPCTimeoutError, RPCError) as exc:
+            except BackendError as exc:
+                if exc.reason not in _IMPORT_ATTEMPT_FAILURE_REASONS:
+                    raise
+                timed_out = exc.reason is BackendErrorReason.TIMEOUT
                 last_error = exc
-                if isinstance(exc, RPCError) and not _is_import_research_failed_precondition(exc):
+                if not timed_out and not _is_import_research_failed_precondition(exc):
                     _log_discarded_progress()
-                    raise  # non-FAILED_PRECONDITION RPCErrors surface immediately (#2187)
-                reason = (
-                    "timed out"
-                    if isinstance(exc, RPCTimeoutError)
-                    else "hit a retry-time FAILED_PRECONDITION"
-                )
+                    raise  # non-FAILED_PRECONDITION RPC failures surface at once (#2187)
+                reason = "timed out" if timed_out else "hit a retry-time FAILED_PRECONDITION"
                 elapsed = time.monotonic() - started_at
                 remaining = max_elapsed - elapsed
 
@@ -591,8 +576,7 @@ class ResearchService:
                             baseline_ids=baseline_ids,
                             requested_urls_norm=requested_urls_norm,
                             requested_no_url_count=requested_no_url_count,
-                            source_inputs=source_inputs,
-                            source_models=source_models,
+                            candidates=candidates,
                             already_verified_ids=verified_imported_ids,
                             allow_duplicate=allow_duplicate,
                         )
@@ -605,24 +589,23 @@ class ResearchService:
                                 reason,
                                 notebook_id,
                             )
-                            return _imported_result(
-                                _merge_imported_sources(
+                            return ResearchImportVerifyResult(
+                                imported=_merge_imported_sources(
                                     outcome.fully_verified_entries,
                                     verified_imported,
                                     verified_imported_ids,
                                 ),
-                                already_present,
+                                already_present=tuple(already_present),
                             )
                         if outcome.filtered:
                             verified_imported.extend(outcome.newly_verified)
                             verified_imported_ids.update(
-                                entry["id"] for entry in outcome.newly_verified
+                                entry.id for entry in outcome.newly_verified
                             )
-                            source_inputs = outcome.source_inputs
-                            source_models = outcome.source_models
+                            candidates = outcome.candidates
                             requested_urls_norm = outcome.requested_urls_norm
                             requested_no_url_count = outcome.requested_no_url_count
-                            if isinstance(exc, RPCError):
+                            if not timed_out:
                                 logger.warning(
                                     "IMPORT_RESEARCH %s for notebook %s: %d "
                                     "of %d requested source(s) verified "
@@ -632,7 +615,7 @@ class ResearchService:
                                     reason,
                                     notebook_id,
                                     outcome.removed_count,
-                                    outcome.removed_count + len(source_models),
+                                    outcome.removed_count + len(candidates),
                                 )
                             else:
                                 logger.warning(
@@ -643,18 +626,20 @@ class ResearchService:
                                     reason,
                                     notebook_id,
                                     outcome.removed_count,
-                                    len(source_models),
+                                    len(candidates),
                                 )
-                    except (NetworkError, RPCError) as probe_exc:
-                        # CancelledError is a BaseException, not Exception, and
-                        # is not in this tuple — it propagates naturally for
-                        # callers that need to cancel the operation cleanly.
+                    except BackendError as probe_exc:
+                        # CancelledError is a BaseException, not a BackendError,
+                        # so it propagates naturally for callers that need to
+                        # cancel the operation cleanly.
+                        if probe_exc.reason not in _SOURCE_PROBE_FAILURE_REASONS:
+                            raise
                         logger.warning(
                             "Failed to probe server state after %s: %s; %s",
                             reason,
                             probe_exc,
                             "falling back to retry"
-                            if not isinstance(exc, RPCError)
+                            if timed_out
                             else "surfacing the original error",
                         )
 
@@ -662,7 +647,7 @@ class ResearchService:
                     _log_discarded_progress()
                     raise
 
-                if isinstance(exc, RPCError):  # no verified-success return above
+                if not timed_out:  # no verified-success return above
                     _log_discarded_progress()
                     raise
 
@@ -692,7 +677,7 @@ class ResearchService:
                     elapsed,
                 )
                 await asyncio.sleep(sleep_for)
-                delay = min(delay * backoff_factor, max_delay)
+                delay = min(delay * value.backoff_factor, max_delay)
                 attempt += 1
 
 

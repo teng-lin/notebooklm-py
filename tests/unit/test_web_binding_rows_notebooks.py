@@ -45,6 +45,7 @@ from notebooklm._records import (
     NotebookDeleteInput,
     NotebookDeleteResult,
     NotebookGetInput,
+    NotebookGetResult,
     NotebookGuideInput,
     NotebookListInput,
     NotebookPatchInput,
@@ -59,6 +60,7 @@ from notebooklm._web.codec import notebooks as notebooks_codec
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import ClientError, DecodingError, RPCError, RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
+from notebooklm.rpc.encoder import build_request_body, encode_rpc_request
 from tests._fixtures.web_backend import build_web_backend
 
 _NOTEBOOK_ROW: list[Any] = ["Title", [["src-1"], ["src-2"]], "nb_123", None, None, [1]]
@@ -216,6 +218,49 @@ def test_notebook_list_decoder_decodes_rows_and_rejects_unknown_shapes() -> None
     assert (notebook.id, notebook.title, notebook.sources_count) == ("nb_123", "Title", 2)
     with pytest.raises(DecodingError, match="Unrecognized LIST_NOTEBOOKS payload shape"):
         notebooks_codec.decode_notebook_list(NotebookListInput(), [["not", "a", "row"]][0][0])
+
+
+def test_raw_notebook_get_request_is_byte_identical_to_the_retired_raw_call() -> None:
+    """R6.2: routing ``notebooks.get_raw`` through the row changes no request byte.
+
+    The retired facade helper issued
+    ``rpc_call(GET_NOTEBOOK, build_get_notebook_params(id),
+    source_path=f"/notebook/{id}")`` and left every other option at its
+    ``rpc_call`` default. The one default that differs from the row's is
+    ``raise_on_null_status``, and it is unreachable here: it only applies to a
+    null result an ``allow_null=True`` caller would otherwise tolerate, and
+    both call shapes send ``allow_null=False``. The integration cassettes match
+    on the decoded ``f.req`` form body, so this equality is what keeps
+    ``notebooks_get_raw.yaml`` replaying.
+    """
+    retired = CodecPayload(
+        params=build_get_notebook_params("nb_123"),
+        source_path="/notebook/nb_123",
+    )
+    raw = notebooks_codec.encode_notebook_get(
+        NotebookGetInput("nb_123", include_notebook=False, include_raw=True)
+    )
+
+    assert raw == retired
+    # The decoded branches share the request; only the decode differs.
+    assert raw == notebooks_codec.encode_notebook_get(NotebookGetInput("nb_123"))
+    assert build_request_body(
+        encode_rpc_request(RPCMethod.GET_NOTEBOOK, raw.params), csrf_token="tok"
+    ) == build_request_body(
+        encode_rpc_request(RPCMethod.GET_NOTEBOOK, retired.params), csrf_token="tok"
+    )
+
+
+def test_raw_notebook_get_decoder_returns_the_payload_untouched() -> None:
+    """The raw branch runs no positional decode, so any shape survives."""
+    value = NotebookGetInput("nb_123", include_notebook=False, include_raw=True)
+
+    assert notebooks_codec.decode_notebook_get(value, _GET_RESPONSE) == NotebookGetResult(
+        notebook=None, source_ids=(), raw=_GET_RESPONSE
+    )
+    # Shapes the decoded branches reject or normalise still come back verbatim.
+    for payload in (None, [], "not-a-row", [["", [], ""]]):
+        assert notebooks_codec.decode_notebook_get(value, payload).raw == payload
 
 
 def test_notebook_get_decoder_branches_on_include_notebook() -> None:

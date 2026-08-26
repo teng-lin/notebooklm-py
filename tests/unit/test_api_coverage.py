@@ -280,7 +280,6 @@ class TestGetNotebookDescription:
         rpc_call = AsyncMock(return_value=mock_response)
         core = make_fake_core(rpc_call=rpc_call)
         notebooks = NotebooksAPI(
-            core.rpc_executor,
             sources_api=MagicMock(),
             _backend=build_web_backend(core.rpc_executor),
         )

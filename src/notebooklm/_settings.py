@@ -4,6 +4,7 @@ import logging
 
 from ._backend import BackendAdapter
 from ._backend_compat import project_backend_call
+from ._projectors import project_account_limits, project_user_settings
 from ._settings_service import SettingsService
 from .types import AccountLimits, UserSettings
 
@@ -63,7 +64,9 @@ class SettingsAPI:
             UserSettings with parsed account limits and output language.
         """
         logger.debug("Fetching user settings")
-        settings = await project_backend_call(self._service.get_user_settings())
+        settings = project_user_settings(
+            await project_backend_call(self._service.get_user_settings())
+        )
         self._log_limits(settings.limits)
         self._log_language_result(settings.output_language, "Current output language")
         return settings
@@ -89,7 +92,9 @@ class SettingsAPI:
             AccountLimits with parsed notebook/source limits when present.
         """
         logger.debug("Fetching user settings")
-        limits = await project_backend_call(self._service.get_account_limits())
+        limits = project_account_limits(
+            await project_backend_call(self._service.get_account_limits())
+        )
         self._log_limits(limits)
         return limits
 

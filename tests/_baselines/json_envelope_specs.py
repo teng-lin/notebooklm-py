@@ -156,16 +156,14 @@ _LITERAL_DICT_DERIVATIONS: dict[tuple[str, str, str], dict[str, object]] = {
         "cli --json",
         "notebooklm.types.Source",
         "transitive-research-import-new-source-projection",
-    ): _literal_dict_derive(
-        "notebooklm/_research_import.py", "_imported_source_entry", ("id", "title")
-    ),
+    ): _literal_dict_derive("notebooklm/_research.py", "_imported_entry", ("id", "title")),
     (
         "cli --json",
         "notebooklm.types.Source",
         "transitive-research-import-existing-source-projection",
     ): _literal_dict_derive(
-        "notebooklm/_research_import.py",
-        "_partition_requested_sources",
+        "notebooklm/_research.py",
+        "_project_import_verification",
         ("id", "title", "url"),
     ),
     (
@@ -233,16 +231,14 @@ _LITERAL_DICT_DERIVATIONS: dict[tuple[str, str, str], dict[str, object]] = {
         "mcp tool result",
         "notebooklm.types.Source",
         "transitive-research-import-new-source-projection",
-    ): _literal_dict_derive(
-        "notebooklm/_research_import.py", "_imported_source_entry", ("id", "title")
-    ),
+    ): _literal_dict_derive("notebooklm/_research.py", "_imported_entry", ("id", "title")),
     (
         "mcp tool result",
         "notebooklm.types.Source",
         "transitive-research-import-existing-source-projection",
     ): _literal_dict_derive(
-        "notebooklm/_research_import.py",
-        "_partition_requested_sources",
+        "notebooklm/_research.py",
+        "_project_import_verification",
         ("id", "title", "url"),
     ),
     (

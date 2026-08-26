@@ -27,9 +27,10 @@ one that forbids the neutral direction too.
 
 **I9 — no ``Legacy*`` class below ``_app``** except the enumerated exemptions:
 the legacy-mapping records consumed only by ``_backend_compat``/the projectors
-and the auth storage-migration types. The two deletion targets that P10 owns
-are recorded separately from the exemptions so they cannot be quietly
-reclassified as permanent.
+and the auth storage-migration types. The deletion targets that P10 owns are
+recorded separately from the exemptions so they cannot be quietly reclassified
+as permanent. ``NotebookLegacyRpc`` left that set in R6.2 when
+``NotebooksAPI.get_raw`` moved onto the ``NOTEBOOK_GET`` row.
 
 **I10 is deliberately not enforced here.** The plan's tenth invariant caps
 ``src/notebooklm/_records.py`` at 1,500 lines; that is already
@@ -39,13 +40,15 @@ measures exactly ``MODULE_SIZE_BUDGET`` lines and is not in
 on the first line of growth. Duplicating it here would create a second
 authority for one ceiling.
 
-This module also carries, verbatim, the five assertions of the retired
+This module also carries the five assertions of the retired
 ``test_semantic_read_boundary.py``. I1 subsumes that guard's *intent* but not
-all of its checks: it pinned the exact import sets of ``_read_services.py`` (tighter than I1's
-forbidden-list rule, and ``_read_services.py`` is an I1 seed so I1 does not
-inspect it at all), and it
-also constrained ``_projectors.py``, which is not a service module. Those
-checks are ported below under "Read-core pins" so no assertion is lost.
+all of its checks: it pinned the exact import sets of ``_read_services.py``
+and ``_mutation_services.py`` (an allowlist, tighter than I1's forbidden-list
+rule), and it also constrained ``_projectors.py``, which is not a service
+module at all. Those checks are ported below under "Read-core pins" so no
+assertion is lost; the ``_mutation_services.py`` half went away with the module
+itself in R3.3, and the ``_read_services.py`` set was *narrowed* in R6.1 when
+that module left the I1 seed.
 """
 
 from __future__ import annotations
@@ -86,20 +89,19 @@ I1_FORBIDDEN_FIRST_PARTY_ROOTS: frozenset[str] = frozenset(
 #: leave as their retiring slice lands (R5.2 for ``_studio``, R6.1-R6.4 for the
 #: root services, R6.6 for ``_note_service``); nothing may be added. The plan's
 #: §6 target is an empty set beside the permanent exemption below.
+#:
+#: ``_research_service.py`` left in R6.4: its wait and verification workflows
+#: now take neutral inputs and return ``*Result`` records, its source probe
+#: reads ``SourceRecord`` rows off the semantic read service instead of calling
+#: the public ``sources.list`` facade, and both exception projection and the
+#: public argument validation moved up to ``ResearchAPI``.
 I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
     {
         "_note_service.py",
-        "_notebook_guide_service.py",
-        "_notebook_mutation_service.py",
-        "_read_services.py",
-        "_research_service.py",
-        "_settings_service.py",
-        "_sharing_service.py",
         "_studio/catalog.py",
         "_studio/lifecycle.py",
         "_studio/mind_maps.py",
         "_studio/representations.py",
-        "_suggestion_service.py",
     }
 )
 
@@ -204,11 +206,12 @@ I9_EXEMPT_LEGACY_CLASSES: frozenset[str] = frozenset(
 #: P10 deletion targets, recorded separately from the exemptions so neither can
 #: be reclassified as permanent by editing one set. ``LegacyNoteBackedService``
 #: goes in R4.2 (its wire graph moves above the port with the mind-map
-#: workflows); ``NotebookLegacyRpc`` goes in R6.2 with ``NotebooksAPI.get_raw``.
+#: workflows). ``NotebookLegacyRpc`` was deleted in R6.2: ``NotebooksAPI.get_raw``
+#: now reads through the ``NOTEBOOK_GET`` row, so the facade needs no raw-call
+#: collaborator at all.
 I9_DELETION_TARGETS: frozenset[str] = frozenset(
     {
         "_note_service.py::LegacyNoteBackedService",
-        "_notebooks.py::NotebookLegacyRpc",
     }
 )
 
@@ -350,8 +353,8 @@ def _i2_domain_violations() -> dict[str, list[tuple[int, str]]]:
 def _legacy_classes(root: Path) -> dict[str, tuple[str, int]]:
     """``<relpath>::<class>`` → ``(relpath, lineno)`` for every ``Legacy`` class.
 
-    Matched on *containment*, not prefix: ``NotebookLegacyRpc`` is one of the
-    plan's two named deletion targets and a prefix match would miss it.
+    Matched on *containment*, not prefix: R6.2's deletion target was named
+    ``NotebookLegacyRpc``, and a prefix match would have missed it.
     """
     found: dict[str, tuple[str, int]] = {}
     for path in sorted(root.rglob("*.py")):
@@ -654,16 +657,22 @@ def _identifiers(path: Path) -> set[str]:
     return {node.id for node in ast.walk(_tree(path)) if isinstance(node, ast.Name)}
 
 
-def test_read_services_depend_only_on_semantic_port_records_deadline_and_projectors() -> None:
+def test_read_services_depend_only_on_semantic_port_records_and_deadline() -> None:
+    """The read services import strictly less than the retired pin allowed.
+
+    R6.1 moved projection up to ``NotebooksAPI`` / ``SourcesAPI``, so
+    ``_projectors`` and the public ``types`` module leave this set, and with
+    them the ``typing.TYPE_CHECKING`` block that guarded the public model
+    names — a tightening of the ported pin, not a loosening. ``builtins``
+    stays: ``get_source_ids`` still spells its return ``builtins.list[str]``
+    to name the built-in rather than the sibling ``list`` method.
+    """
     assert _imported_modules(_SERVICES) <= {
         "__future__",
         "builtins",
-        "typing",
         "_backend",
         "_deadline",
-        "_projectors",
         "_records",
-        "types",
     }
     assert not (_identifiers(_SERVICES) & _FORBIDDEN_IDENTIFIERS)
 

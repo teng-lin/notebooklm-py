@@ -873,7 +873,7 @@ def test_the_parity_audit_reports_two_distinguishable_columns() -> None:
     assert report["summary"] == {
         "direct_rows": 77,
         "direct_row_divergences": 0,
-        "service_owned_workflows": 16,
+        "service_owned_workflows": 18,
         "end_to_end_divergences": 1,
     }
 
