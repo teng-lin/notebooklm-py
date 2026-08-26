@@ -16,9 +16,10 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from notebooklm._binding import OperationDisposition
+from notebooklm._binding import Binding, CodecBinding, OperationDisposition, RpcNative
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyRegistry
 from notebooklm._operations import CallPolicy, Operation, OperationDef, OperationTier
+from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 from notebooklm.rpc import RPCMethod
 
@@ -142,6 +143,68 @@ def product_operations() -> frozenset[Operation]:
     )
 
 
+#: What a binding row *actually* dispatches, keyed by operation.
+RowDispatch = tuple[frozenset[NativeKey], frozenset[str]]
+
+
+def derive_row_dispatch(row: Binding) -> RowDispatch:
+    """The exact natives and streamed labels ``row`` can dispatch.
+
+    Invariant I7: a row's ``NativeCallSpec.choices`` is the sole authority for
+    what it reaches, so this is *derived* and never hand-listed. A codec row has
+    one spec; a custom row has one per declared key, and every choice of every
+    spec is reachable because ``NativeCallSpec.select`` rejects anything else.
+    """
+    specs = (row.native,) if isinstance(row, CodecBinding) else tuple(row.native)
+    natives: set[NativeKey] = set()
+    streams: set[str] = set()
+    for spec in specs:
+        for choice in spec.choices:
+            if isinstance(choice, RpcNative):
+                natives.add((choice.method, choice.variant))
+            else:
+                streams.add(choice.label)
+    return frozenset(natives), frozenset(streams)
+
+
+def audit_direct_row_native_parity(
+    *,
+    bindings: Mapping[Operation, WebCallPolicyBinding] = WEB_CALL_POLICY_BINDINGS,
+    rows: Mapping[Operation, Binding] = WEB_BINDING_ROWS,
+) -> tuple[str, ...]:
+    """Column one: each row's derived dispatch against its reviewed expectation.
+
+    This is the comparison decision D3 exists for. The left side is derived from
+    the row's ``NativeCallSpec``; the right side is hand-reviewed in
+    :mod:`scripts._web_policy_intent` and is not derived from anything, so the
+    two sides are genuinely independent. A row whose sets differ must carry a
+    reviewed ``known_divergence``.
+    """
+    errors: list[str] = []
+    for operation in sorted(rows, key=lambda item: item.value):
+        binding = bindings.get(operation)
+        if binding is None:
+            errors.append(
+                f"direct-row parity: {operation.value} has a binding row but no reviewed intent"
+            )
+            continue
+        actual_natives, actual_streams = derive_row_dispatch(rows[operation])
+        expected_natives = {(item.method, item.variant) for item in binding.native_bindings}
+        expected_streams = {item.label for item in binding.streamed_bindings}
+        if actual_natives != expected_natives and binding.known_divergence is None:
+            errors.append(
+                f"direct-row parity: {operation.value} dispatches "
+                f"{_native_names(actual_natives)} but the reviewed intent expects "
+                f"{_native_names(expected_natives)}"
+            )
+        if actual_streams != expected_streams:
+            errors.append(
+                f"direct-row parity: {operation.value} streams {sorted(actual_streams)} "
+                f"but the reviewed intent expects {sorted(expected_streams)}"
+            )
+    return tuple(errors)
+
+
 def derive_workflow_natives(
     workflow: WorkflowPolicyBinding,
     *,
@@ -209,8 +272,9 @@ def audit_service_owned_workflows(
         derived = derive_workflow_natives(workflow, bindings=bindings)
         if expected != derived and workflow.known_divergence is None:
             errors.append(
-                f"{operation.value}: reviewed natives {_native_names(expected)} differ from the "
-                f"leaf-derived set {_native_names(derived)}"
+                f"end-to-end authority: {operation.value} reviewed natives "
+                f"{_native_names(expected)} differ from the leaf-derived set "
+                f"{_native_names(derived)}"
             )
         for native in workflow.native_bindings:
             actual = registry.get_entry(native.method, operation_variant=native.variant).policy
@@ -238,10 +302,22 @@ def audit_web_call_policy_bindings(
 ) -> tuple[str, ...]:
     """Return deterministic active-binding drift errors without changing retry behavior.
 
-    ``workflows`` names the service-owned operations (P9.2); their rows live in
-    :data:`SERVICE_OWNED_WORKFLOW_BINDINGS` and are audited against their leaves.
+    Two distinct columns, reported separately because they answer different
+    questions:
+
+    * **direct-row parity** — does each executable row dispatch exactly the
+      natives its reviewed intent expects? Derived from ``NativeCallSpec``.
+    * **end-to-end operation authority** — does each service-owned workflow
+      reach, through its leaf edges, exactly the natives the product operation
+      is reviewed to reach? ``workflows`` names those operations (P9.2); their
+      rows live in :data:`SERVICE_OWNED_WORKFLOW_BINDINGS`.
+
+    An operation can be green in the first and divergent in the second:
+    ``chat.ask`` records ``GET_NOTEBOOK`` as an end-to-end recency read the
+    facade issues through ``NOTEBOOK_GET``, which no leaf row dispatches.
     """
     errors: list[str] = []
+    errors.extend(audit_direct_row_native_parity(bindings=bindings))
     if workflows is not None:
         errors.extend(
             audit_service_owned_workflows(workflows, bindings=bindings, registry=registry)
@@ -292,6 +368,66 @@ def audit_web_call_policy_bindings(
                     f"reviewed binding expects {native.expected_policy.value}"
                 )
     return tuple(errors)
+
+
+def web_policy_parity_report() -> dict[str, object]:
+    """The stored D3 parity result: two columns, one row per operation.
+
+    Column one (``direct_row_parity``) compares each executable row's *derived*
+    dispatch set with the hand-reviewed intent. Column two
+    (``end_to_end_authority``) compares each service-owned workflow's reviewed
+    natives with the set its leaf edges actually reach. They are reported apart
+    because a green row table does not imply a green product operation:
+    ``chat.ask``'s ``GET_NOTEBOOK`` is an intentional end-to-end recency
+    divergence and is recorded, not fixed.
+    """
+    direct: dict[str, object] = {}
+    divergent_rows = 0
+    for operation in sorted(WEB_BINDING_ROWS, key=lambda item: item.value):
+        binding = WEB_CALL_POLICY_BINDINGS[operation]
+        actual_natives, actual_streams = derive_row_dispatch(WEB_BINDING_ROWS[operation])
+        expected_natives = {(item.method, item.variant) for item in binding.native_bindings}
+        matches = actual_natives == expected_natives and actual_streams == {
+            item.label for item in binding.streamed_bindings
+        }
+        divergent_rows += 0 if matches else 1
+        direct[operation.value] = {
+            "call_policy": binding.policy.value,
+            "derived_natives": _native_names(actual_natives),
+            "reviewed_natives": _native_names(expected_natives),
+            "derived_streams": sorted(actual_streams),
+            "reviewed_streams": sorted(item.label for item in binding.streamed_bindings),
+            "parity": "match" if matches else "divergent",
+            "known_divergence": binding.known_divergence,
+        }
+
+    end_to_end: dict[str, object] = {}
+    divergent_workflows = 0
+    for operation in sorted(SERVICE_OWNED_WORKFLOW_BINDINGS, key=lambda item: item.value):
+        workflow = SERVICE_OWNED_WORKFLOW_BINDINGS[operation]
+        expected = {(native.method, native.variant) for native in workflow.native_bindings}
+        derived = derive_workflow_natives(workflow)
+        matches = expected == derived
+        divergent_workflows += 0 if matches else 1
+        end_to_end[operation.value] = {
+            "call_policy": workflow.policy.value,
+            "leaf_operations": [leaf.operation.value for leaf in workflow.leaf_operations],
+            "leaf_derived_natives": _native_names(derived),
+            "reviewed_natives": _native_names(expected),
+            "parity": "match" if matches else "recorded_divergence",
+            "known_divergence": workflow.known_divergence,
+        }
+
+    return {
+        "direct_row_parity": direct,
+        "end_to_end_authority": end_to_end,
+        "summary": {
+            "direct_rows": len(direct),
+            "direct_row_divergences": divergent_rows,
+            "service_owned_workflows": len(end_to_end),
+            "end_to_end_divergences": divergent_workflows,
+        },
+    }
 
 
 def web_call_policy_report() -> dict[str, object]:
@@ -379,13 +515,16 @@ __all__ = [
     "collect_rpc_references",
     "collect_unresolved_app_dispatches",
     "collect_unresolved_rpc_dispatches",
+    "audit_direct_row_native_parity",
     "derive_row_authorities",
+    "derive_row_dispatch",
     "derive_workflow_natives",
     "load_rpc_registry_evidence",
     "main",
     "operation_tier",
     "product_operations",
     "web_call_policy_report",
+    "web_policy_parity_report",
 ]
 
 
