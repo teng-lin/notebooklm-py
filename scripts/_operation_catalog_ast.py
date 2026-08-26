@@ -1219,6 +1219,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_read_services.py", "_records", "SOURCE_GET_DEF"),
         ("_read_services.py", "_records", "SOURCE_LIST_DEF"),
         ("_read_services.py", "_records", "SourceGetInput"),
+        ("_read_services.py", "_records", "SourceIdDiagnostics"),
         ("_read_services.py", "_records", "SourceListInput"),
         ("_sharing.py", "_backend", "BackendAdapter"),
         ("_sharing.py", "_backend_compat", "project_backend_call"),
@@ -1825,6 +1826,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/settings.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
         ("_web/bindings/settings.py", "_records", "NotebookSuggestPromptsInput"),
         ("_web/bindings/settings.py", "_records", "NotebookSuggestPromptsResult"),
+        ("_web/bindings/settings.py", "_records", "SourceIdDiagnostics"),
         ("_web/bindings/studio.py", "_binding", "CustomBinding"),
         ("_web/bindings/studio.py", "_binding", "RowInvoker"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_GENERATE_AUDIO_DEF"),
@@ -1845,6 +1847,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/studio.py", "_records", "ReportGenerateInput"),
         ("_web/bindings/studio.py", "_records", "ReportGenerateResult"),
         ("_web/bindings/studio.py", "_records", "SlideDeckGenerateInput"),
+        ("_web/bindings/studio.py", "_records", "SourceIdDiagnostics"),
         ("_web/bindings/studio.py", "_records", "VideoGenerateInput"),
         ("_web/bindings/studio.py", "_records", "VideoGenerateResult"),
         ("_web/bindings/studio.py", "_records", "VisualGenerateResult"),
@@ -1864,6 +1867,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/codec/generation.py", "studio_documents", "encode_report_generation"),
         ("_web/codec/generation.py", "studio_documents", "encode_video_generation"),
         ("_web/codec/source_ids.py", "_binding", "CodecPayload"),
+        ("_web/codec/source_ids.py", "_records", "SourceIdDiagnostics"),
         ("_web/codec/suggestions.py", "_records", "NotebookSuggestPromptsInput"),
     }
 )

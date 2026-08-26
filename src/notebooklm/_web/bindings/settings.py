@@ -26,12 +26,12 @@ from ..._records import (
     SETTINGS_SET_LANGUAGE_DEF,
     NotebookSuggestPromptsInput,
     NotebookSuggestPromptsResult,
+    SourceIdDiagnostics,
 )
 from ...rpc import RPCMethod
 from ..codec import settings as settings_codec
 from ..codec import suggestions as suggestions_codec
 from ..codec.source_ids import (
-    SourceIdDiagnostics,
     decode_notebook_source_ids,
     encode_notebook_source_read,
 )

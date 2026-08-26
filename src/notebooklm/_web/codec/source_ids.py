@@ -3,36 +3,28 @@
 Before P9.4b six near-identical resolvers read the embedded source ids out of a
 ``GET_NOTEBOOK`` payload (``_audio_source_ids``, ``_document_source_ids``,
 ``_data_source_ids``, ``_generation_source_ids``, ``_visual_source_selection``
-and ``decode_prompt_source_ids``).  They differed only in what they said about a
+and the prompt-suggestion resolver).  They differed only in what they said about a
 malformed payload, so :func:`decode_notebook_source_ids` takes that as an explicit
-per-family :class:`SourceIdDiagnostics` mode and the ``notebooklm._notebooks``
-warning surface of every family is preserved byte for byte.
+per-family :class:`~notebooklm._records.SourceIdDiagnostics` mode and the
+``notebooklm._notebooks`` warning surface of every family is preserved byte for
+byte.
+
+Since P10 R5.1 the mode is a neutral record field rather than a codec-owned
+enum: the callers that pick it live above the port and reach the decoder through
+``NotebookGetInput.source_diagnostics``.
 """
 
 from __future__ import annotations
 
 import logging
-from enum import Enum, unique
 from typing import Any
 
 from ..._binding import CodecPayload
+from ..._records import SourceIdDiagnostics
 from ..._row_adapters.sources import SourceRow
 from ...rpc import RPCMethod, safe_index
 
 logger = logging.getLogger("notebooklm._notebooks")
-
-
-@unique
-class SourceIdDiagnostics(str, Enum):
-    """How one family reports a ``GET_NOTEBOOK`` payload it cannot read ids from."""
-
-    #: The Audio family: every shape mismatch yields no ids and says nothing.
-    SILENT = "silent"
-    #: The generation families: each shape mismatch logs the schema-drift warning.
-    WARN = "warn"
-    #: Prompt suggestions and the ``NOTEBOOK_GET`` codec: warn, and additionally
-    #: swallow an ``IndexError``/``TypeError`` raised despite the guards.
-    GUARDED = "guarded"
 
 
 def encode_notebook_source_read(notebook_id: str) -> CodecPayload:
@@ -132,4 +124,4 @@ def decode_notebook_source_ids(
     return tuple(source_ids)
 
 
-__all__ = ["SourceIdDiagnostics", "decode_notebook_source_ids", "encode_notebook_source_read"]
+__all__ = ["decode_notebook_source_ids", "encode_notebook_source_read"]

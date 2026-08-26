@@ -39,7 +39,7 @@ from ..._row_adapters.sources import SourceRow
 from ...exceptions import DecodingError, UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
 from ...rpc.types import ChatGoal, ChatResponseLength
-from .suggestions import decode_prompt_source_ids
+from .source_ids import decode_notebook_source_ids
 
 logger = logging.getLogger("notebooklm._types.notebooks")
 
@@ -358,13 +358,17 @@ def decode_notebook_list(value: NotebookListInput, result: Any) -> NotebookListR
     return decode_notebook_list_result(result)
 
 
+def _source_ids(value: NotebookGetInput, result: Any) -> tuple[str, ...]:
+    """Decode the embedded ids with the diagnostics the caller asked for."""
+    return decode_notebook_source_ids(
+        result, notebook_id=value.notebook_id, diagnostics=value.source_diagnostics
+    )
+
+
 def decode_notebook_get(value: NotebookGetInput, result: Any) -> NotebookGetResult:
     """Row decoder for ``notebook.get``: the input selects the source-id-only branch."""
     if not value.include_notebook:
-        return NotebookGetResult(
-            notebook=None,
-            source_ids=decode_prompt_source_ids(result, notebook_id=value.notebook_id),
-        )
+        return NotebookGetResult(notebook=None, source_ids=_source_ids(value, result))
     source_ids: tuple[str, ...] = ()
     notebook_row = (
         safe_index(
@@ -405,8 +409,7 @@ def decode_notebook_get(value: NotebookGetInput, result: Any) -> NotebookGetResu
                 reason=BackendErrorReason.NOT_FOUND,
             )
         return NotebookGetResult(notebook=None, source_ids=source_ids)
-    source_ids = decode_prompt_source_ids(result, notebook_id=value.notebook_id)
-    return NotebookGetResult(notebook=notebook, source_ids=source_ids)
+    return NotebookGetResult(notebook=notebook, source_ids=_source_ids(value, result))
 
 
 def decode_notebook_patch(value: NotebookPatchInput, result: Any) -> NotebookPatchResult:

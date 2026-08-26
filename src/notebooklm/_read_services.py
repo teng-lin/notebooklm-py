@@ -16,6 +16,7 @@ from ._records import (
     NotebookGetInput,
     NotebookListInput,
     SourceGetInput,
+    SourceIdDiagnostics,
     SourceListInput,
 )
 
@@ -56,12 +57,18 @@ class NotebookReadService:
         self,
         notebook_id: str,
         *,
+        diagnostics: SourceIdDiagnostics = SourceIdDiagnostics.GUARDED,
         deadline: RuntimeDeadline | None = None,
     ) -> builtins.list[str]:
-        """Return embedded source ids from one semantic notebook snapshot."""
+        """Return embedded source ids from one semantic notebook snapshot.
+
+        ``diagnostics`` selects what the decode says about a snapshot whose
+        source slot it cannot read: the Studio generation families differ only
+        in that report, and the mode reaches the decoder on the neutral input.
+        """
         result = await self._backend.invoke(
             NOTEBOOK_GET_DEF,
-            NotebookGetInput(notebook_id, include_notebook=False),
+            NotebookGetInput(notebook_id, include_notebook=False, source_diagnostics=diagnostics),
             deadline=deadline,
         )
         return list(result.source_ids)

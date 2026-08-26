@@ -236,6 +236,7 @@ from ._notebook_records import (
     NotebookUpdateInput,
     NotebookUpdateResult,
     PromptSuggestionRecord,
+    SourceIdDiagnostics,
     SuggestedTopicRecord,
 )
 from ._research_records import (
@@ -562,6 +563,7 @@ __all__ = [
     "NotebookDeleteInput",
     "NotebookDeleteResult",
     "NotebookGetInput",
+    "SourceIdDiagnostics",
     "NotebookGetResult",
     "NotebookGuideInput",
     "NotebookGuideResult",
