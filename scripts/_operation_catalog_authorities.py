@@ -121,7 +121,7 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
         ),
     ),
     (Operation.NOTEBOOK_SUGGEST_PROMPTS, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-        ("_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS", "source_ids is None")
+        ("_web/bindings/notebooks.py:NOTEBOOK_GET", "service-resolved default source scope")
     ),
     (Operation.SOURCE_LIST, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         ("_web/bindings/sources.py:SOURCE_LIST", "public=sources.list")
@@ -189,6 +189,9 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
 }
 
+#: The typed notebook read every service-owned default-source resolution runs.
+_GET_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
+
 _GENERATION_OPERATIONS = {
     Operation.ARTIFACT_GENERATE_AUDIO: "artifact_type=audio",
     Operation.ARTIFACT_GENERATE_VIDEO: "artifact_type=video|cinematic-video",
@@ -200,10 +203,13 @@ _GENERATION_OPERATIONS = {
     Operation.ARTIFACT_GENERATE_DATA_TABLE: "artifact_type=data-table",
 }
 for _operation, _discriminator in _GENERATION_OPERATIONS.items():
-    # P9.4b: every generate family is a ``CustomBinding`` row whose two specs
-    # (``sources`` GET_NOTEBOOK, ``create`` CREATE_ARTIFACT) are the authorities.
+    # P10 R5.1a: each generate family is a one-native codec row over
+    # CREATE_ARTIFACT.  Its default-source read is the service's own
+    # ``NOTEBOOK_GET`` invocation, exactly as ``chat.ask``'s is — an end-to-end
+    # authority the row itself does not dispatch (see the spec's
+    # ``known_divergence``).
     _create_site = f"_web/bindings/studio.py:{_operation.name}"
-    _source_site = _create_site
+    _source_site = _GET_TYPED
     SHARED_RPC_AUTHORITY_RULES[(_operation, _b(RPCMethod.CREATE_ARTIFACT))] = _rules(
         (_create_site, _discriminator)
     )
@@ -221,8 +227,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.MIND_MAP_GENERATE_INTERACTIVE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
             (
-                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
-                "kind=INTERACTIVE and source_ids is None",
+                "_web/bindings/notebooks.py:NOTEBOOK_GET",
+                "service-resolved default source scope",
             )
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.GENERATE_MIND_MAP)): _rules(
@@ -375,14 +381,15 @@ class RecencyRule:
     authority_sites: tuple[str, ...] = ()
 
 
-_GET_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 _UPDATE_TYPED = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 _GET_SOURCES = "_web/bindings/sources.py:SOURCE_LIST"
 # P9.3: source list/get/wait reads dispatch through their own codec rows.
 _GET_SOURCE_LIST = "_web/bindings/sources.py:SOURCE_LIST"
 _GET_SOURCE = "_web/bindings/sources.py:SOURCE_GET"
 _GET_SOURCE_WAIT = "_web/bindings/sources.py:SOURCE_WAIT"
-_GET_PROMPT_SOURCES = "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS"
+# P10 R5.1c: the default-scope read is an ordinary NOTEBOOK_GET the suggestion
+# service issues above the port, not a second native of the suggestion row.
+_GET_PROMPT_SOURCES = "_web/bindings/notebooks.py:NOTEBOOK_GET"
 
 
 RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
@@ -577,11 +584,13 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
 }
 
 for _operation in (*_GENERATION_OPERATIONS, Operation.ARTIFACT_GENERATE_MIND_MAP):
-    # P9.4b: every generate row reads default sources through its own declared spec.
+    # The mind-map row still reads default sources through its own declared
+    # spec (R5.1b); since R5.1a the eight artifact families read through the
+    # service-owned ``NOTEBOOK_GET`` row instead.
     _recency_site = (
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
         if _operation is Operation.ARTIFACT_GENERATE_MIND_MAP
-        else f"_web/bindings/studio.py:{_operation.name}"
+        else _GET_TYPED
     )
     RECENCY_CONTRACTS[_operation] = (
         RecencyRule(
@@ -597,10 +606,13 @@ for _operation, _kind in (
     (Operation.MIND_MAP_GENERATE_NOTE, "NOTE_BACKED"),
     (Operation.MIND_MAP_GENERATE_INTERACTIVE, "INTERACTIVE"),
 ):
+    # P10 R5.1b: the interactive family's default-scope read is an ordinary
+    # NOTEBOOK_GET that MindMapFamilyService issues above the port, not a second
+    # native of the generation row.
     _recency_site = (
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
         if _operation is Operation.MIND_MAP_GENERATE_NOTE
-        else "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE"
+        else "_web/bindings/notebooks.py:NOTEBOOK_GET"
     )
     RECENCY_CONTRACTS[_operation] = (
         RecencyRule(

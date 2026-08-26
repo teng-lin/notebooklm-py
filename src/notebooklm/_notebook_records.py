@@ -4,9 +4,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum, unique
 from typing import Any
 
 from ._operations import CallPolicy, Operation, OperationDef, OperationTier
+
+
+@unique
+class SourceIdDiagnostics(str, Enum):
+    """How one caller reports a notebook snapshot it cannot read source ids from.
+
+    The notebook read decodes its embedded source ids for callers that differ
+    only in what they say about a malformed payload, so the mode travels on
+    :class:`NotebookGetInput` and the decoder applies it.
+    """
+
+    #: The Audio family: every shape mismatch yields no ids and says nothing.
+    SILENT = "silent"
+    #: The generation families: each shape mismatch logs the schema-drift warning.
+    WARN = "warn"
+    #: Prompt suggestions and the notebook read itself: warn, and additionally
+    #: swallow an ``IndexError``/``TypeError`` raised despite the guards.
+    GUARDED = "guarded"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +102,10 @@ class NotebookListResult:
 class NotebookGetInput:
     """Identity requested by the notebook get operation.
 
+    ``source_diagnostics`` selects how the decoder reports a snapshot whose
+    source slot it cannot read; the callers that resolve a default source set
+    differ only in that report.
+
     ``include_raw`` selects the undecoded compatibility branch: the backend
     returns the payload the transport produced without running any positional
     decode, which is the contract ``NotebooksAPI.get_raw`` publishes. It is
@@ -93,6 +116,7 @@ class NotebookGetInput:
     notebook_id: str
     include_notebook: bool = True
     require_notebook: bool = False
+    source_diagnostics: SourceIdDiagnostics = SourceIdDiagnostics.GUARDED
     include_raw: bool = False
 
 
@@ -215,10 +239,16 @@ class PromptSuggestionRecord:
 
 @dataclass(frozen=True, slots=True)
 class NotebookSuggestPromptsInput:
-    """Notebook prompt-suggestion request before web source resolution."""
+    """Notebook prompt-suggestion request whose source scope is already resolved.
+
+    ``source_ids`` is required: "no scope given means every source" is a
+    service-level default (:class:`~notebooklm._suggestion_service.SuggestionService`
+    resolves the notebook's full source set through ``NOTEBOOK_GET`` before
+    invoking), not something the backend re-derives below the port.
+    """
 
     notebook_id: str
-    source_ids: tuple[str, ...] | None = None
+    source_ids: tuple[str, ...]
     mode: int = 4
     query: str | None = None
 
@@ -343,5 +373,6 @@ __all__ = [
     "NotebookUpdateInput",
     "NotebookUpdateResult",
     "PromptSuggestionRecord",
+    "SourceIdDiagnostics",
     "SuggestedTopicRecord",
 ]

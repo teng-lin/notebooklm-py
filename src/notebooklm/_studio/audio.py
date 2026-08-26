@@ -7,31 +7,39 @@ from .._deadline import RuntimeDeadline
 from .._records import (
     ARTIFACT_GENERATE_AUDIO_DEF,
     ArtifactRecord,
-    AudioGenerateInput,
+    AudioGenerateRequest,
     AudioGenerateResult,
     AudioMetadataRecord,
 )
 from .catalog import StudioCatalog
+from .generation import StudioGenerationInputs, _generation_budget
 
 
 class AudioFamilyService:
     """Audio generation, discovery, readiness, and representation selection."""
 
-    __slots__ = ("_backend", "_catalog")
+    __slots__ = ("_backend", "_catalog", "_inputs")
 
-    def __init__(self, backend: BackendAdapter, catalog: StudioCatalog) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        catalog: StudioCatalog,
+        inputs: StudioGenerationInputs,
+    ) -> None:
         self._backend = backend
         self._catalog = catalog
+        self._inputs = inputs
 
     async def generate(
         self,
-        value: AudioGenerateInput,
+        request: AudioGenerateRequest,
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> AudioGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_AUDIO_DEF,
-            value,
+            await self._inputs.audio(request, deadline=deadline),
             deadline=deadline,
         )
 

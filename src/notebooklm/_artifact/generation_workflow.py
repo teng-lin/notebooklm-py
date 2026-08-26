@@ -16,13 +16,13 @@ from .._deadline import Monotonic, RuntimeDeadline, Sleep
 from .._projectors import project_generation_status
 from .._records import (
     ArtifactReviseSlideInput,
-    AudioGenerateInput,
-    DataTableGenerateInput,
-    InfographicGenerateInput,
-    InteractiveGenerateInput,
-    ReportGenerateInput,
-    SlideDeckGenerateInput,
-    VideoGenerateInput,
+    AudioGenerateRequest,
+    DataTableGenerateRequest,
+    InfographicGenerateRequest,
+    InteractiveGenerateRequest,
+    ReportGenerateRequest,
+    SlideDeckGenerateRequest,
+    VideoGenerateRequest,
 )
 from .._studio import (
     ArtifactLifecycleService,
@@ -189,7 +189,13 @@ class ArtifactGenerationWorkflow:
             "on_status_change": None,
             "deadline": deadline,
         }
-        return await self._lifecycle.wait_for_completion(notebook_id, task_id, **wait_kwargs)
+        # ``_wait_for_completion`` is private: the service stays I1-neutral by
+        # not naming the public ``GenerationStatus`` its callbacks carry, so
+        # this caller — which already owns that type — restores it here.
+        return cast(
+            GenerationStatus,
+            await self._lifecycle._wait_for_completion(notebook_id, task_id, **wait_kwargs),
+        )
 
     async def generate_once(
         self,
@@ -207,7 +213,7 @@ class ArtifactGenerationWorkflow:
             audio_length = cast(AudioLength | None, kwargs.get("audio_length"))
             audio_result = await project_backend_call(
                 audio_service.generate(
-                    AudioGenerateInput(
+                    AudioGenerateRequest(
                         notebook_id,
                         sources,
                         kwargs.get("language"),
@@ -226,7 +232,7 @@ class ArtifactGenerationWorkflow:
             try:
                 video_result = await project_backend_call(
                     video_service.generate(
-                        VideoGenerateInput(
+                        VideoGenerateRequest(
                             notebook_id,
                             sources,
                             kwargs.get("language"),
@@ -255,7 +261,7 @@ class ArtifactGenerationWorkflow:
             )
             report_result = await project_backend_call(
                 report_service.generate(
-                    ReportGenerateInput(
+                    ReportGenerateRequest(
                         notebook_id,
                         report_format.value,
                         sources,
@@ -269,7 +275,7 @@ class ArtifactGenerationWorkflow:
             return project_generation_status(report_result.status)
         elif method_name in {"generate_quiz", "generate_flashcards"}:
             interactive_service = _require(self._interactive)
-            value = InteractiveGenerateInput(
+            value = InteractiveGenerateRequest(
                 notebook_id,
                 sources,
                 kwargs.get("instructions"),
@@ -287,7 +293,7 @@ class ArtifactGenerationWorkflow:
             visual_service = _require(self._visuals)
             infographic_result = await project_backend_call(
                 visual_service.generate_infographic(
-                    InfographicGenerateInput(
+                    InfographicGenerateRequest(
                         notebook_id,
                         sources,
                         kwargs.get("language"),
@@ -304,7 +310,7 @@ class ArtifactGenerationWorkflow:
             visual_service = _require(self._visuals)
             slide_deck_result = await project_backend_call(
                 visual_service.generate_slide_deck(
-                    SlideDeckGenerateInput(
+                    SlideDeckGenerateRequest(
                         notebook_id,
                         sources,
                         kwargs.get("language"),
@@ -320,7 +326,7 @@ class ArtifactGenerationWorkflow:
             data_table_service = _require(self._data_tables)
             data_table_result = await project_backend_call(
                 data_table_service.generate(
-                    DataTableGenerateInput(
+                    DataTableGenerateRequest(
                         notebook_id,
                         sources,
                         kwargs.get("language"),

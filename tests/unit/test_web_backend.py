@@ -24,6 +24,7 @@ from notebooklm._notebook_payloads import (
     build_get_notebook_params,
 )
 from notebooklm._operations import CallPolicy, Operation, OperationDef
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,
@@ -107,8 +108,11 @@ from notebooklm._records import (
     ArtifactReviseSlideInput,
     ArtifactSuggestReportsInput,
     AudioGenerateInput,
+    AudioGenerateRequest,
     InfographicGenerateInput,
+    InfographicGenerateRequest,
     InteractiveGenerateInput,
+    InteractiveGenerateRequest,
     MindMapDeleteInput,
     MindMapGenerateInteractiveInput,
     MindMapGenerateNoteInput,
@@ -129,7 +133,9 @@ from notebooklm._records import (
     NoteListInput,
     NoteUpdateInput,
     ReportGenerateInput,
+    ReportGenerateRequest,
     SlideDeckGenerateInput,
+    SlideDeckGenerateRequest,
     SourceAddFailureKind,
     SourceAddFailureRecord,
     SourceAddFileInput,
@@ -137,7 +143,18 @@ from notebooklm._records import (
     SourceGetInput,
     SourceListInput,
     VideoGenerateInput,
+    VideoGenerateRequest,
 )
+from notebooklm._studio import (
+    AudioFamilyService,
+    InteractiveFamilyService,
+    ReportFamilyService,
+    StudioCatalog,
+    StudioGenerationInputs,
+    VideoFamilyService,
+    VisualFamilyService,
+)
+from notebooklm._studio import generation as studio_generation_module
 from notebooklm._transport_errors import TransportRateLimited, TransportServerError
 from notebooklm._web.backend import (
     ROW_COLLABORATOR_NAMES,
@@ -145,7 +162,6 @@ from notebooklm._web.backend import (
     _build_binding_table,
     _row_collaborators_of,
 )
-from notebooklm._web.bindings import studio as studio_rows_module
 from notebooklm._web.codec.artifact_payloads import (
     build_audio_artifact_params,
     build_cinematic_video_artifact_params,
@@ -219,6 +235,31 @@ class _RecordingExecutor:
 
 def _backend(executor: _RecordingExecutor) -> WebRpcBackend:
     return WebRpcBackend(executor)  # type: ignore[arg-type]
+
+
+def _inputs(backend: WebRpcBackend) -> StudioGenerationInputs:
+    """R5.1a: the resolver that owns source, language and option defaulting."""
+    return StudioGenerationInputs(NotebookReadService(backend))
+
+
+def _audio(backend: WebRpcBackend) -> AudioFamilyService:
+    return AudioFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+
+
+def _interactive(backend: WebRpcBackend) -> InteractiveFamilyService:
+    return InteractiveFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+
+
+def _visuals(backend: WebRpcBackend) -> VisualFamilyService:
+    return VisualFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+
+
+def _reports(backend: WebRpcBackend) -> ReportFamilyService:
+    return ReportFamilyService(backend, StudioCatalog(backend), _inputs(backend))
+
+
+def _video(backend: WebRpcBackend) -> VideoFamilyService:
+    return VideoFamilyService(backend, StudioCatalog(backend), _inputs(backend))
 
 
 def test_row_collaborator_names_are_exactly_what_the_rows_declare() -> None:
@@ -598,9 +639,8 @@ async def test_visual_generation_omitted_sources_share_deadline_and_tolerant_ext
     )
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 11.0)
 
-    await _backend(executor).invoke(
-        ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-        InfographicGenerateInput("nb", source_ids=None),
+    await _visuals(_backend(executor)).generate_infographic(
+        InfographicGenerateRequest("nb", source_ids=None),
         deadline=deadline,
     )
 
@@ -615,27 +655,29 @@ async def test_visual_generation_omitted_sources_share_deadline_and_tolerant_ext
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "value",
+    "request_value",
     [
-        InfographicGenerateInput("nb", (), orientation="future"),
-        InfographicGenerateInput("nb", (), detail_level="future"),
-        InfographicGenerateInput("nb", (), style="future"),
-        SlideDeckGenerateInput("nb", (), slide_format="future"),
-        SlideDeckGenerateInput("nb", (), slide_length="future"),
+        InfographicGenerateRequest("nb", (), orientation="future"),
+        InfographicGenerateRequest("nb", (), detail_level="future"),
+        InfographicGenerateRequest("nb", (), style="future"),
+        SlideDeckGenerateRequest("nb", (), slide_format="future"),
+        SlideDeckGenerateRequest("nb", (), slide_length="future"),
     ],
 )
 async def test_visual_generation_rejects_unreviewed_options_before_executor(
-    value: InfographicGenerateInput | SlideDeckGenerateInput,
+    request_value: InfographicGenerateRequest | SlideDeckGenerateRequest,
 ) -> None:
+    """R5.1a: the service rejects the vocabulary, still before any native call."""
     executor = _RecordingExecutor([])
-    definition = (
-        ARTIFACT_GENERATE_INFOGRAPHIC_DEF
-        if isinstance(value, InfographicGenerateInput)
-        else ARTIFACT_GENERATE_SLIDE_DECK_DEF
+    service = _visuals(_backend(executor))
+    call = (
+        service.generate_infographic
+        if isinstance(request_value, InfographicGenerateRequest)
+        else service.generate_slide_deck
     )
 
     with pytest.raises(BackendContractError, match="unrecognized visual"):
-        await _backend(executor).invoke(definition, value, deadline=None)  # type: ignore[arg-type]
+        await call(request_value, deadline=None)  # type: ignore[arg-type]
 
     assert executor.calls == []
 
@@ -646,12 +688,12 @@ async def test_visual_generation_rejects_unreviewed_options_before_executor(
     [
         (
             ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-            InfographicGenerateInput("nb", ()),
+            InfographicGenerateInput("nb", (), "en"),
             "infographic",
         ),
         (
             ARTIFACT_GENERATE_SLIDE_DECK_DEF,
-            SlideDeckGenerateInput("nb", ()),
+            SlideDeckGenerateInput("nb", (), "en"),
             "slide deck",
         ),
     ],
@@ -758,7 +800,7 @@ async def test_report_generate_resolves_sources_once_and_uses_exact_payload() ->
         [["Notebook", [[["src-a"], "A"], [["src-b"], "B"]], "nb-report"]],
         [["report-id", "Report", 2, None, 1]],
     )
-    value = ReportGenerateInput(
+    value = ReportGenerateRequest(
         "nb-report",
         "study_guide",
         source_ids=None,
@@ -766,11 +808,7 @@ async def test_report_generate_resolves_sources_once_and_uses_exact_payload() ->
         extra_instructions="Emphasize key terms",
     )
 
-    result = await _backend(executor).invoke(
-        ARTIFACT_GENERATE_REPORT_DEF,
-        value,
-        deadline=None,
-    )
+    result = await _reports(_backend(executor)).generate(value, deadline=None)
 
     assert result.status.task_id == "report-id"
     assert [call.method for call in executor.calls] == [
@@ -795,9 +833,8 @@ async def test_document_generation_preserves_source_shape_drift_warning(caplog) 
         [["video-id", "Video", 3, None, 1]],
     )
 
-    await _backend(executor).invoke(
-        ARTIFACT_GENERATE_VIDEO_DEF,
-        VideoGenerateInput("nb-video", source_ids=None),
+    await _video(_backend(executor)).generate(
+        VideoGenerateRequest("nb-video", source_ids=None),
         deadline=None,
     )
 
@@ -817,8 +854,8 @@ async def test_document_generation_preserves_source_shape_drift_warning(caplog) 
 @pytest.mark.parametrize(
     ("operation_def", "value", "artifact_type"),
     [
-        (ARTIFACT_GENERATE_VIDEO_DEF, VideoGenerateInput("nb", ()), "video"),
-        (ARTIFACT_GENERATE_REPORT_DEF, ReportGenerateInput("nb", source_ids=()), "report"),
+        (ARTIFACT_GENERATE_VIDEO_DEF, VideoGenerateInput("nb", (), "en"), "video"),
+        (ARTIFACT_GENERATE_REPORT_DEF, ReportGenerateInput("nb", (), "en"), "report"),
     ],
 )
 async def test_document_generation_reconstructs_feature_unavailable_error(
@@ -969,27 +1006,21 @@ async def test_mind_map_handlers_preserve_codecs_payloads_and_deadline() -> None
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("definition", "value"),
-    [
-        (MIND_MAP_GENERATE_NOTE_DEF, MindMapGenerateNoteInput("nb", None)),
-        (
-            MIND_MAP_GENERATE_INTERACTIVE_DEF,
-            MindMapGenerateInteractiveInput("nb", None),
-        ),
-    ],
-)
-async def test_mind_map_generation_resolves_default_sources_once(
-    definition: OperationDef[Any, Any],
-    value: object,
-) -> None:
-    generated = [["id"]] if definition is MIND_MAP_GENERATE_INTERACTIVE_DEF else [["{}"]]
+async def test_mind_map_note_generation_resolves_default_sources_once() -> None:
+    """``mind_map.generate_note`` is the one row still defaulting its own scope.
+
+    P10 R5.1b hoisted the interactive family's read into
+    ``MindMapFamilyService``; the note-backed row keeps its ``GET_NOTEBOOK``
+    spec until its own hoist.
+    """
     executor = _RecordingExecutor(
         [["Notebook", [[[["src-a"]]], [["src-b"]]], "nb"]],
-        generated,
+        [["{}"]],
     )
 
-    await _backend(executor).invoke(definition, value, deadline=None)
+    await _backend(executor).invoke(
+        MIND_MAP_GENERATE_NOTE_DEF, MindMapGenerateNoteInput("nb", None), deadline=None
+    )
 
     assert [call.method for call in executor.calls[:1]] == [RPCMethod.GET_NOTEBOOK]
     assert len(executor.calls) == 2
@@ -1031,12 +1062,11 @@ async def test_audio_generate_reuses_payload_builder_and_one_absolute_deadline()
 
 @pytest.mark.asyncio
 async def test_audio_generate_none_language_uses_current_profile_default(monkeypatch) -> None:
-    monkeypatch.setattr(studio_rows_module, "get_default_language", lambda: "ja")
+    monkeypatch.setattr(studio_generation_module, "get_default_language", lambda: "ja")
     executor = _RecordingExecutor([["audio-id", "Audio", 1, None, 1]])
 
-    await _backend(executor).invoke(
-        ARTIFACT_GENERATE_AUDIO_DEF,
-        AudioGenerateInput("nb", (), language=None),
+    await _audio(_backend(executor)).generate(
+        AudioGenerateRequest("nb", (), language=None),
         deadline=None,
     )
 
@@ -1050,9 +1080,8 @@ async def test_audio_generate_resolves_all_sources_once_inside_backend() -> None
         [["audio-id", "Audio", 1, None, 1]],
     )
 
-    await _backend(executor).invoke(
-        ARTIFACT_GENERATE_AUDIO_DEF,
-        AudioGenerateInput("nb-audio", source_ids=None),
+    await _audio(_backend(executor)).generate(
+        AudioGenerateRequest("nb-audio", source_ids=None),
         deadline=None,
     )
 
@@ -1066,19 +1095,20 @@ async def test_audio_generate_resolves_all_sources_once_inside_backend() -> None
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "value",
+    "request_value",
     [
-        AudioGenerateInput("nb", (), audio_format="future_format"),
-        AudioGenerateInput("nb", (), audio_length="future_length"),
+        AudioGenerateRequest("nb", (), audio_format="future_format"),
+        AudioGenerateRequest("nb", (), audio_length="future_length"),
     ],
 )
 async def test_audio_generate_rejects_unreviewed_options_before_executor(
-    value: AudioGenerateInput,
+    request_value: AudioGenerateRequest,
 ) -> None:
+    """R5.1a: the service rejects the vocabulary, still before any native call."""
     executor = _RecordingExecutor([])
 
     with pytest.raises(BackendContractError, match="unrecognized audio"):
-        await _backend(executor).invoke(ARTIFACT_GENERATE_AUDIO_DEF, value, deadline=None)
+        await _audio(_backend(executor)).generate(request_value, deadline=None)
 
     assert executor.calls == []
 
@@ -1100,7 +1130,7 @@ async def test_audio_generate_feature_unavailable_reconstructs_public_error(
     with pytest.raises(BackendError) as caught:
         await _backend(executor).invoke(
             ARTIFACT_GENERATE_AUDIO_DEF,
-            AudioGenerateInput("nb", ()),
+            AudioGenerateInput("nb", (), "en"),
             deadline=None,
         )
 
@@ -1179,9 +1209,8 @@ async def test_interactive_generation_resolves_omitted_sources_once_with_same_de
     )
     deadline = RuntimeDeadline(timeout=8.0, started_at=10.0, monotonic=lambda: 12.0)
 
-    result = await _backend(executor).invoke(
-        ARTIFACT_GENERATE_QUIZ_DEF,
-        InteractiveGenerateInput("nb", None, None, None, None),
+    result = await _interactive(_backend(executor)).generate_quiz(
+        InteractiveGenerateRequest("nb", None, None, None, None),
         deadline=deadline,
     )
 
@@ -1208,9 +1237,8 @@ async def test_interactive_source_resolution_preserves_schema_drift_warning(capl
     )
 
     with caplog.at_level("WARNING", logger="notebooklm._notebooks"):
-        await _backend(executor).invoke(
-            ARTIFACT_GENERATE_FLASHCARDS_DEF,
-            InteractiveGenerateInput("nb-short", None, None, None, None),
+        await _interactive(_backend(executor)).generate_flashcards(
+            InteractiveGenerateRequest("nb-short", None, None, None, None),
             deadline=None,
         )
 
@@ -1229,19 +1257,20 @@ async def test_interactive_source_resolution_preserves_schema_drift_warning(capl
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "value",
+    "request_value",
     [
-        InteractiveGenerateInput("nb", (), None, "future", None),
-        InteractiveGenerateInput("nb", (), None, None, "future"),
+        InteractiveGenerateRequest("nb", (), None, "future", None),
+        InteractiveGenerateRequest("nb", (), None, None, "future"),
     ],
 )
 async def test_interactive_generation_rejects_unknown_neutral_options_before_rpc(
-    value: InteractiveGenerateInput,
+    request_value: InteractiveGenerateRequest,
 ) -> None:
+    """R5.1a: the service rejects the vocabulary, still before any native call."""
     executor = _RecordingExecutor()
 
     with pytest.raises(BackendContractError, match="unrecognized interactive"):
-        await _backend(executor).invoke(ARTIFACT_GENERATE_QUIZ_DEF, value, deadline=None)
+        await _interactive(_backend(executor)).generate_quiz(request_value, deadline=None)
 
     assert executor.calls == []
 

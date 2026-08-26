@@ -98,7 +98,11 @@ class NotebooksAPI:
             else None
         )
         self._guide_service = NotebookGuideService(_backend) if _backend is not None else None
-        self._suggestion_service = SuggestionService(_backend) if _backend is not None else None
+        self._suggestion_service = (
+            SuggestionService(_backend, deadline_factory=_deadline_factory)
+            if _backend is not None
+            else None
+        )
         self._sources = sources_api
         self._metadata_service: NotebookMetadataService | None
         if metadata_service is not None:

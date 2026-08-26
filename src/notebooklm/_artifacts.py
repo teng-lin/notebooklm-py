@@ -10,7 +10,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ._artifact import downloads as _artifact_downloads
 from ._artifact import formatters as _artifact_formatters
@@ -26,6 +26,7 @@ from ._lookup import unwrap_or_raise
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._projectors import project_artifact, project_generation_status, project_report_suggestion
+from ._read_services import NotebookReadService
 from ._records import (
     ArtifactDeleteInput,
     ArtifactRecord,
@@ -48,6 +49,7 @@ from ._studio import (
     ReportFamilyService,
     ReportSuggestionService,
     StudioCatalog,
+    StudioGenerationInputs,
     StudioManagementService,
     VideoFamilyService,
     VisualFamilyService,
@@ -151,9 +153,18 @@ class ArtifactsAPI:
             if _backend is not None
             else None
         )
+        # R5.1a: the generate families take pre-resolved inputs, so the source-set
+        # and language defaults are resolved here, above the port.
+        self._generation_inputs = (
+            StudioGenerationInputs(NotebookReadService(_backend), deadline_factory=deadline_factory)
+            if _backend is not None
+            else None
+        )
         self._data_tables = (
-            DataTableFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            DataTableFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._mind_map_family = (
@@ -165,28 +176,38 @@ class ArtifactsAPI:
         )
         self._drive_exports = DriveExportService(_backend) if _backend is not None else None
         self._audio = (
-            AudioFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            AudioFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._interactive = (
-            InteractiveFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            InteractiveFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._video = (
-            VideoFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            VideoFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._reports = (
-            ReportFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            ReportFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._visuals = (
-            VisualFamilyService(_backend, self._catalog)
-            if _backend is not None and self._catalog is not None
+            VisualFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._poll_registry = PollRegistry()
@@ -251,10 +272,8 @@ class ArtifactsAPI:
             family = (
                 None if artifact_type is None else getattr(artifact_type, "value", artifact_type)
             )
-            return await self._catalog.list(
-                notebook_id,
-                family,
-            )
+            records = await self._catalog.list_records(notebook_id, family)
+            return [project_artifact(record) for record in records]
         except BackendError as error:
             public_error = project_backend_error(error)
         assert public_error is not None
@@ -340,7 +359,8 @@ class ArtifactsAPI:
             raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
         public_error: Exception | None = None
         try:
-            return await self._catalog.get_or_none(notebook_id, artifact_id)
+            record = await self._catalog.get_record(notebook_id, artifact_id)
+            return None if record is None else project_artifact(record)
         except BackendError as error:
             public_error = project_backend_error(error)
         assert public_error is not None
@@ -1083,16 +1103,22 @@ class ArtifactsAPI:
         """
         if self._lifecycle_service is None:
             raise RuntimeError("ArtifactsAPI requires the client-assembled semantic backend")
-        return await self._lifecycle_service.wait_for_completion(
-            notebook_id,
-            task_id,
-            initial_interval=initial_interval,
-            max_interval=max_interval,
-            timeout=timeout,
-            max_not_found=max_not_found,
-            min_not_found_window=min_not_found_window,
-            poll_status=self.poll_status,
-            on_status_change=on_status_change,
+        # ``_wait_for_completion`` is private: the service stays I1-neutral by
+        # not naming the public ``GenerationStatus`` its callbacks carry, so
+        # the facade — which already owns that type — restores it here.
+        return cast(
+            GenerationStatus,
+            await self._lifecycle_service._wait_for_completion(
+                notebook_id,
+                task_id,
+                initial_interval=initial_interval,
+                max_interval=max_interval,
+                timeout=timeout,
+                max_not_found=max_not_found,
+                min_not_found_window=min_not_found_window,
+                poll_status=self.poll_status,
+                on_status_change=on_status_change,
+            ),
         )
 
     # =========================================================================

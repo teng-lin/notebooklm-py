@@ -23,7 +23,7 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._lookup import unwrap_or_raise
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notebooks import NotebooksAPI
-from notebooklm._records import NoteRecord
+from notebooklm._records import ArtifactRecord, NoteRecord
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import ClientError, NotebookNotFoundError, RPCError
 from notebooklm.types import MindMap, MindMapKind, Note, Source
@@ -267,17 +267,19 @@ class TestSourcesGetOrNone:
 class TestArtifactsGetOrNone:
     @pytest.mark.asyncio
     async def test_returns_artifact_on_hit(self, artifacts_api):
-        found = MagicMock()
-        found.id = "art_1"
-        artifacts_api._catalog = MagicMock(get_or_none=AsyncMock(return_value=found))
+        # P10 I1: the catalog returns a neutral record now; ``get_or_none``
+        # itself does the public ``Artifact`` projection.
+        found = ArtifactRecord(id="art_1", title="Art", family="audio", status="completed")
+        artifacts_api._catalog = MagicMock(get_record=AsyncMock(return_value=found))
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
             result = await artifacts_api.get_or_none("nb_1", "art_1")
-        assert result is found
+        assert result is not None
+        assert result.id == "art_1"
 
     @pytest.mark.asyncio
     async def test_returns_none_on_miss(self, artifacts_api):
-        artifacts_api._catalog = MagicMock(get_or_none=AsyncMock(return_value=None))
+        artifacts_api._catalog = MagicMock(get_record=AsyncMock(return_value=None))
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
             result = await artifacts_api.get_or_none("nb_1", "missing")
@@ -285,7 +287,7 @@ class TestArtifactsGetOrNone:
 
     @pytest.mark.asyncio
     async def test_propagates_rpc_error(self, artifacts_api):
-        artifacts_api._catalog = MagicMock(get_or_none=AsyncMock(side_effect=RPCError("boom")))
+        artifacts_api._catalog = MagicMock(get_record=AsyncMock(side_effect=RPCError("boom")))
         with pytest.raises(RPCError):
             await artifacts_api.get_or_none("nb_1", "art_1")
 

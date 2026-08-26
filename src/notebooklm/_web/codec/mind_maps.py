@@ -9,11 +9,13 @@ from typing import Any
 
 from ..._binding import CodecPayload
 from ..._env import get_default_language
+from ..._operations import Operation
 from ..._records import (
     RAW_MIND_MAP_ROWS,
     MindMapDeleteInput,
     MindMapDeleteResult,
     MindMapGenerateInteractiveInput,
+    MindMapGenerateInteractiveResult,
     MindMapGenerateNoteInput,
     MindMapGenerateNoteResult,
     MindMapGenerateTreeInput,
@@ -33,6 +35,7 @@ from .artifact_payloads import (
     build_mind_map_params,
 )
 from .notes import decode_note_backed_mind_maps, decode_note_row_collection
+from .studio_documents import artifact_feature_unavailable
 
 logger = logging.getLogger("notebooklm._mind_maps_api")
 
@@ -251,18 +254,42 @@ def decode_mind_map_generate(
 
 
 def encode_mind_map_generate_interactive(
-    value: MindMapGenerateInteractiveInput, source_ids: tuple[str, ...]
+    value: MindMapGenerateInteractiveInput,
 ) -> CodecPayload:
-    """Payload for the ``CREATE_ARTIFACT`` phase of ``mind_map.generate_interactive``."""
+    """Payload for the ``mind_map.generate_interactive`` codec row (P10 R5.1b).
+
+    The input carries its resolved source scope, so this encoder is a pure
+    function of the record and never reads a notebook of its own.
+    """
     return CodecPayload(
         params=build_interactive_mind_map_artifact_params(
             value.notebook_id,
-            list(source_ids),
+            list(value.source_ids),
             instructions=value.instructions,
         ),
         source_path=_notebook_route(value.notebook_id),
         allow_null=True,
     )
+
+
+def decode_mind_map_generate_interactive(
+    value: MindMapGenerateInteractiveInput, result: Any, *, method_id: str
+) -> MindMapGenerateInteractiveResult:
+    """Row decoder for ``mind_map.generate_interactive``.
+
+    A response that allocates no identity is the closed
+    ``ARTIFACT_FEATURE_UNAVAILABLE`` failure the composite raised, kept here so
+    the public exception is unchanged. ``method_id`` is threaded from the row's
+    ``NativeCallSpec`` value, as the research rows already do, so this decoder
+    keeps no second copy of the native it decodes.
+    """
+    del value
+    mind_map_id = decode_created_interactive_id(result)
+    if mind_map_id is None:
+        raise artifact_feature_unavailable(
+            Operation.MIND_MAP_GENERATE_INTERACTIVE, "mind_map", method_id=method_id
+        )
+    return MindMapGenerateInteractiveResult(mind_map_id)
 
 
 __all__ = [
@@ -271,6 +298,7 @@ __all__ = [
     "decode_interactive_tree",
     "decode_mind_map_delete",
     "decode_mind_map_generate",
+    "decode_mind_map_generate_interactive",
     "decode_mind_map_generate_note",
     "decode_mind_map_get",
     "decode_mind_map_list",

@@ -52,7 +52,7 @@ class _Lifecycle:
         self.deadlines.append(deadline)
         return GenerationStatusRecord(task_id, "completed")
 
-    async def wait_for_completion(self, notebook_id: str, task_id: str, **kwargs: Any):
+    async def _wait_for_completion(self, notebook_id: str, task_id: str, **kwargs: Any):
         self.deadlines.append(kwargs["deadline"])
         return await kwargs["poll_status"](notebook_id, task_id)
 

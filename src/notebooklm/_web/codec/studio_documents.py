@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import types  # ``from types import …`` reads as a public-model import to the P3 guardrail
-from typing import Any, cast
+from collections.abc import Mapping
+from typing import Any, TypeVar, cast
 
-from ..._backend import BackendError, BackendErrorReason
+from ..._backend import BackendContractError, BackendError, BackendErrorReason
 from ..._binding import CodecPayload
 from ..._operations import Operation
 from ..._records import (
@@ -48,48 +49,72 @@ _VIDEO_STYLES = {
 }
 _REPORT_FORMATS = {value.value: value for value in ReportFormat}
 
+_OptionT = TypeVar("_OptionT")
 
-def encode_video_generation(
-    value: VideoGenerateInput,
+
+def wire_option(
+    value: str | None,
+    options: Mapping[str, _OptionT],
     *,
-    source_ids: tuple[str, ...],
-    language: str,
-) -> list[Any]:
-    """Encode neutral video options into the exact CREATE_ARTIFACT payload."""
+    operation: Operation,
+) -> _OptionT | None:
+    """Map one already-validated option string onto its wire enum.
 
-    video_format = None if value.video_format is None else _VIDEO_FORMATS[value.video_format]
+    Since P10 R5.1a the reviewed vocabulary is a service concern (ADR-0035
+    addendum D1(a)), so a value missing here means an *unresolved* input reached
+    the port — a contract breach, and named as one rather than as the
+    user-facing rejection ``_studio/generation.py`` raises.
+    """
+    if value is None:
+        return None
+    option = options.get(value)
+    if option is None:
+        raise BackendContractError(
+            f"unresolved generation input: {value!r} is not a reviewed option",
+            operation=operation,
+        )
+    return option
+
+
+def encode_video_generation(value: VideoGenerateInput) -> list[Any]:
+    """Encode one pre-resolved video input into the exact CREATE_ARTIFACT payload."""
+
+    operation = Operation.ARTIFACT_GENERATE_VIDEO
+    video_format = wire_option(value.video_format, _VIDEO_FORMATS, operation=operation)
     if value.cinematic_route:
         return build_cinematic_video_artifact_params(
             value.notebook_id,
-            list(source_ids),
-            language=language,
+            list(value.source_ids),
+            language=value.language,
             instructions=value.instructions,
         )
-    video_style = None if value.video_style is None else _VIDEO_STYLES[value.video_style]
     return build_video_artifact_params(
         value.notebook_id,
-        list(source_ids),
-        language=language,
+        list(value.source_ids),
+        language=value.language,
         instructions=value.instructions,
         video_format=video_format,
-        video_style=video_style,
+        video_style=wire_option(value.video_style, _VIDEO_STYLES, operation=operation),
         style_prompt=value.style_prompt,
     )
 
 
-def encode_report_generation(
-    value: ReportGenerateInput,
-    *,
-    source_ids: tuple[str, ...],
-    language: str,
-) -> list[Any]:
-    """Encode neutral report options into the exact CREATE_ARTIFACT payload."""
+def encode_report_generation(value: ReportGenerateInput) -> list[Any]:
+    """Encode one pre-resolved report input into the exact CREATE_ARTIFACT payload."""
 
+    report_format = wire_option(
+        value.report_format, _REPORT_FORMATS, operation=Operation.ARTIFACT_GENERATE_REPORT
+    )
+    if report_format is None:  # pragma: no cover - the field is never ``None``
+        raise BackendContractError(
+            "unresolved generation input: report format is required",
+            operation=Operation.ARTIFACT_GENERATE_REPORT,
+        )
     return build_report_artifact_params(
         value.notebook_id,
-        list(source_ids),
-        report_format=_REPORT_FORMATS[value.report_format],
-        language=language,
+        list(value.source_ids),
+        report_format=report_format,
+        language=value.language,
         custom_prompt=value.custom_prompt,
         extra_instructions=value.extra_instructions,
     )
@@ -218,4 +243,5 @@ __all__ = [
     "encode_artifact_revise_slide",
     "encode_report_generation",
     "encode_video_generation",
+    "wire_option",
 ]

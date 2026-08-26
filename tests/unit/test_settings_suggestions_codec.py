@@ -11,6 +11,7 @@ from notebooklm._records import (
     SettingsGetInput,
     SettingsGetLimitsInput,
     SettingsSetLanguageInput,
+    SourceIdDiagnostics,
 )
 from notebooklm._web.codec.settings import (
     decode_account_limits,
@@ -26,9 +27,9 @@ from notebooklm._web.codec.settings import (
     encode_settings_get_limits,
     encode_settings_set_language,
 )
+from notebooklm._web.codec.source_ids import decode_notebook_source_ids
 from notebooklm._web.codec.suggestions import (
     decode_artifact_suggest_reports,
-    decode_prompt_source_ids,
     decode_prompt_suggestions,
     decode_report_suggestions,
     encode_artifact_suggest_reports,
@@ -170,8 +171,9 @@ def test_prompt_source_lookup_decodes_drive_and_ordinary_ids_tolerantly() -> Non
         ]
     ]
 
-    assert decode_prompt_source_ids(response, notebook_id="nb") == (
+    guarded = SourceIdDiagnostics.GUARDED
+    assert decode_notebook_source_ids(response, notebook_id="nb", diagnostics=guarded) == (
         "src-ordinary",
         "src-drive",
     )
-    assert decode_prompt_source_ids([["truncated"]], notebook_id="nb") == ()
+    assert decode_notebook_source_ids([["truncated"]], notebook_id="nb", diagnostics=guarded) == ()

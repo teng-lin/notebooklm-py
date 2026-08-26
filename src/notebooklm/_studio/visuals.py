@@ -10,44 +10,53 @@ from .._records import (
     ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
     ArtifactRecord,
-    InfographicGenerateInput,
-    SlideDeckGenerateInput,
+    InfographicGenerateRequest,
+    SlideDeckGenerateRequest,
     VisualGenerateResult,
     VisualMetadataRecord,
 )
 from .catalog import StudioCatalog
+from .generation import StudioGenerationInputs, _generation_budget
 
 
 class VisualFamilyService:
     """Visual generation, discovery, and usable-readiness metadata."""
 
-    __slots__ = ("_backend", "_catalog")
+    __slots__ = ("_backend", "_catalog", "_inputs")
 
-    def __init__(self, backend: BackendAdapter, catalog: StudioCatalog) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        catalog: StudioCatalog,
+        inputs: StudioGenerationInputs,
+    ) -> None:
         self._backend = backend
         self._catalog = catalog
+        self._inputs = inputs
 
     async def generate_infographic(
         self,
-        value: InfographicGenerateInput,
+        request: InfographicGenerateRequest,
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> VisualGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-            value,
+            await self._inputs.infographic(request, deadline=deadline),
             deadline=deadline,
         )
 
     async def generate_slide_deck(
         self,
-        value: SlideDeckGenerateInput,
+        request: SlideDeckGenerateRequest,
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> VisualGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_SLIDE_DECK_DEF,
-            value,
+            await self._inputs.slide_deck(request, deadline=deadline),
             deadline=deadline,
         )
 

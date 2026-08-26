@@ -29,7 +29,7 @@ from notebooklm._backend import (
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._binding import CustomBinding, RpcNative
+from notebooklm._binding import CodecBinding, CustomBinding, RpcNative
 from notebooklm._operations import Operation
 from notebooklm._records import (
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
@@ -92,10 +92,6 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
             mind_map_rows.MIND_MAP_GENERATE_NOTE,
             "deferred-product",
         ),
-        Operation.MIND_MAP_GENERATE_INTERACTIVE: (
-            mind_map_rows.MIND_MAP_GENERATE_INTERACTIVE,
-            "deferred-product",
-        ),
     }
     for operation, (row, category) in expected.items():
         assert isinstance(row, CustomBinding)
@@ -105,6 +101,11 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
         assert row.category == category
         assert row.justification.strip()
         assert row.collaborators == ()
+    # P10 R5.1b took the interactive family's default-scope read above the port.
+    interactive = mind_map_rows.MIND_MAP_GENERATE_INTERACTIVE
+    assert isinstance(interactive, CodecBinding)
+    assert WEB_BINDING_ROWS[Operation.MIND_MAP_GENERATE_INTERACTIVE] is interactive
+    assert interactive.native.select(None) == RpcNative(RPCMethod.CREATE_ARTIFACT)
     # P10 R4.2 made ``artifact.generate_mind_map`` service-owned; its
     # ``CREATE_NOTE`` phase is the ``note.create`` leaf's declared variant now.
     assert notes_rows.NOTE_CREATE.native.select(None) == RpcNative(RPCMethod.CREATE_NOTE, "plain")
@@ -114,7 +115,6 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
         "_notebook_limit_error",
         "_list_notebooks",
         "_mind_map_generate_note",
-        "_mind_map_generate_interactive",
         "_mind_map_generate",
         "_persist_generated_mind_map",
         "_artifact_list",

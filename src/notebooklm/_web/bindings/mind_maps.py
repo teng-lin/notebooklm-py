@@ -4,11 +4,13 @@ The four leaves — note-backed listing, interactive tree read, interactive
 rename and interactive delete — are ``encode → one native call → decode``
 rows whose :class:`NativeCallSpec` is the sole method authority.
 
-The remaining composites are :class:`CustomBinding` rows (P9.4b).  The two
-generate members (``MIND_MAP_GENERATE_NOTE``, ``MIND_MAP_GENERATE_INTERACTIVE``)
-are input-defaulting *deferred-product* rows (gate table §3.17): an optional
-``GET_NOTEBOOK`` read when ``source_ids`` is omitted, then one generation
-native.
+``MIND_MAP_GENERATE_INTERACTIVE`` joined them in P10 R5.1b: its conditional
+``GET_NOTEBOOK`` read belongs to ``MindMapFamilyService`` above the port now
+(ADR-0035 P10 addendum D1(a): source-scope defaulting is a service concern), so
+one ``CREATE_ARTIFACT`` native is left and the row is an ordinary codec row.
+``MIND_MAP_GENERATE_NOTE`` remains the input-defaulting *deferred-product*
+:class:`CustomBinding` (gate table §3.17): an optional ``GET_NOTEBOOK`` read
+when ``source_ids`` is omitted, then the generation native.
 
 ``MIND_MAP_LIST`` carries the one ``map_error`` this module needs.  ``invoke``
 translates the closed ``NotebookLMError`` family and nothing else, so the
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
+from typing import Any
 
 import httpx
 
@@ -57,7 +60,6 @@ from ..._records import (
 from ...rpc import RPCMethod
 from ..codec import mind_maps as mind_maps_codec
 from ..codec import notebooks as notebooks_codec
-from ..codec.studio_documents import artifact_feature_unavailable
 
 
 def _map_supplemental_transport_failure(
@@ -121,12 +123,32 @@ MIND_MAP_GENERATE = CodecBinding(
     native=NativeCallSpec.constant(RPCMethod.GENERATE_MIND_MAP),
 )
 
+#: The interactive family's one native, declared once so the row's decoder can
+#: thread its method id off the spec instead of keeping a second copy of it —
+#: the idiom ``_web/bindings/research.py`` already uses for its start rows.
+_CREATE_INTERACTIVE = NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT)
+
+
+def _decode_mind_map_generate_interactive(
+    value: MindMapGenerateInteractiveInput, result: Any
+) -> MindMapGenerateInteractiveResult:
+    return mind_maps_codec.decode_mind_map_generate_interactive(
+        value, result, method_id=_CREATE_INTERACTIVE.select_rpc(value).method.value
+    )
+
+
+MIND_MAP_GENERATE_INTERACTIVE = CodecBinding(
+    definition=MIND_MAP_GENERATE_INTERACTIVE_DEF,
+    encode=mind_maps_codec.encode_mind_map_generate_interactive,
+    decode=_decode_mind_map_generate_interactive,
+    native=_CREATE_INTERACTIVE,
+)
+
 
 # --- custom rows (P9.4b) ---------------------------------------------------------
 
 _SOURCES = "sources"
 _GENERATE = "generate"
-_CREATE = "create"
 
 
 async def _default_source_ids(
@@ -158,27 +180,6 @@ async def _mind_map_generate_note(
     return mind_maps_codec.decode_mind_map_generate_note(result)
 
 
-async def _mind_map_generate_interactive(
-    value: MindMapGenerateInteractiveInput,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-) -> MindMapGenerateInteractiveResult:
-    source_ids = await _default_source_ids(value.notebook_id, value.source_ids, deadline, invoke)
-    result = await invoke.call(
-        _CREATE,
-        mind_maps_codec.encode_mind_map_generate_interactive(value, source_ids),
-        deadline=deadline,
-    )
-    mind_map_id = mind_maps_codec.decode_created_interactive_id(result)
-    if mind_map_id is None:
-        raise artifact_feature_unavailable(
-            Operation.MIND_MAP_GENERATE_INTERACTIVE,
-            "mind_map",
-            method_id=RPCMethod.CREATE_ARTIFACT.value,
-        )
-    return MindMapGenerateInteractiveResult(mind_map_id)
-
-
 MIND_MAP_GENERATE_NOTE = CustomBinding(
     definition=MIND_MAP_GENERATE_NOTE_DEF,
     handler=_mind_map_generate_note,
@@ -189,20 +190,6 @@ MIND_MAP_GENERATE_NOTE = CustomBinding(
     justification=(
         "Input-defaulting member kept adapter-owned under P9.2 contract 1; hoisting needs a "
         "resolved-input primitive for the note-backed family (gate table §3.17)."
-    ),
-    category="deferred-product",
-)
-
-MIND_MAP_GENERATE_INTERACTIVE = CustomBinding(
-    definition=MIND_MAP_GENERATE_INTERACTIVE_DEF,
-    handler=_mind_map_generate_interactive,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.CREATE_ARTIFACT, key=_CREATE),
-    ),
-    justification=(
-        "Input-defaulting member kept adapter-owned under P9.2 contract 1; hoisting needs a "
-        "resolved-input primitive for the interactive family (gate table §3.17)."
     ),
     category="deferred-product",
 )

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from ._backend import BackendAdapter
-from ._deadline import RuntimeDeadline
+from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ._read_services import NotebookReadService
 from ._records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,
@@ -37,10 +38,19 @@ def validate_prompt_suggestion_mode(mode: int) -> None:
 class SuggestionService:
     """Invoke typed suggestion operations and return their neutral records."""
 
-    __slots__ = ("_backend",)
+    __slots__ = ("_backend", "_deadline_factory", "_notebooks")
 
-    def __init__(self, backend: BackendAdapter) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        *,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
+    ) -> None:
         self._backend = backend
+        self._deadline_factory = deadline_factory
+        # The default source scope is resolved here, above the port: the
+        # suggestion operation itself takes an already-resolved input record.
+        self._notebooks = NotebookReadService(backend)
 
     async def suggest_prompts(
         self,
@@ -51,12 +61,27 @@ class SuggestionService:
         query: str | None = None,
         deadline: RuntimeDeadline | None = None,
     ) -> list[PromptSuggestionRecord]:
+        """Suggest prompts for a source scope, defaulting to the whole notebook.
+
+        ``source_ids=None`` is this service's documented default for "every
+        source in the notebook": it costs one extra ``NOTEBOOK_GET`` read, which
+        shares the suggestion call's budget so the pair spends one client
+        timeout. An explicit list — the empty one included — is used verbatim.
+        """
         validate_prompt_suggestion_mode(mode)
+        if deadline is None and self._deadline_factory is not None:
+            # Captured once, before the read: both natives spend one budget.
+            deadline = self._deadline_factory.start()
+        resolved = (
+            tuple(await self._notebooks.get_source_ids(notebook_id, deadline=deadline))
+            if source_ids is None
+            else tuple(source_ids)
+        )
         result = await self._backend.invoke(
             NOTEBOOK_SUGGEST_PROMPTS_DEF,
             NotebookSuggestPromptsInput(
                 notebook_id=notebook_id,
-                source_ids=None if source_ids is None else tuple(source_ids),
+                source_ids=resolved,
                 mode=mode,
                 query=query,
             ),

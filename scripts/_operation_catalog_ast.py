@@ -964,6 +964,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/bindings/notebooks.py", "_backend", "BackendError"),
         ("_web/bindings/notebooks.py", "_backend", "BackendErrorReason"),
         ("_web/codec/mind_maps.py", "_records", "MindMapGenerateInteractiveInput"),
+        ("_web/codec/mind_maps.py", "_records", "MindMapGenerateInteractiveResult"),
         ("_web/codec/mind_maps.py", "_records", "MindMapGenerateNoteInput"),
         ("_web/codec/mind_maps.py", "_records", "MindMapGenerateTreeInput"),
         ("_web/codec/mind_maps.py", "_records", "RAW_MIND_MAP_ROWS"),
@@ -1135,7 +1136,10 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_client_assembly.py", "_web.backend", "WebRpcBackend"),
         ("_mind_maps_api.py", "_backend_compat", "project_backend_call"),
         ("_mind_maps_api.py", "_note_service", "NoteService"),
+        ("_mind_maps_api.py", "_projectors", "project_artifact"),
         ("_mind_maps_api.py", "_projectors", "project_mind_map"),
+        ("_mind_maps_api.py", "_records", "ArtifactRecord"),
+        ("_mind_maps_api.py", "_records", "MindMapGenerateOutcomeRecord"),
         ("_mind_maps_api.py", "_studio", "MindMapFamilyService"),
         ("_notebook_mutation_service.py", "_backend", "BackendAdapter"),
         ("_notebook_mutation_service.py", "_records", "NOTEBOOK_CREATE_DEF"),
@@ -1215,6 +1219,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_read_services.py", "_records", "SOURCE_GET_DEF"),
         ("_read_services.py", "_records", "SOURCE_LIST_DEF"),
         ("_read_services.py", "_records", "SourceGetInput"),
+        ("_read_services.py", "_records", "SourceIdDiagnostics"),
         ("_read_services.py", "_records", "SourceListInput"),
         ("_read_services.py", "_records", "SourceRecord"),
         ("_sharing.py", "_backend", "BackendAdapter"),
@@ -1299,7 +1304,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_sources.py", "_projectors", "project_source"),
         ("_sources.py", "_read_services", "SourceReadService"),
         ("_studio/catalog.py", "_backend", "BackendAdapter"),
-        ("_studio/catalog.py", "_projectors", "project_artifact"),
         ("_studio/catalog.py", "_backend", "BackendError"),
         ("_studio/catalog.py", "_backend", "BackendErrorReason"),
         ("_studio/catalog.py", "_backend", "rebind_operation"),
@@ -1360,7 +1364,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_studio/data_views.py", "_records", "NOTE_UPDATE_DEF"),
         ("_studio/data_views.py", "_records", "MindMapGenerateResult"),
         ("_studio/mind_maps.py", "_backend", "BackendAdapter"),
-        ("_studio/mind_maps.py", "_projectors", "project_artifact"),
+        ("_studio/mind_maps.py", "_read_services", "NotebookReadService"),
         ("_studio/mind_maps.py", "_records", "ArtifactRecord"),
         ("_studio/mind_maps.py", "_records", "MIND_MAP_DELETE_DEF"),
         ("_studio/mind_maps.py", "_records", "MIND_MAP_GENERATE_INTERACTIVE_DEF"),
@@ -1369,8 +1373,10 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_studio/mind_maps.py", "_records", "MindMapDeleteInput"),
         ("_studio/mind_maps.py", "_records", "MindMapGenerateInteractiveInput"),
         ("_studio/mind_maps.py", "_records", "MindMapGenerateInteractiveResult"),
+        ("_studio/mind_maps.py", "_records", "MindMapGenerateOutcomeRecord"),
         ("_studio/mind_maps.py", "_records", "MindMapGetInput"),
         ("_studio/mind_maps.py", "_records", "MindMapUpdateInput"),
+        ("_studio/mind_maps.py", "_records", "SourceIdDiagnostics"),
         ("_studio/exports.py", "_backend", "BackendAdapter"),
         ("_studio/exports.py", "_records", "ARTIFACT_EXPORT_DEF"),
         ("_studio/exports.py", "_records", "DriveExportInput"),
@@ -1562,6 +1568,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_settings_service.py", "_records", "SettingsGetLimitsInput"),
         ("_settings_service.py", "_records", "SettingsSetLanguageInput"),
         ("_suggestion_service.py", "_backend", "BackendAdapter"),
+        ("_suggestion_service.py", "_read_services", "NotebookReadService"),
         ("_suggestion_service.py", "_records", "ARTIFACT_SUGGEST_REPORTS_DEF"),
         ("_suggestion_service.py", "_records", "ArtifactSuggestReportsInput"),
         ("_suggestion_service.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
@@ -1633,6 +1640,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/codec/mind_maps.py", "_records", "MindMapListResult"),
         ("_web/codec/mind_maps.py", "_records", "MindMapUpdateInput"),
         ("_web/codec/mind_maps.py", "_records", "MindMapUpdateResult"),
+        ("_web/codec/mind_maps.py", "studio_documents", "artifact_feature_unavailable"),
         ("_web/codec/notes.py", "_binding", "CodecPayload"),
         ("_web/codec/notes.py", "_records", "NoteCreateInput"),
         ("_web/codec/notes.py", "_records", "NoteCreateResult"),
@@ -1869,11 +1877,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
 # codec modules carry their record/codec imports.
 REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
-        ("_web/bindings/settings.py", "_binding", "CustomBinding"),
-        ("_web/bindings/settings.py", "_binding", "RowInvoker"),
         ("_web/bindings/settings.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
-        ("_web/bindings/settings.py", "_records", "NotebookSuggestPromptsInput"),
-        ("_web/bindings/settings.py", "_records", "NotebookSuggestPromptsResult"),
         ("_web/bindings/studio.py", "_binding", "CustomBinding"),
         ("_web/bindings/studio.py", "_binding", "RowInvoker"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_GENERATE_AUDIO_DEF"),
@@ -1894,6 +1898,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/studio.py", "_records", "ReportGenerateInput"),
         ("_web/bindings/studio.py", "_records", "ReportGenerateResult"),
         ("_web/bindings/studio.py", "_records", "SlideDeckGenerateInput"),
+        ("_web/bindings/studio.py", "_records", "SourceIdDiagnostics"),
         ("_web/bindings/studio.py", "_records", "VideoGenerateInput"),
         ("_web/bindings/studio.py", "_records", "VideoGenerateResult"),
         ("_web/bindings/studio.py", "_records", "VisualGenerateResult"),
@@ -1913,6 +1918,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/codec/generation.py", "studio_documents", "encode_report_generation"),
         ("_web/codec/generation.py", "studio_documents", "encode_video_generation"),
         ("_web/codec/source_ids.py", "_binding", "CodecPayload"),
+        ("_web/codec/source_ids.py", "_records", "SourceIdDiagnostics"),
         ("_web/codec/suggestions.py", "_records", "NotebookSuggestPromptsInput"),
     }
 )
@@ -2574,7 +2580,9 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
 # definitions stay imported — no row carries them — which after R3.2–R3.5 keeps
 # the four hoisted ``SOURCE_ADD_*`` definitions and drops ``SOURCE_REGISTER_DEF``
 # (the R3.2 primitive row carries it) and, after R4.2, ``MIND_MAP_GENERATE_DEF``
-# (the R4.2 primitive row carries that one).
+# (the R4.2 primitive row carries that one) while keeping ``ARTIFACT_LIST_DEF``,
+# ``ARTIFACT_GET_DEF`` and ``ARTIFACT_GENERATE_MIND_MAP_DEF``, the three
+# operations R4.2 moved into the service-owned map.
 REVIEWED_BACKEND_IMPORTS -= frozenset(
     {
         ("_web/registry.py", "_records", "ARTIFACT_CATALOG_DEF"),
@@ -2585,13 +2593,10 @@ REVIEWED_BACKEND_IMPORTS -= frozenset(
         ("_web/registry.py", "_records", "ARTIFACT_GENERATE_DATA_TABLE_DEF"),
         ("_web/registry.py", "_records", "ARTIFACT_GENERATE_FLASHCARDS_DEF"),
         ("_web/registry.py", "_records", "ARTIFACT_GENERATE_INFOGRAPHIC_DEF"),
-        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_MIND_MAP_DEF"),
         ("_web/registry.py", "_records", "ARTIFACT_GENERATE_QUIZ_DEF"),
         ("_web/registry.py", "_records", "ARTIFACT_GENERATE_REPORT_DEF"),
         ("_web/registry.py", "_records", "ARTIFACT_GENERATE_SLIDE_DECK_DEF"),
         ("_web/registry.py", "_records", "ARTIFACT_GENERATE_VIDEO_DEF"),
-        ("_web/registry.py", "_records", "ARTIFACT_GET_DEF"),
-        ("_web/registry.py", "_records", "ARTIFACT_LIST_DEF"),
         ("_web/registry.py", "_records", "ARTIFACT_PATCH_TITLE_DEF"),
         ("_web/registry.py", "_records", "ARTIFACT_RETRY_DEF"),
         ("_web/registry.py", "_records", "ARTIFACT_REVISE_SLIDE_DEF"),
@@ -3595,3 +3600,89 @@ def _definition_invoke_call_count(node: ast.AST, definition_name: str) -> int:
         and isinstance(call.args[0], ast.Name)
         and call.args[0].id == definition_name
     )
+
+
+# P10 R5.1a moves Studio generation input resolution above the port: the eight
+# ``artifact.generate_*`` rows take pre-resolved ``*GenerateInput`` records,
+# ``_studio/generation.py`` owns the ``*GenerateRequest`` form plus the source,
+# language and option defaults, and the rows lose their handler vocabulary.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_artifact/generation_workflow.py", "_records", "AudioGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "DataTableGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "InfographicGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "InteractiveGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "ReportGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "SlideDeckGenerateInput"),
+        ("_artifact/generation_workflow.py", "_records", "VideoGenerateInput"),
+        ("_studio/audio.py", "_records", "AudioGenerateInput"),
+        ("_studio/data_views.py", "_records", "DataTableGenerateInput"),
+        ("_studio/documents.py", "_records", "ReportGenerateInput"),
+        ("_studio/documents.py", "_records", "VideoGenerateInput"),
+        ("_studio/interactive.py", "_records", "InteractiveGenerateInput"),
+        ("_studio/visuals.py", "_records", "InfographicGenerateInput"),
+        ("_studio/visuals.py", "_records", "SlideDeckGenerateInput"),
+        ("_web/bindings/studio.py", "_binding", "CustomBinding"),
+        ("_web/bindings/studio.py", "_binding", "RowInvoker"),
+        ("_web/bindings/studio.py", "_records", "AudioGenerateInput"),
+        ("_web/bindings/studio.py", "_records", "AudioGenerateResult"),
+        ("_web/bindings/studio.py", "_records", "DataTableGenerateInput"),
+        ("_web/bindings/studio.py", "_records", "DataTableGenerateResult"),
+        ("_web/bindings/studio.py", "_records", "InfographicGenerateInput"),
+        ("_web/bindings/studio.py", "_records", "InteractiveGenerateInput"),
+        ("_web/bindings/studio.py", "_records", "InteractiveGenerateResult"),
+        ("_web/bindings/studio.py", "_records", "ReportGenerateInput"),
+        ("_web/bindings/studio.py", "_records", "ReportGenerateResult"),
+        ("_web/bindings/studio.py", "_records", "SlideDeckGenerateInput"),
+        ("_web/bindings/studio.py", "_records", "SourceIdDiagnostics"),
+        ("_web/bindings/studio.py", "_records", "VideoGenerateInput"),
+        ("_web/bindings/studio.py", "_records", "VideoGenerateResult"),
+        ("_web/bindings/studio.py", "_records", "VisualGenerateResult"),
+        ("_web/codec/generation.py", "_backend", "BackendContractError"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_artifact/generation_workflow.py", "_records", "AudioGenerateRequest"),
+        ("_artifact/generation_workflow.py", "_records", "DataTableGenerateRequest"),
+        ("_artifact/generation_workflow.py", "_records", "InfographicGenerateRequest"),
+        ("_artifact/generation_workflow.py", "_records", "InteractiveGenerateRequest"),
+        ("_artifact/generation_workflow.py", "_records", "ReportGenerateRequest"),
+        ("_artifact/generation_workflow.py", "_records", "SlideDeckGenerateRequest"),
+        ("_artifact/generation_workflow.py", "_records", "VideoGenerateRequest"),
+        ("_artifacts.py", "_read_services", "NotebookReadService"),
+        ("_artifacts.py", "_studio", "StudioGenerationInputs"),
+        ("_studio/audio.py", "_records", "AudioGenerateRequest"),
+        ("_studio/data_views.py", "_records", "DataTableGenerateRequest"),
+        ("_studio/documents.py", "_records", "ReportGenerateRequest"),
+        ("_studio/documents.py", "_records", "VideoGenerateRequest"),
+        ("_studio/generation.py", "_backend", "BackendContractError"),
+        ("_studio/generation.py", "_read_services", "NotebookReadService"),
+        ("_studio/generation.py", "_records", "AudioGenerateInput"),
+        ("_studio/generation.py", "_records", "AudioGenerateRequest"),
+        ("_studio/generation.py", "_records", "DataTableGenerateInput"),
+        ("_studio/generation.py", "_records", "DataTableGenerateRequest"),
+        ("_studio/generation.py", "_records", "InfographicGenerateInput"),
+        ("_studio/generation.py", "_records", "InfographicGenerateRequest"),
+        ("_studio/generation.py", "_records", "InteractiveGenerateInput"),
+        ("_studio/generation.py", "_records", "InteractiveGenerateRequest"),
+        ("_studio/generation.py", "_records", "ReportGenerateInput"),
+        ("_studio/generation.py", "_records", "ReportGenerateRequest"),
+        ("_studio/generation.py", "_records", "SlideDeckGenerateInput"),
+        ("_studio/generation.py", "_records", "SlideDeckGenerateRequest"),
+        ("_studio/generation.py", "_records", "SourceIdDiagnostics"),
+        ("_studio/generation.py", "_records", "VideoGenerateInput"),
+        ("_studio/generation.py", "_records", "VideoGenerateRequest"),
+        ("_studio/interactive.py", "_records", "InteractiveGenerateRequest"),
+        ("_studio/visuals.py", "_records", "InfographicGenerateRequest"),
+        ("_studio/visuals.py", "_records", "SlideDeckGenerateRequest"),
+        ("_web/codec/generation.py", "_records", "AudioGenerateResult"),
+        ("_web/codec/generation.py", "_records", "DataTableGenerateResult"),
+        ("_web/codec/generation.py", "_records", "InteractiveGenerateResult"),
+        ("_web/codec/generation.py", "_records", "ReportGenerateResult"),
+        ("_web/codec/generation.py", "_records", "VideoGenerateResult"),
+        ("_web/codec/generation.py", "_records", "VisualGenerateResult"),
+        ("_web/codec/generation.py", "studio_documents", "wire_option"),
+        ("_web/codec/studio_documents.py", "_backend", "BackendContractError"),
+    }
+)

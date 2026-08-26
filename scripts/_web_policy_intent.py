@@ -398,10 +398,7 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
         ),
         Operation.NOTEBOOK_SUGGEST_PROMPTS: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional source resolution"),
-                _native(RPCMethod.SUGGEST_PROMPTS, _IDEMPOTENT, "prompt suggestion read"),
-            ),
+            (_native(RPCMethod.SUGGEST_PROMPTS, _IDEMPOTENT, "prompt suggestion read"),),
         ),
         Operation.ARTIFACT_SUGGEST_REPORTS: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
@@ -415,83 +412,35 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
         ),
         Operation.ARTIFACT_GENERATE_AUDIO: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(
-                    RPCMethod.GET_NOTEBOOK,
-                    _IDEMPOTENT,
-                    "conditional default-source resolution",
-                ),
-                _native(
-                    RPCMethod.CREATE_ARTIFACT,
-                    _PROBE_CREATE,
-                    "audio artifact allocation",
-                ),
-            ),
+            (_native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "audio artifact allocation"),),
         ),
         Operation.ARTIFACT_GENERATE_QUIZ: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(
-                    RPCMethod.GET_NOTEBOOK,
-                    _IDEMPOTENT,
-                    "conditional default-source resolution",
-                ),
-                _native(
-                    RPCMethod.CREATE_ARTIFACT,
-                    _PROBE_CREATE,
-                    "quiz artifact allocation",
-                ),
-            ),
+            (_native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "quiz artifact allocation"),),
         ),
         Operation.ARTIFACT_GENERATE_FLASHCARDS: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(
-                    RPCMethod.GET_NOTEBOOK,
-                    _IDEMPOTENT,
-                    "conditional default-source resolution",
-                ),
-                _native(
-                    RPCMethod.CREATE_ARTIFACT,
-                    _PROBE_CREATE,
-                    "flashcards artifact allocation",
-                ),
-            ),
+            (_native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "flashcards artifact allocation"),),
         ),
         Operation.ARTIFACT_GENERATE_VIDEO: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional all-source resolution"),
-                _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded video kickoff"),
-            ),
+            (_native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded video kickoff"),),
         ),
         Operation.ARTIFACT_GENERATE_REPORT: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional all-source resolution"),
-                _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded report kickoff"),
-            ),
+            (_native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded report kickoff"),),
         ),
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional all-source resolution"),
-                _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded infographic kickoff"),
-            ),
+            (_native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded infographic kickoff"),),
         ),
         Operation.ARTIFACT_GENERATE_SLIDE_DECK: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional all-source resolution"),
-                _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded slide-deck kickoff"),
-            ),
+            (_native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "guarded slide-deck kickoff"),),
         ),
         Operation.ARTIFACT_GENERATE_DATA_TABLE: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
-            (
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "optional source-set read"),
-                _native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "data-table kickoff"),
-            ),
+            (_native(RPCMethod.CREATE_ARTIFACT, _PROBE_CREATE, "data-table kickoff"),),
         ),
         Operation.ARTIFACT_EXPORT: WebCallPolicyBinding(
             CallPolicy.MUTATION,
@@ -621,11 +570,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
         Operation.MIND_MAP_GENERATE_INTERACTIVE: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
             (
-                _native(
-                    RPCMethod.GET_NOTEBOOK,
-                    _IDEMPOTENT,
-                    "conditional default-source resolution",
-                ),
                 _native(
                     RPCMethod.CREATE_ARTIFACT,
                     _PROBE_CREATE,

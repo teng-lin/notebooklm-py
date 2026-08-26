@@ -10,6 +10,7 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
@@ -18,12 +19,23 @@ from notebooklm._records import (
     ArtifactSlideRecord,
     GenerationStatusRecord,
     InfographicGenerateInput,
+    InfographicGenerateRequest,
     SlideDeckGenerateInput,
+    SlideDeckGenerateRequest,
     VisualGenerateResult,
     VisualMetadataRecord,
 )
-from notebooklm._studio import StudioCatalog, VisualFamilyService
+from notebooklm._studio import (
+    StudioCatalog,
+    StudioGenerationInputs,
+    VisualFamilyService,
+)
 from tests._fixtures.recording_backend import RecordingBackend, set_studio_catalog
+
+
+def _generation_inputs(backend: RecordingBackend) -> StudioGenerationInputs:
+    """The R5.1a resolver every generate family now takes."""
+    return StudioGenerationInputs(NotebookReadService(backend))
 
 
 def _infographic() -> ArtifactRecord:
@@ -113,10 +125,10 @@ async def test_visual_generation_records_exact_operations_values_and_deadline() 
     result = VisualGenerateResult(GenerationStatusRecord("task", "pending"))
     backend.set_result(ARTIFACT_GENERATE_INFOGRAPHIC_DEF, result)
     backend.set_result(ARTIFACT_GENERATE_SLIDE_DECK_DEF, result)
-    service = VisualFamilyService(backend, StudioCatalog(backend))
+    service = VisualFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 11.0)
-    infographic = InfographicGenerateInput("nb", ("src",), orientation="square")
-    slides = SlideDeckGenerateInput("nb", ("src",), slide_format="presenter_slides")
+    infographic = InfographicGenerateRequest("nb", ("src",), orientation="square")
+    slides = SlideDeckGenerateRequest("nb", ("src",), slide_format="presenter_slides")
 
     assert await service.generate_infographic(infographic, deadline=deadline) == result
     assert await service.generate_slide_deck(slides, deadline=deadline) == result
@@ -124,7 +136,10 @@ async def test_visual_generation_records_exact_operations_values_and_deadline() 
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC,
         Operation.ARTIFACT_GENERATE_SLIDE_DECK,
     ]
-    assert [item.value for item in backend.invocations] == [infographic, slides]
+    assert [item.value for item in backend.invocations] == [
+        InfographicGenerateInput("nb", ("src",), "en", orientation="square"),
+        SlideDeckGenerateInput("nb", ("src",), "en", slide_format="presenter_slides"),
+    ]
     assert all(item.deadline is deadline for item in backend.invocations)
 
 
@@ -134,7 +149,7 @@ async def test_visual_catalog_and_get_preserve_rendered_accessibility_metadata()
     slides = _slide_deck()
     backend = RecordingBackend()
     set_studio_catalog(backend, (infographic, slides))
-    service = VisualFamilyService(backend, StudioCatalog(backend))
+    service = VisualFamilyService(backend, StudioCatalog(backend), _generation_inputs(backend))
 
     assert await service.list_infographics("nb") == (infographic,)
     assert await service.list_slide_decks("nb") == (slides,)

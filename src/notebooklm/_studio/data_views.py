@@ -15,13 +15,14 @@ from .._records import (
     NOTE_DELETE_DEF,
     NOTE_UPDATE_DEF,
     ArtifactRecord,
-    DataTableGenerateInput,
+    DataTableGenerateRequest,
     DataTableGenerateResult,
     MindMapGenerateInput,
     MindMapGenerateNoteInput,
     MindMapGenerateResult,
 )
 from .catalog import StudioCatalog
+from .generation import StudioGenerationInputs, _generation_budget
 
 #: The title a generated tree carries when it names none of its own.
 _DEFAULT_MIND_MAP_TITLE = "Mind Map"
@@ -56,21 +57,28 @@ def _derive_title(tree: object) -> str:
 class DataTableFamilyService:
     """Data-table generation and complete catalog selection."""
 
-    __slots__ = ("_backend", "_catalog")
+    __slots__ = ("_backend", "_catalog", "_inputs")
 
-    def __init__(self, backend: BackendAdapter, catalog: StudioCatalog) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        catalog: StudioCatalog,
+        inputs: StudioGenerationInputs,
+    ) -> None:
         self._backend = backend
         self._catalog = catalog
+        self._inputs = inputs
 
     async def generate(
         self,
-        value: DataTableGenerateInput,
+        request: DataTableGenerateRequest,
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> DataTableGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_DATA_TABLE_DEF,
-            value,
+            await self._inputs.data_table(request, deadline=deadline),
             deadline=deadline,
         )
 

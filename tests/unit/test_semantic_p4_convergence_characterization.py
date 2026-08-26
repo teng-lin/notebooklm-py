@@ -395,8 +395,8 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         (
             NOTEBOOK_SUGGEST_PROMPTS_DEF,
-            [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.SUGGEST_PROMPTS, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.IDEMPOTENT_SET_OP],
+            [(RPCMethod.SUGGEST_PROMPTS, None)],
+            [IdempotencyPolicy.IDEMPOTENT_SET_OP],
         ),
         (
             ARTIFACT_SUGGEST_REPORTS_DEF,
@@ -435,49 +435,43 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         (
             ARTIFACT_GENERATE_AUDIO_DEF,
-            [
-                (RPCMethod.GET_NOTEBOOK, None),
-                (RPCMethod.CREATE_ARTIFACT, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.PROBE_THEN_CREATE,
-            ],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             ARTIFACT_GENERATE_QUIZ_DEF,
-            [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.CREATE_ARTIFACT, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.PROBE_THEN_CREATE],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             ARTIFACT_GENERATE_FLASHCARDS_DEF,
-            [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.CREATE_ARTIFACT, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.PROBE_THEN_CREATE],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             ARTIFACT_GENERATE_VIDEO_DEF,
-            [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.CREATE_ARTIFACT, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.PROBE_THEN_CREATE],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             ARTIFACT_GENERATE_REPORT_DEF,
-            [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.CREATE_ARTIFACT, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.PROBE_THEN_CREATE],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-            [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.CREATE_ARTIFACT, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.PROBE_THEN_CREATE],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             ARTIFACT_GENERATE_SLIDE_DECK_DEF,
-            [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.CREATE_ARTIFACT, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.PROBE_THEN_CREATE],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             ARTIFACT_GENERATE_DATA_TABLE_DEF,
-            [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.CREATE_ARTIFACT, None)],
-            [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.PROBE_THEN_CREATE],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             ARTIFACT_EXPORT_DEF,
@@ -585,14 +579,8 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         (
             MIND_MAP_GENERATE_INTERACTIVE_DEF,
-            [
-                (RPCMethod.GET_NOTEBOOK, None),
-                (RPCMethod.CREATE_ARTIFACT, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.PROBE_THEN_CREATE,
-            ],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             MIND_MAP_UPDATE_DEF,

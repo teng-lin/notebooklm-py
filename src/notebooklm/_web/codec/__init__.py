@@ -57,7 +57,6 @@ from .studio_documents import (
     encode_video_generation,
 )
 from .suggestions import (
-    decode_prompt_source_ids,
     decode_prompt_suggestions,
     decode_report_suggestions,
     encode_prompt_suggestions,
@@ -82,7 +81,6 @@ __all__ = [
     "decode_mind_map_artifact",
     "decode_notebook",
     "decode_notebook_description",
-    "decode_prompt_source_ids",
     "decode_prompt_suggestions",
     "decode_report_suggestion",
     "decode_imported_sources",

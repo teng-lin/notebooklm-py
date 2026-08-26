@@ -85,24 +85,12 @@ I1_FORBIDDEN_FIRST_PARTY_ROOTS: frozenset[str] = frozenset(
     }
 )
 
-#: Shrinking seed: the semantic service modules that violate I1 today. Entries
-#: leave as their retiring slice lands (R5.2 for ``_studio``, R6.1-R6.4 for the
-#: root services, R6.6 for ``_note_service``); nothing may be added. The plan's
-#: §6 target is an empty set beside the permanent exemption below.
-#:
-#: ``_research_service.py`` left in R6.4: its wait and verification workflows
-#: now take neutral inputs and return ``*Result`` records, its source probe
-#: reads ``SourceRecord`` rows off the semantic read service instead of calling
-#: the public ``sources.list`` facade, and both exception projection and the
-#: public argument validation moved up to ``ResearchAPI``.
-I1_SEED_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "_studio/catalog.py",
-        "_studio/lifecycle.py",
-        "_studio/mind_maps.py",
-        "_studio/representations.py",
-    }
-)
+#: Shrinking seed: the semantic service modules that violate I1. Entries leave
+#: as their retiring slice lands, and nothing may be added. The plan's §6 target
+#: is an empty set beside the permanent exemption below, and P10 reaches it:
+#: R6.1-R6.6 drained the root services and R5.2 the four ``_studio/*`` modules
+#: (``catalog.py``, ``lifecycle.py``, ``mind_maps.py``, ``representations.py``).
+I1_SEED_ALLOWLIST: frozenset[str] = frozenset()
 
 #: Permanent, *named* exemption — not a shrinking seed. ``_studio/downloads.py``
 #: owns the byte-download clients (``httpx`` plus ``_curl_cffi_transport``);
@@ -493,10 +481,13 @@ def test_conforming_semantic_services_return_only_neutral_types() -> None:
     def is_neutral(atom: str) -> bool:
         if atom in permitted:
             return True
-        # A private neutral record/result. The public-model exclusion matters:
-        # ``AskResult`` and ``MindMapResult`` are exported models that the
-        # bare suffix rule would otherwise wave through.
-        return atom.endswith(("Record", "Result")) and atom not in public_models
+        # A private neutral record/result/operation input. ``*Input`` joined the
+        # vocabulary in P10 R5.1a: a service that resolves a port input above the
+        # port (``StudioGenerationInputs``) returns one, and those records live in
+        # the same neutral modules as ``*Record``. The public-model exclusion
+        # matters: ``AskResult`` and ``MindMapResult`` are exported models that
+        # the bare suffix rule would otherwise wave through.
+        return atom.endswith(("Input", "Record", "Result")) and atom not in public_models
 
     offenders: dict[str, list[tuple[str, str]]] = {}
     for path in _semantic_service_modules():

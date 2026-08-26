@@ -28,17 +28,7 @@ from notebooklm.rpc import RPCMethod
 
 _EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
     {
-        Operation.NOTEBOOK_SUGGEST_PROMPTS,
-        Operation.ARTIFACT_GENERATE_AUDIO,
-        Operation.ARTIFACT_GENERATE_VIDEO,
-        Operation.ARTIFACT_GENERATE_REPORT,
-        Operation.ARTIFACT_GENERATE_QUIZ,
-        Operation.ARTIFACT_GENERATE_FLASHCARDS,
-        Operation.ARTIFACT_GENERATE_INFOGRAPHIC,
-        Operation.ARTIFACT_GENERATE_SLIDE_DECK,
-        Operation.ARTIFACT_GENERATE_DATA_TABLE,
         Operation.MIND_MAP_GENERATE_NOTE,
-        Operation.MIND_MAP_GENERATE_INTERACTIVE,
     }
 )
 _EXPECTED_WORKFLOW_OWNED_OPERATIONS = frozenset(

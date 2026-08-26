@@ -26,6 +26,7 @@ from notebooklm._records import (
     MindMapGenerateInteractiveResult,
     MindMapGenerateNoteInput,
     MindMapGenerateNoteResult,
+    MindMapGenerateOutcomeRecord,
     MindMapGetInput,
     MindMapGetResult,
     MindMapListInput,
@@ -184,17 +185,15 @@ async def test_interactive_service_uses_studio_catalog_and_typed_family_operatio
     await service.rename("notebook-id", "mind-map-id", "Renamed")
     await service.delete("notebook-id", "mind-map-id")
 
-    assert [(item.id, item.kind) for item in listed] == [("mind-map-id", MindMapKind.INTERACTIVE)]
-    assert (
-        generated.id,
-        generated.title,
-        generated.created_at,
-        generated.tree,
-    ) == (
-        "mind-map-id",
-        "Generated Map",
-        created_at,
-        {"name": "Generated Map", "children": []},
+    # ``list_mind_maps``/``generate`` stay record-only here (P10 I1); public
+    # ``MindMap`` projection is ``MindMapsAPI``'s job — see
+    # ``tests/unit/test_mind_maps_api.py`` for the projected assertions this
+    # test previously carried.
+    assert [(item.id, item.variant) for item in listed] == [("mind-map-id", "interactive_mind_map")]
+    assert generated == MindMapGenerateOutcomeRecord(
+        mind_map_id="mind-map-id",
+        record=record,
+        tree={"name": "Generated Map", "children": []},
     )
     wait_for_completion.assert_awaited_once_with("notebook-id", "mind-map-id")
     # The listing above is two invocations: the catalog read and its merge.

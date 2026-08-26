@@ -10,14 +10,15 @@ from .._records import (
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_VIDEO_DEF,
     ArtifactRecord,
-    ReportGenerateInput,
+    ReportGenerateRequest,
     ReportGenerateResult,
     ReportMetadataRecord,
-    VideoGenerateInput,
+    VideoGenerateRequest,
     VideoGenerateResult,
     VideoMetadataRecord,
 )
 from .catalog import StudioCatalog
+from .generation import StudioGenerationInputs, _generation_budget
 
 _REPORT_FORMATS_BY_KIND = {
     "Briefing Doc": "briefing_doc",
@@ -35,22 +36,29 @@ class DocumentOptionError(ValueError):
 class VideoFamilyService:
     """Video generation, discovery, readiness, and representation metadata."""
 
-    __slots__ = ("_backend", "_catalog")
+    __slots__ = ("_backend", "_catalog", "_inputs")
 
-    def __init__(self, backend: BackendAdapter, catalog: StudioCatalog) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        catalog: StudioCatalog,
+        inputs: StudioGenerationInputs,
+    ) -> None:
         self._backend = backend
         self._catalog = catalog
+        self._inputs = inputs
 
     async def generate(
         self,
-        value: VideoGenerateInput,
+        request: VideoGenerateRequest,
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> VideoGenerateResult:
-        normalized = self._normalize_options(value)
+        normalized = self._normalize_options(request)
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_VIDEO_DEF,
-            normalized,
+            await self._inputs.video(normalized, deadline=deadline),
             deadline=deadline,
         )
 
@@ -92,7 +100,7 @@ class VideoFamilyService:
         )
 
     @staticmethod
-    def _normalize_options(value: VideoGenerateInput) -> VideoGenerateInput:
+    def _normalize_options(value: VideoGenerateRequest) -> VideoGenerateRequest:
         prompt = value.style_prompt.strip() if value.style_prompt is not None else None
         if value.cinematic_route and (
             value.video_format not in {None, "cinematic"} or value.video_style is not None or prompt
@@ -119,21 +127,28 @@ class VideoFamilyService:
 class ReportFamilyService:
     """Report generation, discovery, readiness, and format metadata."""
 
-    __slots__ = ("_backend", "_catalog")
+    __slots__ = ("_backend", "_catalog", "_inputs")
 
-    def __init__(self, backend: BackendAdapter, catalog: StudioCatalog) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        catalog: StudioCatalog,
+        inputs: StudioGenerationInputs,
+    ) -> None:
         self._backend = backend
         self._catalog = catalog
+        self._inputs = inputs
 
     async def generate(
         self,
-        value: ReportGenerateInput,
+        request: ReportGenerateRequest,
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> ReportGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_REPORT_DEF,
-            value,
+            await self._inputs.report(request, deadline=deadline),
             deadline=deadline,
         )
 

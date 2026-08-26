@@ -331,12 +331,29 @@ class ArtifactDownloadResult:
 
 
 @dataclass(frozen=True, slots=True)
-class AudioGenerateInput:
-    """Audio generation options without web enum or payload vocabulary."""
+class AudioGenerateRequest:
+    """Audio generation as a caller states it; ``None`` means "resolve it".
+
+    ``source_ids=None`` asks for the notebook's whole source set and
+    ``language=None`` asks for the environment default — both are service-level
+    defaults (ADR-0035 addendum D1(a)) resolved before the port is invoked.
+    """
 
     notebook_id: str
     source_ids: tuple[str, ...] | None = None
     language: str | None = "en"
+    instructions: str | None = field(default=None, repr=False)
+    audio_format: str | None = None
+    audio_length: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AudioGenerateInput:
+    """Pre-resolved audio generation input: the port defaults nothing."""
+
+    notebook_id: str
+    source_ids: tuple[str, ...]
+    language: str
     instructions: str | None = field(default=None, repr=False)
     audio_format: str | None = None
     audio_length: str | None = None
@@ -350,12 +367,26 @@ class AudioGenerateResult:
 
 
 @dataclass(frozen=True, slots=True)
-class VideoGenerateInput:
-    """Video generation options without web enum or payload vocabulary."""
+class VideoGenerateRequest:
+    """Video generation as a caller states it; ``None`` means "resolve it"."""
 
     notebook_id: str
     source_ids: tuple[str, ...] | None = None
     language: str | None = "en"
+    instructions: str | None = field(default=None, repr=False)
+    video_format: str | None = None
+    video_style: str | None = None
+    style_prompt: str | None = field(default=None, repr=False)
+    cinematic_route: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class VideoGenerateInput:
+    """Pre-resolved video generation input: the port defaults nothing."""
+
+    notebook_id: str
+    source_ids: tuple[str, ...]
+    language: str
     instructions: str | None = field(default=None, repr=False)
     video_format: str | None = None
     video_style: str | None = None
@@ -371,11 +402,22 @@ class VideoGenerateResult:
 
 
 @dataclass(frozen=True, slots=True)
-class InteractiveGenerateInput:
-    """Quiz or flashcard generation options without web enum vocabulary."""
+class InteractiveGenerateRequest:
+    """Quiz or flashcard generation as a caller states it."""
 
     notebook_id: str
     source_ids: tuple[str, ...] | None = None
+    instructions: str | None = field(default=None, repr=False)
+    quantity: str | None = None
+    difficulty: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InteractiveGenerateInput:
+    """Pre-resolved quiz or flashcard input: the port defaults nothing."""
+
+    notebook_id: str
+    source_ids: tuple[str, ...]
     instructions: str | None = field(default=None, repr=False)
     quantity: str | None = None
     difficulty: str | None = None
@@ -389,13 +431,29 @@ class InteractiveGenerateResult:
 
 
 @dataclass(frozen=True, slots=True)
-class ReportGenerateInput:
-    """Report generation options without web enum or payload vocabulary."""
+class ReportGenerateRequest:
+    """Report generation as a caller states it."""
 
     notebook_id: str
     report_format: str = "briefing_doc"
     source_ids: tuple[str, ...] | None = None
     language: str | None = "en"
+    custom_prompt: str | None = field(default=None, repr=False)
+    extra_instructions: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ReportGenerateInput:
+    """Pre-resolved report generation input: the port defaults nothing.
+
+    The resolved fields lead, as they do in every generate family, so the two
+    required ones precede the defaulted ``report_format``.
+    """
+
+    notebook_id: str
+    source_ids: tuple[str, ...]
+    language: str
+    report_format: str = "briefing_doc"
     custom_prompt: str | None = field(default=None, repr=False)
     extra_instructions: str | None = field(default=None, repr=False)
 
@@ -448,6 +506,24 @@ class InteractiveMetadataRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class MindMapGenerateOutcomeRecord:
+    """Interactive mind-map generation outcome handed from the Studio family
+    service to its facade.
+
+    ``record`` is the resolved catalog row once the post-create readback
+    confirms its interactive identity (``None`` while a newly allocated
+    type-4 row briefly lacks its variant); ``mind_map_id`` is the allocated
+    identity regardless, so the facade can still build a minimal envelope on
+    a ``None`` record. ``tree`` is the parsed JSON tree fetched only when the
+    caller waited for completion.
+    """
+
+    mind_map_id: str
+    record: ArtifactRecord | None
+    tree: dict[str, object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ReportMetadataRecord:
     """Report readiness and format metadata derived from one catalog row."""
 
@@ -462,12 +538,22 @@ class ReportMetadataRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class DataTableGenerateInput:
-    """Data-table generation options without web payload vocabulary."""
+class DataTableGenerateRequest:
+    """Data-table generation as a caller states it."""
 
     notebook_id: str
     source_ids: tuple[str, ...] | None = None
     language: str | None = "en"
+    instructions: str | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class DataTableGenerateInput:
+    """Pre-resolved data-table generation input: the port defaults nothing."""
+
+    notebook_id: str
+    source_ids: tuple[str, ...]
+    language: str
     instructions: str | None = field(default=None, repr=False)
 
 
@@ -497,8 +583,8 @@ class DriveExportResult:
 
 
 @dataclass(frozen=True, slots=True)
-class InfographicGenerateInput:
-    """Infographic options without web enum or payload vocabulary."""
+class InfographicGenerateRequest:
+    """Infographic generation as a caller states it."""
 
     notebook_id: str
     source_ids: tuple[str, ...] | None = None
@@ -510,12 +596,37 @@ class InfographicGenerateInput:
 
 
 @dataclass(frozen=True, slots=True)
-class SlideDeckGenerateInput:
-    """Slide-deck options without web enum or payload vocabulary."""
+class InfographicGenerateInput:
+    """Pre-resolved infographic input: the port defaults nothing."""
+
+    notebook_id: str
+    source_ids: tuple[str, ...]
+    language: str
+    instructions: str | None = field(default=None, repr=False)
+    orientation: str | None = None
+    detail_level: str | None = None
+    style: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SlideDeckGenerateRequest:
+    """Slide-deck generation as a caller states it."""
 
     notebook_id: str
     source_ids: tuple[str, ...] | None = None
     language: str | None = "en"
+    instructions: str | None = field(default=None, repr=False)
+    slide_format: str | None = None
+    slide_length: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SlideDeckGenerateInput:
+    """Pre-resolved slide-deck input: the port defaults nothing."""
+
+    notebook_id: str
+    source_ids: tuple[str, ...]
+    language: str
     instructions: str | None = field(default=None, repr=False)
     slide_format: str | None = None
     slide_length: str | None = None
@@ -786,23 +897,31 @@ __all__ = [
     "ArtifactSuggestReportsResult",
     "ArtifactUserStateRecord",
     "AudioGenerateInput",
+    "AudioGenerateRequest",
     "AudioGenerateResult",
     "AudioMetadataRecord",
     "DataTableGenerateInput",
+    "DataTableGenerateRequest",
     "DataTableGenerateResult",
     "DriveExportInput",
     "DriveExportResult",
     "GenerationStatusRecord",
     "InfographicGenerateInput",
+    "InfographicGenerateRequest",
     "InteractiveGenerateInput",
+    "InteractiveGenerateRequest",
     "InteractiveGenerateResult",
     "InteractiveMetadataRecord",
+    "MindMapGenerateOutcomeRecord",
     "ReportGenerateInput",
+    "ReportGenerateRequest",
     "ReportGenerateResult",
     "ReportMetadataRecord",
     "ReportSuggestionRecord",
     "SlideDeckGenerateInput",
+    "SlideDeckGenerateRequest",
     "VideoGenerateInput",
+    "VideoGenerateRequest",
     "VideoGenerateResult",
     "VideoMetadataRecord",
     "VisualGenerateResult",

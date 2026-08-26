@@ -12,14 +12,21 @@ from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._backend_compat import project_backend_error
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     ARTIFACT_EXPORT_DEF,
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
     DataTableGenerateInput,
+    DataTableGenerateRequest,
     DriveExportInput,
     MindMapGenerateInput,
 )
-from notebooklm._studio import NoteBackedMindMapFamilyService, StudioCatalog
+from notebooklm._studio import (
+    DataTableFamilyService,
+    NoteBackedMindMapFamilyService,
+    StudioCatalog,
+    StudioGenerationInputs,
+)
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.codec.artifact_payloads import (
     build_data_table_artifact_params,
@@ -84,11 +91,13 @@ async def test_omitted_generation_sources_perform_one_recency_read_and_preserve_
         ]
     ]
     executor = _Executor(notebook, [["task-table", None, None, None, 1]])
-    await _backend(executor).invoke(
-        ARTIFACT_GENERATE_DATA_TABLE_DEF,
-        DataTableGenerateInput("nb"),
-        deadline=None,
+    backend = _backend(executor)
+    # R5.1a: the service resolves the omitted source set, so the read is above
+    # the port and the row itself dispatches only the kickoff.
+    service = DataTableFamilyService(
+        backend, StudioCatalog(backend), StudioGenerationInputs(NotebookReadService(backend))
     )
+    await service.generate(DataTableGenerateRequest("nb"), deadline=None)
 
     assert [call.method for call in executor.calls] == [
         RPCMethod.GET_NOTEBOOK,
@@ -106,7 +115,7 @@ async def test_data_table_null_reconstructs_public_feature_error() -> None:
     with pytest.raises(BackendError) as caught:
         await backend.invoke(
             ARTIFACT_GENERATE_DATA_TABLE_DEF,
-            DataTableGenerateInput("nb", ("src-a",)),
+            DataTableGenerateInput("nb", ("src-a",), "en"),
             deadline=None,
         )
 
@@ -257,7 +266,7 @@ async def test_drive_export_preserves_opaque_response_and_exact_destination(
 
 def test_sensitive_generation_export_payloads_are_absent_from_record_reprs() -> None:
     assert "secret instructions" not in repr(
-        DataTableGenerateInput("nb", instructions="secret instructions")
+        DataTableGenerateInput("nb", (), "en", instructions="secret instructions")
     )
     assert "secret instructions" not in repr(
         MindMapGenerateInput("nb", instructions="secret instructions")

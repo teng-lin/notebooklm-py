@@ -30,17 +30,13 @@ class SemanticDeadlineAuthority(str, Enum):
 SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlineAuthority]] = (
     MappingProxyType(
         {
-            Operation.NOTEBOOK_SUGGEST_PROMPTS: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_AUDIO: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_VIDEO: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_REPORT: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_QUIZ: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_FLASHCARDS: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_INFOGRAPHIC: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_SLIDE_DECK: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.ARTIFACT_GENERATE_DATA_TABLE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
+            # P10 R3.2-R3.5 took the ``source.add_*`` operations out of this
+            # ledger, R5.1a the eight ``artifact.generate_*`` families, R5.1b
+            # ``mind_map.generate_interactive`` and R5.1c
+            # ``notebook.suggest_prompts``: their rows are single-native now, and
+            # the owning service captures the one budget the default-source read
+            # and the kickoff share.
             Operation.MIND_MAP_GENERATE_NOTE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
-            Operation.MIND_MAP_GENERATE_INTERACTIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             # Source file registration/upload, source polling, artifact shared-leader
             # polling, chat streaming, and research reconciliation all have explicit
             # existing budgets whose observable semantics P4.2 preserves.

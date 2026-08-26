@@ -12,7 +12,6 @@ failure or a transport family the policy never covered still surfaces.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from .._backend import (
     BackendAdapter,
@@ -23,7 +22,6 @@ from .._backend import (
 )
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._operations import Operation
-from .._projectors import project_artifact
 from .._records import (
     ARTIFACT_CATALOG_DEF,
     MIND_MAP_LIST_DEF,
@@ -34,9 +32,6 @@ from .._records import (
     MindMapRecord,
 )
 from .classifiers import matches_artifact_family
-
-if TYPE_CHECKING:
-    from ..types import Artifact
 
 # The listing surface's historical logger name: the partial-availability
 # warning is observable and tests capture it on this exact logger.
@@ -81,7 +76,12 @@ def _mind_map_artifact(record: MindMapRecord) -> ArtifactRecord:
 
 
 class StudioCatalog:
-    """List and select complete heterogeneous Studio records."""
+    """List and select complete heterogeneous Studio records.
+
+    Public projection to :class:`~notebooklm.types.Artifact` is a facade
+    responsibility (P10 invariant I1); callers project ``list_records``/
+    ``get_record`` output themselves.
+    """
 
     __slots__ = ("_backend", "_deadline_factory")
 
@@ -93,16 +93,6 @@ class StudioCatalog:
     ) -> None:
         self._backend = backend
         self._deadline_factory = deadline_factory
-
-    async def list(
-        self,
-        notebook_id: str,
-        family: str | None = None,
-        *,
-        deadline: RuntimeDeadline | None = None,
-    ) -> list[Artifact]:
-        records = await self.list_records(notebook_id, family, deadline=deadline)
-        return [project_artifact(record) for record in records]
 
     async def list_records(
         self,
@@ -137,16 +127,6 @@ class StudioCatalog:
             notebook_id, Operation.ARTIFACT_GET, deadline=deadline, include_mind_maps=True
         )
         return next((record for record in records if record.id == artifact_id), None)
-
-    async def get_or_none(
-        self,
-        notebook_id: str,
-        artifact_id: str,
-        *,
-        deadline: RuntimeDeadline | None = None,
-    ) -> Artifact | None:
-        record = await self.get_record(notebook_id, artifact_id, deadline=deadline)
-        return None if record is None else project_artifact(record)
 
     async def _catalog_records(
         self,

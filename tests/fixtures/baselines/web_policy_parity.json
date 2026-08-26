@@ -59,120 +59,104 @@
     "artifact.generate_audio": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "reviewed_streams": []
     },
     "artifact.generate_data_table": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "reviewed_streams": []
     },
     "artifact.generate_flashcards": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "reviewed_streams": []
     },
     "artifact.generate_infographic": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "reviewed_streams": []
     },
     "artifact.generate_quiz": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "reviewed_streams": []
     },
     "artifact.generate_report": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "reviewed_streams": []
     },
     "artifact.generate_slide_deck": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "reviewed_streams": []
     },
     "artifact.generate_video": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "reviewed_streams": []
     },
@@ -475,15 +459,13 @@
     "mind_map.generate_interactive": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "CREATE_ARTIFACT:<default>",
-        "GET_NOTEBOOK:<default>"
+        "CREATE_ARTIFACT:<default>"
       ],
       "reviewed_streams": []
     },
@@ -700,14 +682,12 @@
     "notebook.suggest_prompts": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "GET_NOTEBOOK:<default>",
         "SUGGEST_PROMPTS:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "GET_NOTEBOOK:<default>",
         "SUGGEST_PROMPTS:<default>"
       ],
       "reviewed_streams": []

@@ -71,9 +71,11 @@ def test_settings_rows_replace_their_handlers_in_the_registry_and_table() -> Non
         Operation.SETTINGS_GET_LIMITS: settings_rows.SETTINGS_GET_LIMITS,
         Operation.SETTINGS_SET_LANGUAGE: settings_rows.SETTINGS_SET_LANGUAGE,
         Operation.ARTIFACT_SUGGEST_REPORTS: settings_rows.ARTIFACT_SUGGEST_REPORTS,
+        # P10 R5.1c: the last deferred-product row joined the codec rows once its
+        # default-source read moved above the port.
+        Operation.NOTEBOOK_SUGGEST_PROMPTS: settings_rows.NOTEBOOK_SUGGEST_PROMPTS,
     }
     # Domain-scoped: other P9.3 domains add their own rows to WEB_BINDING_ROWS.
-    # Codec-row slice only: the P9.4b prompt-suggestion custom row shares this module.
     assert {op: settings_rows.SETTINGS_ROWS[op] for op in converted} == converted
     for operation, row in converted.items():
         assert WEB_BINDING_ROWS[operation] is row
@@ -90,13 +92,9 @@ def test_settings_rows_replace_their_handlers_in_the_registry_and_table() -> Non
         "_settings_get_limits",
         "_settings_set_language",
         "_artifact_suggest_reports",
+        "_notebook_suggest_prompts",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # P9.4b: the input-defaulting composite is a custom row, not a handler.
-    assert WEB_OPERATION_REGISTRY[Operation.NOTEBOOK_SUGGEST_PROMPTS].row is (
-        settings_rows.NOTEBOOK_SUGGEST_PROMPTS
-    )
-    assert not hasattr(WebRpcBackend, "_notebook_suggest_prompts")
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.SETTINGS_GET] is settings_rows.SETTINGS_GET
 

@@ -6,7 +6,6 @@ from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
-from notebooklm import ArtifactType
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import CallPolicy, Operation
 from notebooklm._records import (
@@ -69,15 +68,19 @@ def _merge_backend(
 
 @pytest.mark.asyncio
 async def test_catalog_filters_neutral_records_and_skips_the_merge_for_one_family() -> None:
+    """``list_records`` stays record-only (P10 I1); public projection is the
+    facade's job — see ``ArtifactsAPI.list`` in the VCR/integration suite
+    (e.g. ``tests/integration/test_artifacts_integration.py``) for the
+    ``ArtifactType`` assertion this test previously carried."""
     audio = ArtifactRecord("audio-id", "Audio", "audio", "completed")
     report = ArtifactRecord("report-id", "Report", "report", "completed")
     deadline = RuntimeDeadline(timeout=5.0, started_at=10.0, monotonic=lambda: 11.0)
     backend = _merge_backend(artifacts=(audio, report))
     catalog = StudioCatalog(backend)
 
-    assert [item.id for item in await catalog.list("notebook-id", "audio", deadline=deadline)] == [
-        "audio-id"
-    ]
+    records = await catalog.list_records("notebook-id", "audio", deadline=deadline)
+
+    assert [item.id for item in records] == ["audio-id"]
     assert [invocation.operation for invocation in backend.invocations] == [
         Operation.ARTIFACT_CATALOG
     ]
@@ -86,17 +89,20 @@ async def test_catalog_filters_neutral_records_and_skips_the_merge_for_one_famil
 
 
 @pytest.mark.asyncio
-async def test_catalog_get_selects_a_note_backed_identity_from_the_merge() -> None:
+async def test_catalog_get_record_selects_a_note_backed_identity_from_the_merge() -> None:
+    """``get_record`` stays record-only (P10 I1); public projection is the
+    facade's job — see ``ArtifactsAPI.get_or_none`` in the VCR/integration
+    suite for the ``ArtifactType`` assertion this test previously carried."""
     backend = _merge_backend(
         mind_maps=(MindMapRecord("mind-map-id", "notebook-id", "Map", "note_backed"),)
     )
     catalog = StudioCatalog(backend)
 
-    artifact = await catalog.get_or_none("notebook-id", "mind-map-id")
+    artifact = await catalog.get_record("notebook-id", "mind-map-id")
 
     assert artifact is not None
     assert artifact.id == "mind-map-id"
-    assert artifact.kind is ArtifactType.MIND_MAP
+    assert artifact.family == "mind_map"
     assert [invocation.operation for invocation in backend.invocations] == [
         Operation.ARTIFACT_CATALOG,
         Operation.MIND_MAP_LIST,

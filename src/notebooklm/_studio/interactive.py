@@ -10,43 +10,52 @@ from .._records import (
     ARTIFACT_GENERATE_FLASHCARDS_DEF,
     ARTIFACT_GENERATE_QUIZ_DEF,
     ArtifactRecord,
-    InteractiveGenerateInput,
+    InteractiveGenerateRequest,
     InteractiveGenerateResult,
     InteractiveMetadataRecord,
 )
 from .catalog import StudioCatalog
+from .generation import StudioGenerationInputs, _generation_budget
 
 
 class InteractiveFamilyService:
     """Quiz/flashcard generation, discovery, and usable-readiness metadata."""
 
-    __slots__ = ("_backend", "_catalog")
+    __slots__ = ("_backend", "_catalog", "_inputs")
 
-    def __init__(self, backend: BackendAdapter, catalog: StudioCatalog) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        catalog: StudioCatalog,
+        inputs: StudioGenerationInputs,
+    ) -> None:
         self._backend = backend
         self._catalog = catalog
+        self._inputs = inputs
 
     async def generate_quiz(
         self,
-        value: InteractiveGenerateInput,
+        request: InteractiveGenerateRequest,
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> InteractiveGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_QUIZ_DEF,
-            value,
+            await self._inputs.quiz(request, deadline=deadline),
             deadline=deadline,
         )
 
     async def generate_flashcards(
         self,
-        value: InteractiveGenerateInput,
+        request: InteractiveGenerateRequest,
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> InteractiveGenerateResult:
+        deadline = _generation_budget(self._inputs, deadline)
         return await self._backend.invoke(
             ARTIFACT_GENERATE_FLASHCARDS_DEF,
-            value,
+            await self._inputs.flashcards(request, deadline=deadline),
             deadline=deadline,
         )
 
