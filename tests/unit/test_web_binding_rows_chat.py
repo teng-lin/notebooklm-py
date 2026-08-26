@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 import pytest
+from scripts._web_policy_intent import WEB_CALL_POLICY_BINDINGS
 
 from notebooklm._backend import (
     BackendDeadlineExceededError,
@@ -48,7 +49,6 @@ from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import chat as chat_rows
 from notebooklm._web.codec.chat import build_save_note_params
 from notebooklm._web.failure_projection import _capture_public_failure
-from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 from notebooklm.exceptions import NetworkError, RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod

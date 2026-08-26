@@ -7,6 +7,8 @@ import logging
 from types import MappingProxyType
 
 import pytest
+from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS
+from scripts.audit_operation_catalog import derive_workflow_natives
 
 from notebooklm._backend import (
     BackendDeadlineExceededError,
@@ -32,7 +34,6 @@ from notebooklm._records import (
     NotebookRecord,
     SettingsGetLimitsResult,
 )
-from notebooklm._web.policy import SERVICE_OWNED_WORKFLOW_BINDINGS, derive_workflow_natives
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import NotebookLimitError, RPCError
 from notebooklm.rpc import RPCMethod

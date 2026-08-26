@@ -7,6 +7,8 @@ from types import MappingProxyType
 from typing import Any
 
 import pytest
+from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS, WEB_CALL_POLICY_BINDINGS
+from scripts.audit_operation_catalog import derive_workflow_natives
 
 from notebooklm._backend import (
     BackendDeadlineExceededError,
@@ -35,11 +37,6 @@ from notebooklm._sharing import SharingAPI
 from notebooklm._sharing_service import SharingService
 from notebooklm._web.bindings import primitives
 from notebooklm._web.codec import sharing as sharing_codec
-from notebooklm._web.policy import (
-    SERVICE_OWNED_WORKFLOW_BINDINGS,
-    WEB_CALL_POLICY_BINDINGS,
-    derive_workflow_natives,
-)
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.exceptions import RPCTimeoutError
 from notebooklm.rpc import RPCMethod

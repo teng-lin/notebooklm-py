@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from scripts._web_policy_intent import WEB_CALL_POLICY_BINDINGS
 
 from notebooklm._backend import (
     BackendContractError,
@@ -52,7 +53,6 @@ from notebooklm._web.bindings import primitives as primitive_rows
 from notebooklm._web.codec import labels as labels_codec
 from notebooklm._web.codec import sharing as sharing_codec
 from notebooklm._web.deadlines import SEMANTIC_DEADLINE_AUTHORITIES, SemanticDeadlineAuthority
-from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from notebooklm.exceptions import RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod

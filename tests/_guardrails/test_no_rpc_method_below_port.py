@@ -79,12 +79,13 @@ BINDINGS_PREFIX = "_web/bindings/"
 TARGET = "RPCMethod"
 
 # Where ``RPCMethod`` belongs below the port: the transport pair, the runtime
-# and its deadline seams, the registry and the policy ledger. Never scanned.
+# and its deadline seams, and the registry. Never scanned. P10 R2.5 deleted the
+# policy ledger from production; its reviewed half now names ``RPCMethod`` in
+# ``scripts/_web_policy_intent.py``, which this gate does not scan at all.
 SANCTIONED_MODULES: frozenset[str] = frozenset(
     {
         "_web/chat_transport.py",
         "_web/deadlines.py",
-        "_web/policy.py",
         "_web/registry.py",
         "_web/runtime.py",
         "_web/transport.py",

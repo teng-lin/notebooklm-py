@@ -20,6 +20,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from scripts._operation_catalog_specs import DIVERGENCE_KINDS, OPERATION_SPECS
+from scripts._web_policy_intent import WEB_CALL_POLICY_BINDINGS
+from scripts.audit_operation_catalog import audit_web_call_policy_bindings
 
 from notebooklm import artifacts as artifact_helpers
 from notebooklm._app.errors import ErrorCategory, classify
@@ -129,10 +131,6 @@ from notebooklm._records import (
     SourceRecord,
 )
 from notebooklm._web.backend import WebRpcBackend
-from notebooklm._web.policy import (
-    WEB_CALL_POLICY_BINDINGS,
-    audit_web_call_policy_bindings,
-)
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SUPPORTED_OPERATIONS
 from notebooklm.exceptions import (
     ArtifactError,

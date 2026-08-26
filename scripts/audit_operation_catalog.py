@@ -17,14 +17,10 @@ from pathlib import Path
 from typing import Any
 
 from notebooklm._binding import OperationDisposition
-from notebooklm._idempotency import IDEMPOTENCY_REGISTRY
-from notebooklm._operations import CallPolicy, Operation, OperationTier
-from notebooklm._web.policy import (
-    WEB_CALL_POLICY_BINDINGS,
-    audit_web_call_policy_bindings,
-    web_call_policy_report,
-)
+from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyRegistry
+from notebooklm._operations import CallPolicy, Operation, OperationDef, OperationTier
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
+from notebooklm.rpc import RPCMethod
 
 if __package__:
     from ._operation_catalog_ast import (
@@ -68,6 +64,12 @@ if __package__:
         OperationSpec,
         native_key_text,
     )
+    from ._web_policy_intent import (
+        SERVICE_OWNED_WORKFLOW_BINDINGS,
+        WEB_CALL_POLICY_BINDINGS,
+        WebCallPolicyBinding,
+        WorkflowPolicyBinding,
+    )
 else:  # pragma: no cover - direct script execution
     from _operation_catalog_ast import (
         _operation_authorities,
@@ -110,6 +112,12 @@ else:  # pragma: no cover - direct script execution
         OperationSpec,
         native_key_text,
     )
+    from _web_policy_intent import (
+        SERVICE_OWNED_WORKFLOW_BINDINGS,
+        WEB_CALL_POLICY_BINDINGS,
+        WebCallPolicyBinding,
+        WorkflowPolicyBinding,
+    )
 
 SCHEMA_VERSION = 3
 _EXPECTED_OPERATION_COUNT = 97
@@ -134,6 +142,219 @@ def product_operations() -> frozenset[Operation]:
     )
 
 
+def derive_workflow_natives(
+    workflow: WorkflowPolicyBinding,
+    *,
+    bindings: Mapping[Operation, WebCallPolicyBinding] = WEB_CALL_POLICY_BINDINGS,
+) -> frozenset[tuple[RPCMethod, str | None]]:
+    """Return the native set a workflow reaches through its leaf edges."""
+    natives: set[tuple[RPCMethod, str | None]] = set()
+    for leaf in workflow.leaf_operations:
+        leaf_binding = bindings.get(leaf.operation)
+        if leaf_binding is None:
+            continue
+        natives.update(
+            (native.method, native.variant)
+            for native in leaf_binding.native_bindings
+            if native.variant in leaf.allowed_variants
+        )
+    return frozenset(natives)
+
+
+def audit_service_owned_workflows(
+    workflows: Mapping[Operation, OperationDef[Any, Any]],
+    *,
+    bindings: Mapping[Operation, WebCallPolicyBinding] = WEB_CALL_POLICY_BINDINGS,
+    workflow_bindings: Mapping[Operation, WorkflowPolicyBinding] = SERVICE_OWNED_WORKFLOW_BINDINGS,
+    registry: IdempotencyRegistry = IDEMPOTENCY_REGISTRY,
+) -> tuple[str, ...]:
+    """Audit every service-owned workflow row against its leaves and the registry."""
+    errors: list[str] = []
+    missing = set(workflows) - set(workflow_bindings)
+    stale = set(workflow_bindings) - set(workflows)
+    if missing:
+        errors.append(
+            "service-owned workflows lack ledger rows: "
+            + ", ".join(sorted(operation.value for operation in missing))
+        )
+    if stale:
+        errors.append(
+            "workflow ledger rows name operations that are not service-owned: "
+            + ", ".join(sorted(operation.value for operation in stale))
+        )
+    for operation in sorted(set(workflows) & set(workflow_bindings), key=lambda item: item.value):
+        definition = workflows[operation]
+        workflow = workflow_bindings[operation]
+        if definition.policy is not workflow.policy:
+            errors.append(
+                f"{operation.value}: semantic policy is {definition.policy.value}, "
+                f"reviewed workflow row expects {workflow.policy.value}"
+            )
+        if not workflow.leaf_operations:
+            errors.append(f"{operation.value}: service-owned workflow names no leaf operations")
+        for leaf in workflow.leaf_operations:
+            leaf_binding = bindings.get(leaf.operation)
+            if leaf_binding is None:
+                errors.append(
+                    f"{operation.value}: leaf {leaf.operation.value} is not an active web binding"
+                )
+                continue
+            declared = {native.variant for native in leaf_binding.native_bindings}
+            if unknown := leaf.allowed_variants - declared:
+                errors.append(
+                    f"{operation.value}: leaf {leaf.operation.value} declares no variant "
+                    f"{sorted(str(item) for item in unknown)}"
+                )
+        expected = {(native.method, native.variant) for native in workflow.native_bindings}
+        derived = derive_workflow_natives(workflow, bindings=bindings)
+        if expected != derived and workflow.known_divergence is None:
+            errors.append(
+                f"{operation.value}: reviewed natives {_native_names(expected)} differ from the "
+                f"leaf-derived set {_native_names(derived)}"
+            )
+        for native in workflow.native_bindings:
+            actual = registry.get_entry(native.method, operation_variant=native.variant).policy
+            if actual is not native.expected_policy:
+                errors.append(
+                    f"{operation.value}: {native.method.name}:"
+                    f"{native.variant or '<default>'} idempotency is {actual.value}, "
+                    f"reviewed workflow row expects {native.expected_policy.value}"
+                )
+    return tuple(errors)
+
+
+def _native_names(
+    natives: frozenset[tuple[RPCMethod, str | None]] | set[tuple[RPCMethod, str | None]],
+) -> list[str]:
+    return sorted(f"{method.name}:{variant or '<default>'}" for method, variant in natives)
+
+
+def audit_web_call_policy_bindings(
+    definitions: Mapping[Operation, OperationDef[Any, Any]],
+    *,
+    bindings: Mapping[Operation, WebCallPolicyBinding] = WEB_CALL_POLICY_BINDINGS,
+    registry: IdempotencyRegistry = IDEMPOTENCY_REGISTRY,
+    workflows: Mapping[Operation, OperationDef[Any, Any]] | None = None,
+) -> tuple[str, ...]:
+    """Return deterministic active-binding drift errors without changing retry behavior.
+
+    ``workflows`` names the service-owned operations (P9.2); their rows live in
+    :data:`SERVICE_OWNED_WORKFLOW_BINDINGS` and are audited against their leaves.
+    """
+    errors: list[str] = []
+    if workflows is not None:
+        errors.extend(
+            audit_service_owned_workflows(workflows, bindings=bindings, registry=registry)
+        )
+    missing = set(definitions) - set(bindings)
+    stale = set(bindings) - set(definitions)
+    if missing:
+        errors.append(
+            "active web operations lack policy bindings: "
+            + ", ".join(sorted(operation.value for operation in missing))
+        )
+    if stale:
+        errors.append(
+            "policy bindings name inactive web operations: "
+            + ", ".join(sorted(operation.value for operation in stale))
+        )
+
+    for operation in sorted(set(definitions) & set(bindings), key=lambda item: item.value):
+        definition = definitions[operation]
+        binding = bindings[operation]
+        if definition.key is not operation:
+            errors.append(f"{operation.value}: definition key is {definition.key.value}")
+        if definition.policy is not binding.policy:
+            errors.append(
+                f"{operation.value}: semantic policy is {definition.policy.value}, "
+                f"reviewed binding expects {binding.policy.value}"
+            )
+        native_keys = [(item.method, item.variant) for item in binding.native_bindings]
+        if len(native_keys) != len(set(native_keys)):
+            errors.append(f"{operation.value}: duplicate native policy bindings")
+        if not binding.native_bindings and not binding.streamed_bindings:
+            errors.append(
+                f"{operation.value}: active web operation has no native or streamed policy binding"
+            )
+        for native in binding.native_bindings:
+            try:
+                actual = registry.get_entry(native.method, operation_variant=native.variant).policy
+            except Exception as exc:  # pragma: no cover - registry owns exact exception types
+                errors.append(
+                    f"{operation.value}: cannot resolve {native.method.name}:"
+                    f"{native.variant or '<default>'}: {type(exc).__name__}"
+                )
+                continue
+            if actual is not native.expected_policy:
+                errors.append(
+                    f"{operation.value}: {native.method.name}:"
+                    f"{native.variant or '<default>'} idempotency is {actual.value}, "
+                    f"reviewed binding expects {native.expected_policy.value}"
+                )
+    return tuple(errors)
+
+
+def web_call_policy_report() -> dict[str, object]:
+    """Return the stable catalog projection of active semantic/native parity."""
+
+    def operation_key(item: tuple[Operation, object]) -> str:
+        operation, _binding = item
+        return operation.value
+
+    report: dict[str, object] = {
+        operation.value: {
+            "call_policy": binding.policy.value,
+            "known_divergence": binding.known_divergence,
+            "native_bindings": [
+                {
+                    "rpc_method": native.method.name,
+                    "variant": native.variant,
+                    "idempotency_policy": native.expected_policy.value,
+                    "role": native.role,
+                }
+                for native in binding.native_bindings
+            ],
+            **(
+                {
+                    "streamed_bindings": [
+                        {"label": streamed.label, "role": streamed.role}
+                        for streamed in binding.streamed_bindings
+                    ]
+                }
+                if binding.streamed_bindings
+                else {}
+            ),
+        }
+        for operation, binding in sorted(WEB_CALL_POLICY_BINDINGS.items(), key=operation_key)
+    }
+    for operation, workflow in sorted(SERVICE_OWNED_WORKFLOW_BINDINGS.items(), key=operation_key):
+        report[operation.value] = {
+            "call_policy": workflow.policy.value,
+            "known_divergence": workflow.known_divergence,
+            "service_owned": True,
+            "leaf_operations": [
+                {
+                    "operation": leaf.operation.value,
+                    "allowed_variants": sorted(
+                        "<default>" if variant is None else variant
+                        for variant in leaf.allowed_variants
+                    ),
+                }
+                for leaf in workflow.leaf_operations
+            ],
+            "native_bindings": [
+                {
+                    "rpc_method": native.method.name,
+                    "variant": native.variant,
+                    "idempotency_policy": native.expected_policy.value,
+                    "role": native.role,
+                }
+                for native in workflow.native_bindings
+            ],
+        }
+    return report
+
+
 __all__ = [
     "CLIENT_PUBLIC_MEMBER_DISPOSITIONS",
     "IDEMPOTENCY_REGISTRY",
@@ -144,6 +365,8 @@ __all__ = [
     "audit_operation_catalog",
     "audit_row_bindings",
     "audit_rpc_registry_evidence",
+    "audit_service_owned_workflows",
+    "audit_web_call_policy_bindings",
     "build_operation_catalog",
     "collect_app_authority_source_evidence",
     "collect_app_callers",
@@ -157,10 +380,12 @@ __all__ = [
     "collect_unresolved_app_dispatches",
     "collect_unresolved_rpc_dispatches",
     "derive_row_authorities",
+    "derive_workflow_natives",
     "load_rpc_registry_evidence",
     "main",
     "operation_tier",
     "product_operations",
+    "web_call_policy_report",
 ]
 
 

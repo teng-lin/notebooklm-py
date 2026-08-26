@@ -850,8 +850,11 @@ def derive_row_authorities(
 
 
 def audit_row_bindings(rows: Sequence[BindingRowSite] | None = None) -> list[str]:
-    """Fail closed when a binding row's declared natives disagree with the policy ledger."""
-    from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
+    """Fail closed when a binding row's declared natives disagree with the reviewed intent."""
+    if __package__:
+        from ._web_policy_intent import WEB_CALL_POLICY_BINDINGS
+    else:  # pragma: no cover - direct script execution
+        from _web_policy_intent import WEB_CALL_POLICY_BINDINGS
 
     errors: list[str] = []
     seen: dict[Operation, str] = {}
