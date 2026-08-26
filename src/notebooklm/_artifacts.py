@@ -168,10 +168,10 @@ class ArtifactsAPI:
             else None
         )
         self._mind_map_family = (
-            NoteBackedMindMapFamilyService(
-                _backend, self._catalog, deadline_factory=deadline_factory
-            )
-            if _backend is not None and self._catalog is not None
+            NoteBackedMindMapFamilyService(_backend, self._catalog, self._generation_inputs)
+            if _backend is not None
+            and self._catalog is not None
+            and self._generation_inputs is not None
             else None
         )
         self._drive_exports = DriveExportService(_backend) if _backend is not None else None

@@ -26,11 +26,9 @@ from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
 
-_EXPECTED_CLIENT_TIMEOUT_OPERATIONS = frozenset(
-    {
-        Operation.MIND_MAP_GENERATE_NOTE,
-    }
-)
+#: Empty since P10 R5.1b hoisted ``mind_map.generate_note``, the last row that
+#: issued two natives inside one typed backend operation on the client's budget.
+_EXPECTED_CLIENT_TIMEOUT_OPERATIONS: frozenset[Operation] = frozenset()
 _EXPECTED_WORKFLOW_OWNED_OPERATIONS = frozenset(
     {
         Operation.SOURCE_ADD_FILE,

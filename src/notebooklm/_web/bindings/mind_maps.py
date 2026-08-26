@@ -4,13 +4,14 @@ The four leaves — note-backed listing, interactive tree read, interactive
 rename and interactive delete — are ``encode → one native call → decode``
 rows whose :class:`NativeCallSpec` is the sole method authority.
 
-``MIND_MAP_GENERATE_INTERACTIVE`` joined them in P10 R5.1b: its conditional
-``GET_NOTEBOOK`` read belongs to ``MindMapFamilyService`` above the port now
-(ADR-0035 P10 addendum D1(a): source-scope defaulting is a service concern), so
-one ``CREATE_ARTIFACT`` native is left and the row is an ordinary codec row.
-``MIND_MAP_GENERATE_NOTE`` remains the input-defaulting *deferred-product*
-:class:`CustomBinding` (gate table §3.17): an optional ``GET_NOTEBOOK`` read
-when ``source_ids`` is omitted, then the generation native.
+Both generate members joined them in P10 R5.1b.  Each was an input-defaulting
+*deferred-product* :class:`CustomBinding` (gate table §3.17) that issued a
+conditional ``GET_NOTEBOOK`` read whenever ``source_ids`` was omitted; under
+ADR-0035 P10 addendum D1(a) source-scope defaulting is a service concern, so
+that read belongs to ``MindMapFamilyService``, ``NoteBackedMindMapFamilyService``
+and ``NoteService`` above the port.  One generation native is left in each row
+and this module has no custom row at all — the last ``deferred-product`` row in
+the package went with it.
 
 ``MIND_MAP_LIST`` carries the one ``map_error`` this module needs.  ``invoke``
 translates the closed ``NotebookLMError`` family and nothing else, so the
@@ -35,12 +36,9 @@ from ..._backend import BackendError, BackendErrorReason
 from ..._binding import (
     Binding,
     CodecBinding,
-    CustomBinding,
     NativeCallSpec,
     NativeChoice,
-    RowInvoker,
 )
-from ..._deadline import RuntimeDeadline
 from ..._operations import Operation
 from ..._records import (
     MIND_MAP_DELETE_DEF,
@@ -53,13 +51,10 @@ from ..._records import (
     SUPPLEMENTAL_TRANSPORT_FAILURE,
     MindMapGenerateInteractiveInput,
     MindMapGenerateInteractiveResult,
-    MindMapGenerateNoteInput,
-    MindMapGenerateNoteResult,
     MindMapListInput,
 )
 from ...rpc import RPCMethod
 from ..codec import mind_maps as mind_maps_codec
-from ..codec import notebooks as notebooks_codec
 
 
 def _map_supplemental_transport_failure(
@@ -145,53 +140,11 @@ MIND_MAP_GENERATE_INTERACTIVE = CodecBinding(
 )
 
 
-# --- custom rows (P9.4b) ---------------------------------------------------------
-
-_SOURCES = "sources"
-_GENERATE = "generate"
-
-
-async def _default_source_ids(
-    notebook_id: str,
-    source_ids: tuple[str, ...] | None,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-) -> tuple[str, ...]:
-    """Resolve the omitted source set through the row's ``GET_NOTEBOOK`` spec (silent parse)."""
-    if source_ids is not None:
-        return source_ids
-    notebook = await invoke.call(
-        _SOURCES, mind_maps_codec.encode_notebook_sources_read(notebook_id), deadline=deadline
-    )
-    return notebooks_codec.decode_notebook_source_ids_silent(notebook)
-
-
-async def _mind_map_generate_note(
-    value: MindMapGenerateNoteInput,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-) -> MindMapGenerateNoteResult:
-    source_ids = await _default_source_ids(value.notebook_id, value.source_ids, deadline, invoke)
-    result = await invoke.call(
-        _GENERATE,
-        mind_maps_codec.encode_mind_map_generate_note(value, source_ids),
-        deadline=deadline,
-    )
-    return mind_maps_codec.decode_mind_map_generate_note(result)
-
-
-MIND_MAP_GENERATE_NOTE = CustomBinding(
+MIND_MAP_GENERATE_NOTE = CodecBinding(
     definition=MIND_MAP_GENERATE_NOTE_DEF,
-    handler=_mind_map_generate_note,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.GENERATE_MIND_MAP, key=_GENERATE),
-    ),
-    justification=(
-        "Input-defaulting member kept adapter-owned under P9.2 contract 1; hoisting needs a "
-        "resolved-input primitive for the note-backed family (gate table §3.17)."
-    ),
-    category="deferred-product",
+    encode=mind_maps_codec.encode_mind_map_generate_note,
+    decode=mind_maps_codec.decode_mind_map_generate_note,
+    native=NativeCallSpec.constant(RPCMethod.GENERATE_MIND_MAP),
 )
 
 MIND_MAP_ROWS: Mapping[Operation, Binding] = MappingProxyType(

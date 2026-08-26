@@ -41,9 +41,15 @@ from notebooklm._deadline import RuntimeDeadlineFactory
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._note_service import NoteService
 from notebooklm._notebook_payloads import build_get_notebook_params
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import MindMapGenerateInput
 from notebooklm._rpc_executor import RpcExecutor
-from notebooklm._studio import MindMapFamilyService, NoteBackedMindMapFamilyService, StudioCatalog
+from notebooklm._studio import (
+    MindMapFamilyService,
+    NoteBackedMindMapFamilyService,
+    StudioCatalog,
+    StudioGenerationInputs,
+)
 from notebooklm._types.mind_maps import MindMapKind
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.codec.artifact_payloads import (
@@ -137,7 +143,7 @@ def _mind_maps(
     """Assemble ``client.mind_maps`` exactly as the composition root does."""
     backend = _backend(executor, factory)
     return MindMapsAPI(
-        notes=NoteService(backend),
+        notes=NoteService(backend, deadline_factory=factory),
         studio=MindMapFamilyService(
             backend,
             StudioCatalog(backend, deadline_factory=factory),
@@ -156,7 +162,7 @@ def _artifact_family(
     return NoteBackedMindMapFamilyService(
         backend,
         StudioCatalog(backend, deadline_factory=factory),
-        deadline_factory=factory,
+        StudioGenerationInputs(NotebookReadService(backend), deadline_factory=factory),
     )
 
 
@@ -319,6 +325,45 @@ async def test_artifact_default_scope_reads_the_notebook_before_generating() -> 
     )
     assert executor.calls[1].kwargs == _kwargs(allow_null=True)
     assert _digest(executor.calls[1].params) == _GENERATE_MIND_MAP_DIGEST
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source_ids", [("only",), ()])
+async def test_artifact_supplied_scope_never_reads_the_notebook(
+    source_ids: tuple[str, ...],
+) -> None:
+    """The Studio workflow honours an explicit list — the empty one included."""
+    executor = _Executor(_GENERATED, _NOTE_CREATED, _NOTE_UPDATED)
+
+    await _artifact_family(executor).generate(
+        MindMapGenerateInput(NOTEBOOK_ID, source_ids, "en", None)
+    )
+
+    assert executor.methods == [
+        RPCMethod.GENERATE_MIND_MAP,
+        RPCMethod.CREATE_NOTE,
+        RPCMethod.UPDATE_NOTE,
+    ]
+    assert executor.calls[0].params == build_mind_map_params(
+        list(source_ids), language="en", instructions=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_artifact_language_none_resolves_the_environment_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Studio workflow expands ``language=None`` from ``NOTEBOOKLM_HL`` too."""
+    monkeypatch.setenv("NOTEBOOKLM_HL", "de")
+    executor = _Executor(_GENERATED, _NOTE_CREATED, _NOTE_UPDATED)
+
+    await _artifact_family(executor).generate(
+        MindMapGenerateInput(NOTEBOOK_ID, ("s1",), None, None)
+    )
+
+    assert executor.calls[0].params == build_mind_map_params(
+        ["s1"], language="de", instructions=None
+    )
 
 
 @pytest.mark.asyncio

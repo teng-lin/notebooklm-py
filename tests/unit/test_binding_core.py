@@ -146,8 +146,8 @@ def test_table_counts_each_row_kind_and_custom_category() -> None:
         definition=ARTIFACT_GENERATE_AUDIO_DEF,
         handler=custom,
         native=(NativeCallSpec.constant("CREATE", key="create"),),
-        justification="Input-defaulting generate member kept adapter-owned in P9.",
-        category="deferred-product",
+        justification="Protocol-varying member kept adapter-owned in P9.",
+        category="protocol",
     )
     table = BindingTable(
         {
@@ -156,11 +156,7 @@ def test_table_counts_each_row_kind_and_custom_category() -> None:
         }
     )
     assert (table.codec_count, table.custom_count) == (1, 1)
-    assert dict(table.custom_count_by_category()) == {
-        "protocol": 0,
-        "compatibility": 0,
-        "deferred-product": 1,
-    }
+    assert dict(table.custom_count_by_category()) == {"protocol": 1, "compatibility": 0}
     assert repr(table) == "BindingTable(rows=2, codec=1, custom=1)"
     with pytest.raises(TypeError):
         table._rows[Operation.NOTE_LIST] = codec  # type: ignore[index]

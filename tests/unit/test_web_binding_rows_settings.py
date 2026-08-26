@@ -71,7 +71,7 @@ def test_settings_rows_replace_their_handlers_in_the_registry_and_table() -> Non
         Operation.SETTINGS_GET_LIMITS: settings_rows.SETTINGS_GET_LIMITS,
         Operation.SETTINGS_SET_LANGUAGE: settings_rows.SETTINGS_SET_LANGUAGE,
         Operation.ARTIFACT_SUGGEST_REPORTS: settings_rows.ARTIFACT_SUGGEST_REPORTS,
-        # P10 R5.1c: the last deferred-product row joined the codec rows once its
+        # P10 R5.1c: this deferred-product row joined the codec rows once its
         # default-source read moved above the port.
         Operation.NOTEBOOK_SUGGEST_PROMPTS: settings_rows.NOTEBOOK_SUGGEST_PROMPTS,
     }

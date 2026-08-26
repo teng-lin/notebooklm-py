@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from .._backend import BackendAdapter, BackendError, rebind_operation, require_leaves
-from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from .._deadline import RuntimeDeadline
 from .._note_service import NoteService
 from .._operations import Operation
 from .._records import (
@@ -14,11 +14,11 @@ from .._records import (
     NOTE_CREATE_DEF,
     NOTE_DELETE_DEF,
     NOTE_UPDATE_DEF,
+    NOTEBOOK_GET_DEF,
     ArtifactRecord,
     DataTableGenerateRequest,
     DataTableGenerateResult,
     MindMapGenerateInput,
-    MindMapGenerateNoteInput,
     MindMapGenerateResult,
 )
 from .catalog import StudioCatalog
@@ -110,21 +110,21 @@ class NoteBackedMindMapFamilyService:
 
     Generation is a workflow, not a leaf: the tree the generation native
     returns is not persisted server-side, so this service sequences the
-    generation and the note allocation that stores it under one budget.
+    default-source read, the generation and the note allocation that stores it
+    under one budget.
     """
 
-    __slots__ = ("_backend", "_catalog", "_deadline_factory", "_notes")
+    __slots__ = ("_backend", "_catalog", "_inputs", "_notes")
 
     def __init__(
         self,
         backend: BackendAdapter,
         catalog: StudioCatalog,
-        *,
-        deadline_factory: RuntimeDeadlineFactory | None = None,
+        inputs: StudioGenerationInputs,
     ) -> None:
         self._backend = backend
         self._catalog = catalog
-        self._deadline_factory = deadline_factory
+        self._inputs = inputs
         self._notes = NoteService(backend)
 
     async def generate(
@@ -133,7 +133,12 @@ class NoteBackedMindMapFamilyService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> MindMapGenerateResult:
-        """Generate a tree, then persist it as a note.
+        """Resolve the request, generate a tree, then persist it as a note.
+
+        ``source_ids=None`` means every source in the notebook and
+        ``language=None`` the environment default; both are resolved by
+        :class:`StudioGenerationInputs` above the port (P10 R5.1b), inside the
+        ``try`` so a failing read keeps this workflow's public identity.
 
         The note allocation runs through :meth:`NoteService.create_note_record`,
         which owns the package's one cancellation-safe create: the finalizing
@@ -146,21 +151,17 @@ class NoteBackedMindMapFamilyService:
         workflow = Operation.ARTIFACT_GENERATE_MIND_MAP
         require_leaves(
             self._backend,
+            NOTEBOOK_GET_DEF.key,
             MIND_MAP_GENERATE_NOTE_DEF.key,
             NOTE_CREATE_DEF.key,
             NOTE_UPDATE_DEF.key,
             NOTE_DELETE_DEF.key,
         )
-        deadline = self._start_deadline(deadline)
+        deadline = _generation_budget(self._inputs, deadline)
         try:
             generated = await self._backend.invoke(
                 MIND_MAP_GENERATE_NOTE_DEF,
-                MindMapGenerateNoteInput(
-                    value.notebook_id,
-                    value.source_ids,
-                    value.language,
-                    value.instructions,
-                ),
+                await self._inputs.mind_map(value, deadline=deadline),
                 deadline=deadline,
             )
             tree_json = generated.tree_json
@@ -182,13 +183,6 @@ class NoteBackedMindMapFamilyService:
             note_id=note.id or None,
             created_at=note.created_at,
         )
-
-    def _start_deadline(self, deadline: RuntimeDeadline | None) -> RuntimeDeadline | None:
-        """Mint one workflow deadline unless the caller supplied its own."""
-
-        if deadline is not None or self._deadline_factory is None:
-            return deadline
-        return self._deadline_factory.start()
 
     async def list(
         self,

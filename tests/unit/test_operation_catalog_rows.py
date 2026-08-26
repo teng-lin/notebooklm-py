@@ -55,7 +55,7 @@ LABEL_UPDATE = CustomBinding(
         ),
     ),
     justification="mutate-then-readback stays adapter-owned until hoisted",
-    category="deferred-product",
+    category="protocol",
 )
 TABLE = BindingTable(
     {

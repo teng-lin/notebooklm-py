@@ -4,8 +4,8 @@ Each row is ``encode → one native call → decode``; the :class:`NativeCallSpe
 is the sole authority for the native it dispatches, so the method the policy
 ledger audits is the method that runs.  The rows are module-level assignments
 because the operation-catalog walker derives execution authorities from them.
-``NOTEBOOK_SUGGEST_PROMPTS`` was the last *deferred-product* row: until P10
-R5.1c it resolved ``source_ids is None`` through its own ``GET_NOTEBOOK`` spec.
+``NOTEBOOK_SUGGEST_PROMPTS`` was a *deferred-product* row: until P10 R5.1c it
+resolved ``source_ids is None`` through its own ``GET_NOTEBOOK`` spec.
 That read now belongs to ``SuggestionService`` above the port (ADR-0035 P10
 addendum D1(a): source-scope defaulting is a service concern), leaving one
 native and an ordinary codec row.

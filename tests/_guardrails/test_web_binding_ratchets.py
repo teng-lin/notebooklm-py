@@ -9,8 +9,9 @@ only move them in the direction the plan requires:
    ``CustomBinding`` rows. P9.4b converted handlers into custom rows one domain
    at a time (the residual was unchanged) and every P9.2 hoist removed one. Per
    category the custom-row counts are exact literals that each PR updates as
-   derivation; the *deferred-product* count must reach zero before any second
-   backend is approved (plan, P9.4 acceptance criteria).
+   derivation; the *deferred-product* category had to reach zero before any
+   second backend was approved (plan, P9.4 acceptance criteria) and P10 R5.1b
+   deleted it outright.
 
 2. **Class size.** No class under ``src/notebooklm/_web/`` may exceed
    ``CLASS_BODY_LINE_CEILING`` body lines unless it is listed in
@@ -54,19 +55,18 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: handlers from the P9.2 stop/go baseline. P10 then took the rest above the
 #: port: R2.2's ``CHAT_ASK``, R3.2-R3.5's four probed source-add rows, R4.2's
 #: three mind-map/catalog compatibility rows, R5.1a's eight
-#: ``artifact.generate_*`` rows, R5.1b's ``mind_map.generate_interactive`` and
-#: R5.1c's ``notebook.suggest_prompts``, 20 -> 2. The ratchet asserts equality,
+#: ``artifact.generate_*`` rows, R5.1b's two ``mind_map.generate_*`` rows and
+#: R5.1c's ``notebook.suggest_prompts``, 20 -> 1. The ratchet asserts equality,
 #: so a hoist that does not tighten it leaves this gate red.
-RESIDUAL_COMPOSITE_CEILING = 2
-#: Exact custom-row counts per justification category: ``SOURCE_ADD_FILE`` (the
-#: permanent upload row of decision D4) and ``MIND_MAP_GENERATE_NOTE``, the one
-#: input-defaulting Studio generation row P10 does not hoist.
+RESIDUAL_COMPOSITE_CEILING = 1
+#: Exact custom-row counts per justification category. One row is left in the
+#: whole table: ``SOURCE_ADD_FILE``, the permanent upload row of decision D4.
 #: ``compatibility`` reached zero once R3.2 hoisted ``source.add_text`` and R4.2
 #: hoisted the catalog reads and the note-backed mind-map generation.
-#: P9.4b PRs raise these as handlers convert;
-#: P9.2 hoists lower ``deferred-product``, which must reach zero before any
-#: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 1, "compatibility": 0, "deferred-product": 1}
+#: ``deferred-product`` reached zero with R5.1b's ``mind_map.generate_note`` and
+#: the category itself is deleted (P10 invariant I3), so a row can no longer be
+#: justified by "the port still defaults this input".
+CUSTOM_ROW_COUNTS = {"protocol": 1, "compatibility": 0}
 
 # --- 2. class size ---------------------------------------------------------------
 
@@ -210,7 +210,7 @@ def test_residual_composites_only_shrink() -> None:
         counts[row.category] += 1
     assert counts == CUSTOM_ROW_COUNTS, (
         f"custom-row counts per category changed to {counts}; update CUSTOM_ROW_COUNTS as "
-        "derivation (deferred-product must reach zero before any second backend)"
+        "derivation (only protocol variance and public compatibility leaves justify a custom row)"
     )
     for row in custom:
         assert row.justification.strip(), f"{row.definition.key.value} lacks a justification"
