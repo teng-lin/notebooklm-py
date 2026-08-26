@@ -1256,7 +1256,6 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_sources.py", "_projectors", "project_source"),
         ("_sources.py", "_read_services", "SourceReadService"),
         ("_studio/catalog.py", "_backend", "BackendAdapter"),
-        ("_studio/catalog.py", "_projectors", "project_artifact"),
         ("_studio/catalog.py", "_records", "ARTIFACT_GET_DEF"),
         ("_studio/catalog.py", "_records", "ARTIFACT_LIST_DEF"),
         ("_studio/catalog.py", "_records", "ArtifactGetInput"),

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline
-from .._projectors import project_artifact
 from .._records import (
     ARTIFACT_GET_DEF,
     ARTIFACT_LIST_DEF,
@@ -16,27 +13,19 @@ from .._records import (
 )
 from .classifiers import matches_artifact_family
 
-if TYPE_CHECKING:
-    from ..types import Artifact
-
 
 class StudioCatalog:
-    """List and select complete heterogeneous Studio records."""
+    """List and select complete heterogeneous Studio records.
+
+    Public projection to :class:`~notebooklm.types.Artifact` is a facade
+    responsibility (P10 invariant I1); callers project ``list_records``/
+    ``get_record`` output themselves.
+    """
 
     __slots__ = ("_backend",)
 
     def __init__(self, backend: BackendAdapter) -> None:
         self._backend = backend
-
-    async def list(
-        self,
-        notebook_id: str,
-        family: str | None = None,
-        *,
-        deadline: RuntimeDeadline | None = None,
-    ) -> list[Artifact]:
-        records = await self.list_records(notebook_id, family, deadline=deadline)
-        return [project_artifact(record) for record in records]
 
     async def list_records(
         self,
@@ -71,16 +60,6 @@ class StudioCatalog:
             deadline=deadline,
         )
         return result.artifact
-
-    async def get_or_none(
-        self,
-        notebook_id: str,
-        artifact_id: str,
-        *,
-        deadline: RuntimeDeadline | None = None,
-    ) -> Artifact | None:
-        record = await self.get_record(notebook_id, artifact_id, deadline=deadline)
-        return None if record is None else project_artifact(record)
 
 
 __all__ = ["StudioCatalog"]

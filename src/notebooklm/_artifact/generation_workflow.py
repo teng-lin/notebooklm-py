@@ -189,7 +189,13 @@ class ArtifactGenerationWorkflow:
             "on_status_change": None,
             "deadline": deadline,
         }
-        return await self._lifecycle.wait_for_completion(notebook_id, task_id, **wait_kwargs)
+        # ``_wait_for_completion`` is private: the service stays I1-neutral by
+        # not naming the public ``GenerationStatus`` its callbacks carry, so
+        # this caller — which already owns that type — restores it here.
+        return cast(
+            GenerationStatus,
+            await self._lifecycle._wait_for_completion(notebook_id, task_id, **wait_kwargs),
+        )
 
     async def generate_once(
         self,
