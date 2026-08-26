@@ -154,7 +154,11 @@ class ArtifactsAPI:
         self._notebooks = notebooks
         self._mind_maps = mind_maps
         self._backend = _backend
-        self._catalog = StudioCatalog(_backend) if _backend is not None else None
+        self._catalog = (
+            StudioCatalog(_backend, deadline_factory=deadline_factory)
+            if _backend is not None
+            else None
+        )
         self._data_tables = (
             DataTableFamilyService(_backend, self._catalog)
             if _backend is not None and self._catalog is not None

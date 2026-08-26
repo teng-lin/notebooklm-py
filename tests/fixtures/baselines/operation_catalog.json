@@ -243,6 +243,20 @@
     "artifact.get": {
       "call_policy": "read",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "artifact.catalog"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "mind_map.list"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -256,11 +270,26 @@
           "rpc_method": "GET_NOTES_AND_MIND_MAPS",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "artifact.list": {
       "call_policy": "read",
       "known_divergence": null,
+      "leaf_operations": [
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "artifact.catalog"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "mind_map.list"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -274,7 +303,8 @@
           "rpc_method": "GET_NOTES_AND_MIND_MAPS",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "artifact.patch_title": {
       "call_policy": "mutation",
@@ -3267,8 +3297,6 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_mind_map.py:LegacyNoteBackedService.fetch_note_rows",
-        "_web/bindings/mind_maps.py:ARTIFACT_GET",
-        "_web/bindings/mind_maps.py:ARTIFACT_LIST",
         "_web/bindings/mind_maps.py:MIND_MAP_LIST",
         "_web/bindings/notes.py:NOTE_GET",
         "_web/bindings/notes.py:NOTE_LIST",
@@ -3631,8 +3659,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/mind_maps.py:ARTIFACT_GET",
-        "_web/bindings/mind_maps.py:ARTIFACT_LIST",
         "_web/bindings/studio.py:ARTIFACT_CATALOG",
         "_web/bindings/studio.py:ARTIFACT_DOWNLOAD",
         "_web/bindings/studio.py:ARTIFACT_WAIT"
@@ -5589,14 +5615,14 @@
       "execution_authorities": [
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
-          "discriminator": "select note-backed mind map",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_GET",
+          "discriminator": "select note-backed mind map via leaf",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_LIST",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_ARTIFACTS:<default>",
-          "discriminator": "select artifact for get/get_or_none/get_prompt",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_GET",
+          "discriminator": "select artifact for get/get_or_none/get_prompt via leaf",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],
@@ -5640,14 +5666,14 @@
       "execution_authorities": [
         {
           "binding": "GET_NOTES_AND_MIND_MAPS:<default>",
-          "discriminator": "merge note-backed mind maps",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "discriminator": "merge note-backed mind maps via leaf",
+          "site": "_web/bindings/mind_maps.py:MIND_MAP_LIST",
           "transport_kind": "rpc"
         },
         {
           "binding": "LIST_ARTIFACTS:<default>",
-          "discriminator": "heterogeneous list",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "discriminator": "heterogeneous list via leaf",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],
@@ -6920,7 +6946,7 @@
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "post-create settle/id match",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],
@@ -7078,7 +7104,7 @@
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "auto-detect/select interactive id",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],
@@ -7133,7 +7159,7 @@
         {
           "binding": "LIST_ARTIFACTS:<default>",
           "discriminator": "filter interactive maps",
-          "site": "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+          "site": "_web/bindings/studio.py:ARTIFACT_CATALOG",
           "transport_kind": "rpc"
         }
       ],

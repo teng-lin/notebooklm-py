@@ -302,7 +302,7 @@ def compose_client(
     # share the client-scoped NoteService; interactive flows use the Studio
     # family and its typed MIND_MAP_* bindings. The legacy adapter above remains
     # only for artifact/download compatibility outside MindMapsAPI.
-    mind_map_catalog = StudioCatalog(backend=client._backend)
+    mind_map_catalog = StudioCatalog(backend=client._backend, deadline_factory=deadline_factory)
     mind_map_studio = MindMapFamilyService(
         backend=client._backend,
         catalog=mind_map_catalog,

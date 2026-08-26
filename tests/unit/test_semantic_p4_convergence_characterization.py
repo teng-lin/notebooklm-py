@@ -53,8 +53,6 @@ from notebooklm._records import (
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
     ARTIFACT_GENERATE_VIDEO_DEF,
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
     ARTIFACT_PATCH_TITLE_DEF,
     ARTIFACT_RETRY_DEF,
     ARTIFACT_REVISE_SLIDE_DEF,
@@ -255,8 +253,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         SOURCE_GET_FULLTEXT_DEF: (Operation.SOURCE_GET_FULLTEXT, CallPolicy.READ),
         SOURCE_WAIT_DEF: (Operation.SOURCE_WAIT, CallPolicy.MUTATION),
         SOURCE_PATCH_TITLE_DEF: (Operation.SOURCE_PATCH_TITLE, CallPolicy.MUTATION),
-        ARTIFACT_LIST_DEF: (Operation.ARTIFACT_LIST, CallPolicy.READ),
-        ARTIFACT_GET_DEF: (Operation.ARTIFACT_GET, CallPolicy.READ),
         ARTIFACT_GENERATE_AUDIO_DEF: (
             Operation.ARTIFACT_GENERATE_AUDIO,
             CallPolicy.STATEFUL_START,
@@ -463,28 +459,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             CHAT_SAVE_NOTE_DEF,
             [(RPCMethod.CREATE_NOTE, "saved_from_chat")],
             [IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY],
-        ),
-        (
-            ARTIFACT_LIST_DEF,
-            [
-                (RPCMethod.LIST_ARTIFACTS, None),
-                (RPCMethod.GET_NOTES_AND_MIND_MAPS, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
-        ),
-        (
-            ARTIFACT_GET_DEF,
-            [
-                (RPCMethod.LIST_ARTIFACTS, None),
-                (RPCMethod.GET_NOTES_AND_MIND_MAPS, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
         ),
         (
             ARTIFACT_GENERATE_AUDIO_DEF,

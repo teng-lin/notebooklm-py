@@ -421,28 +421,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 ),
             ),
         ),
-        Operation.ARTIFACT_LIST: WebCallPolicyBinding(
-            CallPolicy.READ,
-            (
-                _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "studio catalog read"),
-                _native(
-                    RPCMethod.GET_NOTES_AND_MIND_MAPS,
-                    _IDEMPOTENT,
-                    "conditional note-backed mind-map merge",
-                ),
-            ),
-        ),
-        Operation.ARTIFACT_GET: WebCallPolicyBinding(
-            CallPolicy.READ,
-            (
-                _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "catalog identity scan"),
-                _native(
-                    RPCMethod.GET_NOTES_AND_MIND_MAPS,
-                    _IDEMPOTENT,
-                    "note-backed mind-map identity scan",
-                ),
-            ),
-        ),
         Operation.ARTIFACT_GENERATE_AUDIO: WebCallPolicyBinding(
             CallPolicy.STATEFUL_START,
             (
@@ -886,6 +864,36 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.SHARING_PATCH_VIEW_LEVEL, None),
                     _leaf(Operation.SHARING_GET, None),
+                ),
+            ),
+            Operation.ARTIFACT_LIST: WorkflowPolicyBinding(
+                CallPolicy.READ,
+                (
+                    _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "studio catalog read"),
+                    _native(
+                        RPCMethod.GET_NOTES_AND_MIND_MAPS,
+                        _IDEMPOTENT,
+                        "conditional note-backed mind-map merge",
+                    ),
+                ),
+                (
+                    _leaf(Operation.ARTIFACT_CATALOG, None),
+                    _leaf(Operation.MIND_MAP_LIST, None),
+                ),
+            ),
+            Operation.ARTIFACT_GET: WorkflowPolicyBinding(
+                CallPolicy.READ,
+                (
+                    _native(RPCMethod.LIST_ARTIFACTS, _IDEMPOTENT, "catalog identity scan"),
+                    _native(
+                        RPCMethod.GET_NOTES_AND_MIND_MAPS,
+                        _IDEMPOTENT,
+                        "note-backed mind-map identity scan",
+                    ),
+                ),
+                (
+                    _leaf(Operation.ARTIFACT_CATALOG, None),
+                    _leaf(Operation.MIND_MAP_LIST, None),
                 ),
             ),
             Operation.ARTIFACT_RENAME: WorkflowPolicyBinding(

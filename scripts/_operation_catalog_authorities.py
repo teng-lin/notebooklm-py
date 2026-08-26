@@ -581,24 +581,24 @@ for _operation, _kind in (
 SHARED_RPC_AUTHORITY_RULES.update(
     {
         (Operation.ARTIFACT_LIST, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
-            ("_web/bindings/mind_maps.py:ARTIFACT_LIST", "heterogeneous list")
+            ("_web/bindings/studio.py:ARTIFACT_CATALOG", "heterogeneous list via leaf")
         ),
         (Operation.ARTIFACT_GET, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_GET",
-                "select artifact for get/get_or_none/get_prompt",
+                "_web/bindings/studio.py:ARTIFACT_CATALOG",
+                "select artifact for get/get_or_none/get_prompt via leaf",
             ),
         ),
         (Operation.ARTIFACT_LIST, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
-                "merge note-backed mind maps",
+                "_web/bindings/mind_maps.py:MIND_MAP_LIST",
+                "merge note-backed mind maps via leaf",
             )
         ),
         (Operation.ARTIFACT_GET, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_GET",
-                "select note-backed mind map",
+                "_web/bindings/mind_maps.py:MIND_MAP_LIST",
+                "select note-backed mind map via leaf",
             )
         ),
         (Operation.ARTIFACT_DOWNLOAD, _b(RPCMethod.GET_NOTES_AND_MIND_MAPS)): _rules(
@@ -627,19 +627,19 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.MIND_MAP_LIST, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+                "_web/bindings/studio.py:ARTIFACT_CATALOG",
                 "filter interactive maps",
             )
         ),
         (Operation.MIND_MAP_GET, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+                "_web/bindings/studio.py:ARTIFACT_CATALOG",
                 "auto-detect/select interactive id",
             )
         ),
         (Operation.MIND_MAP_GENERATE_INTERACTIVE, _b(RPCMethod.LIST_ARTIFACTS)): _rules(
             (
-                "_web/bindings/mind_maps.py:ARTIFACT_LIST",
+                "_web/bindings/studio.py:ARTIFACT_CATALOG",
                 "post-create settle/id match",
             )
         ),

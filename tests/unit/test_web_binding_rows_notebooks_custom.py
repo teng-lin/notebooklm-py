@@ -1,15 +1,19 @@
 """P9.4b: the mind-map/catalog composites dispatch as ``CustomBinding`` rows.
 
-``MIND_MAP_GENERATE_NOTE``, ``MIND_MAP_GENERATE_INTERACTIVE``, ``ARTIFACT_GENERATE_MIND_MAP``,
-``ARTIFACT_LIST`` and ``ARTIFACT_GET`` declare their natives as keyed specs and
+``MIND_MAP_GENERATE_NOTE``, ``MIND_MAP_GENERATE_INTERACTIVE`` and
+``ARTIFACT_GENERATE_MIND_MAP`` declare their natives as keyed specs and
 sequence them through the row-scoped invoker.  These tests pin the conversion
 oracles: the identical keyword set reaches the runtime for every phase
 (including explicit ``False``/``None`` values, ``disable_internal_retries`` on
 the guarded create, ``operation_variant="plain"`` on the legacy note
 allocation), the closed error identities (quota limit, not-found, feature
-unavailable), the raw partial-availability swallow the catalog rows keep,
-failure tagging with the selected spec, the deadline projection, and the
-``InvokerRpcCaller`` contract that replaced ``DeadlineRpcCaller``.
+unavailable), failure tagging with the selected spec, the deadline projection,
+and the ``InvokerRpcCaller`` contract that replaced ``DeadlineRpcCaller``.
+
+``artifact.list``/``artifact.get`` left this module's rows in P10 R4.2; the same
+oracles now run against ``StudioCatalog``, which sequences ``artifact.catalog``
+and the supplemental ``mind_map.list`` merge, so the wire keywords and the
+partial-availability net stay pinned at their new authority.
 """
 
 from __future__ import annotations
@@ -32,16 +36,13 @@ from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
     ARTIFACT_GENERATE_MIND_MAP_DEF,
-    ARTIFACT_GET_DEF,
-    ARTIFACT_LIST_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
-    ArtifactGetInput,
-    ArtifactListInput,
     MindMapGenerateInput,
     MindMapGenerateInteractiveInput,
     MindMapGenerateNoteInput,
 )
+from notebooklm._studio import StudioCatalog
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import mind_maps as mind_map_rows
@@ -103,8 +104,6 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
             mind_map_rows.ARTIFACT_GENERATE_MIND_MAP,
             "compatibility",
         ),
-        Operation.ARTIFACT_LIST: (mind_map_rows.ARTIFACT_LIST, "compatibility"),
-        Operation.ARTIFACT_GET: (mind_map_rows.ARTIFACT_GET, "compatibility"),
     }
     for operation, (row, category) in expected.items():
         assert isinstance(row, CustomBinding)
@@ -245,11 +244,11 @@ async def test_artifact_mind_map_generation_with_an_absent_leaf_persists_nothing
 @pytest.mark.asyncio
 async def test_artifact_list_merges_note_backed_mind_maps_with_identical_kwargs() -> None:
     executor = _RecordingExecutor([], [])
-    backend = build_web_backend(executor)
+    catalog_service = StudioCatalog(build_web_backend(executor))
 
-    result = await backend.invoke(ARTIFACT_LIST_DEF, ArtifactListInput("nb-1"), deadline=None)
+    result = await catalog_service.list_records("nb-1")
 
-    assert result.artifacts == ()
+    assert result == ()
     catalog, notes = executor.calls
     assert catalog.method is RPCMethod.LIST_ARTIFACTS
     assert catalog.kwargs == _kwargs("/notebook/nb-1", allow_null=True)
@@ -261,11 +260,9 @@ async def test_artifact_list_merges_note_backed_mind_maps_with_identical_kwargs(
 @pytest.mark.asyncio
 async def test_artifact_list_for_another_family_skips_the_merge() -> None:
     executor = _RecordingExecutor([])
-    backend = build_web_backend(executor)
+    catalog_service = StudioCatalog(build_web_backend(executor))
 
-    await backend.invoke(
-        ARTIFACT_LIST_DEF, ArtifactListInput("nb-1", family="audio"), deadline=None
-    )
+    await catalog_service.list_records("nb-1", family="audio")
 
     assert [call.method for call in executor.calls] == [RPCMethod.LIST_ARTIFACTS]
 
@@ -279,14 +276,12 @@ async def test_artifact_get_swallows_a_raw_merge_failure_into_partial_availabili
         "authentication expired", request=request, response=httpx.Response(401, request=request)
     )
     executor = _RecordingExecutor([], failure)
-    backend = build_web_backend(executor)
+    catalog_service = StudioCatalog(build_web_backend(executor))
 
     with caplog.at_level(logging.WARNING, logger="notebooklm._artifact.listing"):
-        result = await backend.invoke(
-            ARTIFACT_GET_DEF, ArtifactGetInput("nb-1", "art-1"), deadline=None
-        )
+        result = await catalog_service.get_record("nb-1", "art-1")
 
-    assert result.artifact is None
+    assert result is None
     assert "Failed to fetch mind maps" in caplog.text
     assert len(executor.calls) == 2
 
@@ -294,13 +289,16 @@ async def test_artifact_get_swallows_a_raw_merge_failure_into_partial_availabili
 @pytest.mark.asyncio
 async def test_a_failed_catalog_read_is_translated_dispatched_and_tagged() -> None:
     executor = _RecordingExecutor(ServerError("boom", method_id=RPCMethod.LIST_ARTIFACTS.value))
-    backend = build_web_backend(executor)
+    catalog_service = StudioCatalog(build_web_backend(executor))
 
     with pytest.raises(BackendError) as caught:
-        await backend.invoke(ARTIFACT_LIST_DEF, ArtifactListInput("nb-1"), deadline=None)
+        await catalog_service.list_records("nb-1")
 
     error = caught.value
+    # The primary read is not covered by the partial-availability net, and the
+    # workflow re-attributes the leaf failure so the public identity is unchanged.
     assert error.operation is Operation.ARTIFACT_LIST
+    assert error.diagnostics["leaf_operation"] is Operation.ARTIFACT_CATALOG
     assert error.reason is BackendErrorReason.SERVER
     assert error.dispatched is True
     assert error.__cause__.binding_native == NativeChoice(RPCMethod.LIST_ARTIFACTS)  # type: ignore[union-attr]

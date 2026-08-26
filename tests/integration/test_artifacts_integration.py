@@ -23,9 +23,7 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._records import (
     ARTIFACT_DOWNLOAD_DEF,
-    ARTIFACT_GET_DEF,
     ArtifactDownloadInput,
-    ArtifactGetResult,
     ArtifactRecord,
 )
 from notebooklm.exceptions import (
@@ -53,7 +51,7 @@ from notebooklm.types import (
     MindMapResult,
     UnknownTypeWarning,
 )
-from tests._fixtures.recording_backend import RecordingBackend
+from tests._fixtures.recording_backend import RecordingBackend, set_studio_catalog
 from tests._fixtures.web_backend import build_web_backend
 
 pytestmark = pytest.mark.allow_no_vcr
@@ -520,10 +518,7 @@ class TestArtifactsAPI:
     async def test_get_uses_semantic_catalog_and_preserves_public_miss(self):
         """get() projects the typed catalog result and keeps the public miss error."""
         backend = RecordingBackend()
-        backend.set_result(
-            ARTIFACT_GET_DEF,
-            ArtifactGetResult(ArtifactRecord("art_found", "Found", "report", "completed")),
-        )
+        set_studio_catalog(backend, (ArtifactRecord("art_found", "Found", "report", "completed"),))
         api = ArtifactsAPI(
             drain=MagicMock(),
             lifecycle=MagicMock(),
@@ -535,7 +530,6 @@ class TestArtifactsAPI:
         result = await api.get("nb_123", "art_found")
         assert result.id == "art_found"
 
-        backend.set_result(ARTIFACT_GET_DEF, ArtifactGetResult(None))
         with pytest.raises(ArtifactNotFoundError):
             await api.get("nb_123", "art_missing")
 

@@ -529,7 +529,14 @@ def decode_artifact_catalog_row(
 
     del value
     rows = decode_studio_rows(result, source="WebRpcBackend._artifact_catalog_records")
-    return ArtifactCatalogResult(artifacts=tuple(decode_artifact(row) for row in rows if row))
+    # The row guard matches ``decode_artifact_catalog``'s: ``unwrap_artifact_rows``
+    # is a permissive shape probe that can hand back scalars from a drifted
+    # payload, and ``decode_artifact`` indexes its argument. Skipping those rows
+    # is the catalog listing's long-standing policy; without the guard this leaf
+    # raises a bare TypeError/KeyError outside the closed failure family.
+    return ArtifactCatalogResult(
+        artifacts=tuple(decode_artifact(row) for row in rows if isinstance(row, list) and row)
+    )
 
 
 def encode_artifact_export(value: DriveExportInput) -> CodecPayload:

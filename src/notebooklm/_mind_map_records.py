@@ -21,6 +21,12 @@ class MindMapRecord:
     tree_json: str | None = None
 
 
+#: Diagnostics key the supplemental catalog read's partial-availability net
+#: matches on.  ``mind_map.list``'s ``map_error`` stamps it on the one failure
+#: it translates, so the swallowing service recognises that failure without
+#: widening its reason set to every network failure.
+SUPPLEMENTAL_TRANSPORT_FAILURE = "supplemental_transport_failure"
+
 #: ``MindMapListInput.raw_rows``: return the mind-map rows only.
 RAW_MIND_MAP_ROWS = "mind_maps"
 #: ``MindMapListInput.raw_rows``: return the whole normalized row collection.
@@ -37,10 +43,18 @@ class MindMapListInput:
     :data:`RAW_ALL_NOTE_ROWS` the whole normalized collection, both exactly as
     the wire produced them.  ``None`` is the record branch every semantic
     caller uses.
+
+    ``supplemental`` marks the optional read the Studio catalog merges into a
+    complete listing.  It selects nothing about the request or the decode; it
+    tells the row only that this one caller applies ADR-0019 Rule 3's
+    partial-availability policy, so the row may translate the raw transport
+    leaf that policy has always swallowed.  Every other consumer leaves it
+    ``False`` and keeps observing that leaf unchanged.
     """
 
     notebook_id: str
     raw_rows: str | None = None
+    supplemental: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,4 +290,5 @@ __all__ = [
     "MindMapUpdateResult",
     "RAW_ALL_NOTE_ROWS",
     "RAW_MIND_MAP_ROWS",
+    "SUPPLEMENTAL_TRANSPORT_FAILURE",
 ]

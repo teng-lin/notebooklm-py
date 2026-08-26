@@ -137,7 +137,10 @@ def test_note_and_mind_map_rows_replace_their_handlers_in_the_registry_and_table
         choice = row.native.select(None)
         assert (choice.method, choice.variant) == _EXPECTED_NATIVES[operation]
         assert row.forward_disable_internal_retries is False
-        assert row.map_error is None
+        # ``mind_map.list`` carries the one scoped mapper in this family: the
+        # Studio catalog's supplemental read needs its raw transport leaf as a
+        # neutral reason (P10 R4.2). Every other leaf here maps nothing.
+        assert (row.map_error is None) is (operation is not Operation.MIND_MAP_LIST)
     for name in (
         "_note_list",
         "_note_get",
