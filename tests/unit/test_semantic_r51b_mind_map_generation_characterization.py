@@ -322,6 +322,45 @@ async def test_artifact_default_scope_reads_the_notebook_before_generating() -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("source_ids", [("only",), ()])
+async def test_artifact_supplied_scope_never_reads_the_notebook(
+    source_ids: tuple[str, ...],
+) -> None:
+    """The Studio workflow honours an explicit list — the empty one included."""
+    executor = _Executor(_GENERATED, _NOTE_CREATED, _NOTE_UPDATED)
+
+    await _artifact_family(executor).generate(
+        MindMapGenerateInput(NOTEBOOK_ID, source_ids, "en", None)
+    )
+
+    assert executor.methods == [
+        RPCMethod.GENERATE_MIND_MAP,
+        RPCMethod.CREATE_NOTE,
+        RPCMethod.UPDATE_NOTE,
+    ]
+    assert executor.calls[0].params == build_mind_map_params(
+        list(source_ids), language="en", instructions=None
+    )
+
+
+@pytest.mark.asyncio
+async def test_artifact_language_none_resolves_the_environment_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Studio workflow expands ``language=None`` from ``NOTEBOOKLM_HL`` too."""
+    monkeypatch.setenv("NOTEBOOKLM_HL", "de")
+    executor = _Executor(_GENERATED, _NOTE_CREATED, _NOTE_UPDATED)
+
+    await _artifact_family(executor).generate(
+        MindMapGenerateInput(NOTEBOOK_ID, ("s1",), None, None)
+    )
+
+    assert executor.calls[0].params == build_mind_map_params(
+        ["s1"], language="de", instructions=None
+    )
+
+
+@pytest.mark.asyncio
 async def test_artifact_workflow_shares_one_deadline_across_read_and_generation() -> None:
     """One workflow budget already covers the read, the generation and both notes."""
     clock = [100.0]
