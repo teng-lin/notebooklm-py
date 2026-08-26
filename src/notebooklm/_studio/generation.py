@@ -1,9 +1,9 @@
 """Resolution and validation of the Studio generation inputs (P10 R5.1a).
 
-ADR-0035 addendum D1(a) makes the eight ``artifact.generate_*`` definitions take
-pre-resolved inputs: the port never sees "sources unspecified" or "language
-unspecified", and it never judges an option vocabulary.  All three resolutions
-live here.
+ADR-0035 addendum D1(a) makes the eight ``artifact.generate_*`` definitions and
+``mind_map.generate_note`` take pre-resolved inputs: the port never sees
+"sources unspecified" or "language unspecified", and it never judges an option
+vocabulary.  All three resolutions live here.
 
 Two of them are documented service-level defaults.  ``source_ids is None`` means
 *every* source in the notebook, read through :class:`NotebookReadService` with
@@ -37,6 +37,8 @@ from .._records import (
     InfographicGenerateRequest,
     InteractiveGenerateInput,
     InteractiveGenerateRequest,
+    MindMapGenerateInput,
+    MindMapGenerateNoteInput,
     ReportGenerateInput,
     ReportGenerateRequest,
     SlideDeckGenerateInput,
@@ -289,6 +291,24 @@ class StudioGenerationInputs:
             request.notebook_id,
             await self._source_ids(
                 request, diagnostics=SourceIdDiagnostics.WARN, deadline=deadline
+            ),
+            self._language(request.language),
+            request.instructions,
+        )
+
+    async def mind_map(
+        self, request: MindMapGenerateInput, *, deadline: RuntimeDeadline | None
+    ) -> MindMapGenerateNoteInput:
+        """The note-backed mind-map family validates nothing; its read is silent.
+
+        Unlike every other family here it reports *nothing* about a snapshot it
+        cannot read — the row it feeds resolved through a silent parse — so it
+        asks for :attr:`SourceIdDiagnostics.SILENT` explicitly.
+        """
+        return MindMapGenerateNoteInput(
+            request.notebook_id,
+            await self._source_ids(
+                request, diagnostics=SourceIdDiagnostics.SILENT, deadline=deadline
             ),
             self._language(request.language),
             request.instructions,

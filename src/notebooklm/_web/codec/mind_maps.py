@@ -199,49 +199,56 @@ def decode_mind_map_delete(value: MindMapDeleteInput, data: Any) -> MindMapDelet
     return MindMapDeleteResult()
 
 
-# Composite-facing payloads (P9.4b). The generate custom rows dispatch these per
-# phase through their row-scoped invoker: an optional ``GET_NOTEBOOK`` read when
-# ``source_ids`` is omitted, then the one generation native.
-def encode_notebook_sources_read(notebook_id: str) -> CodecPayload:
-    """The ``GET_NOTEBOOK`` read a generate composite issues to default its sources."""
-    from ..._notebook_payloads import build_get_notebook_params
-
-    return CodecPayload(
-        params=build_get_notebook_params(notebook_id),
-        source_path=_notebook_route(notebook_id),
-    )
-
-
-def encode_mind_map_generate_note(
-    value: MindMapGenerateNoteInput, source_ids: tuple[str, ...]
+def _encode_generation(
+    notebook_id: str,
+    source_ids: tuple[str, ...],
+    language: str,
+    instructions: str | None,
 ) -> CodecPayload:
-    """Payload for the ``GENERATE_MIND_MAP`` phase of ``mind_map.generate_note``."""
+    """The one ``GENERATE_MIND_MAP`` body both note-backed rows encode.
+
+    ``mind_map.generate`` (the P10 R4.2 primitive) and ``mind_map.generate_note``
+    (the product operation ``MindMapsAPI.generate`` reaches) dispatch the same
+    native over the same already-resolved scope, so they share this body rather
+    than keeping two copies of it that could drift apart on the wire.
+    """
     return CodecPayload(
         params=build_mind_map_params(
             list(source_ids),
-            language=(get_default_language() if value.language is None else value.language),
-            instructions=value.instructions,
+            language=language,
+            instructions=instructions,
         ),
-        source_path=_notebook_route(value.notebook_id),
+        source_path=_notebook_route(notebook_id),
         allow_null=True,
     )
 
 
-def decode_mind_map_generate_note(result: Any) -> MindMapGenerateNoteResult:
-    """Decode the optional JSON leaf of a note-backed generation."""
+def encode_mind_map_generate_note(value: MindMapGenerateNoteInput) -> CodecPayload:
+    """Payload for the ``mind_map.generate_note`` codec row (P10 R5.1b).
+
+    The input carries its resolved source scope and language, so this encoder is
+    a pure function of the record and never reads a notebook of its own.
+    """
+    return _encode_generation(
+        value.notebook_id, value.source_ids, value.language, value.instructions
+    )
+
+
+def decode_mind_map_generate_note(
+    value: MindMapGenerateNoteInput, result: Any
+) -> MindMapGenerateNoteResult:
+    """Row decoder for ``mind_map.generate_note``: the optional JSON leaf alone."""
+    del value
     return MindMapGenerateNoteResult(decode_generated_tree(result))
 
 
 def encode_mind_map_generate(value: MindMapGenerateTreeInput) -> CodecPayload:
     """Payload for the ``mind_map.generate`` leaf (already-resolved source set)."""
-    return CodecPayload(
-        params=build_mind_map_params(
-            list(value.source_ids),
-            language=(get_default_language() if value.language is None else value.language),
-            instructions=value.instructions,
-        ),
-        source_path=_notebook_route(value.notebook_id),
-        allow_null=True,
+    return _encode_generation(
+        value.notebook_id,
+        value.source_ids,
+        get_default_language() if value.language is None else value.language,
+        value.instructions,
     )
 
 
@@ -310,6 +317,5 @@ __all__ = [
     "encode_mind_map_get",
     "encode_mind_map_list",
     "encode_mind_map_update",
-    "encode_notebook_sources_read",
     "extract_interactive_tree_leaf",
 ]

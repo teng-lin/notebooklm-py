@@ -273,7 +273,7 @@ def compose_client(
     )
     # Every note and note-backed mind-map path runs on the one backend-neutral
     # service; nothing below the port owns the note family any more.
-    note_service = NoteService(backend=client._backend)
+    note_service = NoteService(backend=client._backend, deadline_factory=deadline_factory)
     # P5.8: the artifacts compatibility facade owns no native RPC authority.
     # It receives the semantic backend plus the drain/lifecycle collaborators
     # used by its lifecycle-terminal polling service.

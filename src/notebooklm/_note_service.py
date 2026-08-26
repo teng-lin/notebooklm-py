@@ -19,7 +19,9 @@ import logging
 from typing import Any
 
 from ._backend import BackendAdapter
-from ._deadline import RuntimeDeadline
+from ._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from ._env import get_default_language
+from ._read_services import NotebookReadService
 from ._records import (
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_LIST_DEF,
@@ -39,6 +41,7 @@ from ._records import (
     NoteListInput,
     NoteRecord,
     NoteUpdateInput,
+    SourceIdDiagnostics,
 )
 from .exceptions import MindMapNotFoundError
 
@@ -66,10 +69,20 @@ _cleanup_tasks: set[asyncio.Task[Any]] = set()
 class NoteService:
     """Backend-neutral plain-note and note-backed mind-map workflows."""
 
-    __slots__ = ("_backend",)
+    __slots__ = ("_backend", "_deadline_factory", "_notebooks")
 
-    def __init__(self, backend: BackendAdapter) -> None:
+    def __init__(
+        self,
+        backend: BackendAdapter,
+        *,
+        deadline_factory: RuntimeDeadlineFactory | None = None,
+    ) -> None:
         self._backend = backend
+        # Note-backed mind-map generation defaults its source scope here, above
+        # the port, and shares one captured budget with the generation native
+        # the way the row used to (P10 R5.1b).
+        self._deadline_factory = deadline_factory
+        self._notebooks = NotebookReadService(backend)
 
     async def list_notes(self, notebook_id: str) -> list[NoteRecord]:
         """Return active non-mind-map notes in backend order."""
@@ -235,17 +248,30 @@ class NoteService:
         language: str | None,
         instructions: str | None,
     ) -> MindMapRecord:
-        """Generate JSON through MIND_MAP_* and persist it through semantic NOTE_* ops."""
+        """Generate JSON through MIND_MAP_* and persist it through semantic NOTE_* ops.
 
+        ``source_ids=None`` is this service's documented default for "every
+        source in the notebook" and ``language=None`` for the environment
+        default; both are resolved here because the operation takes a
+        pre-resolved input record (P10 R5.1b, ADR-0035 addendum D1(a)).  The
+        read decodes with :attr:`SourceIdDiagnostics.SILENT`, which is what this
+        family has always reported about a snapshot it cannot read: nothing.
+        The budget is captured before the read, so the read and the generation
+        native spend one client timeout — the aggregate the row used to get from
+        the backend's deadline ledger.  Note persistence stays outside it, as
+        before.
+        """
+
+        deadline = None if self._deadline_factory is None else self._deadline_factory.start()
         generated = await self._backend.invoke(
             MIND_MAP_GENERATE_NOTE_DEF,
             MindMapGenerateNoteInput(
                 notebook_id,
-                None if source_ids is None else tuple(source_ids),
-                language,
+                await self._resolve_scope(notebook_id, source_ids, deadline=deadline),
+                get_default_language() if language is None else language,
                 instructions,
             ),
-            deadline=None,
+            deadline=deadline,
         )
         tree_json = generated.tree_json
         if tree_json is None:
@@ -267,6 +293,25 @@ class NoteService:
             "note_backed",
             note.created_at,
             tree_json,
+        )
+
+    async def _resolve_scope(
+        self,
+        notebook_id: str,
+        source_ids: list[str] | None,
+        *,
+        deadline: RuntimeDeadline | None,
+    ) -> tuple[str, ...]:
+        """Expand an omitted scope into the notebook's full embedded source set."""
+
+        if source_ids is not None:
+            return tuple(source_ids)
+        return tuple(
+            await self._notebooks.get_source_ids(
+                notebook_id,
+                diagnostics=SourceIdDiagnostics.SILENT,
+                deadline=deadline,
+            )
         )
 
     async def rename_mind_map(

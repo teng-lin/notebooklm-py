@@ -255,11 +255,10 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
 
     assert sites[(RPCMethod.GET_NOTEBOOK, None)] == [
         "_web/bindings/chat.py:CHAT_CONFIGURE",
-        # P10 R5.1b: MIND_MAP_GENERATE_INTERACTIVE no longer reads a notebook.
-        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
-        # P10 R5.1a/R5.1c: the prompt-suggestion and the eight generate rows no
-        # longer dispatch GET_NOTEBOOK — their default-source read is the
-        # service-owned NOTEBOOK_GET row above.
+        # P10 R5.1a-c: no generation row reads a notebook of its own any more —
+        # not the eight ``artifact.generate_*`` rows, not the prompt-suggestion
+        # row, and since R5.1b neither mind-map row. Every default-source read
+        # is the service-owned NOTEBOOK_GET row above the port.
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
         "_web/bindings/sources.py:SOURCE_GET",
@@ -598,8 +597,11 @@ def test_operation_authorities_are_exact_discriminated_and_include_non_rpc_paths
         "UPDATE_NOTE:<default>",
     ]
     # P10 R4.2 made the workflow service-owned: every native it reaches is a
-    # leaf row's, so the whole authority set is the leaves it sequences.
+    # leaf row's, so the whole authority set is the leaves it sequences. R5.1b
+    # added NOTEBOOK_GET to that set — the optional default-source read is an
+    # ordinary leaf the service issues, not a phase of the generation row.
     assert {row["site"] for row in note_backed["execution_authorities"]} == {
+        "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notes.py:NOTE_CREATE",
         "_web/bindings/notes.py:NOTE_UPDATE",

@@ -1006,24 +1006,42 @@ async def test_mind_map_handlers_preserve_codecs_payloads_and_deadline() -> None
 
 
 @pytest.mark.asyncio
-async def test_mind_map_note_generation_resolves_default_sources_once() -> None:
-    """``mind_map.generate_note`` is the one row still defaulting its own scope.
+@pytest.mark.parametrize(
+    ("definition", "value", "generated", "native"),
+    [
+        (
+            MIND_MAP_GENERATE_NOTE_DEF,
+            MindMapGenerateNoteInput("nb", ("src-a", "src-b"), "en"),
+            [["{}"]],
+            RPCMethod.GENERATE_MIND_MAP,
+        ),
+        (
+            MIND_MAP_GENERATE_INTERACTIVE_DEF,
+            MindMapGenerateInteractiveInput("nb", ("src-a", "src-b")),
+            [["id"]],
+            RPCMethod.CREATE_ARTIFACT,
+        ),
+    ],
+)
+async def test_mind_map_generation_never_reads_a_notebook_of_its_own(
+    definition: OperationDef[Any, Any],
+    value: object,
+    generated: Any,
+    native: RPCMethod,
+) -> None:
+    """Neither generation row can default a scope: each spends one native.
 
-    P10 R5.1b hoisted the interactive family's read into
-    ``MindMapFamilyService``; the note-backed row keeps its ``GET_NOTEBOOK``
-    spec until its own hoist.
+    Both rows used to prefix a conditional ``GET_NOTEBOOK`` when ``source_ids``
+    was omitted.  P10 R5.1b moved that read to ``MindMapFamilyService``,
+    ``NoteBackedMindMapFamilyService`` and ``NoteService``, and the inputs now
+    require a resolved scope, so a notebook read from here would be a
+    regression rather than a default.
     """
-    executor = _RecordingExecutor(
-        [["Notebook", [[[["src-a"]]], [["src-b"]]], "nb"]],
-        [["{}"]],
-    )
+    executor = _RecordingExecutor(generated)
 
-    await _backend(executor).invoke(
-        MIND_MAP_GENERATE_NOTE_DEF, MindMapGenerateNoteInput("nb", None), deadline=None
-    )
+    await _backend(executor).invoke(definition, value, deadline=None)
 
-    assert [call.method for call in executor.calls[:1]] == [RPCMethod.GET_NOTEBOOK]
-    assert len(executor.calls) == 2
+    assert [call.method for call in executor.calls] == [native]
 
 
 @pytest.mark.asyncio

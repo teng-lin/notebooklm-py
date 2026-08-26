@@ -54,19 +54,17 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: handlers from the P9.2 stop/go baseline. P10 then took the rest above the
 #: port: R2.2's ``CHAT_ASK``, R3.2-R3.5's four probed source-add rows, R4.2's
 #: three mind-map/catalog compatibility rows, R5.1a's eight
-#: ``artifact.generate_*`` rows, R5.1b's ``mind_map.generate_interactive`` and
-#: R5.1c's ``notebook.suggest_prompts``, 20 -> 2. The ratchet asserts equality,
+#: ``artifact.generate_*`` rows, R5.1b's two ``mind_map.generate_*`` rows and
+#: R5.1c's ``notebook.suggest_prompts``, 20 -> 1. The ratchet asserts equality,
 #: so a hoist that does not tighten it leaves this gate red.
-RESIDUAL_COMPOSITE_CEILING = 2
-#: Exact custom-row counts per justification category: ``SOURCE_ADD_FILE`` (the
-#: permanent upload row of decision D4) and ``MIND_MAP_GENERATE_NOTE``, the one
-#: input-defaulting Studio generation row P10 does not hoist.
+RESIDUAL_COMPOSITE_CEILING = 1
+#: Exact custom-row counts per justification category. One row is left in the
+#: whole table: ``SOURCE_ADD_FILE``, the permanent upload row of decision D4.
 #: ``compatibility`` reached zero once R3.2 hoisted ``source.add_text`` and R4.2
 #: hoisted the catalog reads and the note-backed mind-map generation.
-#: P9.4b PRs raise these as handlers convert;
-#: P9.2 hoists lower ``deferred-product``, which must reach zero before any
-#: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 1, "compatibility": 0, "deferred-product": 1}
+#: ``deferred-product`` reached zero with R5.1b's ``mind_map.generate_note``; the
+#: category is deleted in the follow-up commit that completes invariant I3.
+CUSTOM_ROW_COUNTS = {"protocol": 1, "compatibility": 0, "deferred-product": 0}
 
 # --- 2. class size ---------------------------------------------------------------
 

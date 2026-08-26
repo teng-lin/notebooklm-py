@@ -472,15 +472,13 @@
     "mind_map.generate_note": {
       "call_policy": "stateful_start",
       "derived_natives": [
-        "GENERATE_MIND_MAP:<default>",
-        "GET_NOTEBOOK:<default>"
+        "GENERATE_MIND_MAP:<default>"
       ],
       "derived_streams": [],
       "known_divergence": null,
       "parity": "match",
       "reviewed_natives": [
-        "GENERATE_MIND_MAP:<default>",
-        "GET_NOTEBOOK:<default>"
+        "GENERATE_MIND_MAP:<default>"
       ],
       "reviewed_streams": []
     },
@@ -1016,6 +1014,7 @@
         "UPDATE_NOTE:<default>"
       ],
       "leaf_operations": [
+        "notebook.get",
         "mind_map.generate_note",
         "note.create",
         "note.update",

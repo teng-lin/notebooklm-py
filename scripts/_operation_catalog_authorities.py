@@ -268,12 +268,15 @@ SHARED_RPC_AUTHORITY_RULES.update(
             )
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.GET_NOTEBOOK)): _rules(
-            ("_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE", "source_ids is None via leaf")
+            (
+                "_web/bindings/notebooks.py:NOTEBOOK_GET",
+                "service-resolved default source scope",
+            )
         ),
         (Operation.MIND_MAP_GENERATE_NOTE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
             (
-                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
-                "kind=NOTE_BACKED and source_ids is None",
+                "_web/bindings/notebooks.py:NOTEBOOK_GET",
+                "service-resolved default source scope",
             )
         ),
     }
@@ -584,14 +587,9 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
 }
 
 for _operation in (*_GENERATION_OPERATIONS, Operation.ARTIFACT_GENERATE_MIND_MAP):
-    # The mind-map row still reads default sources through its own declared
-    # spec (R5.1b); since R5.1a the eight artifact families read through the
-    # service-owned ``NOTEBOOK_GET`` row instead.
-    _recency_site = (
-        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
-        if _operation is Operation.ARTIFACT_GENERATE_MIND_MAP
-        else _GET_TYPED
-    )
+    # Since R5.1a-b every generation family — the note-backed mind map last —
+    # reads its default source scope through the service-owned ``NOTEBOOK_GET``
+    # row above the port rather than through a spec of its own.
     RECENCY_CONTRACTS[_operation] = (
         RecencyRule(
             next(spec.public_methods for spec in OPERATION_SPECS if spec.operation is _operation),
@@ -599,21 +597,16 @@ for _operation in (*_GENERATION_OPERATIONS, Operation.ARTIFACT_GENERATE_MIND_MAP
             1,
             "public_call",
             "one only when source_ids is omitted",
-            (_recency_site,),
+            (_GET_TYPED,),
         ),
     )
 for _operation, _kind in (
     (Operation.MIND_MAP_GENERATE_NOTE, "NOTE_BACKED"),
     (Operation.MIND_MAP_GENERATE_INTERACTIVE, "INTERACTIVE"),
 ):
-    # P10 R5.1b: the interactive family's default-scope read is an ordinary
-    # NOTEBOOK_GET that MindMapFamilyService issues above the port, not a second
-    # native of the generation row.
-    _recency_site = (
-        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
-        if _operation is Operation.MIND_MAP_GENERATE_NOTE
-        else "_web/bindings/notebooks.py:NOTEBOOK_GET"
-    )
+    # P10 R5.1b: both families' default-scope read is an ordinary NOTEBOOK_GET
+    # that ``NoteService`` and ``MindMapFamilyService`` issue above the port,
+    # not a second native of the generation row.
     RECENCY_CONTRACTS[_operation] = (
         RecencyRule(
             _p("mind_maps", "generate"),
@@ -621,7 +614,7 @@ for _operation, _kind in (
             1,
             "public_call",
             f"one only when kind={_kind} and source_ids is omitted",
-            (_recency_site,),
+            ("_web/bindings/notebooks.py:NOTEBOOK_GET",),
         ),
     )
 

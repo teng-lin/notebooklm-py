@@ -129,7 +129,9 @@ def _mind_map_family(executor: _Executor) -> NoteBackedMindMapFamilyService:
     """The service that owns ``artifact.generate_mind_map`` since P10 R4.2."""
 
     backend = _backend(executor)
-    return NoteBackedMindMapFamilyService(backend, StudioCatalog(backend))
+    return NoteBackedMindMapFamilyService(
+        backend, StudioCatalog(backend), StudioGenerationInputs(NotebookReadService(backend))
+    )
 
 
 @pytest.mark.asyncio
@@ -221,7 +223,9 @@ async def test_mind_map_generate_cancellation_schedules_orphan_cleanup() -> None
             return None
 
     backend = WebRpcBackend(_GatedExecutor())  # type: ignore[arg-type]
-    service = NoteBackedMindMapFamilyService(backend, StudioCatalog(backend))
+    service = NoteBackedMindMapFamilyService(
+        backend, StudioCatalog(backend), StudioGenerationInputs(NotebookReadService(backend))
+    )
 
     task = asyncio.create_task(service.generate(MindMapGenerateInput("nb", ("src-a",))))
     await asyncio.wait_for(update_started.wait(), timeout=1)

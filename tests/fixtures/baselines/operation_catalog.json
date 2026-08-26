@@ -116,6 +116,12 @@
           "allowed_variants": [
             "<default>"
           ],
+          "operation": "notebook.get"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
           "operation": "mind_map.generate_note"
         },
         {
@@ -818,12 +824,6 @@
       "call_policy": "stateful_start",
       "known_divergence": null,
       "native_bindings": [
-        {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "conditional default-source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
         {
           "idempotency_policy": "probe_then_create",
           "role": "note-backed tree generation",
@@ -3307,7 +3307,6 @@
       "disposition_reason": null,
       "execution_authorities": [
         "_web/bindings/chat.py:CHAT_CONFIGURE",
-        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
         "_web/bindings/sources.py:SOURCE_GET",
@@ -3366,7 +3365,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -5158,7 +5156,6 @@
         "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5224,7 +5221,6 @@
         "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5290,7 +5286,6 @@
         "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5356,7 +5351,6 @@
         "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5393,8 +5387,8 @@
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "source_ids is None via leaf",
-          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
+          "discriminator": "service-resolved default source scope",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         },
         {
@@ -5422,7 +5416,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when source_ids is omitted",
           "maximum_calls": 1,
@@ -5442,7 +5436,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_generated_tree",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/notes.py:decode_created_note",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
@@ -5508,7 +5501,6 @@
         "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5576,7 +5568,6 @@
         "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5642,7 +5633,6 @@
         "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -5710,7 +5700,6 @@
         "_web/codec/generation.py:_kickoff_status",
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -6104,7 +6093,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -6182,7 +6170,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -6919,7 +6906,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/labels.py:decode_label_set_list_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -7137,7 +7123,6 @@
         "_web/codec/mind_maps.py:decode_created_interactive_id",
         "_web/codec/mind_maps.py:extract_interactive_tree_leaf",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/studio_documents.py:decode_generation_status"
@@ -7168,8 +7153,8 @@
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "kind=NOTE_BACKED and source_ids is None",
-          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
+          "discriminator": "service-resolved default source scope",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         },
         {
@@ -7196,7 +7181,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when kind=NOTE_BACKED and source_ids is omitted",
           "maximum_calls": 1,
@@ -7216,7 +7201,6 @@
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/mind_maps.py:decode_generated_tree",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/notes.py:decode_created_note",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
@@ -7775,7 +7759,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -7873,7 +7856,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -7994,7 +7976,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot",
         "_web/codec/suggestions.py:decode_prompt_suggestions"
@@ -8097,7 +8078,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -8211,7 +8191,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -8750,7 +8729,6 @@
         "_row_adapters/sources.py:unwrap_add_source_rows",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_renamed_source",
@@ -8857,7 +8835,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/settings.py:decode_get_user_settings",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_renamed_source",
@@ -8988,7 +8965,6 @@
         "_row_adapters/sources.py:unwrap_add_source_rows",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_renamed_source",
@@ -9049,7 +9025,6 @@
         "_row_adapters/sources.py:unwrap_add_source_rows",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_add_source_records",
         "_web/codec/sources.py:decode_source_snapshot"
@@ -9177,7 +9152,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -9303,7 +9277,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],
@@ -9477,7 +9450,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_renamed_source",
         "_web/codec/sources.py:decode_source_snapshot",
@@ -9588,7 +9560,6 @@
         "_row_adapters/sources.py:SourceRow.from_unknown_shape",
         "_web/codec/chat.py:decode_get_settings_result",
         "_web/codec/notebooks.py:decode_notebook_get",
-        "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
         "_web/codec/source_ids.py:_decode",
         "_web/codec/sources.py:decode_source_snapshot"
       ],

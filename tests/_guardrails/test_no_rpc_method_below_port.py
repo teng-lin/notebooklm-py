@@ -144,7 +144,6 @@ ALLOWLIST: tuple[str, ...] = (
     "_web/codec/notebooks.py:decode_notebook_description",
     "_web/codec/notebooks.py:decode_notebook_get",
     "_web/codec/notebooks.py:decode_notebook_list_result",
-    "_web/codec/notebooks.py:decode_notebook_source_ids_silent",
     "_web/codec/notes.py:_decode_note_rows",
     "_web/codec/notes.py:_is_note_row_like",
     "_web/codec/notes.py:_normalize_note_row",

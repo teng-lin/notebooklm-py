@@ -86,11 +86,19 @@ class MindMapGetResult:
 
 @dataclass(frozen=True, slots=True)
 class MindMapGenerateNoteInput:
-    """Note-backed mind-map generation options."""
+    """Pre-resolved note-backed generation input: the port defaults nothing.
+
+    ``source_ids`` and ``language`` are both required.  "No scope given means
+    every source in the notebook" and "no language given means the environment
+    default" are service-level defaults (P10 R5.1b, ADR-0035 addendum D1(a)):
+    :class:`~notebooklm._note_service.NoteService` and
+    :class:`~notebooklm._studio.NoteBackedMindMapFamilyService` resolve both
+    above the port, so the row never re-derives them below it.
+    """
 
     notebook_id: str
-    source_ids: tuple[str, ...] | None = None
-    language: str | None = "en"
+    source_ids: tuple[str, ...]
+    language: str
     instructions: str | None = field(default=None, repr=False)
 
 

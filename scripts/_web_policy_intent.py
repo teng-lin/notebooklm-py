@@ -556,11 +556,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.STATEFUL_START,
             (
                 _native(
-                    RPCMethod.GET_NOTEBOOK,
-                    _IDEMPOTENT,
-                    "conditional default-source resolution",
-                ),
-                _native(
                     RPCMethod.GENERATE_MIND_MAP,
                     _PROBE_CREATE,
                     "note-backed tree generation",
@@ -876,6 +871,10 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                     _native(RPCMethod.DELETE_NOTE, _IDEMPOTENT, "cancelled create cleanup"),
                 ),
                 (
+                    # P10 R5.1b: the optional source-set read is the workflow's
+                    # own ``NOTEBOOK_GET`` leaf now, not a phase of the
+                    # generation row.
+                    _leaf(Operation.NOTEBOOK_GET, None),
                     _leaf(Operation.MIND_MAP_GENERATE_NOTE, None),
                     _leaf(Operation.NOTE_CREATE, "plain"),
                     _leaf(Operation.NOTE_UPDATE, None),

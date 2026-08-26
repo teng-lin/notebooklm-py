@@ -1,19 +1,20 @@
-"""P9.4b: the mind-map/catalog composites dispatch as ``CustomBinding`` rows.
+"""The P9.4b mind-map/catalog conversion oracles, kept at their final authority.
 
-``MIND_MAP_GENERATE_NOTE``, ``MIND_MAP_GENERATE_INTERACTIVE`` and
-``ARTIFACT_GENERATE_MIND_MAP`` declare their natives as keyed specs and
-sequence them through the row-scoped invoker.  These tests pin the conversion
-oracles: the identical keyword set reaches the runtime for every phase
-(including explicit ``False``/``None`` values, ``disable_internal_retries`` on
-the guarded create, ``operation_variant="plain"`` on the legacy note
-allocation), the closed error identities (quota limit, not-found, feature
-unavailable), failure tagging with the selected spec and the deadline
-projection.
+Every row this module was written for has since been hoisted, so nothing here
+is a ``CustomBinding`` any more — but the oracles it pins are unchanged, and
+they are what proves each hoist moved behaviour rather than altering it: the
+identical keyword set reaches the runtime for every phase (including explicit
+``False``/``None`` values, ``operation_variant="plain"`` on the legacy note
+allocation), the closed error identities (feature unavailable, server failure),
+failure tagging with the selected spec, and the partial-availability net.
 
-``artifact.list``/``artifact.get`` left this module's rows in P10 R4.2; the same
-oracles now run against ``StudioCatalog``, which sequences ``artifact.catalog``
-and the supplemental ``mind_map.list`` merge, so the wire keywords and the
-partial-availability net stay pinned at their new authority.
+``artifact.list``/``artifact.get`` left this module's rows in P10 R4.2 and the
+same oracles now run against ``StudioCatalog``.  ``mind_map.generate_interactive``
+and ``mind_map.generate_note`` followed in R5.1b: their conditional
+``GET_NOTEBOOK`` read belongs to the services above the port, so the rows are
+single-native codec rows and the wire oracles run against the resolved input.
+The default-scope resolution those rows used to perform is pinned at its new
+authority in ``test_semantic_r51b_mind_map_generation_characterization.py``.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from notebooklm._backend import (
 )
 from notebooklm._binding import CodecBinding, CustomBinding, RpcNative
 from notebooklm._operations import Operation
+from notebooklm._read_services import NotebookReadService
 from notebooklm._records import (
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,
@@ -38,7 +40,11 @@ from notebooklm._records import (
     MindMapGenerateInteractiveInput,
     MindMapGenerateNoteInput,
 )
-from notebooklm._studio import NoteBackedMindMapFamilyService, StudioCatalog
+from notebooklm._studio import (
+    NoteBackedMindMapFamilyService,
+    StudioCatalog,
+    StudioGenerationInputs,
+)
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import mind_maps as mind_map_rows
@@ -86,26 +92,26 @@ def _kwargs(source_path: str, **overrides: Any) -> dict[str, Any]:
 # --- registry partition ----------------------------------------------------------
 
 
-def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
+def test_the_mind_map_rows_are_single_native_codec_rows_with_no_custom_row_left() -> None:
+    """P10 invariant I3 at this module: both generate rows lost their read."""
     expected = {
         Operation.MIND_MAP_GENERATE_NOTE: (
             mind_map_rows.MIND_MAP_GENERATE_NOTE,
-            "deferred-product",
+            RpcNative(RPCMethod.GENERATE_MIND_MAP),
+        ),
+        Operation.MIND_MAP_GENERATE_INTERACTIVE: (
+            mind_map_rows.MIND_MAP_GENERATE_INTERACTIVE,
+            RpcNative(RPCMethod.CREATE_ARTIFACT),
         ),
     }
-    for operation, (row, category) in expected.items():
-        assert isinstance(row, CustomBinding)
+    for operation, (row, native) in expected.items():
+        assert isinstance(row, CodecBinding)
         assert WEB_BINDING_ROWS[operation] is row
-        binding = WEB_OPERATION_REGISTRY[operation]
-        assert binding.row is row
-        assert row.category == category
-        assert row.justification.strip()
-        assert row.collaborators == ()
-    # P10 R5.1b took the interactive family's default-scope read above the port.
-    interactive = mind_map_rows.MIND_MAP_GENERATE_INTERACTIVE
-    assert isinstance(interactive, CodecBinding)
-    assert WEB_BINDING_ROWS[Operation.MIND_MAP_GENERATE_INTERACTIVE] is interactive
-    assert interactive.native.select(None) == RpcNative(RPCMethod.CREATE_ARTIFACT)
+        assert WEB_OPERATION_REGISTRY[operation].row is row
+        assert row.native.select_rpc(None) == native
+    assert not any(isinstance(row, CustomBinding) for row in vars(mind_map_rows).values()), (
+        "the mind-map module has no justified custom row left"
+    )
     # P10 R4.2 made ``artifact.generate_mind_map`` service-owned; its
     # ``CREATE_NOTE`` phase is the ``note.create`` leaf's declared variant now.
     assert notes_rows.NOTE_CREATE.native.select(None) == RpcNative(RPCMethod.CREATE_NOTE, "plain")
@@ -128,35 +134,34 @@ def test_composites_are_custom_rows_with_their_categories_and_specs() -> None:
 # --- mind-map generate rows ---------------------------------------------------------
 
 
+def _mind_map_family(backend: WebRpcBackend) -> NoteBackedMindMapFamilyService:
+    """The service behind ``artifact.generate_mind_map``, assembled as production does."""
+    return NoteBackedMindMapFamilyService(
+        backend, StudioCatalog(backend), StudioGenerationInputs(NotebookReadService(backend))
+    )
+
+
 @pytest.mark.asyncio
-async def test_generate_note_defaults_sources_through_get_notebook() -> None:
-    executor = _RecordingExecutor([[None, []]], [['{"name": "Tree"}']])
+async def test_generate_note_issues_one_call_over_its_resolved_scope() -> None:
+    """The row dispatches the generation native alone, with the same kwargs.
+
+    The ``GET_NOTEBOOK`` read this used to prefix when ``source_ids`` was
+    omitted is ``NoteService``'s and ``NoteBackedMindMapFamilyService``'s since
+    P10 R5.1b; the input record reaching the row is already resolved.
+    """
+    executor = _RecordingExecutor([['{"name": "Tree"}']])
     backend = build_web_backend(executor)
 
     result = await backend.invoke(
-        MIND_MAP_GENERATE_NOTE_DEF, MindMapGenerateNoteInput("nb-1"), deadline=None
-    )
-
-    assert result.tree_json == '{"name": "Tree"}'
-    sources, generate = executor.calls
-    assert sources.method is RPCMethod.GET_NOTEBOOK
-    assert sources.kwargs == _kwargs("/notebook/nb-1")
-    assert generate.method is RPCMethod.GENERATE_MIND_MAP
-    assert generate.kwargs == _kwargs("/notebook/nb-1", allow_null=True)
-
-
-@pytest.mark.asyncio
-async def test_generate_note_with_sources_issues_one_call() -> None:
-    executor = _RecordingExecutor([["tree"]])
-    backend = build_web_backend(executor)
-
-    await backend.invoke(
         MIND_MAP_GENERATE_NOTE_DEF,
-        MindMapGenerateNoteInput("nb-1", source_ids=("s1",)),
+        MindMapGenerateNoteInput("nb-1", ("s1",), "en"),
         deadline=None,
     )
 
-    assert [call.method for call in executor.calls] == [RPCMethod.GENERATE_MIND_MAP]
+    assert result.tree_json == '{"name": "Tree"}'
+    (generate,) = executor.calls
+    assert generate.method is RPCMethod.GENERATE_MIND_MAP
+    assert generate.kwargs == _kwargs("/notebook/nb-1", allow_null=True)
 
 
 @pytest.mark.asyncio
@@ -191,7 +196,7 @@ async def test_generate_interactive_creates_an_artifact_or_reports_unavailable()
 async def test_artifact_mind_map_generation_persists_through_the_note_leaves() -> None:
     executor = _RecordingExecutor([['{"name": "Tree", "children": []}']], [["note-1"]], None)
     backend = build_web_backend(executor)
-    service = NoteBackedMindMapFamilyService(backend, StudioCatalog(backend))
+    service = _mind_map_family(backend)
 
     result = await service.generate(MindMapGenerateInput("nb-1", source_ids=("s1",)))
 
@@ -216,7 +221,7 @@ async def test_artifact_mind_map_generation_persists_through_the_note_leaves() -
 async def test_artifact_mind_map_generation_with_an_absent_leaf_persists_nothing() -> None:
     executor = _RecordingExecutor([])
     backend = build_web_backend(executor)
-    service = NoteBackedMindMapFamilyService(backend, StudioCatalog(backend))
+    service = _mind_map_family(backend)
 
     result = await service.generate(MindMapGenerateInput("nb-1", source_ids=("s1",)))
 
