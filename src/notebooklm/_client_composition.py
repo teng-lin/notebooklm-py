@@ -291,8 +291,9 @@ def compose_client(
         _backend=client._backend,
         deadline_factory=deadline_factory,
     )
-    # P6.1: ChatAPI keeps loop-bound orchestration and client-local state, but
-    # delegates all six semantic operations to the client-owned backend.
+    # P10 R2.3: ChatAPI is the public-vocabulary facade; the loop-bound
+    # orchestration, the client-local conversation state, and all six semantic
+    # operations live in the ChatWorkflowService it builds over the backend.
     client.chat = ChatAPI(
         backend=client._backend,
         loop_guard=internals.lifecycle,

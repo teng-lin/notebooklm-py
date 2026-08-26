@@ -2574,7 +2574,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService"
+        "ChatWorkflowService"
       ],
       "response_decoders": [
         "_web/codec/notes.py:decode_created_note"
@@ -2706,7 +2706,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService"
+        "ChatWorkflowService"
       ],
       "response_decoders": [],
       "response_projectors": [],
@@ -3021,7 +3021,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService"
+        "ChatWorkflowService"
       ],
       "response_decoders": [
         "_row_adapters/chat.py:<module>",
@@ -3128,7 +3128,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService"
+        "ChatWorkflowService"
       ],
       "response_decoders": [],
       "response_projectors": [],
@@ -3201,7 +3201,7 @@
       "override_honored": true,
       "owners": [
         "AudioFamilyService",
-        "ChatService",
+        "ChatWorkflowService",
         "DataTableFamilyService",
         "InfographicFamilyService",
         "LabelService",
@@ -4028,7 +4028,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService",
+        "ChatWorkflowService",
         "NotebookMutationService",
         "SharingService"
       ],
@@ -5944,7 +5944,7 @@
         "GET_LAST_CONVERSATION_ID:<default>",
         "GET_NOTEBOOK:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "stream",
       "public_methods": [
         "chat.ask"
@@ -6009,7 +6009,7 @@
         "GET_NOTEBOOK:<default>",
         "RENAME_NOTEBOOK:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "mutation",
       "public_methods": [
         "chat.configure",
@@ -6076,7 +6076,7 @@
       "native_bindings": [
         "DELETE_CONVERSATION:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "mutation",
       "public_methods": [
         "chat.delete_conversation"
@@ -6110,7 +6110,7 @@
       "native_bindings": [
         "GET_LAST_CONVERSATION_ID:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "read",
       "public_methods": [
         "chat.get_conversation_id"
@@ -6143,7 +6143,7 @@
       "native_bindings": [
         "GET_CONVERSATION_TURNS:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "read",
       "public_methods": [
         "chat.get_conversation_turns",
@@ -6180,7 +6180,7 @@
       "native_bindings": [
         "CREATE_NOTE:saved_from_chat"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "mutation",
       "public_methods": [
         "chat.save_answer_as_note"
@@ -6211,7 +6211,7 @@
       "known_divergence": null,
       "known_divergence_kind": null,
       "native_bindings": [],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "stream",
       "public_methods": [],
       "recency_contract": [],
@@ -10659,7 +10659,7 @@
     },
     "chat.set_bound_loop": {
       "app_callers": [],
-      "declared_by": "notebooklm._loop_bound.LoopBoundPrimitive",
+      "declared_by": "notebooklm._chat.api.ChatAPI",
       "disposition": "local_only",
       "operations": [],
       "reason": "client lifecycle helper; binds loop-affine local state"

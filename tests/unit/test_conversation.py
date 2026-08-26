@@ -153,7 +153,7 @@ class TestAsk:
 
         async with NotebookLMClient(auth_tokens) as client:
             # Seed cache via the public helper (cache moved off Session).
-            client.chat._cache.cache_conversation_turn(_TEST_CONV_ID, "Q1", "A1", 1)
+            client.chat._workflow._cache.cache_conversation_turn(_TEST_CONV_ID, "Q1", "A1", 1)
 
             result = await client.chat.ask(
                 notebook_id="nb_123",

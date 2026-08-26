@@ -2,7 +2,7 @@
 
 ``CHAT_STREAM_ANSWER`` is the one codec row whose ``NativeCallSpec`` selects a
 :class:`StreamNative`: it declares no ``RPCMethod`` and dispatches through
-``Transport.stream``.  ``ChatService.ask`` sequences it and, only when the caller
+``Transport.stream``.  ``ChatWorkflowService.ask`` sequences it and, only when the caller
 resolved no id, the ``CHAT_GET_CONVERSATION`` leaf.
 
 These tests are the conversion oracles for that move.  Every observable the
@@ -37,7 +37,7 @@ from notebooklm._backend import (
     may_have_committed,
 )
 from notebooklm._binding import CodecBinding, NativeCallSpec, StreamNative, StreamRequestPayload
-from notebooklm._chat.service import ChatService
+from notebooklm._chat.workflow import ChatWorkflowService
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation, OperationTier
 from notebooklm._records import (
@@ -130,6 +130,13 @@ def _backend(
     )
 
 
+class _NoSourceIds:
+    """Source-id resolver the workflow never reaches: every ask supplies its own."""
+
+    async def get_source_ids(self, notebook_id: str) -> list[str]:
+        raise AssertionError("chat.ask leaf sequencing must not resolve source ids")
+
+
 def _ask_input(**overrides: Any) -> ChatAskInput:
     values: dict[str, Any] = {
         "notebook_id": _NB,
@@ -143,7 +150,9 @@ def _ask_input(**overrides: Any) -> ChatAskInput:
 
 async def _ask(backend: WebRpcBackend, **overrides: Any) -> Any:
     deadline = overrides.pop("deadline", None)
-    return await ChatService(backend).ask(_ask_input(**overrides), deadline=deadline)
+    return await ChatWorkflowService(backend, notebooks=_NoSourceIds()).ask(
+        _ask_input(**overrides), deadline=deadline
+    )
 
 
 # --- registry partition ------------------------------------------------------
@@ -153,7 +162,7 @@ def test_chat_ask_is_service_owned_over_a_streamed_primitive_leaf() -> None:
     workflow = WEB_OPERATION_REGISTRY[Operation.CHAT_ASK]
     assert workflow.row is None and not workflow.is_supported
     assert workflow.service_owned and Operation.CHAT_ASK not in WEB_BINDING_ROWS
-    assert "ChatService.ask" in (workflow.unsupported_reason or "")
+    assert "ChatWorkflowService.ask" in (workflow.unsupported_reason or "")
 
     row = primitive_rows.CHAT_STREAM_ANSWER
     leaf = WEB_OPERATION_REGISTRY[Operation.CHAT_STREAM_ANSWER]

@@ -54,7 +54,7 @@ class TestChatAPI:
         # someone made the default a class-level singleton.
         client_a = NotebookLMClient(auth_tokens)
         client_b = NotebookLMClient(auth_tokens)
-        assert client_a.chat._cache is not client_b.chat._cache
+        assert client_a.chat._workflow._cache is not client_b.chat._workflow._cache
 
     @pytest.mark.asyncio
     async def test_get_conversation_id(
@@ -1322,7 +1322,7 @@ class TestAskServerAssignedConversationId:
         )
 
         async with NotebookLMClient(auth_tokens) as client:
-            client.chat._cache.cache_conversation_turn(
+            client.chat._workflow._cache.cache_conversation_turn(
                 current_id, "Cached question?", "Cached answer.", turn_number=1
             )
             result = await client.chat.ask("nb_123", "Fresh question?", source_ids=["src_001"])

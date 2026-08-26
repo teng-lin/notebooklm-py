@@ -150,8 +150,9 @@ class _StubHost:
         # invocations are asserted by
         # ``test_open_captures_bound_loop_and_resets_drain``.
         self._uploader = MagicMock()
-        # ``open()`` also propagates the bound loop into the ChatAPI and resets
-        # its lazy per-conversation / per-notebook lock maps (#1225): it calls
+        # ``open()`` also propagates the bound loop into the chat collaborator
+        # and resets its lazy per-conversation / per-notebook lock maps (#1225):
+        # the parameter is typed ``ChatLifecycleHooks``, so all it needs is
         # ``chat.set_bound_loop(loop)`` and ``chat.reset_after_open()`` so a
         # client reopened on a different loop rebuilds the conversation locks on
         # the new loop. The ``MagicMock`` default lets both calls land without
@@ -293,7 +294,7 @@ async def test_open_captures_bound_loop_and_resets_drain() -> None:
     # rebinds on close→reopen.
     host._uploader.set_bound_loop.assert_called_once_with(asyncio.get_running_loop())
     host._uploader.reset_after_open.assert_called_once_with()
-    # Issue #1225: the ChatAPI conversation locks are the last lazily-built
+    # Issue #1225: the chat conversation locks are the last lazily-built
     # loop-bound primitives and must receive the same set_bound_loop /
     # reset_after_open treatment so the per-conversation / per-notebook locks
     # rebind on close→reopen.

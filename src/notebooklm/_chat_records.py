@@ -212,6 +212,20 @@ class ChatHistoryPairRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ChatCachedTurnRecord:
+    """One locally cached exchange with the ordinal the workflow assigned it.
+
+    The cache keeps its own turn numbering because the server does not echo
+    one back; this record is what the chat workflow hands its facade, which
+    projects it to the public conversation-turn model.
+    """
+
+    query: str
+    answer: str
+    turn_number: int
+
+
+@dataclass(frozen=True, slots=True)
 class ChatAskInput:
     """One adapter-owned streamed ask workflow request."""
 
@@ -275,6 +289,23 @@ class ChatAskResultRecord:
     answer_document: StructuredDocument
     turn_key: ChatTurnKeyRecord | None = None
     next_steps: tuple[ChatNextStepRecord, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ChatAskOutcomeRecord:
+    """One completed ask plus the two conversation facts only the workflow knows.
+
+    ``turn_number`` and ``is_follow_up`` are not server-reported: the first is
+    derived from the authoritative prior-turn count the workflow reads before
+    posting, the second from whether the ask continued an existing
+    conversation. Neither belongs in ``ChatAskResultRecord`` — that record is
+    the backend's answer to one operation, while these two describe the
+    client-side conversation the workflow placed it in.
+    """
+
+    result: ChatAskResultRecord
+    turn_number: int
+    is_follow_up: bool
 
 
 CHAT_GET_CONVERSATION_DEF = OperationDef(

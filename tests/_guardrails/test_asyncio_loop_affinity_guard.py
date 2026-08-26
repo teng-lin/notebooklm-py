@@ -94,7 +94,7 @@ class _AllowlistEntry:
 # ---------------------------------------------------------------------------
 ALLOWLIST: tuple[_AllowlistEntry, ...] = (
     # NOTE: ``ClientComposed``, ``TransportDrainTracker``,
-    # ``SourceUploadPipeline``, and ``ChatAPI`` are NOT allowlisted — they
+    # ``SourceUploadPipeline``, and ``ChatWorkflowService`` are NOT allowlisted — they
     # inherit ``set_bound_loop`` from ``LoopBoundPrimitive`` (credited by the
     # base-class check in ``_class_methods``) and each still define
     # ``reset_after_open`` directly, so the owner-method scan detects them as

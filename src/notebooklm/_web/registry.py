@@ -310,7 +310,8 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
             "notebook.patch and notebook.get"
         ),
         Operation.CHAT_ASK: (
-            "service-owned since P10 R2.2: ChatService.ask sequences chat.stream_answer and, "
+            "service-owned since P10 R2.2: ChatWorkflowService.ask sequences chat.stream_answer "
+            "and, "
             "only when the caller resolved no id, chat.get_conversation"
         ),
     }

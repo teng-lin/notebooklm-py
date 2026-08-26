@@ -40,7 +40,7 @@ import pytest
 
 import notebooklm.rpc as rpc_module
 from notebooklm import correlation_id
-from notebooklm._chat.service import ChatService
+from notebooklm._chat.workflow import ChatWorkflowService
 from notebooklm._records import ChatAskInput
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -284,6 +284,13 @@ async def _run_scenario(
     }
 
 
+class _NoSourceIds:
+    """Source-id resolver the workflow never reaches: every ask supplies its own."""
+
+    async def get_source_ids(self, notebook_id: str) -> list[str]:
+        raise AssertionError("chat.ask leaf sequencing must not resolve source ids")
+
+
 async def _derive_observability_baseline() -> dict[str, object]:
     async def notebook_list(client: Any) -> object:
         return await client.notebooks.list()
@@ -292,7 +299,7 @@ async def _derive_observability_baseline() -> dict[str, object]:
         return await client.notebooks.delete("notebook-1")
 
     async def chat_stream(client: Any) -> object:
-        return await ChatService(client._backend).ask(
+        return await ChatWorkflowService(client._backend, notebooks=_NoSourceIds()).ask(
             ChatAskInput(
                 notebook_id="notebook-1",
                 question="What is the answer?",

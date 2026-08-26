@@ -540,16 +540,16 @@ class TestChatNewConversationLocks:
     def test_same_notebook_reuses_new_conversation_lock(self):
         chat = self._factory()
 
-        lock_a = chat._get_new_conversation_lock("nb-1")
-        lock_b = chat._get_new_conversation_lock("nb-1")
+        lock_a = chat._workflow._get_new_conversation_lock("nb-1")
+        lock_b = chat._workflow._get_new_conversation_lock("nb-1")
 
         assert lock_a is lock_b
 
     def test_different_notebooks_get_distinct_new_conversation_locks(self):
         chat = self._factory()
 
-        lock_a = chat._get_new_conversation_lock("nb-1")
-        lock_b = chat._get_new_conversation_lock("nb-2")
+        lock_a = chat._workflow._get_new_conversation_lock("nb-1")
+        lock_b = chat._workflow._get_new_conversation_lock("nb-2")
 
         assert lock_a is not lock_b
 
@@ -589,7 +589,7 @@ class TestChatNewConversationLocks:
             loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
             notebooks=SimpleNamespace(),
         )
-        new_conversation_lock = chat._get_new_conversation_lock("nb-1")
+        new_conversation_lock = chat._workflow._get_new_conversation_lock("nb-1")
 
         with pytest.raises(ChatError, match="hPTbtc lookup failed"):
             await chat.ask("nb-1", "first ask", source_ids=["s1"])

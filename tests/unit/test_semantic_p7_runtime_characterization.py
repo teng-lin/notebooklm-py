@@ -110,7 +110,7 @@ def test_rpc_executor_and_middleware_chain_ordering_invariants() -> None:
     assert client.sources._rpc is client._backend._runtime
     assert not hasattr(client.artifacts, "_rpc")
     assert client.artifacts._backend is client._backend
-    assert client.chat._service._backend is client._backend
+    assert client.chat._workflow._backend is client._backend
 
     # The composed chain is closed over by the transport rather than retained
     # as an inspectable mutable list. Exercise the published terminal instead.
