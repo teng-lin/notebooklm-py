@@ -8,8 +8,8 @@ once and a new one fails immediately:
 
 **I1 — semantic service modules stay neutral.** A semantic service module
 (``src/notebooklm/_*_service.py``, ``_read_services.py``,
-``_mutation_services.py``, ``_chat/service.py`` — later ``_chat/workflow.py`` —
-and ``_studio/*.py``) may import none of ``_projectors``,
+``_chat/service.py`` — later ``_chat/workflow.py`` — and ``_studio/*.py``) may
+import none of ``_projectors``,
 ``notebooklm.types``, ``_types.*``, ``_backend_compat``, ``rpc.*``,
 ``_row_adapters.*``, ``_web.*`` or ``httpx``, and its public methods must
 return ``*Record`` / ``*Result`` types, neutral enums, built-in scalars or
@@ -41,9 +41,9 @@ authority for one ceiling.
 
 This module also carries, verbatim, the five assertions of the retired
 ``test_semantic_read_boundary.py``. I1 subsumes that guard's *intent* but not
-all of its checks: it pinned the exact import sets of ``_read_services.py`` and
-``_mutation_services.py`` (tighter than I1's forbidden-list rule, and
-``_read_services.py`` is an I1 seed so I1 does not inspect it at all), and it
+all of its checks: it pinned the exact import sets of ``_read_services.py`` (tighter than I1's
+forbidden-list rule, and ``_read_services.py`` is an I1 seed so I1 does not
+inspect it at all), and it
 also constrained ``_projectors.py``, which is not a service module. Those
 checks are ported below under "Read-core pins" so no assertion is lost.
 """
@@ -275,7 +275,6 @@ def _semantic_service_modules() -> tuple[Path, ...]:
             {
                 *root_services,
                 SRC_ROOT / "_read_services.py",
-                SRC_ROOT / "_mutation_services.py",
                 *chat_services,
                 *studio,
             }
@@ -577,7 +576,6 @@ def test_the_i9_deletion_targets_stay_separate_from_the_exemptions() -> None:
 
 _PROJECTORS = SRC_ROOT / "_projectors.py"
 _SERVICES = SRC_ROOT / "_read_services.py"
-_MUTATION_SERVICES = SRC_ROOT / "_mutation_services.py"
 
 _FORBIDDEN_MODULE_PARTS = frozenset(
     {
@@ -630,23 +628,13 @@ def test_read_services_depend_only_on_semantic_port_records_deadline_and_project
 
 
 def test_read_core_has_no_transport_wire_or_adapter_dependencies() -> None:
-    for path in (_MUTATION_SERVICES, _PROJECTORS, _SERVICES):
+    for path in (_PROJECTORS, _SERVICES):
         assert not {
             module
             for module in _imported_modules(path)
             if any(part in _FORBIDDEN_MODULE_PARTS for part in module.split("."))
         }
         assert not (_identifiers(path) & _FORBIDDEN_IDENTIFIERS)
-
-
-def test_url_mutation_service_depends_only_on_semantic_port_deadline_and_records() -> None:
-    assert _imported_modules(_MUTATION_SERVICES) <= {
-        "__future__",
-        "_backend",
-        "_deadline",
-        "_records",
-    }
-    assert not any(isinstance(node, ast.Subscript) for node in ast.walk(_tree(_MUTATION_SERVICES)))
 
 
 def test_projectors_use_normal_public_constructors_without_wire_factories() -> None:

@@ -1,6 +1,6 @@
 """P9.4b: the source-add family dispatches as ``CustomBinding`` rows exactly as the handlers did.
 
-``SOURCE_ADD_URL``, ``SOURCE_ADD_URL_BATCH``, ``SOURCE_ADD_DRIVE`` and
+``SOURCE_ADD_URL_BATCH``, ``SOURCE_ADD_DRIVE`` and
 ``SOURCE_ADD_FILE`` declare their natives under spec
 keys and sequence them through the row-scoped invoker.  These tests pin the
 conversion oracles: the partition and categories, the identical keyword set per
@@ -39,14 +39,10 @@ from notebooklm._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
-    SOURCE_ADD_URL_DEF,
-    SourceAddCommitState,
     SourceAddDriveInput,
     SourceAddFailureRecord,
     SourceAddFileInput,
-    SourceAddTitleState,
     SourceAddUrlBatchInput,
-    SourceAddUrlInput,
     SourceFileInputKind,
 )
 from notebooklm._source._upload_decode import raise_partial_upload_failure
@@ -161,17 +157,6 @@ class _Uploader:
 
 def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
     expected = {
-        Operation.SOURCE_ADD_URL: (
-            source_rows.SOURCE_ADD_URL,
-            "protocol",
-            ErrorMode.TRANSLATE,
-            {
-                ("snapshot", RPCMethod.GET_NOTEBOOK, None),
-                ("create", RPCMethod.ADD_SOURCE, "url"),
-                ("rename", RPCMethod.UPDATE_SOURCE, None),
-            },
-            ("capture_public_failure",),
-        ),
         Operation.SOURCE_ADD_URL_BATCH: (
             source_rows.SOURCE_ADD_URL_BATCH,
             "protocol",
@@ -241,54 +226,6 @@ def test_source_add_rows_replace_their_handlers_with_declared_specs() -> None:
 
 
 # --- phase sequences and identical kwargs -----------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_add_url_probe_create_and_rename_phases_forward_identical_kwargs() -> None:
-    url = "https://example.com/doc"
-    created = _source_entry("src", title="Upstream", url=url)
-    executor = _RecordingExecutor(
-        _snapshot(),  # baseline snapshot
-        [[created]],  # guarded create
-        [_source_entry("src", title="Requested", url=url)],  # rename echo
-    )
-    backend = build_web_backend(executor)
-    deadline = RuntimeDeadline(timeout=30.0, started_at=10.0, monotonic=lambda: 12.0)
-
-    result = await backend.invoke(
-        SOURCE_ADD_URL_DEF,
-        SourceAddUrlInput(_NB, url, requested_title="Requested"),
-        deadline=deadline,
-    )
-
-    assert result.source.id == "src"
-    assert result.receipt.commit_state is SourceAddCommitState.CREATED
-    assert result.receipt.title_state is SourceAddTitleState.RENAMED
-    snapshot, create, rename = executor.calls
-    assert snapshot.method is RPCMethod.GET_NOTEBOOK
-    assert snapshot.kwargs == {
-        **_BASE_KWARGS,
-        "source_path": _ROUTE,
-        "read_timeout": 28.0,
-        "_retry_deadline": deadline,
-    }
-    assert create.method is RPCMethod.ADD_SOURCE
-    assert create.kwargs == {
-        **_BASE_KWARGS,
-        "source_path": _ROUTE,
-        "disable_internal_retries": True,
-        "operation_variant": "url",
-        "read_timeout": 28.0,
-        "_retry_deadline": deadline,
-    }
-    assert rename.method is RPCMethod.UPDATE_SOURCE
-    assert rename.kwargs == {
-        **_BASE_KWARGS,
-        "source_path": _ROUTE,
-        "allow_null": True,
-        "read_timeout": 28.0,
-        "_retry_deadline": deadline,
-    }
 
 
 @pytest.mark.asyncio
@@ -475,35 +412,6 @@ def _assert_neutral_source_add_failure(
 
 
 # --- failure projection --------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_add_url_translates_the_public_leaf_and_carries_the_dispatched_marker() -> None:
-    executor = _RecordingExecutor(
-        _snapshot(),
-        ServerError("boom", method_id=RPCMethod.ADD_SOURCE.value),
-        _snapshot(),  # the probe after the transport failure finds nothing
-        ServerError("boom again", method_id=RPCMethod.ADD_SOURCE.value),
-        _snapshot(),
-    )
-
-    with pytest.raises(BackendError) as caught:
-        await build_web_backend(executor).invoke(
-            SOURCE_ADD_URL_DEF, SourceAddUrlInput(_NB, "https://example.com/x"), deadline=None
-        )
-
-    error = caught.value
-    assert type(error) is BackendError
-    assert error.operation is Operation.SOURCE_ADD_URL
-    assert error.reason is BackendErrorReason.SOURCE_ADD
-    assert error.diagnostics is not None
-    assert error.diagnostics["receipt"].commit_state is SourceAddCommitState.FAILED
-    assert "source_add_failure" in error.diagnostics
-    # The transport error escapes SourceAddService raw; the row keeps it as the
-    # cause, tagged with the create spec and marked dispatched by the transport.
-    assert isinstance(error.__cause__, ServerError)
-    assert error.__cause__.dispatched is True  # type: ignore[attr-defined]
-    assert error.__cause__.binding_native.method is RPCMethod.ADD_SOURCE  # type: ignore[attr-defined]
 
 
 class _FailingUploader(_Uploader):

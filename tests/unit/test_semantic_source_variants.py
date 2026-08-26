@@ -16,7 +16,6 @@ from notebooklm._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
-    SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_GUIDE_DEF,
@@ -31,7 +30,6 @@ from notebooklm._records import (
     SourceAddFileResult,
     SourceAddUrlBatchInput,
     SourceAddUrlBatchResult,
-    SourceAddUrlInput,
     SourceDeleteInput,
     SourceFileInputKind,
     SourceFreshnessInput,
@@ -394,21 +392,16 @@ async def test_semantic_wait_binding_fetches_one_unclamped_snapshot() -> None:
 
 @pytest.mark.asyncio
 async def test_waited_url_title_finalize_keeps_add_attribution_and_null_hydration() -> None:
+    """P10 R3.3: the finalise is a service workflow, not a second row invocation."""
     executor = _RecordingExecutor(
         None,
         [["Notebook", [_source_entry("url", title="Requested")], "nb"]],
     )
-    deadline = RuntimeDeadline(timeout=30.0, started_at=10.0, monotonic=lambda: 12.0)
 
-    result = await _web_backend(executor).invoke(
-        SOURCE_ADD_URL_DEF,
-        SourceAddUrlInput(
-            "nb",
-            "",
-            requested_title="Requested",
-            finalize_source=SourceRecord("url", "Upstream", status="ready"),
-        ),
-        deadline=deadline,
+    result = await SourceService(_web_backend(executor)).finalize_title(
+        "nb",
+        SourceRecord("url", "Upstream", status="ready"),
+        "Requested",
     )
 
     assert result.source.title == "Requested"
@@ -417,8 +410,6 @@ async def test_waited_url_title_finalize_keeps_add_attribution_and_null_hydratio
         RPCMethod.GET_NOTEBOOK,
     ]
     assert RPCMethod.ADD_SOURCE not in [call[0] for call in executor.calls]
-    assert all(call[2]["_retry_deadline"] is deadline for call in executor.calls)
-    assert all(call[2]["read_timeout"] == 28.0 for call in executor.calls)
 
 
 @pytest.mark.asyncio

@@ -135,23 +135,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.MUTATION,
             (_native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "read with recency side effect"),),
         ),
-        Operation.SOURCE_ADD_URL: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(
-                    RPCMethod.GET_NOTEBOOK,
-                    _IDEMPOTENT,
-                    "baseline/probe or title null-echo readback",
-                ),
-                _native(
-                    RPCMethod.ADD_SOURCE,
-                    _PROBE_CREATE,
-                    "guarded generic/YouTube create",
-                    variant="url",
-                ),
-                _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "optional title readback"),
-            ),
-        ),
         Operation.SOURCE_ADD_URL_BATCH: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (
@@ -846,6 +829,29 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                 (
                     _leaf(Operation.COLLECTION_GET, None),
                     _leaf(Operation.LABEL_MUTATE, None, "add_notebooks", "remove_notebooks"),
+                ),
+            ),
+            Operation.SOURCE_ADD_URL: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(
+                        RPCMethod.GET_NOTEBOOK,
+                        _IDEMPOTENT,
+                        "baseline/probe or title null-echo readback",
+                    ),
+                    _native(
+                        RPCMethod.ADD_SOURCE,
+                        _PROBE_CREATE,
+                        "guarded generic/YouTube create",
+                        variant="url",
+                    ),
+                    _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "optional title readback"),
+                ),
+                (
+                    _leaf(Operation.SOURCE_LIST, None),
+                    _leaf(Operation.SOURCE_REGISTER, "url"),
+                    _leaf(Operation.SOURCE_PATCH_TITLE, None),
+                    _leaf(Operation.SOURCE_GET, None),
                 ),
             ),
             Operation.SOURCE_ADD_TEXT: WorkflowPolicyBinding(

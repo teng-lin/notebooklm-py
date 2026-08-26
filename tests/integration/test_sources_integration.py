@@ -17,6 +17,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 import notebooklm._sources as _sources_mod
+import notebooklm._url_utils as _url_utils_mod
 import notebooklm._web.bindings.sources as _source_variants_mod
 from notebooklm import NotebookLMClient, Source, SourceType
 from notebooklm._source.add import SourceAddService
@@ -2339,9 +2340,11 @@ class TestExtractYoutubeVideoId:
     ):
         """Test _extract_youtube_video_id() handles exceptions gracefully (lines 817-819)."""
         async with NotebookLMClient(auth_tokens) as client:
-            # Patching urlparse to raise ValueError covers the except block
+            # Patching urlparse to raise ValueError covers the except block.
+            # P10 R3.3 moved the parse itself into ``_url_utils``; the facade
+            # helper still delegates to it, so the patch follows the parse.
             with patch.object(
-                _sources_mod, "urlparse", side_effect=ValueError("parse error")
+                _url_utils_mod, "urlparse", side_effect=ValueError("parse error")
             ) as mock_urlparse:
                 result = client.sources._extract_youtube_video_id(
                     "https://youtube.com/watch?v=abc123"

@@ -3,18 +3,28 @@
 The selected P2.3 boundary is plan option (a): ``SourcesAPI.add_url`` migrates
 as one operation, including its hidden YouTube dispatch.  A generic/YouTube
 split would create two execution authorities behind one public method.
+
+P10 R3.3 hoisted that operation above the semantic port into
+``SourceService.add_url``; these sentinels still hold the *facade* contract —
+the frozen public signature, the exact request the live web path emits, and
+the public failure graph — from outside, so they are unchanged by where the
+workflow is sequenced. The below-port injected-dispatch test that lived here
+moved with the workflow to ``tests/unit/test_source_add_url_workflow.py``.
 """
 
 from __future__ import annotations
 
 import inspect
-import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 
 from notebooklm._deadline import RuntimeDeadline
+from notebooklm._idempotency import (
+    IDEMPOTENCY_REGISTRY,
+    resolve_effective_disable_internal_retries,
+)
 from notebooklm._records import (
     SourceAddCommitState,
     SourceAddTitleState,
@@ -22,7 +32,6 @@ from notebooklm._records import (
     SourceAddUrlResult,
     SourceRecord,
 )
-from notebooklm._source.add import SourceAddService
 from notebooklm._source.upload_payloads import build_template_block
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import (
@@ -33,7 +42,6 @@ from notebooklm.exceptions import (
     SourceTimeoutError,
 )
 from notebooklm.rpc import RPCMethod
-from notebooklm.types import Source
 from tests._fixtures.web_backend import build_web_backend
 
 
@@ -95,56 +103,29 @@ async def test_generic_and_youtube_payloads_share_one_url_operation_boundary() -
         ],
     ]
     assert all(entry.kwargs["source_path"] == "/notebook/nb-1" for entry in add_calls)
-    assert all(entry.kwargs["disable_internal_retries"] is True for entry in add_calls)
     assert all(entry.kwargs["operation_variant"] == "url" for entry in add_calls)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("url", "video_id", "expected_adder"),
-    [
-        ("https://example.com/article", None, "regular"),
-        ("https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ", "youtube"),
-    ],
-)
-async def test_add_url_hidden_dispatch_stays_inside_shared_reconciliation(
-    url: str,
-    video_id: str | None,
-    expected_adder: str,
-) -> None:
-    service = SourceAddService()
-    source_record = Source(id="src-1", title="Upstream", url=url)
-    add_regular = AsyncMock(return_value=source_record)
-    add_youtube = AsyncMock(return_value=source_record)
-    list_sources = AsyncMock(return_value=[])
-
-    source = await service.add_url(
-        "nb-1",
-        url,
-        add_youtube_source=add_youtube,
-        add_url_source=add_regular,
-        list_sources=list_sources,
-        wait_until_ready=AsyncMock(),
-        extract_youtube_video_id=lambda _url: video_id,
-        is_youtube_url=lambda _url: video_id is not None,
-        logger=logging.getLogger(__name__),
+    # P10 R3.3: the caller flag is False because the ``source.register`` leaf
+    # leaves it so deliberately — the reviewed ``(ADD_SOURCE, "url")``
+    # PROBE_THEN_CREATE row forces the inner retry loop off at dispatch, which
+    # is the same effective request the retired row's explicit ``True``
+    # produced. The request body itself is unchanged.
+    assert all(entry.kwargs["disable_internal_retries"] is False for entry in add_calls)
+    assert all(
+        resolve_effective_disable_internal_retries(
+            IDEMPOTENCY_REGISTRY,
+            RPCMethod.ADD_SOURCE,
+            caller_disable_internal_retries=entry.kwargs["disable_internal_retries"],
+            operation_variant=entry.kwargs["operation_variant"],
+        )
+        for entry in add_calls
     )
-
-    assert (source.id, source.url) == ("src-1", url)
-    list_sources.assert_awaited_once_with("nb-1")
-    if expected_adder == "youtube":
-        add_youtube.assert_awaited_once_with("nb-1", url)
-        add_regular.assert_not_awaited()
-    else:
-        add_regular.assert_awaited_once_with("nb-1", url)
-        add_youtube.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_recovered_url_add_uses_exact_baseline_diff_and_still_honors_title() -> None:
     url = "https://example.com/article"
     api = _sources_api()
-    api._url_mutation_service = MagicMock(  # type: ignore[assignment]
+    api._source_service = MagicMock(  # type: ignore[assignment]
         add_url=AsyncMock(
             return_value=SourceAddUrlResult(
                 SourceRecord(id="src-new", title="Requested", url=url, kind="web_page"),
@@ -161,7 +142,7 @@ async def test_recovered_url_add_uses_exact_baseline_diff_and_still_honors_title
     source = await api.add_url("nb-1", url, title="  Requested  ")
 
     assert (source.id, source.title, source.url) == ("src-new", "Requested", url)
-    api._url_mutation_service.add_url.assert_awaited_once_with(
+    api._source_service.add_url.assert_awaited_once_with(
         "nb-1",
         url,
         wait=False,

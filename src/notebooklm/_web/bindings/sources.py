@@ -9,17 +9,19 @@ because the operation-catalog walker derives execution authorities from them.
 and ``SOURCE_WAIT`` is the one ``DeadlineMode.IGNORE`` row (source polling
 historically never clamps an in-flight read).
 
-The remaining source-add rows (``SOURCE_ADD_URL``, ``SOURCE_ADD_URL_BATCH``,
-``SOURCE_ADD_DRIVE``, ``SOURCE_ADD_FILE``) are
+The remaining source-add rows (``SOURCE_ADD_URL_BATCH``, ``SOURCE_ADD_DRIVE``,
+``SOURCE_ADD_FILE``) are
 :class:`CustomBinding` rows (P9.4b): each declares exactly the natives the
 policy ledger lists under spec keys (``snapshot``, ``create``, ``rename``,
 ``register``, ``limits``) and sequences them through the row-scoped invoker
-with the same options the P6.7 handlers set.  All four are *protocol* rows —
+with the same options the P6.7 handlers set.  All three are *protocol* rows —
 source registration has a tentative-source mobile variant (ADR-0035
-principle 2).  ``source.add_text`` no longer has a row at all: P10 R3.2 hoisted
-its workflow into ``SourceService`` over the ``SOURCE_REGISTER`` primitive, so
-the family's one *compatibility* row is gone.  All four translate (P10
-invariant I8): the
+principle 2).  ``source.add_text`` and ``source.add_url`` no longer have rows at
+all: P10 R3.2 and R3.3 hoisted their workflows into ``SourceService`` over the
+``SOURCE_REGISTER`` primitive (plus, for the URL workflow, ``SOURCE_LIST``,
+``SOURCE_PATCH_TITLE`` and ``SOURCE_GET``), so the family's one *compatibility*
+row is gone and its ``protocol`` count is down to three.  All three translate
+(P10 invariant I8): the
 established public leaves the family owns — ``SourceAddError``, the unconfirmed
 transport four-tuple, ``ValidationError``, ``NonIdempotentRetryError`` — are
 captured by ``_source_add_failure`` as bounded neutral evidence under
@@ -38,7 +40,6 @@ import logging
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 from typing import Any, cast
-from urllib.parse import urlparse
 
 from ..._backend import BackendContractError, BackendError, BackendErrorReason
 from ..._binding import (
@@ -51,14 +52,13 @@ from ..._binding import (
     RowInvoker,
 )
 from ..._deadline import RuntimeDeadline
-from ..._idempotency import _CreateResultKind, _IdempotentCreateResult
+from ..._idempotency import _IdempotentCreateResult
 from ..._operations import Operation
 from ..._projectors import project_source
 from ..._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
-    SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_DEF,
@@ -67,17 +67,12 @@ from ..._records import (
     SOURCE_LIST_DEF,
     SOURCE_REFRESH_DEF,
     SOURCE_WAIT_DEF,
-    SourceAddCommitState,
     SourceAddDriveInput,
     SourceAddDriveResult,
     SourceAddFileInput,
     SourceAddFileResult,
-    SourceAddTitleState,
     SourceAddUrlBatchInput,
     SourceAddUrlBatchResult,
-    SourceAddUrlInput,
-    SourceAddUrlReceipt,
-    SourceAddUrlResult,
     SourceFileInputKind,
     SourceFileRegistrationRecord,
     SourceRecord,
@@ -91,7 +86,7 @@ from ..._source.add import (
 from ..._source.batch import SourceBatchAddService
 from ..._source_upload_port import SourceUploadBackend
 from ..._types.sources import _SOURCE_TYPE_CODE_MAP, SourceType
-from ..._url_utils import is_youtube_url
+from ..._url_utils import extract_youtube_video_id
 from ...exceptions import NotebookLMError, ValidationError
 from ...rpc import RPCMethod
 from ...rpc.types import drive_source_status_to_str, source_status_to_str
@@ -304,157 +299,9 @@ async def _rename_source(
     return source
 
 
-def _youtube_video_id_extractor(adder: SourceAddService) -> Any:
-    def extract_youtube_video_id(url: str) -> str | None:
-        return adder.extract_youtube_video_id(
-            url,
-            parse_url=urlparse,
-            extract_video_id_from_parsed_url=adder.extract_video_id_from_parsed_url,
-            is_valid_video_id=adder.is_valid_video_id,
-            logger=source_logger,
-        )
-
-    return extract_youtube_video_id
-
-
-async def _add_url(
-    value: SourceAddUrlInput,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-) -> SourceAddUrlResult:
-    """Run the live generic/YouTube URL workflow with optional outer budgeting."""
-    adder = SourceAddService()
-    capture_public_failure = invoke.collaborator(_CAPTURE_PUBLIC_FAILURE)
-
-    async def rename_source(notebook_id: str, source_id: str, new_title: str) -> Source | None:
-        return await _rename_source(
-            invoke,
-            notebook_id,
-            source_id,
-            new_title,
-            deadline=deadline,
-            hydrate_on_null=True,
-        )
-
-    async def create_url_source(notebook_id: str, url: str, *, youtube: bool) -> Source | None:
-        payload = await invoke.call(
-            _CREATE,
-            sources_codec.encode_add_url_payload(notebook_id, [url], youtube_flags=[youtube]),
-            deadline=deadline,
-            disable_internal_retries=True,
-        )
-        return _first_projected_source(sources_codec.decode_add_source_records(payload))
-
-    if value.finalize_source is not None:
-        source_before_title = project_source(value.finalize_source)
-        source = await honor_requested_title(
-            rename_source,
-            value.notebook_id,
-            source_before_title,
-            value.requested_title,
-            source_logger,
-        )
-        normalized_title = (
-            value.requested_title.strip() if value.requested_title is not None else ""
-        )
-        return SourceAddUrlResult(
-            _source_record(source),
-            SourceAddUrlReceipt(
-                SourceAddCommitState.CREATED,
-                (
-                    SourceAddTitleState.RENAMED
-                    if normalized_title and source.title == normalized_title
-                    else SourceAddTitleState.RENAME_FAILED
-                ),
-            ),
-        )
-
-    try:
-        create_result = cast(
-            _IdempotentCreateResult[Source],
-            await adder.add_url(
-                value.notebook_id,
-                value.url,
-                wait=False,
-                wait_timeout=value.wait_timeout,
-                add_youtube_source=lambda notebook_id, url: create_url_source(
-                    notebook_id, url, youtube=True
-                ),
-                add_url_source=lambda notebook_id, url: create_url_source(
-                    notebook_id, url, youtube=False
-                ),
-                list_sources=lambda notebook_id: _snapshot_sources(
-                    invoke, notebook_id, deadline=deadline
-                ),
-                wait_until_ready=_facade_owned_wait,
-                extract_youtube_video_id=_youtube_video_id_extractor(adder),
-                is_youtube_url=is_youtube_url,
-                logger=source_logger,
-                return_result=True,
-            ),
-        )
-    except NotebookLMError as exc:
-        outcome_unknown = bool(getattr(exc, "unconfirmed", False))
-        receipt = SourceAddUrlReceipt(
-            commit_state=(
-                SourceAddCommitState.UNKNOWN if outcome_unknown else SourceAddCommitState.FAILED
-            ),
-            title_state=SourceAddTitleState.NOT_ATTEMPTED,
-            outcome_unknown=outcome_unknown,
-        )
-        raise BackendError(
-            message=str(exc.args[0]) if exc.args else "",
-            operation=Operation.SOURCE_ADD_URL,
-            outcome_unknown=outcome_unknown,
-            diagnostics=MappingProxyType(
-                {
-                    "receipt": receipt,
-                    "source_add_failure": capture_public_failure(
-                        exc,
-                        operation=Operation.SOURCE_ADD_URL,
-                    ),
-                }
-            ),
-            reason=BackendErrorReason.SOURCE_ADD,
-        ) from exc
-
-    source_before_title = create_result.value
-    requested_title = value.requested_title
-    normalized_title = requested_title.strip() if requested_title is not None else ""
-    source = (
-        source_before_title
-        if value.wait
-        else await honor_requested_title_if_fresh(
-            rename_source,
-            value.notebook_id,
-            create_result,
-            requested_title,
-            source_logger,
-            probe_proves_freshness=True,
-        )
-    )
-    if not normalized_title:
-        title_state = SourceAddTitleState.NOT_REQUESTED
-    elif source_before_title.title == normalized_title:
-        title_state = SourceAddTitleState.UNCHANGED
-    elif value.wait:
-        title_state = SourceAddTitleState.NOT_ATTEMPTED
-    elif source.title == normalized_title:
-        title_state = SourceAddTitleState.RENAMED
-    else:
-        title_state = SourceAddTitleState.RENAME_FAILED
-
-    return SourceAddUrlResult(
-        source=_source_record(source),
-        receipt=SourceAddUrlReceipt(
-            commit_state=(
-                SourceAddCommitState.CREATED
-                if create_result.kind is _CreateResultKind.CREATED
-                else SourceAddCommitState.RECONCILED
-            ),
-            title_state=title_state,
-        ),
-    )
+def _youtube_video_id(url: str) -> str | None:
+    """Bind the neutral URL extractor to this module's source logger."""
+    return extract_youtube_video_id(url, logger=source_logger)
 
 
 async def _add_url_batch(
@@ -463,7 +310,6 @@ async def _add_url_batch(
     invoke: RowInvoker,
 ) -> SourceAddUrlBatchResult:
     """Run one non-replayed true-batch URL write and preserve positions."""
-    adder = SourceAddService()
     capture_public_failure = invoke.collaborator(_CAPTURE_PUBLIC_FAILURE)
 
     async def create_sources(
@@ -496,7 +342,7 @@ async def _add_url_batch(
             value.urls,
             create_sources=create_sources,
             list_sources=list_sources,
-            extract_youtube_video_id=_youtube_video_id_extractor(adder),
+            extract_youtube_video_id=_youtube_video_id,
             logger=source_logger,
         )
     except NotebookLMError as exc:
@@ -767,19 +613,6 @@ _PROTOCOL_JUSTIFICATION = (
     "so the create/probe/rename sequence stays adapter-owned; gate table §4."
 )
 
-SOURCE_ADD_URL = CustomBinding(
-    definition=SOURCE_ADD_URL_DEF,
-    handler=_add_url,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SNAPSHOT),
-        NativeCallSpec.constant(RPCMethod.ADD_SOURCE, "url", key=_CREATE),
-        NativeCallSpec.constant(RPCMethod.UPDATE_SOURCE, key=_RENAME),
-    ),
-    justification=_PROTOCOL_JUSTIFICATION,
-    category="protocol",
-    collaborators=(_CAPTURE_PUBLIC_FAILURE,),
-)
-
 SOURCE_ADD_URL_BATCH = CustomBinding(
     definition=SOURCE_ADD_URL_BATCH_DEF,
     handler=_add_url_batch,
@@ -832,7 +665,6 @@ SOURCE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
         SOURCE_CHECK_FRESHNESS.definition.key: SOURCE_CHECK_FRESHNESS,
         SOURCE_GET_GUIDE.definition.key: SOURCE_GET_GUIDE,
         SOURCE_GET_FULLTEXT.definition.key: SOURCE_GET_FULLTEXT,
-        SOURCE_ADD_URL.definition.key: SOURCE_ADD_URL,
         SOURCE_ADD_URL_BATCH.definition.key: SOURCE_ADD_URL_BATCH,
         SOURCE_ADD_DRIVE.definition.key: SOURCE_ADD_DRIVE,
         SOURCE_ADD_FILE.definition.key: SOURCE_ADD_FILE,
@@ -842,7 +674,6 @@ SOURCE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
 __all__ = [
     "SOURCE_ADD_DRIVE",
     "SOURCE_ADD_FILE",
-    "SOURCE_ADD_URL",
     "SOURCE_ADD_URL_BATCH",
     "SOURCE_CHECK_FRESHNESS",
     "SOURCE_DELETE",

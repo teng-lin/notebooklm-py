@@ -109,7 +109,6 @@ from notebooklm._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
-    SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_DEF,
@@ -212,7 +211,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         SOURCE_LIST_DEF: (Operation.SOURCE_LIST, CallPolicy.MUTATION),
         SOURCE_GET_DEF: (Operation.SOURCE_GET, CallPolicy.MUTATION),
-        SOURCE_ADD_URL_DEF: (Operation.SOURCE_ADD_URL, CallPolicy.MUTATION),
         CHAT_ASK_DEF: (Operation.CHAT_ASK, CallPolicy.STREAM),
         CHAT_GET_CONVERSATION_DEF: (Operation.CHAT_GET_CONVERSATION, CallPolicy.READ),
         CHAT_GET_HISTORY_DEF: (Operation.CHAT_GET_HISTORY, CallPolicy.READ),
@@ -382,19 +380,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             SOURCE_GET_DEF,
             [(RPCMethod.GET_NOTEBOOK, None)],
             [IdempotencyPolicy.IDEMPOTENT_SET_OP],
-        ),
-        (
-            SOURCE_ADD_URL_DEF,
-            [
-                (RPCMethod.GET_NOTEBOOK, None),
-                (RPCMethod.ADD_SOURCE, "url"),
-                (RPCMethod.UPDATE_SOURCE, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.PROBE_THEN_CREATE,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
         ),
         (
             SETTINGS_GET_DEF,

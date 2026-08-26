@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -61,250 +60,6 @@ def source_response(source_id: str, title: str = "Source") -> Source:
 
 
 @pytest.mark.asyncio
-async def test_add_url_routes_youtube_through_late_bound_hook(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    add_youtube_source = AsyncMock(return_value=source_response("yt", "Video"))
-    add_url_source = AsyncMock()
-
-    source = await service.add_url(
-        "nb_1",
-        "https://youtu.be/video",
-        add_youtube_source=add_youtube_source,
-        add_url_source=add_url_source,
-        list_sources=AsyncMock(return_value=[]),
-        wait_until_ready=AsyncMock(),
-        extract_youtube_video_id=MagicMock(return_value="video"),
-        is_youtube_url=MagicMock(return_value=True),
-        logger=logger,
-    )
-
-    assert source.id == "src_yt"
-    add_youtube_source.assert_awaited_once_with("nb_1", "https://youtu.be/video")
-    add_url_source.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_add_url_probe_returns_existing_after_transport_error(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    """A source absent from the baseline and present at probe time is ours.
-
-    ``list_sources`` is called twice: once for the pre-create baseline (empty)
-    and once for the probe. Returning ``[created]`` from *both* would make the
-    match ambiguous — see
-    ``test_add_url_probe_ignores_a_source_present_before_the_create``.
-    """
-    created = Source(id="src_created", url="https://example.com")
-    add_url_source = AsyncMock(side_effect=NetworkError("temporary network failure"))
-    list_sources = AsyncMock(side_effect=[[], [created]])
-
-    source = await service.add_url(
-        "nb_1",
-        created.url,
-        add_youtube_source=AsyncMock(),
-        add_url_source=add_url_source,
-        list_sources=list_sources,
-        wait_until_ready=AsyncMock(),
-        extract_youtube_video_id=MagicMock(return_value=None),
-        is_youtube_url=MagicMock(return_value=False),
-        logger=logger,
-    )
-
-    assert source is created
-    add_url_source.assert_awaited_once_with("nb_1", created.url)
-    assert list_sources.await_count == 2, "baseline + probe"
-
-
-@pytest.mark.asyncio
-async def test_add_url_probe_ignores_a_source_present_before_the_create(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    """The probe must not adopt a same-URL source that predates the call (#2204).
-
-    A URL is not unique within a notebook, so the ``source.url == url`` match
-    alone cannot tell "my create landed" from "a copy was already there". Here
-    the notebook holds the URL both before and after the failed create — i.e.
-    nothing new appeared — so the probe must report no match and let
-    ``idempotent_create`` retry rather than hand back the pre-existing id.
-    """
-    pre_existing = Source(id="src_pre_existing", url="https://example.com")
-    add_url_source = AsyncMock(side_effect=NetworkError("temporary network failure"))
-
-    with pytest.raises(NetworkError):
-        await service.add_url(
-            "nb_1",
-            pre_existing.url,
-            add_youtube_source=AsyncMock(),
-            add_url_source=add_url_source,
-            list_sources=AsyncMock(return_value=[pre_existing]),
-            wait_until_ready=AsyncMock(),
-            extract_youtube_video_id=MagicMock(return_value=None),
-            is_youtube_url=MagicMock(return_value=False),
-            logger=logger,
-        )
-
-    # Both attempts fired: the probe refused to claim the pre-existing source.
-    assert add_url_source.await_count == 2
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "baseline_failure",
-    [
-        # A drifted GET_NOTEBOOK: the strict decoder raises, not the transport.
-        pytest.param(RPCError("baseline decode failed"), id="decode_failure"),
-        # A transport failure. The probe deliberately re-RAISES this class; the
-        # baseline capture deliberately swallows it, so pin that asymmetry.
-        pytest.param(ServerError("baseline 503"), id="transport_failure"),
-    ],
-)
-async def test_add_url_baseline_failure_makes_a_match_ambiguous(
-    service: SourceAddService,
-    logger: logging.Logger,
-    caplog: pytest.LogCaptureFixture,
-    baseline_failure: Exception,
-) -> None:
-    """No baseline + a match = ``SourceAddError``, not a guess (#2204).
-
-    The baseline list is best-effort; when it fails, a probe match may or may
-    not predate this add, and adopting it is exactly the failure mode the
-    baseline exists to prevent. The error must carry enough to act on: what
-    broke the baseline (as ``cause``), and which source is ambiguous.
-    """
-    existing = Source(
-        id="src_ambiguous",
-        title="Highly accurate protein structure prediction with AlphaFold",
-        url="https://www.nature.com/articles/s41586-024-07487-w",
-    )
-    # First call = the baseline (fails); second = the probe.
-    list_sources = AsyncMock(side_effect=[baseline_failure, [existing]])
-    transport_error = NetworkError("temporary network failure")
-
-    with (
-        caplog.at_level(logging.WARNING, logger=logger.name),
-        pytest.raises(SourceAddError) as raised,
-    ):
-        await service.add_url(
-            "nb_1",
-            existing.url,
-            add_youtube_source=AsyncMock(),
-            add_url_source=AsyncMock(side_effect=transport_error),
-            list_sources=list_sources,
-            wait_until_ready=AsyncMock(),
-            extract_youtube_video_id=MagicMock(return_value=None),
-            is_youtube_url=MagicMock(return_value=False),
-            logger=logger,
-        )
-
-    # The message names the ambiguous source, so the caller told to "check the
-    # notebook source list" knows which row to look at.
-    assert "src_ambiguous" in str(raised.value)
-    # ``cause`` carries what broke the baseline — otherwise nothing in the
-    # process can explain why the snapshot was unavailable.
-    assert raised.value.cause is baseline_failure
-    # The transport error that triggered the probe survives as context.
-    assert raised.value.__context__ is transport_error
-    # An ambiguity IS an unconfirmed create (#2220 review): nothing threw
-    # inside the probe, so this looks like an ordinary rejection — but the
-    # server may hold a row either way, which is precisely what the marker
-    # names. Unmarked, it classifies as the non-fatal per-item SOURCE_ADD and
-    # a batch add would keep going, issuing more unresolvable writes.
-    assert getattr(raised.value, "unconfirmed", False) is True
-    assert classify(raised.value).category is ErrorCategory.RPC
-    assert classify(raised.value).retriable is False
-    # The action survives the real MCP/REST truncation slice (#2238).
-    assert len(str(raised.value)) > 300
-    assert "check the notebook source list before retrying" in str(raised.value)[:300].lower()
-    # The swallow is visible at the default logger level (WARNING), not DEBUG.
-    assert "baseline list() failed" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_add_url_probe_raises_on_multiple_new_matches(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    """Two *new* same-URL sources after the failure is ambiguity, not a match.
-
-    The message must name both, since the caller is being told to go and
-    disambiguate a URL that by definition appears in the list more than once.
-    """
-    url = "https://www.nature.com/articles/s41586-024-07487-w"
-    list_sources = AsyncMock(
-        side_effect=[
-            [],
-            [
-                Source(id="src_a", title="Highly accurate protein structure prediction", url=url),
-                Source(id="src_b", title="A second long duplicate source title", url=url),
-            ],
-        ]
-    )
-
-    with pytest.raises(SourceAddError, match="probe found 2 new sources") as raised:
-        await service.add_url(
-            "nb_1",
-            url,
-            add_youtube_source=AsyncMock(),
-            add_url_source=AsyncMock(side_effect=NetworkError("temporary network failure")),
-            list_sources=list_sources,
-            wait_until_ready=AsyncMock(),
-            extract_youtube_video_id=MagicMock(return_value=None),
-            is_youtube_url=MagicMock(return_value=False),
-            logger=logger,
-        )
-
-    assert "src_a" in str(raised.value)
-    assert "src_b" in str(raised.value)
-    # An ambiguity IS an unconfirmed create (#2220 review): nothing threw
-    # inside the probe, so this looks like an ordinary rejection — but the
-    # server may hold a row either way, which is precisely what the marker
-    # names. Unmarked, it classifies as the non-fatal per-item SOURCE_ADD and
-    # a batch add would keep going, issuing more unresolvable writes.
-    assert getattr(raised.value, "unconfirmed", False) is True
-    assert classify(raised.value).category is ErrorCategory.RPC
-    # _describe_sources grows with every match; guidance must remain before it.
-    assert len(str(raised.value)) > 300
-    assert "check the notebook source list before retrying" in str(raised.value)[:300].lower()
-    assert classify(raised.value).retriable is False
-
-
-@pytest.mark.asyncio
-async def test_add_url_baseline_failure_does_not_break_a_successful_add(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    """A failed baseline degrades the probe; it must not fail the add (#2204).
-
-    The baseline is best-effort by design: it exists to disambiguate a *retry*,
-    so a transient notebook read must not turn an otherwise perfectly good
-    ``add_url`` into an error. Pins the resilience half of the swallow — the
-    regression this catches is someone narrowing that ``except Exception`` to
-    mirror the probe's transport re-raise, which would fail every add whenever
-    the notebook read blips.
-    """
-    add_url_source = AsyncMock(return_value=source_response("ok", "Example"))
-
-    source = await service.add_url(
-        "nb_1",
-        "https://example.com",
-        add_youtube_source=AsyncMock(),
-        add_url_source=add_url_source,
-        list_sources=AsyncMock(side_effect=ServerError("baseline 503")),
-        wait_until_ready=AsyncMock(),
-        extract_youtube_video_id=MagicMock(return_value=None),
-        is_youtube_url=MagicMock(return_value=False),
-        logger=logger,
-    )
-
-    assert source.id == "src_ok"
-    assert add_url_source.await_count == 1, "the add must not be retried"
-
-
-@pytest.mark.asyncio
 async def test_probed_result_without_proven_freshness_skips_the_rename() -> None:
     """The #1988 default still holds for a probe that cannot prove freshness.
 
@@ -326,81 +81,6 @@ async def test_probed_result_without_proven_freshness_skips_the_rename() -> None
 
     assert result is probed
     rename.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_add_url_probe_decode_failure_propagates_without_retrying(
-    service: SourceAddService,
-    logger: logging.Logger,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A probe that cannot answer aborts the add instead of retrying (#2220).
-
-    A decode failure leaves the probe unable to say whether the create landed.
-    Returning "no match" there would re-issue ``ADD_SOURCE`` on no evidence,
-    and this variant runs with ``disable_internal_retries=True`` precisely
-    because a blind re-POST can duplicate. So the create must NOT fire twice.
-
-    The raised error has to stay diagnosable end to end: the decode failure as
-    ``cause``/``__cause__``, and the transport failure that triggered the probe
-    as ``__context__`` (``idempotent_create`` awaits the probe inside its
-    handler for that error).
-    """
-    add_url_source = AsyncMock(side_effect=NetworkError("temporary network failure"))
-    probe_error = RPCError("probe decode failed")
-    # Exactly two entries: baseline, then the probe that fails. A third list
-    # call would mean the retry loop continued — StopIteration, not a pass.
-    list_sources = AsyncMock(side_effect=[[], probe_error])
-
-    with (
-        caplog.at_level(logging.WARNING, logger=logger.name),
-        pytest.raises(SourceAddError) as exc_info,
-    ):
-        await service.add_url(
-            "nb_1",
-            "https://example.com",
-            add_youtube_source=AsyncMock(),
-            add_url_source=add_url_source,
-            list_sources=list_sources,
-            wait_until_ready=AsyncMock(),
-            extract_youtube_video_id=MagicMock(return_value=None),
-            is_youtube_url=MagicMock(return_value=False),
-            logger=logger,
-        )
-
-    assert "will not be retried" in caplog.text
-    # The load-bearing assertion: one create, not two. Flip the probe back to
-    # ``return None`` and this is what fails.
-    assert add_url_source.await_count == 1
-    assert exc_info.value.cause is probe_error
-    assert exc_info.value.__cause__ is probe_error
-    assert exc_info.value.__context__ is probe_error
-    # The transport error that made the probe run at all is still reachable.
-    assert isinstance(probe_error.__context__, NetworkError)
-
-
-@pytest.mark.asyncio
-async def test_add_url_wraps_generic_rpc_error(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    rpc_error = RPCError("bad result")
-
-    with pytest.raises(SourceAddError) as exc_info:
-        await service.add_url(
-            "nb_1",
-            "https://example.com",
-            add_youtube_source=AsyncMock(),
-            add_url_source=AsyncMock(side_effect=rpc_error),
-            list_sources=AsyncMock(return_value=[]),
-            wait_until_ready=AsyncMock(),
-            extract_youtube_video_id=MagicMock(return_value=None),
-            is_youtube_url=MagicMock(return_value=False),
-            logger=logger,
-        )
-
-    assert exc_info.value.url == "https://example.com"
-    assert exc_info.value.cause is rpc_error
 
 
 @pytest.mark.asyncio
@@ -481,44 +161,6 @@ async def test_add_drive_preserves_rpc_error_propagation(
     assert exc_info.value.cause is rpc_error
 
 
-def test_extract_youtube_video_id_uses_injected_parser_and_helpers(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    parsed = SimpleNamespace(hostname="www.youtube.com", path="/watch", query="v=video_123")
-    parse_url = MagicMock(return_value=parsed)
-    extract_video_id = MagicMock(return_value="video_123")
-    is_valid = MagicMock(return_value=True)
-
-    result = service.extract_youtube_video_id(
-        " https://www.youtube.com/watch?v=video_123 ",
-        parse_url=parse_url,
-        extract_video_id_from_parsed_url=extract_video_id,
-        is_valid_video_id=is_valid,
-        logger=logger,
-    )
-
-    assert result == "video_123"
-    parse_url.assert_called_once_with("https://www.youtube.com/watch?v=video_123")
-    extract_video_id.assert_called_once_with(parsed, "www.youtube.com")
-    is_valid.assert_called_once_with("video_123")
-
-
-def test_extract_youtube_video_id_parse_error_returns_none(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    result = service.extract_youtube_video_id(
-        "https://www.youtube.com/watch?v=video_123",
-        parse_url=MagicMock(side_effect=ValueError("parse error")),
-        extract_video_id_from_parsed_url=MagicMock(),
-        is_valid_video_id=MagicMock(),
-        logger=logger,
-    )
-
-    assert result is None
-
-
 def test_raw_url_execution_helpers_are_retired(service: SourceAddService) -> None:
     assert not hasattr(service, "add_url_source")
     assert not hasattr(service, "add_youtube_source")
@@ -538,10 +180,10 @@ async def test_sources_api_add_url_uses_only_the_semantic_service() -> None:
     result = await api.add_url("nb_1", "https://youtu.be/video", wait=True, wait_timeout=3.0)
 
     assert result.id == "ready"
-    api._url_mutation_service.add_url.assert_awaited_once()
-    assert api._url_mutation_service.add_url.await_args.kwargs["wait"] is True
-    assert api._url_mutation_service.add_url.await_args.kwargs["wait_timeout"] == 3.0
-    assert api._url_mutation_service.add_url.await_args.kwargs["deadline"] is None
+    api._source_service.add_url.assert_awaited_once()
+    assert api._source_service.add_url.await_args.kwargs["wait"] is True
+    assert api._source_service.add_url.await_args.kwargs["wait_timeout"] == 3.0
+    assert api._source_service.add_url.await_args.kwargs["deadline"] is None
     api.wait_until_ready.assert_awaited_once_with("nb_1", "ready", timeout=3.0)
     api._add_youtube_source.assert_not_awaited()
     api._add_url_source.assert_not_awaited()
@@ -555,7 +197,6 @@ async def test_sources_api_add_url_uses_only_the_semantic_service() -> None:
 
 def _sources_api_with_mocked_adder() -> SourcesAPI:
     api = SourcesAPI(MagicMock(), uploader=MagicMock(), _backend=MagicMock())
-    api._adder = MagicMock()  # type: ignore[assignment]
     api._source_service = MagicMock()  # type: ignore[assignment]
     return api
 
@@ -568,9 +209,7 @@ def _url_result(source: SourceRecord) -> SourceAddUrlResult:
 
 
 def _mock_url_service(api: SourcesAPI, source: SourceRecord) -> None:
-    api._url_mutation_service = MagicMock(  # type: ignore[assignment]
-        add_url=AsyncMock(return_value=_url_result(source))
-    )
+    api._source_service.add_url = AsyncMock(return_value=_url_result(source))
 
 
 @pytest.mark.asyncio
@@ -580,7 +219,7 @@ async def test_add_url_honors_title_via_post_add_rename() -> None:
 
     result = await api.add_url("nb_1", "https://youtu.be/video", title="My Title")
 
-    assert api._url_mutation_service.add_url.await_args.kwargs["requested_title"] == "My Title"
+    assert api._source_service.add_url.await_args.kwargs["requested_title"] == "My Title"
     assert result.id == "src_yt"
     assert result.title == "My Title"
 
@@ -620,8 +259,8 @@ async def test_waited_url_renames_only_after_facade_readiness() -> None:
         events.append("rename")
         return _url_result(SourceRecord(id="u1", title="Requested"))
 
-    api._url_mutation_service = MagicMock(add_url=AsyncMock(side_effect=add_url))
-    api._url_mutation_service.finalize_title = AsyncMock(side_effect=finalize)
+    api._source_service.add_url = AsyncMock(side_effect=add_url)
+    api._source_service.finalize_title = AsyncMock(side_effect=finalize)
     api.wait_until_ready = AsyncMock(side_effect=wait_until_ready)  # type: ignore[method-assign]
 
     result = await api.add_url("nb_1", "https://example.com", title="Requested", wait=True)
@@ -664,7 +303,7 @@ async def test_add_url_without_title_skips_rename() -> None:
 
     result = await api.add_url("nb_1", "https://example.com")
 
-    assert api._url_mutation_service.add_url.await_args.kwargs["requested_title"] is None
+    assert api._source_service.add_url.await_args.kwargs["requested_title"] is None
     assert result.title == "Upstream"
 
 
@@ -689,9 +328,7 @@ async def test_add_url_title_matching_upstream_skips_rename() -> None:
     # A leading/trailing-whitespace-only difference is not a real retitle.
     result = await api.add_url("nb_1", "https://example.com", title="  Same Title  ")
 
-    assert (
-        api._url_mutation_service.add_url.await_args.kwargs["requested_title"] == "  Same Title  "
-    )
+    assert api._source_service.add_url.await_args.kwargs["requested_title"] == "  Same Title  "
     assert result.title == "Same Title"
 
 

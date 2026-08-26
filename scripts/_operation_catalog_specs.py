@@ -202,8 +202,10 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "SourceService",
         "notebook",
-        "Takes an unconditional source-id baseline, routes YouTube URLs to their wire shape, "
-        "uses exact new-row reconciliation, and applies an optional title afterward.",
+        "Service-owned since P10 R3.3: SourceService.add_url takes an unconditional source-id "
+        "baseline over source.list, routes YouTube URLs to their wire shape through one "
+        "source.register url allocation, reconciles an uncertain commit against that baseline, "
+        "and applies an optional title through source.patch_title afterward.",
         _p("sources", "add_url"),
         (
             _b(RPCMethod.ADD_SOURCE, "url"),

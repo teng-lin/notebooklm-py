@@ -1864,7 +1864,6 @@ _REVIEWED_BACKEND_IMPORT_MODULES = frozenset(
         "_binding",
         "_backend_compat",
         "_label_service",
-        "_mutation_services",
         "_note_service",
         "_notebook_mutation_service",
         "_projectors",
@@ -1893,7 +1892,6 @@ _REVIEWED_BACKEND_IMPORT_PREFIXES = (
     "notebooklm._backend",
     "notebooklm._binding",
     "notebooklm._label_service",
-    "notebooklm._mutation_services",
     "notebooklm._notebook_mutation_service",
     "notebooklm._projectors",
     "notebooklm._read_services",
@@ -1964,7 +1962,6 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_studio/representations.py:ArtifactRepresentationService._get_content",
         "_studio/representations.py:ArtifactRepresentationService._list_mind_maps",
         "_studio/representations.py:ArtifactRepresentationService._list_representations",
-        "_mutation_services.py:SourceUrlMutationService.add_url",
         "_sharing_service.py:SharingService.get_status",
         "_sharing_service.py:SharingService._mutate_then_read_status",
         "_sharing_service.py:SharingService._patch_view_level_then_read_status",
@@ -1974,7 +1971,10 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_settings_service.py:SettingsService.set_output_language",
         "_suggestion_service.py:SuggestionService.suggest_prompts",
         "_suggestion_service.py:SuggestionService.suggest_reports",
-        "_mutation_services.py:SourceUrlMutationService.finalize_title",
+        "_source_service.py:SourceService._patch_title",
+        "_source_service.py:SourceService._url_baseline",
+        "_source_service.py:SourceService.add_url.probe",
+        "_source_service.py:SourceService.add_url.register",
         "_source_service.py:SourceService.add_drive",
         "_source_service.py:SourceService.add_drive_file",
         "_source_service.py:SourceService.add_file",
@@ -2361,6 +2361,40 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
     }
 )
 
+# P10 R3.3: source.add_url becomes service-owned. The protocol custom row, the
+# ``_mutation_services.py`` pass-through it was reached through, and their typed
+# input/result leave _web; SourceService gains the baseline/register/probe/
+# finalise workflow over source.list, source.register, source.patch_title and
+# source.get.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_mutation_services.py", "_backend", "BackendAdapter"),
+        ("_mutation_services.py", "_records", "SOURCE_ADD_URL_DEF"),
+        ("_mutation_services.py", "_records", "SourceAddUrlInput"),
+        ("_mutation_services.py", "_records", "SourceAddUrlResult"),
+        ("_mutation_services.py", "_records", "SourceRecord"),
+        ("_sources.py", "_mutation_services", "SourceUrlMutationService"),
+        ("_web/bindings/sources.py", "_records", "SOURCE_ADD_URL_DEF"),
+        ("_web/bindings/sources.py", "_records", "SourceAddCommitState"),
+        ("_web/bindings/sources.py", "_records", "SourceAddTitleState"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlInput"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlReceipt"),
+        ("_web/bindings/sources.py", "_records", "SourceAddUrlResult"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_service.py", "_backend", "annotate_backend_error"),
+        ("_source_service.py", "_records", "SOURCE_ADD_URL_DEF"),
+        ("_source_service.py", "_records", "SOURCE_LIST_DEF"),
+        ("_source_service.py", "_records", "SourceAddCommitState"),
+        ("_source_service.py", "_records", "SourceAddTitleState"),
+        ("_source_service.py", "_records", "SourceAddUrlReceipt"),
+        ("_source_service.py", "_records", "SourceAddUrlResult"),
+        ("_source_service.py", "_records", "SourceListInput"),
+    }
+)
+
 # Facades that still own RpcCaller paths take the backend as the reviewed
 # ``_backend=`` or ``backend=`` keyword beside their executor; a facade whose
 # whole wire surface has migrated takes it as its sole positional collaborator.
@@ -2454,7 +2488,6 @@ def audit_inert_p1_backend_dataflow(
                             "_binding",
                             "_backend_compat",
                             "_label_service",
-                            "_mutation_services",
                             "_notebook_mutation_service",
                             "_projectors",
                             "_read_services",
