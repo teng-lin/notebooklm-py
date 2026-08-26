@@ -253,7 +253,6 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
     assert sites[(RPCMethod.GET_NOTEBOOK, None)] == [
         "_notebooks.py:NotebooksAPI.get_raw",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
-        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
@@ -600,14 +599,13 @@ def test_operation_authorities_are_exact_discriminated_and_include_non_rpc_paths
         "GET_NOTEBOOK:<default>",
         "UPDATE_NOTE:<default>",
     ]
-    # The shared natives (GET_NOTEBOOK, GENERATE_MIND_MAP, CREATE_NOTE/plain) are
-    # allocated to the row; UPDATE_NOTE/DELETE_NOTE are single-consumer natives,
-    # so their direct sites — the legacy note family the row drives and the row
-    # itself — are derived.
+    # P10 R4.2 made the workflow service-owned: every native it reaches is a
+    # leaf row's, so the whole authority set is the leaves it sequences.
     assert {row["site"] for row in note_backed["execution_authorities"]} == {
-        "_mind_map.py:LegacyNoteBackedService.delete_note",
-        "_mind_map.py:LegacyNoteBackedService.update_note",
-        "_web/bindings/mind_maps.py:ARTIFACT_GENERATE_MIND_MAP",
+        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
+        "_web/bindings/notes.py:NOTE_CREATE",
+        "_web/bindings/notes.py:NOTE_UPDATE",
+        "_web/bindings/notes.py:NOTE_DELETE",
     }
     assert "CREATE_ARTIFACT:<default>" not in note_backed["native_bindings"]
     assert {row["transport_kind"] for row in rows["chat.ask"]["execution_authorities"]} >= {

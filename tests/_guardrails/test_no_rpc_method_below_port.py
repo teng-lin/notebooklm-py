@@ -106,9 +106,6 @@ SPEC_SUBSCRIPTS: frozenset[str] = frozenset({"NativeChoice"})
 ALLOWLIST: tuple[str, ...] = (
     "_web/backend.py:WebRpcBackend._rpc_call",
     "_web/backend.py:WebRpcBackend.public_rpc_call",
-    "_web/bindings/_invoker_caller.py:InvokerRpcCaller.__init__",
-    "_web/bindings/_invoker_caller.py:InvokerRpcCaller.rpc_call",
-    "_web/bindings/mind_maps.py:<module>",
     "_web/bindings/mind_maps.py:_mind_map_generate_interactive",
     "_web/bindings/notebooks.py:_map_allocate_quota_rejection",
     "_web/codec/artifact_formatters.py:_extract_data_table_rows",
@@ -120,7 +117,6 @@ ALLOWLIST: tuple[str, ...] = (
     "_web/codec/generation.py:decode_generation_kickoff",
     "_web/codec/labels.py:decode_label_generate_result",
     "_web/codec/labels.py:decode_label_set_list_result",
-    "_web/codec/mind_maps.py:decode_artifact_mind_map_leaf",
     "_web/codec/mind_maps.py:decode_created_interactive_id",
     "_web/codec/mind_maps.py:decode_generated_tree",
     "_web/codec/mind_maps.py:extract_interactive_tree_leaf",

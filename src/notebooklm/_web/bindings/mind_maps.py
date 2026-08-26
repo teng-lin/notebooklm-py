@@ -4,14 +4,11 @@ The four leaves — note-backed listing, interactive tree read, interactive
 rename and interactive delete — are ``encode → one native call → decode``
 rows whose :class:`NativeCallSpec` is the sole method authority.
 
-The composites are :class:`CustomBinding` rows (P9.4b).  The two generate
-members (``MIND_MAP_GENERATE_NOTE``, ``MIND_MAP_GENERATE_INTERACTIVE``) are
-input-defaulting *deferred-product* rows (gate table §3.17): an optional
+The remaining composites are :class:`CustomBinding` rows (P9.4b).  The two
+generate members (``MIND_MAP_GENERATE_NOTE``, ``MIND_MAP_GENERATE_INTERACTIVE``)
+are input-defaulting *deferred-product* rows (gate table §3.17): an optional
 ``GET_NOTEBOOK`` read when ``source_ids`` is omitted, then one generation
-native.  ``ARTIFACT_GENERATE_MIND_MAP`` is a *compatibility* row (gate table
-§3.15): it reaches the note-backed mind-map family through
-``LegacyNoteBackedService`` over the row-scoped :class:`InvokerRpcCaller`, so
-the natives that service selects are exactly the row's declared specs.
+native.
 
 ``MIND_MAP_LIST`` carries the one ``map_error`` this module needs.  ``invoke``
 translates the closed ``NotebookLMError`` family and nothing else, so the
@@ -28,7 +25,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Any, cast
 
 import httpx
 
@@ -42,10 +38,8 @@ from ..._binding import (
     RowInvoker,
 )
 from ..._deadline import RuntimeDeadline
-from ..._mind_map import LegacyNoteBackedService
 from ..._operations import Operation
 from ..._records import (
-    ARTIFACT_GENERATE_MIND_MAP_DEF,
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
@@ -54,19 +48,16 @@ from ..._records import (
     MIND_MAP_LIST_DEF,
     MIND_MAP_UPDATE_DEF,
     SUPPLEMENTAL_TRANSPORT_FAILURE,
-    MindMapGenerateInput,
     MindMapGenerateInteractiveInput,
     MindMapGenerateInteractiveResult,
     MindMapGenerateNoteInput,
     MindMapGenerateNoteResult,
-    MindMapGenerateResult,
     MindMapListInput,
 )
 from ...rpc import RPCMethod
 from ..codec import mind_maps as mind_maps_codec
 from ..codec import notebooks as notebooks_codec
 from ..codec.studio_documents import artifact_feature_unavailable
-from ._invoker_caller import InvokerRpcCaller
 
 
 def _map_supplemental_transport_failure(
@@ -136,18 +127,6 @@ MIND_MAP_GENERATE = CodecBinding(
 _SOURCES = "sources"
 _GENERATE = "generate"
 _CREATE = "create"
-_NOTE_CREATE = "note_create"
-_NOTE_UPDATE = "note_update"
-_NOTE_DELETE = "note_delete"
-
-#: The legacy note-backed family, keyed by the ``RPCMethod`` each helper selects.
-_NOTE_FAMILY_SPECS: Mapping[RPCMethod, tuple[str, str | None]] = MappingProxyType(
-    {
-        RPCMethod.CREATE_NOTE: (_NOTE_CREATE, "plain"),
-        RPCMethod.UPDATE_NOTE: (_NOTE_UPDATE, None),
-        RPCMethod.DELETE_NOTE: (_NOTE_DELETE, None),
-    }
-)
 
 
 async def _default_source_ids(
@@ -200,41 +179,6 @@ async def _mind_map_generate_interactive(
     return MindMapGenerateInteractiveResult(mind_map_id)
 
 
-def _note_service(
-    invoke: RowInvoker, deadline: RuntimeDeadline | None, operation: Operation
-) -> LegacyNoteBackedService:
-    caller = InvokerRpcCaller(invoke, deadline, operation=operation, spec_keys=_NOTE_FAMILY_SPECS)
-    return LegacyNoteBackedService(cast(Any, caller))
-
-
-async def _artifact_mind_map_generate(
-    value: MindMapGenerateInput,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-) -> MindMapGenerateResult:
-    """Generate the tree, then persist it as a note through the legacy note family."""
-    source_ids = await _default_source_ids(value.notebook_id, value.source_ids, deadline, invoke)
-    result = await invoke.call(
-        _GENERATE,
-        mind_maps_codec.encode_artifact_mind_map_generate(value, source_ids),
-        deadline=deadline,
-    )
-    leaf = mind_maps_codec.decode_artifact_mind_map_leaf(result)
-    if leaf is None:
-        return MindMapGenerateResult()
-    mind_map_json, mind_map_data, title = leaf
-    note = await _note_service(invoke, deadline, Operation.ARTIFACT_GENERATE_MIND_MAP).create_note(
-        value.notebook_id,
-        title=title,
-        content=mind_map_json,
-    )
-    return MindMapGenerateResult(
-        mind_map=mind_map_data,
-        note_id=note.id or None,
-        created_at=note.created_at,
-    )
-
-
 MIND_MAP_GENERATE_NOTE = CustomBinding(
     definition=MIND_MAP_GENERATE_NOTE_DEF,
     handler=_mind_map_generate_note,
@@ -263,24 +207,6 @@ MIND_MAP_GENERATE_INTERACTIVE = CustomBinding(
     category="deferred-product",
 )
 
-ARTIFACT_GENERATE_MIND_MAP = CustomBinding(
-    definition=ARTIFACT_GENERATE_MIND_MAP_DEF,
-    handler=_artifact_mind_map_generate,
-    native=(
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SOURCES),
-        NativeCallSpec.constant(RPCMethod.GENERATE_MIND_MAP, key=_GENERATE),
-        NativeCallSpec.constant(RPCMethod.CREATE_NOTE, "plain", key=_NOTE_CREATE),
-        NativeCallSpec.constant(RPCMethod.UPDATE_NOTE, key=_NOTE_UPDATE),
-        NativeCallSpec.constant(RPCMethod.DELETE_NOTE, key=_NOTE_DELETE),
-    ),
-    justification=(
-        "Compatibility: persists the tree through the legacy note family, whose "
-        "shielded finalize/cleanup identity is not yet reproducible from records "
-        "(gate table §3.15)."
-    ),
-    category="compatibility",
-)
-
 MIND_MAP_ROWS: Mapping[Operation, Binding] = MappingProxyType(
     {
         MIND_MAP_LIST.definition.key: MIND_MAP_LIST,
@@ -290,12 +216,10 @@ MIND_MAP_ROWS: Mapping[Operation, Binding] = MappingProxyType(
         MIND_MAP_GENERATE.definition.key: MIND_MAP_GENERATE,
         MIND_MAP_GENERATE_NOTE.definition.key: MIND_MAP_GENERATE_NOTE,
         MIND_MAP_GENERATE_INTERACTIVE.definition.key: MIND_MAP_GENERATE_INTERACTIVE,
-        ARTIFACT_GENERATE_MIND_MAP.definition.key: ARTIFACT_GENERATE_MIND_MAP,
     }
 )
 
 __all__ = [
-    "ARTIFACT_GENERATE_MIND_MAP",
     "MIND_MAP_DELETE",
     "MIND_MAP_GENERATE",
     "MIND_MAP_GENERATE_INTERACTIVE",

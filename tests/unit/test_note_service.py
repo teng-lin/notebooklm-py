@@ -1,21 +1,21 @@
-"""Unit tests for the deferred note-backed wire compatibility service.
+"""Unit tests for the semantic note service.
 
-The class under test is ``LegacyNoteBackedService`` (aliased ``NoteService``
-below for historical continuity). Since P10 R4.1 it lives in
-:mod:`notebooklm._mind_map`, beside the ``NoteBackedMindMapService`` adapter
-that is its only consumer, so that the semantic :mod:`notebooklm._note_service`
-carries no wire imports.
+Until P10 R4.2 these tests drove ``LegacyNoteBackedService``, the deferred raw
+note-row implementation in ``notebooklm._mind_map``. That class and its module
+are gone: every note and note-backed mind-map path now runs on
+:class:`notebooklm._note_service.NoteService` over the semantic port, so each
+case below is retargeted at the surviving authority rather than retired.
 
-It owns the raw note-row fetch + classify + CRUD
-primitives shared by ``NotesAPI`` (Phase 6 retypes it) and
-``NoteBackedMindMapService`` (the mind-map adapter the artifact
-download path uses).
-
-The classifier behaviour, CRUD wire payloads, and the audit §28
-cancel-shielded ``create_note`` are all exercised here; Phase 6
-(docs/refactor-history.md Step 9, ADR-0013) retired the legacy
-``test_mind_map_service.py`` tests because the underlying
-``MindMapService`` class is gone.
+* the envelope normalizer that ``fetch_note_rows`` owned is the ``mind_map.list``
+  raw branch behind :meth:`NoteService.list_note_rows`;
+* the ``NoteRowKind`` classifier is the codec's row partition, observable as
+  which rows reach ``list_mind_map_rows`` versus ``list_notes``;
+* the CRUD wire payloads are the ``note.*`` codec rows, asserted here at the
+  ``rpc_call`` boundary exactly as before;
+* the audit §28 cancel-shielded create is
+  :meth:`NoteService.create_note_record`, which is now the package's single
+  copy of that choreography — ``NoteBackedMindMapFamilyService`` sequences it
+  rather than repeating it.
 """
 
 from __future__ import annotations
@@ -24,12 +24,13 @@ import ast
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, call
 
 import pytest
 
-from notebooklm._mind_map import LegacyNoteBackedService as NoteService
-from notebooklm._mind_map import NoteRowKind
+from notebooklm._note_service import NoteService
+from notebooklm._web.backend import WebRpcBackend
 from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Note
@@ -46,14 +47,29 @@ def mock_session() -> FakeSession:
 
 @pytest.fixture
 def service(mock_session: FakeSession) -> NoteService:
-    return NoteService(mock_session)
+    return NoteService(WebRpcBackend(mock_session.rpc_executor))
 
 
-class TestFetchNoteRows:
-    """``fetch_note_rows`` returns raw rows or ``[]`` for malformed payloads."""
+def _read_kwargs() -> dict[str, Any]:
+    """The keyword set the semantic port sends for a note-collection read."""
+
+    return {
+        "source_path": "/notebook/nb_123",
+        "allow_null": True,
+        "_is_retry": False,
+        "disable_internal_retries": False,
+        "operation_variant": None,
+        "read_timeout": None,
+        "raise_on_null_status": False,
+        "_retry_deadline": None,
+    }
+
+
+class TestListNoteRows:
+    """``list_note_rows`` returns raw rows or ``[]`` for malformed payloads."""
 
     @pytest.mark.asyncio
-    async def test_fetch_note_rows_filters_invalid_rows(
+    async def test_list_note_rows_filters_invalid_rows(
         self, service: NoteService, mock_session: FakeSession
     ) -> None:
         mock_session.rpc_executor.rpc_call.return_value = [
@@ -68,7 +84,7 @@ class TestFetchNoteRows:
             ]
         ]
 
-        rows = await service.fetch_note_rows("nb_123")
+        rows = await service.list_note_rows("nb_123")
 
         assert rows == [
             ["note_1", "Content"],
@@ -78,32 +94,33 @@ class TestFetchNoteRows:
         mock_session.rpc_executor.rpc_call.assert_awaited_once_with(
             RPCMethod.GET_NOTES_AND_MIND_MAPS,
             ["nb_123"],
-            source_path="/notebook/nb_123",
-            allow_null=True,
+            **_read_kwargs(),
         )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("payload", [None, [], ["not-a-list"], [[]]])
-    async def test_fetch_note_rows_returns_empty_for_malformed_payload(
+    async def test_list_note_rows_returns_empty_for_malformed_payload(
         self, service: NoteService, mock_session: FakeSession, payload: object
     ) -> None:
         mock_session.rpc_executor.rpc_call.return_value = payload
-        assert await service.fetch_note_rows("nb_123") == []
+        assert await service.list_note_rows("nb_123") == []
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("payload", ["drift-string", {"oops": 1}, 42])
-    async def test_fetch_note_rows_raises_on_truthy_non_list_drift(
+    async def test_list_note_rows_raises_on_truthy_non_list_drift(
         self, service: NoteService, mock_session: FakeSession, payload: object
     ) -> None:
         # A truthy non-list payload is schema drift, not an empty notebook (#1344):
         # raise so notes/mind_maps get()/get_or_none can tell a miss from drift
-        # instead of silently collapsing to ``[]``.
+        # instead of silently collapsing to ``[]``. The neutral port translates
+        # the decoding failure, so the facade projects it back to DecodingError.
         mock_session.rpc_executor.rpc_call.return_value = payload
-        with pytest.raises(DecodingError):
-            await service.fetch_note_rows("nb_123")
+        with pytest.raises(Exception) as caught:
+            await service.list_note_rows("nb_123")
+        assert caught.value.reason.value == "decoding"
 
     @pytest.mark.asyncio
-    async def test_fetch_note_rows_accepts_flat_row_container(
+    async def test_list_note_rows_accepts_flat_row_container(
         self, service: NoteService, mock_session: FakeSession
     ) -> None:
         mock_session.rpc_executor.rpc_call.return_value = [
@@ -111,71 +128,110 @@ class TestFetchNoteRows:
             ["deleted_note", None, 2],
         ]
 
-        assert await service.fetch_note_rows("nb_123") == [
+        assert await service.list_note_rows("nb_123") == [
             ["note_1", "Content"],
             ["deleted_note", None, 2],
         ]
 
 
-class TestClassifyRow:
-    """The classifier maps raw rows to ``NoteRowKind`` values."""
+class TestRowPartition:
+    """The codec partitions rows exactly as ``NoteRowKind`` classified them."""
 
-    def test_deleted_row_classifies_as_deleted(self, service: NoteService) -> None:
-        assert service.classify_row(["row_1", None, 2]) == NoteRowKind.DELETED
+    @staticmethod
+    async def _ids(
+        service: NoteService, mock_session: FakeSession, row: list[Any]
+    ) -> tuple[list[str], list[str]]:
+        """Return ``(mind_map_ids, note_ids)`` for one raw row."""
 
-    def test_mind_map_row_via_children_key(self, service: NoteService) -> None:
+        mock_session.rpc_executor.rpc_call.return_value = [[row]]
+        mind_maps = await service.list_mind_map_rows("nb_123")
+        notes = await service.list_notes("nb_123")
+        return [item[0] for item in mind_maps], [item.id for item in notes]
+
+    @pytest.mark.asyncio
+    async def test_deleted_row_reaches_neither_listing(
+        self, service: NoteService, mock_session: FakeSession
+    ) -> None:
+        assert await self._ids(service, mock_session, ["row_1", None, 2]) == ([], [])
+
+    @pytest.mark.asyncio
+    async def test_mind_map_row_via_children_key(
+        self, service: NoteService, mock_session: FakeSession
+    ) -> None:
         row = ["mm_1", json.dumps({"children": []})]
-        assert service.classify_row(row) == NoteRowKind.MIND_MAP
+        assert await self._ids(service, mock_session, row) == (["mm_1"], [])
 
-    def test_mind_map_row_via_nodes_key(self, service: NoteService) -> None:
+    @pytest.mark.asyncio
+    async def test_mind_map_row_via_nodes_key(
+        self, service: NoteService, mock_session: FakeSession
+    ) -> None:
         row = ["mm_2", ["mm_2", json.dumps({"nodes": []}), None, None, "Title"]]
-        assert service.classify_row(row) == NoteRowKind.MIND_MAP
+        assert await self._ids(service, mock_session, row) == (["mm_2"], [])
 
-    def test_plain_note_row(self, service: NoteService) -> None:
+    @pytest.mark.asyncio
+    async def test_plain_note_row(self, service: NoteService, mock_session: FakeSession) -> None:
         row = ["note_1", "This is a regular note body."]
-        assert service.classify_row(row) == NoteRowKind.NOTE
+        assert await self._ids(service, mock_session, row) == ([], ["note_1"])
 
-    def test_nested_note_shape_classifies_as_note(self, service: NoteService) -> None:
+    @pytest.mark.asyncio
+    async def test_nested_note_shape_is_a_note(
+        self, service: NoteService, mock_session: FakeSession
+    ) -> None:
         row = ["note_2", ["note_2", "Nested body", None, None, "Nested Title"]]
-        assert service.classify_row(row) == NoteRowKind.NOTE
+        assert await self._ids(service, mock_session, row) == ([], ["note_2"])
 
-    def test_unknown_row_with_missing_content(self, service: NoteService) -> None:
-        # Row with an ID but no extractable content (and not soft-deleted)
-        # is intentionally classified as UNKNOWN rather than NOTE so the
-        # caller can distinguish "not a real note" from "empty note".
-        assert service.classify_row(["row_3", 123]) == NoteRowKind.UNKNOWN
+    @pytest.mark.asyncio
+    async def test_row_without_extractable_content_is_not_a_mind_map(
+        self, service: NoteService, mock_session: FakeSession
+    ) -> None:
+        # A row with an id but no readable content slot is never a mind map;
+        # the plain-note listing keeps surfacing it rather than dropping it.
+        assert await self._ids(service, mock_session, ["row_3", 123]) == ([], ["row_3"])
 
-    def test_empty_row_classifies_as_unknown(self, service: NoteService) -> None:
-        assert service.classify_row([]) == NoteRowKind.UNKNOWN
-
-    def test_saved_chat_with_unrecognized_metadata_falls_back_to_note(
-        self, service: NoteService
+    @pytest.mark.asyncio
+    async def test_saved_chat_without_metadata_stays_a_note(
+        self, service: NoteService, mock_session: FakeSession
     ) -> None:
         """Per docs/refactor-history.md §Risks: when saved-chat metadata is not
-        positively detectable, the classifier must default to NOTE so
-        the row never silently drops out of ``NotesAPI.list()``.
+        positively detectable, the row must still surface through
+        ``NotesAPI.list()`` rather than dropping out.
         """
         row = ["chat_note_1", "Saved chat answer body without explicit chat flag."]
-        # No chat-mode metadata on the wire — classifier should still
-        # surface the row as a (plain) note rather than UNKNOWN.
-        assert service.classify_row(row) == NoteRowKind.NOTE
+        assert await self._ids(service, mock_session, row) == ([], ["chat_note_1"])
 
 
-class TestExtractContent:
-    """``extract_content`` handles legacy and current wire shapes."""
+class TestContentExtraction:
+    """Legacy and current wire shapes both yield their content payload."""
 
-    def test_extract_content_from_legacy_shape(self, service: NoteService) -> None:
-        assert service.extract_content(["row_1", "legacy"]) == "legacy"
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("row", "expected"),
+        [
+            (["row_1", "legacy"], "legacy"),
+            (["row_1", ["row_1", "nested", None, None, "Title"]], "nested"),
+            (["row_1", 123], ""),
+            (["row_1", ["row_1"]], ""),
+        ],
+    )
+    async def test_note_content_for_each_wire_shape(
+        self,
+        service: NoteService,
+        mock_session: FakeSession,
+        row: list[Any],
+        expected: str,
+    ) -> None:
+        mock_session.rpc_executor.rpc_call.return_value = [[row]]
+        notes = await service.list_notes("nb_123")
+        assert [item.content for item in notes] == [expected]
 
-    def test_extract_content_from_nested_shape(self, service: NoteService) -> None:
-        assert (
-            service.extract_content(["row_1", ["row_1", "nested", None, None, "Title"]]) == "nested"
-        )
-
-    def test_extract_content_returns_none_for_unknown_shape(self, service: NoteService) -> None:
-        assert service.extract_content(["row_1", 123]) is None
-        assert service.extract_content(["row_1", ["row_1"]]) is None
-        assert service.extract_content([]) is None
+    @pytest.mark.asyncio
+    async def test_mind_map_content_is_the_persisted_json(
+        self, service: NoteService, mock_session: FakeSession
+    ) -> None:
+        tree = json.dumps({"children": []})
+        mock_session.rpc_executor.rpc_call.return_value = [[["mm_1", tree]]]
+        records = await service._list_mind_map_records("nb_123")
+        assert [record.tree_json for record in records] == [tree]
 
 
 class TestCrud:
@@ -199,18 +255,17 @@ class TestCrud:
             title="Mind Map",
             content='{"children":[]}',
         )
+        create_kwargs = {**_read_kwargs(), "allow_null": False, "operation_variant": "plain"}
         assert mock_session.rpc_executor.rpc_call.await_args_list == [
             call(
                 RPCMethod.CREATE_NOTE,
                 ["nb_123", "", [1], None, "Mind Map"],
-                source_path="/notebook/nb_123",
-                operation_variant="plain",
+                **create_kwargs,
             ),
             call(
                 RPCMethod.UPDATE_NOTE,
                 ["nb_123", "note_123", [[['{"children":[]}', "Mind Map", [], 0]]]],
-                source_path="/notebook/nb_123",
-                allow_null=True,
+                **_read_kwargs(),
             ),
         ]
 
@@ -222,7 +277,7 @@ class TestCrud:
 
         # An unparseable CREATE_NOTE payload must surface as an error
         # rather than a success-shaped ``Note(id="")`` (issue #1162).
-        with pytest.raises(RPCError, match="no usable note id"):
+        with pytest.raises(Exception, match="no usable note id"):
             await service.create_note("nb_123", title="T", content="body")
 
         # Only CREATE_NOTE should fire; bailing before UPDATE_NOTE avoids
@@ -230,20 +285,11 @@ class TestCrud:
         assert mock_session.rpc_executor.rpc_call.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_create_note_accepts_operation_variant_kwarg(
-        self, service: NoteService, mock_session: FakeSession
-    ) -> None:
-        mock_session.rpc_executor.rpc_call.side_effect = [[["note_123"]], None]
-
-        await service.create_note(
-            "nb_123",
-            title="T",
-            content="body",
-            operation_variant="plain",
-        )
-
-        create_call = mock_session.rpc_executor.rpc_call.await_args_list[0]
-        assert create_call.kwargs["operation_variant"] == "plain"
+    async def test_create_note_rejects_a_non_plain_variant(self, service: NoteService) -> None:
+        # The saved-from-chat variant belongs to ``chat.save_note``; the plain
+        # note service never allocated it and must not start now.
+        with pytest.raises(ValueError):
+            await service.create_note("nb_123", operation_variant="saved_from_chat")
 
     @pytest.mark.asyncio
     async def test_update_note_sends_existing_payload(
@@ -254,8 +300,7 @@ class TestCrud:
         mock_session.rpc_executor.rpc_call.assert_awaited_once_with(
             RPCMethod.UPDATE_NOTE,
             ["nb_123", "note_123", [[["Body", "Title", [], 0]]]],
-            source_path="/notebook/nb_123",
-            allow_null=True,
+            **_read_kwargs(),
         )
 
     @pytest.mark.asyncio
@@ -268,63 +313,63 @@ class TestCrud:
         mock_session.rpc_executor.rpc_call.assert_awaited_once_with(
             RPCMethod.DELETE_NOTE,
             ["nb_123", None, ["note_123"]],
-            source_path="/notebook/nb_123",
-            allow_null=True,
+            **_read_kwargs(),
         )
 
 
 class TestCreateNoteCancellation:
     """Audit item §28: cancel mid-UPDATE_NOTE must not leave an orphan row.
 
-    Moved to ``NoteService`` in Phase 6 (docs/refactor-history.md Step 9, ADR-0013).
-    The legacy ``_mind_map.MindMapService.create_note`` path that
-    previously owned the shield + best-effort cleanup contract was
-    retired in the same phase; the contract itself lives here now.
+    P10 R4.2 deleted the second copy of this choreography along with
+    ``LegacyNoteBackedService``. These two cases move to the surviving one and
+    are now the ordered-cleanup gate for every caller that persists generated
+    content, ``artifact.generate_mind_map`` included.
     """
 
+    @staticmethod
+    def _gated_rpc(
+        *,
+        update_started: asyncio.Event,
+        update_can_finish: asyncio.Event,
+        update_finished: asyncio.Event,
+        delete_started: asyncio.Event,
+        update_raises: bool = False,
+    ) -> Any:
+        async def _rpc_call(method: RPCMethod, params: list[Any], **_: Any) -> Any:
+            if method is RPCMethod.CREATE_NOTE:
+                return [["note_123"]]
+            if method is RPCMethod.UPDATE_NOTE:
+                update_started.set()
+                try:
+                    await update_can_finish.wait()
+                    if update_raises:
+                        raise RuntimeError("simulated UPDATE_NOTE failure after shield")
+                finally:
+                    update_finished.set()
+                return None
+            if method is RPCMethod.DELETE_NOTE:
+                assert params == ["nb_123", None, ["note_123"]]
+                delete_started.set()
+                return None
+            return None
+
+        return AsyncMock(side_effect=_rpc_call)
+
     @pytest.mark.asyncio
-    async def test_cancellation_schedules_best_effort_cleanup(
-        self,
-        mock_session: FakeSession,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        service = NoteService(mock_session)
-        mock_session.rpc_executor.rpc_call.return_value = [["note_123"]]
+    async def test_cancellation_schedules_ordered_best_effort_cleanup(self) -> None:
         update_started = asyncio.Event()
         update_can_finish = asyncio.Event()
         update_finished = asyncio.Event()
-        cleanup_started = asyncio.Event()
-        cleanup_can_finish = asyncio.Event()
-        cleanup_finished = asyncio.Event()
-
-        async def fake_update_note(
-            notebook_id: str,
-            note_id: str,
-            content: str,
-            title: str,
-        ) -> None:
-            assert (notebook_id, note_id, content, title) == (
-                "nb_123",
-                "note_123",
-                "body",
-                "Title",
+        delete_started = asyncio.Event()
+        session = make_fake_core(
+            rpc_call=self._gated_rpc(
+                update_started=update_started,
+                update_can_finish=update_can_finish,
+                update_finished=update_finished,
+                delete_started=delete_started,
             )
-            update_started.set()
-            try:
-                await update_can_finish.wait()
-            finally:
-                update_finished.set()
-
-        async def fake_delete_note_best_effort(notebook_id: str, note_id: str) -> None:
-            assert (notebook_id, note_id) == ("nb_123", "note_123")
-            cleanup_started.set()
-            try:
-                await cleanup_can_finish.wait()
-            finally:
-                cleanup_finished.set()
-
-        monkeypatch.setattr(service, "update_note", fake_update_note)
-        monkeypatch.setattr(service, "_delete_note_best_effort", fake_delete_note_best_effort)
+        )
+        service = NoteService(WebRpcBackend(session.rpc_executor))
 
         task = asyncio.create_task(service.create_note("nb_123", title="Title", content="body"))
         await asyncio.wait_for(update_started.wait(), timeout=1)
@@ -333,87 +378,55 @@ class TestCreateNoteCancellation:
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=1)
 
-        # Ordered cleanup (coderabbit feedback on PR #875): the cleanup
-        # wrapper task is scheduled at cancel time but DELETE_NOTE only
-        # fires AFTER the shielded UPDATE_NOTE finishes. Before
-        # releasing UPDATE_NOTE, neither should have run — update is
-        # still suspended on its event and delete is gated on the
-        # update completing.
+        # Ordered cleanup (coderabbit feedback on PR #875): the cleanup wrapper
+        # task is scheduled at cancel time but DELETE_NOTE only fires AFTER the
+        # shielded UPDATE_NOTE finishes, so delete can never write to a row the
+        # still-running update is about to touch.
         assert not update_finished.is_set()
-        assert not cleanup_started.is_set()
-        assert not cleanup_finished.is_set()
+        assert not delete_started.is_set()
 
-        # Release the shielded UPDATE_NOTE; the cleanup task then
-        # observes update_task completion and proceeds to DELETE_NOTE.
         update_can_finish.set()
         await asyncio.wait_for(update_finished.wait(), timeout=1)
-        await asyncio.wait_for(cleanup_started.wait(), timeout=1)
-        assert not cleanup_finished.is_set()
-
-        cleanup_can_finish.set()
-        await asyncio.wait_for(cleanup_finished.wait(), timeout=1)
+        await asyncio.wait_for(delete_started.wait(), timeout=1)
 
     @pytest.mark.asyncio
-    async def test_cancellation_cleanup_runs_even_when_update_raises(
-        self,
-        mock_session: FakeSession,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """If the shielded UPDATE_NOTE raises after cancellation, the
-        best-effort DELETE_NOTE cleanup still fires.
+    async def test_cancellation_cleanup_runs_even_when_update_raises(self) -> None:
+        """A shielded UPDATE_NOTE that raises must not skip the cleanup.
 
-        Coderabbit feedback on PR #875 (the ordered-cleanup change)
-        added this guard: the cleanup wrapper logs and swallows any
-        UPDATE_NOTE exception so the DELETE_NOTE half always runs.
-        Without it, an update-side error would leave the orphan row
-        the shield was supposed to protect against.
+        Coderabbit feedback on PR #875 (the ordered-cleanup change) added this
+        guard: the cleanup wrapper logs and swallows any UPDATE_NOTE exception
+        so the DELETE_NOTE half always runs. Without it, an update-side error
+        would leave exactly the orphan row the shield exists to prevent.
         """
-        service = NoteService(mock_session)
-        mock_session.rpc_executor.rpc_call.return_value = [["note_456"]]
         update_started = asyncio.Event()
         update_can_finish = asyncio.Event()
-        cleanup_started = asyncio.Event()
+        update_finished = asyncio.Event()
+        delete_started = asyncio.Event()
+        session = make_fake_core(
+            rpc_call=self._gated_rpc(
+                update_started=update_started,
+                update_can_finish=update_can_finish,
+                update_finished=update_finished,
+                delete_started=delete_started,
+                update_raises=True,
+            )
+        )
+        service = NoteService(WebRpcBackend(session.rpc_executor))
 
-        async def failing_update_note(
-            notebook_id: str,
-            note_id: str,
-            content: str,
-            title: str,
-        ) -> None:
-            update_started.set()
-            await update_can_finish.wait()
-            raise RuntimeError("simulated UPDATE_NOTE failure after shield")
-
-        async def fake_delete_note_best_effort(notebook_id: str, note_id: str) -> None:
-            assert (notebook_id, note_id) == ("nb_456", "note_456")
-            cleanup_started.set()
-
-        monkeypatch.setattr(service, "update_note", failing_update_note)
-        monkeypatch.setattr(service, "_delete_note_best_effort", fake_delete_note_best_effort)
-
-        task = asyncio.create_task(service.create_note("nb_456", title="T", content="b"))
+        task = asyncio.create_task(service.create_note("nb_123", title="T", content="b"))
         await asyncio.wait_for(update_started.wait(), timeout=1)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=1)
 
-        # Ordered-cleanup guarantee on the failing-update path: even
-        # though we're about to make UPDATE_NOTE raise, DELETE_NOTE
-        # must still wait for that update to complete before firing —
-        # cleanup must NOT have started while UPDATE_NOTE is still in
-        # flight. (Mirrors the pre-release assertion in the
-        # success-path test above.)
-        assert not cleanup_started.is_set()
+        assert not delete_started.is_set()
 
-        # Release the shielded UPDATE_NOTE; it will raise — the
-        # cleanup wrapper must catch+log and still issue the
-        # DELETE_NOTE side.
         update_can_finish.set()
-        await asyncio.wait_for(cleanup_started.wait(), timeout=1)
+        await asyncio.wait_for(delete_started.wait(), timeout=1)
 
 
 class TestPrivacy:
-    """``NoteRowKind`` is intentionally not part of the public surface."""
+    """The row classification never became part of the public surface."""
 
     def test_note_row_kind_not_in_public_exports(self) -> None:
         import notebooklm
@@ -482,3 +495,14 @@ class TestSemanticNoteServiceCarriesNoWireImports:
 
         survivors = _runtime_import_roots(_NOTE_SERVICE_PATH) & _PROJECTION_ROOTS
         assert survivors == {"_projectors", "types"}
+
+
+def test_decoding_error_is_still_the_drift_signal() -> None:
+    """The codec raises the same public class the raw fetch did."""
+
+    from notebooklm._web.codec.notes import _decode_note_rows
+
+    with pytest.raises(DecodingError):
+        _decode_note_rows("drift-string")
+    with pytest.raises(RPCError):
+        _decode_note_rows(42)

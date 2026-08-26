@@ -12,8 +12,6 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-# ``_mind_map`` re-exported as ``_artifacts._mind_map`` for legacy monkeypatch seams (runtime uses injected services).
-from . import _mind_map  # noqa: F401 — re-exported as facade attribute
 from ._artifact import downloads as _artifact_downloads
 from ._artifact import formatters as _artifact_formatters
 from ._artifact import polling as _artifact_polling
@@ -25,7 +23,6 @@ from ._backend import BackendAdapter, BackendContractError, BackendError, Backen
 from ._backend_compat import project_backend_call, project_backend_error
 from ._deadline import RuntimeDeadlineFactory
 from ._lookup import unwrap_or_raise
-from ._mind_map import NoteBackedMindMapService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._projectors import project_artifact, project_generation_status, project_report_suggestion
@@ -126,7 +123,6 @@ class ArtifactsAPI:
         drain: "TransportDrainTracker",
         lifecycle: "ClientLifecycle",
         notebooks: NotebookSourceIdProvider,
-        mind_maps: NoteBackedMindMapService,
         storage_path: Path | None = None,
         _backend: BackendAdapter | None = None,
         deadline_factory: RuntimeDeadlineFactory | None = None,
@@ -142,9 +138,6 @@ class ArtifactsAPI:
             notebooks: Source-id resolver. Required — wire from
                 ``NotebookLMClient`` (no implicit fallback). Threaded into the
                 generation service.
-            mind_maps: Note-backed mind-map facade behind ``_list_mind_maps``.
-                Retired in P10 R4.2, when the mind-map workflows move above the
-                port and ``NotesAPI`` stops sharing this graph.
             storage_path: Path to storage state file for loading download cookies.
             _backend: Private semantic backend used by Studio catalog reads.
             deadline_factory: Client-scoped factory for service-owned workflow deadlines.
@@ -152,7 +145,6 @@ class ArtifactsAPI:
         self._drain = drain
         self._lifecycle = lifecycle
         self._notebooks = notebooks
-        self._mind_maps = mind_maps
         self._backend = _backend
         self._catalog = (
             StudioCatalog(_backend, deadline_factory=deadline_factory)
@@ -165,7 +157,9 @@ class ArtifactsAPI:
             else None
         )
         self._mind_map_family = (
-            NoteBackedMindMapFamilyService(_backend, self._catalog)
+            NoteBackedMindMapFamilyService(
+                _backend, self._catalog, deadline_factory=deadline_factory
+            )
             if _backend is not None and self._catalog is not None
             else None
         )
@@ -1197,11 +1191,6 @@ class ArtifactsAPI:
     # =========================================================================
     # Private Helpers
     # =========================================================================
-
-    async def _list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
-        """Compatibility seam for the injected mind-map facade."""
-
-        return await self._mind_maps.list_mind_maps(notebook_id)
 
     def _select_artifact(
         self,

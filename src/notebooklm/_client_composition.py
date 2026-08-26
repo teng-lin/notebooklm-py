@@ -23,7 +23,6 @@ from ._chat import ChatAPI
 from ._collections import CollectionsAPI
 from ._deadline import RuntimeDeadlineFactory
 from ._labels import LabelsAPI
-from ._mind_map import LegacyNoteBackedService, NoteBackedMindMapService
 from ._mind_maps_api import MindMapsAPI
 from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
@@ -270,13 +269,9 @@ def compose_client(
         _backend=client._backend,
         _deadline_factory=deadline_factory,
     )
-    # P6.3 note wiring keeps semantic NOTE_* ownership disjoint from the
-    # deferred MIND_MAP_* slice. NotesAPI receives the backend-neutral
-    # NoteService; note-backed artifact/mind-map callers retain the explicitly
-    # named legacy RPC service until MindMapsAPI migrates.
+    # Every note and note-backed mind-map path runs on the one backend-neutral
+    # service; nothing below the port owns the note family any more.
     note_service = NoteService(backend=client._backend)
-    legacy_note_backed = LegacyNoteBackedService(internals.executor)
-    mind_maps = NoteBackedMindMapService(legacy_note_backed)
     # P5.8: the artifacts compatibility facade owns no native RPC authority.
     # It receives the semantic backend plus the drain/lifecycle collaborators
     # used by its lifecycle-terminal polling service.
@@ -284,7 +279,6 @@ def compose_client(
         drain=internals.drain_tracker,
         lifecycle=internals.lifecycle,
         notebooks=client.notebooks,
-        mind_maps=mind_maps,
         storage_path=storage_path,
         _backend=client._backend,
         deadline_factory=deadline_factory,

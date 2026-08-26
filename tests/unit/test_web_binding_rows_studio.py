@@ -154,13 +154,13 @@ def test_studio_leaves_are_rows_and_rename_is_service_owned() -> None:
     assert WEB_OPERATION_REGISTRY[Operation.ARTIFACT_GENERATE_DATA_TABLE].row is (
         studio_rows.ARTIFACT_GENERATE_DATA_TABLE
     )
-    assert WEB_OPERATION_REGISTRY[Operation.ARTIFACT_GENERATE_MIND_MAP].row is not None
-    # P10 R4.2: the two catalog composites join rename as service-owned
-    # workflows sequenced from artifact.catalog and mind_map.list.
+    # P10 R4.2: the two catalog composites and the note-backed generate join
+    # rename as service-owned workflows sequenced from their leaves.
     for operation in (
         Operation.ARTIFACT_RENAME,
         Operation.ARTIFACT_LIST,
         Operation.ARTIFACT_GET,
+        Operation.ARTIFACT_GENERATE_MIND_MAP,
     ):
         binding = WEB_OPERATION_REGISTRY[operation]
         assert binding.service_owned is True

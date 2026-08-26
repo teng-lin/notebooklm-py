@@ -44,7 +44,6 @@ from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated
 from ._env import get_base_url as get_base_url
 from ._labels import LabelsAPI
-from ._mind_map import NoteBackedMindMapService as NoteBackedMindMapService  # noqa: F401
 from ._mind_maps_api import MindMapsAPI
 from ._note_service import NoteService as NoteService  # noqa: F401
 from ._notebooks import NotebooksAPI

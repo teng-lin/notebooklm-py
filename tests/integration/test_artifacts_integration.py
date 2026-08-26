@@ -20,7 +20,6 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._records import (
     ARTIFACT_DOWNLOAD_DEF,
     ArtifactDownloadInput,
@@ -474,18 +473,17 @@ class TestArtifactsAPI:
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
         )
 
-        with patch.object(
-            api._mind_maps,
-            "list_mind_maps",
-            new=AsyncMock(return_value=[mind_map]),
-        ) as list_mind_maps:
-            artifacts = await api.list("nb_123")
+        artifacts = await api.list("nb_123")
 
+        # Two leaves, one workflow: the Studio catalog read and the
+        # supplemental note-backed merge.
         assert core.rpc_call.await_count == 2
-        list_mind_maps.assert_not_awaited()
+        assert [call.args[0] for call in core.rpc_call.await_args_list] == [
+            RPCMethod.LIST_ARTIFACTS,
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
+        ]
         assert [artifact.id for artifact in artifacts] == ["art_001", "mind_map_001"]
 
     @pytest.mark.asyncio
@@ -501,18 +499,15 @@ class TestArtifactsAPI:
             drain=core,
             lifecycle=core,
             notebooks=MagicMock(),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
         )
 
-        with patch.object(
-            api._mind_maps,
-            "list_mind_maps",
-            new=AsyncMock(),
-        ) as list_mind_maps:
-            artifacts = await api.list("nb_123", ArtifactType.REPORT)
+        artifacts = await api.list("nb_123", ArtifactType.REPORT)
 
         assert [artifact.id for artifact in artifacts] == ["art_001"]
-        list_mind_maps.assert_not_awaited()
+        # The merge is skipped entirely, not fetched and filtered away.
+        assert [call.args[0] for call in core.rpc_call.await_args_list] == [
+            RPCMethod.LIST_ARTIFACTS
+        ]
 
     @pytest.mark.asyncio
     async def test_get_uses_semantic_catalog_and_preserves_public_miss(self):
@@ -523,7 +518,6 @@ class TestArtifactsAPI:
             drain=MagicMock(),
             lifecycle=MagicMock(),
             notebooks=MagicMock(),
-            mind_maps=MagicMock(spec=NoteBackedMindMapService),
             _backend=backend,
         )
 

@@ -48,7 +48,6 @@ from notebooklm._records import (
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
     ARTIFACT_GENERATE_FLASHCARDS_DEF,
     ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
-    ARTIFACT_GENERATE_MIND_MAP_DEF,
     ARTIFACT_GENERATE_QUIZ_DEF,
     ARTIFACT_GENERATE_REPORT_DEF,
     ARTIFACT_GENERATE_SLIDE_DECK_DEF,
@@ -285,10 +284,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             Operation.ARTIFACT_GENERATE_DATA_TABLE,
             CallPolicy.STATEFUL_START,
         ),
-        ARTIFACT_GENERATE_MIND_MAP_DEF: (
-            Operation.ARTIFACT_GENERATE_MIND_MAP,
-            CallPolicy.STATEFUL_START,
-        ),
         ARTIFACT_EXPORT_DEF: (Operation.ARTIFACT_EXPORT, CallPolicy.MUTATION),
         ARTIFACT_REVISE_SLIDE_DEF: (
             Operation.ARTIFACT_REVISE_SLIDE,
@@ -505,23 +500,6 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
             ARTIFACT_GENERATE_DATA_TABLE_DEF,
             [(RPCMethod.GET_NOTEBOOK, None), (RPCMethod.CREATE_ARTIFACT, None)],
             [IdempotencyPolicy.IDEMPOTENT_SET_OP, IdempotencyPolicy.PROBE_THEN_CREATE],
-        ),
-        (
-            ARTIFACT_GENERATE_MIND_MAP_DEF,
-            [
-                (RPCMethod.GET_NOTEBOOK, None),
-                (RPCMethod.GENERATE_MIND_MAP, None),
-                (RPCMethod.CREATE_NOTE, "plain"),
-                (RPCMethod.UPDATE_NOTE, None),
-                (RPCMethod.DELETE_NOTE, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.PROBE_THEN_CREATE,
-                IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-            ],
         ),
         (
             ARTIFACT_EXPORT_DEF,

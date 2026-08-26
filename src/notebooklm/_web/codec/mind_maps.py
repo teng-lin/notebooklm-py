@@ -13,7 +13,6 @@ from ..._records import (
     RAW_MIND_MAP_ROWS,
     MindMapDeleteInput,
     MindMapDeleteResult,
-    MindMapGenerateInput,
     MindMapGenerateInteractiveInput,
     MindMapGenerateNoteInput,
     MindMapGenerateNoteResult,
@@ -266,54 +265,7 @@ def encode_mind_map_generate_interactive(
     )
 
 
-def encode_artifact_mind_map_generate(
-    value: MindMapGenerateInput, source_ids: tuple[str, ...]
-) -> CodecPayload:
-    """Payload for the ``GENERATE_MIND_MAP`` phase of ``artifact.generate_mind_map``."""
-    return CodecPayload(
-        params=build_mind_map_params(
-            list(source_ids),
-            language=(get_default_language() if value.language is None else value.language),
-            instructions=value.instructions,
-        ),
-        source_path=_notebook_route(value.notebook_id),
-        allow_null=True,
-    )
-
-
-def decode_artifact_mind_map_leaf(result: Any) -> tuple[str, object, str] | None:
-    """Decode ``artifact.generate_mind_map``'s leaf into ``(json, data, title)``.
-
-    ``None`` means the leaf was absent (the semantic result is empty).  The JSON
-    text is what the composite persists as the note content; ``data`` is the
-    parsed tree (or the raw string when it does not parse); ``title`` is the
-    tree's ``name`` when present, else ``"Mind Map"``.
-    """
-    mind_map_json = unwrap_mind_map_generation_leaf(
-        result,
-        method_id=RPCMethod.GENERATE_MIND_MAP.value,
-        source="ArtifactsAPI",
-    )
-    if mind_map_json is MIND_MAP_LEAF_ABSENT:
-        return None
-    if isinstance(mind_map_json, str):
-        try:
-            mind_map_data: object = json.loads(mind_map_json)
-        except json.JSONDecodeError:
-            mind_map_data = mind_map_json
-    else:
-        mind_map_data = mind_map_json
-        mind_map_json = json.dumps(mind_map_json)
-    title = "Mind Map"
-    if isinstance(mind_map_data, dict):
-        name = mind_map_data.get("name")
-        if isinstance(name, str) and name:
-            title = name
-    return mind_map_json, mind_map_data, title
-
-
 __all__ = [
-    "decode_artifact_mind_map_leaf",
     "decode_created_interactive_id",
     "decode_generated_tree",
     "decode_interactive_tree",
@@ -323,7 +275,6 @@ __all__ = [
     "decode_mind_map_get",
     "decode_mind_map_list",
     "decode_mind_map_update",
-    "encode_artifact_mind_map_generate",
     "encode_mind_map_delete",
     "encode_mind_map_generate",
     "encode_mind_map_generate_interactive",

@@ -1437,7 +1437,7 @@ class MindMapNotFoundError(NotFoundError, RPCError, MindMapError):
     """Mind map not found in notebook.
 
     Raised by ``client.mind_maps.rename`` (and the underlying internal
-    ``NoteBackedMindMapService.rename_mind_map``) on a missing target
+    ``NoteService.rename_mind_map``) on a missing target
     (issue #1291). Absence is detected via a content/list lookup, not a
     transport 404 (mind maps share storage with notes / studio artifacts). The
     derived read ``get_tree`` and the idempotent ``delete`` interpret the same

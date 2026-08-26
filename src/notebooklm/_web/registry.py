@@ -206,7 +206,6 @@ _SUPPORTED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = Mapp
         Operation.ARTIFACT_GENERATE_INFOGRAPHIC: ARTIFACT_GENERATE_INFOGRAPHIC_DEF,
         Operation.ARTIFACT_GENERATE_SLIDE_DECK: ARTIFACT_GENERATE_SLIDE_DECK_DEF,
         Operation.ARTIFACT_GENERATE_DATA_TABLE: ARTIFACT_GENERATE_DATA_TABLE_DEF,
-        Operation.ARTIFACT_GENERATE_MIND_MAP: ARTIFACT_GENERATE_MIND_MAP_DEF,
         Operation.ARTIFACT_EXPORT: ARTIFACT_EXPORT_DEF,
         Operation.LABEL_LIST: LABEL_LIST_DEF,
         Operation.LABEL_GET: LABEL_GET_DEF,
@@ -259,6 +258,7 @@ _SERVICE_OWNED_DEFINITIONS: Final[Mapping[Operation, OperationDef[Any, Any]]] = 
         Operation.ARTIFACT_RENAME: ARTIFACT_RENAME_DEF,
         Operation.ARTIFACT_LIST: ARTIFACT_LIST_DEF,
         Operation.ARTIFACT_GET: ARTIFACT_GET_DEF,
+        Operation.ARTIFACT_GENERATE_MIND_MAP: ARTIFACT_GENERATE_MIND_MAP_DEF,
         Operation.NOTEBOOK_CREATE: NOTEBOOK_CREATE_DEF,
         Operation.NOTEBOOK_UPDATE: NOTEBOOK_UPDATE_DEF,
     }
@@ -308,6 +308,10 @@ _SERVICE_OWNED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
         Operation.ARTIFACT_GET: (
             "service-owned since P10 R4.2: StudioCatalog.get_record selects one identity "
             "from the artifact.catalog and mind_map.list merge"
+        ),
+        Operation.ARTIFACT_GENERATE_MIND_MAP: (
+            "service-owned since P10 R4.2: NoteBackedMindMapFamilyService.generate sequences "
+            "mind_map.generate_note and the note.create/note.update/note.delete persistence"
         ),
         Operation.NOTEBOOK_CREATE: (
             "service-owned since P9.2-12: NotebookMutationService.create sequences "
@@ -362,8 +366,8 @@ _UNSUPPORTED_REASONS: Final[Mapping[Operation, str]] = MappingProxyType(
 # the runtime registry boundary: a new enum member must not silently inherit an
 # unsupported disposition without a web-registry review.
 _EXPECTED_OPERATION_COUNT: Final = 97
-_EXPECTED_SUPPORTED_COUNT: Final = 79
-_EXPECTED_SERVICE_OWNED_COUNT: Final = 13
+_EXPECTED_SUPPORTED_COUNT: Final = 78
+_EXPECTED_SERVICE_OWNED_COUNT: Final = 14
 
 
 def _build_web_operation_registry() -> Mapping[Operation, WebOperationBinding]:
