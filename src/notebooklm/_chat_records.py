@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum, unique
 from typing import TypeAlias
 
-from ._operations import CallPolicy, Operation, OperationDef
+from ._operations import CallPolicy, Operation, OperationDef, OperationTier
 from ._types.documents import StructuredDocument
 
 ChatLegacyScalar: TypeAlias = str | int | float | bool | None
@@ -212,6 +212,20 @@ class ChatHistoryPairRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ChatCachedTurnRecord:
+    """One locally cached exchange with the ordinal the workflow assigned it.
+
+    The cache keeps its own turn numbering because the server does not echo
+    one back; this record is what the chat workflow hands its facade, which
+    projects it to the public conversation-turn model.
+    """
+
+    query: str
+    answer: str
+    turn_number: int
+
+
+@dataclass(frozen=True, slots=True)
 class ChatAskInput:
     """One adapter-owned streamed ask workflow request."""
 
@@ -235,6 +249,36 @@ class ChatStreamAnswerRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ChatStreamAnswerInput:
+    """One streamed answer request: chat.ask's first phase without its readback.
+
+    The conversation id here is the one *posted* to the server.  The id the
+    workflow finally reports is resolved above this leaf — the stream never
+    returns one — so ``ChatAskInput.resolved_conversation_id`` has no place in
+    the leaf's input.
+    """
+
+    notebook_id: str
+    question: str
+    source_ids: tuple[str, ...]
+    conversation_history: tuple[ChatHistoryPairRecord, ...] = ()
+    post_conversation_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChatStreamResult:
+    """One decoded streamed answer plus the bounded raw response it came from.
+
+    ``raw_response`` is the truncated diagnostic slice ``ChatAskResultRecord``
+    requires; the streamed answer record itself carries no wire text, so the
+    leaf's result pairs the two rather than widening the answer record.
+    """
+
+    answer: ChatStreamAnswerRecord
+    raw_response: str
+
+
+@dataclass(frozen=True, slots=True)
 class ChatAskResultRecord:
     """One fully completed two-phase chat result; partial results are unrepresentable."""
 
@@ -245,6 +289,23 @@ class ChatAskResultRecord:
     answer_document: StructuredDocument
     turn_key: ChatTurnKeyRecord | None = None
     next_steps: tuple[ChatNextStepRecord, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ChatAskOutcomeRecord:
+    """One completed ask plus the two conversation facts only the workflow knows.
+
+    ``turn_number`` and ``is_follow_up`` are not server-reported: the first is
+    derived from the authoritative prior-turn count the workflow reads before
+    posting, the second from whether the ask continued an existing
+    conversation. Neither belongs in ``ChatAskResultRecord`` — that record is
+    the backend's answer to one operation, while these two describe the
+    client-side conversation the workflow placed it in.
+    """
+
+    result: ChatAskResultRecord
+    turn_number: int
+    is_follow_up: bool
 
 
 CHAT_GET_CONVERSATION_DEF = OperationDef(
@@ -282,6 +343,13 @@ CHAT_ASK_DEF = OperationDef(
     CallPolicy.STREAM,
     ChatAskInput,
     ChatAskResultRecord,
+)
+CHAT_STREAM_ANSWER_DEF = OperationDef(
+    Operation.CHAT_STREAM_ANSWER,
+    CallPolicy.STREAM,
+    ChatStreamAnswerInput,
+    ChatStreamResult,
+    tier=OperationTier.PRIMITIVE,
 )
 
 

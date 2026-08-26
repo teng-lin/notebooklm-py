@@ -10,8 +10,8 @@ conversation-history rows (:class:`ConversationTurnRow` /
 :func:`unwrap_conversation_turns`) come from a regular ``batchexecute`` RPC and
 carry ``RPCMethod.GET_CONVERSATION_TURNS`` as their drift-diagnostic method id.
 
-These adapters centralise the positional knowledge that ``_chat/wire.py``
-previously open-coded as scattered single-level subscripts (``first[4]``,
+These adapters centralise the positional knowledge that the streamed-chat
+parser previously open-coded as scattered single-level subscripts (``first[4]``,
 ``cite[1]``, ``cite_inner[5]``, ``passage_data[0]`` …). Consumer sites should
 wrap the raw lists in the typed views below and read named properties so a
 future Google reshape of the chat wire format is a one-place fix here, and so
@@ -94,7 +94,6 @@ import reprlib
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from .._types.chat import ConversationTurnKey
 from .._types.documents import StructuredDocument
 from ..exceptions import UnknownRPCMethodError
 from ..rpc import RPCMethod, safe_index
@@ -546,7 +545,7 @@ class StreamFrameRow:
     Frames arrive as ``["wrb.fr", None, inner_json, ...]`` (a successful RPC
     result) or ``["er", rpc_id, code, ...]`` (a server-side error). This adapter
     centralises the ``item[0]`` tag, ``item[2]`` inner-JSON / error-code, and
-    ``item[5]`` error-payload reads so ``_chat/wire.py`` stops open-coding them
+    ``item[5]`` error-payload reads so the streamed-chat parser stops open-coding them
     (issue #1491).
 
     The ``tag`` read goes through ``safe_index`` because the caller already
@@ -613,7 +612,7 @@ class StreamEnvelopeRow:
     answer the optional-field questions with their empty defaults.
 
     This adapter owns only the ``isFinalResponse`` read; the ``inner_data[0]``
-    answer-row descent stays in ``_chat/wire.py``, which raises its own typed
+    answer-row descent stays in the streamed-chat parser, which raises its own typed
     drift error for a non-list answer row (a contract this positional view has
     no business restating).
     """
@@ -868,14 +867,22 @@ class AnswerRow:
         return value if isinstance(value, str) else None
 
     @property
-    def turn_key(self) -> ConversationTurnKey | None:
-        """The whole ``ConversationTurnKey`` at ``first[2]`` — ``None`` when absent.
+    def turn_key_parts(self) -> tuple[str, str | None, int | None] | None:
+        """The decoded ``ConversationTurnKey`` slots at ``first[2]``, or ``None``.
+
+        Returns the raw ``(session_id, turn_id, turn_code)`` triple rather than a
+        turn-key object: this module is the raw-row layer and must not name a
+        model type, so the caller (``_web/codec/chat_stream.py``) builds the
+        record. The validation lives here, not in the record — the record has
+        none — so the rules below are the whole contract.
 
         Live-populated on every chunk of every ask (9/9 asks in the 2026-08-07
         audit, plus both probes for #2122). ``None`` when the block is absent,
         empty, not a list, or carries no usable id at slot 0 — the key is
         addressed *by* that id, so a key without one identifies nothing and is
-        reported as absent rather than as a half-populated object.
+        reported as absent rather than as a half-populated object. **An empty
+        string is "no usable id"**, matching the rejection
+        ``ConversationTurnKey.__post_init__`` performs for the public type.
 
         The two trailing slots are optional in the type (a short block yields
         ``None`` for them) but were populated in every observation; each is
@@ -898,10 +905,10 @@ class AnswerRow:
             if len(block) > self._TURN_KEY_TURN_CODE_POS
             else None
         )
-        return ConversationTurnKey(
-            session_id=session_id,
-            turn_id=turn_id if isinstance(turn_id, str) and turn_id else None,
-            turn_code=turn_code if type(turn_code) is int else None,
+        return (
+            session_id,
+            turn_id if isinstance(turn_id, str) and turn_id else None,
+            turn_code if type(turn_code) is int else None,
         )
 
     @property
@@ -971,7 +978,7 @@ class AnswerRow:
           container belongs is structural wire drift, not a citation-less
           answer, and raises :class:`UnknownRPCMethodError`. Precedent: the
           :func:`unwrap_conversation_turns` container raise above and the
-          ``inner_data[0]`` non-list raise in ``_chat/wire.py`` — this
+          ``inner_data[0]`` non-list raise in the streamed-chat parser — this
           parser family treats reshaped containers as a raise, never a
           silent ``[]``.
         """

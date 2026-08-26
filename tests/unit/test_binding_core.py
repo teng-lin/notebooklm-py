@@ -18,10 +18,10 @@ from notebooklm._binding import (
     CustomBinding,
     DeadlineMode,
     NativeCallSpec,
-    NativeChoice,
     OperationDisposition,
-    StreamPayload,
-    StreamSpec,
+    RpcNative,
+    StreamNative,
+    StreamRequestPayload,
     audit_bindings,
     invoke_binding,
 )
@@ -77,8 +77,8 @@ class _FakeTransport:
             raise response
         return response
 
-    def assemble_stream(self, definition, spec, payload, *, deadline):
-        return (definition.key, spec, payload, deadline)
+    def assemble_stream(self, definition, native, payload, *, deadline):
+        return (definition.key, native, payload, deadline)
 
     async def stream(self, request, *, deadline):
         return await self.call(request, deadline=deadline)
@@ -200,15 +200,15 @@ def test_native_call_spec_is_constant_or_finite_input_keyed() -> None:
     with pytest.raises(ValueError):
         NativeCallSpec(choices=())
     with pytest.raises(ValueError):
-        NativeCallSpec(choices=(NativeChoice("A"), NativeChoice("B")))
+        NativeCallSpec(choices=(RpcNative("A"), RpcNative("B")))
     constant = NativeCallSpec.constant("A", "variant")
-    assert constant.is_constant and constant.select(object()) == NativeChoice("A", "variant")
+    assert constant.is_constant and constant.select(object()) == RpcNative("A", "variant")
     keyed = NativeCallSpec.keyed(
-        lambda value: NativeChoice("FAST") if value == "fast" else NativeChoice("OTHER"),
-        NativeChoice("FAST"),
-        NativeChoice("DEEP"),
+        lambda value: RpcNative("FAST") if value == "fast" else RpcNative("OTHER"),
+        RpcNative("FAST"),
+        RpcNative("DEEP"),
     )
-    assert keyed.select("fast") == NativeChoice("FAST")
+    assert keyed.select("fast") == RpcNative("FAST")
     with pytest.raises(BackendContractError, match="undeclared native"):
         keyed.select("deep")
 
@@ -239,7 +239,7 @@ async def test_invoke_binding_runs_codec_rows_through_the_transport() -> None:
     assert transport.requests == [
         (
             Operation.NOTEBOOK_GET,
-            NativeChoice("GET_NOTEBOOK", "with-sources"),
+            RpcNative("GET_NOTEBOOK", "with-sources"),
             CodecPayload(params=["nb"], allow_null=True),
             True,
             deadline,
@@ -251,7 +251,7 @@ async def test_invoke_binding_runs_codec_rows_through_the_transport() -> None:
 
 @pytest.mark.asyncio
 async def test_codec_rows_can_ignore_the_deadline_and_map_errors_only_on_failure() -> None:
-    mapped_calls: list[tuple[Any, Exception, NativeChoice[str]]] = []
+    mapped_calls: list[tuple[Any, Exception, RpcNative[str]]] = []
 
     def map_error(value, raw, native):
         mapped_calls.append((value, raw, native))
@@ -276,7 +276,7 @@ async def test_codec_rows_can_ignore_the_deadline_and_map_errors_only_on_failure
     with pytest.raises(BackendContractError, match="mapped") as info:
         await invoke_binding(table, transport, None, NOTEBOOK_GET_DEF, 2, deadline=deadline)
     assert isinstance(info.value.__cause__, RuntimeError)
-    assert getattr(info.value.__cause__, "binding_native", None) == NativeChoice("GET")
+    assert getattr(info.value.__cause__, "binding_native", None) == RpcNative("GET")
     assert mapped_calls[0][0] == 2
 
 
@@ -289,9 +289,9 @@ async def test_invoke_binding_owns_the_single_pre_dispatch_expiry_check() -> Non
         encode=lambda value: CodecPayload(params=[]),
         decode=lambda value, raw: raw,
         native=NativeCallSpec.keyed(
-            lambda value: NativeChoice(value),
-            NativeChoice("GET_ONE"),
-            NativeChoice("GET_TWO"),
+            lambda value: RpcNative(value),
+            RpcNative("GET_ONE"),
+            RpcNative("GET_TWO"),
         ),
     )
     transport = _FakeTransport()
@@ -393,15 +393,7 @@ async def test_custom_rows_only_reach_their_declared_specs_and_tag_failures() ->
         except BackendContractError as exc:
             seen.append(str(exc))
         try:
-            await invoke.stream(
-                "undeclared-stream", StreamPayload(build_request=lambda s: s), deadline=deadline
-            )
-        except BackendContractError as exc:
-            seen.append(str(exc))
-        try:
-            await invoke.stream(
-                "stream", StreamPayload(build_request=lambda s: s), deadline=deadline
-            )
+            await invoke.call("fails", CodecPayload(params=[]), deadline=deadline)
         except RuntimeError as exc:
             seen.append(repr(getattr(exc, "binding_native", None)))
         return first
@@ -409,12 +401,14 @@ async def test_custom_rows_only_reach_their_declared_specs_and_tag_failures() ->
     row: CustomBinding[Any, Any, str] = CustomBinding(
         definition=NOTEBOOK_GET_DEF,
         handler=handler,
-        native=(NativeCallSpec.constant("LIST", key="list"),),
-        streams=(StreamSpec(key="stream", label="fake.stream"),),
+        native=(
+            NativeCallSpec.constant("LIST", key="list"),
+            NativeCallSpec.constant("GET", key="fails"),
+        ),
         justification="The wire forces a fetch after the streamed answer.",
         category="protocol",
     )
-    transport = _FakeTransport("listed", RuntimeError("stream failed"))
+    transport = _FakeTransport("listed", RuntimeError("call failed"))
     result = await invoke_binding(
         BindingTable({Operation.NOTEBOOK_GET: row}),
         transport,
@@ -427,13 +421,103 @@ async def test_custom_rows_only_reach_their_declared_specs_and_tag_failures() ->
     assert seen == [
         "v",
         "notebook.get declares no native spec 'undeclared'",
-        "notebook.get declares no stream spec 'undeclared-stream'",
-        "StreamSpec(key='stream', label='fake.stream')",
+        "RpcNative(method='GET', variant=None)",
     ]
     assert [request[1] for request in transport.requests] == [
-        NativeChoice("LIST"),
-        StreamSpec(key="stream", label="fake.stream"),
+        RpcNative("LIST"),
+        RpcNative("GET"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_custom_row_cannot_call_a_streamed_native() -> None:
+    """``RowInvoker`` has no stream verb; a streamed spec fails closed on ``call``."""
+
+    async def handler(value, deadline, invoke):
+        return await invoke.call("streamed", CodecPayload(params=[]), deadline=deadline)
+
+    row: CustomBinding[Any, Any, str] = CustomBinding(
+        definition=NOTEBOOK_GET_DEF,
+        handler=handler,
+        native=(NativeCallSpec.streamed("fake.stream", key="streamed"),),
+        justification="The wire forces a fetch after the streamed answer.",
+        category="protocol",
+    )
+
+    with pytest.raises(BackendContractError, match="streamed native"):
+        await invoke_binding(
+            BindingTable({Operation.NOTEBOOK_GET: row}),
+            _FakeTransport(),
+            None,
+            NOTEBOOK_GET_DEF,
+            "v",
+            deadline=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_streamed_codec_row_dispatches_through_the_transport_stream_verb() -> None:
+    """The spec picks the verb: a ``StreamNative`` assembles and streams."""
+    row: CodecBinding[Any, Any, str] = CodecBinding(
+        definition=NOTEBOOK_GET_DEF,
+        encode=lambda value: StreamRequestPayload(data=f"encoded-{value}"),
+        decode=lambda value, raw: raw,
+        native=NativeCallSpec.streamed("fake.stream"),
+    )
+    transport = _FakeTransport("streamed")
+
+    result = await invoke_binding(
+        BindingTable({Operation.NOTEBOOK_GET: row}),
+        transport,
+        None,
+        NOTEBOOK_GET_DEF,
+        "v",
+        deadline=None,
+    )
+
+    assert result == "streamed"
+    assert transport.requests == [
+        (
+            Operation.NOTEBOOK_GET,
+            StreamNative("fake.stream"),
+            StreamRequestPayload("encoded-v"),
+            None,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("native", "payload", "message"),
+    [
+        (NativeCallSpec.streamed("fake.stream"), CodecPayload(params=[]), "streams a native"),
+        (NativeCallSpec.constant("LIST"), StreamRequestPayload(data="x"), "calls a native"),
+    ],
+)
+async def test_a_codec_row_pairs_its_payload_kind_with_its_native_kind(
+    native, payload, message
+) -> None:
+    row: CodecBinding[Any, Any, str] = CodecBinding(
+        definition=NOTEBOOK_GET_DEF,
+        encode=lambda value: payload,
+        decode=lambda value, raw: raw,
+        native=native,
+    )
+
+    with pytest.raises(BackendContractError, match=message):
+        await invoke_binding(
+            BindingTable({Operation.NOTEBOOK_GET: row}),
+            _FakeTransport("unused"),
+            None,
+            NOTEBOOK_GET_DEF,
+            "v",
+            deadline=None,
+        )
+
+
+def test_a_streamed_native_carries_a_non_empty_label() -> None:
+    with pytest.raises(ValueError, match="non-empty label"):
+        StreamNative("")
 
 
 # --- construction-time row audit ---------------------------------------------

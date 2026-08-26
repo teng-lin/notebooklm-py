@@ -14,6 +14,8 @@ from types import MappingProxyType
 from typing import Any
 
 import pytest
+from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS
+from scripts.audit_operation_catalog import derive_workflow_natives
 
 from notebooklm._backend import (
     BackendDeadlineExceededError,
@@ -37,7 +39,6 @@ from notebooklm._records import (
 )
 from notebooklm._source_service import SourceService
 from notebooklm._web.bindings import primitives as primitive_rows
-from notebooklm._web.policy import SERVICE_OWNED_WORKFLOW_BINDINGS, derive_workflow_natives
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY, WEB_SERVICE_OWNED_OPERATIONS
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient

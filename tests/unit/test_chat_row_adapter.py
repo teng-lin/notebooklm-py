@@ -818,16 +818,35 @@ class TestStreamEnvelopeRow:
 
 
 class TestAnswerRowTurnKeyAgainstCapture:
+    """``turn_key_parts`` returns the raw slots (P10 R2.1).
+
+    The adapter stays at the raw-row layer and no longer names a model type;
+    ``_web/codec/chat_stream.py`` builds the ``ChatTurnKeyRecord`` from this
+    triple, and the facade projects that onto the public ``ConversationTurnKey``.
+    The decode rules — including "empty session id means absent" — are unchanged
+    and still pinned below.
+    """
+
     def test_capture_decodes_the_whole_key(self) -> None:
-        key = AnswerRow(_CAPTURED_STREAM[0][0]).turn_key
-        assert key == ConversationTurnKey(
+        parts = AnswerRow(_CAPTURED_STREAM[0][0]).turn_key_parts
+        assert parts == (
+            "3afea005-7d13-41d0-9257-6a9e28597818",
+            "b38d4003-5be1-487d-a121-5c5958709021",
+            2187103311,
+        )
+
+    def test_capture_parts_build_the_public_key_unchanged(self) -> None:
+        """The triple still constructs the exact key the adapter used to return."""
+        parts = AnswerRow(_CAPTURED_STREAM[0][0]).turn_key_parts
+        assert parts is not None
+        assert ConversationTurnKey(*parts) == ConversationTurnKey(
             session_id="3afea005-7d13-41d0-9257-6a9e28597818",
             turn_id="b38d4003-5be1-487d-a121-5c5958709021",
             turn_code=2187103311,
         )
 
     def test_key_is_identical_on_every_chunk_of_one_turn(self) -> None:
-        keys = {AnswerRow(chunk[0]).turn_key for chunk in _CAPTURED_STREAM}
+        keys = {AnswerRow(chunk[0]).turn_key_parts for chunk in _CAPTURED_STREAM}
         assert len(keys) == 1
 
     def test_server_conversation_id_is_the_keys_session_id(self) -> None:
@@ -838,21 +857,23 @@ class TestAnswerRowTurnKeyAgainstCapture:
         per-stream identifier.
         """
         row = AnswerRow(_CAPTURED_STREAM[0][0])
-        assert row.server_conversation_id == row.turn_key.session_id
+        parts = row.turn_key_parts
+        assert parts is not None
+        assert row.server_conversation_id == parts[0]
 
 
 class TestAnswerRowTurnKey:
     def test_absent_block_yields_no_key(self) -> None:
-        assert AnswerRow(_answer_record(conv_id=None)).turn_key is None
+        assert AnswerRow(_answer_record(conv_id=None)).turn_key_parts is None
 
     def test_short_row_yields_no_key(self) -> None:
-        assert AnswerRow(["only-text"]).turn_key is None
+        assert AnswerRow(["only-text"]).turn_key_parts is None
 
     @pytest.mark.parametrize("block", [[], "reshaped", 7])
     def test_unusable_block_yields_no_key(self, block: object) -> None:
         rec = _answer_record()
         rec[2] = block
-        assert AnswerRow(rec).turn_key is None
+        assert AnswerRow(rec).turn_key_parts is None
 
     @pytest.mark.parametrize("bad_id", [None, 123, ""])
     def test_key_without_a_usable_session_id_is_absent(self, bad_id: object) -> None:
@@ -860,23 +881,23 @@ class TestAnswerRowTurnKey:
         so it is reported absent rather than half-populated."""
         rec = _answer_record()
         rec[2] = [bad_id, "turn-uuid", 7]
-        assert AnswerRow(rec).turn_key is None
+        assert AnswerRow(rec).turn_key_parts is None
 
     def test_trailing_slots_are_optional(self) -> None:
         rec = _answer_record()
         rec[2] = ["conv-uuid"]
-        assert AnswerRow(rec).turn_key == ConversationTurnKey("conv-uuid", None, None)
+        assert AnswerRow(rec).turn_key_parts == ("conv-uuid", None, None)
 
     def test_one_drifted_trailing_slot_does_not_discard_the_rest(self) -> None:
         rec = _answer_record()
         rec[2] = ["conv-uuid", ["nested"], 7]
-        assert AnswerRow(rec).turn_key == ConversationTurnKey("conv-uuid", None, 7)
+        assert AnswerRow(rec).turn_key_parts == ("conv-uuid", None, 7)
 
     def test_bool_turn_code_is_rejected(self) -> None:
         """``bool`` is an ``int`` subclass; a wire ``true`` must not read as 1."""
         rec = _answer_record()
         rec[2] = ["conv-uuid", "turn-uuid", True]
-        assert AnswerRow(rec).turn_key == ConversationTurnKey("conv-uuid", "turn-uuid", None)
+        assert AnswerRow(rec).turn_key_parts == ("conv-uuid", "turn-uuid", None)
 
 
 class TestConversationTurnKeyConstructor:

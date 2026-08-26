@@ -27,9 +27,10 @@ This gate makes the population **shrink-only**:
 
 * **Binding rows** (``_web/bindings/*.py``) may name ``RPCMethod`` only as the
   *value of a native spec*: an argument of ``NativeCallSpec.constant(...)``,
-  ``NativeCallSpec.keyed(...)`` or ``NativeChoice(...)`` -- wherever that call
-  sits, including a module-level ``_X = NativeChoice(RPCMethod.Y)`` -- or as
-  the type parameter ``NativeChoice[RPCMethod]`` of such a value. Any other
+  ``NativeCallSpec.keyed(...)`` or ``RpcNative(...)`` -- wherever that call
+  sits, including a module-level ``_X = RpcNative(RPCMethod.Y)`` -- or as
+  the type parameter of ``RpcNative[RPCMethod]`` / ``NativeChoice[RPCMethod]``
+  (the union alias over the wire-method and streamed native kinds). Any other
   mention in a row module (a ``.value`` spelled into a decoder call, a bare
   comparison) is a site.
 
@@ -78,28 +79,46 @@ BINDINGS_PREFIX = "_web/bindings/"
 TARGET = "RPCMethod"
 
 # Where ``RPCMethod`` belongs below the port: the transport pair, the runtime
-# and its deadline seams, the registry and the policy ledger. Never scanned.
+# and its deadline seams. Never scanned. P10 R2.5 deleted the policy ledger from
+# production; its reviewed half now names ``RPCMethod`` in
+# ``scripts/_web_policy_intent.py``, which this gate does not scan at all.
+#
+# ``_web/registry.py`` leaves the sanctioned set in the same slice. It named no
+# ``RPCMethod`` even before R2.5, so "the registry names no wire method" was a
+# claim nothing enforced; scanning it turns that claim into a gate. The
+# derivation is what makes it durable — the registry no longer re-lists the
+# definitions a row could pull a method in through.
 SANCTIONED_MODULES: frozenset[str] = frozenset(
     {
         "_web/chat_transport.py",
         "_web/deadlines.py",
-        "_web/policy.py",
-        "_web/registry.py",
         "_web/runtime.py",
         "_web/transport.py",
     }
 )
 
 # The native-spec forms a binding row may name ``RPCMethod`` inside: callee
-# spellings whose arguments are spec values, and the subscript whose slice is
-# the spec's type parameter.
+# spellings whose arguments are spec values, and the subscripts whose slice is
+# the spec's type parameter. ``RpcNative`` is the constructed wire-method kind;
+# ``NativeChoice`` is the union alias over it and ``StreamNative``, so it appears
+# only as a subscript (a row annotates with it; nothing constructs it).
 SPEC_CALLEES: frozenset[str] = frozenset(
-    {"NativeCallSpec.constant", "NativeCallSpec.keyed", "NativeChoice"}
+    {"NativeCallSpec.constant", "NativeCallSpec.keyed", "RpcNative"}
 )
-SPEC_SUBSCRIPTS: frozenset[str] = frozenset({"NativeChoice"})
+SPEC_SUBSCRIPTS: frozenset[str] = frozenset({"NativeChoice", "RpcNative"})
 
 # P9.4 codec method-id threading burndown. Measured, not estimated; exact and
-# sorted; may only shrink. Regenerate with::
+# sorted; may only shrink.
+#
+# The two ``_web/codec/artifact_formatters.py`` entries are NOT new debt: the
+# data-table helpers already named ``RPCMethod.LIST_ARTIFACTS`` for their
+# ``safe_index`` drift diagnostics while they lived in ``_artifact/formatters.py``,
+# ABOVE the port and therefore outside this gate's scan. P10 R1.3 relocated them
+# under ``_web/codec/`` unchanged, which moved them into scope. Recorded here so
+# the gate measures the real population; draining them is R1.3's follow-up, not a
+# licence to add further codec method-id reads.
+#
+# Regenerate with::
 #
 #     uv run python -c "from tests._guardrails.test_no_rpc_method_below_port \
 #         import measured_sites; print(*measured_sites(), sep='\n')"
@@ -278,14 +297,14 @@ def test_sanctioned_modules_exist() -> None:
 _SPEC_ROW_MODULE = '''\
 """A binding row module that names RPCMethod only through spec values."""
 
-from ..._binding import CodecBinding, NativeCallSpec, NativeChoice
+from ..._binding import CodecBinding, NativeCallSpec, RpcNative
 from ...rpc import RPCMethod
 
-_FAST = NativeChoice(RPCMethod.START_FAST_RESEARCH)
-_DEEP = NativeChoice(RPCMethod.START_DEEP_RESEARCH)
+_FAST = RpcNative(RPCMethod.START_FAST_RESEARCH)
+_DEEP = RpcNative(RPCMethod.START_DEEP_RESEARCH)
 
 
-def _select(value: object) -> NativeChoice[RPCMethod]:
+def _select(value: object) -> RpcNative[RPCMethod]:
     return _FAST if value else _DEEP
 
 

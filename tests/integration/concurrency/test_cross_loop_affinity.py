@@ -513,10 +513,10 @@ def test_reqid_and_auth_locks_reopen_on_new_loop_rebind(
 def test_chat_locks_reopen_on_new_loop_rebind(
     mock_transport_concurrent: ConcurrentMockTransport,
 ) -> None:
-    """Issue #1225: close on loop A, reopen on loop B → ChatAPI conversation locks rebind.
+    """Issue #1225: close on loop A, reopen on loop B → the chat conversation locks rebind.
 
-    The ``ChatAPI`` per-conversation / per-notebook locks
-    (``ChatAPI._conversation_locks`` / ``_new_conversation_locks``, two
+    The chat per-conversation / per-notebook locks
+    (``ChatWorkflowService._conversation_locks`` / ``_new_conversation_locks``, two
     ``WeakValueDictionary`` maps of lazily-built ``asyncio.Lock``) were the
     last lazy loop-bound primitives in the client without the owner-level
     ``set_bound_loop`` + ``reset_after_open`` protocol. Each lock binds to
@@ -525,8 +525,9 @@ def test_chat_locks_reopen_on_new_loop_rebind(
     A raises "bound to a different event loop" (Python 3.10/3.11) or misparks
     waiters on the contended-acquire path.
 
-    Post-fix ``ClientLifecycle.open`` calls ``ChatAPI.set_bound_loop`` +
-    ``reset_after_open`` (mirroring the RPC- and upload-semaphore resets), so
+    Post-fix ``ClientLifecycle.open`` calls ``set_bound_loop`` +
+    ``reset_after_open`` on the chat collaborator (``ChatAPI`` forwards both to
+    the workflow service that owns the maps) (mirroring the RPC- and upload-semaphore resets), so
     the lock maps are cleared on a loop change and each per-key lock is rebuilt
     fresh on the new loop.
 
@@ -580,9 +581,9 @@ def test_chat_locks_reopen_on_new_loop_rebind(
         # is RETURNED so the caller keeps a strong reference; without it the
         # WeakValueDictionary entry would GC the moment this coroutine's locals
         # are dropped, masking whether the reset (vs. plain GC) cleared the map.
-        lock = chat._get_conversation_lock(conv_id)
+        lock = chat._workflow._get_conversation_lock(conv_id)
         await _force_contended_acquire(lock)
-        assert conv_id in chat._conversation_locks
+        assert conv_id in chat._workflow._conversation_locks
         await core.close()
         return lock
 
@@ -592,14 +593,14 @@ def test_chat_locks_reopen_on_new_loop_rebind(
     # The reset happens on open(), not close(): the stale loop-A lock is still
     # cached here (pinned by ``pinned_lock``), bound to the now-dead loop A.
     assert pinned_lock is not None
-    assert chat._conversation_locks.get(conv_id) is pinned_lock
+    assert chat._workflow._conversation_locks.get(conv_id) is pinned_lock
 
     async def _reopen_and_use_lock_under_loop_b() -> None:
         await core.__aenter__()
         # reset_after_open() must have cleared the loop-A lock map so the next
         # _get_conversation_lock() rebuilds a fresh lock on loop B (even though
         # ``pinned_lock`` still holds a strong ref to the old one).
-        assert chat._conversation_locks.get(conv_id) is None
+        assert chat._workflow._conversation_locks.get(conv_id) is None
         prior_cookies = core._backend._kernel.get_http_client().cookies
         await core._backend._kernel.get_http_client().aclose()
         install_http_client_for_test(
@@ -615,7 +616,7 @@ def test_chat_locks_reopen_on_new_loop_rebind(
             # Pre-fix this would reuse the stale loop-A lock and (on 3.10/3.11)
             # raise the cross-loop RuntimeError on the waiter path; post-fix the
             # lock is fresh and binds cleanly to loop B.
-            lock_b = chat._get_conversation_lock(conv_id)
+            lock_b = chat._workflow._get_conversation_lock(conv_id)
             assert lock_b is not pinned_lock
             await _force_contended_acquire(lock_b)
         finally:

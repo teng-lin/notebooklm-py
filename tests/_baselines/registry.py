@@ -160,6 +160,13 @@ def _derive_json_envelope_contract() -> dict[str, object]:
     return derive_json_envelope_contract()
 
 
+def _derive_web_policy_parity() -> dict[str, object]:
+    """The D3 two-column parity result: derived row dispatch vs reviewed intent."""
+    from scripts.audit_operation_catalog import web_policy_parity_report
+
+    return web_policy_parity_report()
+
+
 def _derive_operation_catalog() -> dict[str, object]:
     """Current semantic dispositions derived from native and public authorities."""
     from scripts.audit_operation_catalog import build_operation_catalog
@@ -249,6 +256,16 @@ BASELINES: list[Baseline] = [
         derive=_derive_operation_catalog,
         sort_keys=True,
         description="Semantic dispositions for active RPC rows and public feature methods.",
+    ),
+    Baseline(
+        name="web_policy_parity",
+        path=_BASELINES_DIR / "web_policy_parity.json",
+        derive=_derive_web_policy_parity,
+        sort_keys=True,
+        description=(
+            "Direct-row native parity and end-to-end workflow authority for every "
+            "active web operation."
+        ),
     ),
     Baseline(
         name="public_model_contract",

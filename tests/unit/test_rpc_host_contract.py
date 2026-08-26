@@ -32,9 +32,9 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._chat.wire import build_streaming_chat_request
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._transport_errors import TransportRateLimited
+from notebooklm._web.codec.chat_stream import encode_ask_stream
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import (
@@ -82,7 +82,7 @@ def test_streaming_chat_sends_no_origin_bound_header() -> None:
     adding one is a decision someone makes on purpose.
     """
     snapshot = AuthSnapshot(csrf_token="csrf", session_id="sid", authuser=0, account_email=None)
-    _url, _body, extra_headers = build_streaming_chat_request(
+    _url, _body, extra_headers = encode_ask_stream(
         snapshot=snapshot,
         notebook_id="nb",
         question="hi",

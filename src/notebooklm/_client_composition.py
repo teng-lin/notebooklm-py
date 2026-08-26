@@ -228,7 +228,6 @@ def compose_client(
         internals.executor,
         source_uploader=source_uploader,
         chat_transport=internals.transport,
-        chat_reqid=internals.reqid,
         chat_timeout=resolve_chat_read_timeout(chat_timeout, timeout),
         chat_response_max_bytes=chat_response_max_bytes,
         # Match WebExecutionRuntime's established live timeout-provider
@@ -238,6 +237,9 @@ def compose_client(
         deadline_factory=deadline_factory,
         metrics=internals.metrics,
         drain_tracker=internals.drain_tracker,
+        # One counter, one call site: the streamed chat POST draws its request
+        # id inside ``WebTransport.stream`` (P10 R2.2 retired the duplicate
+        # ``chat_reqid`` input that pointed at this same object).
         reqid=internals.reqid,
         pipeline=internals.pipeline,
         provider=internals.provider,
@@ -289,8 +291,9 @@ def compose_client(
         _backend=client._backend,
         deadline_factory=deadline_factory,
     )
-    # P6.1: ChatAPI keeps loop-bound orchestration and client-local state, but
-    # delegates all six semantic operations to the client-owned backend.
+    # P10 R2.3: ChatAPI is the public-vocabulary facade; the loop-bound
+    # orchestration, the client-local conversation state, and all six semantic
+    # operations live in the ChatWorkflowService it builds over the backend.
     client.chat = ChatAPI(
         backend=client._backend,
         loop_guard=internals.lifecycle,

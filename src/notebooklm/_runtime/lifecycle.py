@@ -75,7 +75,6 @@ from ..auth import AuthTokens
 from .config import CORE_LOGGER_NAME
 
 if TYPE_CHECKING:
-    from .._chat import ChatAPI
     from .._cookie_persistence import CookiePersistence
     from .._reqid_counter import ReqidCounter
     from .._rpc_semaphore import RpcSemaphore
@@ -83,6 +82,7 @@ if TYPE_CHECKING:
     from .._transport_drain import TransportDrainTracker
     from ..types import ConnectionLimits
     from .auth import AuthRefreshCoordinator
+    from .contracts import ChatLifecycleHooks
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +259,7 @@ class ClientLifecycle:
         cookie_persistence: CookiePersistence,
         rpc_semaphore: RpcSemaphore,
         uploader: SourceUploadPipeline,
-        chat: ChatAPI,
+        chat: ChatLifecycleHooks,
     ) -> None:
         """Open the HTTP client connection.
 
@@ -295,7 +295,7 @@ class ClientLifecycle:
         # call site rather than hanging on a primitive bound to a dead
         # loop. ``ArtifactPollingService`` reaches the bound loop through
         # ``ClientLifecycle.get_bound_loop()`` so no further propagation is
-        # needed there. (``ChatAPI`` now receives direct ``set_bound_loop``
+        # needed there. (The chat collaborator now receives direct ``set_bound_loop``
         # propagation below — #1225.)
         drain_tracker.set_bound_loop(self._bound_loop)
         reqid.set_bound_loop(self._bound_loop)
@@ -315,12 +315,12 @@ class ClientLifecycle:
         # bound to the now-dead loop A. Propagating the captured loop lets the
         # uploader discard the stale semaphore on a loop change.
         uploader.set_bound_loop(self._bound_loop)
-        # The ChatAPI per-conversation / per-notebook locks are the last lazy
+        # The chat per-conversation / per-notebook locks are the last lazy
         # loop-bound primitives without the owner-level protocol (#1225): each
         # ``asyncio.Lock`` in the two ``WeakValueDictionary`` maps binds to the
         # loop it is first awaited on, so a client closed on loop A and
         # reopened on loop B would otherwise reuse a lock bound to the now-dead
-        # loop A. Propagating the captured loop lets ChatAPI discard the stale
+        # loop A. Propagating the captured loop lets the workflow discard the stale
         # locks on a loop change (the per-call ``loop_guard.assert_bound_loop``
         # in ``ask`` already rejects cross-loop *use*; this governs rebuild).
         chat.set_bound_loop(self._bound_loop)
@@ -343,7 +343,7 @@ class ClientLifecycle:
         # semaphore is reconstructed lazily on the next ``get_upload_semaphore``
         # call from inside the new loop; ``max_concurrent_uploads`` is untouched.
         uploader.reset_after_open()
-        # Same close→reopen reset for the ChatAPI conversation locks so a
+        # Same close→reopen reset for the chat conversation locks so a
         # reopened client rebuilds each per-key lock on the new loop instead of
         # reusing a stale one bound to the prior (now-dead) loop (#1225). Narrow
         # by design — the locks are reconstructed lazily on the next

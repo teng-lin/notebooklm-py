@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 import pytest
+from scripts._web_policy_intent import WEB_CALL_POLICY_BINDINGS
 
 from notebooklm._backend import (
     BackendDeadlineExceededError,
@@ -26,7 +27,7 @@ from notebooklm._backend import (
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, DeadlineMode, NativeChoice
+from notebooklm._binding import CodecBinding, DeadlineMode, RpcNative
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._operations import Operation
 from notebooklm._records import (
@@ -48,7 +49,6 @@ from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.bindings import chat as chat_rows
 from notebooklm._web.codec.chat import build_save_note_params
 from notebooklm._web.failure_projection import _capture_public_failure
-from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 from notebooklm.exceptions import NetworkError, RPCTimeoutError, ServerError
 from notebooklm.rpc import RPCMethod
@@ -138,8 +138,10 @@ def test_chat_rows_replace_their_handlers_in_the_registry_and_table() -> None:
         "_chat_save_note",
     ):
         assert not hasattr(WebRpcBackend, name)
-    # The two-phase streamed composite is the P9.4 protocol custom row.
-    assert WEB_OPERATION_REGISTRY[Operation.CHAT_ASK].row is chat_rows.CHAT_ASK
+    # P10 R2.2: the two-phase streamed composite is a service-owned workflow
+    # over the streamed leaf, so this module holds no ``chat.ask`` row at all.
+    assert not hasattr(chat_rows, "CHAT_ASK")
+    assert WEB_OPERATION_REGISTRY[Operation.CHAT_ASK].row is None
     backend = build_web_backend(_RecordingExecutor())
     assert backend._bindings[Operation.CHAT_CONFIGURE] is chat_rows.CHAT_CONFIGURE
 
@@ -148,15 +150,15 @@ def test_configure_row_is_input_keyed_over_exactly_the_ledger_natives() -> None:
     spec = chat_rows.CHAT_CONFIGURE.native
     assert not spec.is_constant
     assert spec.choices == (
-        NativeChoice(RPCMethod.GET_NOTEBOOK),
-        NativeChoice(RPCMethod.RENAME_NOTEBOOK),
+        RpcNative(RPCMethod.GET_NOTEBOOK),
+        RpcNative(RPCMethod.RENAME_NOTEBOOK),
     )
     read = ChatConfigureInput(_NB, ChatConfigureAction.GET)
     write = ChatConfigureInput(
         _NB, ChatConfigureAction.SET, goal="default", response_length="longer"
     )
-    assert spec.select(read) == NativeChoice(RPCMethod.GET_NOTEBOOK)
-    assert spec.select(write) == NativeChoice(RPCMethod.RENAME_NOTEBOOK)
+    assert spec.select(read) == RpcNative(RPCMethod.GET_NOTEBOOK)
+    assert spec.select(write) == RpcNative(RPCMethod.RENAME_NOTEBOOK)
 
 
 @pytest.mark.asyncio

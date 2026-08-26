@@ -615,7 +615,7 @@ def legacy_vcr_follow_up_probe(monkeypatch):
     the real request and its empty, non-empty, multi-turn, and failure branches.
     """
 
-    from notebooklm._chat import api as chat_api_module
+    from notebooklm._chat import workflow as chat_workflow_module
 
     async def _count_prior_recorded_turns(
         fetch_turns, notebook_id: str, conversation_id: str
@@ -623,7 +623,9 @@ def legacy_vcr_follow_up_probe(monkeypatch):
         """Replay a legacy cassette whose current conversation had one prior turn."""
         return 1
 
-    monkeypatch.setattr(chat_api_module, "count_prior_recorded_turns", _count_prior_recorded_turns)
+    monkeypatch.setattr(
+        chat_workflow_module, "count_prior_recorded_turns", _count_prior_recorded_turns
+    )
 
 
 @pytest.fixture

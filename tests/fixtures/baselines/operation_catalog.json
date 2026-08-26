@@ -372,6 +372,18 @@
     "chat.ask": {
       "call_policy": "stream",
       "known_divergence": "GET_NOTEBOOK is the facade's NOTEBOOK_GET recency read, not a native the CHAT_ASK row dispatches",
+      "leaf_operations": [
+        {
+          "allowed_variants": [],
+          "operation": "chat.stream_answer"
+        },
+        {
+          "allowed_variants": [
+            "<default>"
+          ],
+          "operation": "chat.get_conversation"
+        }
+      ],
       "native_bindings": [
         {
           "idempotency_policy": "idempotent_set_op",
@@ -385,7 +397,8 @@
           "rpc_method": "GET_LAST_CONVERSATION_ID",
           "variant": null
         }
-      ]
+      ],
+      "service_owned": true
     },
     "chat.configure": {
       "call_policy": "mutation",
@@ -450,6 +463,17 @@
           "role": "non-idempotent citation-rich note allocation",
           "rpc_method": "CREATE_NOTE",
           "variant": "saved_from_chat"
+        }
+      ]
+    },
+    "chat.stream_answer": {
+      "call_policy": "stream",
+      "known_divergence": null,
+      "native_bindings": [],
+      "streamed_bindings": [
+        {
+          "label": "chat.ask",
+          "role": "streamed free-form answer generation"
         }
       ]
     },
@@ -2550,7 +2574,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService"
+        "ChatWorkflowService"
       ],
       "response_decoders": [
         "_web/codec/notes.py:decode_created_note"
@@ -2682,7 +2706,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService"
+        "ChatWorkflowService"
       ],
       "response_decoders": [],
       "response_projectors": [],
@@ -2997,7 +3021,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService"
+        "ChatWorkflowService"
       ],
       "response_decoders": [
         "_row_adapters/chat.py:<module>",
@@ -3073,7 +3097,6 @@
       "disposition": "semantic",
       "disposition_reason": null,
       "execution_authorities": [
-        "_web/bindings/chat.py:CHAT_ASK",
         "_web/bindings/chat.py:CHAT_GET_CONVERSATION"
       ],
       "golden_disposition": "golden_covered",
@@ -3105,7 +3128,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService"
+        "ChatWorkflowService"
       ],
       "response_decoders": [],
       "response_projectors": [],
@@ -3178,7 +3201,7 @@
       "override_honored": true,
       "owners": [
         "AudioFamilyService",
-        "ChatService",
+        "ChatWorkflowService",
         "DataTableFamilyService",
         "InfographicFamilyService",
         "LabelService",
@@ -4005,7 +4028,7 @@
       },
       "override_honored": true,
       "owners": [
-        "ChatService",
+        "ChatWorkflowService",
         "NotebookMutationService",
         "SharingService"
       ],
@@ -5897,8 +5920,8 @@
       "execution_authorities": [
         {
           "binding": "GET_LAST_CONVERSATION_ID:<default>",
-          "discriminator": "post-stream resolution when no server-issued id is already known",
-          "site": "_web/bindings/chat.py:CHAT_ASK",
+          "discriminator": "post-stream resolution via chat.get_conversation when no id is already known",
+          "site": "_web/bindings/chat.py:CHAT_GET_CONVERSATION",
           "transport_kind": "rpc"
         },
         {
@@ -5909,8 +5932,8 @@
         },
         {
           "binding": "streamed_query",
-          "discriminator": "adapter-owned GenerateFreeFormStreamed phase; bytes are incrementally buffered",
-          "site": "_web/bindings/chat.py:_ask",
+          "discriminator": "reached through the chat.stream_answer leaf; bytes are incrementally buffered",
+          "site": "_web/transport.py:WebTransport.stream",
           "transport_kind": "stream"
         }
       ],
@@ -5921,7 +5944,7 @@
         "GET_LAST_CONVERSATION_ID:<default>",
         "GET_NOTEBOOK:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "stream",
       "public_methods": [
         "chat.ask"
@@ -5986,7 +6009,7 @@
         "GET_NOTEBOOK:<default>",
         "RENAME_NOTEBOOK:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "mutation",
       "public_methods": [
         "chat.configure",
@@ -6053,7 +6076,7 @@
       "native_bindings": [
         "DELETE_CONVERSATION:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "mutation",
       "public_methods": [
         "chat.delete_conversation"
@@ -6087,7 +6110,7 @@
       "native_bindings": [
         "GET_LAST_CONVERSATION_ID:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "read",
       "public_methods": [
         "chat.get_conversation_id"
@@ -6120,7 +6143,7 @@
       "native_bindings": [
         "GET_CONVERSATION_TURNS:<default>"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "read",
       "public_methods": [
         "chat.get_conversation_turns",
@@ -6157,7 +6180,7 @@
       "native_bindings": [
         "CREATE_NOTE:saved_from_chat"
       ],
-      "owner": "ChatService",
+      "owner": "ChatWorkflowService",
       "policy": "mutation",
       "public_methods": [
         "chat.save_answer_as_note"
@@ -6171,6 +6194,35 @@
       "tier": "product",
       "unsupported_reason": null,
       "web_paths": []
+    },
+    {
+      "app_callers": [],
+      "composite_behavior": "P10 primitive: one streamed GenerateFreeFormStreamed POST, decoded into the answer record plus the truncated raw slice chat.ask reports. It resolves no conversation id and dispatches no batchexecute method, so it holds no native binding at all.",
+      "disposition": "semantic",
+      "execution_authorities": [
+        {
+          "binding": "streamed_query",
+          "discriminator": "the streamed GenerateFreeFormStreamed POST; it is the row's only native",
+          "site": "_web/transport.py:WebTransport.stream",
+          "transport_kind": "stream"
+        }
+      ],
+      "key": "chat.stream_answer",
+      "known_divergence": null,
+      "known_divergence_kind": null,
+      "native_bindings": [],
+      "owner": "ChatWorkflowService",
+      "policy": "stream",
+      "public_methods": [],
+      "recency_contract": [],
+      "recency_effect": "none",
+      "response_decoders_projectors": [],
+      "route_context": "notebook+conversation+source-set",
+      "tier": "primitive",
+      "unsupported_reason": null,
+      "web_paths": [
+        "streamed_query"
+      ]
     },
     {
       "app_callers": [
@@ -10607,7 +10659,7 @@
     },
     "chat.set_bound_loop": {
       "app_callers": [],
-      "declared_by": "notebooklm._loop_bound.LoopBoundPrimitive",
+      "declared_by": "notebooklm._chat.api.ChatAPI",
       "disposition": "local_only",
       "operations": [],
       "reason": "client lifecycle helper; binds loop-affine local state"

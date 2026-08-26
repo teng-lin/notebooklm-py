@@ -96,8 +96,8 @@ def _attribute_parts(node: ast.AST) -> tuple[str, ...]:
 # is the sole authority for the natives it dispatches, so the walker reads the spec literally
 # and reports anything it cannot resolve statically as an unresolved dispatch.
 _ROW_CONSTRUCTORS = frozenset({"CodecBinding", "CustomBinding"})
-_SPEC_CONSTRUCTORS = frozenset({"NativeCallSpec", "NativeChoice"})
-_SPEC_FACTORIES = frozenset({"constant", "keyed"})
+_SPEC_CONSTRUCTORS = frozenset({"NativeCallSpec", "RpcNative", "StreamNative"})
+_SPEC_FACTORIES = frozenset({"constant", "keyed", "streamed"})
 
 NativeName = tuple[str, str | None]
 
@@ -190,7 +190,13 @@ def _definition_name(call: ast.Call) -> str | None:
 
 
 class _SpecResolver:
-    """Resolve ``NativeCallSpec``/``NativeChoice`` literals to ``(method, variant)`` names."""
+    """Resolve ``NativeCallSpec``/``RpcNative`` literals to ``(method, variant)`` names.
+
+    A ``StreamNative`` resolves to no native at all: a streamed verb is not a
+    method on the wire enum and never enters the policy ledger's native set.
+    Resolving it to the empty set — rather than failing — is what keeps a
+    stream-only row a *resolved* dispatch with zero declared natives.
+    """
 
     def __init__(self, spec_bindings: Mapping[str, tuple[NativeName, ...] | None]) -> None:
         self._spec_bindings = spec_bindings
@@ -235,12 +241,16 @@ class _SpecResolver:
         parts = _attribute_parts(call.func)
         last = parts[-1] if parts else ""
         if (
-            last == "NativeChoice"
+            last == "RpcNative"
             or last == "constant"
             and len(parts) >= 2
             and parts[-2] == "NativeCallSpec"
         ):
             self._choice(_call_argument(call, 0, "method"), _call_argument(call, 1, "variant"))
+        elif last == "StreamNative" or (
+            last == "streamed" and len(parts) >= 2 and parts[-2] == "NativeCallSpec"
+        ):
+            return
         elif last == "keyed" and len(parts) >= 2 and parts[-2] == "NativeCallSpec":
             has_selector_keyword = any(item.arg == "selector" for item in call.keywords)
             choices = list(call.args if has_selector_keyword else call.args[1:])
@@ -840,8 +850,11 @@ def derive_row_authorities(
 
 
 def audit_row_bindings(rows: Sequence[BindingRowSite] | None = None) -> list[str]:
-    """Fail closed when a binding row's declared natives disagree with the policy ledger."""
-    from notebooklm._web.policy import WEB_CALL_POLICY_BINDINGS
+    """Fail closed when a binding row's declared natives disagree with the reviewed intent."""
+    if __package__:
+        from ._web_policy_intent import WEB_CALL_POLICY_BINDINGS
+    else:  # pragma: no cover - direct script execution
+        from _web_policy_intent import WEB_CALL_POLICY_BINDINGS
 
     errors: list[str] = []
     seen: dict[Operation, str] = {}
@@ -981,7 +994,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/transport.py", "_backend", "BackendContractError"),
         ("_web/transport.py", "_backend", "BackendDeadlineExceededError"),
         ("_web/transport.py", "_binding", "CodecPayload"),
-        ("_web/transport.py", "_binding", "NativeChoice"),
+        ("_web/transport.py", "_binding", "RpcNative"),
         ("_web/transport.py", "_binding", "StreamPayload"),
         ("_web/transport.py", "_binding", "StreamSpec"),
         ("_artifact/listing.py", "_projectors", "project_artifact"),
@@ -1356,7 +1369,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/bindings/research.py", "_binding", "Binding"),
         ("_web/bindings/research.py", "_binding", "CodecBinding"),
         ("_web/bindings/research.py", "_binding", "NativeCallSpec"),
-        ("_web/bindings/research.py", "_binding", "NativeChoice"),
+        ("_web/bindings/research.py", "_binding", "RpcNative"),
         ("_web/bindings/research.py", "_records", "RESEARCH_CANCEL_DEF"),
         ("_web/bindings/research.py", "_records", "RESEARCH_IMPORT_DEF"),
         ("_web/bindings/research.py", "_records", "RESEARCH_POLL_DEF"),
@@ -1603,7 +1616,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_web/bindings/studio.py", "_binding", "Binding"),
         ("_web/bindings/studio.py", "_binding", "CodecBinding"),
         ("_web/bindings/studio.py", "_binding", "NativeCallSpec"),
-        ("_web/bindings/studio.py", "_binding", "NativeChoice"),
+        ("_web/bindings/studio.py", "_binding", "RpcNative"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_CATALOG_DEF"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_DELETE_DEF"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_DOWNLOAD_DEF"),
@@ -1710,38 +1723,31 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_chat/api.py", "_projectors", "project_chat_saved_note"),
         ("_chat/api.py", "_projectors", "project_chat_settings"),
         ("_chat/api.py", "_projectors", "project_chat_turns_legacy"),
-        ("_chat/api.py", "_records", "ChatAskInput"),
-        ("_chat/api.py", "_records", "ChatAskResultRecord"),
         ("_chat/api.py", "_records", "ChatConfigureAction"),
         ("_chat/api.py", "_records", "ChatConfigureInput"),
-        ("_chat/api.py", "_records", "ChatGetHistoryResult"),
-        ("_chat/api.py", "_records", "ChatHistoryPairRecord"),
         ("_chat/api.py", "_records", "ChatSaveNoteInput"),
         ("_chat/history.py", "_records", "ChatGetHistoryResult"),
         ("_chat/history.py", "_records", "ChatTurnDecodeErrorRecord"),
-        ("_chat/notes.py", "_projectors", "chat_reference_record"),
-        ("_chat/service.py", "_backend", "BackendAdapter"),
-        ("_chat/service.py", "_records", "CHAT_ASK_DEF"),
-        ("_chat/service.py", "_records", "CHAT_CONFIGURE_DEF"),
-        ("_chat/service.py", "_records", "CHAT_DELETE_HISTORY_DEF"),
-        ("_chat/service.py", "_records", "CHAT_GET_CONVERSATION_DEF"),
-        ("_chat/service.py", "_records", "CHAT_GET_HISTORY_DEF"),
-        ("_chat/service.py", "_records", "CHAT_SAVE_NOTE_DEF"),
-        ("_chat/service.py", "_records", "ChatAskInput"),
-        ("_chat/service.py", "_records", "ChatAskResultRecord"),
-        ("_chat/service.py", "_records", "ChatConfigureInput"),
-        ("_chat/service.py", "_records", "ChatConfigureResult"),
-        ("_chat/service.py", "_records", "ChatDeleteHistoryInput"),
-        ("_chat/service.py", "_records", "ChatGetConversationInput"),
-        ("_chat/service.py", "_records", "ChatGetHistoryInput"),
-        ("_chat/service.py", "_records", "ChatGetHistoryResult"),
-        ("_chat/service.py", "_records", "ChatSaveNoteInput"),
-        ("_chat/service.py", "_records", "ChatSaveNoteResult"),
-        ("_chat/stream_decode.py", "_records", "ChatNextStepRecord"),
-        ("_chat/stream_decode.py", "_records", "ChatReferenceRecord"),
-        ("_chat/stream_decode.py", "_records", "ChatStreamAnswerRecord"),
-        ("_chat/stream_decode.py", "_records", "ChatTurnKeyRecord"),
-        ("_chat/wire.py", "_records", "ChatHistoryPairRecord"),
+        ("_chat/workflow.py", "_backend", "BackendAdapter"),
+        ("_chat/workflow.py", "_records", "CHAT_ASK_DEF"),
+        ("_chat/workflow.py", "_records", "CHAT_CONFIGURE_DEF"),
+        ("_chat/workflow.py", "_records", "CHAT_DELETE_HISTORY_DEF"),
+        ("_chat/workflow.py", "_records", "CHAT_GET_CONVERSATION_DEF"),
+        ("_chat/workflow.py", "_records", "CHAT_GET_HISTORY_DEF"),
+        ("_chat/workflow.py", "_records", "CHAT_SAVE_NOTE_DEF"),
+        ("_chat/workflow.py", "_records", "ChatAskInput"),
+        ("_chat/workflow.py", "_records", "ChatAskOutcomeRecord"),
+        ("_chat/workflow.py", "_records", "ChatAskResultRecord"),
+        ("_chat/workflow.py", "_records", "ChatCachedTurnRecord"),
+        ("_chat/workflow.py", "_records", "ChatConfigureInput"),
+        ("_chat/workflow.py", "_records", "ChatConfigureResult"),
+        ("_chat/workflow.py", "_records", "ChatDeleteHistoryInput"),
+        ("_chat/workflow.py", "_records", "ChatGetConversationInput"),
+        ("_chat/workflow.py", "_records", "ChatGetHistoryInput"),
+        ("_chat/workflow.py", "_records", "ChatGetHistoryResult"),
+        ("_chat/workflow.py", "_records", "ChatHistoryPairRecord"),
+        ("_chat/workflow.py", "_records", "ChatSaveNoteInput"),
+        ("_chat/workflow.py", "_records", "ChatSaveNoteResult"),
         ("_projectors.py", "_records", "ChatAskResultRecord"),
         ("_projectors.py", "_records", "ChatGetHistoryResult"),
         ("_projectors.py", "_records", "ChatLegacyMappingRecord"),
@@ -1758,7 +1764,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/chat.py", "_binding", "CustomBinding"),
         ("_web/bindings/chat.py", "_binding", "ErrorMode"),
         ("_web/bindings/chat.py", "_binding", "NativeCallSpec"),
-        ("_web/bindings/chat.py", "_binding", "NativeChoice"),
+        ("_web/bindings/chat.py", "_binding", "RpcNative"),
         ("_web/bindings/chat.py", "_binding", "RowInvoker"),
         ("_web/bindings/chat.py", "_binding", "StreamPayload"),
         ("_web/bindings/chat.py", "_binding", "StreamSpec"),
@@ -1774,6 +1780,9 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/chat.py", "_records", "ChatConfigureInput"),
         ("_web/bindings/chat.py", "codec", "chat"),
         ("_web/codec/chat.py", "_binding", "CodecPayload"),
+        ("_web/codec/chat_stream.py", "_records", "ChatNextStepRecord"),
+        ("_web/codec/chat_stream.py", "_records", "ChatReferenceRecord"),
+        ("_web/codec/chat_stream.py", "_records", "ChatTurnKeyRecord"),
         ("_web/codec/chat.py", "_records", "ChatAskInput"),
         ("_web/codec/chat.py", "_records", "ChatConfigureAction"),
         ("_web/codec/chat.py", "_records", "ChatConfigureInput"),
@@ -1881,6 +1890,7 @@ _REVIEWED_BACKEND_IMPORT_MODULES = frozenset(
         "_web.backend",
         "_web.codec.settings",
         "backend",
+        "codec.chat_stream",
         "codec.sharing",
         "codec.research",
         "codec",
@@ -1989,12 +1999,12 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_source_service.py:SourceService.get_guide",
         "_source_service.py:SourceService.refresh",
         "_source_service.py:SourceService.update",
-        "_chat/service.py:ChatService.ask",
-        "_chat/service.py:ChatService.configure",
-        "_chat/service.py:ChatService.delete_history",
-        "_chat/service.py:ChatService.get_conversation_id",
-        "_chat/service.py:ChatService.get_history",
-        "_chat/service.py:ChatService.save_note",
+        "_chat/workflow.py:ChatWorkflowService.ask",
+        "_chat/workflow.py:ChatWorkflowService.configure",
+        "_chat/workflow.py:ChatWorkflowService.delete_conversation",
+        "_chat/workflow.py:ChatWorkflowService.get_conversation_id",
+        "_chat/workflow.py:ChatWorkflowService.get_history",
+        "_chat/workflow.py:ChatWorkflowService.save_note",
         "_source_service.py:SourceService.wait_snapshot",
     }
 )
@@ -2182,7 +2192,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_web/bindings/primitives.py", "_binding", "Binding"),
         ("_web/bindings/primitives.py", "_binding", "CodecBinding"),
         ("_web/bindings/primitives.py", "_binding", "NativeCallSpec"),
-        ("_web/bindings/primitives.py", "_binding", "NativeChoice"),
+        ("_web/bindings/primitives.py", "_binding", "RpcNative"),
         ("_web/bindings/primitives.py", "_records", "LABEL_ALLOCATE_DEF"),
         ("_web/bindings/primitives.py", "_records", "LABEL_MUTATE_DEF"),
         ("_web/bindings/primitives.py", "_records", "LabelAllocateInput"),
@@ -2277,7 +2287,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_notebook_mutation_service.py", "_records", "NotebookPatchInput"),
         ("_web/bindings/notebooks.py", "_backend", "BackendError"),
         ("_web/bindings/notebooks.py", "_backend", "BackendErrorReason"),
-        ("_web/bindings/notebooks.py", "_binding", "NativeChoice"),
+        ("_web/bindings/notebooks.py", "_binding", "RpcNative"),
         ("_web/bindings/notebooks.py", "_records", "NOTEBOOK_PATCH_DEF"),
         ("_web/bindings/notebooks.py", "_records", "NotebookGetInput"),
         ("_web/codec/notebooks.py", "_backend", "BackendError"),
@@ -2322,6 +2332,147 @@ ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
         "_notebook_mutation_service.py:NotebookMutationService._notebook_limit_error",
         "_notebook_mutation_service.py:NotebookMutationService.create.allocate",
         "_notebook_mutation_service.py:NotebookMutationService.create.probe",
+    }
+)
+
+
+# P10 R2.2: ``chat.ask`` becomes a service-owned workflow over two leaves — the
+# streamed ``CHAT_STREAM_ANSWER`` primitive row and the conversation-id readback
+# — so the custom row, its handler imports and the ``StreamSpec`` family go, and
+# ``WebTransport`` gains the encoded stream data it materialises per attempt.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_web/bindings/chat.py", "_backend", "BackendContractError"),
+        ("_web/bindings/chat.py", "_backend", "BackendDeadlineExceededError"),
+        ("_web/bindings/chat.py", "_binding", "CustomBinding"),
+        ("_web/bindings/chat.py", "_binding", "ErrorMode"),
+        ("_web/bindings/chat.py", "_binding", "RowInvoker"),
+        ("_web/bindings/chat.py", "_binding", "StreamPayload"),
+        ("_web/bindings/chat.py", "_binding", "StreamSpec"),
+        ("_web/bindings/chat.py", "_records", "CHAT_ASK_DEF"),
+        ("_web/bindings/chat.py", "_records", "ChatAskInput"),
+        ("_web/bindings/chat.py", "_records", "ChatAskResultRecord"),
+        ("_web/bindings/notebooks.py", "_binding", "RpcNative"),
+        ("_web/codec/chat.py", "_records", "ChatAskInput"),
+        ("_web/transport.py", "_binding", "StreamPayload"),
+        ("_web/transport.py", "_binding", "StreamSpec"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_chat/workflow.py", "_backend", "BackendDeadlineExceededError"),
+        ("_chat/workflow.py", "_backend", "BackendError"),
+        ("_chat/workflow.py", "_backend", "BackendErrorReason"),
+        ("_chat/workflow.py", "_backend", "mark_backend_outcome_unknown"),
+        ("_chat/workflow.py", "_backend", "rebind_operation"),
+        ("_chat/workflow.py", "_backend", "require_leaves"),
+        ("_chat/workflow.py", "_records", "CHAT_STREAM_ANSWER_DEF"),
+        ("_chat/workflow.py", "_records", "ChatStreamAnswerInput"),
+        ("_chat/workflow.py", "_records", "ChatStreamAnswerRecord"),
+        ("_web/bindings/notebooks.py", "_binding", "NativeChoice"),
+        ("_web/bindings/primitives.py", "_records", "CHAT_STREAM_ANSWER_DEF"),
+        ("_web/bindings/primitives.py", "codec", "chat"),
+        ("_web/bindings/research.py", "_binding", "NativeChoice"),
+        ("_web/codec/chat.py", "_binding", "StreamRequestPayload"),
+        ("_web/codec/chat.py", "_records", "ChatStreamAnswerInput"),
+        ("_web/codec/chat.py", "_records", "ChatStreamResult"),
+        ("_web/registry.py", "_records", "CHAT_STREAM_ANSWER_DEF"),
+        ("_web/transport.py", "_binding", "StreamNative"),
+        ("_web/transport.py", "_binding", "StreamRequestPayload"),
+        ("_web/transport.py", "codec.chat_stream", "ChatStreamRequestData"),
+    }
+)
+# P10 R2.5 (invariant I7): ``_web/registry.py`` derives its directly supported
+# definition set from ``WEB_BINDING_ROWS`` instead of naming all 80 ``*_DEF``
+# objects, so those imports are gone. The twelve service-owned definitions stay
+# imported — no row carries them.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_web/registry.py", "_records", "ARTIFACT_CATALOG_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_DELETE_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_DOWNLOAD_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_EXPORT_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_AUDIO_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_DATA_TABLE_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_FLASHCARDS_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_INFOGRAPHIC_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_MIND_MAP_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_QUIZ_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_REPORT_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_SLIDE_DECK_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GENERATE_VIDEO_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_GET_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_LIST_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_PATCH_TITLE_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_RETRY_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_REVISE_SLIDE_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_SUGGEST_REPORTS_DEF"),
+        ("_web/registry.py", "_records", "ARTIFACT_WAIT_DEF"),
+        ("_web/registry.py", "_records", "CHAT_CONFIGURE_DEF"),
+        ("_web/registry.py", "_records", "CHAT_DELETE_HISTORY_DEF"),
+        ("_web/registry.py", "_records", "CHAT_GET_CONVERSATION_DEF"),
+        ("_web/registry.py", "_records", "CHAT_GET_HISTORY_DEF"),
+        ("_web/registry.py", "_records", "CHAT_SAVE_NOTE_DEF"),
+        ("_web/registry.py", "_records", "CHAT_STREAM_ANSWER_DEF"),
+        ("_web/registry.py", "_records", "COLLECTION_DELETE_DEF"),
+        ("_web/registry.py", "_records", "COLLECTION_GET_DEF"),
+        ("_web/registry.py", "_records", "COLLECTION_LIST_DEF"),
+        ("_web/registry.py", "_records", "LABEL_ALLOCATE_DEF"),
+        ("_web/registry.py", "_records", "LABEL_DELETE_DEF"),
+        ("_web/registry.py", "_records", "LABEL_GENERATE_DEF"),
+        ("_web/registry.py", "_records", "LABEL_GET_DEF"),
+        ("_web/registry.py", "_records", "LABEL_LIST_DEF"),
+        ("_web/registry.py", "_records", "LABEL_MUTATE_DEF"),
+        ("_web/registry.py", "_records", "LEGACY_SHARE_ARTIFACT_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_DELETE_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_GENERATE_INTERACTIVE_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_GENERATE_NOTE_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_GET_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_LIST_DEF"),
+        ("_web/registry.py", "_records", "MIND_MAP_UPDATE_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_ALLOCATE_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_DELETE_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_DESCRIBE_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_GET_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_LIST_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_PATCH_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_REMOVE_RECENT_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
+        ("_web/registry.py", "_records", "NOTEBOOK_SUMMARIZE_DEF"),
+        ("_web/registry.py", "_records", "NOTE_CREATE_DEF"),
+        ("_web/registry.py", "_records", "NOTE_DELETE_DEF"),
+        ("_web/registry.py", "_records", "NOTE_GET_DEF"),
+        ("_web/registry.py", "_records", "NOTE_LIST_DEF"),
+        ("_web/registry.py", "_records", "NOTE_UPDATE_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_CANCEL_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_IMPORT_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_POLL_DEF"),
+        ("_web/registry.py", "_records", "RESEARCH_START_DEF"),
+        ("_web/registry.py", "_records", "SETTINGS_GET_DEF"),
+        ("_web/registry.py", "_records", "SETTINGS_GET_LIMITS_DEF"),
+        ("_web/registry.py", "_records", "SETTINGS_SET_LANGUAGE_DEF"),
+        ("_web/registry.py", "_records", "SHARING_GET_DEF"),
+        ("_web/registry.py", "_records", "SHARING_MUTATE_DEF"),
+        ("_web/registry.py", "_records", "SHARING_PATCH_VIEW_LEVEL_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_DRIVE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_FILE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_TEXT_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_URL_BATCH_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_ADD_URL_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_CHECK_FRESHNESS_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_DELETE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_GET_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_GET_FULLTEXT_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_GET_GUIDE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_LIST_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_PATCH_TITLE_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_REFRESH_DEF"),
+        ("_web/registry.py", "_records", "SOURCE_WAIT_DEF"),
+    }
+)
+ACTIVE_BACKEND_INVOKE_SITES |= frozenset(
+    {
+        "_chat/workflow.py:ChatWorkflowService._read_back_conversation_id",
     }
 )
 
@@ -3139,11 +3290,11 @@ def _invoker_call_count(tree: ast.Module, node: ast.AST, spec_key: str) -> int:
 
 
 def _native_choice_count(node: ast.AST, method: RPCMethod) -> int:
-    """Count ``NativeChoice(RPCMethod.X …)``/``NativeCallSpec.constant(RPCMethod.X …)`` literals."""
+    """Count ``RpcNative(RPCMethod.X …)``/``NativeCallSpec.constant(RPCMethod.X …)`` literals."""
     count = 0
     for call in (item for item in ast.walk(node) if isinstance(item, ast.Call)):
         parts = _attribute_parts(call.func)
-        if not parts or parts[-1] not in {"NativeChoice", "constant"}:
+        if not parts or parts[-1] not in {"RpcNative", "constant"}:
             continue
         if parts[-1] == "constant" and parts[-2:-1] != ("NativeCallSpec",):
             continue
