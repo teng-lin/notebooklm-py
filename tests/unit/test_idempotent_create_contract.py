@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._idempotency import (
     _CreateResultKind,
     _IdempotentCreateResult,
@@ -18,7 +17,8 @@ from notebooklm._idempotency_create import (
     idempotent_create,
     semantic_may_have_committed,
 )
-from notebooklm._operations import Operation
+from notebooklm._semantic.backend import BackendError, BackendErrorReason
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     SOURCE_GET_DEF,
     SOURCE_LIST_DEF,

@@ -3,13 +3,13 @@
 import logging
 from typing import Any
 
-from ._backend import BackendAdapter, BackendError
 from ._deadline import RuntimeDeadlineFactory
 from ._notebook_metadata import (
     NotebookMetadataService,
     NotebookSourceLister,
 )
 from ._notebook_payloads import build_create_notebook_params as build_create_notebook_params
+from ._semantic.backend import BackendAdapter, BackendError
 from ._semantic.compat import project_backend_call, project_backend_error
 from ._semantic.projectors import (
     project_notebook,

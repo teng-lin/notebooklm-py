@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..._binding import CodecPayload
 from ..._row_adapters.notes import NoteRow
+from ..._semantic.binding import CodecPayload
 from ..._semantic.records import (
     MindMapRecord,
     NoteCreateInput,

@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import BackendContractError
-from notebooklm._binding import (
+from notebooklm._semantic.backend import BackendContractError
+from notebooklm._semantic.binding import (
     BindingTable,
     CodecPayload,
     CustomBinding,
@@ -23,7 +23,7 @@ from notebooklm._binding import (
     RpcNative,
     invoke_binding,
 )
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import SHARING_SET_PUBLIC_DEF, SharingSetPublicInput
 from notebooklm._web.backend import (
     ROW_COLLABORATOR_NAMES,

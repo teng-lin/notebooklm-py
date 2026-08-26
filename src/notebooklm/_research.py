@@ -15,7 +15,7 @@ requested source — a :class:`ResearchSource` or a loose mapping — into a
 neutral :class:`ResearchImportCandidate`, the projection of the service's
 records back onto :class:`ResearchTask` / :class:`ResearchStart` and the
 historical ``list[dict[str, str]]`` import shape, and the reconstruction of
-public exceptions from neutral :class:`~notebooklm._backend.BackendError`
+public exceptions from neutral :class:`~notebooklm._semantic.backend.BackendError`
 records. The service below sees none of it.
 """
 
@@ -26,8 +26,8 @@ from dataclasses import replace
 from typing import Any
 
 from . import research as _research_pub
-from ._backend import BackendAdapter
 from ._runtime.config import AUTO_READ_TIMEOUT, DEFAULT_TIMEOUT
+from ._semantic.backend import BackendAdapter
 from ._semantic.compat import project_backend_call
 from ._semantic.projectors import project_research_task
 from ._semantic.records import (

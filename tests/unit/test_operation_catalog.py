@@ -13,7 +13,7 @@ import pytest
 
 from notebooklm._app.generate import execute_generation
 from notebooklm._idempotency import IdempotencyPolicy, IdempotencyRegistry
-from notebooklm._operations import CallPolicy, Operation, OperationDef, OperationTier
+from notebooklm._semantic.operations import CallPolicy, Operation, OperationDef, OperationTier
 from notebooklm.rpc import RPCMethod
 from scripts import _operation_catalog_ast as catalog_ast
 from scripts import _operation_catalog_authorities as catalog_authorities

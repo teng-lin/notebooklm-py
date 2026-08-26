@@ -17,16 +17,16 @@ import pytest
 from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS
 from scripts.audit_operation_catalog import derive_workflow_natives
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from notebooklm._semantic.backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     UnsupportedOperationError,
     may_have_committed,
 )
-from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from notebooklm._operations import Operation
 from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     SOURCE_GET_DEF,
     SOURCE_PATCH_TITLE_DEF,

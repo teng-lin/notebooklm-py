@@ -19,8 +19,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..._binding import CodecPayload
 from ..._row_adapters.sources import SourceRow
+from ..._semantic.binding import CodecPayload
 from ..._semantic.records import SourceIdDiagnostics
 from ...rpc import RPCMethod, safe_index
 

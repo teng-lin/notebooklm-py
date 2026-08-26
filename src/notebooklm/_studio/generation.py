@@ -23,10 +23,10 @@ from __future__ import annotations
 
 from typing import Final, Protocol
 
-from .._backend import BackendContractError
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._env import get_default_language
-from .._operations import Operation
+from .._semantic.backend import BackendContractError
+from .._semantic.operations import Operation
 from .._semantic.records import (
     AudioGenerateInput,
     AudioGenerateRequest,

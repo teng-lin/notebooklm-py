@@ -26,12 +26,12 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._semantic.backend import (
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._binding import CodecBinding, CustomBinding, RpcNative
-from notebooklm._operations import Operation
+from notebooklm._semantic.binding import CodecBinding, CustomBinding, RpcNative
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     MIND_MAP_GENERATE_INTERACTIVE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,

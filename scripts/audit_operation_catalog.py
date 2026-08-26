@@ -16,9 +16,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from notebooklm._binding import Binding, CodecBinding, OperationDisposition, RpcNative
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyRegistry
-from notebooklm._operations import CallPolicy, Operation, OperationDef, OperationTier
+from notebooklm._semantic.binding import Binding, CodecBinding, OperationDisposition, RpcNative
+from notebooklm._semantic.operations import CallPolicy, Operation, OperationDef, OperationTier
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 from notebooklm.rpc import RPCMethod

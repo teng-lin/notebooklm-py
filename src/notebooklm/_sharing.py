@@ -1,7 +1,7 @@
 """Sharing operations API."""
 
-from ._backend import BackendAdapter
 from ._deadline import RuntimeDeadlineFactory
+from ._semantic.backend import BackendAdapter
 from ._semantic.compat import project_backend_call
 from ._semantic.projectors import project_share_status
 from ._semantic.records import SharePermissionLevel, ShareViewScope

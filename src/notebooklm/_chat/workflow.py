@@ -29,7 +29,11 @@ import weakref
 from collections.abc import Sequence
 from types import MappingProxyType
 
-from .._backend import (
+from .._conversation_cache import ConversationCache
+from .._deadline import RuntimeDeadline
+from .._loop_bound import LoopBoundPrimitive
+from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
+from .._semantic.backend import (
     BackendAdapter,
     BackendDeadlineExceededError,
     BackendError,
@@ -38,10 +42,6 @@ from .._backend import (
     rebind_operation,
     require_leaves,
 )
-from .._conversation_cache import ConversationCache
-from .._deadline import RuntimeDeadline
-from .._loop_bound import LoopBoundPrimitive
-from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._semantic.records import (
     CHAT_ASK_DEF,
     CHAT_CONFIGURE_DEF,

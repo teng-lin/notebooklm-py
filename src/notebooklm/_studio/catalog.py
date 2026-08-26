@@ -13,15 +13,15 @@ from __future__ import annotations
 
 import logging
 
-from .._backend import (
+from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from .._semantic.backend import (
     BackendAdapter,
     BackendError,
     BackendErrorReason,
     rebind_operation,
     require_leaves,
 )
-from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from .._operations import Operation
+from .._semantic.operations import Operation
 from .._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     MIND_MAP_LIST_DEF,

@@ -34,17 +34,17 @@ from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS
 from scripts.audit_operation_catalog import derive_workflow_natives
 
 from notebooklm._app.errors import ErrorCategory, classify
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy, mark_unconfirmed
+from notebooklm._row_adapters.sources import unwrap_add_source_rows
+from notebooklm._semantic.backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     UnsupportedOperationError,
 )
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy, mark_unconfirmed
-from notebooklm._operations import Operation
-from notebooklm._row_adapters.sources import unwrap_add_source_rows
 from notebooklm._semantic.compat import project_backend_error, project_source_add_failure
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_LIST_DEF,

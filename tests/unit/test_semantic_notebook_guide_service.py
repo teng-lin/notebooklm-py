@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     NOTEBOOK_DESCRIBE_DEF,
     NOTEBOOK_SUMMARIZE_DEF,

@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable
 
-from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from .._semantic.backend import BackendAdapter
 from .._semantic.records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,

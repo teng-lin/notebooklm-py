@@ -11,17 +11,17 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._operations import Operation
 from notebooklm._semantic.compat import (
     project_backend_call,
     project_backend_error,
     project_local_not_found,
 )
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import SourceAddFailureKind, SourceAddFailureRecord
 from notebooklm._web.errors import translate_web_error
 from notebooklm.exceptions import (

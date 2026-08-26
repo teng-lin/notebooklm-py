@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm.rpc import RPCMethod
 
 if __package__:

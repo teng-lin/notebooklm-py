@@ -7,10 +7,10 @@ import logging
 import reprlib
 from typing import Any
 
-from ..._binding import CodecPayload
 from ..._env import get_default_language
-from ..._operations import Operation
 from ..._row_adapters.artifacts import MIND_MAP_LEAF_ABSENT, unwrap_mind_map_generation_leaf
+from ..._semantic.binding import CodecPayload
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     RAW_MIND_MAP_ROWS,
     MindMapDeleteInput,

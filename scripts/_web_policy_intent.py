@@ -27,7 +27,7 @@ from types import MappingProxyType
 from typing import Final
 
 from notebooklm._idempotency import IdempotencyPolicy
-from notebooklm._operations import CallPolicy, Operation
+from notebooklm._semantic.operations import CallPolicy, Operation
 from notebooklm.rpc import RPCMethod
 
 

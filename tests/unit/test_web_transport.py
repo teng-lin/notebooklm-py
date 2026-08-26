@@ -7,10 +7,10 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import BackendContractError, BackendDeadlineExceededError
-from notebooklm._binding import CodecPayload, RpcNative
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
+from notebooklm._semantic.backend import BackendContractError, BackendDeadlineExceededError
+from notebooklm._semantic.binding import CodecPayload, RpcNative
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import NOTEBOOK_LIST_DEF
 from notebooklm._web.codec.chat_stream import ChatStreamRequestData
 from notebooklm._web.transport import WebRequest, WebStreamRequest, WebTransport

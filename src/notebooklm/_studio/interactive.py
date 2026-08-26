@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from .._backend import BackendAdapter
 from .._deadline import RuntimeDeadline
+from .._semantic.backend import BackendAdapter
 from .._semantic.records import (
     ARTIFACT_GENERATE_FLASHCARDS_DEF,
     ARTIFACT_GENERATE_QUIZ_DEF,

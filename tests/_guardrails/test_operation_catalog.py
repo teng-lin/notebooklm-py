@@ -24,7 +24,7 @@ from scripts.audit_public_api_compat import CLIENT_NAMESPACE_ATTRIBUTES
 
 from notebooklm._app.generate import execute_generation
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY
-from notebooklm._operations import CallPolicy, Operation
+from notebooklm._semantic.operations import CallPolicy, Operation
 from notebooklm.rpc import RPCMethod
 
 pytestmark = pytest.mark.repo_lint
@@ -73,8 +73,8 @@ def test_backend_dataflow_is_bounded_to_migrated_services() -> None:
 
     for statement in (
         "from .._web import WebRpcBackend",
-        "from . import _backend",
-        "import notebooklm._backend",
+        "from . import _semantic",
+        "import notebooklm._semantic.backend",
     ):
         import_mutation = notebooks + f"\n{statement}\n"
         errors = audit_inert_p1_backend_dataflow({"_notebooks.py": import_mutation})

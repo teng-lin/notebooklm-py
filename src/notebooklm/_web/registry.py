@@ -16,8 +16,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final
 
-from .._binding import Binding, OperationDisposition
-from .._operations import Operation, OperationDef
+from .._semantic.binding import Binding, OperationDisposition
+from .._semantic.operations import Operation, OperationDef
 from .._semantic.records import (
     ARTIFACT_GENERATE_MIND_MAP_DEF,
     ARTIFACT_GET_DEF,

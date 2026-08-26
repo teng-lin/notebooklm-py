@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._notebooks import NotebooksAPI
-from notebooklm._operations import Operation
+from notebooklm._semantic.backend import BackendError, BackendErrorReason
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,

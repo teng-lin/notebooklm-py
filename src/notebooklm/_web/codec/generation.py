@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from ..._binding import CodecPayload
-from ..._operations import Operation
+from ..._semantic.binding import CodecPayload
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     AudioGenerateInput,
     AudioGenerateResult,

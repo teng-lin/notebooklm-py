@@ -12,8 +12,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from .._backend import BackendContractError, BackendError
-from .._operations import Operation
+from .._semantic.backend import BackendContractError, BackendError
+from .._semantic.operations import Operation
 from .._semantic.records import SourceAddFailureKind, SourceAddFailureRecord
 from .._transport_errors import (
     TransportAuthExpired,

@@ -23,13 +23,13 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._semantic.backend import (
     BackendCapabilities,
     UnsupportedOperationError,
     require_leaves,
 )
-from notebooklm._binding import OperationDisposition
-from notebooklm._operations import Operation, OperationTier
+from notebooklm._semantic.binding import OperationDisposition
+from notebooklm._semantic.operations import Operation, OperationTier
 from notebooklm._semantic.records import NOTEBOOK_CREATE_DEF
 from notebooklm._semantic.records.notebook import NotebookCreateInput
 from notebooklm._web.registry import (

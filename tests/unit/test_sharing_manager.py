@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._notebooks import NotebooksAPI
-from notebooklm._operations import CallPolicy, Operation
+from notebooklm._semantic.backend import BackendError, BackendErrorReason
+from notebooklm._semantic.operations import CallPolicy, Operation
 from notebooklm._semantic.records.sharing import (
     LEGACY_SHARE_ARTIFACT_DEF,
     LegacyShareArtifactInput,

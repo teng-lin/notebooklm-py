@@ -29,7 +29,9 @@ import httpx
 import pytest
 from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS, WEB_CALL_POLICY_BINDINGS
 
-from notebooklm._backend import (
+from notebooklm._chat.workflow import ChatWorkflowService
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendDeadlineExceededError,
     BackendError,
@@ -37,10 +39,13 @@ from notebooklm._backend import (
     UnsupportedOperationError,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, NativeCallSpec, StreamNative, StreamRequestPayload
-from notebooklm._chat.workflow import ChatWorkflowService
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation, OperationTier
+from notebooklm._semantic.binding import (
+    CodecBinding,
+    NativeCallSpec,
+    StreamNative,
+    StreamRequestPayload,
+)
+from notebooklm._semantic.operations import Operation, OperationTier
 from notebooklm._semantic.records import (
     CHAT_ASK_DEF,
     CHAT_STREAM_ANSWER_DEF,

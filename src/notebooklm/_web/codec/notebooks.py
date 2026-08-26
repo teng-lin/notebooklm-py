@@ -8,11 +8,11 @@ import types
 from datetime import datetime, timezone
 from typing import Any, cast
 
-from ..._backend import BackendError, BackendErrorReason
-from ..._binding import CodecPayload
-from ..._operations import Operation
 from ..._row_adapters.chat import unwrap_chat_settings
 from ..._row_adapters.notebooks import ProjectRow
+from ..._semantic.backend import BackendError, BackendErrorReason
+from ..._semantic.binding import CodecPayload
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     NotebookAllocateInput,
     NotebookAllocateResult,

@@ -35,19 +35,19 @@ from scripts.audit_operation_catalog import (
 from notebooklm import artifacts as artifact_helpers
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._artifact.polling import ArtifactPollingService
-from notebooklm._backend import (
-    BackendDeadlineExceededError,
-    BackendError,
-    BackendErrorReason,
-)
 from notebooklm._deadline import RuntimeDeadline
 from notebooklm._idempotency import (
     IDEMPOTENCY_REGISTRY,
     IdempotencyPolicy,
     resolve_effective_disable_internal_retries,
 )
-from notebooklm._operations import CallPolicy, Operation, OperationDef
+from notebooklm._semantic.backend import (
+    BackendDeadlineExceededError,
+    BackendError,
+    BackendErrorReason,
+)
 from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import CallPolicy, Operation, OperationDef
 from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,

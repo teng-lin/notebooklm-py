@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, call
 import pytest
 
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     SOURCE_ADD_FILE_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,

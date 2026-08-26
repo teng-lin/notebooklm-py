@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from ..._backend import BackendAdapter
 from ..._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ...exceptions import ValidationError
+from ..backend import BackendAdapter
 from ..records import (
     ARTIFACT_SUGGEST_REPORTS_DEF,
     NOTEBOOK_SUGGEST_PROMPTS_DEF,

@@ -16,15 +16,15 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._semantic.backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, DeadlineMode, RpcNative
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
+from notebooklm._semantic.binding import CodecBinding, DeadlineMode, RpcNative
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,

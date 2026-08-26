@@ -6,7 +6,6 @@ import logging
 import reprlib
 from typing import Any
 
-from ..._binding import CodecPayload, StreamRequestPayload
 from ..._notebook_payloads import build_get_notebook_params
 from ..._row_adapters.chat import (
     ConversationTurnRow,
@@ -16,6 +15,7 @@ from ..._row_adapters.chat import (
     unwrap_last_conversation_id,
 )
 from ..._row_adapters.notes import NoteRow
+from ..._semantic.binding import CodecPayload, StreamRequestPayload
 from ..._semantic.records import (
     ChatConfigureAction,
     ChatConfigureInput,

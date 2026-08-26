@@ -19,16 +19,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._collections import CollectionsAPI
+from notebooklm._labels import LabelsAPI
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendError,
     BackendErrorReason,
     UnsupportedOperationError,
 )
-from notebooklm._collections import CollectionsAPI
-from notebooklm._labels import LabelsAPI
-from notebooklm._operations import CallPolicy, Operation
 from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import CallPolicy, Operation
 from notebooklm._semantic.projectors import project_collection, project_label
 from notebooklm._semantic.records import (
     COLLECTION_CREATE_DEF,

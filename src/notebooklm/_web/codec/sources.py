@@ -10,9 +10,6 @@ import types
 from collections.abc import Sequence
 from typing import Any
 
-from ..._backend import BackendContractError, BackendError, BackendErrorReason
-from ..._binding import CodecPayload
-from ..._operations import Operation
 from ..._row_adapters.sources import (
     SourceFulltextRow,
     SourceGuideRow,
@@ -20,6 +17,9 @@ from ..._row_adapters.sources import (
     interpret_source_freshness,
     unwrap_add_source_rows,
 )
+from ..._semantic.backend import BackendContractError, BackendError, BackendErrorReason
+from ..._semantic.binding import CodecPayload
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     SourceDeleteInput,
     SourceDeleteResult,

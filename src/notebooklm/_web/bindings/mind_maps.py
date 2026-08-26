@@ -32,14 +32,14 @@ from typing import Any
 
 import httpx
 
-from ..._backend import BackendError, BackendErrorReason
-from ..._binding import (
+from ..._semantic.backend import BackendError, BackendErrorReason
+from ..._semantic.binding import (
     Binding,
     CodecBinding,
     NativeCallSpec,
     NativeChoice,
 )
-from ..._operations import Operation
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_DEF,

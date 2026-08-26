@@ -2,7 +2,7 @@
 
 Consumes the private semantic port: every wire call this domain makes is one
 typed :mod:`notebooklm._semantic.records` operation invoked on a
-:class:`~notebooklm._backend.BackendAdapter`.  What stays here is the part that
+:class:`~notebooklm._semantic.backend.BackendAdapter`.  What stays here is the part that
 is not protocol-specific -- task selection and ambiguity, the wait loop's
 deadline and cadence, and the import batch's provenance validation, idempotency
 pre-filter, and timeout reconciliation.
@@ -29,15 +29,7 @@ import time
 from collections.abc import Sequence
 from typing import Any, Protocol
 
-from ..._backend import (
-    BACKEND_STATUS_DIAGNOSTIC,
-    BackendAdapter,
-    BackendError,
-    BackendErrorReason,
-    BackendStatus,
-)
 from ..._deadline import RuntimeDeadline
-from ..._operations import OperationDef
 from ..._research_import import (
     _import_research_read_timeout,
     _merge_imported_sources,
@@ -54,6 +46,14 @@ from ..._runtime.config import (
     MIN_IMPORT_RESEARCH_ATTEMPT_TIMEOUT,
 )
 from ...exceptions import AmbiguousResearchTaskError, ResearchTimeoutError
+from ..backend import (
+    BACKEND_STATUS_DIAGNOSTIC,
+    BackendAdapter,
+    BackendError,
+    BackendErrorReason,
+    BackendStatus,
+)
+from ..operations import OperationDef
 from ..records import (
     RESEARCH_CANCEL_DEF,
     RESEARCH_IMPORT_DEF,

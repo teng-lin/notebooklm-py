@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._binding import CodecBinding, CustomBinding
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from notebooklm._operations import Operation
+from notebooklm._semantic.binding import CodecBinding, CustomBinding
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     SOURCE_WAIT_DEF,
     SourceWaitSnapshotInput,

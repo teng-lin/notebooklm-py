@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-from .._backend import (
+from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from .._semantic.backend import (
     BackendAdapter,
     BackendDeadlineExceededError,
     BackendError,
@@ -13,8 +14,7 @@ from .._backend import (
     rebind_operation,
     require_leaves,
 )
-from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
-from .._operations import Operation
+from .._semantic.operations import Operation
 from .._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,

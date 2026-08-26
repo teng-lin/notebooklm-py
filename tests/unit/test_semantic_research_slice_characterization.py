@@ -16,10 +16,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._backend import BackendContractError, BackendError, BackendErrorReason
-from notebooklm._operations import CallPolicy, Operation
 from notebooklm._research import ResearchAPI, _import_candidates
+from notebooklm._semantic.backend import BackendContractError, BackendError, BackendErrorReason
 from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import CallPolicy, Operation
 from notebooklm._semantic.projectors import project_research_source, project_research_task
 from notebooklm._semantic.records import (
     RESEARCH_CANCEL_DEF,

@@ -32,12 +32,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from ..._backend import (
+from ..backend import (
     BackendContractError,
     BackendError,
     BackendErrorReason,
 )
-from ..._operations import Operation
+from ..operations import Operation
 from ..records import (
     SourceAddFailureKind,
     SourceAddFailureRecord,

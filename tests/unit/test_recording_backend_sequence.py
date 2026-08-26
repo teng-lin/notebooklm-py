@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     UnsupportedOperationError,
 )
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     NOTEBOOK_GET_DEF,
     NOTEBOOK_LIST_DEF,

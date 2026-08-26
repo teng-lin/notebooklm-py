@@ -25,10 +25,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ..._backend import BackendContractError
-from ..._binding import CodecPayload
-from ..._operations import Operation
 from ..._row_adapters.labels import CollectionRow, LabelRow
+from ..._semantic.backend import BackendContractError
+from ..._semantic.binding import CodecPayload
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     LabelAllocateInput,
     LabelAllocateResult,

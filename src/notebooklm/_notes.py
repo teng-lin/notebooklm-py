@@ -17,9 +17,9 @@ import builtins
 import logging
 from typing import Any
 
-from ._backend import BackendError
 from ._lookup import unwrap_or_raise
 from ._row_adapters.notes import NoteRow
+from ._semantic.backend import BackendError
 from ._semantic.compat import project_backend_call, project_backend_error
 from ._semantic.projectors import project_note
 from ._semantic.services.note import NoteService

@@ -8,7 +8,8 @@ from typing import cast
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._semantic.backend import (
     BackendAdapter,
     BackendCapabilities,
     BackendContractError,
@@ -18,8 +19,7 @@ from notebooklm._backend import (
     BackendKind,
     UnsupportedOperationError,
 )
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import CallPolicy, Operation, OperationDef
+from notebooklm._semantic.operations import CallPolicy, Operation, OperationDef
 from notebooklm._semantic.records import (
     MIND_MAP_DELETE_DEF,
     MIND_MAP_GENERATE_INTERACTIVE_DEF,

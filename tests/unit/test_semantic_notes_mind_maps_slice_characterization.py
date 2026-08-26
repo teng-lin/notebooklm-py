@@ -28,10 +28,10 @@ import httpx
 import pytest
 
 from notebooklm import MindMap, Note
-from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._mind_maps_api import MindMapsAPI, extract_interactive_tree_leaf
 from notebooklm._notes import NotesAPI
 from notebooklm._row_adapters.notes import NoteRow
+from notebooklm._semantic.backend import BackendError, BackendErrorReason
 from notebooklm._semantic.records import (
     ArtifactRecord,
     MindMapGenerateOutcomeRecord,

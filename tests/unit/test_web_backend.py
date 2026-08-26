@@ -10,7 +10,11 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._notebook_payloads import (
+    build_get_notebook_params,
+)
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendDeadlineExceededError,
     BackendError,
@@ -18,12 +22,8 @@ from notebooklm._backend import (
     BackendKind,
     UnsupportedOperationError,
 )
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._notebook_payloads import (
-    build_get_notebook_params,
-)
-from notebooklm._operations import CallPolicy, Operation, OperationDef
 from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import CallPolicy, Operation, OperationDef
 from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,

@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._backend import BackendError, BackendErrorReason
 from notebooklm._notebook_payloads import build_get_notebook_params
 from notebooklm._notebooks import NotebooksAPI
+from notebooklm._semantic.backend import BackendError, BackendErrorReason
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import (
     AuthError,

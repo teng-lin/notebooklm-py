@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._backend import (
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendError,
     BackendErrorReason,
     BackendKind,
     UnsupportedOperationError,
 )
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     ARTIFACT_DOWNLOAD_DEF,
     ArtifactDownloadInput,

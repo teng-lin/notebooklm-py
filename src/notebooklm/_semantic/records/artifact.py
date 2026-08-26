@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum, unique
 
 from ..._logging import scrub_secrets
-from ..._operations import CallPolicy, Operation, OperationDef, OperationTier
+from ..operations import CallPolicy, Operation, OperationDef, OperationTier
 from .mind_map import (
     MindMapGenerateInput,
     MindMapGenerateResult,

@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._operations import CallPolicy, Operation
+from notebooklm._semantic.operations import CallPolicy, Operation
 from notebooklm._semantic.projectors import (
     _SHARE_ACCESS,
     _SHARE_PERMISSIONS,

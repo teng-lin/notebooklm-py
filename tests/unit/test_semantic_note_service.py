@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     NOTE_CREATE_DEF,
     NOTE_DELETE_DEF,

@@ -18,7 +18,9 @@ import pytest
 from scripts._web_policy_intent import SERVICE_OWNED_WORKFLOW_BINDINGS
 from scripts.audit_operation_catalog import derive_workflow_natives
 
-from notebooklm._backend import (
+from notebooklm._collections import CollectionsAPI
+from notebooklm._deadline import RuntimeDeadlineFactory
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendDeadlineExceededError,
     BackendError,
@@ -26,10 +28,8 @@ from notebooklm._backend import (
     UnsupportedOperationError,
     may_have_committed,
 )
-from notebooklm._collections import CollectionsAPI
-from notebooklm._deadline import RuntimeDeadlineFactory
-from notebooklm._operations import Operation
 from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     COLLECTION_GET_DEF,
     COLLECTION_UPDATE_DEF,

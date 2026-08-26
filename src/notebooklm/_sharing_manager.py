@@ -4,8 +4,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
 
-from ._backend import BackendAdapter, BackendError
 from ._env import get_base_url
+from ._semantic.backend import BackendAdapter, BackendError
 from ._semantic.compat import project_backend_error
 from ._semantic.records import LEGACY_SHARE_ARTIFACT_DEF, LegacyShareArtifactInput
 

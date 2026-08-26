@@ -33,8 +33,8 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import BackendAdapter, BackendContractError
 from notebooklm._deadline import RuntimeDeadline, RuntimeDeadlineFactory
+from notebooklm._semantic.backend import BackendAdapter, BackendContractError
 from notebooklm._semantic.records import (
     AudioGenerateRequest,
     DataTableGenerateRequest,

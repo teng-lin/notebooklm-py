@@ -18,16 +18,16 @@ from typing import Any
 
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, DeadlineMode
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
+from notebooklm._semantic.binding import CodecBinding, DeadlineMode
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,

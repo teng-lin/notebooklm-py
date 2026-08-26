@@ -14,8 +14,8 @@ from enum import Enum, unique
 from types import MappingProxyType
 from typing import Final, Protocol, TypeVar, runtime_checkable
 
-from ._deadline import RuntimeDeadline
-from ._operations import Operation, OperationDef
+from .._deadline import RuntimeDeadline
+from .operations import Operation, OperationDef
 
 InputT = TypeVar("InputT")
 OutputT = TypeVar("OutputT")

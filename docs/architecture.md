@@ -1042,8 +1042,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_transport_drain.py` | `TransportDrainTracker` — in-flight transport counters + `_TransportOperationToken` |
 | `_deadline.py` | `RuntimeDeadline` helper shared by retry and polling loops so aggregate timeouts clamp sleep consistently |
 | `_semantic/compat.py` | Private compatibility projector from closed semantic `BackendErrorReason` + safe diagnostics back to the existing public exception subclasses at migrated facade boundaries. |
-| `_backend.py` | Private protocol-neutral semantic port: backend kind/capabilities, typed `BackendAdapter.invoke`, and the minimal scrubbed error/deadline handoff used by the P2 slice. |
-| `_binding.py` | Neutral binding vocabulary (P9.0/P9.4c, P10 R2.2): `OperationDisposition`, `NativeCallSpec` over the two native kinds `RpcNative` / `StreamNative` (aliased `NativeChoice`), `CodecPayload` and `StreamRequestPayload`, the `CodecBinding` / `CustomBinding` row kinds, `BindingTable`, the construction-time `audit_bindings`, and the `invoke_binding` dispatch function — which picks the transport verb from the selected native's kind; imports no `_web/`, `rpc/`, `_auth/`, or `httpx` module. |
+| `_semantic/backend.py` | Private protocol-neutral semantic port: backend kind/capabilities, typed `BackendAdapter.invoke`, and the minimal scrubbed error/deadline handoff used by the P2 slice. |
+| `_semantic/binding.py` | Neutral binding vocabulary (P9.0/P9.4c, P10 R2.2): `OperationDisposition`, `NativeCallSpec` over the two native kinds `RpcNative` / `StreamNative` (aliased `NativeChoice`), `CodecPayload` and `StreamRequestPayload`, the `CodecBinding` / `CustomBinding` row kinds, `BindingTable`, the construction-time `audit_bindings`, and the `invoke_binding` dispatch function — which picks the transport verb from the selected native's kind; imports no `_web/`, `rpc/`, `_auth/`, or `httpx` module. |
 | `_semantic/records/__init__.py` | Compatibility re-export hub for frozen, slotted, protocol-neutral input/output records and `OperationDef` values for P2 notebook/source operations, P5.1–P5.8 Studio families, and P6.1–P6.7 domain workflows, plus P3 decoded values and closed URL-source error evidence. R1.4 drained the last records and `OperationDef` values into sibling `_*_records.py` domain modules, so this file only re-exports them and stays well under the module-size ratchet. |
 | `_semantic/records/artifact.py` | Neutral Studio artifact records — parse-failure evidence, artifact/representation/metadata values, and the twenty-two typed artifact operation definitions (R1.4) — re-exported from `_semantic/records/__init__.py`. |
 | `_semantic/records/chat.py` | P6.1 neutral Chat records and six typed operation definitions, re-exported from `_semantic/records/__init__.py`. |
@@ -1063,7 +1063,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_runtime/lifecycle.py` | `ClientLifecycle` — loop-affinity guard + keepalive task |
 | `_runtime/transport.py` | `RuntimeTransport` — authed-POST transport wrapper that drives the immutable runtime pipeline and typed transport response handling |
 | `_rpc_executor.py` | Behaviorless `RpcExecutor(WebExecutionRuntime)` compatibility name; no execution implementation. |
-| `_operations.py` | Closed P0 semantic vocabulary: `Operation` / `CallPolicy` enums and frozen, slotted, typed `OperationDef`, consumed by the private P1 backend port and registries. |
+| `_semantic/operations.py` | Closed P0 semantic vocabulary: `Operation` / `CallPolicy` enums and frozen, slotted, typed `OperationDef`, consumed by the private P1 backend port and registries. |
 | `_semantic/projectors.py` | Shared compatibility projectors from neutral records to the existing public notebook/source/artifact/note/label/collection/sharing/research models, using normal constructors with no positional indices, RPC IDs, or public parsing factories. |
 | `_semantic/services/notebook_mutation.py` | Private transport-neutral notebook mutation service; owns the P9.2 `NOTEBOOK_UPDATE` patch/readback and `NOTEBOOK_CREATE` snapshot/allocate/reconcile/quota workflows under one deadline, and returns `NotebookRecord` — `NotebooksAPI` owns the projection (P10 invariant I1). |
 | `_semantic/services/read.py` | Private P2.1 transport-neutral notebook/source list/get services; invokes only typed operation definitions through `BackendAdapter`, forwards `RuntimeDeadline`, and returns the neutral records unprojected — `NotebooksAPI`/`SourcesAPI` own the `_semantic/projectors.py` call (P10 invariant I1). Since R6.2 it also carries `get_raw`, the `NOTEBOOK_GET` branch that leaves the payload undecoded for `NotebooksAPI.get_raw`. |
@@ -1250,8 +1250,6 @@ src/notebooklm/
 ├── utils.py                     # Public async utility helpers
 ├── _atomic_io.py                # Atomic JSON write/update helpers
 ├── _auth_refresh_retry.py       # Shared auth refresh-and-retry core (RefreshBudget + refresh_and_count) for both retry layers
-├── _backend.py                  # Private semantic backend port, capabilities, errors, and deadline handoff (P1)
-├── _binding.py                  # Neutral binding rows, table, audit, and dispatch function (P9.0)
 ├── _backoff.py                  # Shared retry backoff calculation
 ├── _callbacks.py                # Sync/async callback invocation helper
 ├── _client_composition.py       # Production-only client composition root
@@ -1285,7 +1283,6 @@ src/notebooklm/
 ├── _cookie_persistence.py       # Cookie-jar persistence + __Secure-1PSIDTS rotation
 ├── _mind_maps_api.py            # MindMapsAPI — semantic dual-service facade (#1256)
 ├── _notebook_metadata.py        # Metadata protocols
-├── _operations.py               # Closed semantic operation/call-policy vocabulary (P0)
 ├── _semantic/                   # Transport-neutral semantic layer above the wire (P10 R7)
 │   ├── records/                 # Neutral records and the typed operation definitions over them
 │   │   ├── artifact.py          # Neutral Studio artifact records/operation definitions
@@ -1311,7 +1308,10 @@ src/notebooklm/
 │   │   ├── source_add_reports.py # Neutral source-add failure vocabulary shared by the hoisted add workflows
 │   │   ├── source_batch.py      # Service-owned source.add_url_batch workflow (R3.5)
 │   │   └── suggestion.py        # Transport-neutral suggestion service (P6.6)
+│   ├── backend.py               # Private semantic backend port, capabilities, errors, and deadline handoff (P1)
+│   ├── binding.py               # Neutral binding rows, table, audit, and dispatch function (P9.0)
 │   ├── compat.py                # Closed backend-error to legacy public-exception projector (P2)
+│   ├── operations.py            # Closed semantic operation/call-policy vocabulary (P0)
 │   └── projectors.py            # Neutral record-to-public compatibility projectors (P2/P3/P5/P6)
 ├── _source_upload_port.py       # Neutral upload callback contract + UploadLifecycleHooks (R3.1)
 ├── _research_neutral.py         # Research public-model to neutral-record conversion helpers

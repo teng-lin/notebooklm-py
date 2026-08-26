@@ -22,14 +22,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..._backend import BackendContractError
-from ..._binding import (
+from ..._semantic.backend import BackendContractError
+from ..._semantic.binding import (
     Binding,
     CodecBinding,
     NativeCallSpec,
     RpcNative,
 )
-from ..._operations import Operation
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_DELETE_DEF,

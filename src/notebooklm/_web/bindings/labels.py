@@ -15,8 +15,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..._binding import Binding, CodecBinding, NativeCallSpec
-from ..._operations import Operation
+from ..._semantic.binding import Binding, CodecBinding, NativeCallSpec
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     COLLECTION_DELETE_DEF,
     COLLECTION_GET_DEF,

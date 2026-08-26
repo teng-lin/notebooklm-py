@@ -546,7 +546,7 @@ def test_i1_governs_every_service_family_and_its_detector_fires() -> None:
     assert _is_i1_forbidden("httpx._client", False)
     # The neutral half of ``_semantic`` is what a service is *supposed* to
     # import, so the two forbidden modules under it must not ban their parent.
-    for neutral in ("_backend", "_deadline", "_operations", "_semantic.records"):
+    for neutral in ("_deadline", "_semantic.backend", "_semantic.operations", "_semantic.records"):
         assert not _is_i1_forbidden(neutral, True), neutral
     # ``types`` is forbidden only as the first-party public module; the stdlib
     # module of the same name has to stay reachable.
@@ -806,8 +806,8 @@ def test_read_services_depend_only_on_semantic_port_records_and_deadline() -> No
     assert _imported_modules(_SERVICES) <= {
         "__future__",
         "builtins",
-        "_backend",
         "_deadline",
+        "backend",
         "records",
     }
     assert not (_identifiers(_SERVICES) & _FORBIDDEN_IDENTIFIERS)

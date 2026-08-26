@@ -22,16 +22,16 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._idempotency import mark_unconfirmed
+from notebooklm._semantic.backend import (
     BackendContractError,
     BackendError,
     BackendErrorReason,
 )
-from notebooklm._binding import CustomBinding, ErrorMode
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._idempotency import mark_unconfirmed
-from notebooklm._operations import Operation
+from notebooklm._semantic.binding import CustomBinding, ErrorMode
 from notebooklm._semantic.compat import project_backend_error
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     SOURCE_ADD_FILE_DEF,
     SourceAddFailureRecord,

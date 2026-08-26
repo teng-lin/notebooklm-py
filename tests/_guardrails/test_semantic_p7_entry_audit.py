@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-from notebooklm._operations import Operation
+from notebooklm._semantic.operations import Operation
 from notebooklm._web.registry import WEB_SERVICE_OWNED_OPERATIONS, WEB_SUPPORTED_OPERATIONS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

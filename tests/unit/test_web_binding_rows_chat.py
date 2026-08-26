@@ -21,15 +21,15 @@ import httpx
 import pytest
 from scripts._web_policy_intent import WEB_CALL_POLICY_BINDINGS
 
-from notebooklm._backend import (
+from notebooklm._deadline import RuntimeDeadline
+from notebooklm._semantic.backend import (
     BackendDeadlineExceededError,
     BackendError,
     BackendErrorReason,
     may_have_committed,
 )
-from notebooklm._binding import CodecBinding, DeadlineMode, RpcNative
-from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
+from notebooklm._semantic.binding import CodecBinding, DeadlineMode, RpcNative
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     CHAT_CONFIGURE_DEF,
     CHAT_DELETE_HISTORY_DEF,

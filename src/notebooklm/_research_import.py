@@ -12,7 +12,7 @@ module is their only import home. (P6.2 retired the pass-through re-exports the
 facade used to carry; reference them here.)
 
 The retry-time ``FAILED_PRECONDITION`` predicate that used to live here reads a
-neutral :class:`~notebooklm._backend.BackendStatus` rather than a wire status
+neutral :class:`~notebooklm._semantic.backend.BackendStatus` rather than a wire status
 code, so it moved to ``_research_service.py`` beside the reason sets it is
 branched on with (P10 R6.4). R6.4 also retyped every helper here onto the
 neutral record vocabulary — a batch is a tuple of

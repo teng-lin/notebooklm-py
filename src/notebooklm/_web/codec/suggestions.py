@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ..._binding import CodecPayload
 from ..._row_adapters.artifacts import (
     ReportSuggestionRow,
     unwrap_artifact_rows,
 )
 from ..._row_adapters.notebooks import PromptSuggestionRow, unwrap_prompt_suggestions
+from ..._semantic.binding import CodecPayload
 from ..._semantic.records import (
     ArtifactSuggestReportsInput,
     ArtifactSuggestReportsResult,

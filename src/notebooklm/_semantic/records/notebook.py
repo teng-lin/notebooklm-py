@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum, unique
 from typing import Any
 
-from ..._operations import CallPolicy, Operation, OperationDef, OperationTier
+from ..operations import CallPolicy, Operation, OperationDef, OperationTier
 
 
 @unique

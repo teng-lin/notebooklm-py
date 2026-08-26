@@ -7,7 +7,7 @@ from dataclasses import FrozenInstanceError, replace
 import pytest
 
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import CallPolicy, Operation
+from notebooklm._semantic.operations import CallPolicy, Operation
 from notebooklm._semantic.records import (
     ARTIFACT_CATALOG_DEF,
     ARTIFACT_GET_DEF,

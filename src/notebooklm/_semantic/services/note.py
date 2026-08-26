@@ -18,10 +18,10 @@ import json
 import logging
 from typing import Any
 
-from ..._backend import BackendAdapter
 from ..._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from ..._env import get_default_language
 from ...exceptions import MindMapNotFoundError
+from ..backend import BackendAdapter
 from ..records import (
     MIND_MAP_GENERATE_NOTE_DEF,
     MIND_MAP_LIST_DEF,

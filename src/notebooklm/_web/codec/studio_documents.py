@@ -6,9 +6,9 @@ import types  # ``from types import …`` reads as a public-model import to the 
 from collections.abc import Mapping
 from typing import Any, TypeVar, cast
 
-from ..._backend import BackendContractError, BackendError, BackendErrorReason
-from ..._binding import CodecPayload
-from ..._operations import Operation
+from ..._semantic.backend import BackendContractError, BackendError, BackendErrorReason
+from ..._semantic.binding import CodecPayload
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     ArtifactRetryInput,
     ArtifactRetryResult,

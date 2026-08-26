@@ -28,8 +28,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..._binding import Binding, CodecBinding, NativeCallSpec, RpcNative
-from ..._operations import Operation
+from ..._semantic.binding import Binding, CodecBinding, NativeCallSpec, RpcNative
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     CHAT_STREAM_ANSWER_DEF,
     LABEL_ALLOCATE_DEF,

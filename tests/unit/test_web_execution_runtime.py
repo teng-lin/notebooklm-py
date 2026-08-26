@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import Operation
 from notebooklm._rpc_executor import RpcExecutor
+from notebooklm._semantic.operations import Operation
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web.runtime import WebExecutionRuntime
 from notebooklm.rpc import RPCMethod

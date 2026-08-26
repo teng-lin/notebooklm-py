@@ -23,9 +23,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import notebooklm._semantic.services.research as _research_mod
-from notebooklm._backend import BackendError
-from notebooklm._operations import Operation
 from notebooklm._research import _import_candidates
+from notebooklm._semantic.backend import BackendError
+from notebooklm._semantic.operations import Operation
 from notebooklm._semantic.records import (
     ResearchImportCandidate,
     ResearchImportedSourceRecord,

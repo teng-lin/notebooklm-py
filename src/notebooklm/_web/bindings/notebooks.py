@@ -17,9 +17,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..._backend import BackendError, BackendErrorReason
-from ..._binding import Binding, CodecBinding, NativeCallSpec, NativeChoice
-from ..._operations import Operation
+from ..._semantic.backend import BackendError, BackendErrorReason
+from ..._semantic.binding import Binding, CodecBinding, NativeCallSpec, NativeChoice
+from ..._semantic.operations import Operation
 from ..._semantic.records import (
     NOTEBOOK_ALLOCATE_DEF,
     NOTEBOOK_DELETE_DEF,

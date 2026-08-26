@@ -2,7 +2,7 @@
 
 import logging
 
-from ._backend import BackendAdapter
+from ._semantic.backend import BackendAdapter
 from ._semantic.compat import project_backend_call
 from ._semantic.projectors import project_account_limits, project_user_settings
 from ._semantic.services.settings import SettingsService

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from .._backend import BackendAdapter, BackendError, rebind_operation, require_leaves
 from .._deadline import RuntimeDeadline
-from .._operations import Operation
+from .._semantic.backend import BackendAdapter, BackendError, rebind_operation, require_leaves
+from .._semantic.operations import Operation
 from .._semantic.records import (
     ARTIFACT_GENERATE_DATA_TABLE_DEF,
     MIND_MAP_GENERATE_NOTE_DEF,

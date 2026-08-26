@@ -10,10 +10,10 @@ from typing import IO, Any, Final, Literal, cast
 
 import httpx
 
-from ._backend import BackendAdapter, BackendError
 from ._deadline import RuntimeDeadlineFactory
 from ._lookup import unwrap_or_raise
 from ._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
+from ._semantic.backend import BackendAdapter, BackendError
 from ._semantic.compat import (
     project_backend_call,
     project_backend_error,

@@ -17,10 +17,10 @@ import logging
 from collections.abc import Awaitable
 from typing import Any, TypeVar
 
-from .._backend import BackendAdapter, BackendError
 from .._conversation_cache import ConversationCache
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.contracts import LoopGuard
+from .._semantic.backend import BackendAdapter, BackendError
 from .._semantic.compat import project_backend_error
 from .._semantic.projectors import (
     chat_reference_record,

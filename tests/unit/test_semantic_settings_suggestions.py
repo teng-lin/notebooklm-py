@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 
 from notebooklm._deadline import RuntimeDeadline
-from notebooklm._operations import CallPolicy, Operation
+from notebooklm._semantic.operations import CallPolicy, Operation
 from notebooklm._semantic.projectors import (
     project_account_limits,
     project_prompt_suggestions,

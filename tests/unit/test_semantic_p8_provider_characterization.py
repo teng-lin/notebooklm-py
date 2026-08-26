@@ -50,10 +50,10 @@ from notebooklm._auth import single_flight
 from notebooklm._auth.account import authuser_query, format_authuser_value
 from notebooklm._auth.cookie_types import CookieJar
 from notebooklm._auth.cookies import _clone_cookie_jar
-from notebooklm._backend import BackendContractError, BackendKind
 from notebooklm._kernel import Kernel
 from notebooklm._request_types import AuthSnapshot
 from notebooklm._runtime.auth import AuthRefreshCoordinator
+from notebooklm._semantic.backend import BackendContractError, BackendKind
 from notebooklm._web.backend import WebRpcBackend
 from notebooklm._web_cookie_provider import WebCookieGeneration
 from notebooklm.auth import AuthTokens
@@ -532,7 +532,7 @@ async def test_backend_closes_only_a_provider_it_created() -> None:
 @pytest.mark.asyncio
 async def test_backend_rejects_work_after_close() -> None:
     """A closed backend fails loudly rather than reviving its session."""
-    from notebooklm._operations import Operation
+    from notebooklm._semantic.operations import Operation
     from notebooklm._semantic.records import NotebookListInput
     from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 

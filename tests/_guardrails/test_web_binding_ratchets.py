@@ -39,7 +39,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._binding import CodecBinding, CustomBinding, ErrorMode
+from notebooklm._semantic.binding import CodecBinding, CustomBinding, ErrorMode
 from notebooklm._web.bindings import WEB_BINDING_ROWS
 from notebooklm._web.registry import WEB_OPERATION_REGISTRY
 
