@@ -61,6 +61,7 @@ from ..._records import (
     ReportGenerateInput,
     ReportGenerateResult,
     SlideDeckGenerateInput,
+    SourceIdDiagnostics,
     VideoGenerateInput,
     VideoGenerateResult,
     VisualGenerateResult,
@@ -70,7 +71,6 @@ from ..codec import artifacts as artifacts_codec
 from ..codec import generation as generation_codec
 from ..codec import studio_documents as studio_documents_codec
 from ..codec.source_ids import (
-    SourceIdDiagnostics,
     decode_notebook_source_ids,
     encode_notebook_source_read,
 )
