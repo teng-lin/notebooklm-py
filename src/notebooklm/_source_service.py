@@ -30,7 +30,6 @@ from ._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_TEXT_DEF,
-    SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_ADD_URL_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
@@ -52,7 +51,6 @@ from ._records import (
     SourceAddFileResult,
     SourceAddTextResult,
     SourceAddTitleState,
-    SourceAddUrlBatchInput,
     SourceAddUrlBatchResult,
     SourceAddUrlReceipt,
     SourceAddUrlResult,
@@ -76,6 +74,8 @@ from ._records import (
     SourceWaitSnapshotInput,
     SourceWaitSnapshotResult,
 )
+from ._source_add_failures import _leaf_failure_record, _source_add_failure
+from ._source_batch_service import run_url_batch_registration
 from ._url_utils import extract_youtube_video_id, is_youtube_url
 
 # The pre-P10 ``source.add_text`` row reached this message through
@@ -169,49 +169,6 @@ _CREATE_CONTEXT_FAILURE = "create_context_failure"
 
 # The same logger name and level the retired row logged under.
 _source_logger = logging.getLogger("notebooklm").getChild("_sources")
-
-
-def _source_add_failure(
-    operation: Operation,
-    record: SourceAddFailureRecord,
-    *,
-    outcome_unknown: bool = False,
-    dispatched: bool = False,
-) -> BackendError:
-    """Report one source-add failure as bounded neutral evidence.
-
-    ``_backend_compat`` replays an *equal* public exception at the facade from
-    ``record`` alone, so a transport-neutral workflow never has to name — or
-    construct — a public exception type.
-    """
-    return BackendError(
-        message=record.message,
-        operation=operation,
-        outcome_unknown=outcome_unknown,
-        diagnostics=MappingProxyType({"source_add_failure": record}),
-        reason=BackendErrorReason.SOURCE_ADD,
-        dispatched=dispatched,
-    )
-
-
-def _leaf_failure_record(error: BackendError) -> SourceAddFailureRecord | None:
-    """Return the leaf's captured public graph, if the backend captured one.
-
-    Capturing it is a *web* convention, not a port requirement: another adapter
-    may report a closed reason and nothing else, and the compatibility projector
-    reconstructs a public exception from the reason alone in that case. ``None``
-    therefore means "project by reason", not "malformed". A value of the wrong
-    type is malformed, and fails closed.
-    """
-    record = (error.diagnostics or {}).get("public_error_failure")
-    if record is None:
-        return None
-    if not isinstance(record, SourceAddFailureRecord):
-        raise BackendContractError(
-            "source registration failure has invalid public-error evidence",
-            operation=error.operation,
-        ) from error
-    return record
 
 
 def _degraded_failure_record(error: BaseException) -> SourceAddFailureRecord | None:
@@ -925,10 +882,29 @@ class SourceService:
         *,
         deadline: RuntimeDeadline | None = None,
     ) -> SourceAddUrlBatchResult:
-        return await self._backend.invoke(
-            SOURCE_ADD_URL_BATCH_DEF,
-            SourceAddUrlBatchInput(notebook_id, urls),
-            deadline=deadline,
+        """Register many URLs in one write and attribute the response positionally.
+
+        The gate, the empty short-circuit and the one aggregate budget; the
+        workflow itself is ``_source_batch_service.run_url_batch_registration``,
+        which lives next door because this module is at the ADR-0008 size budget
+        with three hoisted workflows in it. This stays the single entry point —
+        the facade and the MCP/REST adapters reach the batch only through it.
+        """
+        # Both leaves are checked before the write, exactly as ``add_url``
+        # checks its finalise leaves: a backend must never register the sources
+        # and only then discover it cannot run the reconciliation.
+        require_leaves(self._backend, SOURCE_REGISTER_DEF.key, SOURCE_LIST_DEF.key)
+        if not urls:
+            return SourceAddUrlBatchResult(())
+        # One absolute budget for the write and its reconciliation, minted here
+        # for the same reason ``add_url`` mints one: the retired row ran under
+        # the deadline ``WebRpcBackend`` seeded for the whole ``CLIENT_TIMEOUT``
+        # operation, and the workflow is that operation's owner now.
+        return await run_url_batch_registration(
+            self._backend,
+            notebook_id,
+            urls,
+            deadline=self._start_deadline(deadline),
         )
 
     async def add_text(

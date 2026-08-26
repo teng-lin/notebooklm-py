@@ -222,8 +222,10 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "SourceService",
         "notebook",
-        "Sends validated URL/YouTube entries once, never blindly replays an uncertain write, "
-        "and reconciles omitted positions against exact URL identities.",
+        "Service-owned since P10 R3.5: SourceService.add_urls_batch sends validated "
+        "URL/YouTube entries once through one source.register url write, never blindly "
+        "replays an uncertain write, and reconciles omitted positions against exact URL "
+        "identities plus a source.list of ERROR rows.",
         native_bindings=(
             _b(RPCMethod.ADD_SOURCE, "url"),
             _b(RPCMethod.GET_NOTEBOOK),

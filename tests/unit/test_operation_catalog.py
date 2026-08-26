@@ -260,7 +260,6 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
         "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
         "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
         "_web/bindings/sources.py:SOURCE_ADD_FILE",
-        "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
         "_web/bindings/sources.py:SOURCE_GET",
         "_web/bindings/sources.py:SOURCE_LIST",
         "_web/bindings/sources.py:SOURCE_WAIT",

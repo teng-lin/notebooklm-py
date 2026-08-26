@@ -321,7 +321,11 @@ class SourceRegisterInput:
 
     notebook_id: str
     kind: SourceRegisterKind
-    urls: tuple[str, ...] = ()
+    # ``repr=False`` on every payload field: the retired ``source.add_url_batch``
+    # input hid its URLs so a recorded invocation, a contract-error message or a
+    # log line never carries user content, and the leaf that replaced it keeps
+    # that property for all three kinds.
+    urls: tuple[str, ...] = field(default=(), repr=False)
     youtube_flags: tuple[bool, ...] = ()
     title: str | None = field(default=None, repr=False)
     content: str | None = field(default=None, repr=False)

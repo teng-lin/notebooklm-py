@@ -138,7 +138,6 @@ def test_the_source_add_rows_all_translate() -> None:
         is None
     )
     for operation in (
-        Operation.SOURCE_ADD_URL_BATCH,
         Operation.SOURCE_ADD_DRIVE,
         Operation.SOURCE_ADD_FILE,
     ):

@@ -9,18 +9,19 @@ because the operation-catalog walker derives execution authorities from them.
 and ``SOURCE_WAIT`` is the one ``DeadlineMode.IGNORE`` row (source polling
 historically never clamps an in-flight read).
 
-The remaining source-add rows (``SOURCE_ADD_URL_BATCH``, ``SOURCE_ADD_DRIVE``,
-``SOURCE_ADD_FILE``) are
+The remaining source-add rows (``SOURCE_ADD_DRIVE``, ``SOURCE_ADD_FILE``) are
 :class:`CustomBinding` rows (P9.4b): each declares exactly the natives the
 policy ledger lists under spec keys (``snapshot``, ``create``, ``rename``,
 ``register``, ``limits``) and sequences them through the row-scoped invoker
-with the same options the P6.7 handlers set.  All three are *protocol* rows —
+with the same options the P6.7 handlers set.  Both are *protocol* rows —
 source registration has a tentative-source mobile variant (ADR-0035
-principle 2).  ``source.add_text`` and ``source.add_url`` no longer have rows at
-all: P10 R3.2 and R3.3 hoisted their workflows into ``SourceService`` over the
-``SOURCE_REGISTER`` primitive (plus, for the URL workflow, ``SOURCE_LIST``,
-``SOURCE_PATCH_TITLE`` and ``SOURCE_GET``), so the family's one *compatibility*
-row is gone and its ``protocol`` count is down to three.  All three translate
+principle 2).  ``source.add_text``, ``source.add_url`` and
+``source.add_url_batch`` no longer have rows at all: P10 R3.2, R3.3 and R3.5
+hoisted their workflows into ``SourceService`` over the ``SOURCE_REGISTER``
+primitive (plus ``SOURCE_LIST`` for the URL baseline/probe and the batch's
+ERROR-row reconciliation, and ``SOURCE_PATCH_TITLE``/``SOURCE_GET`` for the URL
+finalise), so the family's one *compatibility* row is gone and its ``protocol``
+count is down to two.  Both translate
 (P10 invariant I8): the
 established public leaves the family owns — ``SourceAddError``, the unconfirmed
 transport four-tuple, ``ValidationError``, ``NonIdempotentRetryError`` — are
@@ -58,7 +59,6 @@ from ..._projectors import project_source
 from ..._records import (
     SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
-    SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
     SOURCE_DELETE_DEF,
     SOURCE_GET_DEF,
@@ -71,22 +71,17 @@ from ..._records import (
     SourceAddDriveResult,
     SourceAddFileInput,
     SourceAddFileResult,
-    SourceAddUrlBatchInput,
-    SourceAddUrlBatchResult,
     SourceFileInputKind,
     SourceFileRegistrationRecord,
     SourceRecord,
-    SourceUrlBatchItemRecord,
 )
 from ..._source.add import (
     SourceAddService,
     honor_requested_title,
     honor_requested_title_if_fresh,
 )
-from ..._source.batch import SourceBatchAddService
 from ..._source_upload_port import SourceUploadBackend
 from ..._types.sources import _SOURCE_TYPE_CODE_MAP, SourceType
-from ..._url_utils import extract_youtube_video_id
 from ...exceptions import NotebookLMError, ValidationError
 from ...rpc import RPCMethod
 from ...rpc.types import drive_source_status_to_str, source_status_to_str
@@ -162,7 +157,6 @@ _CREATE = "create"
 _RENAME = "rename"
 _REGISTER = "register"
 _LIMITS = "limits"
-_CAPTURE_PUBLIC_FAILURE = "capture_public_failure"
 _SOURCE_UPLOADER = "source_uploader"
 
 
@@ -179,12 +173,11 @@ def _source_add_failure(exc: NotebookLMError, operation: Operation) -> BackendEr
     public exception object escape the backend.
 
     The projector is imported directly rather than reached through the
-    ``capture_public_failure`` row collaborator (as ``_add_url`` and
-    ``_add_url_batch``'s per-item captures still do): that collaborator leaves
-    ``ROW_COLLABORATOR_NAMES`` with the last source-add hoist, and
+    ``capture_public_failure`` row collaborator, which left
+    ``ROW_COLLABORATOR_NAMES`` with the last source-add hoist (P10 R3.5) while
     ``SOURCE_ADD_FILE`` — which needs this — is permanent under D4.  Both reach
-    the same ``_web.failure_projection`` function; the collaborator seam buys a
-    custom row nothing that a sibling ``_web`` import does not already give it.
+    the same ``_web.failure_projection`` function; the collaborator seam bought
+    a custom row nothing that a sibling ``_web`` import does not already give it.
     """
     return BackendError(
         # Structured subclasses render their diagnostic fields in ``__str__``;
@@ -297,76 +290,6 @@ async def _rename_source(
     if source is None:
         raise sources_codec.rename_target_missing(source_id)
     return source
-
-
-def _youtube_video_id(url: str) -> str | None:
-    """Bind the neutral URL extractor to this module's source logger."""
-    return extract_youtube_video_id(url, logger=source_logger)
-
-
-async def _add_url_batch(
-    value: SourceAddUrlBatchInput,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-) -> SourceAddUrlBatchResult:
-    """Run one non-replayed true-batch URL write and preserve positions."""
-    capture_public_failure = invoke.collaborator(_CAPTURE_PUBLIC_FAILURE)
-
-    async def create_sources(
-        notebook_id: str,
-        urls: Sequence[str],
-        youtube_flags: Sequence[bool],
-    ) -> list[Source]:
-        payload = await invoke.call(
-            _CREATE,
-            sources_codec.encode_add_url_payload(notebook_id, urls, youtube_flags=youtube_flags),
-            deadline=deadline,
-            disable_internal_retries=True,
-        )
-        return [
-            project_source(record) for record in sources_codec.decode_add_source_records(payload)
-        ]
-
-    async def list_sources(notebook_id: str, **kwargs: Any) -> list[Source]:
-        sources = await _snapshot_sources(invoke, notebook_id, deadline=deadline)
-        statuses = kwargs.get("statuses")
-        return (
-            sources
-            if statuses is None
-            else [source for source in sources if source.status in statuses]
-        )
-
-    try:
-        outcomes = await SourceBatchAddService().add_urls(
-            value.notebook_id,
-            value.urls,
-            create_sources=create_sources,
-            list_sources=list_sources,
-            extract_youtube_video_id=_youtube_video_id,
-            logger=source_logger,
-        )
-    except NotebookLMError as exc:
-        # The batch service marks the whole write unconfirmed and re-raises the
-        # native failure with a rewritten message; the row carries that leaf as
-        # neutral evidence instead of letting it escape the port.
-        raise _source_add_failure(exc, Operation.SOURCE_ADD_URL_BATCH) from exc
-    return SourceAddUrlBatchResult(
-        tuple(
-            SourceUrlBatchItemRecord(
-                url=item.url,
-                source=(_source_record(item.source) if item.source is not None else None),
-                error=(
-                    capture_public_failure(
-                        item.error,
-                        operation=Operation.SOURCE_ADD_URL_BATCH,
-                    )
-                    if item.error is not None
-                    else None
-                ),
-            )
-            for item in outcomes
-        )
-    )
 
 
 async def _add_drive(
@@ -613,18 +536,6 @@ _PROTOCOL_JUSTIFICATION = (
     "so the create/probe/rename sequence stays adapter-owned; gate table §4."
 )
 
-SOURCE_ADD_URL_BATCH = CustomBinding(
-    definition=SOURCE_ADD_URL_BATCH_DEF,
-    handler=_add_url_batch,
-    native=(
-        NativeCallSpec.constant(RPCMethod.ADD_SOURCE, "url", key=_CREATE),
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SNAPSHOT),
-    ),
-    justification=_PROTOCOL_JUSTIFICATION,
-    category="protocol",
-    collaborators=(_CAPTURE_PUBLIC_FAILURE,),
-)
-
 SOURCE_ADD_DRIVE = CustomBinding(
     definition=SOURCE_ADD_DRIVE_DEF,
     handler=_add_drive,
@@ -665,7 +576,6 @@ SOURCE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
         SOURCE_CHECK_FRESHNESS.definition.key: SOURCE_CHECK_FRESHNESS,
         SOURCE_GET_GUIDE.definition.key: SOURCE_GET_GUIDE,
         SOURCE_GET_FULLTEXT.definition.key: SOURCE_GET_FULLTEXT,
-        SOURCE_ADD_URL_BATCH.definition.key: SOURCE_ADD_URL_BATCH,
         SOURCE_ADD_DRIVE.definition.key: SOURCE_ADD_DRIVE,
         SOURCE_ADD_FILE.definition.key: SOURCE_ADD_FILE,
     }
@@ -674,7 +584,6 @@ SOURCE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
 __all__ = [
     "SOURCE_ADD_DRIVE",
     "SOURCE_ADD_FILE",
-    "SOURCE_ADD_URL_BATCH",
     "SOURCE_CHECK_FRESHNESS",
     "SOURCE_DELETE",
     "SOURCE_GET",

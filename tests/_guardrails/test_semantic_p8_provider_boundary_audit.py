@@ -114,7 +114,6 @@ KNOWN_WEB_PACKAGE_FIRST_PARTY_IMPORTS: frozenset[str] = frozenset(
         "_runtime.contracts",
         "_runtime.transport",
         "_source.add",
-        "_source.batch",
         "_source_upload_port",
         "_transport_drain",
         "_transport_errors",

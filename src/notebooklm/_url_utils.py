@@ -7,8 +7,9 @@ flagged by CodeQL (py/incomplete-url-substring-sanitization).
 import logging
 import re
 from collections.abc import Iterable
+from ipaddress import IPv6Address, ip_address
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse, urlsplit, urlunsplit
 
 from ._env import ENTERPRISE_BASE_HOST, PERSONAL_APP_HOSTS
 
@@ -198,6 +199,75 @@ def extract_youtube_video_id(url: str, *, logger: logging.Logger) -> str | None:
     except (AttributeError, TypeError, ValueError) as e:
         logger.debug("Failed to parse YouTube URL '%s': %s", url[:100], e)
         return None
+
+
+_PERCENT_ESCAPE = re.compile(r"%[0-9a-fA-F]{2}")
+
+
+def _normalize_percent_escapes(value: str) -> str:
+    return _PERCENT_ESCAPE.sub(lambda match: match.group(0).upper(), value)
+
+
+def url_identity(url: str, *, logger: logging.Logger) -> tuple[str, str]:
+    """Return a conservative identity for sparse-response reconciliation.
+
+    Two spellings of the same address share one identity — a YouTube URL is
+    identified by its video id, everything else by a canonicalized
+    scheme/authority/path/query — so a batch write's response row can be matched
+    back to the request that asked for it. Deliberately conservative: it only
+    normalizes what is unambiguously equivalent (case in the scheme and host,
+    IPv6 and percent-escape spelling, the default port, an empty path), because
+    a false *merge* would attribute one caller's success to another request.
+
+    Pure and transport-neutral, like :func:`extract_youtube_video_id`, which it
+    delegates the YouTube half to; ``logger`` is that call's parse diagnostic.
+    """
+    candidate = url.strip()
+    video_id = extract_youtube_video_id(candidate, logger=logger)
+    if video_id is not None:
+        return ("youtube", video_id)
+
+    try:
+        parsed = urlsplit(candidate)
+        # URL inputs are validated before an identity is asked for, but a
+        # response URL is untrusted wire data. Keep malformed values distinct
+        # and let the caller fail closed rather than raising from normalization.
+        port = parsed.port
+    except (AttributeError, TypeError, ValueError):
+        return ("raw", candidate)
+    if not parsed.scheme or not parsed.hostname:
+        return ("raw", candidate)
+
+    hostname = parsed.hostname.lower()
+    is_ipv6 = False
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        hostname = address.compressed
+        is_ipv6 = isinstance(address, IPv6Address)
+    if is_ipv6:
+        hostname = f"[{hostname}]"
+    default_port = (parsed.scheme.lower() == "http" and port == 80) or (
+        parsed.scheme.lower() == "https" and port == 443
+    )
+    authority = hostname if port is None or default_port else f"{hostname}:{port}"
+    if parsed.username is not None:
+        userinfo = _normalize_percent_escapes(parsed.username)
+        if parsed.password is not None:
+            userinfo += f":{_normalize_percent_escapes(parsed.password)}"
+        authority = f"{userinfo}@{authority}"
+    normalized = urlunsplit(
+        (
+            parsed.scheme.lower(),
+            authority,
+            _normalize_percent_escapes(parsed.path or "/"),
+            _normalize_percent_escapes(parsed.query),
+            "",
+        )
+    )
+    return ("url", normalized)
 
 
 def is_google_auth_redirect(url: str) -> bool:

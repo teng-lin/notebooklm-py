@@ -38,7 +38,6 @@ from .._binding import (
 )
 from .._deadline import RuntimeDeadline, RuntimeDeadlineFactory
 from .._operations import CallPolicy, Operation, OperationDef
-from .._records import SourceAddFailureRecord
 from .._runtime.config import assert_resolved_read_timeout
 from .._source_upload_port import UploadLifecycleHooks
 from .._web_cookie_provider import WebCookieProvider, WebCookieSession
@@ -80,7 +79,6 @@ source_logger = logging.getLogger("notebooklm").getChild("_sources")
 ROW_COLLABORATOR_NAMES: frozenset[str] = frozenset(
     {
         "source_uploader",
-        "capture_public_failure",
         # ``chat.ask`` (P9.4b): the request-id counter, the configured chat read
         # timeout, and whether the composed chat transport exists — never the
         # transport itself.
@@ -318,15 +316,6 @@ class WebRpcBackend:
     def capabilities(self) -> BackendCapabilities:
         return self._capabilities
 
-    def _capture_public_failure(
-        self,
-        exc: Exception,
-        *,
-        operation: Operation,
-    ) -> SourceAddFailureRecord:
-        """Project the bounded public error graph for source workflow receipts."""
-        return _capture_public_failure(exc, operation=operation)
-
     def _row_collaborators(self) -> Mapping[str, object]:
         """The closed, named collaborator set a custom row may declare and reach."""
         return _row_collaborators_of(self)
@@ -557,7 +546,6 @@ def _row_collaborators_of(backend: WebRpcBackend) -> Mapping[str, object]:
     return MappingProxyType(
         {
             "source_uploader": backend._source_uploader,
-            "capture_public_failure": backend._capture_public_failure,
             "chat_reqid": backend._chat_reqid,
             "chat_timeout": backend._chat_timeout,
             "chat_transport_composed": backend._chat_transport is not None,

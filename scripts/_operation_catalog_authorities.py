@@ -58,8 +58,8 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_ADD_URL_BATCH, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
-            "one non-replayed batch payload",
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "one non-replayed batch payload via the source.register leaf",
         ),
     ),
     (Operation.SOURCE_REGISTER, _b(RPCMethod.ADD_SOURCE, "url")): _rules(
@@ -139,8 +139,8 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_ADD_URL_BATCH, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",
-            "one snapshot only for omitted-row reconciliation",
+            "_web/bindings/sources.py:SOURCE_LIST",
+            "one snapshot only for omitted-row reconciliation via source.list",
         )
     ),
     (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
@@ -448,7 +448,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             1,
             "private_app_call",
             "one snapshot only when ADD_SOURCE omits positional outcomes",
-            ("_web/bindings/sources.py:SOURCE_ADD_URL_BATCH",),
+            (_GET_SOURCE_LIST,),
         ),
     ),
     Operation.SOURCE_ADD_URL: (

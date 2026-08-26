@@ -52,17 +52,18 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: Sharing, artifact-rename, and notebook create/update hoists removed six
 #: custom rows; the label- and collection-create hoists removed the final two
 #: handlers from the P9.2 stop/go baseline.
-# Tightened 20 -> 18 to match the two rows P10 R3.2 and R3.3 already hoisted
-# (``source.add_text`` and ``source.add_url``); the ratchet asserts equality, so
-# leaving it at 20 left this gate red under the ``repo_lint`` marker.
-RESIDUAL_COMPOSITE_CEILING = 18
-#: Exact custom-row counts per justification category: five source-add rows,
+# Tightened 20 -> 18 for the two rows P10 R3.2 and R3.3 hoisted, then 18 -> 17
+# for R3.5's ``source.add_url_batch``; the ratchet asserts equality, so a hoist
+# that does not tighten it leaves this gate red.
+RESIDUAL_COMPOSITE_CEILING = 17
+#: Exact custom-row counts per justification category: the two remaining
+#: source-add rows,
 #: ``CHAT_ASK``, the Studio
 #: generation/prompt rows and the notebook/mind-map/catalog composites.
 #: P9.4b PRs raise these as handlers convert;
 #: P9.2 hoists lower ``deferred-product``, which must reach zero before any
 #: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 4, "compatibility": 3, "deferred-product": 11}
+CUSTOM_ROW_COUNTS = {"protocol": 3, "compatibility": 3, "deferred-product": 11}
 
 # --- 2. class size ---------------------------------------------------------------
 
