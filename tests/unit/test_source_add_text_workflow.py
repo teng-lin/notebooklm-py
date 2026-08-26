@@ -349,9 +349,11 @@ def test_only_the_residual_rpc_family_is_wrapped() -> None:
 
     P10 R3.3 found ``add_url`` shared this catch ordering with ``add_text``
     verbatim below the port, so the constant is now named and owned for both
-    hoisted workflows rather than kept as a text-only artifact.
+    hoisted workflows rather than kept as a text-only artifact; R3.4 moved it
+    to ``_source_add_reports`` with the rest of the shared failure vocabulary
+    as ``add_drive`` became the third workflow to share it.
     """
-    from notebooklm._source_service import _WRAPPED_REGISTRATION_FAILURE_KINDS
+    from notebooklm._source_add_reports import WRAPPED_REGISTRATION_FAILURE_KINDS
 
     assert {
         SourceAddFailureKind.RPC,
@@ -359,7 +361,7 @@ def test_only_the_residual_rpc_family_is_wrapped() -> None:
         SourceAddFailureKind.DECODING,
         SourceAddFailureKind.RESPONSE_TOO_LARGE,
         SourceAddFailureKind.UNKNOWN_RPC_METHOD,
-    } == _WRAPPED_REGISTRATION_FAILURE_KINDS
+    } == WRAPPED_REGISTRATION_FAILURE_KINDS
     for unwrapped in (
         SourceAddFailureKind.AUTH,
         SourceAddFailureKind.RATE_LIMIT,
@@ -367,7 +369,7 @@ def test_only_the_residual_rpc_family_is_wrapped() -> None:
         SourceAddFailureKind.NETWORK,
         SourceAddFailureKind.RPC_TIMEOUT,
     ):
-        assert unwrapped not in _WRAPPED_REGISTRATION_FAILURE_KINDS
+        assert unwrapped not in WRAPPED_REGISTRATION_FAILURE_KINDS
 
 
 @pytest.mark.asyncio

@@ -147,19 +147,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
                 _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "conditional reconciliation read"),
             ),
         ),
-        Operation.SOURCE_ADD_DRIVE: WebCallPolicyBinding(
-            CallPolicy.MUTATION,
-            (
-                _native(
-                    RPCMethod.ADD_SOURCE,
-                    _PROBE_CREATE,
-                    "Drive-document allocation with baseline probe",
-                    variant="drive",
-                ),
-                _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "baseline/probe read"),
-                _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "optional title set-op"),
-            ),
-        ),
         Operation.SOURCE_ADD_FILE: WebCallPolicyBinding(
             CallPolicy.MUTATION,
             (
@@ -852,6 +839,24 @@ SERVICE_OWNED_WORKFLOW_BINDINGS: Final[Mapping[Operation, WorkflowPolicyBinding]
                     _leaf(Operation.SOURCE_REGISTER, "url"),
                     _leaf(Operation.SOURCE_PATCH_TITLE, None),
                     _leaf(Operation.SOURCE_GET, None),
+                ),
+            ),
+            Operation.SOURCE_ADD_DRIVE: WorkflowPolicyBinding(
+                CallPolicy.MUTATION,
+                (
+                    _native(
+                        RPCMethod.ADD_SOURCE,
+                        _PROBE_CREATE,
+                        "Drive-document allocation with baseline probe",
+                        variant="drive",
+                    ),
+                    _native(RPCMethod.GET_NOTEBOOK, _IDEMPOTENT, "baseline/probe read"),
+                    _native(RPCMethod.UPDATE_SOURCE, _IDEMPOTENT, "optional title set-op"),
+                ),
+                (
+                    _leaf(Operation.SOURCE_LIST, None),
+                    _leaf(Operation.SOURCE_REGISTER, "drive"),
+                    _leaf(Operation.SOURCE_PATCH_TITLE, None),
                 ),
             ),
             Operation.SOURCE_ADD_TEXT: WorkflowPolicyBinding(

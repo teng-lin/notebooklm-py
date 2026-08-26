@@ -11,8 +11,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._app import source_add as cli_source_add
-from notebooklm._app.errors import ErrorCategory, classify
-from notebooklm._idempotency import _CreateResultKind, _IdempotentCreateResult
 from notebooklm._records import (
     SourceAddCommitState,
     SourceAddDriveResult,
@@ -22,148 +20,16 @@ from notebooklm._records import (
     SourceAddUrlResult,
     SourceRecord,
 )
-from notebooklm._source.add import SourceAddService, honor_requested_title_if_fresh
+from notebooklm._source.add import honor_requested_title
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import (
     NetworkError,
-    ServerError,
-    SourceAddError,
 )
-from notebooklm.rpc import RPCError, RPCMethod
 from notebooklm.types import Source
-
-
-class RecordingRpc:
-    def __init__(self, response: Any) -> None:
-        self.response = response
-        self.calls: list[dict[str, Any]] = []
-
-    async def create_source(self, *args: Any) -> Any:
-        self.calls.append({"args": args})
-        if isinstance(self.response, Exception):
-            raise self.response
-        return self.response
-
-
-@pytest.fixture
-def service() -> SourceAddService:
-    return SourceAddService()
-
-
-@pytest.fixture
-def logger() -> logging.Logger:
-    return logging.getLogger("tests.source_add")
 
 
 def source_response(source_id: str, title: str = "Source") -> Source:
     return Source(id="src_" + source_id, title=title)
-
-
-@pytest.mark.asyncio
-async def test_probed_result_without_proven_freshness_skips_the_rename() -> None:
-    """The #1988 default still holds for a probe that cannot prove freshness.
-
-    Both production call sites now pass ``probe_proves_freshness=True``, so the
-    default branch would otherwise be unreachable and unpinned — and it is the
-    only thing stopping a future third caller with an un-baselined probe from
-    renaming a source it did not create.
-    """
-    probed = Source(id="not_mine", title="Someone Else's Title")
-    rename = AsyncMock()
-
-    result = await honor_requested_title_if_fresh(
-        rename,
-        "nb_1",
-        _IdempotentCreateResult(probed, _CreateResultKind.PROBED),
-        "Retitle me",
-        logging.getLogger("tests.source_add"),
-    )
-
-    assert result is probed
-    rename.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_add_drive_uses_exact_rpc_shape_and_wait_hook(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    rpc = RecordingRpc(source_response("drive", "Drive Doc"))
-    ready = Source(id="src_drive", title="Drive Doc")
-    wait_until_ready = AsyncMock(return_value=ready)
-
-    result = await service.add_drive(
-        "nb_1",
-        "drive_file",
-        "Drive Doc",
-        mime_type="application/pdf",
-        wait=True,
-        wait_timeout=7.0,
-        create_source=rpc.create_source,
-        list_sources=AsyncMock(return_value=[]),
-        wait_until_ready=wait_until_ready,
-        logger=logger,
-    )
-
-    assert result is ready
-    assert rpc.calls == [{"args": ("nb_1", "drive_file", "Drive Doc", "application/pdf")}]
-    wait_until_ready.assert_awaited_once_with("nb_1", "src_drive", timeout=7.0)
-
-
-@pytest.mark.asyncio
-async def test_add_drive_raises_source_add_error_on_null_result(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    with pytest.raises(SourceAddError) as exc_info:
-        await service.add_drive(
-            "nb_1",
-            "drive_file",
-            "Drive Doc",
-            create_source=RecordingRpc(None).create_source,
-            list_sources=AsyncMock(return_value=[]),
-            wait_until_ready=AsyncMock(),
-            logger=logger,
-        )
-
-    assert exc_info.value.url == "Drive Doc"
-    msg = str(exc_info.value)
-    assert "API returned no data for Drive source: Drive Doc" in msg
-    # The message names the attempted mime and hints (not asserts) that the type
-    # may not be importable via Drive, steering the user to the `file` upload path.
-    assert "mime_type=" in msg
-    assert "may not be importable" in msg
-    assert "file" in msg
-    assert "download" in msg.lower()
-
-
-@pytest.mark.asyncio
-async def test_add_drive_preserves_rpc_error_propagation(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    # A non-transport RPCError (e.g. validation) must propagate through
-    # idempotent_create as a SourceAddError, just like add_url does. The
-    # cause chain preserves the original RPCError for callers that need it.
-    rpc_error = RPCError("drive add failed")
-
-    with pytest.raises(SourceAddError) as exc_info:
-        await service.add_drive(
-            "nb_1",
-            "drive_file",
-            "Drive Doc",
-            create_source=AsyncMock(side_effect=rpc_error),
-            list_sources=AsyncMock(return_value=[]),
-            wait_until_ready=AsyncMock(),
-            logger=logger,
-        )
-
-    assert exc_info.value.cause is rpc_error
-
-
-def test_raw_url_execution_helpers_are_retired(service: SourceAddService) -> None:
-    assert not hasattr(service, "add_url_source")
-    assert not hasattr(service, "add_youtube_source")
 
 
 @pytest.mark.asyncio
@@ -334,14 +200,20 @@ async def test_add_url_title_matching_upstream_skips_rename() -> None:
 
 @pytest.mark.asyncio
 async def test_add_rename_failure_is_non_fatal(caplog: pytest.LogCaptureFixture) -> None:
+    """The surviving ``SOURCE_ADD_FILE`` helper still swallows a failed rename.
+
+    P10 R3.4 retired ``honor_requested_title_if_fresh`` with the last probed
+    registration row; the freshness wrapper had no production caller left, and
+    the non-fatal contract it delegated lives in ``honor_requested_title``.
+    """
     source = Source(id="d1", title="Drive Name")
     rename = AsyncMock(side_effect=NetworkError("boom"))
 
     with caplog.at_level(logging.WARNING):
-        result = await honor_requested_title_if_fresh(
+        result = await honor_requested_title(
             rename,
             "nb_1",
-            _IdempotentCreateResult(source, _CreateResultKind.CREATED),
+            source,
             "My Title",
             logging.getLogger("tests.source_add"),
         )
@@ -702,112 +574,3 @@ class TestBuildSourceAddPlanUrlRouting:
             looks_path_shaped=self._make_looks_path(),
         )
         assert plan.detected_type == "youtube"
-
-
-def _drive_source(source_id: str, file_id: str, title: str = "Drive Doc") -> Source:
-    """A Drive-backed row, built from the captured wire shape.
-
-    Copied from the live ``GET_NOTEBOOK`` capture in
-    ``tests/cassettes/sources_check_freshness_drive.yaml`` (the same shape
-    ``tests/integration/test_sources_idempotency.py::_google_docs_source_row``
-    uses): the Drive block sits at ``metadata[0]`` and **no** URL slot is
-    populated — which is exactly why the pre-#2113 URL-based probe could never
-    match one. Decoding a real row rather than setting the property keeps this
-    honest: if the ``documentId`` slot ever moves, these tests notice.
-    """
-    metadata: list = [
-        [file_id, "SCRUBBED_AONS", 12],
-        911,
-        [1769105469, 316769000],
-        ["d4325602-2399-44c2-b45b-9df8f433189f", [1769105982, 178269000]],
-        1,  # SourceType.GOOGLE_DOCS
-        None,
-        1,
-    ]
-    source = Source.from_api_response(
-        [[source_id], title, metadata, [None, 2]],
-        method_id=RPCMethod.GET_NOTEBOOK.value,
-    )
-    # Guard the fixture itself: a silently non-matching row would make the
-    # probe return None and the test would fail for the wrong reason.
-    assert source.drive_document_id == file_id, "fixture no longer decodes as a Drive row"
-    return source
-
-
-@pytest.mark.asyncio
-async def test_add_drive_baseline_failure_makes_a_match_ambiguous(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    """The Drive twin of ``test_add_url_baseline_failure_makes_a_match_ambiguous``.
-
-    This branch had **no** test at all before #2220's round-4 review — neither
-    for the #2113 ambiguity behaviour nor for the marker. A ``documentId`` is
-    not unique within a notebook, so without a baseline a match may predate the
-    add; adopting it would report a create that never landed.
-    """
-    file_id = "drive_file_1"
-    existing = _drive_source("src_pre_existing", file_id)
-    create_source = AsyncMock(side_effect=ServerError("commit lost"))
-
-    with pytest.raises(SourceAddError, match="Cannot disambiguate Drive source") as raised:
-        await service.add_drive(
-            "nb_1",
-            file_id,
-            "Drive Doc",
-            create_source=create_source,
-            # baseline fails, then the probe finds the unattributable match
-            list_sources=AsyncMock(side_effect=[RPCError("baseline decode failed"), [existing]]),
-            wait_until_ready=AsyncMock(),
-            logger=logger,
-        )
-
-    # Parity with add_url: the error names what broke the baseline, because the
-    # caller reads "baseline snapshot failed" long after that read happened and
-    # nothing else in the process can explain it.
-    # The load-bearing assertion: ONE create. The finite ``side_effect`` list
-    # would also fail a runaway loop, but with a StopIteration that says nothing
-    # about what went wrong; this names it.
-    assert create_source.await_count == 1
-    assert isinstance(raised.value.cause, RPCError)
-    assert "RPCError" in str(raised.value)
-    # The create's outcome is unknown, so this must not be classified as a
-    # per-item input rejection a batch add can isolate and continue past.
-    assert getattr(raised.value, "unconfirmed", False) is True
-    assert classify(raised.value).category is ErrorCategory.RPC
-    assert classify(raised.value).retriable is False
-
-
-@pytest.mark.asyncio
-async def test_add_drive_probe_raises_on_multiple_new_matches(
-    service: SourceAddService,
-    logger: logging.Logger,
-) -> None:
-    """Two new rows sharing a ``documentId`` cannot be told apart — raise, don't pick.
-
-    The repo's own cassette holds two source ids sharing one ``documentId``
-    (#2113), so this is a real shape, not a hypothetical.
-    """
-    file_id = "drive_file_2"
-    first = _drive_source("src_a", file_id)
-    second = _drive_source("src_b", file_id)
-    create_source = AsyncMock(side_effect=ServerError("commit lost"))
-
-    with pytest.raises(SourceAddError, match="probe found 2 new sources") as raised:
-        await service.add_drive(
-            "nb_1",
-            file_id,
-            "Drive Doc",
-            create_source=create_source,
-            list_sources=AsyncMock(side_effect=[[], [first, second]]),
-            wait_until_ready=AsyncMock(),
-            logger=logger,
-        )
-
-    # The load-bearing assertion: ONE create. The finite ``side_effect`` list
-    # would also fail a runaway loop, but with a StopIteration that says nothing
-    # about what went wrong; this names it.
-    assert create_source.await_count == 1
-    assert "src_a" in str(raised.value) or "2 new sources" in str(raised.value)
-    assert getattr(raised.value, "unconfirmed", False) is True
-    assert classify(raised.value).category is ErrorCategory.RPC

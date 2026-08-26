@@ -39,7 +39,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any
 
 from ..._backend import BackendContractError, BackendError, BackendErrorReason
 from ..._binding import (
@@ -52,11 +52,9 @@ from ..._binding import (
     RowInvoker,
 )
 from ..._deadline import RuntimeDeadline
-from ..._idempotency import _IdempotentCreateResult
 from ..._operations import Operation
 from ..._projectors import project_source
 from ..._records import (
-    SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
@@ -67,8 +65,6 @@ from ..._records import (
     SOURCE_LIST_DEF,
     SOURCE_REFRESH_DEF,
     SOURCE_WAIT_DEF,
-    SourceAddDriveInput,
-    SourceAddDriveResult,
     SourceAddFileInput,
     SourceAddFileResult,
     SourceAddUrlBatchInput,
@@ -78,11 +74,7 @@ from ..._records import (
     SourceRecord,
     SourceUrlBatchItemRecord,
 )
-from ..._source.add import (
-    SourceAddService,
-    honor_requested_title,
-    honor_requested_title_if_fresh,
-)
+from ..._source.add import honor_requested_title
 from ..._source.batch import SourceBatchAddService
 from ..._source_upload_port import SourceUploadBackend
 from ..._types.sources import _SOURCE_TYPE_CODE_MAP, SourceType
@@ -238,20 +230,6 @@ def _source_record(source: Source) -> SourceRecord:
     )
 
 
-def _first_projected_source(records: Sequence[SourceRecord]) -> Source | None:
-    """Project the first decoded create row without retaining positional wire reads."""
-    record = next(iter(records), None)
-    return project_source(record) if record is not None else None
-
-
-async def _facade_owned_wait(*_args: Any, **_kwargs: Any) -> Source:
-    """Fail closed if an adapter create path tries to take over readiness polling."""
-    raise BackendContractError(
-        "source readiness polling belongs to the public source facade",
-        operation=Operation.SOURCE_WAIT,
-    )
-
-
 async def _snapshot_sources(
     invoke: RowInvoker,
     notebook_id: str,
@@ -367,87 +345,6 @@ async def _add_url_batch(
             for item in outcomes
         )
     )
-
-
-async def _add_drive(
-    value: SourceAddDriveInput,
-    deadline: RuntimeDeadline | None,
-    invoke: RowInvoker,
-) -> SourceAddDriveResult:
-    adder = SourceAddService()
-
-    async def create_source(
-        notebook_id: str,
-        file_id: str,
-        title: str,
-        mime_type: str,
-    ) -> Source | None:
-        payload = await invoke.call(
-            _CREATE,
-            sources_codec.encode_add_drive_payload(notebook_id, file_id, title, mime_type),
-            deadline=deadline,
-            disable_internal_retries=True,
-        )
-        records = sources_codec.decode_add_source_records(payload) if payload is not None else ()
-        return _first_projected_source(records)
-
-    async def rename_source(notebook_id: str, source_id: str, new_title: str) -> Source | None:
-        return await _rename_source(
-            invoke,
-            notebook_id,
-            source_id,
-            new_title,
-            deadline=deadline,
-            hydrate_on_null=False,
-        )
-
-    try:
-        if value.finalize_source is not None:
-            source = await honor_requested_title(
-                rename_source,
-                value.notebook_id,
-                project_source(value.finalize_source),
-                value.title,
-                source_logger,
-            )
-            return SourceAddDriveResult(_source_record(source))
-
-        result = cast(
-            _IdempotentCreateResult[Source],
-            await adder.add_drive(
-                value.notebook_id,
-                value.file_id,
-                value.title,
-                mime_type=value.mime_type,
-                wait=False,
-                wait_timeout=value.wait_timeout,
-                create_source=create_source,
-                list_sources=lambda notebook_id: _snapshot_sources(
-                    invoke, notebook_id, deadline=deadline
-                ),
-                wait_until_ready=_facade_owned_wait,
-                logger=source_logger,
-                return_result=True,
-            ),
-        )
-
-        source = (
-            result.value
-            if value.wait
-            else await honor_requested_title_if_fresh(
-                rename_source,
-                value.notebook_id,
-                result,
-                value.title,
-                source_logger,
-                probe_proves_freshness=True,
-            )
-        )
-        return SourceAddDriveResult(_source_record(source))
-    except NotebookLMError as exc:
-        # Rejected input, the ``SourceAddError`` wrap and the unconfirmed transport
-        # four-tuple all leave as neutral evidence under one reason.
-        raise _source_add_failure(exc, Operation.SOURCE_ADD_DRIVE) from exc
 
 
 def upload_backend(invoke: RowInvoker) -> SourceUploadBackend:
@@ -625,18 +522,6 @@ SOURCE_ADD_URL_BATCH = CustomBinding(
     collaborators=(_CAPTURE_PUBLIC_FAILURE,),
 )
 
-SOURCE_ADD_DRIVE = CustomBinding(
-    definition=SOURCE_ADD_DRIVE_DEF,
-    handler=_add_drive,
-    native=(
-        NativeCallSpec.constant(RPCMethod.ADD_SOURCE, "drive", key=_CREATE),
-        NativeCallSpec.constant(RPCMethod.GET_NOTEBOOK, key=_SNAPSHOT),
-        NativeCallSpec.constant(RPCMethod.UPDATE_SOURCE, key=_RENAME),
-    ),
-    justification=_PROTOCOL_JUSTIFICATION,
-    category="protocol",
-)
-
 SOURCE_ADD_FILE = CustomBinding(
     definition=SOURCE_ADD_FILE_DEF,
     handler=_add_file,
@@ -666,13 +551,11 @@ SOURCE_ROWS: Mapping[Operation, Binding] = MappingProxyType(
         SOURCE_GET_GUIDE.definition.key: SOURCE_GET_GUIDE,
         SOURCE_GET_FULLTEXT.definition.key: SOURCE_GET_FULLTEXT,
         SOURCE_ADD_URL_BATCH.definition.key: SOURCE_ADD_URL_BATCH,
-        SOURCE_ADD_DRIVE.definition.key: SOURCE_ADD_DRIVE,
         SOURCE_ADD_FILE.definition.key: SOURCE_ADD_FILE,
     }
 )
 
 __all__ = [
-    "SOURCE_ADD_DRIVE",
     "SOURCE_ADD_FILE",
     "SOURCE_ADD_URL_BATCH",
     "SOURCE_CHECK_FRESHNESS",

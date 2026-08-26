@@ -252,7 +252,10 @@ OPERATION_SPECS: tuple[OperationSpec, ...] = (
         CallPolicy.MUTATION,
         "SourceService",
         "notebook",
-        "Takes an unconditional source-id baseline and reconciles by new exact Drive document id.",
+        "Service-owned since P10 R3.4: SourceService.add_drive takes an unconditional source-id "
+        "baseline over source.list, allocates the Drive document through one source.register "
+        "drive write, reconciles an uncertain commit against that baseline by exact new Drive "
+        "document id, and applies an optional title through source.patch_title afterward.",
         _p("sources", "add_drive"),
         (
             _b(RPCMethod.ADD_SOURCE, "drive"),

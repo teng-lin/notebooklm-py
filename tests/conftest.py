@@ -650,54 +650,40 @@ def legacy_vcr_add_url_baseline(monkeypatch):
     ``tests/integration/test_sources_idempotency.py``, so nothing here is its
     only coverage. Mirrors :func:`legacy_vcr_follow_up_probe`.
     """
-    from notebooklm._records import SOURCE_LIST_DEF
     from notebooklm._source_service import SourceService
 
-    # P10 R3.3 hoisted the workflow above the semantic port: the baseline and
-    # the probe are now two named phases of ``SourceService.add_url`` over the
-    # same ``source.list`` leaf, so the stub replaces the phases rather than the
-    # injected ``list_sources`` callable the retired below-port service took.
-    # The probe's read is inlined into a nested closure (no longer a separately
-    # patchable method — see the P10 R3.3 catalog audit), so it is stubbed by
-    # swapping the backend's ``invoke`` for the duration of one ``add_url``
-    # call instead: with the baseline fully replaced below, any ``source.list``
-    # that still reaches the backend can only be the probe's.
+    # P10 R3.3 hoisted the workflow above the semantic port, and R3.4 made its
+    # baseline and probe the phases the Drive workflow shares: the stub replaces
+    # those two named phases rather than the injected ``list_sources`` callable
+    # the retired below-port service took.
     baseline_calls = 0
 
-    async def _url_baseline(self, notebook_id, *, deadline):
+    async def _add_baseline(self, notebook_id, *, deadline, label):
         nonlocal baseline_calls
         baseline_calls += 1
         return set(), None, None
 
+    async def _probe_snapshot(self, notebook_id, *, deadline):
+        raise AssertionError(
+            "legacy_vcr_add_url_baseline: the idempotency probe fired, so this "
+            "cassette's create did not succeed. The stubbed empty baseline would "
+            "decide the probe's answer — record the probe's GET_NOTEBOOK instead "
+            "of stubbing the baseline."
+        )
+
     original_add_url = SourceService.add_url
 
     async def _add_url(self, notebook_id, url, **kwargs):
-        backend_cls = type(self._backend)
-        original_invoke = backend_cls.invoke
-
-        async def _invoke(backend_self, operation, value, *, deadline=None):
-            if operation is SOURCE_LIST_DEF:
-                raise AssertionError(
-                    "legacy_vcr_add_url_baseline: the idempotency probe fired, so "
-                    "this cassette's create did not succeed. The stubbed empty "
-                    "baseline would decide the probe's answer — record the "
-                    "probe's GET_NOTEBOOK instead of stubbing the baseline."
-                )
-            return await original_invoke(backend_self, operation, value, deadline=deadline)
-
         before = baseline_calls
-        monkeypatch.setattr(backend_cls, "invoke", _invoke)
-        try:
-            result = await original_add_url(self, notebook_id, url, **kwargs)
-        finally:
-            monkeypatch.setattr(backend_cls, "invoke", original_invoke)
+        result = await original_add_url(self, notebook_id, url, **kwargs)
         assert baseline_calls == before + 1, (
             "legacy_vcr_add_url_baseline: add_url no longer captures a pre-create "
             "baseline, so this fixture is stale — drop it."
         )
         return result
 
-    monkeypatch.setattr(SourceService, "_url_baseline", _url_baseline)
+    monkeypatch.setattr(SourceService, "_add_baseline", _add_baseline)
+    monkeypatch.setattr(SourceService, "_probe_snapshot", _probe_snapshot)
     monkeypatch.setattr(SourceService, "add_url", _add_url)
 
 

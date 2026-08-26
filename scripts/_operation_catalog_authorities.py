@@ -88,8 +88,8 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.ADD_SOURCE, "drive")): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
-            "native Drive-document payload",
+            "_web/bindings/primitives.py:SOURCE_REGISTER",
+            "native Drive-document allocation via the source.register leaf",
         ),
     ),
     (Operation.NOTEBOOK_LIST, _b(RPCMethod.LIST_NOTEBOOKS)): _rules(
@@ -145,8 +145,8 @@ SHARED_RPC_AUTHORITY_RULES: dict[tuple[Operation, NativeKey], tuple[AuthorityRul
     ),
     (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
         (
-            "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
-            "unconditional baseline plus ambiguity probes",
+            "_web/bindings/sources.py:SOURCE_LIST",
+            "unconditional baseline plus ambiguity probes via source.list",
         )
     ),
     (Operation.SOURCE_ADD_FILE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
@@ -470,7 +470,7 @@ RECENCY_CONTRACTS: dict[Operation, tuple[RecencyRule, ...]] = {
             "public_call",
             "one baseline plus ambiguity probes and, when wait=True, one snapshot per "
             "facade-owned readiness poll tick",
-            ("_web/bindings/sources.py:SOURCE_ADD_DRIVE",),
+            (_GET_SOURCE_LIST,),
         ),
     ),
     Operation.SOURCE_ADD_FILE: (
@@ -838,8 +838,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.SOURCE_ADD_DRIVE, _b(RPCMethod.UPDATE_SOURCE)): _rules(
             (
-                "_web/bindings/sources.py:SOURCE_ADD_DRIVE",
-                "optional post-create title",
+                "_web/bindings/primitives.py:SOURCE_PATCH_TITLE",
+                "optional post-create title via source.patch_title",
             )
         ),
         (Operation.SOURCE_ADD_FILE, _b(RPCMethod.UPDATE_SOURCE)): _rules(

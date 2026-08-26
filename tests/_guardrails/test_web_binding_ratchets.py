@@ -51,17 +51,16 @@ WEB_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_web"
 #: Custom rows at P9.4c; shrinks with every later hoist.
 #: Sharing, artifact-rename, and notebook create/update hoists removed six
 #: custom rows; the label- and collection-create hoists removed the final two
-#: handlers from the P9.2 stop/go baseline; P10 R3.2's source.add_text hoist
-#: removed the source-add family's one compatibility row and R3.3's
-#: source.add_url hoist removed its one protocol row.
-RESIDUAL_COMPOSITE_CEILING = 18
-#: Exact custom-row counts per justification category: five source-add rows,
-#: ``CHAT_ASK``, the Studio
+#: handlers from the P9.2 stop/go baseline. P10 R3.2/R3.3/R3.4 then took the
+#: three probed source-add rows above the port, 20 -> 17.
+RESIDUAL_COMPOSITE_CEILING = 17
+#: Exact custom-row counts per justification category: the two remaining
+#: source-add rows, ``CHAT_ASK``, the Studio
 #: generation/prompt rows and the notebook/mind-map/catalog composites.
 #: P9.4b PRs raise these as handlers convert;
 #: P9.2 hoists lower ``deferred-product``, which must reach zero before any
 #: second backend.
-CUSTOM_ROW_COUNTS = {"protocol": 4, "compatibility": 3, "deferred-product": 11}
+CUSTOM_ROW_COUNTS = {"protocol": 3, "compatibility": 3, "deferred-product": 11}
 
 # --- 2. class size ---------------------------------------------------------------
 

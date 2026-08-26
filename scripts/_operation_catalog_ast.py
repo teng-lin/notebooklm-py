@@ -1972,15 +1972,13 @@ ACTIVE_BACKEND_INVOKE_SITES = frozenset(
         "_suggestion_service.py:SuggestionService.suggest_prompts",
         "_suggestion_service.py:SuggestionService.suggest_reports",
         "_source_service.py:SourceService._patch_title",
-        "_source_service.py:SourceService._url_baseline",
-        "_source_service.py:SourceService.add_url.probe",
-        "_source_service.py:SourceService.add_url.register",
-        "_source_service.py:SourceService.add_drive",
+        "_source_service.py:SourceService._add_baseline",
+        "_source_service.py:SourceService._guarded_registration.register",
+        "_source_service.py:SourceService._probe_snapshot",
         "_source_service.py:SourceService.add_drive_file",
         "_source_service.py:SourceService.add_file",
         "_source_service.py:SourceService.add_text",
         "_source_service.py:SourceService.add_urls_batch",
-        "_source_service.py:SourceService.finalize_drive_title",
         "_source_service.py:SourceService.finalize_file_title",
         "_source_service.py:SourceService.check_freshness",
         "_source_service.py:SourceService.delete",
@@ -2392,6 +2390,33 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
         ("_source_service.py", "_records", "SourceAddUrlReceipt"),
         ("_source_service.py", "_records", "SourceAddUrlResult"),
         ("_source_service.py", "_records", "SourceListInput"),
+    }
+)
+
+# P10 R3.4: source.add_drive becomes service-owned. The last probed-registration
+# protocol row and its typed input/result leave _web; ``SourceService`` gains the
+# baseline/register/probe/finalise workflow over source.list, source.register and
+# source.patch_title, and the neutral report vocabulary the three hoisted
+# source-add workflows share moves to ``_source_add_reports.py`` so the service
+# stays inside the module-size budget.
+REVIEWED_BACKEND_IMPORTS -= frozenset(
+    {
+        ("_source_service.py", "_records", "SourceAddDriveInput"),
+        ("_web/bindings/sources.py", "_records", "SOURCE_ADD_DRIVE_DEF"),
+        ("_web/bindings/sources.py", "_records", "SourceAddDriveInput"),
+        ("_web/bindings/sources.py", "_records", "SourceAddDriveResult"),
+    }
+)
+REVIEWED_BACKEND_IMPORTS |= frozenset(
+    {
+        ("_source_add_reports.py", "_backend", "BackendContractError"),
+        ("_source_add_reports.py", "_backend", "BackendError"),
+        ("_source_add_reports.py", "_backend", "BackendErrorReason"),
+        ("_source_add_reports.py", "_records", "SourceAddFailureKind"),
+        ("_source_add_reports.py", "_records", "SourceAddFailureRecord"),
+        ("_source_add_reports.py", "_records", "SourceRecord"),
+        ("_source_add_reports.py", "_records", "SourceRegisterInput"),
+        ("_source_service.py", "_records", "SourceListResult"),
     }
 )
 

@@ -91,7 +91,6 @@ from notebooklm._records import (
     SHARING_GET_DEF,
     SHARING_MUTATE_DEF,
     SHARING_PATCH_VIEW_LEVEL_DEF,
-    SOURCE_ADD_DRIVE_DEF,
     SOURCE_ADD_FILE_DEF,
     SOURCE_ADD_URL_BATCH_DEF,
     SOURCE_CHECK_FRESHNESS_DEF,
@@ -134,9 +133,9 @@ from notebooklm._records import (
     NoteUpdateInput,
     ReportGenerateInput,
     SlideDeckGenerateInput,
-    SourceAddDriveInput,
     SourceAddFailureKind,
     SourceAddFailureRecord,
+    SourceAddUrlBatchInput,
     SourceGetInput,
     SourceListInput,
     VideoGenerateInput,
@@ -331,7 +330,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_DOWNLOAD,
         Operation.ARTIFACT_WAIT,
         Operation.SOURCE_ADD_URL_BATCH,
-        Operation.SOURCE_ADD_DRIVE,
         Operation.SOURCE_ADD_FILE,
         Operation.SOURCE_DELETE,
         Operation.SOURCE_PATCH_TITLE,
@@ -416,7 +414,6 @@ def test_registry_is_closed_and_exposes_only_reviewed_live_handlers() -> None:
         Operation.ARTIFACT_DOWNLOAD: ARTIFACT_DOWNLOAD_DEF,
         Operation.ARTIFACT_WAIT: ARTIFACT_WAIT_DEF,
         Operation.SOURCE_ADD_URL_BATCH: SOURCE_ADD_URL_BATCH_DEF,
-        Operation.SOURCE_ADD_DRIVE: SOURCE_ADD_DRIVE_DEF,
         Operation.SOURCE_ADD_FILE: SOURCE_ADD_FILE_DEF,
         Operation.SOURCE_DELETE: SOURCE_DELETE_DEF,
         Operation.SOURCE_PATCH_TITLE: SOURCE_PATCH_TITLE_DEF,
@@ -1509,12 +1506,12 @@ async def test_expired_custom_row_fails_before_the_handler_and_names_no_native()
 
     with pytest.raises(BackendDeadlineExceededError) as caught:
         await _backend(executor).invoke(
-            SOURCE_ADD_DRIVE_DEF,
-            SourceAddDriveInput("nb", "file-id", "Doc", "application/pdf"),
+            SOURCE_ADD_URL_BATCH_DEF,
+            SourceAddUrlBatchInput("nb", ("https://a.example/",)),
             deadline=deadline,
         )
 
-    assert caught.value.operation is Operation.SOURCE_ADD_DRIVE
+    assert caught.value.operation is Operation.SOURCE_ADD_URL_BATCH
     assert caught.value.reason is BackendErrorReason.TIMEOUT
     assert caught.value.diagnostics == {
         "timeout": 2.0,
