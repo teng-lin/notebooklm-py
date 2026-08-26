@@ -301,6 +301,7 @@ def compose_client(
         backend=client._backend,
         catalog=mind_map_catalog,
         wait_for_completion=client.artifacts.wait_for_completion,
+        deadline_factory=deadline_factory,
     )
     client.mind_maps = MindMapsAPI(
         notes=note_service,

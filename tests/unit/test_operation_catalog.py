@@ -253,7 +253,7 @@ def test_rpc_ast_walk_distinguishes_calls_from_decoder_references() -> None:
     assert sites[(RPCMethod.GET_NOTEBOOK, None)] == [
         "_notebooks.py:NotebooksAPI.get_raw",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
-        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
+        # P10 R5.1b: MIND_MAP_GENERATE_INTERACTIVE no longer reads a notebook.
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",

@@ -142,6 +142,7 @@ def _mind_maps(
             backend,
             StudioCatalog(backend, deadline_factory=factory),
             wait_for_completion=_never_waited,
+            deadline_factory=factory,
         ),
     )
 

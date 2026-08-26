@@ -607,14 +607,8 @@ def test_migrated_operation_defs_are_frozen_and_attach_expected_call_policy() ->
         ),
         (
             MIND_MAP_GENERATE_INTERACTIVE_DEF,
-            [
-                (RPCMethod.GET_NOTEBOOK, None),
-                (RPCMethod.CREATE_ARTIFACT, None),
-            ],
-            [
-                IdempotencyPolicy.IDEMPOTENT_SET_OP,
-                IdempotencyPolicy.PROBE_THEN_CREATE,
-            ],
+            [(RPCMethod.CREATE_ARTIFACT, None)],
+            [IdempotencyPolicy.PROBE_THEN_CREATE],
         ),
         (
             MIND_MAP_UPDATE_DEF,

@@ -185,8 +185,8 @@ SHARED_RPC_AUTHORITY_RULES.update(
         ),
         (Operation.MIND_MAP_GENERATE_INTERACTIVE, _b(RPCMethod.GET_NOTEBOOK)): _rules(
             (
-                "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
-                "kind=INTERACTIVE and source_ids is None",
+                "_web/bindings/notebooks.py:NOTEBOOK_GET",
+                "service-resolved default source scope",
             )
         ),
         (Operation.ARTIFACT_GENERATE_MIND_MAP, _b(RPCMethod.GENERATE_MIND_MAP)): _rules(
@@ -562,10 +562,13 @@ for _operation, _kind in (
     (Operation.MIND_MAP_GENERATE_NOTE, "NOTE_BACKED"),
     (Operation.MIND_MAP_GENERATE_INTERACTIVE, "INTERACTIVE"),
 ):
+    # P10 R5.1b: the interactive family's default-scope read is an ordinary
+    # NOTEBOOK_GET that MindMapFamilyService issues above the port, not a second
+    # native of the generation row.
     _recency_site = (
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE"
         if _operation is Operation.MIND_MAP_GENERATE_NOTE
-        else "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE"
+        else "_web/bindings/notebooks.py:NOTEBOOK_GET"
     )
     RECENCY_CONTRACTS[_operation] = (
         RecencyRule(

@@ -7527,7 +7527,7 @@
             ],
             "evidence_shape_fingerprints": {
               "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
-              "notebooklm/_studio/mind_maps.py:return MindMap(": "sha256:4c045d40b7874552463573a810afe0d9b7605a1d3b6bb5b4b75e2249f88c7421",
+              "notebooklm/_studio/mind_maps.py:return MindMap(": "sha256:8c3764faa4b61278001331621dc5fed3984de86333a126acd6a06c553dd6f611",
               "notebooklm/cli/generate_cmd.py:_output_mind_map_result": "sha256:d2680ea672181b764845d049e04f982a15dae5b043a669c16a34c99b279cf6de"
             },
             "id": "cli.Artifact.transitive-interactive-mind-map-generation-final-contribution",
@@ -11395,7 +11395,7 @@
             ],
             "evidence_shape_fingerprints": {
               "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
-              "notebooklm/_studio/mind_maps.py:return MindMap(": "sha256:4c045d40b7874552463573a810afe0d9b7605a1d3b6bb5b4b75e2249f88c7421",
+              "notebooklm/_studio/mind_maps.py:return MindMap(": "sha256:8c3764faa4b61278001331621dc5fed3984de86333a126acd6a06c553dd6f611",
               "notebooklm/mcp/tools/_studio_payloads.py:_mind_map_id": "sha256:19790ad71c4f564641f76c3b54b161e34a5834edf5b7329e32b028a397787668"
             },
             "id": "mcp.Artifact.transitive-interactive-mind-map-generation-final-contribution",
@@ -14921,7 +14921,7 @@
             ],
             "evidence_shape_fingerprints": {
               "notebooklm/_studio/mind_maps.py:artifact = project_artifact(record)": "sha256:5b1002c94e5fa7a54c74df9520d6cb6213847d6e2704f1971a335c67452ea1b8",
-              "notebooklm/_studio/mind_maps.py:return MindMap(": "sha256:4c045d40b7874552463573a810afe0d9b7605a1d3b6bb5b4b75e2249f88c7421",
+              "notebooklm/_studio/mind_maps.py:return MindMap(": "sha256:8c3764faa4b61278001331621dc5fed3984de86333a126acd6a06c553dd6f611",
               "notebooklm/server/routes/artifacts.py:payload[\"mind_map\"] = to_jsonable": "sha256:cb093a06a8e0c9c0d5735d14adbb4d815a3c23613382f7b1926cd49e714127ca"
             },
             "id": "rest.Artifact.transitive-interactive-mind-map-generation-final-contribution",

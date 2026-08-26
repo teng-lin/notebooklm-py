@@ -983,27 +983,21 @@ async def test_mind_map_handlers_preserve_codecs_payloads_and_deadline() -> None
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("definition", "value"),
-    [
-        (MIND_MAP_GENERATE_NOTE_DEF, MindMapGenerateNoteInput("nb", None)),
-        (
-            MIND_MAP_GENERATE_INTERACTIVE_DEF,
-            MindMapGenerateInteractiveInput("nb", None),
-        ),
-    ],
-)
-async def test_mind_map_generation_resolves_default_sources_once(
-    definition: OperationDef[Any, Any],
-    value: object,
-) -> None:
-    generated = [["id"]] if definition is MIND_MAP_GENERATE_INTERACTIVE_DEF else [["{}"]]
+async def test_mind_map_note_generation_resolves_default_sources_once() -> None:
+    """``mind_map.generate_note`` is the one row still defaulting its own scope.
+
+    P10 R5.1b hoisted the interactive family's read into
+    ``MindMapFamilyService``; the note-backed row keeps its ``GET_NOTEBOOK``
+    spec until its own hoist.
+    """
     executor = _RecordingExecutor(
         [["Notebook", [[[["src-a"]]], [["src-b"]]], "nb"]],
-        generated,
+        [["{}"]],
     )
 
-    await _backend(executor).invoke(definition, value, deadline=None)
+    await _backend(executor).invoke(
+        MIND_MAP_GENERATE_NOTE_DEF, MindMapGenerateNoteInput("nb", None), deadline=None
+    )
 
     assert [call.method for call in executor.calls[:1]] == [RPCMethod.GET_NOTEBOOK]
     assert len(executor.calls) == 2

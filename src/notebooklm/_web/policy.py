@@ -630,11 +630,6 @@ WEB_CALL_POLICY_BINDINGS: Final[Mapping[Operation, WebCallPolicyBinding]] = Mapp
             CallPolicy.STATEFUL_START,
             (
                 _native(
-                    RPCMethod.GET_NOTEBOOK,
-                    _IDEMPOTENT,
-                    "conditional default-source resolution",
-                ),
-                _native(
                     RPCMethod.CREATE_ARTIFACT,
                     _PROBE_CREATE,
                     "interactive mind-map allocation",

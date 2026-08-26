@@ -129,10 +129,16 @@ class MindMapGenerateTreeResult:
 
 @dataclass(frozen=True, slots=True)
 class MindMapGenerateInteractiveInput:
-    """Interactive Studio mind-map generation options."""
+    """Interactive Studio mind-map generation options with a resolved scope.
+
+    ``source_ids`` is required: "no scope given means every source" is a
+    service-level default (:class:`~notebooklm._studio.MindMapFamilyService`
+    resolves the notebook's full source set through ``NOTEBOOK_GET`` before
+    invoking), not something the backend re-derives below the port.
+    """
 
     notebook_id: str
-    source_ids: tuple[str, ...] | None = None
+    source_ids: tuple[str, ...]
     instructions: str | None = field(default=None, repr=False)
 
 

@@ -831,12 +831,6 @@
       "known_divergence": null,
       "native_bindings": [
         {
-          "idempotency_policy": "idempotent_set_op",
-          "role": "conditional default-source resolution",
-          "rpc_method": "GET_NOTEBOOK",
-          "variant": null
-        },
-        {
           "idempotency_policy": "probe_then_create",
           "role": "interactive mind-map allocation",
           "rpc_method": "CREATE_ARTIFACT",
@@ -3193,7 +3187,6 @@
       "execution_authorities": [
         "_notebooks.py:NotebooksAPI.get_raw",
         "_web/bindings/chat.py:CHAT_CONFIGURE",
-        "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
         "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_NOTE",
         "_web/bindings/notebooks.py:NOTEBOOK_GET",
         "_web/bindings/settings.py:NOTEBOOK_SUGGEST_PROMPTS",
@@ -6954,8 +6947,8 @@
         },
         {
           "binding": "GET_NOTEBOOK:<default>",
-          "discriminator": "kind=INTERACTIVE and source_ids is None",
-          "site": "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE",
+          "discriminator": "service-resolved default source scope",
+          "site": "_web/bindings/notebooks.py:NOTEBOOK_GET",
           "transport_kind": "rpc"
         },
         {
@@ -6982,7 +6975,7 @@
       "recency_contract": [
         {
           "authority_sites": [
-            "_web/bindings/mind_maps.py:MIND_MAP_GENERATE_INTERACTIVE"
+            "_web/bindings/notebooks.py:NOTEBOOK_GET"
           ],
           "condition": "one only when kind=INTERACTIVE and source_ids is omitted",
           "maximum_calls": 1,
