@@ -16,6 +16,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from notebooklm._binding import OperationDisposition
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY
 from notebooklm._operations import CallPolicy, Operation, OperationTier
 from notebooklm._web.policy import (
@@ -204,7 +205,15 @@ def audit_operation_catalog() -> list[str]:
         for operation, binding in WEB_OPERATION_REGISTRY.items()
         if binding.is_supported and binding.definition is not None
     }
-    errors.extend(audit_web_call_policy_bindings(active_definitions))
+    service_owned_definitions = {
+        operation: binding.definition
+        for operation, binding in WEB_OPERATION_REGISTRY.items()
+        if binding.disposition is OperationDisposition.SERVICE_OWNED
+        and binding.definition is not None
+    }
+    errors.extend(
+        audit_web_call_policy_bindings(active_definitions, workflows=service_owned_definitions)
+    )
     for operation, binding in WEB_CALL_POLICY_BINDINGS.items():
         spec = specs_by_operation.get(operation)
         if spec is None:
