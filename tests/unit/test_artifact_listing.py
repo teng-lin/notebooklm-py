@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -64,6 +65,45 @@ def test_prefetched_neutral_representation_records_are_not_decoded_twice() -> No
 
     assert ArtifactsAPI._representation_records([representation]) == (representation,)
     assert ArtifactsAPI._mind_map_records([mind_map]) == (mind_map,)
+
+
+def test_representation_records_decodes_raw_wire_rows() -> None:
+    """Public ``download_<x>(..., artifacts_data=...)`` callers may still pass
+    raw ``LIST_ARTIFACTS`` rows, not just pre-decoded records (P10 PR1 review
+    finding 1): ``_representation_records`` must decode them rather than
+    handing the studio/download layer an undecoded row it can't use.
+    """
+    raw_row: list[object] = ["slide_001", "Slide Deck Title", 8, None, 3]
+    raw_row.extend([None] * 11)
+    raw_row.append(
+        [
+            ["config"],
+            "Slide Deck Title",
+            [["slide1"], ["slide2"]],
+            "https://contribution.usercontent.google.com/download?filename=test.pdf",
+        ]
+    )
+
+    (record,) = ArtifactsAPI._representation_records([raw_row])
+
+    assert isinstance(record, ArtifactRepresentationRecord)
+    assert record.artifact.id == "slide_001"
+    assert record.artifact.family == "slide_deck"
+
+
+def test_mind_map_records_decodes_raw_note_rows_and_drops_none() -> None:
+    """Same raw-row tolerance for ``download_mind_map(..., mind_maps=...)``,
+    plus the ``None`` filter (a deleted/non-mind-map note row decodes to
+    ``None`` and must not reach ``_select`` as a bare ``None``)."""
+    mind_map_row = ["mm_1", json.dumps({"children": []})]
+    non_mind_map_row = ["note_1", "just a plain note, not a mind map"]
+
+    records = ArtifactsAPI._mind_map_records([mind_map_row, non_mind_map_row])
+
+    assert records is not None
+    assert len(records) == 1
+    assert isinstance(records[0], MindMapRepresentationRecord)
+    assert records[0].id == "mm_1"
 
 
 @pytest.mark.asyncio
