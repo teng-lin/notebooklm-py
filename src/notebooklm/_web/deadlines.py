@@ -27,7 +27,6 @@ class SemanticDeadlineAuthority(str, Enum):
 SEMANTIC_DEADLINE_AUTHORITIES: Final[MappingProxyType[Operation, SemanticDeadlineAuthority]] = (
     MappingProxyType(
         {
-            Operation.NOTEBOOK_SUGGEST_PROMPTS: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SOURCE_ADD_URL: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SOURCE_ADD_URL_BATCH: SemanticDeadlineAuthority.CLIENT_TIMEOUT,
             Operation.SOURCE_ADD_DRIVE: SemanticDeadlineAuthority.CLIENT_TIMEOUT,

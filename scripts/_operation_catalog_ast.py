@@ -1515,6 +1515,7 @@ REVIEWED_BACKEND_IMPORTS = frozenset(
         ("_settings_service.py", "_records", "SettingsSetLanguageInput"),
         ("_suggestion_service.py", "_backend", "BackendAdapter"),
         ("_suggestion_service.py", "_projectors", "project_prompt_suggestions"),
+        ("_suggestion_service.py", "_read_services", "NotebookReadService"),
         ("_suggestion_service.py", "_projectors", "project_report_suggestions"),
         ("_suggestion_service.py", "_records", "ARTIFACT_SUGGEST_REPORTS_DEF"),
         ("_suggestion_service.py", "_records", "ArtifactSuggestReportsInput"),
@@ -1820,11 +1821,7 @@ REVIEWED_BACKEND_IMPORTS |= frozenset(
 # codec modules carry their record/codec imports.
 REVIEWED_BACKEND_IMPORTS |= frozenset(
     {
-        ("_web/bindings/settings.py", "_binding", "CustomBinding"),
-        ("_web/bindings/settings.py", "_binding", "RowInvoker"),
         ("_web/bindings/settings.py", "_records", "NOTEBOOK_SUGGEST_PROMPTS_DEF"),
-        ("_web/bindings/settings.py", "_records", "NotebookSuggestPromptsInput"),
-        ("_web/bindings/settings.py", "_records", "NotebookSuggestPromptsResult"),
         ("_web/bindings/studio.py", "_binding", "CustomBinding"),
         ("_web/bindings/studio.py", "_binding", "RowInvoker"),
         ("_web/bindings/studio.py", "_records", "ARTIFACT_GENERATE_AUDIO_DEF"),
